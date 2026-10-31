@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        <link rel="canonical" href="https://thomaskistler.github.io/aero-grid/main/panels/link-status/">
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>Link status - AeroGrid</title>
+  
+        <link href="../../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../../css/brands.min.css" rel="stylesheet">
+        <link href="../../css/solid.min.css" rel="stylesheet">
+        <link href="../../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../../stylesheets/aerogrid.css" rel="stylesheet">
+        <link href="../../stylesheets/versions.css" rel="stylesheet">
+  <link href="../../stylesheets/console.css" rel="stylesheet">
+
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-RMCKML1PKS"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+
+          gtag('config', "G-RMCKML1PKS");
+        </script>
+   
+  <meta name="aerogrid-site-root" content="/aero-grid/">
+
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-light bg-light">
+            <div class="container">
+  <a class="navbar-brand ag-brand" href="../..">
+    <span class="ag-brand-mark" aria-hidden="true">A</span>
+    <span class="ag-brand-name">AeroGrid</span>
+    <span class="ag-brand-divider" aria-hidden="true">/</span>
+    <span class="ag-current-page">Link status</span>
+  </a>
+  <div class="ag-docs-version">
+  <select aria-label="Documentation version"
+          data-docs-root="/aero-grid/"
+          data-docs-version="main"
+          disabled>
+    <option value="main">main (unreleased)</option>
+  </select>
+  <span class="ag-docs-version-status" role="status"></span>
+</div>
+
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+  <nav class="ag-icon-rail" aria-label="Main navigation">
+    <a
+      class="ag-icon-link"
+      href="../../user-guide/installation/"
+      aria-label="Install / Upgrade"
+      title="Install / Upgrade"
+      
+    >
+      <svg class="ag-icon-logo" viewBox="0 0 450 450" aria-hidden="true">
+        <image href="../../assets/icons/install-upgrade-radio.svg" width="505" height="453" />
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link"
+      href="../../user-guide/add-dashboard/"
+      aria-label="User Guide"
+      title="User Guide"
+      
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 5v16"/>
+        <path d="M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/>
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link active"
+      href="../../reference-guide/"
+      aria-label="Reference Guide"
+      title="Reference Guide"
+      aria-current="page"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/>
+        <path d="M8 11h8"/>
+        <path d="M8 7h6"/>
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link"
+      href="../../developer-guide/build/"
+      aria-label="Developer Guide"
+      title="Developer Guide"
+      
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m18 16 4-4-4-4"/>
+        <path d="m6 8-4 4 4 4"/>
+        <path d="m14.5 4-5 16"/>
+      </svg>
+    </a>
+  </nav>
+
+
+                    <ul class="nav navbar-nav ms-md-auto">
+  
+    <li class="nav-item">
+      <a class="nav-link ag-search-link" href="#" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+        <i class="fa fa-search" aria-hidden="true"></i>
+        <span>Search docs</span>
+      </a>
+    </li>
+  
+
+  
+    <li class="nav-item">
+      <a class="nav-link ag-edit-link" href="https://github.com/thomaskistler/aero-grid" aria-label="AeroGrid repository on GitHub" title="AeroGrid repository on GitHub">
+        <i class="fa-brands fa-github" aria-hidden="true"></i>
+      </a>
+    </li>
+  
+
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+  <div class="ag-console-layout">
+    
+    <aside class="ag-guide-sidebar" aria-label="Documentation navigation">
+      
+
+
+  
+  
+  
+
+
+<nav class="ag-guide-nav" aria-label="Reference Guide">
+  <a class="ag-guide-home" href="../../reference-guide/">
+    <span class="ag-guide-heading">Reference Guide</span>
+  </a>
+  <div class="ag-guide-pages">
+    
+    
+  
+  <a class="ag-guide-link" href="../../reference-guide/">Overview</a>
+
+    
+  
+  <a class="ag-guide-link" href="../output/">Channel output</a>
+
+    
+  
+  <a class="ag-guide-link" href="../chart/">Chart</a>
+
+    
+  
+  <a class="ag-guide-link" href="../flight-counter/">Flight counter</a>
+
+    
+  
+  <a class="ag-guide-link" href="../flight-mode/">Flight mode</a>
+
+    
+  
+  <a class="ag-guide-link" href="../flight-timer/">Flight timer</a>
+
+    
+  
+  <a class="ag-guide-link" href="../host-diagnostics/">Host diagnostics</a>
+
+    
+  
+  <a class="ag-guide-link current" href="./" aria-current="page">Link status</a>
+
+    
+  
+  <a class="ag-guide-link" href="../metric/">Metric</a>
+
+    
+  
+  <a class="ag-guide-link" href="../model-identity/">Model identity</a>
+
+    
+  
+  <a class="ag-guide-link" href="../navigation/">Navigation</a>
+
+    
+  
+  <a class="ag-guide-link" href="../rx-battery/">RX battery</a>
+
+    
+  
+  <a class="ag-guide-link" href="../service-probe/">Service probe</a>
+
+    
+  
+  <a class="ag-guide-link" href="../state/">State</a>
+
+    
+  
+  <a class="ag-guide-link" href="../trim-panel/">Trim</a>
+
+    
+  
+  <a class="ag-guide-link" href="../tx-battery/">TX battery</a>
+
+    
+  
+  <a class="ag-guide-link" href="../../reference-guide/yaml/">YAML reference</a>
+
+  
+  </div>
+</nav>
+    </aside>
+    
+    <div class="ag-reading-column">
+      <article class="ag-article" role="main">
+        
+
+<h1 id="link-status">Link status</h1>
+<table>
+<thead>
+<tr>
+<th>1x2</th>
+<th>2x1</th>
+<th>2x2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><img alt="Link status at 1x2" src="../../assets/panels/link-status/1x2.png" /></td>
+<td><img alt="Link status at 2x1" src="../../assets/panels/link-status/2x1.png" /></td>
+<td><img alt="Link status at 2x2" src="../../assets/panels/link-status/2x2.png" /></td>
+</tr>
+</tbody>
+</table>
+<p>Shows measured link quality or RSSI, link freshness, and optional RF details.
+Link quality is never inferred from RSSI. The panel does not calculate an
+aggregate health percentage or issue voice or haptic alerts.</p>
+<h2 id="settings">Settings</h2>
+<p><img alt="Link status panel settings" src="../../assets/editor/link-status-settings.png" /></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Label</strong></td>
+<td>LINK</td>
+<td>Panel heading.</td>
+</tr>
+<tr>
+<td><strong>RSSI source</strong></td>
+<td>RSSI</td>
+<td>Signal-strength source, such as <code>RSSI</code> or receiver-side <code>1RSS</code>.</td>
+</tr>
+<tr>
+<td><strong>Link quality source</strong></td>
+<td>none</td>
+<td>Measured link-quality source, such as receiver-side <code>RQly</code>. Quality alarms require a source reporting percent.</td>
+</tr>
+<tr>
+<td><strong>RF mode source</strong></td>
+<td>none</td>
+<td>RF mode source, such as <code>RFMD</code>. Enables rate decoding and margin calculation with <strong>Protocol mapping</strong> set to <strong>elrs4</strong>.</td>
+</tr>
+<tr>
+<td><strong>SNR source</strong></td>
+<td>none</td>
+<td>Optional signal-to-noise reading, such as <code>RSNR</code>. It does not trigger alarms.</td>
+</tr>
+<tr>
+<td><strong>Transmit power source</strong></td>
+<td>none</td>
+<td>Optional transmit-power reading, such as <code>TPWR</code>. It does not trigger alarms.</td>
+</tr>
+<tr>
+<td><strong>Protocol mapping</strong></td>
+<td>generic</td>
+<td><strong>generic</strong> preserves source units and the raw RF mode. <strong>elrs4</strong> decodes ExpressLRS 4.x RF modes and estimates RSSI margin above nominal receiver sensitivity.</td>
+</tr>
+<tr>
+<td><strong>Primary reading</strong></td>
+<td>auto</td>
+<td><strong>rssi</strong> or <strong>quality</strong> selects the headline. <strong>auto</strong> prefers available quality, including a retained stale reading, and falls back to RSSI.</td>
+</tr>
+<tr>
+<td><strong>Minimum tracked</strong></td>
+<td>none</td>
+<td><strong>none</strong> shows the other reading as supporting detail. <strong>source</strong> shows an EdgeTX minimum; <strong>flight</strong> shows the dashboard's session minimum.</td>
+</tr>
+<tr>
+<td><strong>Minimum source</strong></td>
+<td>automatic</td>
+<td>Explicit EdgeTX minimum source for <strong>Minimum tracked</strong> set to <strong>source</strong>. With none selected, uses the tracked source's minimum, such as <code>RSSI-</code>.</td>
+</tr>
+<tr>
+<td><strong>Warning quality %</strong></td>
+<td>Off</td>
+<td>Low-quality warning threshold, 0 to 100 percent. Steps of 1. Requires <strong>Link quality source</strong>.</td>
+</tr>
+<tr>
+<td><strong>Critical quality %</strong></td>
+<td>Off</td>
+<td>Low-quality critical threshold, 0 to 100 percent. Steps of 1. Requires <strong>Link quality source</strong>.</td>
+</tr>
+<tr>
+<td><strong>Warning RSSI margin dB</strong></td>
+<td>Off</td>
+<td>Low-margin warning threshold, 0 to 60 dB. Steps of 1. Requires <strong>Protocol mapping</strong> set to <strong>elrs4</strong>, <strong>RSSI source</strong>, and <strong>RF mode source</strong>.</td>
+</tr>
+<tr>
+<td><strong>Critical RSSI margin dB</strong></td>
+<td>Off</td>
+<td>Low-margin critical threshold, 0 to 60 dB. Steps of 1. Requires <strong>Protocol mapping</strong> set to <strong>elrs4</strong>, <strong>RSSI source</strong>, and <strong>RF mode source</strong>.</td>
+</tr>
+<tr>
+<td><strong>Warning RSSI</strong></td>
+<td>Off</td>
+<td>Low-RSSI warning threshold in the source's units, −130 to 100. Steps of 1. Requires <strong>RSSI source</strong>.</td>
+</tr>
+<tr>
+<td><strong>Critical RSSI</strong></td>
+<td>Off</td>
+<td>Low-RSSI critical threshold in the source's units, −130 to 100. Steps of 1. Requires <strong>RSSI source</strong>.</td>
+</tr>
+<tr>
+<td><strong>Bar minimum</strong></td>
+<td>0</td>
+<td>Primary-reading value at which the bar is empty, in the source's units. Steps of 1.</td>
+</tr>
+<tr>
+<td><strong>Bar maximum</strong></td>
+<td>100</td>
+<td>Primary-reading value at which the bar is full, in the source's units. Steps of 1.</td>
+</tr>
+<tr>
+<td><strong>Visualization</strong></td>
+<td>bar</td>
+<td><strong>bar</strong> shows the primary reading's level; <strong>none</strong> hides it.</td>
+</tr>
+<tr>
+<td><strong>Accent</strong></td>
+<td>green</td>
+<td>Color used for the normal state: <strong>cyan</strong>, <strong>green</strong>, <strong>amber</strong>, or <strong>orange</strong>. Alarm and stale states use the shared state colors instead.</td>
+</tr>
+</tbody>
+</table>
+<p>The six alarm thresholds start at <strong>Off</strong>; step below the lowest value to
+turn one off again.
+Each critical threshold must be less than or equal to its warning threshold.</p>
+<h2 id="behavior">Behavior</h2>
+<p>Link quality shows packet reception; RSSI shows signal strength, with
+less-negative dBm values indicating a stronger signal. Both sources remain
+active regardless of <strong>Primary reading</strong>. The other reading or the selected
+minimum appears as supporting detail where space permits.</p>
+<p>With <strong>Protocol mapping</strong> set to <strong>elrs4</strong>, live RSSI and RF mode readings can
+show the RF rate and estimated signal margin. RSSI must be nonpositive and
+reported in dB or dBm, and RF mode must be a recognized, unitless value.
+Margin is headroom above nominal receiver sensitivity, not a guaranteed
+failsafe boundary. Dual-band modes and unavailable or stale inputs show no
+margin. Use <strong>generic</strong> for other protocols, including ExpressLRS 3.x.</p>
+<p>All thresholds trigger at or below their value. The most severe live alarm
+wins, with critical ahead of warning. Equal-severity conditions prefer RSSI,
+then link quality, then margin. Link-down takes precedence over alarms.
+Link-quality thresholds only apply to a source reporting percent.</p>
+<p><strong>Minimum tracked</strong> set to <strong>source</strong> reads EdgeTX's own minimum, which EdgeTX
+resets on its own schedule. <strong>Minimum source</strong> overrides the automatic source.
+<strong>flight</strong> resets the minimum when the model's armed condition becomes active,
+tracks fresh readings while armed, and retains the result after disarming.
+Set <strong>Arm switch</strong> in <strong>AeroGrid → Model settings</strong>. Changes save automatically. Before model
+arming is saved, a legacy layout session switch remains in use. With no arm
+switch configured, it tracks one open-ended dashboard session instead.
+The tracked source is <strong>RSSI source</strong> when <strong>Primary reading</strong> is <strong>rssi</strong>;
+otherwise it is <strong>Link quality source</strong>, falling back to <strong>RSSI source</strong> when
+no quality source is selected. It does not switch with the automatic headline.</p>
+<p>The <a href="../../user-guide/model-settings/#session-reset">Session reset switch</a> clears
+AeroGrid's flight-session minima on every dashboard, not EdgeTX's source minima.</p>
+<h2 id="states">States</h2>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Presentation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Live readings, no crossed thresholds</td>
+<td>Measured value and normal accent.</td>
+</tr>
+<tr>
+<td>Low link quality, RSSI, or margin</td>
+<td><code>WARN</code> or <code>CRIT</code> badge, state color, and the cause where supporting text fits.</td>
+</tr>
+<tr>
+<td>Link down after the primary has received data</td>
+<td><code>NO LINK</code> headline without a unit, critical state, and empty bar.</td>
+</tr>
+<tr>
+<td>Link down before the primary has received data</td>
+<td>Unavailable state rather than a critical alarm.</td>
+</tr>
+<tr>
+<td>Stale primary source</td>
+<td>Last reading retained and <code>STALE</code>; an independent live warning or critical alarm can take precedence.</td>
+</tr>
+<tr>
+<td>Primary source not recognized</td>
+<td><code>N/A</code> reading and badge, empty bar.</td>
+</tr>
+<tr>
+<td>Primary source waiting for data or not selected</td>
+<td><code>--</code> reading and <code>N/A</code> badge, empty bar.</td>
+</tr>
+<tr>
+<td>Minimum unavailable</td>
+<td><code>MIN --</code> or a shorter form where supporting detail fits.</td>
+</tr>
+<tr>
+<td>Valid zero while live</td>
+<td>Measured zero, not an unavailable sentinel.</td>
+</tr>
+</tbody>
+</table>
+      </article>
+    </div>
+  </div>
+
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+                <p>Copyright &copy; AeroGrid contributors. GPL-2.0-only.</p>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+  
+        <script src="../../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../../js/base.js"></script>
+        <script src="../../javascripts/versions.mjs" type="module"></script>
+        <script src="../../javascripts/radio-connection-help.mjs" type="module"></script>
+        <script src="../../javascripts/radio-panel.mjs" type="module"></script>
+        <script src="../../search/main.js"></script>
+  <script src="../../javascripts/tables.js" defer></script>
+
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

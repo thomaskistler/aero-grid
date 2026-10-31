@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        <link rel="canonical" href="https://thomaskistler.github.io/aero-grid/main/developer-guide/tools/">
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>Project tools - AeroGrid</title>
+  
+        <link href="../../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../../css/brands.min.css" rel="stylesheet">
+        <link href="../../css/solid.min.css" rel="stylesheet">
+        <link href="../../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../../stylesheets/aerogrid.css" rel="stylesheet">
+        <link href="../../stylesheets/versions.css" rel="stylesheet">
+  <link href="../../stylesheets/console.css" rel="stylesheet">
+
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-RMCKML1PKS"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+
+          gtag('config', "G-RMCKML1PKS");
+        </script>
+   
+  <meta name="aerogrid-site-root" content="/aero-grid/">
+
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-light bg-light">
+            <div class="container">
+  <a class="navbar-brand ag-brand" href="../..">
+    <span class="ag-brand-mark" aria-hidden="true">A</span>
+    <span class="ag-brand-name">AeroGrid</span>
+    <span class="ag-brand-divider" aria-hidden="true">/</span>
+    <span class="ag-current-page">Project tools</span>
+  </a>
+  <div class="ag-docs-version">
+  <select aria-label="Documentation version"
+          data-docs-root="/aero-grid/"
+          data-docs-version="main"
+          disabled>
+    <option value="main">main (unreleased)</option>
+  </select>
+  <span class="ag-docs-version-status" role="status"></span>
+</div>
+
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+  <nav class="ag-icon-rail" aria-label="Main navigation">
+    <a
+      class="ag-icon-link"
+      href="../../user-guide/installation/"
+      aria-label="Install / Upgrade"
+      title="Install / Upgrade"
+      
+    >
+      <svg class="ag-icon-logo" viewBox="0 0 450 450" aria-hidden="true">
+        <image href="../../assets/icons/install-upgrade-radio.svg" width="505" height="453" />
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link"
+      href="../../user-guide/add-dashboard/"
+      aria-label="User Guide"
+      title="User Guide"
+      
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 5v16"/>
+        <path d="M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/>
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link"
+      href="../../reference-guide/"
+      aria-label="Reference Guide"
+      title="Reference Guide"
+      
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/>
+        <path d="M8 11h8"/>
+        <path d="M8 7h6"/>
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link active"
+      href="../build/"
+      aria-label="Developer Guide"
+      title="Developer Guide"
+      aria-current="page"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m18 16 4-4-4-4"/>
+        <path d="m6 8-4 4 4 4"/>
+        <path d="m14.5 4-5 16"/>
+      </svg>
+    </a>
+  </nav>
+
+
+                    <ul class="nav navbar-nav ms-md-auto">
+  
+    <li class="nav-item">
+      <a class="nav-link ag-search-link" href="#" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+        <i class="fa fa-search" aria-hidden="true"></i>
+        <span>Search docs</span>
+      </a>
+    </li>
+  
+
+  
+    <li class="nav-item">
+      <a class="nav-link ag-edit-link" href="https://github.com/thomaskistler/aero-grid" aria-label="AeroGrid repository on GitHub" title="AeroGrid repository on GitHub">
+        <i class="fa-brands fa-github" aria-hidden="true"></i>
+      </a>
+    </li>
+  
+
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+  <div class="ag-console-layout">
+    
+    <aside class="ag-guide-sidebar" aria-label="Documentation navigation">
+      
+
+
+  
+  
+  
+
+
+<nav class="ag-guide-nav" aria-label="Developer Guide">
+  <a class="ag-guide-home" href="../build/">
+    <span class="ag-guide-heading">Developer Guide</span>
+  </a>
+  <div class="ag-guide-pages">
+    
+    
+  
+  <a class="ag-guide-link" href="../build/">Check out and build</a>
+
+    
+  
+  <a class="ag-guide-link" href="../testing/">Test and debug</a>
+
+    
+  
+  <a class="ag-guide-link" href="../simulators/">Run and test in simulators</a>
+
+    
+  
+  <a class="ag-guide-link" href="../architecture/">Repository and architecture</a>
+
+    
+  
+  <a class="ag-guide-link current" href="./" aria-current="page">Project tools</a>
+
+    
+  
+  <a class="ag-guide-link" href="../videos/">Tutorial videos</a>
+
+    
+  
+  <a class="ag-guide-link" href="../contributing/">Issues, changes, and releases</a>
+
+  
+  </div>
+</nav>
+    </aside>
+    
+    <div class="ag-reading-column">
+      <article class="ag-article" role="main">
+        
+
+<h1 id="project-tools">Project tools</h1>
+<p>These tools exist to make AeroGrid development reproducible. They do not run
+on the radio, and their generated output belongs in ignored <code>build/</code>
+directories unless you deliberately publish reviewed documentation assets.</p>
+<p>For native walkthrough recording, cached Cora narration, and radio-photo
+compositing, see <a href="../videos/">Tutorial videos</a>.</p>
+<h2 id="capture-documentation-images-with-native-firmware">Capture documentation images with native firmware</h2>
+<p>The capture tools load Companion's native TX16S simulator library directly
+through <code>tools/capture-native.cpp</code>. They create isolated SD images and widget
+copies; they do not modify <code>src/</code> or your active <code>build/sdcard/</code>.
+VS Code is not involved.</p>
+<p>Requirements are <strong>macOS</strong>, EdgeTX Companion 2.12, and Xcode command-line
+tools (<code>clang++</code> and <code>lipo</code>). The tools require a single-architecture TX16S
+simulator library; an Intel library on Apple Silicon needs Rosetta.
+The default application path is <code>/Applications/EdgeTX Companion 2.12.app</code>;
+pass <code>--companion "/path/to/Companion.app"</code> to choose another installation.
+These tools are local-only and do not run in CI.</p>
+<h3 id="panel-screenshots">Panel screenshots</h3>
+<pre><code class="language-sh">make capture-setup
+build/capture-venv/bin/python tools/capture-panels.py --panel trim-panel
+build/capture-venv/bin/python tools/capture-panels.py --all
+</code></pre>
+<p>Choose <strong>one</strong> of <code>--panel &lt;type&gt;</code>, <code>--recipe &lt;path&gt;</code>, or <code>--all</code>.
+<code>make capture-setup</code> installs pinned PyYAML in a separate environment.
+All thirteen user-facing panel types, plus the Host diagnostics and Service
+probe utility panels, have bundled recipes.</p>
+<p>Each panel writes to <code>build/doc-capture/&lt;panel&gt;/</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Output</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>1x2.png</code>, <code>2x1.png</code>, <code>2x2.png</code></td>
+<td>Gallery crops with recipe-defined borders.</td>
+</tr>
+<tr>
+<td><code>full-frame.png</code>, <code>frame.rgb565</code></td>
+<td>Full display and raw framebuffer for inspection.</td>
+</tr>
+<tr>
+<td><code>recipe.yaml</code>, <code>provenance.json</code></td>
+<td>Exact inputs, geometry, source/tool hashes, simulator digest, and disclosures.</td>
+</tr>
+<tr>
+<td><code>sdcard/</code>, <code>simulator.log</code></td>
+<td>Isolated fixture and diagnostics.</td>
+</tr>
+</tbody>
+</table>
+<p>Regenerating a panel <strong>replaces its previous output directory</strong>; there is no
+run history. <code>--all</code> runs recipes sequentially, so a failure leaves earlier
+successful panels updated. A failed run keeps diagnostics, raises an error,
+and does not publish documentation assets.</p>
+<p>Default panel captures use a 480 x 272 Modern Dark/App-mode dashboard with
+placements outside the menu overlay. Crops are unscaled; a 10-pixel border
+gives output dimensions of 137 x 154, 258 x 85, and 258 x 154 respectively.
+Recipes can override the border.
+Chart omits the unsupported 1x2 placement. Its adapter generates varying
+synthetic readings through the real telemetry/history services, records for
+two flights separated by a recording pause, and waits for confirmed completion
+and finished projection before capturing. This shows neutral flight bands,
+arm/disarm triangles, and a resume gap with dotted connectors.
+Its recipe requires <code>armSwitch: SFv</code>; the adapter supplies that condition and
+a motor channel through the real services, with isolated model flight settings.</p>
+<p>The runner waits for recipe-specific readiness, not just a fixed delay.
+Timer, trim, flight-mode, and model-image samples use isolated firmware model
+settings. Other recipes use capture-only firmware API inputs passed through
+the <strong>real services and panels</strong>. They demonstrate actual EdgeTX rendering,
+not the correctness of a receiver's telemetry.</p>
+<h3 id="change-a-capture-recipe">Change a capture recipe</h3>
+<p>Recipes live in <code>tools/capture-recipes/*.yaml</code>. Copy an existing recipe to an
+untracked experiment location and select it explicitly:</p>
+<pre><code class="language-sh">build/capture-venv/bin/python tools/capture-panels.py --recipe /path/to/example.yaml
+</code></pre>
+<p>The recipe specifies <code>panel</code>, <code>theme</code>, <code>border</code>, named <code>panels</code> placements,
+each placement's <code>config</code>, and <code>sample</code> inputs. Positions are zero-based in
+the 4 x 4 grid and must not overlap. Row spans are currently limited to 1 or
+2; span-shaped image names must match the placement's dimensions.
+Validation runs before startup, then the widget validates panel settings.</p>
+<p>Use the bundled recipe for the exact sample schema. Examples include timer
+name/start/remaining seconds, signed stored trim values, TX voltage, and
+<code>sample.sources</code> with exact sensor names, values, EdgeTX units, and precision.
+Cells use a voltage list; GPS uses coordinates including pilot position.
+Every configured source needs a sample.</p>
+<p><code>tools/capture_recipes.py</code> owns recipe validation, model setup, synthetic
+inputs, and readiness adapters. <code>capture-panels.py</code> handles preparation,
+native invocation, cropping, borders, and provenance. Add an adapter, not
+production panel logic, when a new sample type needs capture support.</p>
+<p>Be explicit about capture-only differences:</p>
+<ul>
+<li><code>brighten_supporting_text: true</code> uses the resolved muted color for faint text
+  (<code>#C4CDD3</code> to <code>#DCE2E6</code> in Modern Dark) for computer readability; omit it or set false
+  for production colors.</li>
+<li>The timer's <code>hide_bottom_bar: true</code> hides its bar without reflow. It is not
+  a supported production setting.</li>
+<li>Metric/link-status examples can omit visuals through <code>config.visual: none</code>.
+  This is a production setting, not evidence that all presentations were tested.</li>
+<li>The flight-counter gallery panels share one detector and reach their sample
+  count through one real GV9 FM0 increment in the isolated model.</li>
+</ul>
+<p>Model images resolve relative to the recipe and need a firmware-safe PNG name.
+Establish redistribution permission before publishing a replacement image;
+the bundled Crack Yak image's permission was confirmed by its contributor.</p>
+<p>Capture instrumentation follows the runtime module boundaries: panel captures
+inject synthetic service inputs and optional text-color overrides into the
+isolated <code>lib/dashboard_loader.lua</code>; editor captures call
+<code>context.editorController.openEditor</code>. Readiness checks wrap the isolated
+<code>main.lua</code> refresh export. Update these hooks when moving runtime code; do not
+add capture-specific behavior to production modules.</p>
+<p>Run the <a href="../testing/#python-tooling-tests">capture-recipe tests</a> after changing
+recipes/adapters, then inspect the resulting frame and provenance.</p>
+<h3 id="editor-and-setup-screenshots">Editor and setup screenshots</h3>
+<pre><code class="language-sh">python3 tools/capture-editor.py
+python3 tools/capture-editor.py --scene select-layout
+python3 tools/capture-editor.py --scene navigation-location
+python3 tools/capture-editor.py --scene chart-settings
+python3 tools/capture-editor.py --scene chart-metric-entry
+</code></pre>
+<p>The <code>navigation-location</code> scene enters fullscreen and taps the navigation
+panel using native touch input. It closes and reopens the location overlay
+twice before capturing the frozen Google Maps QR code.</p>
+<p>This tool uses the same native capture runner; panel-drawer scenes also need
+PyYAML from <code>make capture-setup</code>. It covers setup/widget/layout choices,
+editor overview, Metric/State settings, entry dialogs, exit, and Save As. Every other panel has a
+<code>&lt;panel&gt;-settings</code> scene (for example <code>--scene flight-timer-settings</code>) that
+captures its full settings drawer from the panel's capture recipe config, for
+the panel reference pages. Use <code>--help</code> for supported scene names.
+Panel drawer scenes save <strong>SFv</strong> as the model-wide Arm switch, so obsolete
+panel arm controls are not shown. The Chart scenes use a native GV1 source
+labeled <strong>Reading</strong>.
+<code>chart-settings</code> selects <strong>rolling</strong> to include <strong>Window duration</strong>;
+<code>chart-metric-entry</code> opens Chart's own entry drawer, not Metric's.
+The <code>aero-menu</code>, <code>model-settings</code>, <code>model-settings-reset</code>, and
+<code>model-settings-bottom</code> scenes show the shared model menu and settings.</p>
+<p>It also captures the telemetry-free <strong>Palette</strong> layout with real production
+primitives. These scenes are opt-in and do not open the editor:</p>
+<pre><code class="language-sh">python3 tools/capture-editor.py --scene theme-modern-dark
+python3 tools/capture-editor.py --scene theme-modern-light
+python3 tools/capture-editor.py --scene theme-custom
+</code></pre>
+<p>The custom scene uses a fixed blue-gray palette with warm text and green
+default accents. To experiment interactively, add a <code>.yml</code> file in the user
+theme directory described
+in <a href="../../user-guide/customize-themes/">Customize themes</a>.
+Panel recipes also accept <code>theme: modern-light</code> for checking individual
+instruments in the built-in light palette.</p>
+<p>Each selected scene writes a PNG, isolated SD card, framebuffer, and log
+under <code>build/editor-capture/&lt;scene&gt;/</code>. The root <code>provenance.json</code> records
+the selected scenes and source/simulator hashes. Selected scene directories
+are replaced on regeneration, and the root provenance describes the current
+invocation, not a merged history of earlier runs.</p>
+<p>Setup scenes automate native touch input. Editor scenes enter fullscreen
+through a native long-press and automate production editor commands in the
+isolated copy. Check images manually: capture success is not a replacement
+for interactive editor/persistence tests.</p>
+<p>The <code>settings</code>, <code>&lt;kind&gt;-settings</code>, <code>state-entry</code>, <code>state-condition</code>,
+<code>metric-entry</code>, and <code>chart-metric-entry</code> scenes capture the whole
+configuration drawer, cropped to the dialog. When its rows do not fit on the
+screen, the tool captures further pages in <code>&lt;scene&gt;-page&lt;N&gt;/</code>, each hiding
+leading rows in the isolated copy so later rows move into view, and stitches
+them into one taller PNG. Hidden rows are used instead of scrolling because the
+native dialog keeps its focused row in view. The scrollbar is painted over,
+since it reflects only one page.</p>
+<h3 id="full-dashboard-screenshot">Full dashboard screenshot</h3>
+<pre><code class="language-sh">python3 tools/capture-editor.py --scene dashboard
+</code></pre>
+<p>This opt-in scene captures the entire 480 x 272 display, not a composition of
+panel crops. It uses the shipped <strong>Default</strong> layout and <strong>Modern Dark</strong> theme
+without color or presentation overrides, entering fullscreen through native
+touch input without opening the editor.</p>
+<p>The isolated model uses the permitted bundled Crack Yak image, a stopped timer
+at 5:47 of 10:00, GV9 flight count 42, and GV1 expo 30. Capture-only firmware API
+inputs supply telemetry, transmitter voltage, and a disarmed SF switch through
+the real services. Readiness checks verify all nine panels and their primary
+readings before the native runner waits for the full frame to stabilize.
+These are illustrative readings, not live receiver telemetry.</p>
+<p>The PNG and diagnostics are in <code>build/editor-capture/dashboard/</code>; the root
+<code>provenance.json</code> also records the sample inputs, bitmap digest, capture tool
+hashes, and unmodified production source hashes.</p>
+<h3 id="publish-reviewed-images">Publish reviewed images</h3>
+<p>Panel reference images live in <code>docs/assets/panels/&lt;panel&gt;/</code>.
+After reviewing the full frame, crops, and provenance, copy only the intended
+gallery PNGs and matching <code>provenance.json</code> there. Update the reference-page captions if samples,
+synthetic inputs, or presentation overrides changed.</p>
+<p>Editor images live in <code>docs/assets/editor/</code>. Copy the selected PNGs and the
+corresponding provenance, taking care not to describe images from several
+runs with a provenance file for only one scene.</p>
+<p>The reviewed full-dashboard image and its corresponding provenance live in
+<code>docs/assets/dashboard/</code>. The README and website home page share this PNG.</p>
+<p>Keep SD images, raw framebuffers, logs, and incidental full frames in ignored
+output. Run <code>make docs</code> after publishing assets. Website builds use the
+checked-in images and need neither Companion nor capture dependencies.</p>
+<h2 id="package-a-release-deterministically">Package a release deterministically</h2>
+<pre><code class="language-sh">make release-package
+python3 tools/package-release.py --version-only
+python3 -m unittest discover -s tools -p 'test_release_*.py'
+</code></pre>
+<p><code>tools/package-release.py</code> reads the package version, checks required
+layouts/assets, rejects unexpected runtime files and symlinks, and writes
+a deterministic source-only ZIP plus SHA-256 checksum. Its explicit allowlists
+include <code>Default</code>, <code>Empty</code>, <code>Diagnostics</code>, and <code>Palette</code>, excluding review layouts and mutable
+simulator data. Use <code>--output &lt;directory&gt;</code> to choose another output location.</p>
+<p>See <a href="../contributing/#publish-a-release">Issues, changes, and releases</a>
+for publishing; making a local ZIP does not tag or upload anything.</p>
+      </article>
+    </div>
+  </div>
+
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+                <p>Copyright &copy; AeroGrid contributors. GPL-2.0-only.</p>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+  
+        <script src="../../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../../js/base.js"></script>
+        <script src="../../javascripts/versions.mjs" type="module"></script>
+        <script src="../../javascripts/radio-connection-help.mjs" type="module"></script>
+        <script src="../../javascripts/radio-panel.mjs" type="module"></script>
+        <script src="../../search/main.js"></script>
+  <script src="../../javascripts/tables.js" defer></script>
+
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

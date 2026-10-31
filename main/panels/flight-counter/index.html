@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        <link rel="canonical" href="https://thomaskistler.github.io/aero-grid/main/panels/flight-counter/">
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>Flight counter - AeroGrid</title>
+  
+        <link href="../../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../../css/brands.min.css" rel="stylesheet">
+        <link href="../../css/solid.min.css" rel="stylesheet">
+        <link href="../../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../../stylesheets/aerogrid.css" rel="stylesheet">
+        <link href="../../stylesheets/versions.css" rel="stylesheet">
+  <link href="../../stylesheets/console.css" rel="stylesheet">
+
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-RMCKML1PKS"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+
+          gtag('config', "G-RMCKML1PKS");
+        </script>
+   
+  <meta name="aerogrid-site-root" content="/aero-grid/">
+
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-light bg-light">
+            <div class="container">
+  <a class="navbar-brand ag-brand" href="../..">
+    <span class="ag-brand-mark" aria-hidden="true">A</span>
+    <span class="ag-brand-name">AeroGrid</span>
+    <span class="ag-brand-divider" aria-hidden="true">/</span>
+    <span class="ag-current-page">Flight counter</span>
+  </a>
+  <div class="ag-docs-version">
+  <select aria-label="Documentation version"
+          data-docs-root="/aero-grid/"
+          data-docs-version="main"
+          disabled>
+    <option value="main">main (unreleased)</option>
+  </select>
+  <span class="ag-docs-version-status" role="status"></span>
+</div>
+
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+  <nav class="ag-icon-rail" aria-label="Main navigation">
+    <a
+      class="ag-icon-link"
+      href="../../user-guide/installation/"
+      aria-label="Install / Upgrade"
+      title="Install / Upgrade"
+      
+    >
+      <svg class="ag-icon-logo" viewBox="0 0 450 450" aria-hidden="true">
+        <image href="../../assets/icons/install-upgrade-radio.svg" width="505" height="453" />
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link"
+      href="../../user-guide/add-dashboard/"
+      aria-label="User Guide"
+      title="User Guide"
+      
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 5v16"/>
+        <path d="M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/>
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link active"
+      href="../../reference-guide/"
+      aria-label="Reference Guide"
+      title="Reference Guide"
+      aria-current="page"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/>
+        <path d="M8 11h8"/>
+        <path d="M8 7h6"/>
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link"
+      href="../../developer-guide/build/"
+      aria-label="Developer Guide"
+      title="Developer Guide"
+      
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m18 16 4-4-4-4"/>
+        <path d="m6 8-4 4 4 4"/>
+        <path d="m14.5 4-5 16"/>
+      </svg>
+    </a>
+  </nav>
+
+
+                    <ul class="nav navbar-nav ms-md-auto">
+  
+    <li class="nav-item">
+      <a class="nav-link ag-search-link" href="#" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+        <i class="fa fa-search" aria-hidden="true"></i>
+        <span>Search docs</span>
+      </a>
+    </li>
+  
+
+  
+    <li class="nav-item">
+      <a class="nav-link ag-edit-link" href="https://github.com/thomaskistler/aero-grid" aria-label="AeroGrid repository on GitHub" title="AeroGrid repository on GitHub">
+        <i class="fa-brands fa-github" aria-hidden="true"></i>
+      </a>
+    </li>
+  
+
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+  <div class="ag-console-layout">
+    
+    <aside class="ag-guide-sidebar" aria-label="Documentation navigation">
+      
+
+
+  
+  
+  
+
+
+<nav class="ag-guide-nav" aria-label="Reference Guide">
+  <a class="ag-guide-home" href="../../reference-guide/">
+    <span class="ag-guide-heading">Reference Guide</span>
+  </a>
+  <div class="ag-guide-pages">
+    
+    
+  
+  <a class="ag-guide-link" href="../../reference-guide/">Overview</a>
+
+    
+  
+  <a class="ag-guide-link" href="../output/">Channel output</a>
+
+    
+  
+  <a class="ag-guide-link" href="../chart/">Chart</a>
+
+    
+  
+  <a class="ag-guide-link current" href="./" aria-current="page">Flight counter</a>
+
+    
+  
+  <a class="ag-guide-link" href="../flight-mode/">Flight mode</a>
+
+    
+  
+  <a class="ag-guide-link" href="../flight-timer/">Flight timer</a>
+
+    
+  
+  <a class="ag-guide-link" href="../host-diagnostics/">Host diagnostics</a>
+
+    
+  
+  <a class="ag-guide-link" href="../link-status/">Link status</a>
+
+    
+  
+  <a class="ag-guide-link" href="../metric/">Metric</a>
+
+    
+  
+  <a class="ag-guide-link" href="../model-identity/">Model identity</a>
+
+    
+  
+  <a class="ag-guide-link" href="../navigation/">Navigation</a>
+
+    
+  
+  <a class="ag-guide-link" href="../rx-battery/">RX battery</a>
+
+    
+  
+  <a class="ag-guide-link" href="../service-probe/">Service probe</a>
+
+    
+  
+  <a class="ag-guide-link" href="../state/">State</a>
+
+    
+  
+  <a class="ag-guide-link" href="../trim-panel/">Trim</a>
+
+    
+  
+  <a class="ag-guide-link" href="../tx-battery/">TX battery</a>
+
+    
+  
+  <a class="ag-guide-link" href="../../reference-guide/yaml/">YAML reference</a>
+
+  
+  </div>
+</nav>
+    </aside>
+    
+    <div class="ag-reading-column">
+      <article class="ag-article" role="main">
+        
+
+<h1 id="flight-counter">Flight counter</h1>
+<table>
+<thead>
+<tr>
+<th>1x2</th>
+<th>2x1</th>
+<th>2x2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><img alt="Flight counter at 1x2" src="../../assets/panels/flight-counter/1x2.png" /></td>
+<td><img alt="Flight counter at 2x1" src="../../assets/panels/flight-counter/2x1.png" /></td>
+<td><img alt="Flight counter at 2x2" src="../../assets/panels/flight-counter/2x2.png" /></td>
+</tr>
+</tbody>
+</table>
+<p>Displays the model's GV9 flight total and highlights a detected active flight.
+Flight tracking is shared by AeroGrid dashboards and does not require a visible
+Flight counter.</p>
+<h2 id="settings">Settings</h2>
+<p><img alt="Flight counter panel settings" src="../../assets/editor/flight-counter-settings.png" /></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Label</strong></td>
+<td>FLT</td>
+<td>Panel heading. Clear it to restore the default.</td>
+</tr>
+</tbody>
+</table>
+<p>Select <strong>Arm switch</strong> in <strong>AeroGrid → Model settings</strong>. Changes apply immediately
+to every dashboard for the model. Until model arming is set,
+retained legacy Flight counter arm conditions remain in use and must agree for
+shared flight tracking. Conflicts require an explicit model selection, not an
+automatic choice. Saving <strong>None</strong> disables arming, including legacy fallbacks.</p>
+<h3 id="model-flight-settings">Model flight settings</h3>
+<p>Configure motor output, start/end detection windows, Smart detection,
+Session reset switch, and Flight status switch in
+<a href="../../user-guide/model-settings/">Model settings</a>.
+These settings save automatically and apply to the model's dashboards,
+including Empty dashboards. The panel drawer only configures its label.</p>
+<p>Existing layouts keep their detection settings until you change Model settings.
+If older counters disagree, choose the intended configuration explicitly.
+Configure Model settings before removing the last legacy counter.</p>
+<h2 id="behavior">Behavior</h2>
+<p>A flight qualifies when the effective armed condition, <strong>Motor threshold (%)</strong>,
+and live telemetry hold continuously for the <strong>Start detection window</strong>. Any
+interruption before qualification resets the attempt. Qualification increments
+the total once. Motor percentage maps the channel's normal low-to-high travel
+to 0–100%, after applying <strong>Reverse motor</strong>.</p>
+<p>With <strong>Smart detection</strong> on, a flight can also qualify when trustworthy
+barometric altitude is <strong>more than 3 metres above its arming reference for
+2 continuous seconds</strong>, <strong>or</strong> valid GPS groundspeed is <strong>more than 10 mph for
+2 continuous seconds</strong>. Both shortcuts still require armed state, motor above
+the configured threshold, and live telemetry. The fixed speed rule is a
+provisional heuristic, not a guaranteed taxi/flight discriminator.</p>
+<p>Smart discovers supported CRSF/ELRS and FrSky S.Port sensors automatically.
+Open <strong>Model settings</strong> to see sensor readiness or why standard detection is
+being used. Missing, ambiguous, stale, or unsupported sensors never block
+standard qualification. Altitude needs a trustworthy recent reading seen while
+disarmed or freshly received at the observed arm transition; starting AeroGrid
+already armed or receiving altitude late does not establish that reference.
+Healthy half-second and one-second updates are supported. <code>Current</code> means Smart
+is bridging a normal interval between updates; stopped or unverifiable streams
+fall back to standard detection. Low flights and short hops are not guaranteed
+to qualify early.</p>
+<p>The model's <strong>Arm switch</strong> overrides panel arm switches and also drives
+Chart, first-arm Navigation, and flight-session minima in this widget.
+Custom State-panel conditions remain independent.
+An unavailable arm reading cannot confirm disarming.</p>
+<p>After qualification, telemetry or motor changes do not end the flight.
+Continuous disarming starts the <strong>End detection window (s)</strong>. Re-arming before
+it expires cancels the pending end without counting again. A callback gap of
+more than one second restarts qualification or a pending end timeout rather
+than assuming the condition held while unobserved. Tracking continues through
+hidden dashboards, layout/theme rebuilds, and panel previews while AeroGrid
+callbacks are running. Adding counters does not create another detector.</p>
+<p>Reserve GV9 in flight mode 0, with precision 0 and limits allowing 0–999.
+The existing total is kept, including one previously written by EdgeTX
+Flights. Invalid or unsavable counts produce an error rather than wrapping.
+Do not also run EdgeTX Flights or another GV9 flight counter. Configure other
+flight modes to inherit GV9 from flight mode 0.</p>
+<p>If dashboard arm conditions conflict or settings change during a flight, the
+current flight finishes using its original condition and output. New flights
+wait until the configuration is consistent.</p>
+<h3 id="optional-logical-switch-output">Optional logical-switch output</h3>
+<p>First configure a dedicated <strong>Sticky</strong> logical switch in EdgeTX, with no inputs,
+AND condition, delay, or duration. Then select it in <strong>Flight status switch</strong>.
+The list shows configured logical switches plus <strong>None</strong>. The output must not
+also be the flight's Arm or Session reset input.
+AeroGrid changes only its state, not its model configuration. Use the switch
+in your own Special Functions or sounds.</p>
+<p>The output turns true at qualification and false after confirmed completion,
+including the disarm grace period. A full command buffer is reported and retried.
+Do not share this output with another script. It is not a safety interlock:
+stopped Lua execution, model changes, or transmitter restarts cannot guarantee
+output cleanup.</p>
+<p>The <a href="../../user-guide/model-settings/#session-reset">Session reset switch</a>
+cancels detection and clears its output without changing GV9.
+Disarm before another flight can be counted. AeroGrid does not write flight CSV files.</p>
+<p>GV9 persists through model saving and transmitter restarts, but in-flight
+detection state does not. Changing model or restarting during a flight can
+lose its history and qualify it again.</p>
+<h2 id="states">States</h2>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Presentation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Resting or qualifying</td>
+<td>Count and normal styling, without a badge.</td>
+</tr>
+<tr>
+<td>Qualified flight or pending disarm timeout</td>
+<td>Count, mist blue surface, blue accent, and <code>IN-FLIGHT</code> badge. If the blue surface would be illegible, the surface keeps its normal color.</td>
+</tr>
+<tr>
+<td>Confirmed completion</td>
+<td>Count retained and normal styling restored.</td>
+</tr>
+<tr>
+<td>GV9 unavailable</td>
+<td><code>--</code> and an <code>N/A</code> badge.</td>
+</tr>
+<tr>
+<td>Configuration or persistence failure</td>
+<td>Actionable service error; resolve it before relying on tracking.</td>
+</tr>
+</tbody>
+</table>
+      </article>
+    </div>
+  </div>
+
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+                <p>Copyright &copy; AeroGrid contributors. GPL-2.0-only.</p>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+  
+        <script src="../../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../../js/base.js"></script>
+        <script src="../../javascripts/versions.mjs" type="module"></script>
+        <script src="../../javascripts/radio-connection-help.mjs" type="module"></script>
+        <script src="../../javascripts/radio-panel.mjs" type="module"></script>
+        <script src="../../search/main.js"></script>
+  <script src="../../javascripts/tables.js" defer></script>
+
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        <link rel="canonical" href="https://thomaskistler.github.io/aero-grid/main/panels/metric/">
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>Metric - AeroGrid</title>
+  
+        <link href="../../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../../css/brands.min.css" rel="stylesheet">
+        <link href="../../css/solid.min.css" rel="stylesheet">
+        <link href="../../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../../stylesheets/aerogrid.css" rel="stylesheet">
+        <link href="../../stylesheets/versions.css" rel="stylesheet">
+  <link href="../../stylesheets/console.css" rel="stylesheet">
+
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-RMCKML1PKS"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+
+          gtag('config', "G-RMCKML1PKS");
+        </script>
+   
+  <meta name="aerogrid-site-root" content="/aero-grid/">
+
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-light bg-light">
+            <div class="container">
+  <a class="navbar-brand ag-brand" href="../..">
+    <span class="ag-brand-mark" aria-hidden="true">A</span>
+    <span class="ag-brand-name">AeroGrid</span>
+    <span class="ag-brand-divider" aria-hidden="true">/</span>
+    <span class="ag-current-page">Metric</span>
+  </a>
+  <div class="ag-docs-version">
+  <select aria-label="Documentation version"
+          data-docs-root="/aero-grid/"
+          data-docs-version="main"
+          disabled>
+    <option value="main">main (unreleased)</option>
+  </select>
+  <span class="ag-docs-version-status" role="status"></span>
+</div>
+
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+  <nav class="ag-icon-rail" aria-label="Main navigation">
+    <a
+      class="ag-icon-link"
+      href="../../user-guide/installation/"
+      aria-label="Install / Upgrade"
+      title="Install / Upgrade"
+      
+    >
+      <svg class="ag-icon-logo" viewBox="0 0 450 450" aria-hidden="true">
+        <image href="../../assets/icons/install-upgrade-radio.svg" width="505" height="453" />
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link"
+      href="../../user-guide/add-dashboard/"
+      aria-label="User Guide"
+      title="User Guide"
+      
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 5v16"/>
+        <path d="M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/>
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link active"
+      href="../../reference-guide/"
+      aria-label="Reference Guide"
+      title="Reference Guide"
+      aria-current="page"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/>
+        <path d="M8 11h8"/>
+        <path d="M8 7h6"/>
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link"
+      href="../../developer-guide/build/"
+      aria-label="Developer Guide"
+      title="Developer Guide"
+      
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m18 16 4-4-4-4"/>
+        <path d="m6 8-4 4 4 4"/>
+        <path d="m14.5 4-5 16"/>
+      </svg>
+    </a>
+  </nav>
+
+
+                    <ul class="nav navbar-nav ms-md-auto">
+  
+    <li class="nav-item">
+      <a class="nav-link ag-search-link" href="#" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+        <i class="fa fa-search" aria-hidden="true"></i>
+        <span>Search docs</span>
+      </a>
+    </li>
+  
+
+  
+    <li class="nav-item">
+      <a class="nav-link ag-edit-link" href="https://github.com/thomaskistler/aero-grid" aria-label="AeroGrid repository on GitHub" title="AeroGrid repository on GitHub">
+        <i class="fa-brands fa-github" aria-hidden="true"></i>
+      </a>
+    </li>
+  
+
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+  <div class="ag-console-layout">
+    
+    <aside class="ag-guide-sidebar" aria-label="Documentation navigation">
+      
+
+
+  
+  
+  
+
+
+<nav class="ag-guide-nav" aria-label="Reference Guide">
+  <a class="ag-guide-home" href="../../reference-guide/">
+    <span class="ag-guide-heading">Reference Guide</span>
+  </a>
+  <div class="ag-guide-pages">
+    
+    
+  
+  <a class="ag-guide-link" href="../../reference-guide/">Overview</a>
+
+    
+  
+  <a class="ag-guide-link" href="../output/">Channel output</a>
+
+    
+  
+  <a class="ag-guide-link" href="../chart/">Chart</a>
+
+    
+  
+  <a class="ag-guide-link" href="../flight-counter/">Flight counter</a>
+
+    
+  
+  <a class="ag-guide-link" href="../flight-mode/">Flight mode</a>
+
+    
+  
+  <a class="ag-guide-link" href="../flight-timer/">Flight timer</a>
+
+    
+  
+  <a class="ag-guide-link" href="../host-diagnostics/">Host diagnostics</a>
+
+    
+  
+  <a class="ag-guide-link" href="../link-status/">Link status</a>
+
+    
+  
+  <a class="ag-guide-link current" href="./" aria-current="page">Metric</a>
+
+    
+  
+  <a class="ag-guide-link" href="../model-identity/">Model identity</a>
+
+    
+  
+  <a class="ag-guide-link" href="../navigation/">Navigation</a>
+
+    
+  
+  <a class="ag-guide-link" href="../rx-battery/">RX battery</a>
+
+    
+  
+  <a class="ag-guide-link" href="../service-probe/">Service probe</a>
+
+    
+  
+  <a class="ag-guide-link" href="../state/">State</a>
+
+    
+  
+  <a class="ag-guide-link" href="../trim-panel/">Trim</a>
+
+    
+  
+  <a class="ag-guide-link" href="../tx-battery/">TX battery</a>
+
+    
+  
+  <a class="ag-guide-link" href="../../reference-guide/yaml/">YAML reference</a>
+
+  
+  </div>
+</nav>
+    </aside>
+    
+    <div class="ag-reading-column">
+      <article class="ag-article" role="main">
+        
+
+<h1 id="metric">Metric</h1>
+<table>
+<thead>
+<tr>
+<th>1x2</th>
+<th>2x1</th>
+<th>2x2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><img alt="Metric at 1x2" src="../../assets/panels/metric/1x2.png" /></td>
+<td><img alt="Metric at 2x1" src="../../assets/panels/metric/2x1.png" /></td>
+<td><img alt="Metric at 2x2" src="../../assets/panels/metric/2x2.png" /></td>
+</tr>
+</tbody>
+</table>
+<p>Displays up to three independently configured numeric EdgeTX sources.
+The first reading is the headline; the other two are supporting readings.
+Sensor minimum and maximum readings are ordinary sources, such as <code>GAlt-</code>
+and <code>GAlt+</code>. The panel does not derive measurements or convert units.
+AeroGrid's Session reset switch does not clear these EdgeTX-owned minima or maxima.</p>
+<h2 id="settings">Settings</h2>
+<p><img alt="Metric panel settings" src="../../assets/editor/settings.png" /></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Metrics</strong></td>
+<td>none</td>
+<td>Up to three readings. The first is the headline; the others are supporting readings. Each row shows the entry's label (or source) and a summary; unnamed readings use <strong>Metric 1</strong>, <strong>Metric 2</strong>, and so on. Tap <strong>+</strong> to add a reading; the first one starts blank, later ones copy the last entry.</td>
+</tr>
+<tr>
+<td><strong>Visualization</strong></td>
+<td>none</td>
+<td>How the headline reading is drawn: <strong>bar</strong>, <strong>radial</strong>, or <strong>none</strong>.</td>
+</tr>
+<tr>
+<td><strong>Accent</strong></td>
+<td>cyan</td>
+<td>Color used for the normal state: <strong>cyan</strong>, <strong>green</strong>, <strong>amber</strong>, or <strong>orange</strong>. Alarm and stale states use the shared state colors instead.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="metric-entry">Metric entry</h3>
+<p>Tap a reading under <strong>Metrics</strong> to open its settings.</p>
+<p><img alt="Metric entry settings with GV1 selected as Source" src="../../assets/editor/metric-entry.png" /></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Label</strong></td>
+<td>source name</td>
+<td>Panel heading for the headline reading; caption for supporting readings. Clear it to use the source name.</td>
+</tr>
+<tr>
+<td><strong>Source</strong></td>
+<td>required</td>
+<td>The EdgeTX numeric source to show: a telemetry sensor, its minimum or maximum (for example <code>GAlt-</code> or <code>GAlt+</code>), a global variable, a channel, and so on.</td>
+</tr>
+<tr>
+<td><strong>Unit</strong></td>
+<td>sensor unit</td>
+<td>Unit text shown beside the value. It only changes the label, not the number. Clear it to use the sensor's unit.</td>
+</tr>
+<tr>
+<td><strong>Precision</strong></td>
+<td>Sensor</td>
+<td>Decimal places, 0 to 3. Step below 0 to reach <strong>Sensor</strong>, which uses the precision EdgeTX reports for the source.</td>
+</tr>
+<tr>
+<td><strong>Direction</strong></td>
+<td>auto</td>
+<td>Whether alarms trigger when the value climbs (<strong>rising</strong>) or drops (<strong>falling</strong>). <strong>auto</strong> treats the reading as falling only when both thresholds are set and <strong>Critical</strong> is below <strong>Warning</strong>.</td>
+</tr>
+<tr>
+<td><strong>Range min</strong></td>
+<td>0</td>
+<td>Low end of the reading's scale: the bar or radial is empty here, and <strong>Warning</strong> and <strong>Critical</strong> cannot go below it. Steps of 0.1.</td>
+</tr>
+<tr>
+<td><strong>Range max</strong></td>
+<td>100</td>
+<td>High end of the reading's scale: the bar or radial is full here, and <strong>Warning</strong> and <strong>Critical</strong> cannot go above it. Steps of 0.1.</td>
+</tr>
+<tr>
+<td><strong>Warning</strong></td>
+<td>Off</td>
+<td>Value that triggers the warning state, in the source's units, between <strong>Range min</strong> and <strong>Range max</strong>. Steps of 0.1. One step below <strong>Range min</strong> is <strong>Off</strong>.</td>
+</tr>
+<tr>
+<td><strong>Critical</strong></td>
+<td>Off</td>
+<td>Value that triggers the critical state, in the source's units, between <strong>Range min</strong> and <strong>Range max</strong>. Steps of 0.1. One step below <strong>Range min</strong> is <strong>Off</strong>.</td>
+</tr>
+<tr>
+<td><strong>Remove entry</strong></td>
+<td></td>
+<td>Deletes this reading.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="behavior">Behavior</h2>
+<p>The first metric is the main reading; the others show their captions and
+values. Each has its own unit and precision. Missing readings show <code>--</code>.
+When a headline unit is visible, the number and unit are centered together.
+New Metric panels inherit the selected sensor's unit. Enlarging a compact panel
+reveals the unit when it fits.</p>
+<p>Only the headline reading drives the bar or radial and the panel alarm
+state. The bar or radial is empty at <strong>Range min</strong> and full at <strong>Range max</strong>.
+Values outside that range keep the visual empty or full, but the number
+still shows the actual value.</p>
+<p>Set <strong>Warning</strong> or <strong>Critical</strong> on the headline reading to enable alarms.
+Thresholds include the boundary value, and critical takes priority. A
+threshold only counts inside the range, so set <strong>Range min</strong> and <strong>Range max</strong>
+to cover your alarm values even when <strong>Visualization</strong> is <strong>none</strong>. Narrowing
+the range past a threshold turns that threshold <strong>Off</strong>.
+<strong>Direction</strong>, the range, and the thresholds appear on supporting readings
+too, but have no effect there.</p>
+<h2 id="states">States</h2>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Presentation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Live primary, no crossed thresholds</td>
+<td>Value and normal accent.</td>
+</tr>
+<tr>
+<td>Primary crosses warning or critical</td>
+<td><code>WARN</code> or <code>CRIT</code> badge and state color.</td>
+</tr>
+<tr>
+<td>Primary becomes stale</td>
+<td>Last value retained, <code>STALE</code> badge and muted presentation.</td>
+</tr>
+<tr>
+<td>No metric, or no source picked</td>
+<td><code>METRIC</code> heading and <code>--</code>.</td>
+</tr>
+<tr>
+<td>Primary unavailable</td>
+<td><code>--</code>, <code>N/A</code> badge, no unit beside the sentinel.</td>
+</tr>
+<tr>
+<td>Supporting source unavailable</td>
+<td>Its caption followed by <code>--</code>, without a unit.</td>
+</tr>
+<tr>
+<td>Supporting source stale</td>
+<td>Last value retained; it does not change the primary state.</td>
+</tr>
+</tbody>
+</table>
+      </article>
+    </div>
+  </div>
+
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+                <p>Copyright &copy; AeroGrid contributors. GPL-2.0-only.</p>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+  
+        <script src="../../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../../js/base.js"></script>
+        <script src="../../javascripts/versions.mjs" type="module"></script>
+        <script src="../../javascripts/radio-connection-help.mjs" type="module"></script>
+        <script src="../../javascripts/radio-panel.mjs" type="module"></script>
+        <script src="../../search/main.js"></script>
+  <script src="../../javascripts/tables.js" defer></script>
+
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

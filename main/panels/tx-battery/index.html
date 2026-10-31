@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        <link rel="canonical" href="https://thomaskistler.github.io/aero-grid/main/panels/tx-battery/">
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>TX battery - AeroGrid</title>
+  
+        <link href="../../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../../css/brands.min.css" rel="stylesheet">
+        <link href="../../css/solid.min.css" rel="stylesheet">
+        <link href="../../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../../stylesheets/aerogrid.css" rel="stylesheet">
+        <link href="../../stylesheets/versions.css" rel="stylesheet">
+  <link href="../../stylesheets/console.css" rel="stylesheet">
+
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-RMCKML1PKS"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+
+          gtag('config', "G-RMCKML1PKS");
+        </script>
+   
+  <meta name="aerogrid-site-root" content="/aero-grid/">
+
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-light bg-light">
+            <div class="container">
+  <a class="navbar-brand ag-brand" href="../..">
+    <span class="ag-brand-mark" aria-hidden="true">A</span>
+    <span class="ag-brand-name">AeroGrid</span>
+    <span class="ag-brand-divider" aria-hidden="true">/</span>
+    <span class="ag-current-page">TX battery</span>
+  </a>
+  <div class="ag-docs-version">
+  <select aria-label="Documentation version"
+          data-docs-root="/aero-grid/"
+          data-docs-version="main"
+          disabled>
+    <option value="main">main (unreleased)</option>
+  </select>
+  <span class="ag-docs-version-status" role="status"></span>
+</div>
+
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+  <nav class="ag-icon-rail" aria-label="Main navigation">
+    <a
+      class="ag-icon-link"
+      href="../../user-guide/installation/"
+      aria-label="Install / Upgrade"
+      title="Install / Upgrade"
+      
+    >
+      <svg class="ag-icon-logo" viewBox="0 0 450 450" aria-hidden="true">
+        <image href="../../assets/icons/install-upgrade-radio.svg" width="505" height="453" />
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link"
+      href="../../user-guide/add-dashboard/"
+      aria-label="User Guide"
+      title="User Guide"
+      
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 5v16"/>
+        <path d="M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/>
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link active"
+      href="../../reference-guide/"
+      aria-label="Reference Guide"
+      title="Reference Guide"
+      aria-current="page"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/>
+        <path d="M8 11h8"/>
+        <path d="M8 7h6"/>
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link"
+      href="../../developer-guide/build/"
+      aria-label="Developer Guide"
+      title="Developer Guide"
+      
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m18 16 4-4-4-4"/>
+        <path d="m6 8-4 4 4 4"/>
+        <path d="m14.5 4-5 16"/>
+      </svg>
+    </a>
+  </nav>
+
+
+                    <ul class="nav navbar-nav ms-md-auto">
+  
+    <li class="nav-item">
+      <a class="nav-link ag-search-link" href="#" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+        <i class="fa fa-search" aria-hidden="true"></i>
+        <span>Search docs</span>
+      </a>
+    </li>
+  
+
+  
+    <li class="nav-item">
+      <a class="nav-link ag-edit-link" href="https://github.com/thomaskistler/aero-grid" aria-label="AeroGrid repository on GitHub" title="AeroGrid repository on GitHub">
+        <i class="fa-brands fa-github" aria-hidden="true"></i>
+      </a>
+    </li>
+  
+
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+  <div class="ag-console-layout">
+    
+    <aside class="ag-guide-sidebar" aria-label="Documentation navigation">
+      
+
+
+  
+  
+  
+
+
+<nav class="ag-guide-nav" aria-label="Reference Guide">
+  <a class="ag-guide-home" href="../../reference-guide/">
+    <span class="ag-guide-heading">Reference Guide</span>
+  </a>
+  <div class="ag-guide-pages">
+    
+    
+  
+  <a class="ag-guide-link" href="../../reference-guide/">Overview</a>
+
+    
+  
+  <a class="ag-guide-link" href="../output/">Channel output</a>
+
+    
+  
+  <a class="ag-guide-link" href="../chart/">Chart</a>
+
+    
+  
+  <a class="ag-guide-link" href="../flight-counter/">Flight counter</a>
+
+    
+  
+  <a class="ag-guide-link" href="../flight-mode/">Flight mode</a>
+
+    
+  
+  <a class="ag-guide-link" href="../flight-timer/">Flight timer</a>
+
+    
+  
+  <a class="ag-guide-link" href="../host-diagnostics/">Host diagnostics</a>
+
+    
+  
+  <a class="ag-guide-link" href="../link-status/">Link status</a>
+
+    
+  
+  <a class="ag-guide-link" href="../metric/">Metric</a>
+
+    
+  
+  <a class="ag-guide-link" href="../model-identity/">Model identity</a>
+
+    
+  
+  <a class="ag-guide-link" href="../navigation/">Navigation</a>
+
+    
+  
+  <a class="ag-guide-link" href="../rx-battery/">RX battery</a>
+
+    
+  
+  <a class="ag-guide-link" href="../service-probe/">Service probe</a>
+
+    
+  
+  <a class="ag-guide-link" href="../state/">State</a>
+
+    
+  
+  <a class="ag-guide-link" href="../trim-panel/">Trim</a>
+
+    
+  
+  <a class="ag-guide-link current" href="./" aria-current="page">TX battery</a>
+
+    
+  
+  <a class="ag-guide-link" href="../../reference-guide/yaml/">YAML reference</a>
+
+  
+  </div>
+</nav>
+    </aside>
+    
+    <div class="ag-reading-column">
+      <article class="ag-article" role="main">
+        
+
+<h1 id="tx-battery">TX battery</h1>
+<table>
+<thead>
+<tr>
+<th>1x2</th>
+<th>2x1</th>
+<th>2x2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><img alt="TX battery at 1x2" src="../../assets/panels/tx-battery/1x2.png" /></td>
+<td><img alt="TX battery at 2x1" src="../../assets/panels/tx-battery/2x1.png" /></td>
+<td><img alt="TX battery at 2x2" src="../../assets/panels/tx-battery/2x2.png" /></td>
+</tr>
+</tbody>
+</table>
+<p>Displays the transmitter's own battery voltage, not the aircraft battery.
+An optional battery glyph, bar, and percentage estimate show voltage headroom
+against the radio's battery meter range or an explicit override.</p>
+<h2 id="settings">Settings</h2>
+<p><img alt="TX battery panel settings" src="../../assets/editor/tx-battery-settings.png" /></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Label</strong></td>
+<td>TX</td>
+<td>Panel heading. Longer headings need more space.</td>
+</tr>
+<tr>
+<td><strong>Empty volts, whole pack</strong></td>
+<td>Radio</td>
+<td>Overrides the empty end of the estimate's range, in whole-pack volts. Takes effect only together with <strong>Full volts, whole pack</strong>, with full above empty.</td>
+</tr>
+<tr>
+<td><strong>Full volts, whole pack</strong></td>
+<td>Radio</td>
+<td>Overrides the full end of the estimate's range, in whole-pack volts. Takes effect only together with <strong>Empty volts, whole pack</strong>, with full above empty.</td>
+</tr>
+<tr>
+<td><strong>Warning volts</strong></td>
+<td>Off</td>
+<td>Whole-pack voltage at or below which warning triggers.</td>
+</tr>
+<tr>
+<td><strong>Critical volts</strong></td>
+<td>Off</td>
+<td>Whole-pack voltage at or below which critical triggers, taking priority over warning.</td>
+</tr>
+<tr>
+<td><strong>Visualization</strong></td>
+<td>battery</td>
+<td><strong>battery</strong> prioritizes the battery glyph; <strong>bar</strong> adds a bar to the voltage; <strong>none</strong> shows voltage without a visual.</td>
+</tr>
+<tr>
+<td><strong>Show estimate</strong></td>
+<td>off</td>
+<td>Requests a voltage-based percentage, shown only when a usable range and enough space are available.</td>
+</tr>
+<tr>
+<td><strong>Accent</strong></td>
+<td>cyan</td>
+<td>Color used for the normal state: <strong>cyan</strong>, <strong>green</strong>, <strong>amber</strong>, or <strong>orange</strong>. Alarm and stale states use the shared state colors instead.</td>
+</tr>
+</tbody>
+</table>
+<p>The four voltages range from 3 to 20 V in steps of 0.01 V. Step below 3 V to
+return to <strong>Radio</strong>, which uses the radio's own battery range, or to <strong>Off</strong>.</p>
+<h2 id="behavior">Behavior</h2>
+<p>Voltage is shown to one decimal. The battery fill, bar, and optional percentage
+use <strong>SYS → Hardware → Battery meter range</strong> by default. Set both
+<strong>Empty volts, whole pack</strong> and <strong>Full volts, whole pack</strong> to override it,
+with full above empty. Incomplete or invalid overrides use the radio's range.
+Without a usable range, the panel shows voltage without a glyph, bar, or
+percentage rather than implying an empty battery.</p>
+<p>Fill and percentage estimate voltage headroom, not remaining charge. The
+visual is empty at the range's low end and full at its high end. Values
+outside that range keep the visual empty or full, but the number still
+shows the actual voltage. <strong>Show estimate</strong> requests a centered supporting
+reading such as <code>75% EST</code>; the <code>EST</code> suffix is dropped first when space is
+tight. The estimate is hidden on single-row panels or when it does not fit.
+Enlarging the panel restores it when possible.</p>
+<p><strong>battery</strong> keeps the glyph first. If the glyph and normal-size voltage cannot
+fit side by side, only the centered glyph is shown. At the standard 480×272
+grid size, 1x2 panels show the glyph without voltage; 1x1 and wider panels show
+both. Single-row panels use a smaller reading and glyph to clear the full-size
+heading. Resizing restores voltage when it fits, without shrinking it to buy
+space for the glyph.
+Choose <strong>none</strong> to keep numeric voltage in a compact panel. <strong>bar</strong> prioritizes
+voltage and hides the bar at 1x1.</p>
+<p>Set <strong>Warning volts</strong> and <strong>Critical volts</strong> to suit the transmitter pack,
+with critical below warning. Thresholds include the boundary value, and
+critical takes priority. Neither threshold is set by default. Hiding voltage
+or supporting details does not suppress state colors or badges.</p>
+<h2 id="states">States</h2>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Presentation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Live voltage, no crossed thresholds</td>
+<td>Normal accent and reading color; no badge.</td>
+</tr>
+<tr>
+<td>Voltage at or below <strong>Warning volts</strong></td>
+<td>Amber state color, tinted panel, <code>WARN</code> badge.</td>
+</tr>
+<tr>
+<td>Voltage at or below <strong>Critical volts</strong></td>
+<td>Red state color, tinted panel, <code>CRIT</code> badge; critical takes priority.</td>
+</tr>
+<tr>
+<td>Retained voltage becomes stale</td>
+<td>Last voltage and level retained, muted presentation, <code>STALE</code> badge.</td>
+</tr>
+<tr>
+<td>No usable voltage</td>
+<td><code>--</code> and <code>N/A</code> badge, no battery glyph or unit.</td>
+</tr>
+<tr>
+<td>Voltage available but no usable range</td>
+<td>Numeric voltage, without battery glyph, bar, or percentage.</td>
+</tr>
+</tbody>
+</table>
+      </article>
+    </div>
+  </div>
+
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+                <p>Copyright &copy; AeroGrid contributors. GPL-2.0-only.</p>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+  
+        <script src="../../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../../js/base.js"></script>
+        <script src="../../javascripts/versions.mjs" type="module"></script>
+        <script src="../../javascripts/radio-connection-help.mjs" type="module"></script>
+        <script src="../../javascripts/radio-panel.mjs" type="module"></script>
+        <script src="../../search/main.js"></script>
+  <script src="../../javascripts/tables.js" defer></script>
+
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

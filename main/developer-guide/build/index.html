@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        <link rel="canonical" href="https://thomaskistler.github.io/aero-grid/main/developer-guide/build/">
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>Check out and build - AeroGrid</title>
+  
+        <link href="../../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../../css/brands.min.css" rel="stylesheet">
+        <link href="../../css/solid.min.css" rel="stylesheet">
+        <link href="../../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../../stylesheets/aerogrid.css" rel="stylesheet">
+        <link href="../../stylesheets/versions.css" rel="stylesheet">
+  <link href="../../stylesheets/console.css" rel="stylesheet">
+
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-RMCKML1PKS"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+
+          gtag('config', "G-RMCKML1PKS");
+        </script>
+   
+  <meta name="aerogrid-site-root" content="/aero-grid/">
+
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-light bg-light">
+            <div class="container">
+  <a class="navbar-brand ag-brand" href="../..">
+    <span class="ag-brand-mark" aria-hidden="true">A</span>
+    <span class="ag-brand-name">AeroGrid</span>
+    <span class="ag-brand-divider" aria-hidden="true">/</span>
+    <span class="ag-current-page">Check out and build</span>
+  </a>
+  <div class="ag-docs-version">
+  <select aria-label="Documentation version"
+          data-docs-root="/aero-grid/"
+          data-docs-version="main"
+          disabled>
+    <option value="main">main (unreleased)</option>
+  </select>
+  <span class="ag-docs-version-status" role="status"></span>
+</div>
+
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+  <nav class="ag-icon-rail" aria-label="Main navigation">
+    <a
+      class="ag-icon-link"
+      href="../../user-guide/installation/"
+      aria-label="Install / Upgrade"
+      title="Install / Upgrade"
+      
+    >
+      <svg class="ag-icon-logo" viewBox="0 0 450 450" aria-hidden="true">
+        <image href="../../assets/icons/install-upgrade-radio.svg" width="505" height="453" />
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link"
+      href="../../user-guide/add-dashboard/"
+      aria-label="User Guide"
+      title="User Guide"
+      
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 5v16"/>
+        <path d="M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/>
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link"
+      href="../../reference-guide/"
+      aria-label="Reference Guide"
+      title="Reference Guide"
+      
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/>
+        <path d="M8 11h8"/>
+        <path d="M8 7h6"/>
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link active"
+      href="./"
+      aria-label="Developer Guide"
+      title="Developer Guide"
+      aria-current="page"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m18 16 4-4-4-4"/>
+        <path d="m6 8-4 4 4 4"/>
+        <path d="m14.5 4-5 16"/>
+      </svg>
+    </a>
+  </nav>
+
+
+                    <ul class="nav navbar-nav ms-md-auto">
+  
+    <li class="nav-item">
+      <a class="nav-link ag-search-link" href="#" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+        <i class="fa fa-search" aria-hidden="true"></i>
+        <span>Search docs</span>
+      </a>
+    </li>
+  
+
+  
+    <li class="nav-item">
+      <a class="nav-link ag-edit-link" href="https://github.com/thomaskistler/aero-grid" aria-label="AeroGrid repository on GitHub" title="AeroGrid repository on GitHub">
+        <i class="fa-brands fa-github" aria-hidden="true"></i>
+      </a>
+    </li>
+  
+
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+  <div class="ag-console-layout">
+    
+    <aside class="ag-guide-sidebar" aria-label="Documentation navigation">
+      
+
+
+  
+  
+  
+
+
+<nav class="ag-guide-nav" aria-label="Developer Guide">
+  <a class="ag-guide-home" href="./">
+    <span class="ag-guide-heading">Developer Guide</span>
+  </a>
+  <div class="ag-guide-pages">
+    
+    
+  
+  <a class="ag-guide-link current" href="./" aria-current="page">Check out and build</a>
+
+    
+  
+  <a class="ag-guide-link" href="../testing/">Test and debug</a>
+
+    
+  
+  <a class="ag-guide-link" href="../simulators/">Run and test in simulators</a>
+
+    
+  
+  <a class="ag-guide-link" href="../architecture/">Repository and architecture</a>
+
+    
+  
+  <a class="ag-guide-link" href="../tools/">Project tools</a>
+
+    
+  
+  <a class="ag-guide-link" href="../videos/">Tutorial videos</a>
+
+    
+  
+  <a class="ag-guide-link" href="../contributing/">Issues, changes, and releases</a>
+
+  
+  </div>
+</nav>
+    </aside>
+    
+    <div class="ag-reading-column">
+      <article class="ag-article" role="main">
+        
+
+<h1 id="check-out-and-build">Check out and build</h1>
+<p>AeroGrid is a Lua widget, not a firmware fork. You do not need to build EdgeTX
+or connect a radio to get started. The development build assembles an SD-card
+directory that either simulator can boot; the release build creates the ZIP
+that users install.</p>
+<h2 id="get-the-code">Get the code</h2>
+<p>With Git installed, clone the repository and create a branch for your change:</p>
+<pre><code class="language-sh">git clone https://github.com/thomaskistler/aero-grid.git
+cd aero-grid
+git switch -c my-change
+</code></pre>
+<p>If you do not have repository write access, fork it on GitHub and clone your
+fork instead. Run all commands in this guide from the repository root.</p>
+<h2 id="prerequisites">Prerequisites</h2>
+<p>Install Python 3 with virtual-environment support, Make, and rsync.
+Python 3.11 is the version used in CI. The Makefile uses a Unix shell and
+<code>bin/</code> virtual-environment paths: use macOS, Linux, or WSL for these commands.
+On Windows, Companion can run natively, but must be pointed at a directory
+accessible from Windows.</p>
+<h3 id="set-up-the-development-environment">Set up the development environment</h3>
+<pre><code class="language-sh">make setup
+make test
+</code></pre>
+<p><code>make setup</code> creates <code>build/venv/</code> and installs the pinned <code>lupa</code> dependency.
+There is no need to activate the environment: Make invokes its Python directly.
+<code>make test</code> also sets up this environment automatically when needed.</p>
+<h3 id="install-the-validation-tools">Install the validation tools</h3>
+<p>Behavior tests need only the Python environment, but runtime changes also need
+these tools on <code>PATH</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Used for</th>
+<th>Version guidance</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>edgetx-luac</code> or Lua 5.3 <code>luac</code></td>
+<td>Parse source and test Lua in <code>make check</code>.</td>
+<td>Prefer EdgeTX's compiler when available; otherwise use Lua <strong>5.3</strong>, not a different Lua version.</td>
+</tr>
+<tr>
+<td><code>lua-language-server</code></td>
+<td>Static diagnostics in <code>make lint</code>.</td>
+<td>CI uses 3.19.1; install the appropriate binary from <a href="https://github.com/LuaLS/lua-language-server/releases">LuaLS releases</a>.</td>
+</tr>
+<tr>
+<td><code>stylua</code></td>
+<td>Format Lua and check formatting.</td>
+<td>CI pins 2.5.2; use <a href="https://github.com/JohnnyMorganz/StyLua/releases">StyLua releases</a>.</td>
+</tr>
+</tbody>
+</table>
+<p>For example, on Debian/Ubuntu:</p>
+<pre><code class="language-sh">sudo apt-get install git make rsync python3 python3-venv lua5.3
+make check LUA_COMPILER=luac5.3
+</code></pre>
+<p>On macOS with Homebrew, the basic dependencies and Lua compiler can be installed
+with:</p>
+<pre><code class="language-sh">brew install python rsync lua@5.3
+make check LUA_COMPILER=&quot;$(brew --prefix lua@5.3)/bin/luac&quot;
+</code></pre>
+<p>Install LuaLS and StyLua separately and ensure their executables are on <code>PATH</code>.
+The VS Code Lua extension is useful in the editor, but does not by itself make
+the LuaLS command-line binary available to Make.</p>
+<p><code>make check</code> searches for <code>edgetx-luac</code>, <code>luac5.3</code>, then <code>luac</code>.
+If the last one is a different version, pass <code>LUA_COMPILER</code> explicitly.
+See <a href="../testing/">Test and debug</a> for the complete validation workflow.</p>
+<h2 id="build">Build</h2>
+<pre><code class="language-sh">make build
+</code></pre>
+<p>This creates the SD image at <code>build/sdcard/</code>. To see the dashboard, follow
+<a href="../simulators/">Run and test in simulators</a>.</p>
+<h3 id="what-the-build-does">What the build does</h3>
+<pre><code class="language-text">tests/fixtures/sdcard/        radio, models, registry, and model image
+            +
+src/WIDGETS/AeroGrid/         current widget, panels, libraries, and layouts
+            |
+            v
+build/sdcard/                disposable simulator SD-card root
+</code></pre>
+<p><code>make build</code> copies the fixture first, then overlays the whole widget package.
+It removes compiled <code>.luac</code> files and updates Lua source timestamps so EdgeTX
+recompiles the current sources. There is no transpilation or native compilation
+of AeroGrid itself.</p>
+<p><strong>Stop the simulator before rebuilding.</strong> The build recreates the image from
+the baseline, deleting simulator-created models, saved layouts, registry changes,
+and other files not present in the fixture. Back up experiments outside that
+directory first. Never point a build at a real SD card or personal model backup.</p>
+<p>Use a separate image when you want an independent experiment:</p>
+<pre><code class="language-sh">make build BUILD_DIR=build/experiment
+</code></pre>
+<p>Its SD-card root is <code>build/experiment/sdcard/</code>; change the simulator path to match.
+Changing <code>BUILD_DIR</code> also relocates Make-managed environments and output.
+The screenshot tools have their own fixed output paths, described in
+<a href="../tools/">Project tools</a>.</p>
+<h2 id="build-an-installable-package">Build an installable package</h2>
+<pre><code class="language-sh">make release-package
+</code></pre>
+<p>This writes <code>AeroGrid-&lt;version&gt;.zip</code> and its <code>.sha256</code> file to <code>build/release/</code>,
+using the version in <code>src/WIDGETS/AeroGrid/lib/package.lua</code>. The archive contains
+runtime Lua, the editor assets, the <code>Default</code>, <code>Empty</code>, <code>Diagnostics</code>, and <code>Palette</code> layouts, and
+the license. Review layouts, fixture models, simulator state, and bytecode are
+not included.</p>
+<p>Use this ZIP, rather than the development SD image, to check the actual
+<a href="../../user-guide/installation/">installation and upgrade procedure</a>.
+Publishing a release is a separate <a href="../contributing/#publish-a-release">maintainer workflow</a>.</p>
+<h2 id="build-and-preview-the-documentation">Build and preview the documentation</h2>
+<pre><code class="language-sh">make docs
+make docs-serve
+</code></pre>
+<p>The first command installs the pinned documentation tools into
+<code>build/docs-venv/</code> and strictly builds the site at <code>build/docs/</code>.
+The second serves a live-reloading preview at <code>http://127.0.0.1:8000</code>;
+stop it with Ctrl-C.</p>
+<p>This previews the checkout only. The published site's <strong>Documentation version</strong>
+menu offers released versions and <code>main</code>.</p>
+<p>Markdown lives in <code>docs/</code>. When adding or renaming a page, update <strong>both</strong>
+<code>mkdocs.yml</code> and the explicit sidebar in <code>docs/overrides/toc.html</code>.
+Base site styling is in <code>docs/stylesheets/aerogrid.css</code>; the shared Radio Console
+shell, typography, cards, dialogs, help popovers, notices, and disclosures are in
+<code>docs/stylesheets/console.css</code>. Their existing <code>ag-radio</code>, <code>ag-release</code>, and
+<code>ag-install</code> class names are also reused by the browser tools; these styles do not
+load or require those tools. Checked-in screenshots are used as-is; building the
+site never launches a simulator.</p>
+<h3 id="browser-installer-assets">Browser installer assets</h3>
+<p>The USB installer modules live in <code>docs/javascripts/</code>: <code>radio-storage.mjs</code> owns
+connections and metadata, <code>radio-installer.mjs</code> handles releases and verified
+widget replacement, <code>radio-panel.mjs</code> drives the installation UI, and
+<code>radio-connection-help.mjs</code> adds connection help.</p>
+<p>The site mirrors <strong>published stable releases</strong>, not the current source tree.
+Downloads are verified before replacement and installed files are checked afterward.
+Only <code>WIDGETS/AeroGrid</code> is replaced; user data, maps, other widgets, settings, and
+firmware are preserved. There is no backup or rollback.</p>
+<p>To include those assets in a disposable built-site preview:</p>
+<pre><code class="language-sh">make docs
+python3 tools/installer_assets.py --output build/docs/installer
+python3 -m http.server 8000 --directory build/docs
+</code></pre>
+<p>Mirroring needs network access to GitHub; optional <code>GH_TOKEN</code> authentication stays
+server-side. Test in desktop Chrome or Edge over HTTPS or localhost.
+Ordinary <code>make docs-serve</code> does not mirror installation assets. Releases without
+mirrored assets remain unavailable for automatic installation.
+Stop the preview with Ctrl-C. Never direct asset output or a development build at
+a radio's SD card.</p>
+<h2 id="command-reference">Command reference</h2>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>make help</code></td>
+<td>List supported targets.</td>
+</tr>
+<tr>
+<td><code>make setup</code></td>
+<td>Install development Python dependencies.</td>
+</tr>
+<tr>
+<td><code>make test</code></td>
+<td>Check the Python runner, then run every Lua behavior suite with firmware-like string behavior.</td>
+</tr>
+<tr>
+<td><code>make test-installer</code></td>
+<td>Test the browser installer with Node.js 22 and Python.</td>
+</tr>
+<tr>
+<td><code>make check</code></td>
+<td>Run behavior tests, then parse source/test Lua.</td>
+</tr>
+<tr>
+<td><code>make lint</code></td>
+<td>Run LuaLS diagnostics.</td>
+</tr>
+<tr>
+<td><code>make format</code></td>
+<td>Rewrite source/test Lua using StyLua.</td>
+</tr>
+<tr>
+<td><code>make build</code></td>
+<td>Reset and assemble the development SD image.</td>
+</tr>
+<tr>
+<td><code>make capture-setup</code></td>
+<td>Install optional panel screenshot dependencies.</td>
+</tr>
+<tr>
+<td><code>make release-package</code></td>
+<td>Generate the installation ZIP and checksum.</td>
+</tr>
+<tr>
+<td><code>make docs</code> / <code>make docs-serve</code></td>
+<td>Build / preview the website.</td>
+</tr>
+<tr>
+<td><code>make clean</code></td>
+<td>Delete the configured build directory, including environments and simulator state.</td>
+</tr>
+</tbody>
+</table>
+      </article>
+    </div>
+  </div>
+
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+                <p>Copyright &copy; AeroGrid contributors. GPL-2.0-only.</p>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+  
+        <script src="../../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../../js/base.js"></script>
+        <script src="../../javascripts/versions.mjs" type="module"></script>
+        <script src="../../javascripts/radio-connection-help.mjs" type="module"></script>
+        <script src="../../javascripts/radio-panel.mjs" type="module"></script>
+        <script src="../../search/main.js"></script>
+  <script src="../../javascripts/tables.js" defer></script>
+
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

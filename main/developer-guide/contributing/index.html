@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        <link rel="canonical" href="https://thomaskistler.github.io/aero-grid/main/developer-guide/contributing/">
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>Issues, changes, and releases - AeroGrid</title>
+  
+        <link href="../../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../../css/brands.min.css" rel="stylesheet">
+        <link href="../../css/solid.min.css" rel="stylesheet">
+        <link href="../../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../../stylesheets/aerogrid.css" rel="stylesheet">
+        <link href="../../stylesheets/versions.css" rel="stylesheet">
+  <link href="../../stylesheets/console.css" rel="stylesheet">
+
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-RMCKML1PKS"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+
+          gtag('config', "G-RMCKML1PKS");
+        </script>
+   
+  <meta name="aerogrid-site-root" content="/aero-grid/">
+
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-light bg-light">
+            <div class="container">
+  <a class="navbar-brand ag-brand" href="../..">
+    <span class="ag-brand-mark" aria-hidden="true">A</span>
+    <span class="ag-brand-name">AeroGrid</span>
+    <span class="ag-brand-divider" aria-hidden="true">/</span>
+    <span class="ag-current-page">Issues, changes, and releases</span>
+  </a>
+  <div class="ag-docs-version">
+  <select aria-label="Documentation version"
+          data-docs-root="/aero-grid/"
+          data-docs-version="main"
+          disabled>
+    <option value="main">main (unreleased)</option>
+  </select>
+  <span class="ag-docs-version-status" role="status"></span>
+</div>
+
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+  <nav class="ag-icon-rail" aria-label="Main navigation">
+    <a
+      class="ag-icon-link"
+      href="../../user-guide/installation/"
+      aria-label="Install / Upgrade"
+      title="Install / Upgrade"
+      
+    >
+      <svg class="ag-icon-logo" viewBox="0 0 450 450" aria-hidden="true">
+        <image href="../../assets/icons/install-upgrade-radio.svg" width="505" height="453" />
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link"
+      href="../../user-guide/add-dashboard/"
+      aria-label="User Guide"
+      title="User Guide"
+      
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 5v16"/>
+        <path d="M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/>
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link"
+      href="../../reference-guide/"
+      aria-label="Reference Guide"
+      title="Reference Guide"
+      
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/>
+        <path d="M8 11h8"/>
+        <path d="M8 7h6"/>
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link active"
+      href="../build/"
+      aria-label="Developer Guide"
+      title="Developer Guide"
+      aria-current="page"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m18 16 4-4-4-4"/>
+        <path d="m6 8-4 4 4 4"/>
+        <path d="m14.5 4-5 16"/>
+      </svg>
+    </a>
+  </nav>
+
+
+                    <ul class="nav navbar-nav ms-md-auto">
+  
+    <li class="nav-item">
+      <a class="nav-link ag-search-link" href="#" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+        <i class="fa fa-search" aria-hidden="true"></i>
+        <span>Search docs</span>
+      </a>
+    </li>
+  
+
+  
+    <li class="nav-item">
+      <a class="nav-link ag-edit-link" href="https://github.com/thomaskistler/aero-grid" aria-label="AeroGrid repository on GitHub" title="AeroGrid repository on GitHub">
+        <i class="fa-brands fa-github" aria-hidden="true"></i>
+      </a>
+    </li>
+  
+
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+  <div class="ag-console-layout">
+    
+    <aside class="ag-guide-sidebar" aria-label="Documentation navigation">
+      
+
+
+  
+  
+  
+
+
+<nav class="ag-guide-nav" aria-label="Developer Guide">
+  <a class="ag-guide-home" href="../build/">
+    <span class="ag-guide-heading">Developer Guide</span>
+  </a>
+  <div class="ag-guide-pages">
+    
+    
+  
+  <a class="ag-guide-link" href="../build/">Check out and build</a>
+
+    
+  
+  <a class="ag-guide-link" href="../testing/">Test and debug</a>
+
+    
+  
+  <a class="ag-guide-link" href="../simulators/">Run and test in simulators</a>
+
+    
+  
+  <a class="ag-guide-link" href="../architecture/">Repository and architecture</a>
+
+    
+  
+  <a class="ag-guide-link" href="../tools/">Project tools</a>
+
+    
+  
+  <a class="ag-guide-link" href="../videos/">Tutorial videos</a>
+
+    
+  
+  <a class="ag-guide-link current" href="./" aria-current="page">Issues, changes, and releases</a>
+
+  
+  </div>
+</nav>
+    </aside>
+    
+    <div class="ag-reading-column">
+      <article class="ag-article" role="main">
+        
+
+<h1 id="issues-changes-and-releases">Issues, changes, and releases</h1>
+<p>You can contribute a reproducible bug report, a focused fix, a panel, or clearer
+documentation. Start with the <a href="../build/">checkout instructions</a> for code work;
+you do not need a working development environment to file an issue.</p>
+<h2 id="file-an-issue">File an issue</h2>
+<p>Search <a href="https://github.com/thomaskistler/aero-grid/issues">existing issues</a>
+first. If none describes the problem, choose
+<a href="https://github.com/thomaskistler/aero-grid/issues/new">New issue</a>.
+There are currently no repository-specific issue templates.</p>
+<p>For a bug report, include:</p>
+<table>
+<thead>
+<tr>
+<th>Detail</th>
+<th>What to provide</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Summary</td>
+<td>A specific title and what failed.</td>
+</tr>
+<tr>
+<td>Version</td>
+<td>AeroGrid package version or Git commit; EdgeTX version; radio type and display size.</td>
+</tr>
+<tr>
+<td>Environment</td>
+<td>Physical radio, VS Code Dev Kit/WASM, Companion native simulator, or mock test; extension/Companion version and desktop OS when relevant.</td>
+</tr>
+<tr>
+<td>Reproduction</td>
+<td>Steps from a clean baseline, selected model/layout/theme, and the smallest layout or settings that reproduce it.</td>
+</tr>
+<tr>
+<td>Expected / actual</td>
+<td>What should happen and what actually happens, including exact error text.</td>
+</tr>
+<tr>
+<td>Evidence</td>
+<td>Relevant logs, screenshots, failing test output, or a recording. For growth/CPU problems, include duration and observed measurements.</td>
+</tr>
+<tr>
+<td>Data setup</td>
+<td>Source names/types/units, link state, switches, timers, and any synthetic inputs needed to reproduce it.</td>
+</tr>
+</tbody>
+</table>
+<p>Attach a minimal YAML layout rather than an entire personal SD card. Remove
+unrelated model information, GPS coordinates, and other private data before
+posting. State whether the issue survives a fresh build/restart; that helps
+separate a code defect from stale bytecode or saved-layout overrides.</p>
+<p>For a feature request, describe the developer or pilot problem, an example
+workflow, and the desired behavior. Mention relevant panel sizes and radio
+constraints. Discuss large behavioral changes before implementing them.</p>
+<p>The optional GitHub CLI provides the same workflow:</p>
+<pre><code class="language-sh">gh issue list --repo thomaskistler/aero-grid
+gh issue create --repo thomaskistler/aero-grid
+</code></pre>
+<h2 id="prepare-a-focused-change">Prepare a focused change</h2>
+<p>Work on a branch or fork based on current <code>main</code>. Keep implementation, tests,
+and directly related documentation together. Runtime code and tests use SPDX
+<code>GPL-2.0-only</code> headers.</p>
+<p>Lua naming follows these conventions:</p>
+<table>
+<thead>
+<tr>
+<th>Element</th>
+<th>Convention</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Module and test filenames</td>
+<td>kebab-case</td>
+</tr>
+<tr>
+<td>Panel IDs and layout types</td>
+<td>kebab-case; match the panel filename</td>
+</tr>
+<tr>
+<td>Lua locals, functions, fields, and settings keys</td>
+<td>camelCase</td>
+</tr>
+<tr>
+<td>Constants</td>
+<td><code>UPPER_SNAKE_CASE</code>; keep implementation details local and expose a module field only when callers or tests use it</td>
+</tr>
+<tr>
+<td>LuaDoc</td>
+<td>Annotate parameters in signature order, followed by return values</td>
+</tr>
+</tbody>
+</table>
+<p>Comments should explain current contracts, non-obvious decisions, or firmware
+constraints. Keep historical bug narratives and experiment results in tests,
+commit history, or developer documentation rather than beside the implementation.
+Use the established settings vocabulary and shared rendering/service helpers.</p>
+<p>For a fix, add a regression test that fails before the change. Exercise absent
+data and boundary values, not only the happy path. For UI changes, cover
+declared spans, resizing, content shedding/restoration, App mode's menu
+reservation, and editor behavior. See <a href="../testing/">Test and debug</a> and
+<a href="../architecture/">Repository and architecture</a>.</p>
+<p><code>tests/fixtures/sdcard/</code> is deterministic input, not a place to save a running
+simulator. If a radio/model change intentionally becomes the baseline, stop the
+simulator and update only the relevant tracked fixture files. Keep
+<code>manuallyEdited: 1</code> in <code>RADIO/radio.yml</code> when manually changing its model
+selection; EdgeTX can then accept the edit and regenerate the checksum.
+Companion's SD import still checks the checksum even with that flag. After
+editing, run <code>python3 -m unittest discover -s tools -p 'test_sdcard_checksum.py'</code>
+and update the first line to the calculated value reported by a failing check.
+The checksum includes the exact bytes after the first line, including line
+endings. Check a fresh <code>make build</code> afterwards.</p>
+<p>The six categorized simulator models use <code>MODELS/model1.yml</code> as their common
+setup source. Edit shared sensors, mixes, timers, or other model setup there,
+then run <code>python3 tools/generate-simulator-models.py</code> to refresh all six models
+and <code>labels.yml</code>. Category names and screen assignments live in that generator;
+keep the layout registry order stable because widget options store its indices.
+<code>python3 tools/generate-simulator-models.py --check</code> checks reproducibility, and
+<code>make test</code> checks the exact category mapping and shared setup. The generator
+does not change radio settings or their checksum.</p>
+<p>Do not commit <code>.luac</code>, virtual environments, logs, framebuffer dumps,
+<code>build/sdcard/</code>, or incidental captures. Reviewed website screenshots belong
+in <code>docs/assets/</code> with the relevant provenance and disclosure.</p>
+<h2 id="check-and-submit">Check and submit</h2>
+<p>For runtime Lua changes, use:</p>
+<pre><code class="language-sh">make format
+make check
+make lint
+stylua --check src/WIDGETS tests
+make build BUILD_DIR=build/package-check
+diff -r src/WIDGETS/AeroGrid build/package-check/sdcard/WIDGETS/AeroGrid
+</code></pre>
+<p>Inspect formatting changes before committing. Run the
+<a href="../testing/#python-tooling-tests">tooling tests</a> if changing Python tools,
+and <code>make docs</code> if changing documentation. Exercise behavior/UI changes in
+a simulator; hardware-sensitive changes need radio evidence or an explicit
+statement that hardware remains unverified.</p>
+<p>Push your branch and open a pull request against <code>main</code>. Explain the problem,
+the behavior change, reproduction/regression coverage, and any remaining
+limitations. Reference the associated issue, using <code>Fixes #&lt;number&gt;</code> when the
+PR resolves it. Distinguish mocked, synthetic simulator, and real hardware
+observations rather than calling all three "tested."</p>
+<p>GitHub's <strong>CI</strong> workflow runs Lua behavior/syntax checks, release-package tests,
+LuaLS, pinned StyLua formatting, SD-image/source parity, and clean-tree checks.
+The separate <strong>Documentation</strong> workflow strictly builds website changes.
+The native screenshot tools are local macOS tools, not CI jobs.</p>
+<h2 id="publish-a-release">Publish a release</h2>
+<p>This is a maintainer operation, not a required step for a normal contribution.</p>
+<ol>
+<li>Update <code>src/WIDGETS/AeroGrid/lib/package.lua</code> in a PR and merge to <code>main</code>.
+   Use <code>X.Y.Z</code>, <code>X.Y.Z-beta.N</code>, or <code>X.Y.Z-rc.N</code>; beta/RC releases become
+   prereleases. Change API versions only when the corresponding contract
+   changes.</li>
+<li>Build locally with <code>make release-package</code> when checking archive contents.
+   The allowlists in <code>tools/package-release.py</code> separate installation content
+   from development fixtures.</li>
+<li>In <a href="https://github.com/thomaskistler/aero-grid/actions/workflows/release.yml">Actions &gt; Release</a>,
+   choose <strong>Run workflow</strong> on <strong>main</strong>. The workflow runs CI, documentation,
+   and package validation against the exact selected commit, creates
+   <code>v&lt;version&gt;</code>, uploads the ZIP and checksum to a draft, then publishes.</li>
+</ol>
+<p>There is no automatic release on every merge, and no need to create a release
+manually in the Releases UI. Release notes include installation links and
+hardware coverage.</p>
+<p>If validation fails, fix it in a PR, merge, and run again. If publication fails
+after creating a tag/draft, rerun the <strong>same workflow run</strong> at the same commit:
+it can resume a matching draft and replace incomplete assets. A tag pointing
+to another commit or an already-public release is rejected. Never move a
+published tag; use a new version for fixes. Abandoning an unpublished attempt
+requires deliberately removing its draft and tag before reusing that version.</p>
+<p>Documentation defaults to the latest stable release. The header's
+<strong>Documentation version</strong> menu also offers previous releases, prereleases, and
+<code>main</code> (unreleased). The installer has its own independent release selection.</p>
+<p>The <strong>Documentation</strong> workflow builds released documentation from its exact tag
+and updates <code>main</code> separately. Existing releases are backfilled on the first
+deployment; subsequent deployments preserve those snapshots. To publish again,
+run <strong>Actions &gt; Documentation &gt; Run workflow</strong> on <strong>main</strong>.</p>
+<p>Released content and layouts stay version-specific; all builds share the current
+version navigation and Google Analytics configuration.</p>
+<p>Generated snapshots are stored on <code>gh-pages</code>; do not edit that branch manually.
+Repository <strong>Settings &gt; Pages &gt; Source</strong> must remain <strong>GitHub Actions</strong>.</p>
+      </article>
+    </div>
+  </div>
+
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+                <p>Copyright &copy; AeroGrid contributors. GPL-2.0-only.</p>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+  
+        <script src="../../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../../js/base.js"></script>
+        <script src="../../javascripts/versions.mjs" type="module"></script>
+        <script src="../../javascripts/radio-connection-help.mjs" type="module"></script>
+        <script src="../../javascripts/radio-panel.mjs" type="module"></script>
+        <script src="../../search/main.js"></script>
+  <script src="../../javascripts/tables.js" defer></script>
+
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

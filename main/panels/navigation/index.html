@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        <link rel="canonical" href="https://thomaskistler.github.io/aero-grid/main/panels/navigation/">
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>Navigation - AeroGrid</title>
+  
+        <link href="../../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../../css/brands.min.css" rel="stylesheet">
+        <link href="../../css/solid.min.css" rel="stylesheet">
+        <link href="../../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../../stylesheets/aerogrid.css" rel="stylesheet">
+        <link href="../../stylesheets/versions.css" rel="stylesheet">
+  <link href="../../stylesheets/console.css" rel="stylesheet">
+
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-RMCKML1PKS"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+
+          gtag('config', "G-RMCKML1PKS");
+        </script>
+   
+  <meta name="aerogrid-site-root" content="/aero-grid/">
+
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-light bg-light">
+            <div class="container">
+  <a class="navbar-brand ag-brand" href="../..">
+    <span class="ag-brand-mark" aria-hidden="true">A</span>
+    <span class="ag-brand-name">AeroGrid</span>
+    <span class="ag-brand-divider" aria-hidden="true">/</span>
+    <span class="ag-current-page">Navigation</span>
+  </a>
+  <div class="ag-docs-version">
+  <select aria-label="Documentation version"
+          data-docs-root="/aero-grid/"
+          data-docs-version="main"
+          disabled>
+    <option value="main">main (unreleased)</option>
+  </select>
+  <span class="ag-docs-version-status" role="status"></span>
+</div>
+
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+  <nav class="ag-icon-rail" aria-label="Main navigation">
+    <a
+      class="ag-icon-link"
+      href="../../user-guide/installation/"
+      aria-label="Install / Upgrade"
+      title="Install / Upgrade"
+      
+    >
+      <svg class="ag-icon-logo" viewBox="0 0 450 450" aria-hidden="true">
+        <image href="../../assets/icons/install-upgrade-radio.svg" width="505" height="453" />
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link"
+      href="../../user-guide/add-dashboard/"
+      aria-label="User Guide"
+      title="User Guide"
+      
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 5v16"/>
+        <path d="M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/>
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link active"
+      href="../../reference-guide/"
+      aria-label="Reference Guide"
+      title="Reference Guide"
+      aria-current="page"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/>
+        <path d="M8 11h8"/>
+        <path d="M8 7h6"/>
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link"
+      href="../../developer-guide/build/"
+      aria-label="Developer Guide"
+      title="Developer Guide"
+      
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m18 16 4-4-4-4"/>
+        <path d="m6 8-4 4 4 4"/>
+        <path d="m14.5 4-5 16"/>
+      </svg>
+    </a>
+  </nav>
+
+
+                    <ul class="nav navbar-nav ms-md-auto">
+  
+    <li class="nav-item">
+      <a class="nav-link ag-search-link" href="#" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+        <i class="fa fa-search" aria-hidden="true"></i>
+        <span>Search docs</span>
+      </a>
+    </li>
+  
+
+  
+    <li class="nav-item">
+      <a class="nav-link ag-edit-link" href="https://github.com/thomaskistler/aero-grid" aria-label="AeroGrid repository on GitHub" title="AeroGrid repository on GitHub">
+        <i class="fa-brands fa-github" aria-hidden="true"></i>
+      </a>
+    </li>
+  
+
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+  <div class="ag-console-layout">
+    
+    <aside class="ag-guide-sidebar" aria-label="Documentation navigation">
+      
+
+
+  
+  
+  
+
+
+<nav class="ag-guide-nav" aria-label="Reference Guide">
+  <a class="ag-guide-home" href="../../reference-guide/">
+    <span class="ag-guide-heading">Reference Guide</span>
+  </a>
+  <div class="ag-guide-pages">
+    
+    
+  
+  <a class="ag-guide-link" href="../../reference-guide/">Overview</a>
+
+    
+  
+  <a class="ag-guide-link" href="../output/">Channel output</a>
+
+    
+  
+  <a class="ag-guide-link" href="../chart/">Chart</a>
+
+    
+  
+  <a class="ag-guide-link" href="../flight-counter/">Flight counter</a>
+
+    
+  
+  <a class="ag-guide-link" href="../flight-mode/">Flight mode</a>
+
+    
+  
+  <a class="ag-guide-link" href="../flight-timer/">Flight timer</a>
+
+    
+  
+  <a class="ag-guide-link" href="../host-diagnostics/">Host diagnostics</a>
+
+    
+  
+  <a class="ag-guide-link" href="../link-status/">Link status</a>
+
+    
+  
+  <a class="ag-guide-link" href="../metric/">Metric</a>
+
+    
+  
+  <a class="ag-guide-link" href="../model-identity/">Model identity</a>
+
+    
+  
+  <a class="ag-guide-link current" href="./" aria-current="page">Navigation</a>
+
+    
+  
+  <a class="ag-guide-link" href="../rx-battery/">RX battery</a>
+
+    
+  
+  <a class="ag-guide-link" href="../service-probe/">Service probe</a>
+
+    
+  
+  <a class="ag-guide-link" href="../state/">State</a>
+
+    
+  
+  <a class="ag-guide-link" href="../trim-panel/">Trim</a>
+
+    
+  
+  <a class="ag-guide-link" href="../tx-battery/">TX battery</a>
+
+    
+  
+  <a class="ag-guide-link" href="../../reference-guide/yaml/">YAML reference</a>
+
+  
+  </div>
+</nav>
+    </aside>
+    
+    <div class="ag-reading-column">
+      <article class="ag-article" role="main">
+        
+
+<h1 id="navigation">Navigation</h1>
+<table>
+<thead>
+<tr>
+<th>1x2</th>
+<th>2x1</th>
+<th>2x2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><img alt="Navigation at 1x2" src="../../assets/panels/navigation/1x2.png" /></td>
+<td><img alt="Navigation at 2x1" src="../../assets/panels/navigation/2x1.png" /></td>
+<td><img alt="Navigation at 2x2" src="../../assets/panels/navigation/2x2.png" /></td>
+</tr>
+</tbody>
+</table>
+<p>Shows distance from home and the north-up bearing from home toward the model,
+with optional GPS coordinates and satellite count. Bearing is not aircraft
+heading, transmitter orientation, or a return-home instruction.</p>
+<h2 id="settings">Settings</h2>
+<p><img alt="Navigation panel settings" src="../../assets/editor/navigation-settings.png" /></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Label</strong></td>
+<td>NAV</td>
+<td>Panel heading.</td>
+</tr>
+<tr>
+<td><strong>GPS source</strong></td>
+<td>GPS</td>
+<td>EdgeTX GPS source supplying the model's coordinates. It must return a coordinate table.</td>
+</tr>
+<tr>
+<td><strong>Home position</strong></td>
+<td>edgetx</td>
+<td><strong>edgetx</strong> uses EdgeTX home; <strong>first-arm</strong> captures home using the effective armed condition.</td>
+</tr>
+<tr>
+<td><strong>Satellite count source</strong></td>
+<td>none</td>
+<td>Optional source reporting a plain nonnegative integer count of locked satellites, not a packed GPS-status value.</td>
+</tr>
+<tr>
+<td><strong>Warn below satellites</strong></td>
+<td>8</td>
+<td>Warns when the satellite count is strictly below this value. Nonnegative integers, steps of 1. Requires <strong>Satellite count source</strong>.</td>
+</tr>
+<tr>
+<td><strong>Critical below satellites</strong></td>
+<td>4</td>
+<td>Critical alarm when the satellite count is strictly below this value. Nonnegative integers, steps of 1; must not exceed <strong>Warn below satellites</strong>. Requires <strong>Satellite count source</strong>.</td>
+</tr>
+<tr>
+<td><strong>Show tape</strong></td>
+<td>off</td>
+<td>Replaces bearing text with a scrolling direction tape where space permits.</td>
+</tr>
+<tr>
+<td><strong>Bearing format</strong></td>
+<td>degrees</td>
+<td><strong>degrees</strong> shows numeric azimuth; <strong>quadrant</strong> shows notation such as <code>N29°E</code>. Shown only when <strong>Show tape</strong> is off.</td>
+</tr>
+<tr>
+<td><strong>Show coordinates</strong></td>
+<td>off</td>
+<td>Shows the model's latitude and longitude where space permits, independently of <strong>Show tape</strong>.</td>
+</tr>
+<tr>
+<td><strong>Show satellites</strong></td>
+<td>on</td>
+<td>Shows the satellite icon and locked-satellite count in the header where space permits. Requires <strong>Satellite count source</strong>; turning it off does not disable satellite alerts.</td>
+</tr>
+<tr>
+<td><strong>Accent</strong></td>
+<td>cyan</td>
+<td>Color used for the normal state: <strong>cyan</strong>, <strong>green</strong>, <strong>amber</strong>, or <strong>orange</strong>. Alarm and stale states use the shared state colors instead.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="behavior">Behavior</h2>
+<p>Distance from home is always the main reading. It uses metres or kilometres
+according to distance. Zero latitude and longitude together mean no fix,
+matching EdgeTX's uninitialized GPS values. A valid <code>0m</code> reading means the
+model is at home, not that GPS is unavailable.</p>
+<h3 id="satellite-count-and-alerts">Satellite count and alerts</h3>
+<p>With <strong>Satellite count source</strong> selected, <strong>Show satellites</strong> controls the
+satellite icon and locked-satellite count in the header. It defaults to on,
+including for existing layouts without this setting. Turning it off hides
+both the icon and count, not the warning, critical, missing-source, or stale
+indications. The indicator is also hidden when it cannot fit; alerts remain active.
+With no source selected, neither the indicator nor satellite alerts appear.
+The defaults make 0 critical, 4 warning, and 8 normal. Thresholds do not
+control home capture, and distance never triggers an alarm.</p>
+<h3 id="first-arm-home">First-arm home</h3>
+<p>With <strong>Home position</strong> set to <strong>edgetx</strong>, home comes from EdgeTX.
+Selecting <strong>first-arm</strong> captures a separate AeroGrid home without
+changing EdgeTX home or the flight controller's return-home position.
+It uses <strong>Arm switch</strong> in <strong>AeroGrid → Model settings</strong>, falling back to an existing
+panel switch only before model arming has been saved. Saving <strong>None</strong> disables
+first-arm capture rather than restoring the fallback. Older layouts with a home arm
+switch retain first-arm behavior; those without one retain EdgeTX home.
+AeroGrid must observe disarmed, then armed; opening the widget already armed
+does not capture home.</p>
+<p>With an effective armed switch, AeroGrid captures the home position when
+the model is first armed. If that capture fails, each later disarm and re-arm
+tries again until home is set.</p>
+<p>A captured home or failed attempt survives telemetry loss, panel recreation,
+and layout or theme reloads in this widget instance. Panels using the same
+GPS source and armed switch share the capture. A different pair has its own
+capture. Home is not saved to disk: restarting the radio, reloading the model,
+or removing and recreating the widget starts a new session. Separate widget
+instances have independent homes.
+Changing the model's Arm switch clears retained AeroGrid homes on every dashboard.
+The <a href="../../user-guide/model-settings/#session-reset">Session reset switch</a> also clears
+these homes; observe a new disarm/arm transition to capture again. EdgeTX home is unchanged.</p>
+<p>To investigate <code>HOME NOT SET</code>, first add a <strong>Host diagnostics</strong> panel and
+select its <strong>log</strong> section on any AeroGrid screen. The shared in-memory log
+records captured/missed or switch unavailable, together with the inputs used
+for the decision: current time, availability, freshness, stale state, value,
+update time, reported delay, and coordinate validity. These are GPS inputs
+for capture attempts, or switch inputs for switch-unavailable events.
+Times are 10 ms ticks; GPS delay is seconds. Poll age is
+<code>now - updatedAt</code>; combined age is <code>delay * 100 + now - updatedAt</code>.
+Missing values appear as <code>nil</code>. No coordinates are logged.
+The capture gates and first-transition-only timing are unchanged. The log
+cannot recover an attempt made before logging was enabled; reproduce it in a
+new widget session. See <a href="../host-diagnostics/#shared-log">Host diagnostics</a> for
+retention settings and the fullscreen history viewer.</p>
+<h3 id="bearing-display">Bearing display</h3>
+<p><strong>Show tape</strong> places the tape below distance in square and tall panels, and
+beside it in wide panels. Resizing updates this arrangement. It spans 210
+degrees beneath a fixed pointer, with <code>N</code>, <code>E</code>, <code>S</code>, and <code>W</code> labels, major
+ticks every 30 degrees, and minor ticks every 10 degrees. Its tint follows
+the panel state. When bearing is unavailable, the tape shows the reason
+instead of a pointer and scale that could imply due north.</p>
+<p>With <strong>Show tape</strong> off, <strong>Bearing format</strong> selects numeric azimuth or
+quadrant notation. Bearing text and <strong>Show coordinates</strong> are displayed only
+where they fit; a tape that cannot fit yields to distance. Stale data retains
+the last bearing with the panel's <code>STALE</code> indication.</p>
+<h3 id="location-details">Location details</h3>
+<p>In fullscreen, tap the panel to open a QR code linking to Google Maps at the
+model's GPS coordinates, not home. The code and coordinates are frozen when
+opened; close and reopen for a newer position. A stale fix is marked
+<code>LAST KNOWN POSITION</code>. Without a valid position, tapping does nothing.</p>
+<p>Tap anywhere or press <strong>RTN/Back/Exit</strong> to return. Location details are
+unavailable outside fullscreen and while editing. The radio generates the
+QR code without a network connection; following it on a phone uses Google Maps.</p>
+<h2 id="states">States</h2>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Presentation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Valid fix and home</td>
+<td>Distance, live bearing, and requested coordinates.</td>
+</tr>
+<tr>
+<td>GPS source not recognized</td>
+<td><code>--</code>, <code>N/A</code> badge, and <code>NO GPS SOURCE</code> or a shorter form where supporting text fits.</td>
+</tr>
+<tr>
+<td>Source present but no fix</td>
+<td><code>--</code>, <code>N/A</code> badge, and <code>NO FIX</code> where supporting text fits, unless a satellite alarm takes precedence.</td>
+</tr>
+<tr>
+<td>Valid fix but no EdgeTX home</td>
+<td>No distance or bearing; requested coordinates remain available. <code>NO HOME POSITION</code> or a shorter form, without a failure badge.</td>
+</tr>
+<tr>
+<td>Waiting for the first arm with a valid fix</td>
+<td>No distance or bearing; <code>WAITING FOR ARM</code> or a shorter form.</td>
+</tr>
+<tr>
+<td>First-arm capture missed with a valid fix</td>
+<td>No distance or bearing; <code>HOME NOT SET</code> or a shorter form.</td>
+</tr>
+<tr>
+<td>Home arm switch unreadable with a valid fix before capture</td>
+<td>No distance or bearing; <code>ARM SWITCH UNAVAILABLE</code> or a shorter form.</td>
+</tr>
+<tr>
+<td>Stale position</td>
+<td>Last reading retained, <code>STALE</code> badge, and <code>LAST KNOWN</code> or a shorter form where supporting text fits.</td>
+</tr>
+<tr>
+<td>Configured satellite count below a threshold</td>
+<td><code>WARN</code> or <code>CRIT</code> badge and state color, even while waiting for a fix or home.</td>
+</tr>
+<tr>
+<td>Configured satellite source missing or invalid</td>
+<td><code>N/A</code> badge and satellite count <code>--</code> when <strong>Show satellites</strong> is on and it fits. GPS readings remain available.</td>
+</tr>
+<tr>
+<td>Configured satellite count stale</td>
+<td>Last count retained and <code>STALE</code> badge.</td>
+</tr>
+</tbody>
+</table>
+<p>Satellite critical is checked before warning, using strict less-than
+comparisons. An unrecognized GPS source, stale position, or missing, invalid,
+or stale satellite count takes priority over satellite threshold alarms.</p>
+      </article>
+    </div>
+  </div>
+
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+                <p>Copyright &copy; AeroGrid contributors. GPL-2.0-only.</p>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+  
+        <script src="../../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../../js/base.js"></script>
+        <script src="../../javascripts/versions.mjs" type="module"></script>
+        <script src="../../javascripts/radio-connection-help.mjs" type="module"></script>
+        <script src="../../javascripts/radio-panel.mjs" type="module"></script>
+        <script src="../../search/main.js"></script>
+  <script src="../../javascripts/tables.js" defer></script>
+
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

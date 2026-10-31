@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        <link rel="canonical" href="https://thomaskistler.github.io/aero-grid/main/developer-guide/architecture/">
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>Repository and architecture - AeroGrid</title>
+  
+        <link href="../../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../../css/brands.min.css" rel="stylesheet">
+        <link href="../../css/solid.min.css" rel="stylesheet">
+        <link href="../../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../../stylesheets/aerogrid.css" rel="stylesheet">
+        <link href="../../stylesheets/versions.css" rel="stylesheet">
+  <link href="../../stylesheets/console.css" rel="stylesheet">
+
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-RMCKML1PKS"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+
+          gtag('config', "G-RMCKML1PKS");
+        </script>
+   
+  <meta name="aerogrid-site-root" content="/aero-grid/">
+
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-light bg-light">
+            <div class="container">
+  <a class="navbar-brand ag-brand" href="../..">
+    <span class="ag-brand-mark" aria-hidden="true">A</span>
+    <span class="ag-brand-name">AeroGrid</span>
+    <span class="ag-brand-divider" aria-hidden="true">/</span>
+    <span class="ag-current-page">Repository and architecture</span>
+  </a>
+  <div class="ag-docs-version">
+  <select aria-label="Documentation version"
+          data-docs-root="/aero-grid/"
+          data-docs-version="main"
+          disabled>
+    <option value="main">main (unreleased)</option>
+  </select>
+  <span class="ag-docs-version-status" role="status"></span>
+</div>
+
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+  <nav class="ag-icon-rail" aria-label="Main navigation">
+    <a
+      class="ag-icon-link"
+      href="../../user-guide/installation/"
+      aria-label="Install / Upgrade"
+      title="Install / Upgrade"
+      
+    >
+      <svg class="ag-icon-logo" viewBox="0 0 450 450" aria-hidden="true">
+        <image href="../../assets/icons/install-upgrade-radio.svg" width="505" height="453" />
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link"
+      href="../../user-guide/add-dashboard/"
+      aria-label="User Guide"
+      title="User Guide"
+      
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 5v16"/>
+        <path d="M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/>
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link"
+      href="../../reference-guide/"
+      aria-label="Reference Guide"
+      title="Reference Guide"
+      
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/>
+        <path d="M8 11h8"/>
+        <path d="M8 7h6"/>
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link active"
+      href="../build/"
+      aria-label="Developer Guide"
+      title="Developer Guide"
+      aria-current="page"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m18 16 4-4-4-4"/>
+        <path d="m6 8-4 4 4 4"/>
+        <path d="m14.5 4-5 16"/>
+      </svg>
+    </a>
+  </nav>
+
+
+                    <ul class="nav navbar-nav ms-md-auto">
+  
+    <li class="nav-item">
+      <a class="nav-link ag-search-link" href="#" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+        <i class="fa fa-search" aria-hidden="true"></i>
+        <span>Search docs</span>
+      </a>
+    </li>
+  
+
+  
+    <li class="nav-item">
+      <a class="nav-link ag-edit-link" href="https://github.com/thomaskistler/aero-grid" aria-label="AeroGrid repository on GitHub" title="AeroGrid repository on GitHub">
+        <i class="fa-brands fa-github" aria-hidden="true"></i>
+      </a>
+    </li>
+  
+
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+  <div class="ag-console-layout">
+    
+    <aside class="ag-guide-sidebar" aria-label="Documentation navigation">
+      
+
+
+  
+  
+  
+
+
+<nav class="ag-guide-nav" aria-label="Developer Guide">
+  <a class="ag-guide-home" href="../build/">
+    <span class="ag-guide-heading">Developer Guide</span>
+  </a>
+  <div class="ag-guide-pages">
+    
+    
+  
+  <a class="ag-guide-link" href="../build/">Check out and build</a>
+
+    
+  
+  <a class="ag-guide-link" href="../testing/">Test and debug</a>
+
+    
+  
+  <a class="ag-guide-link" href="../simulators/">Run and test in simulators</a>
+
+    
+  
+  <a class="ag-guide-link current" href="./" aria-current="page">Repository and architecture</a>
+
+    
+  
+  <a class="ag-guide-link" href="../tools/">Project tools</a>
+
+    
+  
+  <a class="ag-guide-link" href="../videos/">Tutorial videos</a>
+
+    
+  
+  <a class="ag-guide-link" href="../contributing/">Issues, changes, and releases</a>
+
+  
+  </div>
+</nav>
+    </aside>
+    
+    <div class="ag-reading-column">
+      <article class="ag-article" role="main">
+        
+
+<h1 id="repository-and-architecture">Repository and architecture</h1>
+<p>Start with <code>main.lua</code> for host behavior, an existing panel for presentation,
+or a service for data acquisition. AeroGrid runs as <strong>one EdgeTX widget</strong>;
+the dashboard's panels are modules managed by that widget, not separate
+EdgeTX widgets.</p>
+<h2 id="find-your-way-around">Find your way around</h2>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>What belongs here</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>src/WIDGETS/AeroGrid/main.lua</code></td>
+<td>EdgeTX entry points, native options, event routing, and callback scheduling.</td>
+</tr>
+<tr>
+<td><code>src/WIDGETS/AeroGrid/lib/</code></td>
+<td>Layout parsing/storage, grid geometry, panel hosting, shared services, rendering primitives, themes, and editor modules.</td>
+</tr>
+<tr>
+<td><code>src/WIDGETS/AeroGrid/panels/</code></td>
+<td>Thirteen user-facing panel types plus <code>host-diagnostics</code>, <code>service-probe</code>, and the fixed-data <code>theme-showcase</code>.</td>
+</tr>
+<tr>
+<td><code>src/WIDGETS/AeroGrid/layouts/</code></td>
+<td>Shipped layouts.</td>
+</tr>
+<tr>
+<td><code>tests/fixtures/layouts/development/</code></td>
+<td>Simulator and review layouts used by tests and disposable SD images.</td>
+</tr>
+<tr>
+<td><code>src/WIDGETS/AeroGrid/assets/</code></td>
+<td>Runtime editor icon and its license.</td>
+</tr>
+<tr>
+<td><code>tests/unit/</code></td>
+<td>Focused module and panel tests.</td>
+</tr>
+<tr>
+<td><code>tests/integration/</code></td>
+<td>Host, editor, dashboard, budget, and resource tests using mocked EdgeTX.</td>
+</tr>
+<tr>
+<td><code>tests/support/</code></td>
+<td>Assertions, firmware-aware EdgeTX/LVGL mocks, and widget/layout fixture helpers.</td>
+</tr>
+<tr>
+<td><code>tests/fixtures/</code></td>
+<td>Deterministic simulator SD card, test-only panels, and test layouts.</td>
+</tr>
+<tr>
+<td><code>tools/</code></td>
+<td>Release packaging, native screenshots, capture recipes, and Python tooling tests.</td>
+</tr>
+<tr>
+<td><code>docs/</code></td>
+<td>Website sources, reference pages, reviewed images, and hardware evidence.</td>
+</tr>
+<tr>
+<td><code>.vscode/</code></td>
+<td>TX16S profile and build/test tasks; local settings are ignored.</td>
+</tr>
+<tr>
+<td><code>.github/workflows/</code></td>
+<td>CI, documentation publication, and manual release workflow.</td>
+</tr>
+<tr>
+<td><code>plans/</code></td>
+<td>Design specifications and planning material, not runtime input.</td>
+</tr>
+<tr>
+<td><code>build/</code></td>
+<td>Ignored, generated output; never the source of truth.</td>
+</tr>
+</tbody>
+</table>
+<p>The <a href="https://github.com/thomaskistler/aero-grid/blob/main/plans/aerogrid-spec.md">project specification</a>
+provides design background. Check the implementation and its tests for exact
+current signatures; planning examples can describe earlier contracts.</p>
+<h2 id="follow-a-dashboard-from-disk-to-display">Follow a dashboard from disk to display</h2>
+<ol>
+<li>EdgeTX loads <code>main.lua</code> and passes a zone and the native <strong>Layout</strong> and
+   <strong>Theme</strong> options. Layout choices use stable positions maintained by
+   <code>layout_registry.lua</code>.
+   Stable layout positions are stored in <code>/AEROGRID/layout-registry.txt</code>,
+   separately from <code>/AEROGRID/theme-registry.txt</code>.</li>
+<li>The host resolves the selected name through <code>layout_store.lua</code>. A saved
+   <code>/AEROGRID/layouts/&lt;name&gt;.yaml</code> takes precedence over the bundled
+   <code>/WIDGETS/AeroGrid/layouts/&lt;name&gt;.yaml</code>; a missing file can fall back to
+   <code>Default</code>.</li>
+<li><code>yaml.lua</code> tokenizes the constrained YAML format; <code>layout.lua</code> validates
+   version, grid, placements, and configuration. <code>grid.lua</code> turns zero-based
+   positions and spans in the 4 x 4 grid into pixel rectangles.</li>
+<li>The host loads services and panel modules, checks compatibility, resolves
+   typed settings, and creates each panel inside its own LVGL container.</li>
+<li>Foreground/background callbacks update subscribed services and dispatch
+   panel work. A zone or fullscreen change triggers bounded reflow rather
+   than reconstructing every object in a single frame.</li>
+</ol>
+<p>Host coordination has three boundaries:</p>
+<table>
+<thead>
+<tr>
+<th>Module</th>
+<th>Ownership</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dashboard_loader.lua</code></td>
+<td>Layout recovery, staged parsing, service/panel construction, and placement-local services.</td>
+</tr>
+<tr>
+<td><code>dashboard_lifecycle.lua</code></td>
+<td>Empty-page decoration, batched reflow, fullscreen-to-App rebuilds, and page retirement/replacement.</td>
+</tr>
+<tr>
+<td><code>editor_controller.lua</code></td>
+<td>Editor activation, staged advancement, dashboard previews, draft restoration, and adoption after saving.</td>
+</tr>
+</tbody>
+</table>
+<p>Their <code>new</code> functions bind host operations once per widget. They do not capture
+another widget's context or introduce per-refresh forwarding wrappers. <code>main.lua</code>
+decides which operation advances; loading and cleanup keep their explicit stages.
+Page retirement and replacement run in separate callbacks so deferred cleanup
+cannot invalidate objects belonging to the replacement page.</p>
+<p>Panels use container-local coordinates. They must not draw at absolute screen
+coordinates or assume the TX16S's dimensions. The host reserves the same
+top-left footprint for the native App-mode menu and fullscreen AeroGrid menu.
+Use the shared geometry instead of adding panel-specific menu offsets.</p>
+<p><code>lib/package.lua</code> records package, runtime API, panel API, and layout versions.
+The current layout schema is version 5. The central layout module keeps an
+adjacent migration registry: each source version provides a header step and a
+panel step for that version-to-next-version transition. A future version must
+add every intervening step; a layout is rejected if its source version is newer
+or any transition is missing.</p>
+<p>Runtime loading validates the header, applies at most one header transition per
+loader callback, then parses each panel and applies at most one panel transition
+per callback before validating and building that panel. Staged Save follows the
+same bounded progression, keeping header migration, each panel migration,
+validation, and persistence in separate callbacks. The synchronous whole-layout
+helpers are for tests and tools, not runtime callback paths. Loading changes
+only the in-memory document and emits an upgrade notice; only explicit editor
+Save persists the current schema. Runtime modules expose <code>RUNTIME_API</code>; panels
+expose <code>apiVersion</code>. The host surfaces incompatible modules and isolates
+failures where possible. These checks detect incompatible mixtures, not every
+stale or mixed package: deploy the <strong>complete</strong> widget directory.</p>
+<h2 id="shared-services-own-firmware-reads">Shared services own firmware reads</h2>
+<p>Panels subscribe in <code>create</code>, retain read-only snapshots, and render them.
+They do not each poll EdgeTX or maintain their own telemetry cache.
+Subscriptions to the same source share polling, and an unsubscribed service
+does not consume scheduled work.</p>
+<table>
+<thead>
+<tr>
+<th>Service module</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>telemetry_service.lua</code></td>
+<td>Source resolution, readings, units, precision, freshness, and link status.</td>
+</tr>
+<tr>
+<td><code>model_service.lua</code></td>
+<td>Model identity/image, timers, flight mode, and TX voltage.</td>
+</tr>
+<tr>
+<td><code>control_service.lua</code></td>
+<td>Trims, final channel outputs and their trim associations, switch conditions, GV snapshots, and verified GV9 FM0 increments.</td>
+</tr>
+<tr>
+<td><code>armed_service.lua</code></td>
+<td>Saved model Armed precedence, legacy switch fallback, and immutable effective arm views over shared Control polls.</td>
+</tr>
+<tr>
+<td><code>flight_service.lua</code></td>
+<td>Shared model-flight detection, once-only count, optional Sticky output, and timestamped boundaries.</td>
+</tr>
+<tr>
+<td><code>smart_flight.lua</code></td>
+<td>Optional protocol-identified flight sensors with per-sensor receipt/freshness and SI units.</td>
+</tr>
+<tr>
+<td><code>extrema_service.lua</code></td>
+<td>Sensor extrema and dashboard flight-session tracking.</td>
+</tr>
+<tr>
+<td><code>navigation_service.lua</code></td>
+<td>GPS fix, pilot/home position, distance, and north-up bearing.</td>
+</tr>
+<tr>
+<td><code>history_service.lua</code></td>
+<td>Error-bounded chart recordings, cumulative recording time, flight boundaries, raw extrema, line-only smoothing, and bounded rolling expiration.</td>
+</tr>
+<tr>
+<td><code>services.lua</code></td>
+<td>Environment/snapshots, subscription registration, and bounded scheduling/update dispatch.</td>
+</tr>
+</tbody>
+</table>
+<p>Snapshots are read-only views over service-owned state, mutated in place by
+the service to avoid per-frame allocations. Missing APIs, unknown sources, and
+missing fixes yield unavailable data; panel code must handle that explicitly.</p>
+<p><code>services.addSubscription</code> publishes an entry's live view and records its polling
+order/count. Each domain service still owns name lookup, duplicate detection,
+source resolution, and its polling metadata. Link/session-only subscriptions
+remain separate from source polling lists.</p>
+<p>Telemetry zero is not inherently unavailable. EdgeTX can return zero both for
+a real reading and for a stopped stream. AeroGrid preserves the last live
+value when an ambiguous zero arrives with a down link, but accepts a live zero.
+<code>getRSSI()</code> is not reliable for every protocol; the service can stop trusting
+it when a non-zero source proves that telemetry is arriving. Staleness is
+link-wide, not per sensor, and a configured but never-received sensor can
+appear as valid zero on a live link. Local switch values remain usable
+without a receiver.</p>
+<p>Chart history observes completed telemetry polls rather than reading changed
+revisions during redraw: unchanged numeric samples still occupy recording time,
+and raw spikes must not be lost between frames. Observer failures are isolated
+from telemetry polling and reported through normal service failure handling.
+<code>services.armed:state()</code> describes the saved model condition;
+<code>:state(legacySwitch)</code> resolves model-over-legacy precedence for a consumer.
+Snapshots expose <code>condition</code>, <code>key</code>, <code>origin</code>, <code>generation</code>, <code>configured</code>,
+<code>available</code>, <code>fresh</code>, <code>updatedAt</code>, Boolean <code>value</code>, <code>revision</code>, and <code>status</code>.
+An unavailable/stale reading is not disarmed. Reliability is evaluated on
+access with a one-second maximum sample age, so a failed poller cannot leave a
+permanently fresh reading. <code>revision</code> changes on observed sample/reliability
+changes; <code>generation</code> changes when the widget runtime is rebuilt.
+<code>status</code> is <code>unconfigured</code>, <code>ready</code>, or <code>unavailable</code>; invalid configuration
+is reported through normal host error isolation.
+The resolver owns no separate polling work: Control still reads each switch
+once per runtime. Configuration is model-wide; each dashboard publishes its
+own view over that same condition.</p>
+<p>History and extrema key sessions by the effective condition. A configured
+model Armed unifies their arm inputs; absent model arming retains independent legacy
+switches. Each chart arm configuration has its own cumulative session.
+It pauses on disarm unless a matching shared flight is still active, including
+its disarm grace, and resumes the same recording;
+geometry reflow keeps it, while rebuilding the service runtime clears it.
+Each source/options subscription stores at most 6,144 connected linear knots.
+A fixed-anchor slope corridor chooses synthesized shared endpoints within half
+a displayed precision step of every observed value (filtered values if EMA is
+enabled). Numerical margin is reserved before accepting a segment; when that
+margin consumes the tolerance, exact native values are retained. Unknown sensor
+precision uses the strictest supported tolerance until discovery completes.</p>
+<p>Knots use chunked <code>&lt;I4n</code> / <code>&lt;I4j</code> packing: cumulative recording ticks with gap/type
+bits and a lossless native Lua float or integer. Payload is 48 KiB per full recording on float32
+firmware, or 72 KiB on double-precision hosts, excluding string/table/index and
+rendering overhead. Matching armed-switch/source/options subscriptions share storage.
+Absolute <code>first</code>/<code>last</code> sequence IDs and scalar <code>history:point</code> reads avoid
+per-knot snapshot tables. Growing history freezes at capacity without relaxing
+accuracy; rolling expiration reuses ring slots while retaining an interpolation
+anchor. Raw readouts/extrema continue even when plot storage is full.</p>
+<p>Multilevel extrema/gap indexes accelerate projection only inside one pixel
+column; they never replace stored knots. Projection, native trace updates and
+gap-marker updates are staged with bounded work per callback. Geometry changes
+restart pending projection. Recorded gaps stay separate except when their
+endpoints coincide on screen; marker objects are pooled by pixel column.
+Unchanged readouts are cached so their callback budget can process a larger
+bounded projection batch; same-pixel extrema do not add redundant geometry.</p>
+<p>History consumes at most one flight journal record per service turn, keyed by
+the event's pinned <code>armKey</code>, never by the optional Sticky output or the current
+broker arm. Per effective arm, 128 recording spans map wall-clock <code>at</code> timestamps
+to the cumulative recording axis; qualification/confirmation receipt times do
+not place boundaries. Grace samples remain after the mapped end. A 64-interval
+ring supplies scalar <code>history:flight(sessionView, index)</code> reads, independent of
+metric subscriptions. Shaded flight bands are staged in a bounded native-object
+pool behind the grid and traces. Each chart snapshots its inputs and stages a
+complete plot in a second reusable buffer before swapping it on screen.
+Arm/disarm triangles use a bounded directional transition journal.
+A separate resume journal drives fixed-width axis gaps and dotted trace connectors;
+the same projection maps traces, flight bands, grid lines, and axis markers.
+Crowded gaps evict the oldest visible section rather than narrowing the gaps.
+During normal sampling, flight bands clip to the recorded telemetry horizon.
+Telemetry-sampling turns reserve projection headroom without lowering the
+existing callback or staged-drain limits.</p>
+<p>Journal loss sets the session's <code>flightLost</code> flag and closes an unmatched open
+band at its last observed recording time rather than extending it into later
+flights.
+Late attachment can recover the current active interval only from its recorded
+portion; old completed flights do not create new history. Model epochs clear
+intervals and mapping spans. Draft chart previews read compatible live views
+through a read-only facade and make no live subscriptions. Compatible previews
+can become live panels after saving without losing history; new or incompatible
+subscriptions require a post-save rebuild.</p>
+<h2 id="shared-flight-tracking">Shared flight tracking</h2>
+<p>The factory-scoped broker in <code>flight_service.lua</code> owns a separate non-UI
+Control/Telemetry runtime and optional Smart sensor poller. Any live widget callback can pump it. Dashboard
+registrations are weakly held; rebuilds mark proposals pending before replacing
+them. Unanimous effective arm/configuration proposals are required, not the
+first caller's settings. Saved model Armed overrides every declaration. A qualified session
+pins its arm, detector settings, and output until completion, including output
+cleanup when proposals change or conflict. Counter panels only render state.</p>
+<p><code>services.flight:state()</code> is an immutable live view. It exposes model/epoch,
+configuration revision/status, phase (<code>ground</code>, <code>starting</code>, <code>active</code>, <code>ending</code>),
+<code>active</code>, flight ID/count, candidate/qualification/disarm/completion timestamps,
+qualification <code>reason</code> and <code>smartStatus</code>, and actionable diagnostics. <code>ready</code> describes configuration, not telemetry
+validity. Unknown/stale arm observations never confirm disarm.</p>
+<p><code>services.flight:boundaries(afterSequence, epoch)</code> returns immutable records,
+the oldest retained sequence, and a gap flag. The journal retains 64 start/end
+records with epoch, sequence, flight ID/count, pinned <code>armKey</code>, <code>kind</code>, <code>at</code>, <code>observedAt</code>, and
+qualification <code>reason</code> (<code>standard</code>, <code>smart-altitude</code>, or <code>smart-speed</code>).
+Start <code>at</code> is the motor candidate start; end <code>at</code> is the final disarm start.
+<code>observedAt</code> is qualification or
+completion, so duration excludes the disarm grace. Consumers must reconcile a
+gap or changed epoch; they must never read Sticky output as their event bus.
+Smart shortcuts use the same qualification/effect path; they do not move the
+candidate timestamp. The standard timer remains an independent OR path.</p>
+<p>Model <code>flight.smartDetection</code> defaults false. Smart requires EdgeTX
+<a href="https://github.com/EdgeTX/edgetx/blob/2.11/radio/src/lua/api_general.cpp"><code>getSourceValue</code></a>
+receipt/current/fresh flags, not <code>getValue</code> zeros or link-wide freshness.
+Firmware <code>isFresh</code> spans roughly 160-320 ms; <code>isCurrent</code> only means the sensor
+is not marked old and may remain true for seconds after updates stop.
+Numeric receipt timestamps are not exposed. Smart bridges current finite
+readings for at most 1.2 seconds after positive per-sensor <code>isFresh</code> evidence;
+polling a cached value never renews that evidence. Never-received, old,
+unavailable, invalid, or expired data invalidate immediately. A shortcut can
+finish only once renewed evidence from every required source spans the full
+two-second hold; a cached value alone cannot finish it. Continuity counters
+preserve invalidations between detector ticks. This supports healthy 500ms/1s
+streams without treating the short fresh flag as a minimum update rate.
+Receipt age remains bounded evidence, not an exact timestamp or instant
+stopped-stream detector. Callbacks too infrequent to observe fresh flags
+conservatively fall back to standard detection.</p>
+<p>The Smart poller is due every 100ms. Ordinary chart callbacks continue on
+Smart polling callbacks: the host reduces that callback's dashboard telemetry
+batch from eight sources to four, reserving room for Smart's four sensor
+categories. Both pollers retain round-robin progress; Smart does not skip
+whole chart callbacks. Selected metadata is compared directly rather than
+rebuilding identity strings on every poll. Expensive loading/editor work
+still gets separate, per-widget fair slices, and pending input takes priority.
+Discovery uses numeric <code>telemN</code> sources and custom
+sensor metadata from <code>model.getSensor</code>, never names or units alone. Supported
+single-module families are CRSF (including ELRS) and native FrSky S.Port;
+unknown/MULTI or multiple active modules fall back rather than guessing.
+CRSF barometric altitude is ID <code>0x09</code>/instance 0; GPS position, groundspeed,
+and satellite count are ID <code>0x02</code>/instances 0, 2, and 5. S.Port uses the firmware
+barometric/GPS position/groundspeed ID ranges, with matching GPS/speed instances.
+Calculated sensors and GPS altitude are excluded. Ambiguous categories are
+disabled independently. GPS requires fresh valid coordinates/delay and, on CRSF,
+at least four fresh satellites. Numeric inputs reject nonfinite values and
+normalize metres/feet and knots/m/s/ft/s/km/h/mph.</p>
+<p>Altitude references require an observed disarmed-to-armed transition using
+a recent sample explicitly witnessed while disarmed, or fresh evidence at
+that transition. Merely current late readings never rebase an armed session.
+Motor interruptions preserve the reference but reset holds; unknown arm resets
+holds without inventing disarm. Metadata changes and scheduling gaps invalidate
+the reference conservatively. Fixed shortcuts are strictly above +3 m or
+10 mph for at least 200 ticks, allowing only precision-scaled conversion
+roundoff (including float32 firmware). <code>smartStatus</code> explains fallback in the native Model settings dialog;
+confirmed field changes persist and update live detection immediately.</p>
+<p>Model settings use their own schema/revision and losslessly encoded model
+filename under <code>/AEROGRID/models/</code>. Saves verify model identity and revision
+before verified file replacement. Layout saves and previews never write this
+document. Legacy detector declarations remain compatible until model settings
+are changed; retained arm metadata stays with its layout rather than becoming
+model-wide Armed. Schema version 1 has an optional top-level <code>armed</code> condition:
+missing preserves per-consumer legacy fallback, while <code>""</code> explicitly disables
+arming, including fallbacks. Nonempty values must be physical positions or
+logical switches L01–L64 (optionally inverted). Numeric channel IDs are rejected.
+The model document is loaded in a separate callback before Armed and panel
+construction. Saving a different arm condition rebuilds every registered
+dashboard and clears captured homes, preserving layout data and a pinned active
+flight's completion/cleanup. Previous per-widget Armed selections are never
+silently promoted; conflicting old selections require an explicit model choice.
+The optional top-level <code>sessionReset</code> uses the same switch syntax; missing or
+<code>""</code> disables it. A shared control poller detects false-to-true transitions
+independently of flight detection. Activation advances the flight epoch,
+cancels detection, releases its owned output, and stages every dashboard's
+reload with captured homes cleared and editor drafts retained. Counting waits
+for a fresh disarm observation. Model changes also reset the flight epoch;
+ordinary dashboard rebuilds do not.</p>
+<h2 id="add-or-change-a-panel">Add or change a panel</h2>
+<p>Use <code>panels/flight-mode.lua</code> as a small working example and
+<code>lib/panel_host.lua</code> as the authoritative contract.</p>
+<table>
+<thead>
+<tr>
+<th>Declaration or callback</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code>, <code>apiVersion</code>, <code>supportedSpans</code></td>
+<td>Identify the module, check compatibility, and advertise valid grid sizes.</td>
+</tr>
+<tr>
+<td><code>settings</code></td>
+<td>Typed fields, defaults, bounds, and choices used by validation and the editor.</td>
+</tr>
+<tr>
+<td><code>refreshInterval</code></td>
+<td>Desired foreground interval in 10 ms ticks; work still shares the host budget.</td>
+</tr>
+<tr>
+<td><code>refreshCost</code></td>
+<td>Whole-number share of the six host refresh slots (default 1). Chart uses all six so dense layouts cannot batch expensive redraws into one callback.</td>
+</tr>
+<tr>
+<td><code>create(parent, rect, settings, services)</code></td>
+<td>Build LVGL objects, subscribe to data, and return private instance state.</td>
+</tr>
+<tr>
+<td><code>refresh(context)</code></td>
+<td>Optional callback to update existing objects from snapshots. May return a whole-number interval of 1–6000 ticks; nil preserves the current interval. A second result of <code>true</code> reserves subsequent turns among panels of the same type until the update completes; other panel types and services continue running.</td>
+</tr>
+<tr>
+<td><code>update(context, rect, settings, detailsOnly, placement)</code></td>
+<td>Optional geometry/configuration update. Host reflows and editor resizes pass the current grid placement as the fifth argument, leaving the internal <code>detailsOnly</code> argument unset.</td>
+</tr>
+<tr>
+<td><code>background(context)</code></td>
+<td>Optional work when the dashboard is not visible.</td>
+</tr>
+<tr>
+<td><code>event(context, event)</code></td>
+<td>Optional event handling; return true when consumed.</td>
+</tr>
+<tr>
+<td><code>destroy(context)</code></td>
+<td>Optional cleanup of panel-owned references.</td>
+</tr>
+<tr>
+<td><code>validateSettings(settings, span, config)</code></td>
+<td>Optional cross-field and span-dependent validation.</td>
+</tr>
+</tbody>
+</table>
+<p>Put the module at <code>panels/&lt;type&gt;.lua</code> and reference that type in a layout.
+Regular panels declare <code>supportedSpans = { "any" }</code> and adapt their contents to
+every in-bounds span of the 4 x 4 grid. Use an explicit span list when there is a
+real rendering constraint: Host diagnostics and Service probe need at least
+2x2, Chart needs a wide or square placement at least 2x1, while Theme showcase requires 4x4. Declare only spans you actually render
+correctly. A list setting
+(<code>type = "table"</code>) declares entry <code>fields</code> with keys or nested paths, labels,
+types, and appropriate defaults/bounds/choices. The editor uses this schema
+to offer even fields omitted from the YAML, and can remove cleared optional
+fields. List declarations, including nested lists, can set <code>itemLabel</code> to a
+singular name such as <code>"Metric"</code> or <code>"State"</code>. The editor names rows using the
+first nonempty label or source, then <code>itemLabel</code> and the one-based index;
+lists without <code>itemLabel</code> use <code>"Entry"</code>. Do not build a separate settings UI
+for each panel.</p>
+<p>The public <code>theme.lua</code> API composes palette/state resolution with
+<code>typography.lua</code> (measurement, font fitting, unit metrics) and <code>panel_layout.lua</code>
+(frames, slots, bands, and regions). The public <code>primitives.lua</code> API composes LVGL
+objects with <code>reading.lua</code> (reading/unit composition, redraw detection, and
+visibility/reflow reconciliation). Installed functions are direct references,
+not per-call wrappers; each widget has its own caches and mutable API tables.</p>
+<p>The host supplies these dependencies when executing the modules. Pure-Lua tests
+use <code>tests/support/module_loader.lua</code> to compose the same APIs without installing
+firmware globals.</p>
+<p>Use <code>theme.lua</code> for bands, font fitting, shared colors, and spacing, and
+<code>primitives.lua</code> for reusable LVGL objects. <code>primitives.reading</code> constructs the
+matching value/unit arrangement used by the battery and link readouts; optional
+units and differing initial geometry remain panel-specific. Keep a reading's font stable as
+its value changes, using the widest expected representation to choose it.
+When changing settings vocabulary or rendering, inspect sibling panels so
+the same setting retains the same meaning.</p>
+<p>Add focused tests, an integration case at every declared span, a simulator
+review layout when useful, and a <a href="../../reference-guide/">panel reference page</a>.
+If adding screenshot support, add a capture recipe and adapter as described
+in <a href="../tools/#change-a-capture-recipe">Project tools</a>.</p>
+<h2 id="editor-and-persistence">Editor and persistence</h2>
+<p><code>editor.lua</code> owns draft operations; <code>editor_ui.lua</code> and <code>editor_drawer.lua</code>
+present them; <code>editor_controller.lua</code> coordinates them with the live dashboard.
+<code>layout_store.lua</code> handles saving, backups, and user-versus-shipped
+resolution; <code>layout_registry.lua</code> maintains name-to-choice positions.
+Keep these boundaries intact when changing save behavior.
+Panel settings drawers, including entry subdrawers, put <strong>Label</strong> first when
+declared, preserving the declaration order of all remaining controls.</p>
+<p>Editing does not overwrite bundled layouts. Save writes to <code>/AEROGRID/layouts/</code>,
+and Save As creates a named user layout. The layout registry is initialized
+at script load, so new names require a restart before appearing in the native
+Layout picker. Save errors must preserve the draft and report failure.
+Test persistence through the store/editor suites, not just the visible dialog.</p>
+<h2 id="firmware-constraints-that-affect-design">Firmware constraints that affect design</h2>
+<p>EdgeTX limits a widget callback to <strong>20,000 Lua VM instructions</strong>. Creation,
+parsing, panel building, reload, and reflow are staged across callbacks.
+Services have bounded subscription updates, and panel work is capped and
+phase-staggered. Do not replace this with one synchronous "simpler" loader.
+The <a href="../testing/#performance-and-resource-regressions">budget tests</a> require
+strictly less than 75% of the callback allowance.</p>
+<p>Avoid object churn and retained callbacks. Shared labels install a persistent
+font callback; change its backing state through <code>primitives.setFont</code> rather
+than replacing the callback during refresh/reflow. Replacement retained Lua
+registry references in EdgeTX 2.12.4.</p>
+<p>Other firmware details already have helpers and regression coverage:
+<code>theme.measureText</code> uses <code>lcd.sizeText</code> where available and estimates otherwise;
+trim sources do not identify their axis, image decode failure is not reported
+by <code>lvgl.image</code>, and
+<code>lvgl.arc</code> positions use the center rather than the bounding-box corner.
+Reuse the existing panel logic, file checks, and <code>primitives.arcBounds</code>
+instead of introducing alternate assumptions.</p>
+      </article>
+    </div>
+  </div>
+
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+                <p>Copyright &copy; AeroGrid contributors. GPL-2.0-only.</p>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+  
+        <script src="../../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../../js/base.js"></script>
+        <script src="../../javascripts/versions.mjs" type="module"></script>
+        <script src="../../javascripts/radio-connection-help.mjs" type="module"></script>
+        <script src="../../javascripts/radio-panel.mjs" type="module"></script>
+        <script src="../../search/main.js"></script>
+  <script src="../../javascripts/tables.js" defer></script>
+
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        <link rel="canonical" href="https://thomaskistler.github.io/aero-grid/main/user-guide/model-settings/">
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>Edit model settings - AeroGrid</title>
+  
+        <link href="../../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../../css/brands.min.css" rel="stylesheet">
+        <link href="../../css/solid.min.css" rel="stylesheet">
+        <link href="../../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../../stylesheets/aerogrid.css" rel="stylesheet">
+        <link href="../../stylesheets/versions.css" rel="stylesheet">
+  <link href="../../stylesheets/console.css" rel="stylesheet">
+
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-RMCKML1PKS"></script>
+        <script>
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+
+          gtag('config', "G-RMCKML1PKS");
+        </script>
+   
+  <meta name="aerogrid-site-root" content="/aero-grid/">
+
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-light bg-light">
+            <div class="container">
+  <a class="navbar-brand ag-brand" href="../..">
+    <span class="ag-brand-mark" aria-hidden="true">A</span>
+    <span class="ag-brand-name">AeroGrid</span>
+    <span class="ag-brand-divider" aria-hidden="true">/</span>
+    <span class="ag-current-page">Edit model settings</span>
+  </a>
+  <div class="ag-docs-version">
+  <select aria-label="Documentation version"
+          data-docs-root="/aero-grid/"
+          data-docs-version="main"
+          disabled>
+    <option value="main">main (unreleased)</option>
+  </select>
+  <span class="ag-docs-version-status" role="status"></span>
+</div>
+
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+  <nav class="ag-icon-rail" aria-label="Main navigation">
+    <a
+      class="ag-icon-link"
+      href="../installation/"
+      aria-label="Install / Upgrade"
+      title="Install / Upgrade"
+      
+    >
+      <svg class="ag-icon-logo" viewBox="0 0 450 450" aria-hidden="true">
+        <image href="../../assets/icons/install-upgrade-radio.svg" width="505" height="453" />
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link active"
+      href="../add-dashboard/"
+      aria-label="User Guide"
+      title="User Guide"
+      aria-current="page"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 5v16"/>
+        <path d="M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/>
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link"
+      href="../../reference-guide/"
+      aria-label="Reference Guide"
+      title="Reference Guide"
+      
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/>
+        <path d="M8 11h8"/>
+        <path d="M8 7h6"/>
+      </svg>
+    </a>
+    <a
+      class="ag-icon-link"
+      href="../../developer-guide/build/"
+      aria-label="Developer Guide"
+      title="Developer Guide"
+      
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m18 16 4-4-4-4"/>
+        <path d="m6 8-4 4 4 4"/>
+        <path d="m14.5 4-5 16"/>
+      </svg>
+    </a>
+  </nav>
+
+
+                    <ul class="nav navbar-nav ms-md-auto">
+  
+    <li class="nav-item">
+      <a class="nav-link ag-search-link" href="#" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+        <i class="fa fa-search" aria-hidden="true"></i>
+        <span>Search docs</span>
+      </a>
+    </li>
+  
+
+  
+    <li class="nav-item">
+      <a class="nav-link ag-edit-link" href="https://github.com/thomaskistler/aero-grid" aria-label="AeroGrid repository on GitHub" title="AeroGrid repository on GitHub">
+        <i class="fa-brands fa-github" aria-hidden="true"></i>
+      </a>
+    </li>
+  
+
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+  <div class="ag-console-layout">
+    
+    <aside class="ag-guide-sidebar" aria-label="Documentation navigation">
+      
+
+
+  
+  
+  
+
+
+<nav class="ag-guide-nav" aria-label="User Guide">
+  <a class="ag-guide-home" href="../add-dashboard/">
+    <span class="ag-guide-heading">User Guide</span>
+  </a>
+  <div class="ag-guide-pages">
+    
+    
+  
+  <a class="ag-guide-link" href="../installation/">Install and upgrade</a>
+
+    
+  
+  <a class="ag-guide-link" href="../add-dashboard/">Add a dashboard</a>
+
+    
+  
+  <a class="ag-guide-link current" href="./" aria-current="page">Edit model settings</a>
+
+    
+  
+  <a class="ag-guide-link" href="../edit-dashboard/">Edit a dashboard on the radio</a>
+
+    
+  
+  <a class="ag-guide-link" href="../customize-themes/">Customize themes</a>
+
+    
+  
+  <a class="ag-guide-link" href="../troubleshooting/">Troubleshoot and file bugs</a>
+
+  
+  </div>
+</nav>
+    </aside>
+    
+    <div class="ag-reading-column">
+      <article class="ag-article" role="main">
+        
+
+<h1 id="edit-model-settings">Edit model settings</h1>
+<p>Long-press the AeroGrid dashboard to enter fullscreen. The AeroGrid icon
+appears in the top-left corner. Tap it, then choose <strong>Model settings</strong>.</p>
+<p>Settings apply to every AeroGrid dashboard for the selected model, not to an individual panel
+or layout. Each confirmed change saves automatically; Back closes the page.</p>
+<p><img alt="AeroGrid menu with Model settings and UI setup" src="../../assets/editor/aero-menu.png" /></p>
+<h2 id="arming">Arming</h2>
+<p>Arming tells AeroGrid when your model is armed, using the switch condition
+you select. It starts Chart recording, captures Navigation's <strong>first-arm</strong>
+home, starts flight-session minimum tracking, and enables flight detection.
+It only observes your model's state; it does not arm the aircraft or control
+the motor.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Arm switch</strong></td>
+<td>none</td>
+<td>Physical switch position or logical switch (including inverted logical switches) that means armed.</td>
+</tr>
+</tbody>
+</table>
+<p>Saving <strong>None</strong> for Arm switch disables arming across all dashboards.
+Older layouts retain their panel/session arm switches only until model arming
+is saved. Those legacy controls disappear once model arming takes precedence.
+Numeric sources such as <code>ch5</code> or <code>sa</code> are not arm conditions.</p>
+<h2 id="flight-detection">Flight detection</h2>
+<p>Flight detection distinguishes a flight from simply being armed. It observes
+the armed condition, motor output, and live telemetry to confirm a flight
+start, then confirms its end after sustained disarming.</p>
+<p>Each confirmed start increments the model's flight total once, shown by
+Flight counter. Detection also supplies Chart flight shading, keeps recording
+running through the end-detection window, and drives the optional
+<a href="#flight-status-output">Flight status output</a> for your sounds or announcements.
+It runs across the model's dashboards even without a Flight counter panel.</p>
+<p><img alt="Complete Model settings drawer" src="../../assets/editor/model-settings.png" /></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Motor channel</strong></td>
+<td>CH3</td>
+<td>Channel used to measure motor output.</td>
+</tr>
+<tr>
+<td><strong>Reverse motor</strong></td>
+<td>off</td>
+<td>Enable when the motor channel runs from high at idle to low at full power.</td>
+</tr>
+<tr>
+<td><strong>Motor threshold (%)</strong></td>
+<td>25</td>
+<td>Motor output must be strictly above this percentage to qualify a flight. Valid values are 0 up to, but not including, 100.</td>
+</tr>
+<tr>
+<td><strong>Start detection window (s)</strong></td>
+<td>30</td>
+<td>Continuous armed state, sufficient motor output, and live telemetry required to confirm flight start.</td>
+</tr>
+<tr>
+<td><strong>End detection window (s)</strong></td>
+<td>10</td>
+<td>Continuous disarming required to confirm flight end. Rearming within this window keeps the flight open.</td>
+</tr>
+<tr>
+<td><strong>Smart detection</strong></td>
+<td>off</td>
+<td>Also allows sustained altitude or GPS groundspeed evidence to confirm takeoff earlier. See <a href="../../panels/flight-counter/#behavior">Flight counter</a>.</td>
+</tr>
+</tbody>
+</table>
+<p>Flight detection observes live telemetry; it does not arm the aircraft.
+Both detection windows accept values greater than 0 and up to 3600 seconds.
+Flight timestamps use the beginning of each window, not the later confirmation.</p>
+<h3 id="flight-status-output">Flight status output</h3>
+<p><img alt="Model settings showing the Flight status switch" src="../../assets/editor/model-settings-bottom.png" /></p>
+<p><strong>Flight status switch</strong> exposes the detected flight session through a
+dedicated Sticky logical switch. It turns on when flight start is confirmed
+and off when flight end is confirmed, including the end-detection window.
+Session reset also turns it off. Choose <strong>None</strong> to disable the output.</p>
+<p>For example, reserve an unused <strong>L01</strong> in EdgeTX's <strong>Logical Switches</strong> page:</p>
+<table>
+<thead>
+<tr>
+<th>Switch</th>
+<th>Function</th>
+<th>V1</th>
+<th>V2</th>
+<th>AND switch</th>
+<th>Delay</th>
+<th>Duration</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>L01</td>
+<td>Sticky</td>
+<td>unassigned</td>
+<td>unassigned</td>
+<td>unassigned</td>
+<td>0.0 s</td>
+<td>0.0 s</td>
+</tr>
+</tbody>
+</table>
+<p>Then select <strong>L01</strong> as AeroGrid's <strong>Flight status switch</strong>. The picker lists
+configured logical switches. AeroGrid controls the switch's state; leave its
+inputs unassigned and reserve it exclusively for this output.</p>
+<p>Use <strong>L01</strong> in an EdgeTX Special Function to play your chosen sound when a
+flight starts; use <strong>!L01</strong> for an action when it ends. Configure the Special
+Function's startup and repeat options to avoid unwanted announcements.
+Do not also use this switch as the Arm switch or Session reset switch, or
+share it with another script. It is not a safety interlock.</p>
+<h2 id="session-reset">Session reset</h2>
+<p><img alt="Model settings showing the Session reset switch" src="../../assets/editor/model-settings-reset.png" /></p>
+<p>Set <strong>Session reset switch</strong> to a physical switch position or logical switch.
+Activation resets the following AeroGrid session data across all dashboards,
+including hidden screens:</p>
+<table>
+<thead>
+<tr>
+<th>Panel or service</th>
+<th>What resets</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Chart</td>
+<td>Recordings, recorded extrema, flight shading, and arm/resume markers.</td>
+</tr>
+<tr>
+<td>Link status / Extrema Service probe</td>
+<td>Flight-session minima, maxima, and session timing.</td>
+</tr>
+<tr>
+<td>Navigation</td>
+<td>First-arm captured home; a new disarm/arm transition is needed to capture again.</td>
+</tr>
+<tr>
+<td>RX battery</td>
+<td>Automatic cell estimate; fresh voltage supplies the next estimate.</td>
+</tr>
+<tr>
+<td>Flight counter / detection</td>
+<td>Pending or active detection and its flight-status output, not the flight total.</td>
+</tr>
+</tbody>
+</table>
+<p>Reset runs once per off-to-on transition, not continuously while held.
+An input already on at startup, after changing the setting, or after signal
+recovery does not trigger a reset. Choose <strong>None</strong> to disable it.</p>
+<p>Reset during a flight cancels detection without creating a completion.
+Disarm before another flight can be counted. Flight totals, radio timers,
+radio telemetry minima/maxima, EdgeTX home, saved settings/layouts, and
+unsaved editor changes are preserved. Other panels continue showing live data.</p>
+      </article>
+    </div>
+  </div>
+
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+                <p>Copyright &copy; AeroGrid contributors. GPL-2.0-only.</p>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+  
+        <script src="../../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../../js/base.js"></script>
+        <script src="../../javascripts/versions.mjs" type="module"></script>
+        <script src="../../javascripts/radio-connection-help.mjs" type="module"></script>
+        <script src="../../javascripts/radio-panel.mjs" type="module"></script>
+        <script src="../../search/main.js"></script>
+  <script src="../../javascripts/tables.js" defer></script>
+
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>
