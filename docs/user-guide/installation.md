@@ -36,7 +36,8 @@ Install the latest stable AeroGrid on your radio, or choose a previous release. 
     </div>
   <fieldset class="ag-release-picker" data-release-picker disabled>
     <legend class="visually-hidden">Available AeroGrid releases</legend>
-    <p id="ag-release-description" class="ag-radio-muted">Latest stable is selected by default. Beta and RC releases are not included.</p>
+    <p id="ag-release-description" class="ag-radio-muted">Latest stable is selected by default. Developer builds contain unreleased changes and may be unstable. Beta and RC releases are not included.</p>
+    <label><input type="checkbox" data-developer-releases> Show developer releases</label>
     <div class="ag-release-list" data-releases></div>
   </fieldset>
   </dialog>

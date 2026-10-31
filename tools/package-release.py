@@ -38,8 +38,13 @@ def version(source):
     return matches[0]
 
 
-def package(source, output):
+def package(source, output, developer_build=None):
     release = version(source)
+    if developer_build is not None:
+        if not re.fullmatch(r"[1-9]\d*\.[a-f0-9]{40}", developer_build):
+            raise ValueError("Developer build must be RUN_NUMBER.COMMIT_SHA (40 lowercase hex digits)")
+        run, commit = developer_build.split(".")
+        release = f"{release.split('-')[0]}-dev.{run}+g{commit}"
     for name in LAYOUTS:
         if not (source / "layouts" / name).is_file():
             raise ValueError(f"Missing bundled layout: {name}")
@@ -71,13 +76,16 @@ def package(source, output):
     if not (source / "main.lua").is_file():
         raise ValueError("Missing widget main.lua")
     output.mkdir(parents=True, exist_ok=True)
-    archive = output / f"AeroGrid-{release}.zip"
+    archive = output / ("AeroGrid-dev.zip" if developer_build else f"AeroGrid-{release}.zip")
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
         for path, relative in files:
             entry = zipfile.ZipInfo("WIDGETS/AeroGrid/" + relative.as_posix(), (1980, 1, 1, 0, 0, 0))
             entry.compress_type = zipfile.ZIP_DEFLATED
             entry.external_attr = 0o100644 << 16
-            bundle.writestr(entry, path.read_bytes())
+            data = path.read_bytes()
+            if developer_build and relative.as_posix() == "lib/package.lua":
+                data = re.sub(rb'\bversion\s*=\s*"[^"]+"', f'version = "{release}"'.encode(), data)
+            bundle.writestr(entry, data)
         for name in ("LICENSE",):
             entry = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
             entry.compress_type = zipfile.ZIP_DEFLATED
@@ -92,10 +100,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--version-only", action="store_true")
     parser.add_argument("--output", type=Path, default=ROOT / "build/release")
+    parser.add_argument("--developer-build", help="Stamp the archive with RUN_NUMBER.COMMIT_SHA")
     args = parser.parse_args()
     try:
         source = ROOT / "src/WIDGETS/AeroGrid"
-        print(version(source) if args.version_only else package(source, args.output))
+        print(version(source) if args.version_only else package(source, args.output, args.developer_build))
     except (ValueError, OSError) as error:
         parser.error(str(error))
 
