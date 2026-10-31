@@ -25,6 +25,7 @@
 --- A numeric refresh result selects the next interval in 10ms ticks.
 --- A second result of true requests consecutive turns until this update finishes.
 ---@field background? fun(instance: any)
+---@field resetSession? fun(instance: any, now: integer) Second result true requests another reset turn.
 ---@field event? fun(instance: any, event: any): boolean
 ---@field destroy? fun(instance: any)
 
@@ -44,7 +45,7 @@ local panelHost = { RUNTIME_API = 1 }
 panelHost.API_VERSION = 1
 
 --- Optional lifecycle callbacks, in a fixed order so errors stay deterministic.
-local OPTIONAL_CALLBACKS = { "update", "refresh", "background", "event", "destroy" }
+local OPTIONAL_CALLBACKS = { "update", "refresh", "background", "resetSession", "event", "destroy" }
 
 --- Restrict module identifiers to the same path-safe characters as layout types.
 ---@param value any

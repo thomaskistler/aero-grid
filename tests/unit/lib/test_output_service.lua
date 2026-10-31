@@ -176,6 +176,22 @@ equal(feed.name, "ail", "unnamed inputs fall back to their source")
 mixes[1].source = 1
 settle()
 equal(feed.name, "ail", "direct stick mixes expose their source name")
+for _, nextMode in ipairs({ 1, 0 }) do
+    mode = nextMode
+    for _ = 1, 10 do
+        now = now + 20
+        service:update(now)
+        equal(feed.name, "ail", "flight mode rescans must retain resolved captions")
+        assert(feed.nameReady)
+    end
+end
+mixes[2] = { source = 2, carryTrim = false, weight = 100, multiplex = 2, flightModes = 1 }
+mode = 1
+settle()
+equal(feed.name, "ele", "completed rescans must publish genuinely changed names")
+mode = 0
+settle()
+equal(feed.name, "ail", "returning to the original mode restores its inferred name")
 mixes[2] = { source = 2, carryTrim = true, weight = 100 }
 settle()
 equal(feed.name, "", "different active source names must not produce a guessed label")

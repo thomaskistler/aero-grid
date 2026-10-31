@@ -228,45 +228,41 @@ local function paintRow(context, row, index, drawn)
             row.caption:set({ text = caption })
         end
     end
-    if
-        row.text ~= nil
-        and row.name == name
-        and row.available == available
-        and row.fraction == fraction
-        and row.trimFraction == trimFraction
-    then
-        return
-    end
-    row.name, row.available = name, available
+    local placed = row.text == nil
     local text = available and percentText(fraction) or "--"
-    row.text, row.fraction, row.trimFraction = text, fraction, trimFraction
-    if context.area.showValues then
+    if context.area.showValues and (placed or row.text ~= text) then
         local textWidth = builder.measureText(context.area.font, text)
         row.value:set({ text = text, x = context.area.frame.content - textWidth, w = textWidth })
     end
-    local zero, endpoint = position(row.width, 0), position(row.width, fraction)
-    local fillWidth = math.max(1, math.abs(endpoint - zero))
-    local accent = context.state("normal", context.settings.accent).accent
-    context.primitives.reconcile(row.fill, available, {
-        x = row.x + math.min(zero, endpoint),
-        y = row.y,
-        w = fillWidth,
-        h = row.height,
-        color = accent,
-    })
-    -- Cover only the inner corners, keeping the moving tip rounded.
-    local originWidth = math.min(2, fillWidth)
-    context.primitives.reconcile(row.fillOrigin, available, {
-        x = row.x + zero - (endpoint < zero and originWidth or 0),
-        y = row.y,
-        w = originWidth,
-        h = row.height,
-        color = accent,
-    })
-    local pointer = row.x + position(row.width, trimFraction or 0)
-    context.primitives.reconcile(row.trim, trimFraction ~= nil, {
-        pts = { { pointer - 3, row.y - 5 }, { pointer + 3, row.y - 5 }, { pointer, row.y + 1 } },
-    })
+    if placed or row.available ~= available or row.fraction ~= fraction then
+        local zero, endpoint = position(row.width, 0), position(row.width, fraction)
+        local fillWidth = math.max(1, math.abs(endpoint - zero))
+        local accent = context.state("normal", context.settings.accent).accent
+        context.primitives.reconcile(row.fill, available, {
+            x = row.x + math.min(zero, endpoint),
+            y = row.y,
+            w = fillWidth,
+            h = row.height,
+            color = accent,
+        })
+        -- Cover only the inner corners, keeping the moving tip rounded.
+        local originWidth = math.min(2, fillWidth)
+        context.primitives.reconcile(row.fillOrigin, available, {
+            x = row.x + zero - (endpoint < zero and originWidth or 0),
+            y = row.y,
+            w = originWidth,
+            h = row.height,
+            color = accent,
+        })
+    end
+    if placed or row.trimFraction ~= trimFraction then
+        local pointer = row.x + position(row.width, trimFraction or 0)
+        context.primitives.reconcile(row.trim, trimFraction ~= nil, {
+            pts = { { pointer - 3, row.y - 5 }, { pointer + 3, row.y - 5 }, { pointer, row.y + 1 } },
+        })
+    end
+    row.name, row.available = name, available
+    row.text, row.fraction, row.trimFraction = text, fraction, trimFraction
 end
 
 function output.create(parent, rect, settings, services)

@@ -1303,7 +1303,7 @@ local function prepareAeroMenu(context, widgetEvent)
 end
 
 local function suspendArmingEditor(context)
-    if context.modelArmingReload or context.sessionResetPending then
+    if context.modelArmingReload then
         if context.editorUi and context.editorUi.saving then
             context.editorController.advanceEditor(context)
             return true
@@ -1323,20 +1323,58 @@ local function pumpSessionReset(context)
     if not context.sessionResetPending then
         return false
     end
-    if context.reloadState == "clear" then
-        if context.modelSettingsUi and not isFullScreen() then
-            context.modelSettingsUiModule.advance(context)
-        end
-        context.dashboardLifecycle.retirePage(context)
-    elseif context.reloadState == "rebuild" then
-        context.dashboardLifecycle.rebuildPage(context)
-        context.dashboardLoader.beginLoad(context)
-    elseif context.stage then
-        context.dashboardLoader.advanceLoad(context)
-    else
-        context.sessionResetPending = nil
+    if context.reloadState or context.stage then
         return false
     end
+    local job = context.sessionResetJob
+    if not job then
+        job = { service = 1, item = 1, panel = 1, now = getTime() }
+        context.sessionResetJob = job
+        context.refreshOwner = nil
+    end
+    local runtime = context.serviceRuntime
+    local service = runtime and runtime.order[job.service]
+    while service do
+        if service.resetSession and not service.failed then
+            for _ = 1, 8 do
+                local ok, nextItem = pcall(service.resetSession, service, job.now, job.item)
+                if not ok then
+                    service.failed = true
+                    addError(context, service.id .. ": reset: " .. tostring(nextItem))
+                    showErrors(context)
+                elseif nextItem then
+                    job.item = nextItem
+                end
+                if not ok or not nextItem then
+                    service.revision = service.revision + 1
+                    service.due = job.now
+                    job.service, job.item = job.service + 1, 1
+                    return true
+                end
+            end
+            return true
+        end
+        job.service, job.item = job.service + 1, 1
+        service = runtime.order[job.service]
+    end
+    local entry = context.panels[job.panel]
+    while entry do
+        if not entry.failed and rawget(entry.module, "resetSession") then
+            local ok, message, _, unfinished = context.panelHost.dispatch(entry, "resetSession", job.now)
+            if not ok and message then
+                addError(context, entry.placement.id .. ": reset: " .. message)
+                showErrors(context)
+            end
+            entry.nextRefresh = job.now
+            if not unfinished then
+                job.panel = job.panel + 1
+            end
+            return true
+        end
+        job.panel = job.panel + 1
+        entry = context.panels[job.panel]
+    end
+    context.sessionResetPending, context.sessionResetJob = nil, nil
     return true
 end
 
@@ -1361,8 +1399,9 @@ local function refresh(context, widgetEvent, touchState)
     end
     if context.modelSettingsUi then
         context.modelSettingsUiModule.handle(context, widgetEvent, touchState)
-        context.modelSettingsUiModule.advance(context)
-        updateServices(context)
+        if not context.modelSettingsUiModule.advance(context) then
+            updateServices(context)
+        end
         return
     end
     if context.aeroMenuModule and context.aeroMenuModule.handle(context, widgetEvent, touchState) then
