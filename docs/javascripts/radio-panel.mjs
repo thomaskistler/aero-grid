@@ -6,7 +6,9 @@ import { actionFor, ContentMismatchError, loadCatalog, loadRelease, preparePacka
 const panel = document.querySelector("[data-radio-installer]");
 if (panel) {
   const element = (name) => panel.querySelector(`[data-${name}]`);
-  const base = new URL("../installer/", import.meta.url);
+  const siteRoot = document.querySelector('meta[name="aerogrid-site-root"]')?.content;
+  const base = siteRoot ? new URL(`${siteRoot}installer/`, location.href)
+    : new URL("../installer/", import.meta.url);
   const connect = element("connect");
   const install = element("install");
   const confirm = element("confirm");

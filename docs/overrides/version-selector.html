@@ -1,0 +1,9 @@
+<div class="ag-docs-version">
+  <select aria-label="Documentation version"
+          data-docs-root="{{ config.extra.docs_root|default('') }}"
+          data-docs-version="{{ config.extra.docs_version }}"
+          disabled>
+    <option value="{{ config.extra.docs_version }}">{{ config.extra.docs_title }}</option>
+  </select>
+  <span class="ag-docs-version-status" role="status"></span>
+</div>

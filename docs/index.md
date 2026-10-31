@@ -4,6 +4,9 @@ AeroGrid is a configurable 4 x 4 glass-cockpit dashboard for EdgeTX color radios
 YAML layouts combine telemetry, model timers, flight tracking, switch states,
 trim positions, and model images in responsive panels.
 
+Use **Documentation version** in the header to match your installed release.
+**main (unreleased)** describes the development version.
+
 <section class="ag-home-start" aria-label="Get started with AeroGrid">
   <div>
     <span class="ag-start-eyebrow">START HERE</span>

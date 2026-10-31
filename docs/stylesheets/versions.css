@@ -1,0 +1,53 @@
+.ag-docs-version {
+  position: relative;
+  flex: 0 0 auto;
+  margin: 0 12px;
+}
+
+.ag-docs-version select {
+  width: 148px;
+  min-height: 34px;
+  padding: 4px 6px;
+  border: 1px solid #dce4e9;
+  border-radius: 6px;
+  color: #52667a;
+  background: #fff;
+  font-size: 14px;
+}
+
+.ag-docs-version select:focus-visible {
+  outline: 2px solid #258cc7;
+  outline-offset: 2px;
+}
+
+.ag-docs-version-status:not(:empty) {
+  position: absolute;
+  z-index: 1050;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 240px;
+  padding: 10px;
+  border: 1px solid #dce4e9;
+  border-radius: 6px;
+  color: #22364b;
+  background: #fff;
+  font-size: 14px;
+}
+
+@media (max-width: 650px) {
+  .ag-docs-version {
+    margin: 0 4px;
+  }
+
+  .ag-docs-version select {
+    width: 136px;
+    min-height: 30px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 450px) {
+  .navbar .ag-brand-name {
+    display: none;
+  }
+}

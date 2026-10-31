@@ -147,6 +147,17 @@ to another commit or an already-public release is rejected. Never move a
 published tag; use a new version for fixes. Abandoning an unpublished attempt
 requires deliberately removing its draft and tag before reusing that version.
 
-Documentation publication is independent: the Documentation workflow deploys
-changes on `main` to GitHub Pages. Repository **Settings > Pages > Source**
-must be **GitHub Actions**.
+Documentation defaults to the latest stable release. The header's
+**Documentation version** menu also offers previous releases, prereleases, and
+`main` (unreleased). The installer has its own independent release selection.
+
+The **Documentation** workflow builds released documentation from its exact tag
+and updates `main` separately. Existing releases are backfilled on the first
+deployment; subsequent deployments preserve those snapshots. To publish again,
+run **Actions > Documentation > Run workflow** on **main**.
+
+Released content and layouts stay version-specific; all builds share the current
+version navigation and Google Analytics configuration.
+
+Generated snapshots are stored on `gh-pages`; do not edit that branch manually.
+Repository **Settings > Pages > Source** must remain **GitHub Actions**.

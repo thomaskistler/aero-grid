@@ -43,8 +43,13 @@ class DocumentationLayoutTests(unittest.TestCase):
         cls.browser = cls.playwright.chromium.launch()
         cls.addClassCleanup(cls.browser.close)
 
+    def new_page(self, **options):
+        page = self.browser.new_page(**options)
+        page.route("https://www.googletagmanager.com/**", lambda route: route.abort())
+        return page
+
     def test_every_page_image_loads(self):
-        page = self.browser.new_page()
+        page = self.new_page()
         try:
             for source in sorted((ROOT / "docs").rglob("*.md")):
                 relative = source.relative_to(ROOT / "docs")
@@ -77,7 +82,7 @@ class DocumentationLayoutTests(unittest.TestCase):
             ("developer-guide/build/", "Developer Guide"),
         ):
             with self.subTest(path=path):
-                page = self.browser.new_page()
+                page = self.new_page()
                 try:
                     page.goto(f"{self.url}/{path}")
                     rail = page.get_by_role("navigation", name="Main navigation", exact=True)
@@ -100,7 +105,7 @@ class DocumentationLayoutTests(unittest.TestCase):
         for width in (320, 375, 768, 1024, 1440):
             for path in PAGES:
                 with self.subTest(width=width, path=path):
-                    page = self.browser.new_page(viewport={"width": width, "height": 900})
+                    page = self.new_page(viewport={"width": width, "height": 900})
                     try:
                         page.goto(f"{self.url}/{path}")
                         page.locator(".ag-table-scroll").first.wait_for()
@@ -130,7 +135,7 @@ class DocumentationLayoutTests(unittest.TestCase):
             ("reference-guide/yaml/", 1024),
         ):
             with self.subTest(width=width, path=path):
-                page = self.browser.new_page(viewport={"width": width, "height": 900})
+                page = self.new_page(viewport={"width": width, "height": 900})
                 try:
                     page.goto(f"{self.url}/{path}")
                     page.locator(".ag-table-scroll").first.wait_for()
@@ -155,7 +160,7 @@ class DocumentationLayoutTests(unittest.TestCase):
     def test_homepage_radio_examples_fit_desktop_and_wrap_on_mobile(self):
         for width in (320, 375, 768, 1024, 1280, 1440, 1920):
             with self.subTest(width=width):
-                page = self.browser.new_page(viewport={"width": width, "height": 900})
+                page = self.new_page(viewport={"width": width, "height": 900})
                 try:
                     page.goto(f"{self.url}/")
                     page.evaluate("document.fonts.ready")
