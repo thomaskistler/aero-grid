@@ -1,3 +1,15 @@
+map-home.png is original AeroGrid artwork, licensed under GPL-2.0-only.
+Regenerate with tools/generate-map-icons.py, which colors the original
+shape mask orange with a dark inner disc and outer outline.
+map-aircraft-000.png through map-aircraft-350.png (10-degree steps) and
+map-follow.png are AeroGrid aircraft artwork based on the user-supplied shape
+reference, licensed under GPL-2.0-only. Regenerate with
+tools/generate-aircraft-icons.py. Map sprites have a translucent black shadow.
+map-info.png is original AeroGrid artwork, licensed under GPL-2.0-only.
+Regenerate with tools/generate-map-info-icon.py.
+
+---
+
 Editor icon glyph adapted from Heroicons:
 https://github.com/tailwindlabs/heroicons
 solid/cog-6-tooth. AeroGrid adds the gray circular background.

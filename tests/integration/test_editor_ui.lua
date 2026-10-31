@@ -292,7 +292,7 @@ equal(context.editorUi, nil, "ordinary tap must not open editing")
 for _, cancel in ipairs({ EVT_TOUCH_BREAK, EVT_TOUCH_TAP }) do
     refresh(EVT_TOUCH_FIRST, { x = 50, y = 40 })
     refresh(EVT_TOUCH_SLIDE, { x = 250, y = 140 })
-    assert(context.editorPress, "sliding must not cancel entry")
+    equal(context.editorPress, nil, "moving a finger must cancel hold-to-edit")
     refresh(cancel)
     widget.tick(60)
     refresh()
@@ -305,12 +305,12 @@ refresh(EVT_TOUCH_SLIDE)
 equal(context.editorUi, nil, "sliding hold still requires the full duration")
 widget.tick(1)
 refresh(EVT_TOUCH_SLIDE, { x = 350, y = 240 })
-assert(context.editorUi, "sliding for the hold duration opens editing")
-settle()
+equal(context.editorUi, nil, "dragging for the hold duration must not open editing")
 refresh(EVT_TOUCH_BREAK)
+open(true)
 refresh(EVT_VIRTUAL_EXIT)
 refresh()
-equal(context.editorUi, nil, "unchanged editor closes before the next hold")
+equal(context.editorUi, nil, "stationary SLIDE events still allow hold-to-edit")
 refresh(EVT_TOUCH_FIRST, { x = 50, y = 40 })
 widget.tick(59)
 refresh(EVT_TOUCH_FIRST, { x = 50, y = 40 })
@@ -1542,6 +1542,85 @@ exitWith("Discard changes")
 assert(not hostIo.open(path .. "AEROGRID/layouts/Empty.yaml", "r"), "Empty is never written")
 
 -- Leaving fullscreen neither saves nor discards; the draft resumes on return.
+do
+    widget.lvglMock.setFullScreen(true)
+    load("Empty")
+    open()
+    local tile = assert(context.editorUi.addRect)
+    tap(tile.x + 50, tile.y + 40)
+    settleDrawer()
+    local picker = widget.lvglMock.menu()
+    local mapIndex
+    for index, item in ipairs(context.editorUi.handlers.editor.CATALOG) do
+        if item.type == "map" then
+            equal(picker.values[index], "Map", "radio picker must expose the map's display name")
+            mapIndex = index
+        end
+    end
+    assert(mapIndex, "Map must be selectable through Add Panel")
+    picker.set(mapIndex)
+    settleDrawer()
+    equal(context.editorUi.mode, "configure", "adding Map must open its normal configuration drawer")
+    local placement = context.editorSession.draft.panels[1]
+    equal(placement.type, "map", "Map picker must install the real radio panel")
+    equal(placement.config.source, "GPS", "new maps default to the normal GPS source")
+    equal(placement.config.pack, nil, "map editor must not introduce an area override")
+    for _, key in ipairs({ "source", "headingSource", "armSwitch", "satelliteSource" }) do
+        assert(control(key), "map must expose the native source/switch controls")
+    end
+    control("label").properties.set("MY MAP")
+    settleDrawer()
+    control("positionMarker").properties.set(2)
+    settleDrawer()
+    control("flightPath").properties.set(3)
+    settleDrawer()
+    control("showCoordinates").properties.set(1)
+    settleDrawer()
+    control("showSatellites").properties.set(0)
+    settleDrawer()
+    control("satelliteWarning").properties.set(9)
+    settleDrawer()
+    control("satelliteCritical").properties.set(5)
+    settleDrawer()
+    back()
+    for _ = 1, 30 do
+        refresh()
+    end
+    local instance = assert(context.panels[1].instance)
+    equal(instance.settings.label, "MY MAP", "configured map must rebuild its live preview")
+    equal(instance.settings.positionMarker, "arrow", "marker choice must reach the map")
+    equal(instance.settings.flightPath, "full", "path choice must reach the map")
+    equal(instance.settings.showCoordinates, true, "coordinate toggle must reach the map")
+    equal(instance.settings.showSatellites, false, "satellite toggle must reach the map")
+    equal(instance.settings.satelliteWarning, 9, "warning threshold must reach the map")
+    equal(instance.settings.satelliteCritical, 5, "critical threshold must reach the map")
+    equal(instance.automatic, true, "editor-created maps must select areas automatically")
+    equal(context.panels[1].failed, nil, "map preview must work without an installed map or GPS fix")
+    exitWith("Save as...")
+    local drawer = context.editorUi.nativeDrawer
+    local saveButton
+    for _, child in ipairs(drawer.children) do
+        if child.kind == "textEdit" then
+            child.properties.set("EditorMap")
+        elseif child.kind == "button" then
+            saveButton = child
+        end
+    end
+    assert(saveButton).properties.press()
+    refresh()
+    settleSave()
+    context = widget.createLoaded(
+        { x = 0, y = 0, w = 480, h = 272 },
+        { Layout = "EditorMap", Theme = "modern-dark" },
+        path
+    )
+    widget.pump(context, 30)
+    equal(#context.errors, 0, "installed map layout must reload without errors")
+    equal(context.document.panels[1].type, "map", "saved map must reload from the installed layout")
+    equal(context.panels[1].instance.settings.positionMarker, "arrow", "saved marker choice must persist")
+    equal(context.panels[1].instance.settings.flightPath, "full", "saved path choice must persist")
+end
+
 load("edit-sparse")
 os.remove(path .. "AEROGRID/layouts/edit-sparse.yaml")
 widget.lvglMock.setFullScreen(true)

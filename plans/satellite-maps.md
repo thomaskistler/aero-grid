@@ -65,8 +65,12 @@ prototype contract are obsolete. Transparent marker artwork remains PNG.
 Browser implementation references:
 
 - `docs/developer-guide/map-packs.md`: format 2 manifest, shared identity,
-  preparation limits, and SD-card synchronization.
+  preparation limits, automatic area selection, and SD-card synchronization.
+- `docs/developer-guide/map.md`: radio-panel interaction, rendering,
+  resource constraints, and hardware checks.
 - `docs/map-manager.md`: browser workflow.
+- `MAP-HANDOFF.md`: temporary historical handoff, not the canonical
+  product specification.
 
 ## PR ownership and parallel iteration
 
@@ -361,7 +365,7 @@ adapter. This is separate from implementing or testing the pack contract.
 
 ### Supported prototype and interaction
 
-`panels/map-prototype.lua` currently targets TX16S-size 480 x 272 geometry and
+`panels/map.lua` currently targets TX16S-size 480 x 272 geometry and
 the EdgeTX 2.12 LVGL API. No exact minimum patch release or broader radio support
 matrix is established. The panel is YAML-configured and intentionally absent
 from the normal editor add-panel catalog.

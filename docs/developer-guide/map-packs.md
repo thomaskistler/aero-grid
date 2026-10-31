@@ -21,15 +21,19 @@ The connected manager reads and writes these paths directly under the SD-card
 root. Each area has exactly one YAML metadata file; JPEGs remain shared. No
 `selections/` or `sources/` sidecars are read or written.
 
-The radio map panel and its simulator fixtures are delivered separately. This
-browser layer does not install a radio reader or establish hardware compatibility.
-No format 1 area compatibility or migration is implemented. See
+The radio map panel consumes version 2 area manifests and shared tile paths. It
+validates the selection metadata and uses declared level coverage to locate
+tiles. Version 1 manifests are not supported; the browser manager does not
+install or update the radio panel. See
 [testing](testing.md#planner-and-map-file-contract) for format 2 file-generation
 and validation checks.
 
-The browser's `synthetic-v1-jpeg-q90` source generates coordinate-derived
-artificial images at any selected location. They are test patterns, not flight
-terrain.
+The simulator build copies a stored USGS/USDA NAIP aerial-imagery area around
+Companion's known GPS location. Automated panel tests generate a separate
+`synthetic` area referencing `companion-v1-jpeg-v1`. The browser's
+`synthetic-v1-jpeg-q90` source generates different, coordinate-derived artificial
+images at any selected location. Both synthetic sources are test patterns, not flight terrain.
+Simulator fixtures remain excluded from release archives.
 
 ## Area metadata v2
 
@@ -260,6 +264,34 @@ longer server-requested delays fail with a try-later message, never an early
 retry. Missing/unauthorized responses and invalid images fail immediately.
 Cancellation aborts requests and retry waits. CORS support and endpoint access
 are provider/browser-dependent; failure does not trigger a proxy workaround.
+
+## Automatic area selection
+
+The radio-panel consumer accepts version 2 manifests only. It does not
+recalculate planner geometry on the radio; the browser validates the saved
+selection against the planner when reading or writing areas.
+
+GPS readiness uses the existing navigation service: a known source, a valid fix
+and `state: normal`, not stale/unavailable coordinates. This is readiness for
+geographic map lookup, not proof of a satellite-count or 3D-fix threshold.
+Coordinates alone do not expose that quality reliably. A temporary GPS loss
+retains the chosen area and shows the existing GPS-stale/no-fix state.
+
+Without a manual override, the panel incrementally lists `areas/` and reads at
+most one manifest per refresh after GPS is ready. It does not scan tile folders.
+It selects an area covering the position at every declared zoom, preferring
+highest maximum zoom, then smallest highest-detail tile rectangle, then lexical
+area ID to break exact ties. Matching handles the date line. Selection is held
+while live GPS remains covered, even if another overlapping area would rank
+higher; leaving coverage hides the old tiles and triggers selection again.
+
+No match shows `NO MAP AT GPS`; a missing areas directory shows
+`NO INSTALLED MAP`. Unmatched searches retry after 10 seconds, allowing later
+installation without continuously polling the SD card. A scan retains only its
+best candidate, with limits of 64 area manifests and 256 directory entries.
+Invalid/unreadable manifests, directory-access failures and exceeded limits
+surface through the panel error path rather than silently skipping files.
+Changes to a currently selected area's files require reloading the panel.
 
 ## Updates
 

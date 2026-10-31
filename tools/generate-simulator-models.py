@@ -17,7 +17,7 @@ CATEGORIES = (
                    "review-flight-timer", "review-flight-counter", "review-chart")),
     ("AG Power-Link", ("review-rx-battery", "review-cell-sources",
                        "review-tx-battery", "review-link-status", "review-metric")),
-    ("AG Navigation", ("review-navigation",)),
+    ("AG Navigation", ("review-navigation", "review-map")),
     ("AG Controls", ("review-output", "review-trim-panel")),
     ("AG System", ("Diagnostics", "services", "services2", "review-state",
                    "states", "Palette", "Empty")),

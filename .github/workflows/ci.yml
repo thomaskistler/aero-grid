@@ -77,6 +77,9 @@ jobs:
           node tools/test_map_sources.js
           node --test tests/browser/radio-map-library.test.mjs tests/browser/radio-map-manager.test.mjs
 
+      - name: Test synthetic map pack
+        run: build/venv/bin/python -m unittest discover -s tools -p 'test_map_test_pack.py'
+
       - name: Lint Lua sources
         run: make lint
 

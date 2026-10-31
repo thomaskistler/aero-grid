@@ -25,7 +25,7 @@
 --- A numeric refresh result selects the next interval in 10ms ticks.
 --- A second result of true requests consecutive turns until this update finishes.
 ---@field background? fun(instance: any)
----@field event? fun(instance: any, event: any): boolean
+---@field event? fun(instance: any, event: any, touchState: table?, rect: table?): boolean
 ---@field destroy? fun(instance: any)
 
 ---@class AeroGridPanelEntry

@@ -21,3 +21,4 @@ review-flight-counter
 Palette
 review-output
 review-chart
+review-map
