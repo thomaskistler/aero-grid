@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /** Installation-page UI: connection, release selection, confirmation, and progress. */
 import { radioStorage, compareVersions, radioHardware, radioCompatibility } from "./radio-storage.mjs";
-import { actionFor, ContentMismatchError, loadCatalog, loadRelease, preparePackage, replaceWidget, verifyInstalled } from "./radio-installer.mjs";
+import { actionFor, ContentMismatchError, isDeveloperVersion, loadCatalog, loadRelease, preparePackage, replaceWidget, verifyInstalled } from "./radio-installer.mjs";
 
 const panel = document.querySelector("[data-radio-installer]");
 if (panel) {
   const element = (name) => panel.querySelector(`[data-${name}]`);
-  const base = new URL("../installer/", import.meta.url);
+  const siteRoot = document.querySelector('meta[name="aerogrid-site-root"]')?.content;
+  const base = siteRoot ? new URL(`${siteRoot}installer/`, location.href)
+    : new URL("../installer/", import.meta.url);
   const connect = element("connect");
   const install = element("install");
   const confirm = element("confirm");
@@ -19,6 +21,7 @@ if (panel) {
   const confirmClose = element("confirm-close");
   const releaseDialog = element("release-dialog");
   const supported = window.isSecureContext && typeof window.showDirectoryPicker === "function";
+  const developerWarning = "DEVELOPER BUILD: changes may not be fully tested and may be unstable. Use at your own risk.";
   let manifest = null;
   let latestManifest = null;
   let catalog = null;
@@ -28,14 +31,26 @@ if (panel) {
   let checking = false;
   let checkingRelease = false;
   let incomplete = false;
+  let verificationMessage = null;
   let confirmation = null;
   let operationFinished = false;
 
-  function message(text, error = false, success = false) {
+  function shownVersion(version) {
+    return isDeveloperVersion(version) ? version.replace(/\+g([a-f0-9]{40})$/, (_, commit) => `+${commit.slice(0, 8)}`) : version;
+  }
+
+  function message(text, error = false, success = false, warning = false) {
     const target = busy && confirmDialog.open ? operationStatus : status;
     target.textContent = text;
     target.classList.toggle("ag-radio-error", error);
     target.classList.toggle("ag-radio-success", success);
+    target.classList.toggle("ag-radio-warning", warning);
+  }
+
+  function clearVerification() {
+    if (verificationMessage && status.textContent === verificationMessage) message("");
+    verificationMessage = null;
+    incomplete = false;
   }
 
   function render() {
@@ -56,10 +71,13 @@ if (panel) {
     element("compatibility").textContent = compatibility?.message ?? "Connect your radio to check compatibility.";
     element("compatibility").classList.toggle("ag-radio-compatibility-warning", !!compatibility && !compatibility.supported);
     element("widget").textContent = !details ? "Unknown" : !details.widget.present
-      ? "Not installed" : details.widget.version ? `v${details.widget.version}` : "Unknown version";
+      ? "Not installed" : details.widget.version ? `v${shownVersion(details.widget.version)}` : "Unknown version";
     const displayedVersion = selectedVersion ?? latestManifest?.version;
     element("latest").textContent = displayedVersion
-      ? `v${displayedVersion}${displayedVersion === catalog?.latest ? " - latest" : ""}` : "Unavailable";
+      ? `v${shownVersion(displayedVersion)}${isDeveloperVersion(displayedVersion) ? " - developer build"
+        : displayedVersion === catalog?.latest ? " - latest" : ""}` : "Unavailable";
+    element("developer-warning").hidden = !isDeveloperVersion(displayedVersion);
+    element("developer-warning").textContent = isDeveloperVersion(displayedVersion) ? developerWarning : "";
     const releaseDisabled = busy || checking || checkingRelease || !!confirmation || !catalog;
     element("release-picker").disabled = releaseDisabled;
     element("release-open").disabled = releaseDisabled;
@@ -67,12 +85,13 @@ if (panel) {
       && compareVersions(details.widget.version, manifest.version) > 0;
     element("downgrade").hidden = !downgrade;
     element("downgrade").textContent = downgrade
-      ? `Downgrade: AeroGrid v${details.widget.version} to v${manifest.version}. Older releases may not support your current layouts or settings. User data is not converted.`
+      ? `Downgrade: AeroGrid v${shownVersion(details.widget.version)} to v${shownVersion(manifest.version)}. Older releases may not support your current layouts or settings. User data is not converted.`
       : "";
     const action = details && manifest
       ? actionFor(incomplete ? { present: true, version: null } : details.widget, manifest.version) : null;
     install.textContent = busy ? "Installation in progress..." : action?.label
-      ?? (selectedVersion ? `Install AeroGrid v${selectedVersion}` : "Install latest AeroGrid");
+      ?? (isDeveloperVersion(selectedVersion) ? "Install AeroGrid developer build"
+        : selectedVersion ? `Install AeroGrid v${selectedVersion}` : "Install latest AeroGrid");
     install.disabled = !supported || busy || checking || checkingRelease || !!confirmation || !connected || !action?.enabled;
     confirm.hidden = !confirmation;
     confirmClose.hidden = !operationFinished;
@@ -89,15 +108,26 @@ if (panel) {
 
   async function inspect() {
     details = await radioStorage.inspect();
+    clearVerification();
     if (details.widget.present && details.widget.version === manifest?.version) {
       try {
         await verifyInstalled(radioStorage.root, manifest, () => {}, true);
         incomplete = false;
       } catch (error) {
         if (!(error instanceof ContentMismatchError)) throw error;
-        console.error("[AeroGrid installer] Installed file verification failed.", error, error.differences);
+        console.warn("[AeroGrid installer] Local AeroGrid changes detected.", error, error.differences);
         incomplete = true;
-        message(`${error.message} A full replacement is available.`, true);
+        const changes = error.differences?.path
+          ? [["Modified file", [error.differences.path]]]
+          : [["Added files", error.differences?.unexpected ?? []], ["Missing files", error.differences?.missing ?? []]];
+        const files = changes.filter(([, paths]) => paths.length)
+          .map(([label, paths]) => `${label} (${paths.length}): ${paths.map((path) => JSON.stringify(path)).join(", ")}.`)
+          .join(" ");
+        verificationMessage = "It looks like you have modified, added, or removed AeroGrid files on your radio. "
+          + `Files are relative to WIDGETS/AeroGrid. ${files || error.message} `
+          + "Updating will discard these changes and remove any added files in WIDGETS/AeroGrid. "
+          + "Back up any files you want to keep before updating.";
+        message(verificationMessage, false, false, true);
       }
     }
   }
@@ -105,6 +135,7 @@ if (panel) {
   function renderReleases() {
     element("releases").replaceChildren();
     for (const entry of catalog.releases) {
+      if (isDeveloperVersion(entry.version) && !element("developer-releases").checked) continue;
       const row = document.createElement("div");
       row.className = "ag-release-row";
       const label = document.createElement("label");
@@ -116,7 +147,8 @@ if (panel) {
       input.disabled = !entry.available;
       const text = document.createElement("span");
       const title = document.createElement("strong");
-      title.textContent = `v${entry.version}${entry.version === catalog.latest ? " - latest" : ""}`;
+      title.textContent = `v${shownVersion(entry.version)}${isDeveloperVersion(entry.version) ? " - developer build"
+        : entry.version === catalog.latest ? " - latest" : ""}`;
       const description = document.createElement("small");
       description.textContent = entry.available ? entry.name : entry.reason;
       text.append(title, description);
@@ -131,6 +163,7 @@ if (panel) {
   }
 
   async function refreshRelease() {
+    clearVerification();
     checkingRelease = true;
     manifest = null;
     releaseStatus.textContent = "Checking the latest stable release...";
@@ -162,23 +195,18 @@ if (panel) {
 
   element("release-open").addEventListener("click", () => {
     releaseDialog.showModal();
-    const selected = releaseDialog.querySelector("input:checked");
+    const selected = releaseDialog.querySelector('input[type="radio"]:checked');
     selected?.focus();
   });
   element("release-close").addEventListener("click", () => releaseDialog.close());
   releaseDialog.addEventListener("close", () => element("release-open").focus());
 
-  element("releases").addEventListener("change", async (event) => {
-    const input = event.target;
-    if (!(input instanceof HTMLInputElement) || input.type !== "radio"
-        || busy || checking || checkingRelease || confirmation
-        || !catalog?.releases.some((entry) => entry.version === input.value && entry.available)) return;
-    selectedVersion = input.value;
-    releaseDialog.close();
+  async function selectRelease(version) {
+    selectedVersion = version;
     manifest = null;
-    incomplete = false;
+    clearVerification();
     checkingRelease = true;
-    releaseStatus.textContent = `Checking AeroGrid v${selectedVersion}...`;
+    releaseStatus.textContent = `Checking AeroGrid v${shownVersion(selectedVersion)}...`;
     render();
     try {
       manifest = await loadRelease(base, selectedVersion);
@@ -191,6 +219,25 @@ if (panel) {
       checkingRelease = false;
       render();
     }
+  }
+
+  element("developer-releases").addEventListener("change", async () => {
+    if (!catalog || busy || checking || checkingRelease || confirmation) return;
+    if (!element("developer-releases").checked && isDeveloperVersion(selectedVersion)) {
+      await selectRelease(catalog.latest);
+    }
+    renderReleases();
+  });
+
+  element("releases").addEventListener("change", async (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || input.type !== "radio"
+        || busy || checking || checkingRelease || confirmation
+        || (isDeveloperVersion(input.value) && !element("developer-releases").checked)
+        || !catalog?.releases.some((entry) => entry.version === input.value && entry.available)) return;
+    releaseDialog.close();
+    await selectRelease(input.value);
+    renderReleases();
   });
 
   connect.addEventListener("click", async () => {
@@ -229,22 +276,24 @@ if (panel) {
     const version = manifest.version;
     const downgrade = details.widget.version && compareVersions(details.widget.version, version) > 0;
     const compatibility = radioCompatibility(details.radio);
-    const warning = `Install AeroGrid v${version} on ${details.radio.name}?\n\n`
+    const warning = `Install AeroGrid v${shownVersion(version)} on ${details.radio.name}?\n\n`
+      + (isDeveloperVersion(version) ? `${developerWarning}\n\n` : "")
       + (!compatibility.supported ? `${compatibility.message}\n\n` : "")
-      + (downgrade ? `DOWNGRADE from v${details.widget.version} to v${version}. Older releases may not support your current layouts or settings. User data will not be converted.\n\n` : "")
+      + (downgrade ? `DOWNGRADE from v${shownVersion(details.widget.version)} to v${shownVersion(version)}. Older releases may not support your current layouts or settings. User data will not be converted.\n\n` : "")
       + (details.widget.present
-        ? "This will replace the AeroGrid installation on your radio. No backup or rollback is available.\n\n"
+        ? "This will replace the AeroGrid installation on your radio. Any modified or added files in WIDGETS/AeroGrid will be discarded. No backup or rollback is available.\n\n"
         : "This will install AeroGrid on your radio.\n\n")
       + (!details.widget.version && details.widget.present ? "The existing version is unknown; version comparison is unavailable.\n\n" : "")
       + "AeroGrid user data, maps, other widgets, model/radio settings, and firmware will not be changed.";
     confirmation = { version, details: structuredClone(details), downgrade: !!downgrade };
     element("confirm-title").textContent = downgrade ? "Confirm downgrade" : "Confirm installation";
-    confirmStart.textContent = downgrade ? `Confirm downgrade to v${version}` : `Confirm installation of v${version}`;
+    confirmStart.textContent = isDeveloperVersion(version) ? "Confirm developer build"
+      : downgrade ? `Confirm downgrade to v${version}` : `Confirm installation of v${version}`;
     element("confirm-description").textContent = warning;
     operationFinished = false;
     progress.hidden = true;
     operationStatus.textContent = "";
-    operationStatus.classList.remove("ag-radio-error", "ag-radio-success");
+    operationStatus.classList.remove("ag-radio-error", "ag-radio-success", "ag-radio-warning");
     render();
     confirmDialog.showModal();
     confirmStart.focus();
@@ -313,7 +362,7 @@ if (panel) {
         await inspect();
       });
       progress.value = 1;
-      message(`Done. AeroGrid v${version} installed successfully. Disconnect Radio, safely eject the drive through your operating system, then unplug the USB data cable.`, false, true);
+      message(`Done. AeroGrid v${shownVersion(version)} installed successfully. Disconnect Radio, safely eject the drive through your operating system, then unplug the USB data cable.`, false, true);
     } catch (error) {
       if (replacing) incomplete = true;
       console.error("[AeroGrid installer] Installation failed.", error, error.cause?.differences);
@@ -343,6 +392,7 @@ if (panel) {
       const current = await radioStorage.inspect();
       if (busy || radioStorage.root !== root || details !== previous) return;
       if (JSON.stringify(current) !== JSON.stringify(details)) {
+        if (JSON.stringify(current.widget) !== JSON.stringify(details?.widget)) clearVerification();
         details = current;
         if (confirmation) {
           confirmation = null;

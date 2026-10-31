@@ -19,6 +19,87 @@ PAGES = ("developer-guide/build/", "panels/metric/", "reference-guide/yaml/",
 
 
 class DocumentationLayoutTests(unittest.TestCase):
+    def test_installer_developer_release_checkbox_is_opt_in_and_keyboard_accessible(self):
+        release_root = "https://github.com/thomaskistler/aero-grid/releases"
+        developer_version = "0.4.0-dev.12+aaaaaaaa"
+        stable_version = "0.4.0"
+        versions = (stable_version, developer_version)
+        catalog = {"schema": 1, "latest": stable_version, "releases": [
+            {"version": version, "name": "Stable" if version == stable_version else "Developer build",
+             "release": f"{release_root}/tag/{'v' + version if version == stable_version else 'dev'}",
+             "available": True, "reason": None}
+            for version in versions
+        ]}
+
+        def release_response(route):
+            version = developer_version if route.request.url.endswith("/dev") else stable_version
+            tag = "dev" if version == developer_version else "v" + version
+            archive = "AeroGrid-dev.zip" if tag == "dev" else f"AeroGrid-{version}.zip"
+            route.fulfill(json={
+                "tag_name": tag, "draft": False, "prerelease": tag == "dev",
+                "name": f"AeroGrid {version} (developer build)" if tag == "dev" else "Stable",
+                "assets": [{"name": name, "browser_download_url": f"{release_root}/download/{tag}/{name}"}
+                           for name in (archive, archive + ".sha256")],
+            })
+
+        def manifest_response(route):
+            version = developer_version if "/dev/" in route.request.url else stable_version
+            route.fulfill(json={
+                "schema": 1, "version": version,
+                "release": f"{release_root}/tag/{'dev' if version == developer_version else 'v' + version}",
+                "archiveSha256": "a" * 64,
+                "files": [{"path": path, "size": 1, "sha256": "a" * 64}
+                          for path in ("main.lua", "lib/package.lua")],
+            })
+
+        for width in (375, 1280):
+            with self.subTest(width=width):
+                page = self.new_page(viewport={"width": width, "height": 1000})
+                try:
+                    errors = []
+                    page.on("pageerror", lambda error: errors.append(str(error)))
+                    page.route("**/installer/releases.json", lambda route: route.fulfill(json=catalog))
+                    page.route("**/installer/releases/*/manifest.json", manifest_response)
+                    page.route("https://api.github.com/repos/thomaskistler/aero-grid/releases/tags/*", release_response)
+                    page.route("https://api.github.com/repos/thomaskistler/aero-grid/releases?*", lambda route:
+                               route.fulfill(json=[{
+                                   "tag_name": "v0.4.0", "name": "Stable", "draft": False, "prerelease": False,
+                                   "assets": [{"name": name, "browser_download_url": f"{release_root}/download/v0.4.0/{name}"}
+                                              for name in ("AeroGrid-0.4.0.zip", "AeroGrid-0.4.0.zip.sha256")],
+                               }, {
+                                   "tag_name": "dev", "name": f"AeroGrid {developer_version} (developer build)",
+                                   "draft": False, "prerelease": True,
+                                   "assets": [{"name": name, "browser_download_url": f"{release_root}/download/dev/{name}"}
+                                              for name in ("AeroGrid-dev.zip", "AeroGrid-dev.zip.sha256")],
+                               }]))
+                    page.goto(f"{self.url}/user-guide/installation/")
+                    page.wait_for_function("document.querySelector('[data-release-open]').disabled === false")
+                    page.locator("[data-release-open]").click()
+                    checkbox = page.get_by_role("checkbox", name="Show developer releases")
+                    self.assertFalse(checkbox.is_checked())
+                    self.assertTrue(page.locator("[data-developer-warning]").is_hidden())
+                    self.assertEqual(page.locator("[data-releases] input").count(), 1)
+                    checkbox.focus()
+                    page.keyboard.press("Space")
+                    self.assertTrue(checkbox.is_checked())
+                    self.assertEqual(page.locator("[data-releases] input").count(), 2)
+                    page.locator(f'input[value="{developer_version}"]').check()
+                    page.wait_for_function("document.querySelector('[data-latest]').textContent.includes('developer build')")
+                    self.assertTrue(page.locator("[data-developer-warning]").is_visible())
+                    self.assertIn("Use at your own risk", page.locator("[data-developer-warning]").inner_text())
+                    page.wait_for_function("document.querySelector('[data-release-open]').disabled === false")
+                    self.assertLessEqual(page.evaluate("document.documentElement.scrollWidth"), width)
+                    page.locator("[data-release-open]").click()
+                    checkbox.uncheck()
+                    page.wait_for_function("document.querySelector('[data-latest]').textContent === 'v0.4.0 - latest'")
+                    self.assertTrue(page.locator("[data-developer-warning]").is_hidden())
+                    page.wait_for_function("document.querySelectorAll('[data-releases] input').length === 1")
+                    self.assertEqual(page.locator("[data-releases] input").count(), 1)
+                    self.assertLessEqual(page.evaluate("document.documentElement.scrollWidth"), width)
+                    self.assertEqual(errors, [])
+                finally:
+                    page.close()
+
     @classmethod
     def setUpClass(cls):
         cls.site = tempfile.TemporaryDirectory()
@@ -43,8 +124,13 @@ class DocumentationLayoutTests(unittest.TestCase):
         cls.browser = cls.playwright.chromium.launch()
         cls.addClassCleanup(cls.browser.close)
 
+    def new_page(self, **options):
+        page = self.browser.new_page(**options)
+        page.route("https://www.googletagmanager.com/**", lambda route: route.abort())
+        return page
+
     def test_every_page_image_loads(self):
-        page = self.browser.new_page()
+        page = self.new_page()
         try:
             for source in sorted((ROOT / "docs").rglob("*.md")):
                 relative = source.relative_to(ROOT / "docs")
@@ -77,7 +163,7 @@ class DocumentationLayoutTests(unittest.TestCase):
             ("developer-guide/build/", "Developer Guide"),
         ):
             with self.subTest(path=path):
-                page = self.browser.new_page()
+                page = self.new_page()
                 try:
                     page.goto(f"{self.url}/{path}")
                     rail = page.get_by_role("navigation", name="Main navigation", exact=True)
@@ -100,7 +186,7 @@ class DocumentationLayoutTests(unittest.TestCase):
         for width in (320, 375, 768, 1024, 1440):
             for path in PAGES:
                 with self.subTest(width=width, path=path):
-                    page = self.browser.new_page(viewport={"width": width, "height": 900})
+                    page = self.new_page(viewport={"width": width, "height": 900})
                     try:
                         page.goto(f"{self.url}/{path}")
                         page.locator(".ag-table-scroll").first.wait_for()
@@ -130,7 +216,7 @@ class DocumentationLayoutTests(unittest.TestCase):
             ("reference-guide/yaml/", 1024),
         ):
             with self.subTest(width=width, path=path):
-                page = self.browser.new_page(viewport={"width": width, "height": 900})
+                page = self.new_page(viewport={"width": width, "height": 900})
                 try:
                     page.goto(f"{self.url}/{path}")
                     page.locator(".ag-table-scroll").first.wait_for()
@@ -155,7 +241,7 @@ class DocumentationLayoutTests(unittest.TestCase):
     def test_homepage_radio_examples_fit_desktop_and_wrap_on_mobile(self):
         for width in (320, 375, 768, 1024, 1280, 1440, 1920):
             with self.subTest(width=width):
-                page = self.browser.new_page(viewport={"width": width, "height": 900})
+                page = self.new_page(viewport={"width": width, "height": 900})
                 try:
                     page.goto(f"{self.url}/")
                     page.evaluate("document.fonts.ready")

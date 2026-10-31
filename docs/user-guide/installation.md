@@ -36,12 +36,14 @@ Install the latest stable AeroGrid on your radio, or choose a previous release. 
     </div>
   <fieldset class="ag-release-picker" data-release-picker disabled>
     <legend class="visually-hidden">Available AeroGrid releases</legend>
-    <p id="ag-release-description" class="ag-radio-muted">Latest stable is selected by default. Beta and RC releases are not included.</p>
+    <p id="ag-release-description" class="ag-radio-muted">Latest stable is selected by default. Developer builds may not be fully tested and may be unstable. Use at your own risk. Beta and RC releases are not included.</p>
+    <label><input type="checkbox" data-developer-releases> Show developer releases</label>
     <div class="ag-release-list" data-releases></div>
   </fieldset>
   </dialog>
   <div class="ag-install-action">
   <p class="ag-radio-compatibility" data-compatibility role="status" aria-live="polite">Connect your radio to check compatibility.</p>
+  <p class="ag-radio-downgrade" data-developer-warning role="status" aria-live="polite" hidden></p>
   <p class="ag-radio-downgrade" data-downgrade hidden></p>
   <div class="ag-radio-actions">
     <button type="button" class="ag-radio-button" data-install aria-haspopup="dialog" aria-controls="ag-install-confirm-dialog" disabled>Install latest AeroGrid</button>
@@ -80,6 +82,9 @@ into the radio's `/WIDGETS/` directory, then select **AeroGrid** in an App mode
 screen.
 
 ### Upgrade
+
+If you changed or added files in `/WIDGETS/AeroGrid/`, back them up first:
+the update discards those changes.
 
 1. Remove the old `/WIDGETS/AeroGrid/` folder from the SD card rather than
    merging new files into the old installation. This also removes stale

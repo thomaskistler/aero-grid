@@ -15,8 +15,11 @@ theme:
 
 extra_css:
   - stylesheets/aerogrid.css
+  - stylesheets/versions.css
 
 extra_javascript:
+  - path: javascripts/versions.mjs
+    type: module
   - path: javascripts/radio-connection-help.mjs
     type: module
   - path: javascripts/radio-panel.mjs
@@ -61,6 +64,16 @@ nav:
 
 plugins:
   - search
+  - mike:
+      alias_type: redirect
+      version_selector: false
+
+hooks:
+  - tools/docs_version_hook.py
+
+extra:
+  docs_version: main
+  docs_title: main (unreleased)
 
 validation:
   links:

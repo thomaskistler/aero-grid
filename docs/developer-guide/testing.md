@@ -139,13 +139,14 @@ build/capture-venv/bin/python -m unittest discover -s tools -p 'test_capture_*.p
 Neither command is included in `make test`. CI runs the release-packaging
 tests; run capture-recipe tests locally when changing recipes or adapters.
 
-Documentation layout tests check table containment and keyboard scrolling in Chromium:
+Documentation tests check versioned publishing, version switching, table
+containment, and keyboard navigation in Chromium:
 
 ```sh
 make docs
 build/docs-venv/bin/python -m pip install -r requirements-docs-test.txt
 build/docs-venv/bin/python -m playwright install chromium
-build/docs-venv/bin/python -m unittest discover -s tools -p 'test_docs_layout.py'
+build/docs-venv/bin/python -m unittest discover -s tools -p 'test_docs_*.py'
 ```
 
 ## Lint and formatting

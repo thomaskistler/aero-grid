@@ -6,12 +6,78 @@ import {
   parseRadioMetadata, parseVersion, radioHardware, radioCompatibility, RadioStorage,
 } from "../../docs/javascripts/radio-storage.mjs";
 import {
-  actionFor, ContentMismatchError, loadCatalog, loadRelease, preparePackage,
+  actionFor, ContentMismatchError, isDeveloperVersion, loadCatalog, loadRelease, preparePackage,
   replaceWidget, sha256, validateManifest, verifyInstalled,
 } from "../../docs/javascripts/radio-installer.mjs";
 
 const encoder = new TextEncoder();
 const base = new URL("https://example.test/aero-grid/installer/");
+
+test("developer versions accept eight hex digits and existing legacy releases", () => {
+  for (const suffix of ["0fe9d3d9", "g" + "a".repeat(40)]) {
+    assert.equal(isDeveloperVersion(`1.2.3-dev.12+${suffix}`), true);
+  }
+  for (const suffix of ["0fe9d3d", "0fe9d3d98", "0FE9D3D9", "g0fe9d3d9", "a".repeat(40)]) {
+    assert.equal(isDeveloperVersion(`1.2.3-dev.12+${suffix}`), false);
+  }
+});
+
+test("developer releases stay separate from latest stable and verify their pinned build before installation", async () => {
+  const fixtureRelease = await releaseFixture();
+  const version = "0.4.0-dev.12+aaaaaaaa";
+  const manifest = structuredClone(fixtureRelease.manifest);
+  manifest.version = version;
+  manifest.release = "https://github.com/thomaskistler/aero-grid/releases/tag/dev";
+  const content = {
+    ...fixtureRelease.content,
+    "lib/package.lua": encoder.encode(`return {\n version = "${version}",\n}`),
+  };
+  manifest.files = await Promise.all(Object.entries(content).map(async ([path, bytes]) => ({
+    path, size: bytes.length, sha256: await sha256(bytes),
+  })));
+  const developer = {
+    tag_name: "dev", name: `AeroGrid ${version} (developer build)`, draft: false, prerelease: true,
+    assets: ["AeroGrid-dev.zip", "AeroGrid-dev.zip.sha256"].map((name) => ({
+      name, browser_download_url: `https://github.com/thomaskistler/aero-grid/releases/download/dev/${name}`,
+    })),
+  };
+  const entry = (version, release, name) => ({ version, release, name, available: true, reason: null });
+  const catalog = { schema: 1, releases: [
+    entry("0.4.0", fixtureRelease.manifest.release, "Stable"),
+    entry(version, manifest.release, developer.name),
+  ] };
+  const fetcher = async (url) => {
+    const address = String(url);
+    if (address.endsWith("/releases.json")) return Response.json(catalog);
+    if (address.endsWith("/tags/dev")) return Response.json(developer);
+    if (address.includes("?per_page")) return Response.json([developer, fixtureRelease.release]);
+    if (address.endsWith("/releases/dev/manifest.json")) return Response.json(manifest);
+    const path = address.split("/releases/dev/")[1];
+    if (path in content) return new Response(content[path]);
+    return fixtureRelease.fetcher(url);
+  };
+  assert.equal(isDeveloperVersion(version), true);
+  assert.equal(isDeveloperVersion("0.4.0-beta.1"), false);
+  const loaded = await loadCatalog(base, fetcher);
+  assert.equal(loaded.latest, "0.4.0");
+  assert.deepEqual(loaded.releases.map((item) => item.version), ["0.4.0", version]);
+  assert.equal(loaded.releases[1].available, true);
+  assert.deepEqual(await loadRelease(base, version, fetcher), manifest);
+  const root = await fixture("absent");
+  await replaceWidget(root, await preparePackage(manifest, base, () => {}, fetcher));
+  assert.equal((await inspectWidget(root)).version, version);
+  await verifyInstalled(root, manifest);
+  developer.name = `AeroGrid ${version.replace("dev.12", "dev.13")} (developer build)`;
+  await assert.rejects(loadRelease(base, version, fetcher), /developer build changed/);
+  const updated = await loadCatalog(base, fetcher);
+  assert.equal(updated.releases[1].available, false);
+  developer.name = `AeroGrid ${version} (developer build)`;
+  developer.prerelease = false;
+  await assert.rejects(loadRelease(base, version, fetcher), /developer build changed/);
+  developer.prerelease = true;
+  developer.draft = true;
+  assert.equal((await loadCatalog(base, fetcher)).releases.length, 1);
+});
 
 test("compatibility requires known color hardware and stable EdgeTX 2.11.0 or later", () => {
   for (const version of ["2.11.0", "2.11.9", "2.12.4", "3.0.0"]) {
