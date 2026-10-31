@@ -793,6 +793,11 @@ function rxBattery.create(parent, rect, settings, services)
     return context
 end
 
+function rxBattery.resetSession(context, now)
+    context.estimatedCells, context.reestimateOnFresh = nil, true
+    context.estimateAfter = now
+end
+
 --- Read both subscriptions into the context, allocating nothing.
 --- Kept separate from `apply` so a refresh can decide whether anything is
 --- worth repainting without summarizing the cells table twice.
@@ -809,9 +814,14 @@ function rxBattery.gather(context)
     if type(raw) == "number" then
         local cells = settings.cells or 0
         if cells == 0 then
-            if not stale and (context.reestimateOnFresh or context.estimatedCells == nil) then
+            local afterReset = context.estimateAfter == nil
+                or type(feed) == "table"
+                    and feed.fresh
+                    and type(feed.updatedAt) == "number"
+                    and feed.updatedAt >= context.estimateAfter
+            if not stale and afterReset and (context.reestimateOnFresh or context.estimatedCells == nil) then
                 context.estimatedCells = rxBattery.estimateCount(raw, settings.cellFull)
-                context.reestimateOnFresh = nil
+                context.reestimateOnFresh, context.estimateAfter = nil, nil
             end
             cells = context.estimatedCells
         end

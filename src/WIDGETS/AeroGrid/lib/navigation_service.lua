@@ -413,6 +413,26 @@ function navigationService:update(now)
     self.cursor = self.support.roundRobin(self.entries, self.cursor, POLL_CAP, pollEntry, self, now)
 end
 
+function navigationService:resetSession(_, index)
+    index = index or 1
+    if index == 1 then
+        for _, capture in pairs(self.homes) do
+            capture.latitude, capture.longitude, capture.attempted = nil, nil, nil
+        end
+    end
+    local entry = self.entries[index]
+    if not entry then
+        return
+    end
+    if entry.capture then
+        entry.wasArmed, entry.switchUnavailable = nil, nil
+        local state = entry.state
+        state.home, state.homeStatus = false, "waiting"
+        state.pilotLatitude, state.pilotLongitude, state.distance, state.bearing = nil, nil, nil, nil
+    end
+    return index + 1
+end
+
 --- Format a distance with a sensible unit, switching to kilometres when the
 --- metre reading stops being readable at a glance.
 ---@param metres any

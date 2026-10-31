@@ -171,6 +171,46 @@ function history:session(armSwitch)
     return sessionFor(self, armSwitch).view
 end
 
+--- Reset one session or recording per step, preserving subscriptions.
+function history:resetSession(now, index)
+    index = index or 1
+    local session = self.sessions[index]
+    if session then
+        local state = session.state
+        session.lastTime, session.attachedAt, session.armed = now, now, nil
+        session.spans, session.spanLast, session.span = {}, 0, nil
+        session.flights, session.openFlight = {}, nil
+        session.arms, session.armValues, session.resumes = {}, {}, {}
+        local flight = self.runtime.byId.flight
+        session.epoch = flight and flight:state().epoch
+        state.available, state.recording, state.elapsed, state.segment = false, false, 0, 0
+        state.stoppedAt = nil
+        state.flightFirst, state.flightLast, state.flightLost, state.flightActive = 1, 0, false, false
+        state.armFirst, state.armLast, state.resumeFirst, state.resumeLast = 1, 0, 1, 0
+        state.revision = state.revision + 1
+        state.flightRevision = state.flightRevision + 1
+        state.armRevision, state.resumeRevision = state.armRevision + 1, state.resumeRevision + 1
+    else
+        local entry = self.entries[index - #self.sessions]
+        if not entry then
+            self.flightSequence, self.flightEpoch = nil, nil
+            return
+        end
+        local state = entry.state
+        entry.chunks, entry.resumeBits, entry.blocks = {}, {}, { {}, {}, {}, {} }
+        entry.lows, entry.highs, entry.bounds = {}, {}, {}
+        entry.last, entry.anchorAt, entry.lastAt = 0, 0, 0
+        entry.anchor, entry.endpoint, entry.low, entry.high = nil, nil, nil, nil
+        entry.segment, entry.filtered, entry.sampledAt, entry.gap = nil, nil, nil, true
+        state.available, state.stale, state.full = false, false, false
+        state.value, state.min, state.max, state.epsilon = nil, nil, nil, nil
+        state.first, state.last, state.count = 1, 0, 0
+        state.window = entry.mode == "growing" and 6000 or state.window
+        state.revision, state.plotRevision = state.revision + 1, state.plotRevision + 1
+    end
+    return index + 1
+end
+
 local function advance(session, now, flight)
     if session.lastTime == now and (not flight or not flight.epoch or session.epoch == flight.epoch) then
         return

@@ -260,7 +260,7 @@ function controlService:readOutput(entry)
     local mode = env.getFlightMode and env.getFlightMode() or 0
     if mode ~= entry.flightMode then
         entry.flightMode = mode
-        state.trim, entry.trimName, entry.scan, entry.sourceName = nil, nil, nil, nil
+        state.trim, entry.trimName, entry.scan = nil, nil, nil
     end
     local details = env.getOutput and env.getOutput(state.index)
     self:scanOutputMetadata(entry)

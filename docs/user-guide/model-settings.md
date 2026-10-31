@@ -43,13 +43,13 @@ It runs across the model's dashboards even without a Flight counter panel.
 | --- | --- | --- |
 | **Motor channel** | CH3 | Channel used to measure motor output. |
 | **Reverse motor** | off | Enable when the motor channel runs from high at idle to low at full power. |
-| **Motor threshold (%)** | 25 | Motor output must be strictly above this percentage to qualify a flight. Valid values are 0 up to, but not including, 100. |
+| **Motor threshold (%)** | 25 | Motor output must be strictly above this percentage to qualify a flight. Set from 0 to 99 in whole-percent steps. |
 | **Start detection window (s)** | 30 | Continuous armed state, sufficient motor output, and live telemetry required to confirm flight start. |
 | **End detection window (s)** | 10 | Continuous disarming required to confirm flight end. Rearming within this window keeps the flight open. |
 | **Smart detection** | off | Also allows sustained altitude or GPS groundspeed evidence to confirm takeoff earlier. See [Flight counter](../panels/flight-counter.md#behavior). |
 
 Flight detection observes live telemetry; it does not arm the aircraft.
-Both detection windows accept values greater than 0 and up to 3600 seconds.
+Both detection windows can be set from 1 to 3600 seconds in whole-second steps.
 Flight timestamps use the beginning of each window, not the later confirmation.
 
 ### Flight status output
@@ -100,4 +100,5 @@ recovery does not trigger a reset. Choose **None** to disable it.
 Reset during a flight cancels detection without creating a completion.
 Disarm before another flight can be counted. Flight totals, radio timers,
 radio telemetry minima/maxima, EdgeTX home, saved settings/layouts, and
-unsaved editor changes are preserved. Other panels continue showing live data.
+unsaved editor changes are preserved. The dashboard stays on screen; only
+session-dependent content is redrawn.

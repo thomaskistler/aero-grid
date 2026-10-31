@@ -185,8 +185,13 @@ do
     equal(owner.session.referencePending, nil)
     equal(#owner.events, 0, "reset does not manufacture a completed flight")
     equal(radio.writes, 1, "reset must not write the durable total")
-    assert(first.sessionResetPending and second.sessionResetPending, "all matching dashboards are invalidated")
-    assert(next(first.navigationHomes) == nil and next(second.navigationHomes) == nil)
+    assert(first.sessionResetPending and second.sessionResetPending, "all matching dashboards queue an in-place reset")
+    equal(first.reloadState, nil, "session reset must not request a page rebuild")
+    equal(second.reloadState, nil)
+    assert(
+        first.navigationHomes.saved and second.navigationHomes.saved,
+        "home clearing is staged by each host without replacing its shared table"
+    )
     assert(owner.output and not owner.output.desired, "a full output queue must retain the release request")
     radio.full = false
     owner.members[first].pending, owner.members[second].pending = false, false

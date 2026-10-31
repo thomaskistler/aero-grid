@@ -291,8 +291,9 @@ silently promoted; conflicting old selections require an explicit model choice.
 The optional top-level `sessionReset` uses the same switch syntax; missing or
 `""` disables it. A shared control poller detects false-to-true transitions
 independently of flight detection. Activation advances the flight epoch,
-cancels detection, releases its owned output, and stages every dashboard's
-reload with captured homes cleared and editor drafts retained. Counting waits
+cancels detection, releases its owned output, and resets each dashboard's
+session data in bounded service/panel callbacks. Subscriptions, screen objects,
+and editor drafts stay intact; charts reuse their plot buffers. Counting waits
 for a fresh disarm observation. Model changes also reset the flight epoch;
 ordinary dashboard rebuilds do not.
 
@@ -311,6 +312,7 @@ Use `panels/flight-mode.lua` as a small working example and
 | `refresh(context)` | Optional callback to update existing objects from snapshots. May return a whole-number interval of 1–6000 ticks; nil preserves the current interval. A second result of `true` reserves subsequent turns among panels of the same type until the update completes; other panel types and services continue running. |
 | `update(context, rect, settings, detailsOnly, placement)` | Optional geometry/configuration update. Host reflows and editor resizes pass the current grid placement as the fifth argument, leaving the internal `detailsOnly` argument unset. |
 | `background(context)` | Optional work when the dashboard is not visible. |
+| `resetSession(context, now)` | Optional session-data reset without rebuilding the panel. A second result of `true` requests another bounded reset turn. |
 | `event(context, event)` | Optional event handling; return true when consumed. |
 | `destroy(context)` | Optional cleanup of panel-owned references. |
 | `validateSettings(settings, span, config)` | Optional cross-field and span-dependent validation. |

@@ -422,9 +422,7 @@ function broker:resetSession(now)
     self.state.revision = (self.state.revision or 0) + 1
     for host, member in pairs(self.members) do
         if member.modelFilename == self.filename and host.dashboardLifecycle then
-            host.navigationHomes = {}
-            host.sessionResetPending, host.reloadState = true, "clear"
-            member.pending = true
+            host.sessionResetPending, host.sessionResetJob = true, nil
         end
     end
     if self.factory then

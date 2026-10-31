@@ -26,6 +26,7 @@ model.getMix = function(index, line)
 end
 
 local resolvingNames = true
+local initialCaptions = true
 local outputReader = model.getOutput
 model.getOutput = function(index)
     return resolvingNames and { name = "" } or outputReader(index)
@@ -49,7 +50,7 @@ local function pump()
         measured(function()
             definition.refresh(context)
         end)
-        if resolvingNames then
+        if initialCaptions then
             local instance = fixture.instanceOf(context, "outputs")
             if instance then
                 local labeled = 0
@@ -71,6 +72,7 @@ local function pump()
     fixture.assertNoOverlap(context)
 end
 pump()
+initialCaptions = false
 resolvingNames = false
 pump()
 local panel = assert(fixture.instanceOf(context, "outputs"))
@@ -126,6 +128,44 @@ equal(panel.rows[1].captionText, "CH1: ail", "unnamed outputs use their mix sour
 names[1] = "AIL"
 pump()
 local controlEnv = context.serviceRuntime.byId.control.env
+local originalMode = controlEnv.getFlightMode
+local mode = 0
+controlEnv.getFlightMode = function()
+    return mode
+end
+resolvingNames = true
+pump()
+local stable = {}
+for index, current in ipairs(panel.rows) do
+    stable[index] = {
+        caption = current.caption.writes,
+        root = current.root.writes,
+        track = current.track.writes,
+        value = current.value.writes,
+    }
+end
+for _, nextMode in ipairs({ 1, 0 }) do
+    mode = nextMode
+    values[3] = mode == 1 and 1024 or 819
+    pump()
+    for index, current in ipairs(panel.rows) do
+        equal(current.caption.writes, stable[index].caption, "unchanged names must not redraw on mode changes")
+        equal(current.root.writes, stable[index].root, "mode changes must not reposition unchanged rows")
+        equal(current.track.writes, stable[index].track, "mode changes must not redraw static tracks")
+        if index ~= 3 then
+            equal(current.value.writes, stable[index].value, "trim reassociation must not redraw output percentages")
+        end
+    end
+    equal(panel.rows[3].text, mode == 1 and "+100%" or "+80%", "changed motor output must still redraw")
+end
+local percentWrites = panel.rows[1].value.writes
+values[1] = 52
+pump()
+equal(panel.rows[1].value.writes, percentWrites, "sub-percent output changes must not rewrite unchanged text")
+values[1] = 51
+controlEnv.getFlightMode = originalMode
+resolvingNames = false
+pump()
 local originalOutput, originalMix, originalInput = controlEnv.getOutput, controlEnv.getMix, controlEnv.getInput
 controlEnv.getOutput = function()
     return { name = "" }
@@ -172,8 +212,12 @@ for _, raw in ipairs({ -1024, 1024, 1536 }) do
     assert(row.value.properties.x - row.x - row.width >= 8, "signed full travel must retain the right gutter")
 end
 fixture.radio.values[310] = 512
+local valueWrites, fillWrites, captionWrites = row.value.writes, row.fill.writes, row.caption.writes
 pump()
 assert(row.trim.properties.pts[3][1] > trimX)
+equal(row.value.writes, valueWrites, "trim movement must not redraw the output percentage")
+equal(row.fill.writes, fillWrites, "trim movement must not redraw the output fill")
+equal(row.caption.writes, captionWrites, "trim movement must not redraw the channel name")
 
 for _, size in ipairs({ { 320, 240 }, { 800, 480 }, { 800, 800 }, { 480, 272 } }) do
     context.zone.w, context.zone.h = size[1], size[2]
