@@ -60,12 +60,18 @@ local first = definition.create({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "
 local second = definition.create({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "session-reset" }, path)
 local worst = 0
 local function measured(callback, context)
+    fixture.lvglMock.setPropertyValidation(false)
+    fixture.lvglMock.setCallCounting(false)
+    fixture.lcdMock.setTextMeasurement(false)
     local instructions = 0
     debug.sethook(function()
         instructions = instructions + 100
     end, "", 100)
     local ok, message = pcall(callback, context)
     debug.sethook()
+    fixture.lcdMock.setTextMeasurement(true)
+    fixture.lvglMock.setCallCounting(true)
+    fixture.lvglMock.setPropertyValidation(true)
     assert(ok, message)
     worst = math.max(worst, instructions)
     assert(instructions < 15000, "session reset callback exceeded budget: " .. instructions)
@@ -113,6 +119,7 @@ local function panel(context, id)
     return assert(fixture.instanceOf(context, id), id)
 end
 local beforeFirst, beforeSecond = first.serviceRuntime, second.serviceRuntime
+local beforeCharts = { panel(first, "chart"), panel(second, "chart") }
 local timer = model.getTimer(0).value
 fixture.radio.logicalSwitches[64] = true
 fixture.radio.values[306] = 1024
@@ -141,15 +148,22 @@ for _, context in ipairs({ first, second }) do
 end
 fixture.radio.rssi = 25
 fixture.radio.values[fixture.radio.fields.RQly.id] = 25
-pump(30)
+pump(200)
 equal(panel(first, "link").sessionExtrema.min, 25)
+local chartElapsed = {}
+for index, context in ipairs({ first, second }) do
+    local chart = panel(context, "chart")
+    chartElapsed[index] = chart.session.elapsed
+    assert(chart.series[1].feed.available and chart.series[1].feed.count > 0)
+end
 first.editorController.openEditor(first)
 untilState(function()
     return first.editorUi and not first.editorUi.buildStage
 end)
 local draft = first.editorSession
+local editorUi = first.editorUi
 draft.dirty = true
-draft.draft.panels[1].config.title = "Retained draft"
+draft.draft.panels[1].config.label = "Retained draft"
 local epoch, revision = owner.epoch, owner.document.revision
 fixture.radio.rssi = 80
 fixture.radio.values[fixture.radio.fields.RQly.id] = 80
@@ -160,20 +174,32 @@ untilState(function()
     return owner.epoch == epoch + 1 and settled()
 end)
 assert(
-    first.serviceRuntime ~= beforeFirst and second.serviceRuntime ~= beforeSecond,
-    "hidden dashboards must reset too"
+    first.serviceRuntime == beforeFirst and second.serviceRuntime == beforeSecond,
+    "foreground and hidden dashboards must reset in place"
 )
 assert(first.editorStash == draft or first.editorSession == draft, "session reset preserves unsaved layout edits")
-equal(draft.draft.panels[1].config.title, "Retained draft")
+equal(first.editorUi, editorUi, "session reset must not dismiss or rebuild the editor")
+equal(draft.draft.panels[1].config.label, "Retained draft")
 equal(owner.document.revision, revision, "switch activation must not save model settings")
 equal(writes, 1)
 equal(model.getGlobalVariable(8, 0), 18)
 assert(not owner.view.active)
 pump(60)
 equal(sticky, false)
-for _, context in ipairs({ first, second }) do
+for index, context in ipairs({ first, second }) do
     local history = context.serviceRuntime.byId.history
     local session = history:session()
+    local chart = panel(context, "chart")
+    assert(chart == beforeCharts[index], "reset must retain charts and their display objects")
+    equal(chart.session, session, "charts must use the reset recording session")
+    equal(chart.series[1].feed, history:subscribe("Alt"), "chart previews must observe reset recordings too")
+    assert(chart.session.elapsed < chartElapsed[index], "chart timelines must restart after reset")
+    equal(chart.series[1].feed.min, 50, "chart readouts must discard pre-reset extrema")
+    equal(chart.series[1].feed.max, 50)
+    for point = chart.series[1].feed.first, chart.series[1].feed.last do
+        local _, value = history:point(chart.series[1].feed, point)
+        equal(value, 50, "chart traces must contain only post-reset samples")
+    end
     equal(session.flightLast, 0)
     equal(session.armLast, 0)
     equal(session.resumeLast, 0)
@@ -183,6 +209,9 @@ for _, context in ipairs({ first, second }) do
     assert(panel(context, "radio-home").feed.home, "EdgeTX home is never reset")
     equal(panel(context, "link").sessionExtrema.min, 80)
 end
+first.editorUiModule.close(first, false)
+first.editorSession, first.editorStash = nil, nil
+first.editorController.restorePreview(first)
 untilState(function()
     return panel(first, "battery").estimatedCells == 2
 end)
@@ -210,11 +239,6 @@ equal(writes, 2, "a new flight can qualify after disarming")
 equal(model.getGlobalVariable(8, 0), 19)
 assert(panel(first, "home").feed.home and panel(second, "home").feed.home)
 
-if first.editorUi then
-    first.editorUiModule.close(first, false)
-    first.editorSession, first.editorStash = nil, nil
-    first.editorController.restorePreview(first)
-end
 first.aeroMenuHandlers.modelSettings()
 untilState(function()
     return first.modelSettingsUi and not first.modelSettingsUi.build
@@ -254,7 +278,7 @@ fixture.radio.logicalSwitches[3] = true
 untilState(function()
     return owner.epoch == dormantEpoch + 1 and settled()
 end)
-assert(second.serviceRuntime ~= dormantRuntime, "the reset input must run even without flight detection")
+assert(second.serviceRuntime == dormantRuntime, "dormant flight detection must reset without rebuilding")
 for _, context in ipairs({ first, second }) do
     local history = context.serviceRuntime.byId.history
     equal(history:session().elapsed, 0)

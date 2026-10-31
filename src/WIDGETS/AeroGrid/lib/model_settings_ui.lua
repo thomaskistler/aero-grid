@@ -18,13 +18,13 @@ local fields = {
         description = "Detects when a flight begins and ends using live telemetry data.",
     },
     { key = "motorReversed", label = "Reverse motor", kind = "toggle" },
-    { key = "minMotorPercent", label = "Motor threshold (%)", kind = "numberEdit", min = 0, max = 99.99 },
-    { key = "minFlightDuration", label = "Start detection window (s)", kind = "numberEdit", min = 0.01, max = 3600 },
+    { key = "minMotorPercent", label = "Motor threshold (%)", kind = "numberEdit", min = 0, max = 99 },
+    { key = "minFlightDuration", label = "Start detection window (s)", kind = "numberEdit", min = 1, max = 3600 },
     {
         key = "disarmDuration",
         label = "End detection window (s)",
         kind = "numberEdit",
-        min = 0.01,
+        min = 1,
         max = 3600,
     },
     { key = "smartDetection", label = "Smart detection", kind = "toggle" },
@@ -224,7 +224,6 @@ local function buildField(context, state, field)
         state.nextY = state.nextY + state.height
         description(state, field.description)
     end
-    local scale = field.kind == "numberEdit" and field.key ~= "flightSwitch" and 100 or 1
     local row = lvgl.setting(state.dialog, {
         x = 4,
         y = state.nextY,
@@ -237,8 +236,8 @@ local function buildField(context, state, field)
         y = 0,
         w = math.floor(state.width * 0.48) - 4,
         h = state.height,
-        min = field.min and math.floor(field.min * scale + 0.5),
-        max = field.max and math.floor(field.max * scale + 0.5),
+        min = field.min,
+        max = field.max,
         active = function()
             return active(context, state) and not state.build
         end,
@@ -261,7 +260,10 @@ local function buildField(context, state, field)
                 local info = getFieldInfo(value)
                 return type(info) == "table" and info.id or getSourceIndex(value) or 0
             end
-            return scale ~= 1 and math.floor(value * scale + 0.5) or value
+            if field.kind == "numberEdit" then
+                return math.max(field.min, math.min(field.max, math.floor(value + 0.5)))
+            end
+            return value
         end,
         set = function(value)
             if not active(context, state) then
@@ -305,8 +307,8 @@ local function buildField(context, state, field)
                     return
                 end
                 value = string.lower(name)
-            elseif scale ~= 1 then
-                value = value / scale
+            elseif field.kind == "numberEdit" then
+                value = math.floor(value + 0.5)
             end
             queue(context, state, { key = field.key, value = value })
         end,
@@ -321,10 +323,6 @@ local function buildField(context, state, field)
             properties.values[number + 1] = string.format("L%02d", number)
         end
         properties.filter = outputAvailable
-    elseif scale ~= 1 then
-        properties.display = function(value)
-            return tostring(value / scale)
-        end
     end
     state.controls[field.key] = lvgl[field.kind](row, properties)
     state.nextY = state.nextY + state.height + 6

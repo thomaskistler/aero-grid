@@ -1615,6 +1615,77 @@ local function needsFrame(context)
     return false
 end
 
+--- Retain both plot buffers and retire old traces in bounded batches.
+function chart.resetSession(context)
+    local reset = context.resetWork
+    if not reset then
+        if context.framePhase then
+            exchange(context, context.backPlot, PLOT_FIELDS)
+            for index, item in ipairs(context.series) do
+                exchange(item, context.backPlot.series[index], SERIES_FIELDS)
+            end
+        end
+        context.framePhase, context.frameSession, context.frameExpired = nil, nil, nil
+        context.pending, context.axisWork, context.projectionTurn, context.rangesReady = nil, nil, nil, false
+        reset = { groups = {}, group = 1, index = 1 }
+        context.resetWork = reset
+        local function markers(pool)
+            if pool then
+                pool.job, pool.drawnRevision, pool.drawnVersion = nil, nil, nil
+                reset.groups[#reset.groups + 1] = { pool = pool, kind = "markers", keys = pool.markerKeys }
+            end
+        end
+        local function plot(buffer, series)
+            if not buffer then
+                return
+            end
+            buffer.axis = nil
+            buffer.flightPassRevision, buffer.flightDrawnRevision = nil, nil
+            reset.groups[#reset.groups + 1] = { kind = "flights", keys = buffer.flightBands or {} }
+            markers(buffer.armMarkers)
+            markers(buffer.resumeMarkers)
+            for _, item in ipairs(series) do
+                item.job, item.drawnRevision, item.drawnVersion = nil, nil, nil
+                reset.groups[#reset.groups + 1] = { kind = "runs", keys = item.runs }
+                markers(item)
+            end
+        end
+        plot(context, context.series)
+        plot(context.backPlot, context.backPlot and context.backPlot.series)
+    end
+    for _ = 1, 8 do
+        local group = reset.groups[reset.group]
+        if not group then
+            context.resetWork = nil
+            return
+        end
+        local value = group.keys[reset.index]
+        if value then
+            if group.kind == "runs" then
+                if value.line and value.visible then
+                    lvgl.hide(value.line)
+                    value.visible = false
+                end
+                if value.connector then
+                    lvgl.hide(value.connector)
+                end
+            elseif group.kind == "markers" then
+                local marker = group.pool.markers[value]
+                if marker.active then
+                    lvgl.hide(marker.object)
+                    marker.active = false
+                end
+            else
+                lvgl.hide(value)
+            end
+            reset.index = reset.index + 1
+        else
+            reset.group, reset.index = reset.group + 1, 1
+        end
+    end
+    return nil, true
+end
+
 function chart.refresh(context, creating)
     if creating or not context.history or context.history.failed then
         return refreshPlot(context, true)

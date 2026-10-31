@@ -181,6 +181,24 @@ function extremaService:reset(now)
     end
 end
 
+function extremaService:resetSession(_, index)
+    index = index or 1
+    local session = self.sessionOrder[index]
+    if session then
+        local state = session.state
+        state.armed, state.active, state.count = false, false, 0
+        state.startedAt, state.duration, state.state = nil, 0, "unavailable"
+    else
+        local track = (self.trackOrder or {})[index - #self.sessionOrder]
+        if not track then
+            return
+        end
+        local state = track.state
+        state.min, state.max, state.samples, state.available, state.session = nil, nil, 0, false, 0
+    end
+    return index + 1
+end
+
 --- Fold one reading into its tracked extrema.
 ---@param track table
 local function sample(track)

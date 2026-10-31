@@ -96,6 +96,17 @@ local function testPackSourceAndAutomaticCount()
     assertions.assertEqual(context.estimatedCells, 3, "reconnected source did not start a new estimate")
     assertions.assertEqual(context.primary, 4.2)
 
+    context.feed.fresh, context.feed.updatedAt = true, 90
+    rxBattery.resetSession(context, 100)
+    rxBattery.gather(context)
+    assertions.assertEqual(context.estimatedCells, nil, "reset must not reuse a pre-reset voltage sample")
+    context.feed.raw, context.feed.updatedAt = 8.4, 100
+    rxBattery.gather(context)
+    assertions.assertEqual(context.estimatedCells, 2, "reset must estimate from a post-reset fresh sample")
+    context.feed.raw, context.feed.updatedAt = 7.8, 120
+    rxBattery.gather(context)
+    assertions.assertEqual(context.estimatedCells, 2, "the new estimate must remain stable as voltage falls")
+
     local pack = rxBattery.summarizePack(16.4, 4, {})
     settings.cells = 4
     settings.reading = "pack"

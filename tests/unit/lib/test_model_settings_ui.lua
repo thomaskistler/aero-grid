@@ -175,7 +175,47 @@ do
     change("minFlightDuration", 225)
     assert(document().flight.motorSource == "ch5" and document().flight.motorReversed)
     assert(document().flight.smartDetection and document().flight.flightSwitch == "L63")
-    assert(document().flight.minFlightDuration == 2.25)
+    assert(document().flight.minFlightDuration == 225)
+    for _, key in ipairs({ "minFlightDuration", "disarmDuration" }) do
+        local properties = state.controls[key].properties
+        assert(properties.min == 1 and properties.max == 3600 and properties.display == nil)
+        for _, seconds in ipairs({ 1, 2, 3599, 3600 }) do
+            change(key, seconds)
+            assert(document().flight[key] == seconds and properties.get() == seconds)
+        end
+        change(key, 2.25)
+        assert(document().flight[key] == 2 and properties.get() == 2)
+        local attemptsBefore = control.attempts
+        local errorsBefore = control.errors
+        for _, seconds in ipairs({ 0, 3601 }) do
+            properties.set(seconds)
+            ui.advance(c)
+            assert(document().flight[key] == 2 and properties.get() == 2)
+        end
+        assert(control.attempts == attemptsBefore and control.errors == errorsBefore + 2)
+    end
+    state.values.minFlightDuration = 2.75
+    state.values.disarmDuration = 0.25
+    assert(state.controls.minFlightDuration.properties.get() == 3)
+    assert(state.controls.disarmDuration.properties.get() == 1)
+    local threshold = state.controls.minMotorPercent.properties
+    assert(threshold.min == 0 and threshold.max == 99 and threshold.display == nil)
+    for _, percent in ipairs({ 0, 1, 25, 98, 99 }) do
+        change("minMotorPercent", percent)
+        assert(document().flight.minMotorPercent == percent and threshold.get() == percent)
+    end
+    change("minMotorPercent", 25.25)
+    assert(document().flight.minMotorPercent == 25 and threshold.get() == 25)
+    assert(document().flight.minFlightDuration == 2.75 and document().flight.disarmDuration == 0.25)
+    state.values.minMotorPercent = 99.99
+    assert(threshold.get() == 99)
+    local thresholdAttempts, thresholdErrors = control.attempts, control.errors
+    for _, percent in ipairs({ -1, 100 }) do
+        threshold.set(percent)
+        ui.advance(c)
+        assert(document().flight.minMotorPercent == 25 and threshold.get() == 99)
+    end
+    assert(control.attempts == thresholdAttempts and control.errors == thresholdErrors + 2)
     assert(document().sessionReset == "!L64", "unrelated edits preserve the reset input")
     change("sessionReset", 0)
     assert(document().sessionReset == "" and state.controls.sessionReset.properties.get() == 0)
@@ -221,7 +261,7 @@ do
     ui.advance(c)
     assert(document().flight.motorSource == "ch7" and control.published == 1)
     assert(state.status.properties.text == "")
-    state.controls.minMotorPercent.properties.set(10000)
+    state.controls.minMotorPercent.properties.set(100)
     ui.advance(c)
     assert(control.attempts == 2 and state.values.minMotorPercent < 100 and control.errors == 2)
     control.exception = true

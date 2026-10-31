@@ -479,6 +479,29 @@ equal(failureTelemetry.failed, nil, "an observer failure must not retire telemet
 failures.failure = "history observer failed"
 local ok, message = pcall(failures.update, failures, 10)
 assert(not ok and string.find(message, "history observer failed", 1, true))
+
+local resetHistory, resetFeed, resetSample, _, resetView = recorder({ smoothing = "strong" })
+resetSample(0, 10)
+resetSample(100, 20)
+local oldRevision, oldPlotRevision = resetFeed.revision, resetFeed.plotRevision
+local nextItem = 1
+repeat
+    nextItem = resetHistory:resetSession(120, nextItem)
+until not nextItem
+equal(resetHistory:session("L01"), resetView, "reset must retain the session view")
+equal(resetHistory:subscribe("V", { armSwitch = "L01", smoothing = "strong" }), resetFeed)
+equal(resetView.elapsed, 0)
+equal(resetView.segment, 0)
+equal(resetFeed.count, 0)
+equal(resetFeed.min, nil)
+equal(resetFeed.max, nil)
+equal(resetFeed.full, false)
+assert(resetFeed.revision > oldRevision and resetFeed.plotRevision > oldPlotRevision)
+resetSample(140, 50)
+equal(resetFeed.min, 50)
+equal(resetFeed.max, 50)
+local _, resetValue = resetHistory:point(resetFeed, resetFeed.last)
+equal(resetValue, 50, "the first post-reset sample must not inherit smoothing from old recordings")
 print(
     string.format(
         "  chart history: 6001 worst-case samples fit; %d bytes/knot on this runtime",
