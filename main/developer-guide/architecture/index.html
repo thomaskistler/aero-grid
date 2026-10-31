@@ -569,8 +569,9 @@ silently promoted; conflicting old selections require an explicit model choice.
 The optional top-level <code>sessionReset</code> uses the same switch syntax; missing or
 <code>""</code> disables it. A shared control poller detects false-to-true transitions
 independently of flight detection. Activation advances the flight epoch,
-cancels detection, releases its owned output, and stages every dashboard's
-reload with captured homes cleared and editor drafts retained. Counting waits
+cancels detection, releases its owned output, and resets each dashboard's
+session data in bounded service/panel callbacks. Subscriptions, screen objects,
+and editor drafts stay intact; charts reuse their plot buffers. Counting waits
 for a fresh disarm observation. Model changes also reset the flight epoch;
 ordinary dashboard rebuilds do not.</p>
 <h2 id="add-or-change-a-panel">Add or change a panel</h2>
@@ -615,6 +616,10 @@ ordinary dashboard rebuilds do not.</p>
 <tr>
 <td><code>background(context)</code></td>
 <td>Optional work when the dashboard is not visible.</td>
+</tr>
+<tr>
+<td><code>resetSession(context, now)</code></td>
+<td>Optional session-data reset without rebuilding the panel. A second result of <code>true</code> requests another bounded reset turn.</td>
 </tr>
 <tr>
 <td><code>event(context, event)</code></td>

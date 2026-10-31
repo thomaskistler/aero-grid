@@ -255,7 +255,7 @@ It runs across the model's dashboards even without a Flight counter panel.</p>
 <tr>
 <td><strong>Motor threshold (%)</strong></td>
 <td>25</td>
-<td>Motor output must be strictly above this percentage to qualify a flight. Valid values are 0 up to, but not including, 100.</td>
+<td>Motor output must be strictly above this percentage to qualify a flight. Set from 0 to 99 in whole-percent steps.</td>
 </tr>
 <tr>
 <td><strong>Start detection window (s)</strong></td>
@@ -275,7 +275,7 @@ It runs across the model's dashboards even without a Flight counter panel.</p>
 </tbody>
 </table>
 <p>Flight detection observes live telemetry; it does not arm the aircraft.
-Both detection windows accept values greater than 0 and up to 3600 seconds.
+Both detection windows can be set from 1 to 3600 seconds in whole-second steps.
 Flight timestamps use the beginning of each window, not the later confirmation.</p>
 <h3 id="flight-status-output">Flight status output</h3>
 <p><img alt="Model settings showing the Flight status switch" src="../../assets/editor/model-settings-bottom.png" /></p>
@@ -357,7 +357,8 @@ recovery does not trigger a reset. Choose <strong>None</strong> to disable it.</
 <p>Reset during a flight cancels detection without creating a completion.
 Disarm before another flight can be counted. Flight totals, radio timers,
 radio telemetry minima/maxima, EdgeTX home, saved settings/layouts, and
-unsaved editor changes are preserved. Other panels continue showing live data.</p>
+unsaved editor changes are preserved. The dashboard stays on screen; only
+session-dependent content is redrawn.</p>
       </article>
     </div>
   </div>
