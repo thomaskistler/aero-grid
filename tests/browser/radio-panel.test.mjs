@@ -10,7 +10,8 @@ const source = (await readFile(new URL("../../docs/javascripts/radio-panel.mjs",
   .replace(/^import .*;\n/gm, "")
   .replaceAll("import.meta.url", JSON.stringify(new URL("../../docs/javascripts/radio-panel.mjs", import.meta.url).href));
 
-async function panel({ gtag, allowInstallation = false, downloadError, writeError } = {}) {
+async function panel({ gtag, allowInstallation = false, downloadError, writeError,
+  siteRoot, docsURL = "https://thomaskistler.github.io/aero-grid/main/user-guide/installation/" } = {}) {
   const elements = new Map();
   const document = { hidden: false, activeElement: null };
   function element(name) {
@@ -44,7 +45,8 @@ async function panel({ gtag, allowInstallation = false, downloadError, writeErro
   }
   const host = element("panel");
   host.querySelector = (selector) => element(selector.slice(6, -1));
-  document.querySelector = () => host;
+  document.querySelector = (selector) => selector === 'meta[name="aerogrid-site-root"]'
+    ? { content: siteRoot } : host;
   document.createElement = () => element(Symbol());
   let details = {
     radio: { name: "Test SD", board: "tx16s", version: "2.12.4" },
@@ -65,14 +67,19 @@ async function panel({ gtag, allowInstallation = false, downloadError, writeErro
     exclusive: async (operation) => operation(radioStorage.root),
   };
   let poll;
+  const requestedBases = [];
   vm.runInNewContext(source, {
     document, window: { isSecureContext: true, showDirectoryPicker() {}, addEventListener() {}, gtag },
     radioStorage, actionFor, compareVersions, radioCompatibility, radioHardware,
-    structuredClone, URL, console, queueMicrotask,
-    loadCatalog: async () => ({
-      latest: "1.0.0", releases: [{ version: "1.0.0", available: true, name: "Test release" }],
-    }),
-    loadRelease: async () => ({ version: "1.0.0" }),
+    structuredClone, URL, console, queueMicrotask, location: { href: docsURL },
+    loadCatalog: async (base) => {
+      requestedBases.push(base.href);
+      return { latest: "1.0.0", releases: [{ version: "1.0.0", available: true, name: "Test release" }] };
+    },
+    loadRelease: async (base) => {
+      requestedBases.push(base.href);
+      return { version: "1.0.0" };
+    },
     preparePackage: async (manifest) => {
       if (downloadError) throw downloadError;
       return { version: manifest.version, files: [] };
@@ -90,10 +97,21 @@ async function panel({ gtag, allowInstallation = false, downloadError, writeErro
   assert.equal(element("confirm-dialog").open, true);
   assert.equal(element("confirm").hidden, false);
   return {
-    element, document, radioStorage, poll,
+    element, document, radioStorage, poll, requestedBases,
     change(update) { details = update(structuredClone(details)); },
     loseAccess(name) { failure = new DOMException("Drive unavailable", name); },
   };
+}
+
+for (const version of ["main", "0.1.0", "0.4.0"]) {
+  test(`documentation version ${version} uses the shared installer and its independent latest release`, async () => {
+    const ui = await panel({
+      siteRoot: "/aero-grid/",
+      docsURL: `https://thomaskistler.github.io/aero-grid/${version}/user-guide/installation/`,
+    });
+    assert.deepEqual(ui.requestedBases, Array(2).fill("https://thomaskistler.github.io/aero-grid/installer/"));
+    assert.equal(ui.element("latest").textContent, "v1.0.0 - latest");
+  });
 }
 
 test("each verified release download emits one analytics event with its version", async () => {

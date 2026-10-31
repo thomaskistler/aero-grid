@@ -1,5 +1,10 @@
 {% extends "base.html" %}
 
+{% block extrahead %}
+  {{ super() }}
+  <meta name="aerogrid-site-root" content="{{ config.extra.docs_root|default('') }}">
+{% endblock %}
+
 {% block styles %}
   {{ super() }}
   <link href="{{ 'stylesheets/console.css'|url }}" rel="stylesheet">
@@ -17,6 +22,7 @@
     <span class="ag-brand-divider" aria-hidden="true">/</span>
     <span class="ag-current-page">{{ page.title }}</span>
   </a>
+  {% include "version-selector.html" %}
 {% endblock %}
 
 {% block site_nav %}

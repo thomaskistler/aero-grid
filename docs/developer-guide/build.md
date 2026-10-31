@@ -135,10 +135,13 @@ make docs
 make docs-serve
 ```
 
-The first command installs the pinned MkDocs dependency into
+The first command installs the pinned documentation tools into
 `build/docs-venv/` and strictly builds the site at `build/docs/`.
 The second serves a live-reloading preview at `http://127.0.0.1:8000`;
 stop it with Ctrl-C.
+
+This previews the checkout only. The published site's **Documentation version**
+menu offers released versions and `main`.
 
 Markdown lives in `docs/`. When adding or renaming a page, update **both**
 `mkdocs.yml` and the explicit sidebar in `docs/overrides/toc.html`.
