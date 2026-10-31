@@ -24,7 +24,14 @@ local map = {
             default = "plane",
             choices = { "plane", "arrow" },
         },
-        { key = "armSwitch", label = "Home arm switch", type = "string", default = "" },
+        {
+            key = "armSwitch",
+            label = "Home arm switch",
+            type = "string",
+            default = "",
+            legacyArm = true,
+            hidden = true,
+        },
         { key = "satelliteSource", label = "Satellite count source", type = "string", default = "" },
         { key = "satelliteWarning", label = "Warn below satellites", type = "number", default = 8 },
         { key = "satelliteCritical", label = "Critical below satellites", type = "number", default = 4 },
@@ -110,7 +117,7 @@ local function clamp(value, low, high)
     return math.max(low, math.min(value, high))
 end
 
-function map.validateSettings(settings)
+function map.validateSettings(settings, _, _, modelArmed)
     local errors = {}
     if
         settings.initialZoom ~= nil
@@ -159,7 +166,7 @@ function map.validateSettings(settings)
         errors[#errors + 1] = "flightPath must be off, trail, or full"
     end
     local arm = settings.armSwitch
-    if arm ~= nil and arm ~= "" then
+    if modelArmed == nil and arm ~= nil and arm ~= "" then
         if type(arm) ~= "string" or not (string.match(arm, "^S[A-Z][%^v%-]$") or string.match(arm, "^L%d%d$")) then
             errors[#errors + 1] =
                 "armSwitch must be blank, a position such as SF^, SA-, SFv, or a logical switch such as L01"
@@ -1823,7 +1830,7 @@ function map.create(parent, rect, settings, services)
     updateControls(context)
     if services.navigation then
         context.navigation = services.navigation
-        context.feed = services.navigation:subscribe(settings.source, settings.armSwitch)
+        context.feed = services.navigation:subscribe(settings.source, settings.armSwitch, "first-arm")
     end
     if settings.headingSource and settings.headingSource ~= "" and services.telemetry then
         context.headingFeed = services.telemetry:subscribe(settings.headingSource)

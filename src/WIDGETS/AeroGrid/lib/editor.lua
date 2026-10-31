@@ -351,6 +351,7 @@ function editor.add(session, typeName)
             and setting.default ~= nil
             and not setting.drawerField
             and not setting.legacyFlight
+            and not setting.hidden
         then
             config[setting.key] = copy(setting.default)
         end
@@ -1007,6 +1008,7 @@ function editor.settings(session)
     for _, setting in ipairs(module.settings or {}) do
         if
             not setting.legacyFlight
+            and not setting.hidden
             and (not setting.legacyArm or (session.modelArmed == nil and config[setting.key] ~= ""))
         then
             fields[#fields + 1] = setting

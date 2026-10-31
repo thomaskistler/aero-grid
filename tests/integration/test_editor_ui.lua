@@ -1565,9 +1565,22 @@ do
     equal(placement.type, "map", "Map picker must install the real radio panel")
     equal(placement.config.source, "GPS", "new maps default to the normal GPS source")
     equal(placement.config.pack, nil, "map editor must not introduce an area override")
-    for _, key in ipairs({ "source", "headingSource", "armSwitch", "satelliteSource" }) do
-        assert(control(key), "map must expose the native source/switch controls")
+    equal(placement.config.armSwitch, nil, "new maps must not add a panel-specific arm setting")
+    for _, key in ipairs({ "source", "headingSource", "satelliteSource" }) do
+        assert(control(key), "map must expose the native source controls")
     end
+    for _, row in ipairs(context.editorUi.drawerControls) do
+        assert(row.field.key ~= "armSwitch", "map arming belongs in Model settings, not the panel drawer")
+    end
+    placement.config.armSwitch = "SFv"
+    back()
+    local mapRect = context.editorUi.controls[1].rect
+    tap(mapRect.x + mapRect.w - 12, mapRect.y + 12)
+    settleDrawer()
+    for _, row in ipairs(context.editorUi.drawerControls) do
+        assert(row.field.key ~= "armSwitch", "retained legacy map switches must not create a drawer control")
+    end
+    equal(placement.config.armSwitch, "SFv", "opening the drawer preserves old layout compatibility")
     control("label").properties.set("MY MAP")
     settleDrawer()
     control("positionMarker").properties.set(2)

@@ -9,6 +9,7 @@
 ---@field type? "string"|"number"|"boolean"|"table" Rejects mistyped YAML values.
 ---@field choices? string[] Values this setting accepts; anything else is reported.
 ---@field default? any Applied when the key is absent, mistyped, or not a choice.
+---@field hidden? boolean Compatibility-only key; omitted from editor controls and new-panel config.
 
 ---@class AeroGridPanelModule
 ---@field id string Must equal the panel type name used in YAML.

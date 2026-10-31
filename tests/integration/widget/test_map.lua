@@ -796,11 +796,19 @@ local captured = map.create(
 )
 a.assertEqual(
     captured.feed,
-    services.navigation:subscribe("GPS", "SFv"),
-    "map must share the navigation subscription for the configured arm switch"
+    services.navigation:subscribe("GPS", "SFv", "first-arm"),
+    "map must share Navigation's first-arm home using the shared Armed service"
 )
 assert(captured.feed ~= services.navigation:subscribe("GPS"), "custom capture must not use the default EdgeTX home")
 assert(captured.feed ~= services.navigation:subscribe("GPS", "SAv"), "different switches must keep separate homes")
+local modelCapture = map.create(
+    entry.container,
+    { x = 0, y = 0, w = 480, h = 272 },
+    { label = "MAP", source = "GPS" },
+    services
+)
+a.assertEqual(modelCapture.feed, services.navigation:subscribe("GPS", nil, "first-arm"))
+assert(modelCapture.feed ~= services.navigation:subscribe("GPS"), "new maps must use model arming, not EdgeTX home")
 selectAutomaticArea(captured, 25.9973, -97.1572)
 local arrow = map.create(
     entry.container,

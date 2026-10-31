@@ -715,7 +715,6 @@ local function testAllPanelDrawersStartWithLabel()
             "initialZoom",
             "headingSource",
             "positionMarker",
-            "armSwitch",
             "satelliteSource",
             "satelliteWarning",
             "satelliteCritical",

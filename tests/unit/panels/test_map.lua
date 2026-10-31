@@ -320,6 +320,14 @@ for _, arm in ipairs({ "", "SF^", "SA-", "SFv", "L01" }) do
 end
 for _, arm in ipairs({ "SF", "SFx", "L1", 42, false }) do
     a.assertEqual(#map.validateSettings({ armSwitch = arm }), 1)
+    a.assertEqual(#map.validateSettings({ armSwitch = arm }, nil, nil, "SFv"), 0)
+    a.assertEqual(#map.validateSettings({ armSwitch = arm }, nil, nil, ""), 0)
+end
+for _, setting in ipairs(map.settings) do
+    if setting.key == "armSwitch" then
+        assert(setting.legacyArm, "old map switches remain compatibility-only settings")
+        a.assertEqual(setting.hidden, true, "even legacy map switches must never appear in the drawer")
+    end
 end
 
 local level = { zoom = 1, xMin = 1, xMax = 1, yMin = 1, yMax = 1 }

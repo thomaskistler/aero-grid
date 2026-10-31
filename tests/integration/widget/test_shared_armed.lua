@@ -30,7 +30,8 @@ local document = {
         placement("two", "chart", 2, 0, 1, { armSwitch = "L02", metrics = { { source = "Alt" } } }),
         placement("counter", "flight-counter", 0, 1, 1, { armSwitch = "L02" }),
         placement("capture", "navigation", 2, 1, 2, { homeMode = "first-arm", armSwitch = "L01" }),
-        placement("link", "link-status", 0, 2, 2, { extrema = "flight" }),
+        placement("link", "link-status", 0, 2, 1, { extrema = "flight" }),
+        placement("map", "map", 0, 3, 1, { armSwitch = "L02" }),
         placement("edgetx", "navigation", 2, 3, 1, { homeMode = "edgetx" }),
     },
 }
@@ -85,6 +86,11 @@ local armed = first.serviceRuntime.byId.armed
 equal(armed:state().status, "unconfigured")
 assert(armed:state("L01") ~= armed:state("L02"), "unsaved model arming preserves legacy panel sessions")
 equal(fixture.instanceOf(first, "counter").arm.condition, "L02")
+equal(
+    fixture.instanceOf(first, "map").feed,
+    first.serviceRuntime.byId.navigation:subscribe("GPS", "L02", "first-arm"),
+    "old map layouts use the shared Armed service's unsaved legacy fallback"
+)
 assert(first.serviceRuntime.byId.extrema:flight("L01") ~= first.serviceRuntime.byId.extrema:flight("L02"))
 
 local function open(context)
@@ -136,6 +142,11 @@ equal(owner.session.armKey, "L64", "the shared flight detector uses model arming
 local navigation = first.serviceRuntime.byId.navigation
 assert(navigation:subscribe("GPS", "L01", "first-arm") == navigation:subscribe("GPS", "L02", "first-arm"))
 assert(navigation:subscribe("GPS", nil, "edgetx") ~= navigation:subscribe("GPS", nil, "first-arm"))
+equal(
+    fixture.instanceOf(first, "map").feed,
+    fixture.instanceOf(first, "capture").feed,
+    "saved model arming unifies Map and Navigation home capture despite conflicting legacy switches"
+)
 assert(first.serviceRuntime.byId.extrema:flight("L01") == first.serviceRuntime.byId.extrema:flight("L02"))
 
 local custom = first.serviceRuntime.byId.control:switch("L03")
@@ -149,6 +160,8 @@ equal(shared.value, true)
 equal(second.serviceRuntime.byId.armed:state().value, true, "every instance observes the same model condition")
 equal(fixture.instanceOf(first, "capture").feed.homeStatus, "captured")
 equal(fixture.instanceOf(second, "capture").feed.homeStatus, "captured")
+equal(fixture.instanceOf(first, "map").feed.homeStatus, "captured")
+equal(fixture.instanceOf(second, "map").feed.homeStatus, "captured")
 
 local session = assert(editor.new(first.document, first.grid, first.layoutValidator, first.panelHost, function(kind)
     return fixture.module("panels/" .. kind .. ".lua")
@@ -189,11 +202,26 @@ equal(first.serviceRuntime.byId.armed:state("L01").configured, false, "saved Non
 assert(first.navigationHomes ~= homes, "changing model arming invalidates captured homes")
 equal(second.serviceRuntime.byId.armed:state("L02").configured, false)
 equal(owner.state.status, "unconfigured")
+equal(fixture.instanceOf(first, "map").feed.home, false, "saved None clears captured map home")
+equal(fixture.instanceOf(second, "map").feed.home, false)
+fixture.radio.logicalSwitches[2] = true
+pump(first, second)
+equal(fixture.instanceOf(first, "map").feed.home, false, "saved None must not restore a legacy map switch")
+fixture.radio.logicalSwitches[2] = false
 
 save(first, -getSwitchIndex("L64"))
 equal(first.serviceRuntime.byId.armed:state().condition, "!L64")
 equal(second.serviceRuntime.byId.armed:state().value, false)
+equal(fixture.instanceOf(first, "map").feed.home, false, "a model-arm change starts a new capture")
+local gps = fixture.radio.values[109]
+gps.lat, gps.lon = gps.lat + 0.001, gps.lon + 0.001
+fixture.radio.logicalSwitches[64] = false
+pump(first, second)
+equal(fixture.instanceOf(first, "map").feed.homeStatus, "captured", "Map captures at the new model condition's edge")
+equal(fixture.instanceOf(first, "map").feed.pilotLatitude, gps.lat)
+equal(fixture.instanceOf(second, "map").feed.pilotLongitude, gps.lon)
 document.panels[2].config.armSwitch = "ch5"
+document.panels[6].config.armSwitch = "ch5"
 write("shared-armed", document)
 local recreated = fixture.createLoaded(nil, { Layout = "shared-armed", Theme = "modern-dark" })
 equal(#recreated.errors, 0, table.concat(recreated.errors, "\n"))

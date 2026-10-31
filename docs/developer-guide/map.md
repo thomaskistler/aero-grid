@@ -32,7 +32,7 @@ generated `AEROGRID/maps/` library into `/AEROGRID/maps/`, and copy `review-map.
 `/WIDGETS/AeroGrid/layouts/`. Restart before selecting the layout.
 Do not copy the fixture's `MODELS/` or `RADIO/` onto your radio.
 On the radio, open the layout editor, tap **+**, and choose **Map** in
-**Select panel**. Configure its GPS source and optional heading, home switch,
+**Select panel**. Configure its GPS source and optional heading,
 satellite, marker and path settings in the normal drawer, then save the layout.
 **Initial zoom** selects the widest, middle or most detailed installed level
 whenever a map area is selected. The default remains widest; for an even number
@@ -165,20 +165,20 @@ unmeasured. There are no runtime pixel transforms or image scaling.
 Home uses an upright red (#EC483E) house with a small rounded doorway inside
 the same 44-pixel white circle at 67% opacity as the arrow marker.
 Its native 52 x 52 PNG is anchored at its centre (26, 26), exactly at home.
-A valid EdgeTX home appears as a standalone marker; no home is
+A captured home appears as a standalone marker; no home is
 invented when pilot coordinates are unavailable. No source, no fix, stale GPS, invalid
 coordinates and off-view positions have distinct status text; an off-view
 marker is hidden rather than pinned to a false position. The first viewport
 is centred on coverage, not on an unverified GPS value.
 
-To capture home from GPS on arming, set `armSwitch: SFv` (or another armed
-switch position, including logical switches such as `L01`) in the map's YAML
-`config`. Leave it blank or omit it to use EdgeTX home. This reuses the
-navigation panel's service: it must observe disarmed before armed and have a
-valid, fresh GPS reading at capture. The switch is configured independently
-per panel. Within one widget instance, identical GPS source and arm-switch
-settings share the same home state; different settings capture independently.
-Separate widget instances do not share captured home.
+Set **Arm switch** in **AeroGrid → Model settings** to capture home from GPS.
+Map uses Navigation's shared first-arm home capture: it must observe disarmed
+before armed and have a valid, fresh GPS reading at capture. Maps with the same
+GPS source share that home within one widget instance. Changing model arming
+clears captured homes; saving **None** disables capture, including legacy fallbacks.
+Older layouts' `armSwitch` values remain a fallback only before model arming has
+been saved, but never appear in the map drawer. Separate widget instances do not
+share captured home.
 
 Paths use a blue (#328BEE) 5-pixel stroke over an 8-pixel white outline at
 67% opacity. Both layers fade together by age to zero opacity at 30 seconds.
