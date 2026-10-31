@@ -148,6 +148,42 @@ build/docs-venv/bin/python -m playwright install chromium
 build/docs-venv/bin/python -m unittest discover -s tools -p 'test_docs_layout.py'
 ```
 
+### Planner and map-file contract
+
+With Node.js 22 and the development environment (`make setup`):
+
+```sh
+node tools/test_map_planner.js
+node tools/test_map_files.js
+node tools/test_map_sources.js
+node --test tests/browser/radio-map-library.test.mjs tests/browser/radio-map-manager.test.mjs
+```
+
+The JavaScript suites check planner coverage, format 2 area-file generation,
+JPEG validation, shared tile identity, source fetch and cancellation behavior,
+selection reconstruction (including per-zoom bounds and date-line geometry),
+malformed YAML rejection, shared-tile pruning, and manager review/sync behavior.
+
+The connected manager writes only area format 2. The radio map panel is delivered
+separately; these browser tests do not prove radio rendering or hardware
+compatibility. No legacy-area migration is implemented. The manager reports
+library bytes and update estimates but cannot query SD-card free space; ensure
+the card has room before confirming a sync.
+
+The optional rendered Map Manager check uses the same Playwright environment
+as the installer smoke above:
+
+```sh
+node tests/browser/radio-map-manager.smoke.mjs http://127.0.0.1:8000/
+```
+
+It serves synthetic preview imagery instead of requesting Google tiles and
+uses disposable native OPFS handles for repair, review/cancel/confirmation,
+metadata edits, shared-tile preservation and map-to-installer connection
+restoration. OpenLayers still loads from its pinned CDN. No hardware or operating
+system picker is exercised. Run the installer smoke separately to retain its
+full update, downgrade and persisted-handle checks.
+
 ## Lint and formatting
 
 ```sh
