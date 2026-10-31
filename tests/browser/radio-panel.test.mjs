@@ -148,35 +148,69 @@ test("developer builds require checkbox opt-in, warn before installation, and re
   assert.equal(ui.element("latest").textContent, "v1.0.0 - latest");
 });
 
-test("switching releases clears stale verification errors and rechecks when returning", async () => {
+for (const [name, differences, fileDescriptions] of [
+  ["modified file", { path: "lib/editor.lua", expectedSize: 10, actualSize: 12 }, ['Modified file (1): "lib/editor.lua"']],
+  ["added and missing files", { missing: ["main.lua"], unexpected: ["assets/custom.png"] },
+    ['Added files (1): "assets/custom.png"', 'Missing files (1): "main.lua"']],
+  ["missing files", { missing: ["lib/editor.lua"], unexpected: [] }, ['Missing files (1): "lib/editor.lua"']],
+  ["all added files", { missing: [], unexpected: Array.from({ length: 21 }, (_, index) => `extra${index}.lua`) },
+    ['Added files (21):', '"extra0.lua"', '"extra20.lua"']],
+]) {
+  test(`an installation with ${name} shows a discard warning with file paths, not an installation error`, async () => {
+    const ui = await panel({
+      installedVersion: "1.0.0", openConfirmation: false,
+      verifyInstalled: async () => { throw new ContentMismatchError("Technical verification error.", differences); },
+    });
+    const warning = ui.element("status").textContent;
+    assert.match(warning, /looks like.*modified, added, or removed AeroGrid files on your radio/);
+    assert.match(warning, /WIDGETS\/AeroGrid/);
+    for (const description of fileDescriptions) assert.ok(warning.includes(description), description);
+    for (const path of differences.path ? [differences.path] : [...differences.missing, ...differences.unexpected]) {
+      assert.ok(warning.includes(JSON.stringify(path)), path);
+    }
+    assert.match(warning, /Updating will discard these changes/);
+    assert.match(warning, /Back up any files you want to keep/);
+    assert.doesNotMatch(warning, /Technical verification error|more not shown|full replacement/);
+    assert.equal(ui.element("status").classList.contains("ag-radio-error"), false);
+    assert.equal(ui.element("status").classList.contains("ag-radio-warning"), true);
+    assert.equal(ui.element("install").disabled, false);
+    await ui.element("install").dispatch("click");
+    assert.match(ui.element("confirm-description").textContent, /modified or added files in WIDGETS\/AeroGrid will be discarded/);
+  });
+}
+
+test("switching releases clears stale modification warnings and rechecks when returning", async () => {
   const version = "1.1.0-dev.12+0fe9d3d9";
   let damaged = true;
   const ui = await panel({
     installedVersion: "1.0.0", openConfirmation: false,
     extraReleases: [{ version, available: true, name: "Developer build" }],
     verifyInstalled: async () => {
-      if (damaged) throw new ContentMismatchError("Unexpected files (119).");
+      if (damaged) throw new ContentMismatchError("Unexpected files (119).",
+        { missing: [], unexpected: ["assets/custom.png"] });
     },
   });
-  assert.match(ui.element("status").textContent, /Unexpected files.*full replacement/);
-  assert.equal(ui.element("status").classList.contains("ag-radio-error"), true);
+  assert.match(ui.element("status").textContent, /Added files.*Updating will discard these changes/);
+  assert.equal(ui.element("status").classList.contains("ag-radio-warning"), true);
   ui.element("developer-releases").checked = true;
   await ui.element("developer-releases").dispatch("change");
   const developer = ui.element("releases").children[1].children[0].children[0];
   await ui.element("releases").dispatch("change", { target: developer });
   assert.equal(ui.element("status").textContent, "");
   assert.equal(ui.element("status").classList.contains("ag-radio-error"), false);
+  assert.equal(ui.element("status").classList.contains("ag-radio-warning"), false);
   assert.equal(ui.element("downgrade").hidden, true);
   assert.equal(ui.element("install").textContent, "Update to AeroGrid developer build");
   ui.element("developer-releases").checked = false;
   await ui.element("developer-releases").dispatch("change");
-  assert.match(ui.element("status").textContent, /Unexpected files/);
+  assert.match(ui.element("status").textContent, /Added files/);
   assert.equal(ui.element("install").disabled, false);
   damaged = false;
   const stable = ui.element("releases").children[0].children[0].children[0];
   await ui.element("releases").dispatch("change", { target: stable });
   assert.equal(ui.element("status").textContent, "");
   assert.equal(ui.element("status").classList.contains("ag-radio-error"), false);
+  assert.equal(ui.element("status").classList.contains("ag-radio-warning"), false);
   assert.equal(ui.element("install").disabled, true);
   assert.equal(ui.element("install").textContent, "Up to date");
 });
@@ -194,9 +228,10 @@ test("release selection preserves unrelated status errors", async () => {
 test("changed widget metadata clears verification results for the previous installation", async () => {
   const ui = await panel({
     installedVersion: "1.0.0", openConfirmation: false,
-    verifyInstalled: async () => { throw new ContentMismatchError("Unexpected files (119)."); },
+    verifyInstalled: async () => { throw new ContentMismatchError("Unexpected files (119).",
+      { missing: [], unexpected: ["assets/custom.png"] }); },
   });
-  assert.match(ui.element("status").textContent, /Unexpected files/);
+  assert.match(ui.element("status").textContent, /Added files/);
   ui.change((details) => {
     details.widget.version = "0.4.0";
     return details;
@@ -204,6 +239,7 @@ test("changed widget metadata clears verification results for the previous insta
   await ui.poll();
   assert.equal(ui.element("status").textContent, "");
   assert.equal(ui.element("status").classList.contains("ag-radio-error"), false);
+  assert.equal(ui.element("status").classList.contains("ag-radio-warning"), false);
   assert.equal(ui.element("install").textContent, "Update to AeroGrid v1.0.0");
 });
 
