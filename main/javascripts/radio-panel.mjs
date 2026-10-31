@@ -39,11 +39,12 @@ if (panel) {
     return isDeveloperVersion(version) ? version.replace(/\+g([a-f0-9]{40})$/, (_, commit) => `+${commit.slice(0, 8)}`) : version;
   }
 
-  function message(text, error = false, success = false) {
+  function message(text, error = false, success = false, warning = false) {
     const target = busy && confirmDialog.open ? operationStatus : status;
     target.textContent = text;
     target.classList.toggle("ag-radio-error", error);
     target.classList.toggle("ag-radio-success", success);
+    target.classList.toggle("ag-radio-warning", warning);
   }
 
   function clearVerification() {
@@ -114,10 +115,19 @@ if (panel) {
         incomplete = false;
       } catch (error) {
         if (!(error instanceof ContentMismatchError)) throw error;
-        console.error("[AeroGrid installer] Installed file verification failed.", error, error.differences);
+        console.warn("[AeroGrid installer] Local AeroGrid changes detected.", error, error.differences);
         incomplete = true;
-        verificationMessage = `${error.message} A full replacement is available.`;
-        message(verificationMessage, true);
+        const changes = error.differences?.path
+          ? [["Modified file", [error.differences.path]]]
+          : [["Added files", error.differences?.unexpected ?? []], ["Missing files", error.differences?.missing ?? []]];
+        const files = changes.filter(([, paths]) => paths.length)
+          .map(([label, paths]) => `${label} (${paths.length}): ${paths.map((path) => JSON.stringify(path)).join(", ")}.`)
+          .join(" ");
+        verificationMessage = "It looks like you have modified, added, or removed AeroGrid files on your radio. "
+          + `Files are relative to WIDGETS/AeroGrid. ${files || error.message} `
+          + "Updating will discard these changes and remove any added files in WIDGETS/AeroGrid. "
+          + "Back up any files you want to keep before updating.";
+        message(verificationMessage, false, false, true);
       }
     }
   }
@@ -271,7 +281,7 @@ if (panel) {
       + (!compatibility.supported ? `${compatibility.message}\n\n` : "")
       + (downgrade ? `DOWNGRADE from v${shownVersion(details.widget.version)} to v${shownVersion(version)}. Older releases may not support your current layouts or settings. User data will not be converted.\n\n` : "")
       + (details.widget.present
-        ? "This will replace the AeroGrid installation on your radio. No backup or rollback is available.\n\n"
+        ? "This will replace the AeroGrid installation on your radio. Any modified or added files in WIDGETS/AeroGrid will be discarded. No backup or rollback is available.\n\n"
         : "This will install AeroGrid on your radio.\n\n")
       + (!details.widget.version && details.widget.present ? "The existing version is unknown; version comparison is unavailable.\n\n" : "")
       + "AeroGrid user data, maps, other widgets, model/radio settings, and firmware will not be changed.";
@@ -283,7 +293,7 @@ if (panel) {
     operationFinished = false;
     progress.hidden = true;
     operationStatus.textContent = "";
-    operationStatus.classList.remove("ag-radio-error", "ag-radio-success");
+    operationStatus.classList.remove("ag-radio-error", "ag-radio-success", "ag-radio-warning");
     render();
     confirmDialog.showModal();
     confirmStart.focus();
