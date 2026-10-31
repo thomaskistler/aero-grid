@@ -10,6 +10,8 @@ theme:
   custom_dir: docs/overrides
   color_mode: light
   nav_style: light
+  analytics:
+    gtag: G-RMCKML1PKS
 
 extra_css:
   - stylesheets/aerogrid.css

@@ -298,6 +298,9 @@ if (panel) {
         const selected = await loadRelease(base, version);
         if (selected.version !== version) throw new Error("This release is no longer available. Reload and choose it again.");
         const prepared = await preparePackage(selected, base, report);
+        if (typeof window.gtag === "function") {
+          window.gtag("event", "release_download", { version: prepared.version });
+        }
         const current = await radioStorage.inspect();
         if (current.radio.board !== expected.radio.board || current.radio.version !== expected.radio.version
             || current.widget.present !== expected.widget.present || current.widget.version !== expected.widget.version) {
