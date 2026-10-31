@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="robots" content="noindex">
+    <meta http-equiv="refresh" content="0; url=../../../0.4.0/panels/output/">
+    <title>Redirecting to AeroGrid documentation</title>
+  </head>
+  <body>
+    <p><a href="../../../0.4.0/panels/output/">Continue to the documentation</a></p>
+    <script>
+      const target = new URL("../../../0.4.0/panels/output/", location.href);
+      new URLSearchParams(location.search).forEach((value, key) => target.searchParams.set(key, value));
+      target.hash = location.hash;
+      location.replace(target.href);
+    </script>
+  </body>
+</html>
