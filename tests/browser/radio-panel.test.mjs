@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import vm from "node:vm";
-import { actionFor } from "../../docs/javascripts/radio-installer.mjs";
+import { actionFor, isDeveloperVersion } from "../../docs/javascripts/radio-installer.mjs";
 import { compareVersions, radioCompatibility, radioHardware } from "../../docs/javascripts/radio-storage.mjs";
 
 const source = (await readFile(new URL("../../docs/javascripts/radio-panel.mjs", import.meta.url), "utf8"))
@@ -11,7 +11,9 @@ const source = (await readFile(new URL("../../docs/javascripts/radio-panel.mjs",
   .replaceAll("import.meta.url", JSON.stringify(new URL("../../docs/javascripts/radio-panel.mjs", import.meta.url).href));
 
 async function panel({ gtag, allowInstallation = false, downloadError, writeError,
-  siteRoot, docsURL = "https://thomaskistler.github.io/aero-grid/main/user-guide/installation/" } = {}) {
+  siteRoot, extraReleases = [], openConfirmation = true,
+  docsURL = "https://thomaskistler.github.io/aero-grid/main/user-guide/installation/" } = {}) {
+  class HTMLInputElement {}
   const elements = new Map();
   const document = { hidden: false, activeElement: null };
   function element(name) {
@@ -19,19 +21,21 @@ async function panel({ gtag, allowInstallation = false, downloadError, writeErro
     const listeners = new Map();
     const classes = new Set();
     const node = {
-      textContent: "", hidden: false, disabled: false, open: false,
+      textContent: "", hidden: false, disabled: false, open: false, children: [], checked: false,
       classList: {
         toggle(name, enabled) { if (enabled) classes.add(name); else classes.delete(name); },
         remove(...names) { for (const name of names) classes.delete(name); },
         contains(name) { return classes.has(name); },
       },
-      setAttribute() {}, append() {}, replaceChildren() {},
+      setAttribute() {},
+      append(...children) { this.children.push(...children); },
+      replaceChildren() { this.children = []; },
       addEventListener(event, listener) {
         if (!listeners.has(event)) listeners.set(event, []);
         listeners.get(event).push(listener);
       },
-      async dispatch(event) {
-        for (const listener of listeners.get(event) ?? []) await listener({});
+      async dispatch(event, payload = {}) {
+        for (const listener of listeners.get(event) ?? []) await listener(payload);
       },
       focus() { if (!this.disabled) document.activeElement = this; },
       showModal() { this.open = true; },
@@ -47,7 +51,11 @@ async function panel({ gtag, allowInstallation = false, downloadError, writeErro
   host.querySelector = (selector) => element(selector.slice(6, -1));
   document.querySelector = (selector) => selector === 'meta[name="aerogrid-site-root"]'
     ? { content: siteRoot } : host;
-  document.createElement = () => element(Symbol());
+  document.createElement = (tag) => {
+    const node = element(Symbol());
+    if (tag === "input") Object.setPrototypeOf(node, HTMLInputElement.prototype);
+    return node;
+  };
   let details = {
     radio: { name: "Test SD", board: "tx16s", version: "2.12.4" },
     widget: { present: true, version: "0.0.1" },
@@ -70,38 +78,67 @@ async function panel({ gtag, allowInstallation = false, downloadError, writeErro
   const requestedBases = [];
   vm.runInNewContext(source, {
     document, window: { isSecureContext: true, showDirectoryPicker() {}, addEventListener() {}, gtag },
-    radioStorage, actionFor, compareVersions, radioCompatibility, radioHardware,
+    radioStorage, actionFor, isDeveloperVersion, compareVersions, radioCompatibility, radioHardware, HTMLInputElement,
     structuredClone, URL, console, queueMicrotask, location: { href: docsURL },
     loadCatalog: async (base) => {
       requestedBases.push(base.href);
-      return { latest: "1.0.0", releases: [{ version: "1.0.0", available: true, name: "Test release" }] };
+      return { latest: "1.0.0", releases: [{ version: "1.0.0", available: true, name: "Test release" }, ...extraReleases] };
     },
-    loadRelease: async (base) => {
+    loadRelease: async (base, version) => {
       requestedBases.push(base.href);
-      return { version: "1.0.0" };
+      return { version };
     },
     preparePackage: async (manifest) => {
       if (downloadError) throw downloadError;
       return { version: manifest.version, files: [] };
     },
-    replaceWidget: async () => {
+    replaceWidget: async (_root, prepared) => {
       if (writeError) throw writeError;
-      details.widget.version = "1.0.0";
+      details.widget.version = prepared.version;
     },
     verifyInstalled: async () => {},
     setInterval(callback, interval) { assert.equal(interval, 5000); poll = callback; },
   }, { filename: "radio-panel.mjs" });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(element("install").disabled, false);
-  await element("install").dispatch("click");
-  assert.equal(element("confirm-dialog").open, true);
-  assert.equal(element("confirm").hidden, false);
+  if (openConfirmation) {
+    await element("install").dispatch("click");
+    assert.equal(element("confirm-dialog").open, true);
+    assert.equal(element("confirm").hidden, false);
+  }
   return {
     element, document, radioStorage, poll, requestedBases,
     change(update) { details = update(structuredClone(details)); },
     loseAccess(name) { failure = new DOMException("Drive unavailable", name); },
   };
 }
+
+test("developer builds require checkbox opt-in, warn before installation, and reset to stable when hidden", async () => {
+  const version = "1.0.0-dev.12+g" + "a".repeat(40);
+  const ui = await panel({
+    openConfirmation: false, allowInstallation: true,
+    extraReleases: [{ version, available: true, name: "Developer build" }],
+  });
+  const rows = () => ui.element("releases").children;
+  assert.equal(rows().length, 1);
+  assert.equal(ui.element("developer-releases").checked, false);
+  ui.element("developer-releases").checked = true;
+  await ui.element("developer-releases").dispatch("change");
+  assert.equal(rows().length, 2);
+  const developer = rows()[1].children[0].children[0];
+  assert.equal(developer.value, version);
+  await ui.element("releases").dispatch("change", { target: developer });
+  assert.match(ui.element("latest").textContent, /developer build/);
+  await ui.element("install").dispatch("click");
+  assert.match(ui.element("confirm-description").textContent, /DEVELOPER BUILD.*unstable/);
+  await ui.element("confirm-cancel").dispatch("click");
+  ui.element("developer-releases").checked = false;
+  await ui.element("developer-releases").dispatch("change");
+  assert.equal(rows().length, 1);
+  assert.equal(ui.element("latest").textContent, "v1.0.0 - latest");
+  await ui.element("releases").dispatch("change", { target: developer });
+  assert.equal(ui.element("latest").textContent, "v1.0.0 - latest");
+});
 
 for (const version of ["main", "0.1.0", "0.4.0"]) {
   test(`documentation version ${version} uses the shared installer and its independent latest release`, async () => {

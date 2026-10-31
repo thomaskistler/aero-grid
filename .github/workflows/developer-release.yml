@@ -1,0 +1,80 @@
+# SPDX-License-Identifier: GPL-2.0-only
+name: Developer release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    branches: [main]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aerogrid-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Skip superseded builds
+        id: current
+        env:
+          COMMIT: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          git fetch origin main
+          if [ "$(git rev-parse origin/main)" = "$COMMIT" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "A newer commit is on main; leaving the developer release unchanged."
+          fi
+      - name: Package and replace developer release
+        if: steps.current.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT: ${{ github.event.workflow_run.head_sha }}
+          BUILD_NUMBER: ${{ github.event.workflow_run.run_number }}
+        run: |
+          set -euo pipefail
+          python3 tools/package-release.py --developer-build "$BUILD_NUMBER.$COMMIT"
+          base_version="$(python3 tools/package-release.py --version-only)"
+          version="${base_version%%-*}-dev.$BUILD_NUMBER+g$COMMIT"
+          releases="$(gh api --paginate "repos/$GH_REPO/releases" --jq '.[].tag_name')"
+          if printf '%s\n' "$releases" | grep -qx dev; then
+            gh release edit dev --draft=true
+          else
+            gh release create dev --target "$COMMIT" --draft --prerelease \
+              --title "AeroGrid $version (developer build)"
+          fi
+          git tag --force dev "$COMMIT"
+          git push --force origin refs/tags/dev
+          gh release upload dev build/release/AeroGrid-dev.zip \
+            build/release/AeroGrid-dev.zip.sha256 --clobber
+          cat > build/release/dev-notes.md <<EOF
+          Developer build from main. Unreleased changes may be unstable.
+
+          Version: $version
+          Commit: $COMMIT
+          Build: https://github.com/$GH_REPO/actions/runs/${{ github.event.workflow_run.id }}
+
+          In the [USB installer](https://thomaskistler.github.io/aero-grid/main/user-guide/installation/),
+          check **Show developer releases** to select this build after the website updates.
+          For manual installation, extract AeroGrid-dev.zip and replace WIDGETS/AeroGrid on the SD card.
+          EOF
+          gh release edit dev --title "AeroGrid $version (developer build)" \
+            --notes-file build/release/dev-notes.md --prerelease --latest=false --draft=false

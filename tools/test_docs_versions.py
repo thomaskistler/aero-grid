@@ -19,6 +19,34 @@ def release(version, draft=False):
 
 
 class ReleaseVersionTests(unittest.TestCase):
+    def test_rolling_developer_release_uses_main_docs_not_a_version_snapshot(self):
+        developer = {"tag_name": "dev", "draft": False, "prerelease": True}
+        self.assertEqual(docs_versions.release_versions([release("0.1.0"), developer], release("0.1.0")),
+                         ({"0.1.0": "v0.1.0"}, "0.1.0"))
+        with self.assertRaises(ValueError):
+            docs_versions.release_versions([release("0.1.0"), {**developer, "prerelease": False}], release("0.1.0"))
+
+    def test_existing_installer_pages_get_current_picker_and_modules(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            for version in ("main", "0.1.0"):
+                root = output / version
+                page = root / "user-guide/installation/index.html"
+                page.parent.mkdir(parents=True)
+                page.write_text('<h1>Keep this version</h1><div data-radio-installer>'
+                                '<dialog data-release-dialog>'
+                                + ('<input type="checkbox" data-developer-releases>' if version == "main" else "Old picker")
+                                + '</dialog></div>')
+                (root / "javascripts").mkdir()
+                for name in ("radio-installer.mjs", "radio-panel.mjs", "radio-storage.mjs"):
+                    (root / "javascripts" / name).write_text(version)
+            docs_versions.update_installers(output, [{"version": "main"}, {"version": "0.1.0"}])
+            html = (output / "0.1.0/user-guide/installation/index.html").read_text()
+            self.assertIn("Keep this version", html)
+            self.assertIn("data-developer-releases", html)
+            self.assertNotIn("Old picker", html)
+            self.assertEqual((output / "0.1.0/javascripts/radio-panel.mjs").read_text(), "main")
+
     def test_drafts_are_excluded_and_prereleases_do_not_set_the_default(self):
         versions, latest = docs_versions.release_versions(
             [release("0.1.0"), release("0.2.0-beta.1"), release("0.3.0", draft=True)],

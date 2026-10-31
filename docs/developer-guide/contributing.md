@@ -136,15 +136,17 @@ This is a maintainer operation, not a required step for a normal contribution.
    and package validation against the exact selected commit, creates
    `v<version>`, uploads the ZIP and checksum to a draft, then publishes.
 
-There is no automatic release on every merge, and no need to create a release
-manually in the Releases UI. Release notes include installation links and
-hardware coverage.
+Successful CI builds on `main` update a single [developer prerelease](https://github.com/thomaskistler/aero-grid/releases/tag/dev),
+replacing its ZIP and checksum. Select **Show developer releases** in the USB
+installer to try it. Developer builds may be unstable; stable and beta/RC
+releases still use the manual workflow above.
 
 If validation fails, fix it in a PR, merge, and run again. If publication fails
 after creating a tag/draft, rerun the **same workflow run** at the same commit:
 it can resume a matching draft and replace incomplete assets. A tag pointing
 to another commit or an already-public release is rejected. Never move a
-published tag; use a new version for fixes. Abandoning an unpublished attempt
+published version tag; use a new version for fixes. The rolling `dev` tag is the exception.
+Abandoning an unpublished attempt
 requires deliberately removing its draft and tag before reusing that version.
 
 Documentation defaults to the latest stable release. The header's
@@ -157,7 +159,7 @@ deployment; subsequent deployments preserve those snapshots. To publish again,
 run **Actions > Documentation > Run workflow** on **main**.
 
 Released content and layouts stay version-specific; all builds share the current
-version navigation and Google Analytics configuration.
+version navigation, installer UI, and Google Analytics configuration.
 
 Generated snapshots are stored on `gh-pages`; do not edit that branch manually.
 Repository **Settings > Pages > Source** must remain **GitHub Actions**.

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
-"""Mirror validated stable installation releases into a built documentation site."""
+"""Mirror validated stable and rolling developer releases into a documentation site."""
 import argparse
 import hashlib
 import io
@@ -15,6 +15,7 @@ REPOSITORY = "thomaskistler/aero-grid"
 API_URL = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
 RELEASES_URL = f"https://api.github.com/repos/{REPOSITORY}/releases"
 STABLE_VERSION = re.compile(r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)")
+DEVELOPER_VERSION = re.compile(STABLE_VERSION.pattern + r"-dev\.[1-9]\d*\+g[a-f0-9]{40}")
 PREFIX = "WIDGETS/AeroGrid/"
 MAX_DOWNLOAD = 16 * 1024 * 1024
 MAX_TOTAL = 64 * 1024 * 1024
@@ -37,23 +38,31 @@ def fetch(url, limit, api=False):
 def release_assets(release):
     tag = release.get("tag_name", "")
     version = tag.removeprefix("v")
-    if (not STABLE_VERSION.fullmatch(version) or tag != f"v{version}"
-            or release.get("draft") is not False or release.get("prerelease") is not False):
-        raise ValueError("Latest release must be a published stable vX.Y.Z release")
-    archive = f"AeroGrid-{version}.zip"
+    developer = tag == "dev"
+    if developer:
+        match = re.fullmatch(r"AeroGrid (.+) \(developer build\)", release.get("name", ""))
+        version = match[1] if match else ""
+    if (release.get("draft") is not False
+            or (developer and (not DEVELOPER_VERSION.fullmatch(version)
+                              or release.get("prerelease") is not True))
+            or (not developer and (not STABLE_VERSION.fullmatch(version) or tag != f"v{version}"
+                                   or release.get("prerelease") is not False))):
+        raise ValueError("Release must be a published stable vX.Y.Z release or a valid dev prerelease")
+    archive = f"AeroGrid-{'dev' if developer else version}.zip"
     urls = []
     for name in (archive, archive + ".sha256"):
         matches = [asset for asset in release.get("assets", []) if asset.get("name") == name]
         expected = f"https://github.com/{REPOSITORY}/releases/download/{tag}/{name}"
         if len(matches) != 1 or matches[0].get("browser_download_url") != expected:
-            raise ValueError(f"Latest stable release is missing a valid {name} asset")
+            raise ValueError(f"Release is missing a valid {name} asset")
         urls.append(expected)
     return version, urls
 
 
 def unpack(version, archive, checksum):
+    archive_version = "dev" if DEVELOPER_VERSION.fullmatch(version) else version
     match = re.fullmatch(
-        rf"([a-fA-F0-9]{{64}})  AeroGrid-{re.escape(version)}\.zip\s*", checksum
+        rf"([a-fA-F0-9]{{64}})  AeroGrid-{re.escape(archive_version)}\.zip\s*", checksum
     )
     digest = hashlib.sha256(archive).hexdigest()
     if not match or match[1].lower() != digest:
@@ -117,13 +126,14 @@ def unpack(version, archive, checksum):
 def publish(release, archive, checksum, output, latest=True):
     version, _ = release_assets(release)
     files, digest = unpack(version, archive, checksum)
-    target = output / "releases" / version
+    developer = release["tag_name"] == "dev"
+    target = output / "releases" / ("dev" if developer else version)
     if target.exists():
         raise ValueError(f"Installer output already exists: {target}")
     manifest = {
         "schema": 1,
         "version": version,
-        "release": f"https://github.com/{REPOSITORY}/releases/tag/v{version}",
+        "release": f"https://github.com/{REPOSITORY}/releases/tag/{release['tag_name']}",
         "archiveSha256": digest,
         "files": [
             {"path": name, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
@@ -135,7 +145,7 @@ def publish(release, archive, checksum, output, latest=True):
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(data)
     (target / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    if latest:
+    if latest and not developer:
         (output / "latest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return manifest
 
@@ -187,6 +197,18 @@ def publish_catalog(output, fetcher=fetch):
             publish(item, fetcher(urls[0], MAX_DOWNLOAD),
                     fetcher(urls[1], 1024).decode("ascii"), output, latest=version == latest_version)
         entries.append(entry)
+    developers = [item for item in releases if item.get("tag_name") == "dev" and item.get("draft") is False]
+    if len(developers) > 1:
+        raise ValueError("Duplicate developer release")
+    for item in developers:
+        version, urls = release_assets(item)
+        publish(item, fetcher(urls[0], MAX_DOWNLOAD),
+                fetcher(urls[1], 1024).decode("ascii"), output, latest=False)
+        entries.append({
+            "version": version, "name": item["name"],
+            "release": f"https://github.com/{REPOSITORY}/releases/tag/dev",
+            "available": True, "reason": None,
+        })
     catalog = {"schema": 1, "latest": latest_version, "releases": entries}
     (output / "releases.json").write_text(json.dumps(catalog, indent=2) + "\n")
     return catalog
