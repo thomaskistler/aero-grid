@@ -58,8 +58,10 @@ for index, entry in ipairs(context.panels) do
 end
 
 local callbackCount, worstInstructions = 0, 0
-local traceAges, frameAges = {}, {}
-local seenPlotAt, lastDrawnRevision = {}, {}
+-- Input timestamps begin at mock-source updates. History revisions are observed
+-- after each host callback; drawn revisions count only after the staged frame ends.
+local sourceRecordAges, recordTraceAges, sourceTraceAges, frameTimes = {}, {}, {}, {}
+local inputChangedAt, seenPlotRevision, sampleTimes, lastDrawnRevision = {}, {}, {}, {}
 local function measureRefresh()
     fixture.lvglMock.setPropertyValidation(false)
     fixture.lvglMock.setCallCounting(false)
@@ -99,22 +101,36 @@ local function observe(callback)
         elseif not active and chart.wasActive then
             local elapsed = (callback - chart.frameStart) * 50
             chart.frames[#chart.frames + 1] = elapsed
-            frameAges[#frameAges + 1] = elapsed
+            frameTimes[#frameTimes + 1] = elapsed
         end
         chart.wasActive = active
 
         for seriesIndex, item in ipairs(instance.series) do
             local key = chartIndex .. ":" .. seriesIndex
             local plotRevision = item.feed.plotRevision
-            if plotRevision ~= nil then
-                local seen = seenPlotAt[key] or {}
-                seenPlotAt[key] = seen
-                seen[plotRevision] = seen[plotRevision] or callback
+            local source = item.settings.source
+            local changedAt = inputChangedAt[source]
+            local seenRevision = seenPlotRevision[key] or 0
+            if plotRevision ~= nil and plotRevision > seenRevision then
+                local times = sampleTimes[key] or {}
+                sampleTimes[key] = times
+                local now = getTime()
+                for revision = seenRevision + 1, plotRevision do
+                    times[revision] = { sampledAt = now, changedAt = changedAt }
+                    if changedAt then
+                        sourceRecordAges[#sourceRecordAges + 1] = (now - changedAt) * 10
+                    end
+                end
+                seenPlotRevision[key] = plotRevision
             end
             if not active and item.drawnRevision ~= lastDrawnRevision[key] then
-                local sampledAt = seenPlotAt[key] and seenPlotAt[key][item.drawnRevision]
-                if sampledAt then
-                    traceAges[#traceAges + 1] = (callback - sampledAt) * 50
+                local sampled = sampleTimes[key] and sampleTimes[key][item.drawnRevision]
+                if sampled then
+                    local visibleAt = getTime()
+                    recordTraceAges[#recordTraceAges + 1] = (visibleAt - sampled.sampledAt) * 10
+                    if sampled.changedAt then
+                        sourceTraceAges[#sourceTraceAges + 1] = (visibleAt - sampled.changedAt) * 10
+                    end
                 end
                 lastDrawnRevision[key] = item.drawnRevision
             end
@@ -126,6 +142,7 @@ local callbacks = 1200
 for callback = 1, callbacks do
     for sourceIndex, source in ipairs(sources) do
         fixture.radio.values[5000 + sourceIndex] = ((callback * 17 + sourceIndex * 331) % 2049) - 1024
+        inputChangedAt[source] = getTime()
     end
     fixture.tick(5)
     measureRefresh()
@@ -152,21 +169,29 @@ for index, chart in ipairs(charts) do
         #chart.frames
     )
 end
-assert(#traceAges > 10, "the baseline must capture repeated sample-to-trace measurements")
+assert(#sourceRecordAges > 10, "the baseline must capture source-to-record measurements")
+assert(#recordTraceAges > 10, "the baseline must capture repeated record-to-trace measurements")
 print(
     string.format(
         "  chart responsiveness baseline: %d callbacks (%.1fs), %s; "
-            .. "trace age p50/p95/max=%d/%d/%d ms; frame time p50/p95/max=%d/%d/%d ms; "
+            .. "source->record p50/p95/max=%d/%d/%d ms; record->trace=%d/%d/%d ms; "
+            .. "source->trace=%d/%d/%d ms; frame=%d/%d/%d ms; "
             .. "worst callback=%d instructions",
         callbackCount,
         callbackCount / 20,
         table.concat(dimensions, ", "),
-        percentile(traceAges, 0.50),
-        percentile(traceAges, 0.95),
-        percentile(traceAges, 1),
-        percentile(frameAges, 0.50),
-        percentile(frameAges, 0.95),
-        percentile(frameAges, 1),
+        percentile(sourceRecordAges, 0.50),
+        percentile(sourceRecordAges, 0.95),
+        percentile(sourceRecordAges, 1),
+        percentile(recordTraceAges, 0.50),
+        percentile(recordTraceAges, 0.95),
+        percentile(recordTraceAges, 1),
+        percentile(sourceTraceAges, 0.50),
+        percentile(sourceTraceAges, 0.95),
+        percentile(sourceTraceAges, 1),
+        percentile(frameTimes, 0.50),
+        percentile(frameTimes, 0.95),
+        percentile(frameTimes, 1),
         worstInstructions
     )
 )

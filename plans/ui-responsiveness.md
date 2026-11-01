@@ -9,21 +9,18 @@ The metric is the **age of the data on screen** (sample time to painted), not re
 
 One dashboard with two chart panels, each plotting two stick inputs, shows about
 **2 s** between moving a stick and the trace reflecting it (reported by the pilot;
-approximate, not instrumented).
+approximate, not instrumented). The pilot's visual impression is that a redraw about a
+second after stick movement still shows the old position, and a later redraw shows the
+movement. This is a useful symptom, not evidence that sampling itself takes a second:
+the screen alone cannot distinguish source-poll delay, recording delay, or a staged chart
+frame displaying an older snapshot.
 
-Working hypothesis, from the code: history records every poll promptly, so the delay is
-in display. A moving stick makes every chart need a new frame constantly. The host runs
-one chart turn per callback (`refreshCost = 6` fills the cap) and callbacks arrive about
-every 50 ms. In a frame, each series is projected one pixel column at a time, at most
-7 to 8 columns per callback (`PROJECTION_CAP`), then applied to LVGL a few lines per
-callback. The new plot stays hidden until every phase and series finishes, and charts
-wait for each other (`refreshOwner`). Rough latency:
-
-idle interval (0.2 to 1 s, by window) + 2 charts x (2 series x plot columns / 8 + phase
-turns) x 50 ms
-
-Plot width in columns is therefore the main lever. Confirm with Phase 0 before relying
-on it.
+The chart code makes a display-side delay plausible: each series projects a limited
+number of history columns per callback (`PROJECTION_CAP`), applies its trace in bounded
+steps, and the staged plot stays hidden until the frame is complete. Same-type chart
+panels are serialized by `refreshOwner`. But the live radio path from stick source to
+recorded history has not yet been measured, so do not attribute either apparent second
+to a particular stage yet.
 
 Field setup: both charts are **growing** and each occupies a **2x2** panel, so about
 half the screen width each. The 480px mocked radio gives each a 130px plot area; measure
@@ -48,12 +45,16 @@ This is the highest-priority problem, ahead of the output panel.
 ## Phase 0: baseline (no behavior change)
 
 Add a test-side harness on `tests/support/widget_fixture.lua`, modeled on the instruction
-hook in `tests/integration/widget/test_chart_recording.lua`. The test-only baseline
-implements the two-chart field scenario with 50 ms simulated callbacks. Measure:
+hook in `tests/integration/widget/test_chart_recording.lua`. Measure both source-change-
+to-recorded-sample delay and recorded-sample-to-visible-trace delay. The test-only
+baseline implements the two-chart field scenario with 50 ms simulated callbacks, but
+its source values change inside the mock before each callback; it does not model or
+measure physical-stick-to-radio-source latency.
 
 - Output panel: ticks from a `getOutputValue` change to the bar and percent being set.
 - Service rotation: ticks between updates of each service.
-- Chart: sample-to-visible-trace age and full-frame duration; callback instruction cost.
+- Chart: mock-source-change-to-recorded-sample age, recorded-sample-to-visible-trace age,
+  full-frame duration, and callback instruction cost.
 - Peak and p95 instructions per callback.
 
 Scenarios: output-only (32 channels), chart-only (1 and 3 series, short and long
@@ -69,10 +70,12 @@ interval. Add temporary timing to the diagnostics log only if that is inconclusi
 
 Initial simulated field-case baseline (`test_chart_responsiveness.lua`): two 2x2 charts,
 two changing series each, 130 plot columns, and 50 ms callbacks. Over 60 simulated
-seconds, each chart completed 52 frames; trace age was 550/700/1000 ms (p50/p95/max),
-full-frame time was 500/600/900 ms, and the worst callback was 8,600 instructions. This
-is a mock-radio baseline, not a hardware measurement; p95 is above the proposed 500 ms
-target.
+seconds, each chart completed 52 frames. The mock source-change-to-recorded-sample
+interval was 50/50/50 ms (p50/p95/max); recorded-sample-to-visible-trace was
+550/700/1000 ms; source-change-to-visible-trace was 600/750/1050 ms. Full-frame time was
+500/600/900 ms and the worst callback was 8,600 instructions. Source timestamps have only
+50 ms granularity here. This is not a hardware measurement; it cannot represent physical
+stick-to-radio-source latency or confirm the pilot's apparent two-step sequence.
 
 Exit: a table of current numbers and targets derived from it. Proposed: output age
 p95 <= 150 ms with typical services active; trace age p95 <= 500 ms in the two-chart
