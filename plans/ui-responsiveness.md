@@ -26,9 +26,9 @@ Plot width in columns is therefore the main lever. Confirm with Phase 0 before r
 on it.
 
 Field setup: both charts are **growing** and each occupies a **2x2** panel, so about
-half the screen width each (on a TX16S, a plot of very roughly 200 columns, to be
-measured). In growing mode the time-to-x mapping is fixed until the window grows by a
-minute, and a stick chart quickly reaches stable full-range bounds. So almost every
+half the screen width each. The 480px mocked radio gives each a 130px plot area; measure
+the actual plot width on the radio. In growing mode the time-to-x mapping is fixed until
+the window grows by a minute, and a stick chart quickly reaches stable full-range bounds. So almost every
 column already drawn stays correct from one frame to the next, and a full re-projection
 every frame is mostly redundant work. This makes incremental drawing in growing mode the
 most promising fix, not an optional extra.
@@ -48,12 +48,12 @@ This is the highest-priority problem, ahead of the output panel.
 ## Phase 0: baseline (no behavior change)
 
 Add a test-side harness on `tests/support/widget_fixture.lua`, modeled on the instruction
-hook in `tests/integration/widget/test_chart_recording.lua`. Measure:
+hook in `tests/integration/widget/test_chart_recording.lua`. The test-only baseline
+implements the two-chart field scenario with 50 ms simulated callbacks. Measure:
 
 - Output panel: ticks from a `getOutputValue` change to the bar and percent being set.
 - Service rotation: ticks between updates of each service.
-- Chart: ticks from a telemetry change to the legend changing; callbacks per frame;
-  instruction cost per stage (axis, traces, flights, resumes, arms).
+- Chart: sample-to-visible-trace age and full-frame duration; callback instruction cost.
 - Peak and p95 instructions per callback.
 
 Scenarios: output-only (32 channels), chart-only (1 and 3 series, short and long
@@ -67,8 +67,16 @@ panel, and a 30 second versus 10 minute window. Lag that grows with series count
 width points to projection cost; lag that grows with the window alone points to the idle
 interval. Add temporary timing to the diagnostics log only if that is inconclusive.
 
+Initial simulated field-case baseline (`test_chart_responsiveness.lua`): two 2x2 charts,
+two changing series each, 130 plot columns, and 50 ms callbacks. Over 60 simulated
+seconds, each chart completed 52 frames; trace age was 550/700/1000 ms (p50/p95/max),
+full-frame time was 500/600/900 ms, and the worst callback was 8,600 instructions. This
+is a mock-radio baseline, not a hardware measurement; p95 is above the proposed 500 ms
+target.
+
 Exit: a table of current numbers and targets derived from it. Proposed: output age
-p95 <= 150 ms with typical services active; chart readout age <= 200 ms during a frame.
+p95 <= 150 ms with typical services active; trace age p95 <= 500 ms in the two-chart
+field case.
 
 ## Phase 1: low-risk wins (independent changes)
 
