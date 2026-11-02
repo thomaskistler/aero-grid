@@ -2,12 +2,13 @@
 
 ## Status
 
-The opt-in prototype updates extrema directly from incoming chart readings and
-has a dedicated fixed-level scroll path. The two-series, 240-column native
-fixture meets its workload limits; larger stress cases still exceed the
-original turn targets. **Production integration is not yet approved.**
-The production renderer remains unchanged; the history service
-has an optional sample-observer hook used only by the experiment.
+The acceptance workload is the worst case: **two populated 800-column,
+three-series charts**, incoming readings, 24 recorded sources and Smart.
+Fixed-geometry scrolling now completes in **460 ms through confirmed painting**.
+All measured native callbacks remain below 15,000 instructions. Expansion,
+vertical rescaling and resizing still exceed the 1,000 ms painted deadline.
+**Production integration is not yet approved.** The production renderer remains
+unchanged; its optional history sample-observer hook is dormant without a consumer.
 
 This checkout did not contain the parent worktree's uncommitted responsiveness
 changes or one-parent visual cache. Nothing has been implicitly merged.
@@ -69,6 +70,22 @@ buckets to avoid accumulating rounding error. Level changes still use a full
 redraw. Scroll preserves the last published vertical scale and horizontal
 geometry, including after resizing.
 
+The worst-case adapter now groups native spans by ring quarter and fractional
+pixel phase. Moving 48 parent containers per three-series chart translates the
+retained spans exactly, including half/quarter-pixel rounding. Only the active
+and newly exposed quarter needs individual updates or hiding. Native layout
+and painting still perform work; this is not a zero-CPU transform. The grouped
+path requires integral quarter-columns and the original horizontal geometry.
+Resized geometry and unsupported widths retain the bounded per-span fallback.
+
+Each redraw tracks its captured sample revision and timestamp. New readings
+received during drawing are caught up within the remaining column allowance;
+finished charts also process append updates while another chart owns the
+dispatcher. A window boundary reached by one series moves every series, even
+those receiving no reading. Stable-window vertical/resize jobs skip the future
+tail already hidden by the published frame, without skipping stale-slot cleanup
+when the level or origin changes.
+
 ## Acceptance gate
 
 Include services, recording, synchronous summary updates, projection, native
@@ -83,74 +100,77 @@ application, dispatch waits, other charts and confirmed visible completion.
 | Multi-series append or quarter-scroll | At most two chart turns |
 | Any rescale or resize | At most five chart turns |
 
-These are the original experiment targets. The user has clarified that seven
-redraw callbacks in the 800-column, three-series stress case are not a current
-priority; the representative panel is two series and about 240 pixels wide.
-Keep the strict 15k callback ceiling and report stress results separately,
-rather than presenting that seven-callback redraw as the main blocker.
+These are the original experiment targets. The strict callback ceiling and
+painted deadlines remain primary. Seven extreme redraw turns alone were not a
+priority for the user; the smaller panel example was illustrative, not a reason
+to replace worst-case acceptance. Report turn counts without presenting the
+original five-turn target as the sole blocker.
 
 ## Current measurements
 
-Native runs use the existing host service/dispatch path. Times end at setter
-submission, **not confirmed per-operation painting**.
+Final native run: `build/chart-mipmap-worst-native-v6/native-results.json`.
+Both charts have 800 summary columns and three series, compressed into the
+480-pixel simulator's two full-width panels. Ordinary polling, recording,
+Smart and dispatcher serialization use the real host path, with deterministic
+synthetic firmware readings.
 
-| Operation | 240 columns, two series: turns / time | 800 columns, three series: turns / time |
-| --- | --- | --- |
-| Append | 1 / <10 ms | 1 / <10 ms |
-| Horizontal expansion | 3 / 110 ms | 7 / 340 ms |
-| Vertical rescale | 3 / 120 ms | 7 / 340 ms |
-| Populated fixed-level quarter-scroll | 2 / 60 ms | 7 / 310 ms |
-| Resize of the scrolled view | 4 / 160 ms | 10 / 480 ms |
+| Operation | Max chart turns | Whole host callbacks | First verified paint | Worst instruction bound | Incoming sample events |
+| --- | --- | --- | --- | --- | --- |
+| Append | 1 | 2 | 180 ms | 8,200 | 4 |
+| Horizontal expansion | 11 | 20 | 1,160 ms | 13,200 | 10 |
+| Vertical rescale | 9 | 18 | 1,070 ms | 13,600 | 6 |
+| Populated fixed-level quarter-scroll | 4 | 7 | 460 ms | 11,600 | 6 |
+| Resize of the scrolled view | 9 | 18 | 1,050 ms | 14,000 | 8 |
 
-Scroll callback instruction upper bounds are **10,000** at 240 columns and
-**12,200** at 800 columns. The worst bound across all five operations is
-10,000 and 13,800 respectively. Bounds use the next callback's
-`getUsage()` for the preceding complete refresh, plus one 200-instruction
-quantum (EdgeTX v2.12.0).
+Every one of the **65 complete callbacks** has a trace entry and stays strictly
+below 15,000 instructions. Bounds use the next callback's `getUsage()` for the
+preceding complete refresh, plus one 200-instruction quantum (EdgeTX v2.12.0).
+All five native frames match every expected plot pixel, including cleared
+regions. Painting adds 50-60 ms after setter completion; the 990 ms resize
+submission is therefore **not** a painted-deadline pass.
 
-Scroll preparation now fills and publishes the maximum level before timing,
-then admits the reading that crosses its next quarter-window boundary. It
-does not combine a level change with scrolling. The 240-column run shifts
-358 retained spans using x-only setters; the 800-column run shifts 1,797.
-The preceding warm-up uses 50 ms readings; maximum-level preparation uses
-roughly one reading per bucket. This is deterministic long-duration input,
-not continuous live sampling during a redraw.
+The preceding per-span scroll run took 1,170 ms through painting. The grouped
+path moves 96 native containers across both charts rather than individually
+shifting the retained spans. Start timing now aligns with a natural chart-source
+poll, ensuring the short scroll receives readings without changing polling
+quotas, service order or cursors. Ordinary sources remain available; their
+maximum observed age at completion is 570 ms.
 
-The old sparse, mixed level-change/scroll result of ten callbacks is not
-directly comparable with this populated fixture. There is still no deferred
-recorder-segment distribution: incoming readings update at most eleven
-columns per series, decreasing as fine levels retire.
+Input feeds both charts throughout their initial redraws. Once both initial
+frames complete, the fixture establishes a comparison fence and drains all
+readings received through that fence. **Polling and recording continue during
+the drain**; only forwarding into the test maps stops. This proves a settled
+fenced frame, not perpetual zero-lag publication under continuously changing
+input. Preparation, trigger alignment and bounded diagnostic target export
+are outside timed submission callbacks.
 
-The instrumented dense mock attributes about **3,000 instructions per admission**
-to recording plus synchronous hierarchy updates across three series. There is
-no separate deferred-maintenance cost; `work=0` does not mean summary updates
-are free. Mock setter bodies run in Lua, unlike native C++ setters, so mock
-instruction failures are not native drawing counts.
-
-General redraws admit up to 130 columns per series with unchanged x, 90 with
-changed x, and 24 on admission. X-only scrolls use a chart-wide ceiling of 400
-columns, 300 on admission, additionally bounded by the per-series batch limit.
-These are measured fixture operating points, not a production scheduler.
+The stress adapter caps each series at 64 columns with telemetry work, 80 with
+other Smart-pump work, and 130 otherwise, also respecting `--batch`. General
+x-changing redraws retain their 90-column ceiling. Admission throttling applies
+only when the renderer itself records a reading, not when the host already
+delivered it. These are measured opt-in operating points, not a production
+instruction scheduler. Mock Lua setters inflate counts relative to native C++
+setters; mock geometry passes do not establish a native budget pass.
 
 ## Remaining work before integration
 
-Measure continuous input during redraws, heavy 24-source/Smart services,
-multiple charts and actual layout resizing. The two-series 240-column native
-workload passes; the 800-column stress case still exceeds the original
-scroll/redraw turn targets.
-Confirm painted completion, firmware heap use and MK3 display/hardware behavior.
-The current native simulator is 480 pixels wide. The 240-column run uses a
-supported half-width 2x2 panel (about 240 pixels wide, with a narrower inner
-plot); the 800-column workload is compressed into the full-width plot.
-Warm allocations and input preparation are excluded from operation timing.
+Reduce worst-case expansion/rescale/resize painting below 1,000 ms; verify the
+scroll deadline after horizontal geometry changes, where grouped shifting
+currently falls back. The original two-turn scroll/five-turn redraw targets
+also remain unmet. The full gate stays failing rather than being relaxed.
+Confirm actual layout resizing, shared consumer lifetime/reconstruction,
+atomic publication, firmware heap use and MK3 display/hardware behavior.
+Warm allocations remain outside operation timing.
 
 Correctness coverage compares all levels with independent incoming-reading
 extrema, including non-aligned boundaries, partial buckets, gaps/resumes,
 smoothing, long timestamp jumps, wraparound, reset, full recording and
 retirement. Recording with/without an observer must retain identical knots.
-The renderer checks final native-object visibility/geometry against summaries.
-Repeated quarter-scroll tests at 240 and 226 columns cover gaps, fractional
-origins, ring-slot recycling and preservation of resized geometry.
+The renderer checks the full window's final visibility and geometry, not just
+the changed tail. Grouped-scroll tests at 600/800 columns exercise all four
+fractional-pixel phases, repeated ring wraps, gaps, vertical changes, resized
+fallback and an uneven-series boundary during redraw. Continuous competing
+charts and real 24-source/Smart regressions cover catch-up and service fairness.
 
 ## Files and reproduction
 
@@ -162,20 +182,24 @@ origins, ring-slot recycling and preservation of resized geometry.
 | `tests/support/chart_mipmap_prototype.lua` | Opt-in sample-to-native adapter |
 | `tests/unit/lib/test_chart_mipmap.lua` | Extrema, gaps, resets, lifetime and unchanged-recording checks |
 | `tests/integration/widget/test_chart_mipmap_prototype.lua` | Dense native-object geometry checks |
-| `tests/experiments/run_chart_feasibility.py` | Mock/native reports preserving failing gates |
+| `tests/integration/widget/test_chart_mipmap_continuous.lua` | Continuous competing-chart catch-up |
+| `tests/integration/widget/test_chart_mipmap_group_scroll.lua` | Group translations, rounding and fallback correctness |
+| `tests/support/chart_mipmap_stress.lua` | Real-service/Smart workload and fenced comparison |
+| `tests/integration/widget/test_chart_mipmap_stress.lua` | Live-input and recording-fairness regression |
+| `tests/experiments/run_chart_feasibility.py` | Mock/native reports and exact painted-frame verification |
+| `tools/capture-native.cpp` | Optional firmware-timestamped framebuffer trace |
+| `tests/test_chart_feasibility.py` | Complete-pixel comparison and timestamp regressions |
 
 Use fresh output directories:
 
 ```sh
-python3 tests/experiments/run_chart_feasibility.py --recorded --sample-ticks 5 --output build/mipmap-direct-mock-new
-python3 tests/experiments/run_chart_feasibility.py --recorded --profile --sample-ticks 5 --output build/mipmap-direct-profile-new
-python3 tests/experiments/run_chart_feasibility.py --native --recorded --columns 800 --sample-ticks 5 --output build/mipmap-direct-native-new
-python3 tests/experiments/run_chart_feasibility.py --native --recorded --columns 240 --series 2 --sample-ticks 5 --output build/mipmap-scroll-small-new
+python3 tests/experiments/run_chart_feasibility.py --recorded --stress --batch 130 --output build/mipmap-worst-mock-new
+python3 tests/experiments/run_chart_feasibility.py --native --recorded --stress --batch 130 --output build/mipmap-worst-native-new
 ```
 
-Nonzero exit status is expected while workload limits fail. `--sample-ticks`
-controls warm-up reading spacing in 10 ms ticks, not native dispatch cadence.
-`--profile` includes diagnostic instrumentation overhead; omit it for normal
-mock counts. `--batch N` lowers per-series batch limits for comparison.
+Nonzero exit status is expected while workload limits fail. `--batch` is an
+upper limit; the stress adapter may select a smaller service-aware allowance.
+Stress warm-up uses 50 ms synthetic readings; live samples arrive through real
+polling. Non-stress `--sample-ticks` controls preparation spacing, not dispatch.
 Without `--recorded`, the runner retains drawing-only and isolated mapping/
 setter lower bounds, which cannot demonstrate a full performance-gate pass.

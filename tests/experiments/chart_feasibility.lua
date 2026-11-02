@@ -62,6 +62,7 @@ do
             item.batch = batch or 130
             item.sampleTicks = scenario.sample_ticks or sampleTicks or 20
             item.scrollGaps = scenario.scroll_gaps
+            item.live = scenario.continuous
         else
             item = probe.new(entry.instance, {
                 points = scenario.points,
@@ -97,6 +98,7 @@ do
             entry.nextRefresh = getTime()
         end
         local worst, callbacks = 0, 0
+        local feeding = scenario.continuous
         local profile = {}
         repeat
             fixture.tick(16)
@@ -125,6 +127,13 @@ do
             debug.sethook(function()
                 instructions = instructions + 100
             end, "", 100)
+            if feeding then
+                for _, entry in ipairs(context.panels) do
+                    local item = entry.instance.feasibility
+                    item:sample(math.max(item.clock, item.nextStamp) + 5)
+                    item.admitted = true
+                end
+            end
             local ok, message = pcall(definition.refresh, context)
             debug.sethook()
             local setter = profile.mock_setter_body or { total = 0, worst = 0 }
@@ -153,8 +162,19 @@ do
             callbacks = callbacks + 1
             assert(callbacks <= 120, "synthetic job failed to drain")
             local active = false
+            local completed = true
             for _, entry in ipairs(context.panels) do
-                active = active or entry.instance.feasibility.active
+                local item = entry.instance.feasibility
+                active = active or item.active
+                completed = completed and item.completedAt ~= nil
+                if scenario.continuous then
+                    for series, map in ipairs(item.maps) do
+                        active = active or item.published[series].revision ~= map.revision
+                    end
+                end
+            end
+            if completed then
+                feeding = false
             end
         until not active
         local maxMs, turns, submitted = 0, 0, 0
