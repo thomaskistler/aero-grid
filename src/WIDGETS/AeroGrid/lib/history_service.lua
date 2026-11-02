@@ -207,6 +207,11 @@ function history:resetSession(now, index)
         state.first, state.last, state.count = 1, 0, 0
         state.window = entry.mode == "growing" and 6000 or state.window
         state.revision, state.plotRevision = state.revision + 1, state.plotRevision + 1
+        if entry.observers then
+            for _, observer in ipairs(entry.observers) do
+                observer:reset()
+            end
+        end
     end
     return index + 1
 end
@@ -568,6 +573,19 @@ function history:point(view, index, retainedFirst)
     return read(entry, index)
 end
 
+--- Observe the chart's filtered samples without polling again or changing knots.
+--- Observers are subscription-owned and reset with their recording.
+function history:observeSamples(view, observer)
+    local entry = assert(self.views[view], "unknown history subscription")
+    assert(entry.mode == "growing", "sample observer prototype requires growing history")
+    assert(type(observer.sample) == "function" and type(observer.reset) == "function", "invalid sample observer")
+    entry.observers = entry.observers or {}
+    for _, existing in ipairs(entry.observers) do
+        assert(existing ~= observer, "sample observer already registered")
+    end
+    entry.observers[#entry.observers + 1] = observer
+end
+
 --- Skip sealed blocks only when they fit in one screen column. These summaries
 --- accelerate projection; they never replace or recompress the stored knots.
 function history:block(view, index, finish, before)
@@ -678,10 +696,21 @@ function history:sample(reading, now)
                 state.available, state.stale = true, false
                 local precision = entry.precision or (reading.precisionKnown == false and 3 or reading.precision or 0)
                 precision = math.min(3, math.max(0, precision))
+                local broken = entry.gap or entry.segment ~= session.segment or session.elapsed <= entry.lastAt
                 record(entry, entry.filtered, session.elapsed, 0.5 * 10 ^ -precision, session.segment)
+                if entry.observers and not state.full then
+                    for _, observer in ipairs(entry.observers) do
+                        observer:sample(session.elapsed, entry.filtered, broken)
+                    end
+                end
                 state.revision = state.revision + 1
             else
                 entry.gap = true
+                if entry.observers and not entry.state.full then
+                    for _, observer in ipairs(entry.observers) do
+                        observer:sample(session.elapsed, nil, true)
+                    end
+                end
                 if not state.stale then
                     state.stale = state.available
                     state.revision = state.revision + 1
