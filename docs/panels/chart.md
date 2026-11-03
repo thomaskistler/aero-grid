@@ -9,6 +9,8 @@ The legend shows each recorded value and its minimum and maximum.
 Wide layouts keep the legend on the right. Square and tall layouts put it above
 the full-width plot, with two or three metrics arranged left to right. Each metric
 uses two lines: its name and value, then its minimum and maximum.
+Live readings do not change the plot width. Legend text shrinks to fit; values
+that still cannot fit show `...` instead of a truncated number.
 Use separate panels for separate charts.
 Select **Arm switch** in **AeroGrid → Model settings**; changes save automatically.
 Until model arming has been saved, an existing panel arm switch remains in use
