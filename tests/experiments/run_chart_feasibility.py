@@ -12,9 +12,18 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
+RUNTIME_OPERATIONS = {"append", "horizontal", "vertical", "scroll"}
 
 
-def mock(output, kernel, recorded=False, batch=130, profile=False, sample_ticks=20, stress=False):
+def operation_limits(operation, elapsed_ms, turns, series=3, stress=False):
+    if stress and operation not in RUNTIME_OPERATIONS:
+        return True
+    incremental = operation in ("append", "scroll", "resized_scroll")
+    turn_limit = 1 if operation == "append" and series == 1 else 2 if incremental else 5
+    return elapsed_ms < (500 if incremental else 1001) and turns <= turn_limit
+
+
+def mock(output, kernel, recorded=False, batch=130, profile=False, sample_ticks=20, stress=False, resized_scroll=False):
     from lupa.lua53 import LuaRuntime
 
     lua = LuaRuntime(unpack_returned_tuples=True)
@@ -22,26 +31,27 @@ def mock(output, kernel, recorded=False, batch=130, profile=False, sample_ticks=
     if stress:
         rows = lua.execute(
             (ROOT / "tests/experiments/chart_mipmap_stress_mock.lua").read_text(),
-            str(ROOT), batch,
+            str(ROOT), batch, resized_scroll,
         )
         results = [dict(rows[index].items()) for index in range(1, len(rows) + 1)]
         for row in results:
             row["callback_instructions"] = list(row["callback_instructions"].values())
+            row["runtime_operation"] = row["operation"] in RUNTIME_OPERATIONS
             row["passed"] = (
                 len(row["callback_instructions"]) == row["callbacks"]
                 and all(count < 15000 for count in row["callback_instructions"])
-                and row["setter_complete_ms"] < (500 if row["operation"] in ("append", "scroll") else 1001)
-                and row["turns"] <= (2 if row["operation"] in ("append", "scroll") else 5)
+                and operation_limits(row["operation"], row["setter_complete_ms"], row["turns"], stress=True)
             )
-        limits_passed = len(results) == 5 and all(row["passed"] for row in results)
+        limits_passed = len(results) == (6 if resized_scroll else 4) and all(row["passed"] for row in results)
         report = {
-            "kind": "mock continuous 2-chart/800-column/3-series/24-source/Smart workload",
+            "kind": "mock physical-width envelopes/2-chart/3-series/24-source/Smart workload",
             "results": results,
             "workload_limits_passed": limits_passed,
             "gate_passed": False,
             "limitations": [
                 "Mock Lua setter bodies inflate instruction counts; no native painting measurement.",
                 "Input continues through both initial redraws; verification fences and drains the received readings.",
+                "Physical resize and preserved post-resize scrolling are diagnostic, not runtime deadline/turn requirements.",
             ],
         }
         (output / "mock-results.json").write_text(json.dumps(report, indent=2) + "\n")
@@ -166,7 +176,8 @@ def verify_paint(output, sd):
     } for phase, target in sorted(targets.items())]
 
 
-def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3, stress=False):
+def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3, stress=False, resized_scroll=False,
+           prototype_source=None):
     sys.path.insert(0, str(ROOT / "tools"))
     spec = importlib.util.spec_from_file_location("capture", ROOT / "tools/capture-panels.py")
     capture = importlib.util.module_from_spec(spec)
@@ -216,10 +227,11 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
         (ROOT / "tests/support/chart_feasibility.lua").read_text()
     )
     if recorded:
-        for name in ("chart_mipmap_prototype.lua", "mipmap_recorder.lua", "chart_mipmap_stress.lua"):
+        for name in ("chart_mipmap_prototype.lua", "mipmap_recorder.lua", "chart_mipmap_stress.lua", "mipmap_reading_oracle.lua"):
             target = widget / "tests/support" / name
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text((ROOT / "tests/support" / name).read_text())
+            target.write_text(prototype_source if name == "chart_mipmap_prototype.lua" and prototype_source is not None
+                              else (ROOT / "tests/support" / name).read_text())
     driver = (ROOT / "tests/experiments/native_chart_feasibility.lua").read_text()
     if driver.count("points = 512") != 1:
         raise RuntimeError("Update the experiment's native point-count injection")
@@ -234,7 +246,8 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
     if stress:
         driver = (ROOT / "tests/experiments/native_chart_mipmap_stress.lua").read_text()
         (widget / "chart-feasibility-driver.lua").write_text(
-            driver.replace("local batchSize = 64", f"local batchSize = {batch}"))
+            driver.replace("local batchSize = 64", f"local batchSize = {batch}")
+            .replace("local resizedScroll = false", f"local resizedScroll = {'true' if resized_scroll else 'false'}"))
     source = (ROOT / "src/WIDGETS/AeroGrid/main.lua").read_text()
     if source.count("    refresh = refresh,") != 1:
         raise RuntimeError("Update the experiment's isolated refresh injection")
@@ -258,11 +271,16 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
         dict(re.findall(r"(\w+)=(\w+)", line))
         for line in text.splitlines() if line.startswith("op=")
     ]
+    operations = set(RUNTIME_OPERATIONS)
+    if not stress or resized_scroll:
+        operations.add("resize")
+    if resized_scroll:
+        operations.add("resized_scroll")
     completed = (
         result.returncode == 0
         and "FAIL" not in text
-        and len(measurements) == 5
-        and {row.get("op") for row in measurements} == {"append", "horizontal", "vertical", "scroll", "resize"}
+        and len(measurements) == len(operations)
+        and {row.get("op") for row in measurements} == operations
     )
     for row in measurements:
         row["instruction_upper_bound"] = (int(row["usage_percent"]) + 1) * 200
@@ -280,8 +298,7 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
     )
     limits_passed = callback_limits_passed and all(
         row["instruction_upper_bound"] < 15000
-        and int(row["setter_complete_ms"]) < (500 if row["op"] in ("append", "scroll") else 1001)
-        and int(row["turns"]) <= (1 if row["op"] == "append" and series == 1 else 2 if row["op"] in ("append", "scroll") else 5)
+        and operation_limits(row["op"], int(row["setter_complete_ms"]), int(row["turns"]), series, stress)
         for row in measurements
     )
     report = {
@@ -310,24 +327,34 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
     }
     if stress:
         painting = verify_paint(output, sd)
-        report["kind"] = "native continuous 2-chart/800-column/3-series/24-source/Smart workload"
+        heap_path = output / "frame.rgb565.heap.json"
+        report["native_heap"] = json.loads(heap_path.read_text())
+        report["kind"] = "native physical-width envelopes/2-chart/3-series/24-source/Smart workload"
+        report["historical_fixture_columns"] = points
+        report["columns_per_series"] = sorted({int(row["points"]) for row in measurements})
+        report["native_span_objects"] = sorted({int(row["native_spans"]) for row in measurements})
+        report["paint_oracle"] = "independent timestamped input trace accumulated into physical-width envelopes"
         report["charts"], report["recorded_sources"], report["smart"] = 2, 24, True
         report["paint_measurements"] = painting
-        report["paint_verified"] = len(painting) == 5 and all(row["verified"] for row in painting)
+        report["paint_verified"] = len(painting) == len(operations) and all(row["verified"] for row in painting)
         report["live_input_covered"] = completed and all(int(row["input_events"]) > 0 for row in measurements)
+        for row in measurements:
+            row["runtime_operation"] = row["op"] in RUNTIME_OPERATIONS
         limits_passed = limits_passed and report["live_input_covered"] and report["paint_verified"] and all(
-            row["paint_complete_ms"] < (500 if row["phase"] in (1, 4) else 1001)
+            row["phase"] in (5, 6) or row["paint_complete_ms"] < (500 if row["phase"] in (1, 4) else 1001)
             for row in painting
         )
         report["workload_limits_passed"] = limits_passed
         report["limitations"] = [
-            "Both charts contain 800 columns and three series on the 480-pixel native simulator.",
+            "Screen envelopes use each chart's integer drawable width, not the historical 800-bucket fixture setting.",
             "Real polling/recording/Smart/dispatcher path with deterministic synthetic firmware values.",
             "Triggers align with a natural chart-source poll; no poll quota, cursor or service-order override.",
             "Input continues throughout competing initial redraws; a comparison fence then drains received samples. Polling and recording are not paused.",
             "Native framebuffer trace verifies all expected plot pixels, including cleared/gap regions.",
             "Warm/preparation and bounded diagnostic target export are outside timed submission callbacks.",
             "One pool per chart; no atomic staged replacement, actual layout resize, production ownership or hardware heap approval.",
+            "Heap measurement is the simulator LVGL allocator lifetime high-water mark read after shutdown, not radio total RAM, Lua/C++ allocations, or an approved memory bound.",
+            "Physical resize and preserved post-resize scrolling are diagnostic, not runtime deadline/turn requirements; their pixels and complete callbacks are still checked.",
         ]
     if recorded and not stress:
         report["limitations"] = [
@@ -348,12 +375,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--native", action="store_true")
     parser.add_argument("--stress", action="store_true", help="Continuous worst-case charts with real 24-source recording and Smart")
+    parser.add_argument("--resized-scroll", action="store_true", help="Historical preserved-resize diagnostic; not the physical-resize lifecycle")
     parser.add_argument("--recorded", action="store_true", help="Exercise incoming-reading hierarchy alongside actual recording")
     parser.add_argument("--batch", type=int, help="Upper limit on recorder-backed columns per series per turn")
     parser.add_argument("--profile", action="store_true", help="Instrument mock recorder-backed stage and setter-body costs")
     parser.add_argument("--sample-ticks", type=int, default=20, choices=(5, 10, 20), help="Warm-up reading spacing in 10ms ticks")
     parser.add_argument("--kernel", choices=("combined", "mapping", "setters"), default="combined")
-    parser.add_argument("--columns", "--points", dest="points", type=int, choices=(128, 240, 512, 600, 800))
+    parser.add_argument("--columns", "--points", dest="points", type=int, choices=(128, 240, 512, 600, 800),
+                        help="Legacy fixture size; recorded charts derive output columns from actual plot geometry")
     parser.add_argument("--series", type=int, default=3, choices=(1, 2, 3), help="Native series count")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -361,6 +390,8 @@ def main():
     args.points = args.points if args.points is not None else 800 if args.stress else 600
     if args.stress and (not args.recorded or args.points != 800 or args.series != 3 or args.profile):
         parser.error("--stress requires --recorded, 800 columns, three series and no --profile")
+    if args.resized_scroll and not args.stress:
+        parser.error("--resized-scroll requires --stress")
     if args.batch < 1:
         parser.error("--batch must be positive")
     if args.profile and (not args.recorded or args.native):
@@ -375,7 +406,7 @@ def main():
         parser.error("Native runner currently supports the combined kernel only")
     if args.recorded and args.kernel != "combined":
         parser.error("--recorded requires --kernel combined")
-    completed = native(output, args.points, args.recorded, args.batch, args.sample_ticks, args.series, args.stress) if args.native else mock(output, args.kernel, args.recorded, args.batch, args.profile, args.sample_ticks, args.stress)
+    completed = native(output, args.points, args.recorded, args.batch, args.sample_ticks, args.series, args.stress, args.resized_scroll) if args.native else mock(output, args.kernel, args.recorded, args.batch, args.profile, args.sample_ticks, args.stress, args.resized_scroll)
     print("Workload limits:", "PASS (not a full gate pass)" if completed else "FAIL; full implementation remains blocked")
     return 0 if completed else 1
 

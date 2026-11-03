@@ -110,7 +110,9 @@ do
             local marks = {}
             if recorded and profileEnabled then
                 for _, entry in ipairs(context.panels) do
-                    local setter = entry.instance.feasibility.objects[1].set
+                    local item = entry.instance.feasibility
+                    local setter = item.objects[1].set
+                    item.profileSetter = setter
                     local function measuredSet(object, changes)
                         local before = instructions
                         setter(object, changes)
@@ -136,6 +138,14 @@ do
             end
             local ok, message = pcall(definition.refresh, context)
             debug.sethook()
+            if recorded and profileEnabled then
+                for _, entry in ipairs(context.panels) do
+                    local item = entry.instance.feasibility
+                    for _, object in ipairs(item.objects) do
+                        rawset(object, "set", item.profileSetter)
+                    end
+                end
+            end
             local setter = profile.mock_setter_body or { total = 0, worst = 0 }
             setter.total, setter.worst = setter.total + setterInstructions, math.max(setter.worst, setterInstructions)
             profile.mock_setter_body = setter
@@ -242,6 +252,7 @@ do
             passed = passed,
             pool_kib = poolKiB,
             pool_objects = poolObjects,
+            output_columns = context.panels[1].instance.feasibility.width,
         }
         print(
             string.format(

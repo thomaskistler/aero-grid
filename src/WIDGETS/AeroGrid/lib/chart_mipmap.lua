@@ -62,7 +62,7 @@ function mipmap:select(at)
     local selected, origin = self.levels[level], 0
     if level == mipmap.LAST_LEVEL and at >= selected.span then
         local quarter = selected.span / 4
-        origin = (((at - selected.span) / quarter) // 1 + 1) * self.width / 4
+        origin = ((((at - selected.span) / quarter) // 1 + 1) * self.width / 4) // 1
     end
     return level, origin
 end

@@ -10,6 +10,13 @@
 #include <cstdint>
 #include <unistd.h>
 
+// LVGL v8.3 monitor ABI used by the EdgeTX 2.12 simulator.
+struct NativeHeap {
+    std::uint32_t total_size, free_count, free_size, largest_free, used_count, peak_used;
+    std::uint8_t used_percent, fragmented_percent;
+};
+static_assert(sizeof(NativeHeap) == 28, "Unexpected LVGL monitor ABI");
+
 template<typename T> T symbol(void* library, const char* name) {
     auto value = reinterpret_cast<T>(dlsym(library, name));
     if (!value) {
@@ -73,13 +80,14 @@ int main(int argc, char** argv) {
     auto buffer = symbol<unsigned char**>(library, "simuLcdBuf");
     auto changed = symbol<bool*>(library, "simuLcdRefresh");
     auto clock = tracing ? symbol<std::uint32_t*>(library, "g_tmr10ms") : nullptr;
+    auto monitor = tracing ? symbol<void(*)(NativeHeap*)>(library, "lv_mem_monitor") : nullptr;
     auto touchDown = fullscreen || scripted ? symbol<void(*)(short, short)>(library, "_Z14touchPanelDownss") : nullptr;
     auto touchUp = fullscreen || scripted ? symbol<void(*)()>(library, "_Z12touchPanelUpv") : nullptr;
     if (!init || !start || !stop || !flush || !buffer || !changed) {
         return 1;
     }
     if ((fullscreen || scripted) && (!touchDown || !touchUp)) return 1;
-    if (tracing && !clock) return 1;
+    if (tracing && (!clock || !monitor)) return 1;
     std::ofstream trace;
     if (tracing) {
         trace.open(std::string(argv[3]) + ".trace", std::ios::binary);
@@ -152,6 +160,18 @@ int main(int argc, char** argv) {
         usleep(10000);
     }
     stop();
+    if (tracing) {
+        // Shutdown frees widgets. Only the lifetime high-water mark measures the workload.
+        NativeHeap heap{};
+        monitor(&heap);
+        std::ofstream memory(std::string(argv[3]) + ".heap.json");
+        memory << "{\"lvgl_total_bytes\":" << heap.total_size
+               << ",\"lvgl_peak_used_bytes\":" << heap.peak_used << "}\n";
+        if (!memory) {
+            std::fprintf(stderr, "Cannot write native allocator snapshot\n");
+            return 1;
+        }
+    }
     if (!captured) {
         std::fprintf(stderr, "Timed out waiting for verified content and stable frames\n");
         return 1;

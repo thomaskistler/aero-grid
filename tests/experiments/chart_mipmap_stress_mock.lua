@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local root, batch = ...
+local root, batch, resizedScroll = ...
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
 fixture.reset()
 fixture.radio.rssi, fixture.radio.values[300] = 80, 1024
@@ -10,6 +10,10 @@ local function load(path, ...)
     return assert(loadfile(base .. path))(...)
 end
 local Stress = load("tests/support/chart_mipmap_stress.lua", load)
+if resizedScroll then
+    Stress.operations[#Stress.operations + 1] = "resize"
+    Stress.operations[#Stress.operations + 1] = "resized_scroll"
+end
 local path = root .. "/build/test-widget-fixture/"
 local lines = { "version: 3", "grid:", "  columns: 4", "  rows: 4", "panels:" }
 for chart = 1, 2 do

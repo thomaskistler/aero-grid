@@ -5,6 +5,11 @@ local function load(path, ...)
 end
 local Stress = load("tests/support/chart_mipmap_stress.lua", load)
 local batchSize = 64
+local resizedScroll = false
+if resizedScroll then
+    Stress.operations[#Stress.operations + 1] = "resize"
+    Stress.operations[#Stress.operations + 1] = "resized_scroll"
+end
 local state = { phase = "prepare" }
 local function write(path, text, mode)
     local file = assert(io.open(path, mode or "w"))
@@ -106,8 +111,10 @@ return function(context, refresh)
         write(
             "/chart-feasibility.txt",
             string.format(
-                "op=%s points=800 series=3 charts=2 turns=%d host_callbacks=%d setter_complete_ms=%d usage_percent=%d input_events=%d catchups=%d group_moves=%d oldest_source_ms=%d\n",
+                "op=%s historical_fixture_points=800 points=%d native_spans=%d series=3 charts=2 turns=%d host_callbacks=%d setter_complete_ms=%d usage_percent=%d input_events=%d catchups=%d group_moves=%d oldest_source_ms=%d\n",
                 row.operation,
+                row.output_columns,
+                row.native_spans,
                 row.turns,
                 row.callbacks,
                 row.setter_complete_ms,

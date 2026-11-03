@@ -8,7 +8,9 @@ prototype.__index = prototype
 local makeJob, draw, drawScroll
 local function checkpoint() end
 
-function prototype.new(chart, width, background)
+function prototype.new(chart, _fixtureColumns, background)
+    local width = math.floor(chart.area.w)
+    assert(width >= 1, "chart requires a drawable pixel column")
     local record = recorder(#chart.series)
     local self = setmetatable({
         chart = chart,
@@ -67,7 +69,6 @@ end
 function prototype:prepare()
     local index = self.prepareIndex
     if self.groupedScroll and not self.groups then
-        assert(self.width % 4 == 0, "grouped scrolling requires integral quarter-columns")
         assert(
             self.chart.area.w % 1 == 0 and self.chart.area.x % 1 == 0,
             "grouped scrolling requires integral plot geometry"
@@ -77,7 +78,7 @@ function prototype:prepare()
         self.groupScale, self.groupLeft = self.chart.area.w / self.width, self.chart.area.x + 0.5
         self.groupReady = true
     end
-    if self.groups and #self.groups < 16 * #self.maps then
+    if self.groups and #self.groups < 4 * #self.maps then
         local group = #self.groups + 1
         self.groups[group] = lvgl.box(self.root, { x = 0, y = 0, w = self.chart.rect.w, h = self.chart.rect.h })
         self.groupOffsets[group] = 0
@@ -88,16 +89,17 @@ function prototype:prepare()
         local parent = self.root
         if self.groups then
             local bucket = (index - 1) % self.width
-            local quarter = bucket // (self.width / 4)
-            local phase = ((bucket * self.chart.area.w + self.width / 2) % self.width * 4) // self.width
-            local group = (series - 1) * 16 + quarter * 4 + phase + 1
+            local quarter = math.min(3, ((bucket + 1) * 4 - 1) // self.width)
+            local group = (series - 1) * 4 + quarter + 1
             self.objectGroups[index], parent = group, self.groups[group]
         end
-        self.objects[index] = lvgl.vline(parent, {
+        self.objects[index] = lvgl.rectangle(parent, {
             x = 0,
             y = 0,
             w = 1,
             h = 1,
+            filled = true,
+            thickness = 0,
             color = self.chart.series[series].color,
         })
         lvgl.hide(self.objects[index])
@@ -189,7 +191,8 @@ function prototype:begin(operation)
         local previous = self.published[1]
         assert(previous.level == mipmap.LAST_LEVEL, "scroll fixture must publish the maximum level first")
         local span = self.maps[1].levels[mipmap.LAST_LEVEL].span
-        stamp = math.ceil(span * (1 + previous.origin / self.width))
+        local nextQuarter = ((self.clock - span) / (span / 4)) // 1 + 1
+        stamp = math.ceil(span + nextQuarter * span / 4)
     end
     self.nextStamp, self.active, self.admitted = stamp, true, false
     self.preparedJobs = false
@@ -201,7 +204,7 @@ makeJob = function(self, series)
     local summary, previous = map.levels[level], self.published[series]
     local operation = self.jobKind or self.operation
     local height = area.h * (operation == "vertical" and 0.75 or 1)
-    local scale = area.w / self.width * (operation == "resize" and 0.75 or 1)
+    local scale = 1 * (operation == "resize" and 0.75 or 1)
     if operation == "scroll" or operation == "append" and previous then
         height, scale = previous.height, previous.scale
     end
@@ -249,25 +252,23 @@ makeJob = function(self, series)
     }
 end
 
---- Quarter and subpixel-phase groups share an exact integer native translation.
+--- One native parent per integer ring quarter; every column is one pixel wide.
 function prototype:shiftGroups(job, series)
     local width, scale, origin = self.width, job.scale, job.origin
     for quarter = 0, 3 do
-        local base = (origin // width) * width + quarter * width / 4
+        local start = (quarter * width / 4) // 1
+        local base = (origin // width) * width + start
         if base < origin then
             base = base + width
         end
-        local delta = (base - quarter * width / 4 - origin) * scale
-        for phase = 0, 3 do
-            local group = (series - 1) * 16 + quarter * 4 + phase + 1
-            local shift = delta // 1 + (phase / 4 + delta % 1 >= 1 and 1 or 0)
-            self.groupChanges.x = shift
-            self.groups[group]:set(self.groupChanges)
-            self.groupOffsets[group] = shift
-        end
+        local group = (series - 1) * 4 + quarter + 1
+        local shift = (base - start - origin) * scale
+        self.groupChanges.x = shift
+        self.groups[group]:set(self.groupChanges)
+        self.groupOffsets[group] = shift
     end
     self.groupActive, job.offsets = true, self.groupOffsets
-    self.groupMoves = self.groupMoves + 16
+    self.groupMoves = self.groupMoves + 4
     job.index = math.max(job.first, job.retainedLast + 1)
     job.scroll, job.updateX = false, false
 end

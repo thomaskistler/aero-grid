@@ -2,9 +2,10 @@
 
 local load = assert(...)
 local prototype = load("tests/support/chart_mipmap_prototype.lua", load)
+local Oracle = load("tests/support/mipmap_reading_oracle.lua")
 local stress = {}
 stress.__index = stress
-stress.operations = { "append", "horizontal", "vertical", "scroll", "resize" }
+stress.operations = { "append", "horizontal", "vertical", "scroll" }
 
 local function inputs(env, state)
     local field, value = env.getFieldInfo, env.getValue
@@ -116,6 +117,22 @@ function stress:prepare(refresh)
         if not item then
             item = prototype.new(entry.instance, self.width, entry.instance.theme.color.surface)
             item.groupedScroll = true
+            item.oracles = {}
+            for series, map in ipairs(item.maps) do
+                local oracle = Oracle.new()
+                oracle:sample(item.clock, item.values[series])
+                item.oracles[series] = oracle
+                local sample = map.sample
+                map.sample = function(target, at, value, broken)
+                    oracle:sample(at, value, broken)
+                    return sample(target, at, value, broken)
+                end
+                local reset = map.reset
+                map.reset = function(target)
+                    oracle.times, oracle.values, oracle.breaks = {}, {}, {}
+                    return reset(target)
+                end
+            end
             item.batch, item.sampleTicks = self.batch, 5
             entry.instance.feasibility = item
             self.items[self.index] = item
@@ -140,7 +157,7 @@ function stress:prepare(refresh)
                 })
             end
         end
-        local count = item.prepareIndex <= self.width * #item.maps and 16 or 1
+        local count = item.prepareIndex <= item.width * #item.maps and 16 or 1
         for _ = 1, count do
             if item:prepare() then
                 lvgl.hide(entry.instance.plotRoot)
@@ -155,7 +172,7 @@ function stress:prepare(refresh)
                 end
                 break
             end
-            if item.prepareIndex > self.width * #item.maps then
+            if item.prepareIndex > item.width * #item.maps then
                 break
             end
         end
@@ -246,7 +263,7 @@ function stress:begin(operation)
     self.context.refreshOwner = nil
     local session = self.history:session("SAv")
     for _, item in ipairs(self.items) do
-        item:begin(operation)
+        item:begin(operation == "resized_scroll" and "scroll" or operation)
         self.offset = self.offset or item.nextStamp - session.elapsed
         item.admitted, item.live, item.clock, item.received = true, true, item.nextStamp, 0
     end
@@ -316,6 +333,8 @@ function stress:step(refresh)
         catchups = repairs,
         group_moves = groupMoves,
         fenced_at = self.fencedAt * 10,
+        output_columns = self.items[1].width,
+        native_spans = #self.items[1].objects + #self.items[2].objects,
     }
     self.rows[#self.rows + 1] = row
     return true
@@ -325,6 +344,16 @@ function stress:verify(geometry)
     for _, item in ipairs(self.items) do
         if geometry ~= false then
             item:verify()
+        end
+        for series, job in ipairs(geometry ~= false and item.published or {}) do
+            for bucket = job.origin, job.origin + item.width - 1 do
+                local low, high, gap = item.oracles[series]:column(item.width, job.level, bucket)
+                local actualLow, actualHigh, actualGap = job.map:column(job.level, bucket)
+                assert(gap == actualGap, "width-column oracle gap differs")
+                if not gap then
+                    assert(low == actualLow and high == actualHigh, "width-column oracle extrema differ")
+                end
+            end
         end
     end
     local now, telemetry = getTime(), self.context.serviceRuntime.byId.telemetry
@@ -367,9 +396,9 @@ function stress:exportPaint()
     end
     local job = item.published[self.paintSeries]
     local color = item.chart.series[self.paintSeries].color
-    for _ = 1, 32 do
+    for _ = 1, 8 do
         local bucket = job.origin // 1 + self.paintBucket
-        local low, high, gap = job.map:column(job.level, bucket)
+        local low, high, gap = item.oracles[self.paintSeries]:column(item.width, job.level, bucket)
         if not gap then
             local x = self.paintX + (job.left + (bucket - job.origin) * job.scale) // 1
             local top = (job.bottom - high * job.height) // 1
@@ -377,7 +406,7 @@ function stress:exportPaint()
             io.write(self.paintFile, string.format("L %d %d %d %d\n", x, self.paintY + top, bottom - top + 1, color))
         end
         self.paintBucket = self.paintBucket + 1
-        if self.paintBucket >= self.width then
+        if self.paintBucket >= item.width then
             self.paintSeries, self.paintBucket = self.paintSeries + 1, 0
             if self.paintSeries > #item.maps then
                 self.paintChart, self.paintSeries = self.paintChart + 1, 0

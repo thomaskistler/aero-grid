@@ -62,5 +62,20 @@ class ChartPaintTests(unittest.TestCase):
                 self.verify(data)
 
 
+class ChartRuntimeLimitsTests(unittest.TestCase):
+    def test_physical_resize_is_diagnostic_not_a_runtime_deadline(self):
+        for operation in ("resize", "resized_scroll"):
+            self.assertTrue(RUNNER.operation_limits(operation, 2000, 20, stress=True))
+            self.assertFalse(RUNNER.operation_limits(operation, 2000, 20))
+
+    def test_runtime_rescaling_keeps_its_deadline_and_turn_limits(self):
+        for operation in ("horizontal", "vertical"):
+            self.assertTrue(RUNNER.operation_limits(operation, 1000, 5, stress=True))
+            self.assertFalse(RUNNER.operation_limits(operation, 1001, 5, stress=True))
+            self.assertFalse(RUNNER.operation_limits(operation, 1000, 6, stress=True))
+        self.assertTrue(RUNNER.operation_limits("scroll", 499, 2, stress=True))
+        self.assertFalse(RUNNER.operation_limits("scroll", 500, 2, stress=True))
+
+
 if __name__ == "__main__":
     unittest.main()
