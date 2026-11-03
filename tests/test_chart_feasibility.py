@@ -77,5 +77,44 @@ class ChartRuntimeLimitsTests(unittest.TestCase):
         self.assertFalse(RUNNER.operation_limits("scroll", 500, 2, stress=True))
 
 
+class MatchedPaintTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.output = Path(self.directory.name)
+        self.text = ("MATCHED mode=integrated started_ms=100 submitted_ms=300\n"
+                     "REGION 10 20 2 2\nREGION 30 40 2 2\n")
+        self.reference = bytearray(480 * 272 * 2)
+        struct.pack_into("<H", self.reference, (20 * 480 + 10) * 2, 0x1234)
+        (self.output / "frame.rgb565").write_bytes(self.reference)
+
+    def verify(self, frames):
+        (self.output / "frame.rgb565.trace").write_bytes(b"".join(
+            struct.pack("<II", phase, stamp) + data for phase, stamp, data in frames))
+        return RUNNER.verify_matched_paint(self.output, self.text)
+
+    def test_first_complete_paint_can_precede_submission_completion(self):
+        result = self.verify([(1, 150, bytes(len(self.reference))),
+                              (1, 200, self.reference), (2, 500, self.reference)])
+        self.assertTrue(result["verified"])
+        self.assertEqual(result["paint_complete_ms"], 100)
+        self.assertEqual(result["submission_ms"], 200)
+        self.assertEqual(result["pixels_checked"], 8)
+
+    def test_missing_reference_phase_is_not_a_verified_paint(self):
+        result = self.verify([(1, 200, self.reference)])
+        self.assertFalse(result["verified"])
+        self.assertFalse(result["reference_seen"])
+
+    def test_stale_pixel_fails_the_whole_panel_comparison(self):
+        result = self.verify([(1, 200, bytes(len(self.reference))), (2, 500, self.reference)])
+        self.assertFalse(result["verified"])
+        self.assertEqual(result["mismatched_pixels"], 1)
+
+    def test_truncated_trace_is_an_explicit_failure(self):
+        with self.assertRaisesRegex(RuntimeError, "Truncated matched"):
+            self.verify([(1, 200, self.reference[:-1])])
+
+
 if __name__ == "__main__":
     unittest.main()

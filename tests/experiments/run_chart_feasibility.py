@@ -176,8 +176,58 @@ def verify_paint(output, sd):
     } for phase, target in sorted(targets.items())]
 
 
+def verify_matched_paint(output, text):
+    rows = [dict(re.findall(r"(\w+)=([\w,]+)", line)) for line in text.splitlines()
+            if line.startswith("MATCHED ")]
+    if len(rows) != 1:
+        return {"verified": False, "reason": "Missing matched completion report"}
+    regions = [tuple(map(int, line.split()[1:])) for line in text.splitlines() if line.startswith("REGION ")]
+    if len(regions) != 2 or any(width < 1 or height < 1 or x < 0 or y < 0 or x + width > 480 or y + height > 272
+                                for x, y, width, height in regions):
+        raise RuntimeError("Matched comparison requires two valid panel regions")
+    indices = [yy * 480 + xx for x, y, width, height in regions
+               for yy in range(y, y + height) for xx in range(x, x + width)]
+    reference = (output / "frame.rgb565").read_bytes()
+    if len(reference) != 480 * 272 * 2:
+        raise RuntimeError("Truncated matched reference framebuffer")
+    target = array("H", reference)
+    if sys.byteorder != "little":
+        target.byteswap()
+    best, painted, examples, reference_seen = len(indices) + 1, None, [], False
+    with (output / "frame.rgb565.trace").open("rb") as source:
+        while header := source.read(8):
+            if len(header) != 8:
+                raise RuntimeError("Truncated matched framebuffer timestamp")
+            phase, stamp = struct.unpack("<II", header)
+            data = source.read(480 * 272 * 2)
+            if len(data) != 480 * 272 * 2:
+                raise RuntimeError("Truncated matched framebuffer capture")
+            reference_seen = reference_seen or phase == 2 and data == reference
+            if phase != 1 or stamp < int(rows[0]["started_ms"]) or painted is not None:
+                continue
+            actual = array("H", data)
+            if sys.byteorder != "little":
+                actual.byteswap()
+            mismatches = [index for index in indices if actual[index] != target[index]]
+            if len(mismatches) < best:
+                best = len(mismatches)
+                examples = [{"x": index % 480, "y": index // 480,
+                             "expected": target[index], "actual": actual[index]} for index in mismatches[:6]]
+            if not mismatches:
+                painted = stamp
+    return {
+        "verified": painted is not None and reference_seen,
+        "reference_seen": reference_seen,
+        "pixels_checked": len(indices),
+        "mismatched_pixels": best if best <= len(indices) else None,
+        "mismatch_examples": examples,
+        "paint_complete_ms": painted - int(rows[0]["started_ms"]) if painted is not None else None,
+        "submission_ms": int(rows[0]["submitted_ms"]) - int(rows[0]["started_ms"]),
+    }
+
+
 def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3, stress=False, resized_scroll=False,
-           prototype_source=None):
+           prototype_source=None, integrated=False, matched=None, smart_batch=80, matched_trace=False):
     sys.path.insert(0, str(ROOT / "tools"))
     spec = importlib.util.spec_from_file_location("capture", ROOT / "tools/capture-panels.py")
     capture = importlib.util.module_from_spec(spec)
@@ -220,6 +270,8 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
                          "    colSpan: 4\n    rowSpan: 2\n    config:\n      metrics:")
             for channel in range(3):
                 lines.append(f"        - source: Q{chart * 3 + channel + 1}\n          precision: 3")
+                if matched:
+                    lines.append("          rangeMin: 0\n          rangeMax: 1")
         (widget / "layouts/capture-panels.yaml").write_text("\n".join(lines) + "\n")
         (sd / "AEROGRID/models" / ("model1.yml".encode().hex() + ".yaml")).write_text(
             "version: 1\nmodelFilename: model1.yml\nrevision: 1\narmed: SAv\n")
@@ -244,10 +296,23 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
         )
         (widget / "chart-feasibility-driver.lua").write_text(driver)
     if stress:
-        driver = (ROOT / "tests/experiments/native_chart_mipmap_stress.lua").read_text()
+        driver = (ROOT / ("tests/experiments/native_chart_mipmap_matched.lua" if matched
+                          else "tests/experiments/native_chart_mipmap_integrated.lua" if integrated
+                          else "tests/experiments/native_chart_mipmap_stress.lua")).read_text()
         (widget / "chart-feasibility-driver.lua").write_text(
             driver.replace("local batchSize = 64", f"local batchSize = {batch}")
+            .replace('local mode = "integrated"', f'local mode = "{matched}"' if matched else 'local mode = "integrated"')
+            .replace("local tracing = false", f"local tracing = {'true' if matched_trace else 'false'}")
             .replace("local resizedScroll = false", f"local resizedScroll = {'true' if resized_scroll else 'false'}"))
+    if matched:
+        chart_path = widget / "panels/chart.lua"
+        chart_source = chart_path.read_text()
+        allowance = "local quota = host and host.flightPolled and 24 or 40"
+        if chart_source.count(allowance) != 1:
+            raise RuntimeError("Update the isolated matched allowance injection")
+        chart_path.write_text(chart_source.replace(
+            allowance, "local quota = host and host.matchedOperation "
+            f"and (host.flightPolled and {smart_batch} or {batch}) or (host and host.flightPolled and 24 or 40)"))
     source = (ROOT / "src/WIDGETS/AeroGrid/main.lua").read_text()
     if source.count("    refresh = refresh,") != 1:
         raise RuntimeError("Update the experiment's isolated refresh injection")
@@ -256,6 +321,15 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
             or assert(loadScript("/WIDGETS/AeroGrid/chart-feasibility-driver.lua"))()
         return context.feasibilityDriver(context, refresh)
     end,""")
+    if matched:
+        source = (
+            "local matchedContext\nlocal matchedFirmwareTime = getTime\n"
+            "local function getTime()\n"
+            "    return matchedContext and matchedContext.matchedNow or matchedFirmwareTime()\nend\n"
+        ) + source.replace(
+            "    refresh = function(context)\n",
+            "    refresh = function(context)\n        matchedContext = context\n",
+        )
     (widget / "main.lua").write_text(source)
     regions = output / "regions.txt"
     regions.write_text("0 0 480 272\n")
@@ -266,6 +340,81 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
         result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=240 if stress else 90)
     results = sd / "chart-feasibility.txt"
     text = results.read_text() if results.exists() else ""
+    if matched:
+        rows = [dict(re.findall(r"(\w+)=([\w,]+)", line)) for line in text.splitlines()
+                if line.startswith("MATCHED ")]
+        samples = [int(value) for line in text.splitlines() if line.startswith("CALLBACK_USAGE ")
+                   for value in line.split(" ", 1)[1].split(",")]
+        completed = result.returncode == 0 and "FAIL" not in text and len(rows) == 1
+        paint = verify_matched_paint(output, text) if completed else {"verified": False}
+        traces = [dict(re.findall(r"(\w+)=([-\w,]+)", line)) for line in text.splitlines()
+                  if line.startswith("TRACE ")]
+        reasons = {reason: sum(row["reason"] == reason for row in traces)
+                   for reason in sorted({row["reason"] for row in traces})}
+        heap_path = output / "frame.rgb565.heap.json"
+        report = {
+            "kind": "matched native horizontal expansion: full-panel input-derived reference comparison",
+            "mode": matched,
+            "allowance": {"ordinary": batch, "smart": smart_batch},
+            "capture_exit": result.returncode,
+            "workload_completed": completed,
+            "measurements": rows,
+            "callback_samples": samples,
+            "callback_trace": traces,
+            "callback_reasons": reasons,
+            "phase_trace_complete": (
+                len(traces) == len(samples)
+                and all(int(row["callback"]) == index + 1 and int(row["usage"]) == samples[index]
+                        for index, row in enumerate(traces))
+            ) if matched_trace else None,
+            "callback_trace_complete": completed and int(rows[0]["callbacks"]) == len(samples),
+            "instruction_upper_bound": max(((value + 1) * 200 for value in samples), default=None),
+            "callback_limits_passed": bool(samples) and all((value + 1) * 200 < 15000 for value in samples),
+            "paint": paint,
+            "native_heap": json.loads(heap_path.read_text()) if heap_path.exists() else None,
+            "gate_passed": False,
+            "limitations": [
+                "Both paths use the same deterministic service/input clock and 160ms timed host admission.",
+                "Input forwards through both initial redraws, then fences only chart summaries; recording/Smart continue.",
+                "Independent timestamped readings build replacement native reference spans after timing.",
+                "Normal overlay objects are retained in the reference; this is not an independent overlay-algorithm oracle.",
+                "Both runs allocate both diagnostic pools; heap includes those and the post-timing reference, not production RAM.",
+                "This horizontal comparison is not the full append/scroll/vertical or production acceptance gate.",
+                "Optional phase tracing adds callback overhead; use it for attribution, not an uninstrumented acceptance claim.",
+            ],
+        }
+        (output / "native-results.json").write_text(json.dumps(report, indent=2) + "\n")
+        print(json.dumps({key: value for key, value in report.items()
+                          if key not in ("callback_samples", "callback_trace")}, indent=2))
+        return False
+    if integrated:
+        rows = [dict(re.findall(r"(\w+)=([\w,]+)", line)) for line in text.splitlines()
+                if line.startswith("INTEGRATED ")]
+        samples = [int(value) for line in text.splitlines() if line.startswith("CALLBACK_USAGE ")
+                   for value in line.split(" ", 1)[1].split(",")]
+        completed = result.returncode == 0 and "FAIL" not in text and len(rows) == 1
+        report = {
+            "kind": "normal integrated chart native callback smoke, not a painted-frame gate",
+            "capture_exit": result.returncode,
+            "workload_completed": completed,
+            "measurements": rows,
+            "callback_samples": samples,
+            "instruction_upper_bound": max(((value + 1) * 200 for value in samples), default=None),
+            "callback_trace_complete": completed and int(rows[0]["callbacks"]) == len(samples),
+            "callback_limits_passed": bool(samples) and all((value + 1) * 200 < 15000 for value in samples),
+            "native_heap": json.loads((output / "frame.rgb565.heap.json").read_text()),
+            "paint_verified": False,
+            "gate_passed": False,
+            "limitations": [
+                "Normal chart refresh is not replaced; recording, Smart, grid, legends and overlays stay active.",
+                "Continuous native smoke includes natural first horizontal expansion, not matched controlled operations.",
+                "No independent integrated overlay/frame oracle or first-complete-painted timings yet.",
+                "Heap is simulator LVGL lifetime peak, not total hardware RAM.",
+            ],
+        }
+        (output / "native-results.json").write_text(json.dumps(report, indent=2) + "\n")
+        print(json.dumps({key: value for key, value in report.items() if key != "callback_samples"}, indent=2))
+        return False
     print(text or "No native results; inspect simulator.log")
     measurements = [
         dict(re.findall(r"(\w+)=(\w+)", line))
@@ -374,6 +523,10 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--native", action="store_true")
+    parser.add_argument("--integrated", action="store_true", help="Normal chart native callback smoke; not a paint gate")
+    parser.add_argument("--matched", choices=("prototype", "integrated"), help="Common-trigger native expansion/reference comparison")
+    parser.add_argument("--smart-batch", type=int, default=80, help="Isolated matched normal-chart Smart allowance")
+    parser.add_argument("--matched-trace", action="store_true", help="Diagnostic matched integration phase trace; adds measured overhead")
     parser.add_argument("--stress", action="store_true", help="Continuous worst-case charts with real 24-source recording and Smart")
     parser.add_argument("--resized-scroll", action="store_true", help="Historical preserved-resize diagnostic; not the physical-resize lifecycle")
     parser.add_argument("--recorded", action="store_true", help="Exercise incoming-reading hierarchy alongside actual recording")
@@ -392,6 +545,14 @@ def main():
         parser.error("--stress requires --recorded, 800 columns, three series and no --profile")
     if args.resized_scroll and not args.stress:
         parser.error("--resized-scroll requires --stress")
+    if args.integrated and (not args.native or not args.stress or args.resized_scroll):
+        parser.error("--integrated requires --native --recorded --stress and no --resized-scroll")
+    if args.matched and (not args.native or not args.stress or args.resized_scroll or args.integrated):
+        parser.error("--matched requires --native --recorded --stress without --integrated or --resized-scroll")
+    if args.smart_batch < 1:
+        parser.error("--smart-batch must be positive")
+    if args.matched_trace and args.matched != "integrated":
+        parser.error("--matched-trace requires --matched integrated")
     if args.batch < 1:
         parser.error("--batch must be positive")
     if args.profile and (not args.recorded or args.native):
@@ -406,7 +567,9 @@ def main():
         parser.error("Native runner currently supports the combined kernel only")
     if args.recorded and args.kernel != "combined":
         parser.error("--recorded requires --kernel combined")
-    completed = native(output, args.points, args.recorded, args.batch, args.sample_ticks, args.series, args.stress, args.resized_scroll) if args.native else mock(output, args.kernel, args.recorded, args.batch, args.profile, args.sample_ticks, args.stress, args.resized_scroll)
+    completed = native(output, args.points, args.recorded, args.batch, args.sample_ticks, args.series, args.stress,
+                       args.resized_scroll, integrated=args.integrated, matched=args.matched,
+                       smart_batch=args.smart_batch, matched_trace=args.matched_trace) if args.native else mock(output, args.kernel, args.recorded, args.batch, args.profile, args.sample_ticks, args.stress, args.resized_scroll)
     print("Workload limits:", "PASS (not a full gate pass)" if completed else "FAIL; full implementation remains blocked")
     return 0 if completed else 1
 

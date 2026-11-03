@@ -985,6 +985,7 @@ local function updateServices(context)
 
     registry.byId.telemetry.pollCap = context.flightPolled and 4 or nil
     local id, serviceError = context.servicesModule.update(registry, getTime())
+    context.updatedService, context.servicesUpdatedAt = id, getTime()
     if serviceError then
         addError(context, id .. ": " .. serviceError)
         showErrors(context)

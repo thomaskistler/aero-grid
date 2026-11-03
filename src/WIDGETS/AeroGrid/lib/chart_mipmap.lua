@@ -3,6 +3,8 @@
 -- Incoming-reading prototype. Not selected by the production chart.
 local mipmap = { LAST_LEVEL = 10 }
 mipmap.__index = mipmap
+local consumer = {}
+consumer.__index = consumer
 
 function mipmap.new(width)
     assert(type(width) == "number" and width >= 1 and width % 1 == 0, "mipmap requires an integer column count")
@@ -87,6 +89,43 @@ function mipmap:column(levelIndex, bucket)
         return level.low[slot], level.high[slot], tag < 0
     end
     return nil, nil, true
+end
+
+--- A late attachment cannot reconstruct observed extrema from compressed knots.
+function mipmap.attach(history, feed, width)
+    local self = setmetatable({
+        history = history,
+        feed = feed,
+        map = mipmap.new(width),
+        startedAt = 0,
+        complete = feed.count == 0,
+    }, consumer)
+    history:observeSamples(feed, self)
+    return self
+end
+
+function consumer:sample(at, value, broken)
+    self.map:sample(at - self.startedAt, value, broken)
+end
+
+function consumer:reset()
+    self.startedAt, self.complete = 0, true
+    self.map:reset()
+end
+
+--- Configuration-time restart affects this presentation, never its recording.
+function consumer:restart(width, at)
+    assert(self.history, "mipmap consumer was destroyed")
+    assert(type(at) == "number" and at >= 0 and at % 1 == 0, "invalid mipmap restart timestamp")
+    local map = mipmap.new(width)
+    self.map, self.startedAt, self.complete = map, at, true
+end
+
+function consumer:destroy()
+    if self.history then
+        self.history:unobserveSamples(self.feed, self)
+        self.history, self.feed, self.map = nil, nil, nil
+    end
 end
 
 return mipmap

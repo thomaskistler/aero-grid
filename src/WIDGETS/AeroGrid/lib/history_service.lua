@@ -574,7 +574,7 @@ function history:point(view, index, retainedFirst)
 end
 
 --- Observe the chart's filtered samples without polling again or changing knots.
---- Observers are subscription-owned and reset with their recording.
+--- Observers reset with their recording; consumers must detach when destroyed.
 function history:observeSamples(view, observer)
     local entry = assert(self.views[view], "unknown history subscription")
     assert(entry.mode == "growing", "sample observer prototype requires growing history")
@@ -584,6 +584,20 @@ function history:observeSamples(view, observer)
         assert(existing ~= observer, "sample observer already registered")
     end
     entry.observers[#entry.observers + 1] = observer
+end
+
+function history:unobserveSamples(view, observer)
+    local entry = assert(self.views[view], "unknown history subscription")
+    for index, existing in ipairs(entry.observers or {}) do
+        if existing == observer then
+            table.remove(entry.observers, index)
+            if #entry.observers == 0 then
+                entry.observers = nil
+            end
+            return
+        end
+    end
+    error("sample observer is not registered")
 end
 
 --- Skip sealed blocks only when they fit in one screen column. These summaries

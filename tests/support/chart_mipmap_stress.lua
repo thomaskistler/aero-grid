@@ -58,7 +58,7 @@ local function inputs(env, state)
     }
 end
 
-function stress.new(context, width, batch)
+function stress.new(context, width, batch, integrated)
     assert(#context.panels == 2, "stress fixture requires two competing charts")
     local self = setmetatable({
         context = context,
@@ -86,7 +86,7 @@ function stress.new(context, width, batch)
         flight = context.flightConfig.resolve({ smartDetection = true }),
     })
     self.history = runtime.byId.history
-    for _, entry in ipairs(context.panels) do
+    for _, entry in ipairs(integrated and {} or context.panels) do
         entry.module.refresh = function(chart)
             if self.running then
                 local service = self:serviceWork()

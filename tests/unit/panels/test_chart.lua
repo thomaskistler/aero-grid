@@ -258,8 +258,14 @@ local function alignedReadouts(panel)
             item.maximum.properties.x,
             "maximum arrow must stay beside its value"
         )
-        equal(item.value.properties.text, item.valueText)
-        equal(item.unit.properties.text, item.unitText)
+        for _, field in ipairs({ { item.value, item.valueText }, { item.unit, item.unitText } }) do
+            local expected = field[2]
+            if panel.themeBuilder.measureText(panel.legendFont, expected) > field[1].properties.w then
+                expected = panel.themeBuilder.measureText(panel.legendFont, "...") <= field[1].properties.w and "..."
+                    or ""
+            end
+            equal(field[1].properties.text, expected, "readout must fit without displaying a truncated value")
+        end
     end
 end
 local function separatedReadouts(panel)
@@ -399,8 +405,16 @@ for _, size in ipairs({ { 320, 240 }, { 800, 480 }, { 480, 272 } }) do
             equal(item.extrema.properties.font(), panel.extremaFont, "minimum must use the smaller extrema font")
             equal(item.maximum.properties.font(), panel.extremaFont, "maximum must use the smaller extrema font")
             assert(panel.themeBuilder.fontHeight(panel.extremaFont) < panel.themeBuilder.fontHeight(panel.legendFont))
-            equal(item.extrema.properties.text, item.minimumText)
-            equal(item.maximum.properties.text, item.maximumText)
+            for _, field in ipairs({ { item.extrema, item.minimumText }, { item.maximum, item.maximumText } }) do
+                if panel.themeBuilder.measureText(panel.extremaFont, field[2]) <= field[1].properties.w then
+                    equal(field[1].properties.text, field[2])
+                else
+                    assert(
+                        field[1].properties.text == "..." or field[1].properties.text == "",
+                        "overflow must not display a truncated numeric value"
+                    )
+                end
+            end
             equal(item.minSymbol.kind, "triangle")
             equal(item.maxSymbol.kind, "triangle")
             assert(item.minSymbol.properties.pts[1][2] < item.minSymbol.properties.pts[3][2])
@@ -584,6 +598,7 @@ assert(not multiple.showExtrema, "extrema may hide only when they cannot fit at 
 separatedReadouts(multiple)
 chart.update(single, { x = 0, y = 0, w = 472, h = 132 })
 local initialFontHeight = single.themeBuilder.fontHeight(single.legendFont)
+local initialPlotWidth = single.area.w
 local altitudeId = getFieldInfo("Alt").id
 local altitude = fixture.radio.values[altitudeId]
 fixture.radio.values[altitudeId] = 123456789012345678901234
@@ -593,9 +608,17 @@ assert(
     single.themeBuilder.fontHeight(single.legendFont) < initialFontHeight,
     "longer readouts must reduce the font to fit"
 )
+equal(single.area.w, initialPlotWidth, "live legend growth must not resize the plot")
+local longValue = single.series[1]
+assert(longValue.value.properties.text ~= longValue.valueText, "oversized readouts must be explicitly shortened")
 assert(
-    single.area.legendW >= single.themeBuilder.measureText(single.legendFont, single.series[1].readout),
-    "the resized legend must fit the full recorded value"
+    single.themeBuilder.measureText(single.legendFont, longValue.value.properties.text) <= longValue.value.properties.w,
+    "fitted readout must stay inside its allocation"
+)
+assert(
+    single.themeBuilder.measureText(single.extremaFont, longValue.maximum.properties.text)
+        <= longValue.maximum.properties.w,
+    "fitted extrema must stay inside their allocation"
 )
 equal(single.series[1].name.properties.font(), single.legendFont)
 equal(single.series[1].value.properties.font(), single.legendFont)

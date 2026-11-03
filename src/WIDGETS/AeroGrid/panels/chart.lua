@@ -545,6 +545,10 @@ local function symbolSize(builder, font)
     return math.max(4, math.floor(builder.fontHeight(font) / 3))
 end
 
+local function overflowText(builder, font, width)
+    return builder.measureText(font, "...") <= width and "..." or ""
+end
+
 local function extremaWidth(context, item, font)
     local builder = context.themeBuilder
     return 2
@@ -562,8 +566,10 @@ local function positionExtrema(context, item, y)
     local size = symbolSize(builder, font)
     local available = math.max(0, legendW - 2 * size - 14)
     local budget = math.floor(available / 2)
-    local minimumWidth = math.min(budget, builder.measureText(font, item.minimumText or "--"))
-    local maximumWidth = math.min(available - budget, builder.measureText(font, item.maximumText or "--"))
+    local measuredMinimum = builder.measureText(font, item.minimumText or "--")
+    local measuredMaximum = builder.measureText(font, item.maximumText or "--")
+    local minimumWidth = math.min(budget, measuredMinimum)
+    local maximumWidth = math.min(available - budget, measuredMaximum)
     local groupWidth = minimumWidth + maximumWidth + 2 * size + 14
     local left = legendX + math.floor((legendW - groupWidth) * (item.legendAlignment or 1))
     local minimumX = left + size + 3
@@ -572,6 +578,17 @@ local function positionExtrema(context, item, y)
     local top = y + math.floor((builder.fontAscent(font) - height) / 2)
     item.extrema:set({ x = minimumX, y = y, w = minimumWidth })
     item.maximum:set({ x = maximumX, y = y, w = maximumWidth })
+    local minimum, maximum = item.minimumText or "--", item.maximumText or "--"
+    if measuredMinimum > minimumWidth then
+        minimum = overflowText(builder, font, minimumWidth)
+    end
+    if measuredMaximum > maximumWidth then
+        maximum = overflowText(builder, font, maximumWidth)
+    end
+    if item.minimumText then
+        text(item.extrema, minimum, context.theme.color.textFaint)
+        text(item.maximum, maximum, context.theme.color.textFaint)
+    end
     item.minSymbol:set({
         pts = {
             { left, top },
@@ -610,9 +627,10 @@ local function positionReading(context, item, y)
     local area, builder, font = context.area, context.themeBuilder, context.legendFont
     local legendX, legendW = item.legendX or area.legendX, item.legendW or area.legendW
     local width = builder.measureText(font, item.valueText or "--")
+    local measuredValue, measuredUnit = width, builder.measureText(font, item.unitText or "")
     local unitWidth = math.min(
         context.topLegend and math.max(0, legendW - math.min(width, legendW)) or context.unitWidth,
-        builder.measureText(font, item.unitText or "")
+        measuredUnit
     )
     width = math.min(context.topLegend and legendW - unitWidth or context.valueWidth, width)
     local alignment = item.legendAlignment or 1
@@ -650,6 +668,17 @@ local function positionReading(context, item, y)
     if item.nameX ~= nameX or item.nameY ~= y or item.nameWidth ~= nameWidth then
         item.name:set({ x = nameX, y = y, w = nameWidth })
         item.nameX, item.nameY, item.nameWidth = nameX, y, nameWidth
+    end
+    local value, unit = item.valueText or "--", item.unitText or ""
+    if measuredValue > width then
+        value = overflowText(builder, font, width)
+    end
+    if measuredUnit > unitWidth then
+        unit = overflowText(builder, font, unitWidth)
+    end
+    if item.valueText then
+        text(item.value, value, item.readingColor or context.theme.color.text)
+        text(item.unit, unit, item.readingColor or context.theme.color.text)
     end
 end
 
@@ -695,6 +724,7 @@ function chart.geometry(context, rect)
     end
     local fontLimit =
         math.max(builder.fontHeight(SMLSIZE), math.floor(rect.h / (context.topLegend and 6 or math.max(6, count * 3))))
+    local legendLimit = context.plotWidth and math.max(0, content - context.plotWidth - gap) or math.floor(content / 2)
     local font, required
     -- Readout growth can step down the font; resizing restarts the ladder.
     for index = count == 0 and #LEGEND_FONTS or context.legendIndex or 1, #LEGEND_FONTS do
@@ -711,7 +741,7 @@ function chart.geometry(context, rect)
             if candidate == context.legendFont then
                 width = math.max(width, context.legendWidth or 0)
             end
-            if width <= (context.topLegend and cellWidth or math.floor(content / 2)) or candidate == SMLSIZE then
+            if width <= (context.topLegend and cellWidth or legendLimit) or candidate == SMLSIZE then
                 font, required, context.legendIndex = candidate, width, index
                 break
             end
@@ -719,13 +749,17 @@ function chart.geometry(context, rect)
     end
     context.legendFont, context.legendWidth = font, required
     context.extremaFont = extremaFont(font)
-    local legend = math.min(required, context.topLegend and cellWidth or math.max(24, content - 28))
+    local legend = math.min(
+        required,
+        context.topLegend and cellWidth or context.plotWidth and legendLimit or math.max(24, content - 28)
+    )
     local valueWidth, unitWidth = readingWidths(context, font)
     context.requiredValueWidth, context.requiredUnitWidth = valueWidth, unitWidth
     context.unitWidth = math.min(unitWidth, math.max(0, legend - 27))
     context.valueWidth = math.min(valueWidth, math.max(0, legend - context.unitWidth - 4))
     local nameWidth = math.max(0, legend - context.valueWidth - context.unitWidth - 4)
-    local width = context.topLegend and content or math.max(1, content - legend - gap)
+    local width = context.topLegend and content or context.plotWidth or math.max(1, content - legend - gap)
+    context.plotWidth = width
     local lineHeight = builder.fontHeight(font)
     if context.topLegend and count > 0 then
         top = first + lineHeight + (showExtrema and builder.fontAscent(context.extremaFont) or 0) + gap
@@ -1363,13 +1397,7 @@ function chart.render(context)
         end
         item.minimumText, item.maximumText = minimumText, maximumText
         width = math.max(width, context.showExtrema and extremaWidth(context, item, context.extremaFont) or 0)
-        local color = feed and feed.stale and context.theme.color.textFaint or context.theme.color.text
-        text(item.value, value, color)
-        text(item.unit, item.unitText, color)
-        if context.showExtrema then
-            text(item.extrema, minimumText, context.theme.color.textFaint)
-            text(item.maximum, maximumText, context.theme.color.textFaint)
-        end
+        item.readingColor = feed and feed.stale and context.theme.color.textFaint or context.theme.color.text
     end
     local valueWidth, unitWidth, nameWidth, rowWidth = readingWidths(context, font)
     width = math.max(width, context.topLegend and rowWidth or valueWidth + unitWidth + nameWidth + 4)
@@ -1389,6 +1417,31 @@ function chart.render(context)
     end
     context.readingGeometry = context.geometryVersion
     return true
+end
+
+local function plotStatus(context)
+    if not context.history or context.history.failed then
+        return "HISTORY N/A"
+    elseif context.preview then
+        return context.previewMissing and "PREVIEW: NO DATA" or "PREVIEW"
+    elseif not context.session.configured then
+        return "SET ARM SOURCE"
+    elseif #context.series == 0 then
+        return "ADD METRICS"
+    end
+    local available, full = false, false
+    for _, item in ipairs(context.series) do
+        available = available or item.feed and item.feed.available
+        full = full or item.feed and item.feed.full
+    end
+    if full then
+        return "HISTORY FULL"
+    elseif not context.session.available and not context.session.recording then
+        return "ARM N/A"
+    elseif not available then
+        return context.session.recording and "NO DATA" or "WAITING FOR ARM"
+    end
+    return ""
 end
 
 local function refreshPlot(context, creating)
@@ -1424,32 +1477,7 @@ local function refreshPlot(context, creating)
     if not creating then
         updateGrid(context)
     end
-    local status = ""
-    local full = false
-    for _, item in ipairs(context.series) do
-        full = full or item.feed and item.feed.full
-    end
-    if not context.history or context.history.failed then
-        status = "HISTORY N/A"
-    elseif context.preview then
-        status = context.previewMissing and "PREVIEW: NO DATA" or "PREVIEW"
-    elseif not session.configured then
-        status = "SET ARM SOURCE"
-    elseif #context.series == 0 then
-        status = "ADD METRICS"
-    elseif full then
-        status = "HISTORY FULL"
-    elseif not session.available and not session.recording then
-        status = "ARM N/A"
-    else
-        local available = false
-        for _, item in ipairs(context.series) do
-            available = available or item.feed.available
-        end
-        if not available then
-            status = session.recording and "NO DATA" or "WAITING FOR ARM"
-        end
-    end
+    local status = plotStatus(context)
     text(context.status, status, context.theme.color.textFaint)
     if status ~= "" and status ~= "HISTORY FULL" and status ~= "PREVIEW" and status ~= "PREVIEW: NO DATA" then
         if readingsChanged then
@@ -1642,6 +1670,9 @@ end
 function chart.resetSession(context)
     local reset = context.resetWork
     if not reset then
+        if context.mipmapRenderer then
+            context.mipmapRenderer:reset()
+        end
         if context.framePhase then
             exchange(context, context.backPlot, PLOT_FIELDS)
             for index, item in ipairs(context.series) do
@@ -1649,6 +1680,7 @@ function chart.resetSession(context)
             end
         end
         context.framePhase, context.frameSession, context.frameExpired = nil, nil, nil
+        context.mipmapDecorating, context.frameThrough = nil, nil
         context.pending, context.axisWork, context.projectionTurn, context.rangesReady = nil, nil, nil, false
         reset = { groups = {}, group = 1, index = 1 }
         context.resetWork = reset
@@ -1709,9 +1741,125 @@ function chart.resetSession(context)
     return nil, true
 end
 
+local function finishMipmap(context)
+    if updateFlights(context) and context.flightCursor ~= 1 then
+        return 1, true
+    end
+    context.armMarkers = context.armMarkers or markerPool("arm")
+    if
+        not updateSessionMarkers(
+            context,
+            context.armMarkers,
+            context.session.armFirst,
+            context.session.armLast,
+            context.session.armRevision,
+            context.history.armBoundary
+        )
+    then
+        return 1, true
+    end
+    context.mipmapDecorating, context.frameThrough = nil, nil
+    return chart.intervalFor(context.window, context.area.w, #context.series)
+end
+
+local function refreshMipmap(context)
+    if not context.mipmapRenderer then
+        context.mipmapRenderer = context.mipmapRendererModule.new(context)
+    end
+    local renderer = context.mipmapRenderer
+    if not context.mipmapPrepared then
+        context.mipmapPrepared = renderer:prepare()
+        return 1, true
+    end
+    if context.mipmapDecorating then
+        return finishMipmap(context)
+    end
+    local host = context.host
+    if host and host.servicesUpdatedAt == context.clock() and host.updatedService == "telemetry" then
+        return 1, true
+    end
+    local readings = not renderer.jobs and not context.projectionTurn and chart.render(context)
+    context.projectionTurn = false
+    if readings or not context.rangesReady then
+        chart.ranges(context)
+        context.rangesReady = true
+    end
+    local owner = context.mipmapConsumers[1]
+    local at = math.max(0, context.session.elapsed - owner.startedAt)
+    local level, origin = owner.map:select(at)
+    local window = owner.map.levels[level].span
+    local start = owner.startedAt + origin * window / renderer.width
+    if context.window ~= window or context.start ~= start then
+        context.window, context.start = window, start
+        context.axis = nil
+        context.version = context.version + 1
+    end
+    local geometry = context.geometryVersion
+    if renderer.jobs then
+        for series, job in ipairs(renderer.jobs) do
+            local item, consumer = context.series[series], context.mipmapConsumers[series]
+            local selected, selectedOrigin = consumer.map:select(at)
+            if
+                job.map ~= consumer.map
+                or job.level ~= selected
+                or job.origin ~= selectedOrigin
+                or job.geometry ~= geometry
+                or job.low ~= item.low
+                or job.high ~= item.high
+            then
+                renderer.jobs = nil
+                break
+            end
+        end
+    end
+    updateHeader(context)
+    text(context.status, plotStatus(context), context.theme.color.textFaint)
+    -- Reserve decoration callbacks rather than stacking native work on submission.
+    if readings then
+        context.projectionTurn = true
+        return 1, true
+    end
+    if context.gridVersion ~= context.version then
+        updateGrid(context)
+        return 1, true
+    end
+    local quota = host and host.flightPolled and 24 or 40
+    if not renderer:step(quota) then
+        return 1, true
+    end
+    context.mipmapDecorating, context.frameThrough = true, context.session.elapsed
+    return finishMipmap(context)
+end
+
 function chart.refresh(context, creating)
+    if context.mipmapSetup then
+        chart.geometry(context, context.rect)
+        context.mipmapConsumers = {}
+        for index, item in ipairs(context.series) do
+            context.mipmapConsumers[index] = context.mipmapSetup.attach(context.history, item.feed, context.area.w // 1)
+        end
+        context.mipmapSetup = nil
+        return 1, true
+    end
     if creating or not context.history or context.history.failed then
         return refreshPlot(context, true)
+    end
+    local eligible = context.mipmapRendererModule
+        and context.mipmapConsumers
+        and #context.mipmapConsumers > 0
+        and (context.session.resumeLast or 0) == 0
+    if eligible then
+        for _, owner in ipairs(context.mipmapConsumers) do
+            eligible = eligible and owner.complete
+        end
+    end
+    if eligible then
+        return refreshMipmap(context)
+    elseif context.mipmapRenderer then
+        context.mipmapRenderer:destroy()
+        context.mipmapRenderer, context.mipmapPrepared = nil, nil
+        context.mipmapDecorating, context.frameThrough = nil, nil
+        context.rangesReady = false
     end
     if not context.framePhase then
         if not needsFrame(context) then
@@ -1839,6 +1987,8 @@ function chart.create(parent, rect, settings, services)
         primitives = services.primitives,
         settings = settings,
         history = services.history and (services.preview and services.history:preview() or services.history),
+        host = services.host,
+        mipmapRendererModule = services.chartMipmapRenderer,
         preview = services.preview == true,
         clock = services.clock or getTime,
         series = {},
@@ -1913,7 +2063,11 @@ function chart.create(parent, rect, settings, services)
     context.baseline =
         lvgl.hline(context.plotRoot, { x = 0, y = 0, w = 1, h = 1, color = context.theme.chartColor.grid })
     context.window, context.start, context.pixelStart = timeWindow(settings, 0), 0, 0
-    chart.geometry(context, rect)
+    if services.chartMipmap and not context.preview and settings.timeRange ~= "rolling" and context.history then
+        context.mipmapSetup = services.chartMipmap
+    else
+        chart.geometry(context, rect)
+    end
     text(
         context.status,
         not context.history and "HISTORY N/A"
@@ -1926,6 +2080,15 @@ function chart.create(parent, rect, settings, services)
 end
 
 function chart.update(context, rect)
+    if context.mipmapSetup then
+        context.rect = rect
+        chart.refresh(context)
+        return
+    end
+    local resized = rect.w ~= context.rect.w or rect.h ~= context.rect.h
+    if resized then
+        context.plotWidth = nil
+    end
     context.rect = rect
     context.legendFont, context.legendIndex, context.legendWidth = nil, nil, nil
     context.primitives.resizePanel(context.panel, rect)
@@ -1935,11 +2098,35 @@ function chart.update(context, rect)
     context.gapRoot:set({ w = rect.w, h = rect.h })
     context.gridRoot:set({ w = rect.w, h = rect.h })
     chart.geometry(context, rect)
+    if resized and context.mipmapConsumers then
+        if context.mipmapRenderer then
+            context.mipmapRenderer:destroy()
+            context.mipmapRenderer, context.mipmapPrepared = nil, nil
+        end
+        context.mipmapDecorating, context.frameThrough = nil, nil
+        for _, consumer in ipairs(context.mipmapConsumers) do
+            consumer:restart(context.area.w // 1, context.session.elapsed)
+        end
+    end
     if context.framePhase then
         context.framePhase, context.pending, context.axisWork = "axis", nil, nil
         context.armMarkers.job, context.resumeMarkers.job = nil, nil
     end
     chart.refresh(context)
+end
+
+function chart.destroy(context)
+    context.mipmapDecorating, context.frameThrough = nil, nil
+    if context.mipmapRenderer then
+        context.mipmapRenderer:destroy()
+        context.mipmapRenderer = nil
+    end
+    if context.mipmapConsumers then
+        for _, consumer in ipairs(context.mipmapConsumers) do
+            consumer:destroy()
+        end
+        context.mipmapConsumers = nil
+    end
 end
 
 return chart
