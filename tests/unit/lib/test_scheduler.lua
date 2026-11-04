@@ -101,10 +101,10 @@ local function testNotReadyTasksWait()
     add(s, "a", single("critical", 100), task(log, "a", 10), 20)
     equal(s:run("steady", 19), 0)
     equal(s:run("steady", 20), 1)
-    equal(s.byId.a.due, 30, "due is the callback time plus the delay")
+    equal(s:dueOf("a"), 30, "due is the callback time plus the delay")
     equal(s:run("steady", 29), 0)
     equal(s:run("steady", 100), 1, "a late release runs once, with no catch-up")
-    equal(s.byId.a.due, 110)
+    equal(s:dueOf("a"), 110)
 end
 
 local function testPlanStaysUnderTheBudget()
@@ -131,16 +131,16 @@ local function testSkipAndContinueKeepsTheWaiterFirst()
     local log = {}
     local s = scheduler.new(OVERHEAD)
     local room = ROOM
-    add(s, "big", single("normal", room - 2 * CHARGE - 100), task(log, "big", 1), 0)
-    add(s, "huge", single("normal", room + 1), task(log, "huge", 1), 1)
+    add(s, "big", single("normal", room - 3 * CHARGE - 100), task(log, "big", 1), 0)
+    add(s, "huge", single("normal", room - CHARGE), task(log, "huge", 1), 1)
     add(s, "small", single("normal", 50), task(log, "small", 1), 2)
     equal(s:run("steady", 5), 2, "big and small fit together, huge never fits")
     equal(table.concat(log, " "), "big:run:1 small:run:1")
-    equal(s.byId.huge.due, 1, "a task that did not fit keeps its release")
-    log[1], log[2] = nil, nil
-    equal(s:run("steady", 6), 2)
-    equal(table.concat(log, " "), "big:run:1 small:run:1")
+    equal(s:dueOf("huge"), 1, "a task that did not fit keeps its release")
     assert(s.lists[2][1] == s.byId.huge, "the waiter is still first")
+    log[1], log[2] = nil, nil
+    s:run("steady", 6)
+    equal(log[1], "huge:run:1", "the oldest waiter goes first as soon as it fits")
 end
 
 local function testCriticalIsNeverDroppedAndKeepsItsPlace()
@@ -151,9 +151,9 @@ local function testCriticalIsNeverDroppedAndKeepsItsPlace()
     add(s, "n", single("normal", 100), task(log, "n"), 0)
     s:run("steady", 1)
     equal(table.concat(log, " "), "n:run:1", "a critical task above the reserved limit waits")
-    equal(s.byId.c.due, 0)
+    equal(s:dueOf("c"), 0)
     s:run("steady", 2, 0)
-    equal(s.byId.c.due, 0, "and is not dropped")
+    equal(s:dueOf("c"), 0, "and is not dropped")
     log = {}
     s = scheduler.new({ steady = OVERHEAD.steady - 1 })
     add(s, "c", single("critical", critical), task(log, "c"), 0)
@@ -278,10 +278,10 @@ local function testThePlannerChargesItsOwnCostAndNeedsNoCap()
 
     local refused = scheduler.new({ steady = 0 })
     for index = 1, scheduler.MAX_TASKS - 1 do
-        add(refused, index, single("normal", 1000000), task({}, index), 0)
+        add(refused, index, single("normal", 12000), task({}, index), 0)
     end
     add(refused, "tiny", single("normal", 1), task({}, "tiny"), 10 ^ 9)
-    equal(refused:run("steady", 1), 0)
+    equal(refused:run("steady", 1, 6000), 0, "none fits beside the 6000 already used")
     equal(refused.lastPlan.examined, scheduler.MAX_TASKS - 1, "tasks that do not fit are charged, all of them")
     equal(refused.lastPlan.charged, FIXED + (scheduler.MAX_TASKS - 1) * EXAMINE)
     assert(refused.lastPlan.U <= scheduler.CEILING - scheduler.MARGIN)
@@ -304,7 +304,7 @@ local function testCriticalIsScannedFirstWhateverTheNormalBacklog()
     local log = {}
     local s = scheduler.new({ steady = 0 })
     for index = 1, 100 do
-        add(s, "n" .. index, single("normal", 1000000), task(log, "n" .. index), 0)
+        add(s, "n" .. index, single("normal", 14000), task(log, "n" .. index), 0)
     end
     add(s, "c", single("critical", 100), task(log, "c"), 1000)
     equal(s:run("steady", 1000), 1)
@@ -376,7 +376,7 @@ local function testDelaysAreWholeTicks()
     local log = {}
     add(s, "a", single("normal", 10), task(log, "a", 1), 0)
     s:run("steady", 7)
-    equal(s.byId.a.due, 8, "a delay of 1 is ready at the first callback a tick later")
+    equal(s:dueOf("a"), 8, "a delay of 1 is ready at the first callback a tick later")
     s:run("steady", 7)
     equal(#log, 1, "and not again in the same tick")
 end
@@ -398,7 +398,7 @@ local function testAddAndRemoveDuringARun()
     add(s, "second", decl, second, 1)
     s:run("steady", 10)
     equal(#log, 0, "a task removed earlier in the same plan does not run")
-    equal(s.byId.third.due, 0, "an added task is first planned in the next callback")
+    equal(s:dueOf("third"), 0, "an added task is first planned in the next callback")
     s:run("steady", 11)
     equal(log[1], "third:run:1")
     local selfRemoving = {}
@@ -433,7 +433,7 @@ local function testOnePendingReleasePerTask()
     s:run("steady", 1000)
     equal(#log, 1)
     equal(#s.lists[2], 1)
-    equal(s.byId.a.due, 1010)
+    equal(s:dueOf("a"), 1010)
 end
 
 local function testListsStayOrdered()
@@ -448,7 +448,7 @@ local function testListsStayOrdered()
         for _, list in pairs(s.lists) do
             for index = 2, #list do
                 local a, b = list[index - 1], list[index]
-                assert(a.key < b.key and a.due <= b.due, "list out of order")
+                assert(a.due < b.due or (a.due == b.due and a.seq < b.seq), "list out of order")
             end
         end
     end
