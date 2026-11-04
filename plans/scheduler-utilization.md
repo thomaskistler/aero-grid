@@ -61,25 +61,76 @@ task.step(units) -> unitsDone, finished, nextDue
 - No data-dependent unbounded work. Anything open-ended (string formatting,
   extrema scans, parsing) needs a hard per-call cap or becomes a staged task.
 
+### Task contract
+
+Each task declares static data and returns its next release after each run.
+
+| Field | Meaning |
+|---|---|
+| Class | `CRITICAL`, `HIGH`, `NORMAL` or `BACKGROUND`: who is cut first under overload |
+| Tolerance | Callbacks a release may wait before it is late (starting point: 0, 1, 4, 20) |
+| Unit and `worstCostPerUnit` | As above; a task with no divisible work has one unit |
+| Next release | Returned by `step`, counted from the callback in which the task actually ran |
+
+- Deadline = release + tolerance. One pending release per task, so waiting
+  never stacks up work and there are no catch-up bursts.
+- A task with leftover work returns a delay of 1 to run again next callback.
+- Classes: `CRITICAL` is telemetry acquisition, recording and shared history.
+  `HIGH` is live input and Smart. `NORMAL` is chart completion and panel
+  refresh. `BACKGROUND` is diagnostics and decoration.
+
 ### Budget
 
-Each callback admits tasks while
-`fixedOverhead + sum(worstCost of grants) <= ceiling - margin`.
+Each callback has a capacity
+`C = ceiling - fixedOverhead - margin`, and tasks are admitted against it at
+their worst-case cost.
 
-- `ceiling` is 15000 for now. Margin covers at least one 200-instruction
-  quantum.
-- Fixed overhead (callback entry, drawing, bookkeeping) is measured and
-  declared like any task.
+- `ceiling` is 15000 for now. The margin is at least one 200-instruction
+  quantum, and is raised by a near-miss (see Runtime feedback).
+- Callback kinds (draw, telemetry, grid, metadata) differ in fixed overhead,
+  so overhead is declared per kind and measured natively, not as one constant.
+  The scheduler's own cost is part of the fixed overhead and must be bounded.
+- **Margin cap.** The margin may shed everything except due `CRITICAL` work, so
+  a near-miss can never lock out recording.
+- **Design-time admission test.** Overhead plus margin floor plus the sum of
+  the worst-case costs of every `CRITICAL` task that can fall due together
+  must fit under the ceiling. This is checked in CI.
+- Admission compares with a small tolerance so rounding cannot drop the last
+  critical task.
 
-### Selection
+### Selection: guarded due-first
 
-A work-conserving loop: keep admitting the most urgent task that fits until
-nothing does.
+A work-conserving loop: admit tasks in order while their worst-case cost fits
+the remaining capacity, and skip any that do not fit. Unused budget does not
+carry over, so skipping never delays a task; it only lets smaller ones use the
+leftover.
 
-- Priority classes, highest first: telemetry acquisition and recording, live
-  input and Smart, chart completion, everything else.
-- Aging by `(now - due) / interval` prevents starvation.
-- Several services may run per callback.
+```
+urgent = sum of cost of ready CRITICAL and HIGH tasks
+if urgent <= C:   due tasks by (class, deadline), then not-yet-due by (class, deadline)
+else:             CRITICAL, then HIGH, by deadline;
+                  then due NORMAL/BACKGROUND, then not-yet-due, by (class, deadline)
+```
+
+Guaranteed classes lend their slack only when all their ready work fits in one
+callback anyway. The other orders fail in the blind-scheduler simulation:
+earliest deadline first lets late low-priority work push out critical work,
+strict priority starves background work, and due-first without the guard lets
+high-priority work pile up past its deadline.
+
+Several services may run per callback. A leftover-budget **filler** (chart
+columns, grid slots) is planned last and sized in units to the remaining
+capacity.
+
+### Accumulating work
+
+A task whose cost grows with how long it waited (queues, logs, history
+compaction) must:
+
+1. cap the work per run and declare its bound at the cap;
+2. always be planned at that bound;
+3. drain with a delay of 1 while backlog remains;
+4. apply the cap from its first run.
 
 ### Invariants kept
 
@@ -91,11 +142,19 @@ nothing does.
 
 ### Runtime feedback
 
-At callback start, compare `getUsage` with the planned total.
+The plan records its upper bound `U` for each callback. When `getUsage` reports
+the previous callback, it is looked up against that callback's plan, because
+the report lags by one.
 
-- Observed above planned plus one quantum means the cost table is wrong:
-  reduce the budget for a window and log the task mix.
-- Sustained low usage never raises grants beyond what the proven bounds allow.
+- **Near-miss** (observed above `U`): at least one bound is wrong. Raise the
+  margin to cover the excess (for example `max(M, Mmin + 2 * excess)`), subject
+  to the margin cap, then decay it slowly. Log the task mix.
+- Observed usage never raises grants beyond what the proven bounds allow.
+- With static bounds a near-miss is a cost-table bug to fix, not a signal to
+  learn from.
+- Because of the 200-instruction quantum and the one-callback lag, `Mmin`
+  should be at least one quantum plus slack; the blind design's 1% of the
+  ceiling is about one quantum here and is not enough on its own.
 
 An optional isolation probe runs one task alone so the next `getUsage` read is
 a clean per-task check on real hardware.
@@ -104,6 +163,34 @@ a clean per-task check on real hardware.
 
 If `getUsage` is unavailable, or under a mock, use the current static caps. Tests
 inject a synthetic meter so mock counts do not affect decisions.
+
+### Learned bounds (later, optional)
+
+The blind-scheduler design learns bounds `mu + lambda * d` from callback totals.
+Not used initially:
+
+- An overrun here kills the widget and stops recording, so a learned bound that
+  misses a rare spike is not acceptable for `CRITICAL` or `HIGH` work.
+- It needs about 20 attributed solo runs per task, but chart stages run 5-12
+  times in a whole first paint, and tasks that always run together cannot be
+  separated.
+- Its learner runs in Lua and is charged to the budget.
+
+If measured native traces later show tight static bounds still waste too much,
+learned bounds could apply to `NORMAL` and `BACKGROUND` tasks only, capped at
+the declared bound and validated by replaying recorded native traces.
+
+## Relationship to the blind scheduler design
+
+`blind_scheduler_design.md` (simulation-validated, T = 10000) is the source for
+the policy layer here: classes, tolerance, self-declared release, guarded
+due-first, margin cap, the admission test and the accumulating-work rules. This
+plan differs in three ways. Bounds are static and CI-measured rather than
+learned. Work is granted in units, which that design lists as future work.
+Feedback is a guard, not a learner. Its simulation numbers (74.6% to 81.8% of
+T for learned bounds against 91.5% for ideal worst-case bounds) are synthetic
+and are not claims about AeroGrid; tight static bounds are expected to behave
+like its ideal worst-case planner.
 
 ## Limits of the approach
 
@@ -114,15 +201,27 @@ inject a synthetic meter so mock counts do not affect decisions.
   spike. Planning uses worst-case bounds, not averages, for that reason.
 - 200-instruction quantization limits how finely drift can be detected.
 
+- **Starvation.** Under severe overload the blind simulation saw background
+  work wait hundreds of callbacks. If that matters, add a minimum budget share
+  or aging for the best-effort classes.
+- **Callback attribution.** Confirm on the native simulator which callback
+  `getUsage` reports when `refresh` and `background` callbacks interleave.
+
 ## Phases
 
-0. **Audit.** For every current task, record its unit, measured worst cost per
-   unit, and whether it is bounded. Chart stages are closest to ready; telemetry,
-   flight and history services need the most work.
-1. **Shadow mode.** Compute grants and log them without applying them.
-2. **Services.** Run several per callback within budget.
-3. **Chart grants.** Replace fixed allowance constants with grants.
-4. **Feedback.** Enable the total-only guard and back-off.
+0. **Audit.** For every current task, record its class, unit, measured worst
+   cost per unit, fixed overhead per callback kind, and whether it is bounded.
+   Chart stages are closest to ready; telemetry, flight and history services
+   need the most work. Record native traces for replay.
+1. **Simulator.** Port the blind-scheduler simulators' task model to the
+   audited costs and replay recorded traces. Fault-inject cost steps, spikes and
+   overload bursts and require zero overruns.
+2. **Shadow mode.** Compute plans and grants and log them without applying them.
+3. **Services.** Run several per callback within budget, behind the
+   `CRITICAL` admission test.
+4. **Chart grants.** Replace fixed allowance constants with grants.
+5. **Near-miss guard.** Enable `getUsage` verification and margin back-off.
+6. **Learned bounds.** Only if the measured gap still justifies it (see above).
 
 Each phase is validated on the matched native harness: callbacks and time to
 first complete paint, worst callback usage at or below 15000, and zero pixel
@@ -134,3 +233,5 @@ mismatch against the reference.
   larger margin once costs are proven?
 - Should the scheduler live in `main.lua` or a new `lib/scheduler.lua`?
 - Are isolation probes worth the lost utilization?
+- Which services are `CRITICAL` rather than `HIGH`, and are the default
+  tolerances right for them?
