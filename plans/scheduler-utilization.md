@@ -233,3 +233,7 @@ mismatch against the reference.
 - Are isolation probes worth the lost utilization?
 - Which services are `CRITICAL` rather than `HIGH`, and are the default
   tolerances right for them?
+- How does a measured maximum become a declared bound? Measured costs are
+  observed worst cases under a stimulus, not proofs. The plan needs a rule for
+  the margin added on top, and fault-injection runs (worst-case inputs, gaps,
+  resets, largest layouts) to justify it.
