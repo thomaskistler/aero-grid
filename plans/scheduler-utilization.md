@@ -113,10 +113,11 @@ else:             CRITICAL, then HIGH, by deadline;
 ```
 
 Guaranteed classes lend their slack only when all their ready work fits in one
-callback anyway. The other orders fail in the blind-scheduler simulation:
-earliest deadline first lets late low-priority work push out critical work,
-strict priority starves background work, and due-first without the guard lets
-high-priority work pile up past its deadline.
+callback anyway. The simpler orders each have a failure mode under overload:
+earliest deadline first lets late low-priority work, which has the earliest
+deadlines, push out critical work; strict priority runs high-priority work as
+soon as it is released and starves background work; and due-first without the
+guard defers high-priority work until it piles up past its deadline.
 
 Several services may run per callback. A leftover-budget **filler** (chart
 columns, grid slots) is planned last and sized in units to the remaining
@@ -153,8 +154,8 @@ the report lags by one.
 - With static bounds a near-miss is a cost-table bug to fix, not a signal to
   learn from.
 - Because of the 200-instruction quantum and the one-callback lag, `Mmin`
-  should be at least one quantum plus slack; the blind design's 1% of the
-  ceiling is about one quantum here and is not enough on its own.
+  should be at least one quantum plus slack. 1% of the ceiling is about one
+  quantum here and is not enough on its own.
 
 An optional isolation probe runs one task alone so the next `getUsage` read is
 a clean per-task check on real hardware.
@@ -166,8 +167,8 @@ inject a synthetic meter so mock counts do not affect decisions.
 
 ### Learned bounds (later, optional)
 
-The blind-scheduler design learns bounds `mu + lambda * d` from callback totals.
-Not used initially:
+An alternative is to learn each task's bound (a mean plus an allowance for
+spread) from the callback totals. Not used initially:
 
 - An overrun here kills the widget and stops recording, so a learned bound that
   misses a rare spike is not acceptable for `CRITICAL` or `HIGH` work.
@@ -180,18 +181,6 @@ If measured native traces later show tight static bounds still waste too much,
 learned bounds could apply to `NORMAL` and `BACKGROUND` tasks only, capped at
 the declared bound and validated by replaying recorded native traces.
 
-## Relationship to the blind scheduler design
-
-[`blind-scheduler-design.md`](blind-scheduler-design.md) (simulation-validated, T = 10000) is the source for
-the policy layer here: classes, tolerance, self-declared release, guarded
-due-first, margin cap, the admission test and the accumulating-work rules. This
-plan differs in three ways. Bounds are static and CI-measured rather than
-learned. Work is granted in units, which that design lists as future work.
-Feedback is a guard, not a learner. Its simulation numbers (74.6% to 81.8% of
-T for learned bounds against 91.5% for ideal worst-case bounds) are synthetic
-and are not claims about AeroGrid; tight static bounds are expected to behave
-like its ideal worst-case planner.
-
 ## Limits of the approach
 
 - Reclaimable budget is the gap between a task's worst case and its typical
@@ -201,9 +190,12 @@ like its ideal worst-case planner.
   spike. Planning uses worst-case bounds, not averages, for that reason.
 - 200-instruction quantization limits how finely drift can be detected.
 
-- **Starvation.** Under severe overload the blind simulation saw background
-  work wait hundreds of callbacks. If that matters, add a minimum budget share
-  or aging for the best-effort classes.
+- **Starvation.** Under severe sustained overload, background work can wait
+  many callbacks. If that matters, add a minimum budget share or aging for the
+  best-effort classes.
+- **Bound tightness.** Utilization depends on how close each declared bound is
+  to the task's true worst case. Loose bounds waste budget, so bounds must be
+  measured, not guessed.
 - **Callback attribution.** Confirm on the native simulator which callback
   `getUsage` reports when `refresh` and `background` callbacks interleave.
 
@@ -213,9 +205,9 @@ like its ideal worst-case planner.
    cost per unit, fixed overhead per callback kind, and whether it is bounded.
    Chart stages are closest to ready; telemetry, flight and history services
    need the most work. Record native traces for replay.
-1. **Simulator.** Port the blind-scheduler simulators' task model to the
-   audited costs and replay recorded traces. Fault-inject cost steps, spikes and
-   overload bursts and require zero overruns.
+1. **Simulator.** Build an offline scheduler simulation from the audited costs
+   and replay recorded native traces through it. Fault-inject cost steps,
+   spikes and overload bursts and require zero overruns.
 2. **Shadow mode.** Compute plans and grants and log them without applying them.
 3. **Services.** Run several per callback within budget, behind the
    `CRITICAL` admission test.
