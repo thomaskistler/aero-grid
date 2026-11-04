@@ -533,7 +533,7 @@ legacy loop, and nothing else:
   legacy, as today.
 - `updateServices` still serves one due legacy-owned service per callback and
   skips `new`-owned ones; it serves it only if its declared bound fits `L`.
-- Because `L` is at least the largest legacy bound (test C), the item at the
+- Because `L` is at least the largest legacy bound (admission test D), the item at the
   cursor always eventually fits, so nothing is starved.
 - A legacy item above `L`, or without a declared bound, is a **load error**: the
   host logs `scheduler: <id> exceeds the legacy share` once, falls back to
