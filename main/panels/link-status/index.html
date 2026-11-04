@@ -309,7 +309,7 @@ aggregate health percentage or issue voice or haptic alerts.</p>
 <tr>
 <td><strong>Minimum tracked</strong></td>
 <td>none</td>
-<td><strong>none</strong> shows the other reading as supporting detail. <strong>source</strong> shows an EdgeTX minimum; <strong>flight</strong> shows the dashboard's session minimum.</td>
+<td><strong>none</strong> shows the other reading as supporting detail. <strong>source</strong> shows EdgeTX's own minimum. Layouts that used the removed <strong>flight</strong> option load as <strong>source</strong>.</td>
 </tr>
 <tr>
 <td><strong>Minimum source</strong></td>
@@ -386,18 +386,11 @@ margin. Use <strong>generic</strong> for other protocols, including ExpressLRS 3
 wins, with critical ahead of warning. Equal-severity conditions prefer RSSI,
 then link quality, then margin. Link-down takes precedence over alarms.
 Link-quality thresholds only apply to a source reporting percent.</p>
-<p><strong>Minimum tracked</strong> set to <strong>source</strong> reads EdgeTX's own minimum, which EdgeTX
-resets on its own schedule. <strong>Minimum source</strong> overrides the automatic source.
-<strong>flight</strong> resets the minimum when the model's armed condition becomes active,
-tracks fresh readings while armed, and retains the result after disarming.
-Set <strong>Arm switch</strong> in <strong>AeroGrid → Model settings</strong>. Changes save automatically. Before model
-arming is saved, a legacy layout session switch remains in use. With no arm
-switch configured, it tracks one open-ended dashboard session instead.
-The tracked source is <strong>RSSI source</strong> when <strong>Primary reading</strong> is <strong>rssi</strong>;
+<p><strong>Minimum tracked</strong> set to <strong>source</strong> shows EdgeTX's own minimum (for example
+<code>RSSI-</code>), which EdgeTX resets on its own schedule. <strong>Minimum source</strong> overrides
+the automatic source. The tracked source is <strong>RSSI source</strong> when <strong>Primary reading</strong> is <strong>rssi</strong>;
 otherwise it is <strong>Link quality source</strong>, falling back to <strong>RSSI source</strong> when
 no quality source is selected. It does not switch with the automatic headline.</p>
-<p>The <a href="../../user-guide/model-settings/#session-reset">Session reset switch</a> clears
-AeroGrid's flight-session minima on every dashboard, not EdgeTX's source minima.</p>
 <h2 id="states">States</h2>
 <table>
 <thead>

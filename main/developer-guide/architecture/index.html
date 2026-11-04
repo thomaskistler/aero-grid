@@ -385,10 +385,6 @@ does not consume scheduled work.</p>
 <td>Optional protocol-identified flight sensors with per-sensor receipt/freshness and SI units.</td>
 </tr>
 <tr>
-<td><code>extrema_service.lua</code></td>
-<td>Sensor extrema and dashboard flight-session tracking.</td>
-</tr>
-<tr>
 <td><code>navigation_service.lua</code></td>
 <td>GPS fix, pilot/home position, distance, and north-up bearing.</td>
 </tr>
@@ -434,7 +430,7 @@ is reported through normal host error isolation.
 The resolver owns no separate polling work: Control still reads each switch
 once per runtime. Configuration is model-wide; each dashboard publishes its
 own view over that same condition.</p>
-<p>History and extrema key sessions by the effective condition. A configured
+<p>History keys sessions by the effective condition. A configured
 model Armed unifies their arm inputs; absent model arming retains independent legacy
 switches. Each chart arm configuration has its own cumulative session.
 It pauses on disarm unless a matching shared flight is still active, including

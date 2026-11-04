@@ -361,7 +361,7 @@
 <td><code>armSource</code></td>
 <td>string</td>
 <td>unset</td>
-<td>Legacy physical-position or logical-switch fallback for flight-session extrema before model arming has been saved. Numeric sources such as <code>sa</code> or <code>ch5</code> are no longer supported: select a model switch instead. Without either condition, extrema maintain an open-ended session.</td>
+<td>Accepted so existing layouts load, but no longer used. Configure <strong>Arm switch</strong> in Model settings instead.</td>
 </tr>
 </tbody>
 </table>
@@ -811,9 +811,9 @@ flight-active logical switch and EdgeTX Special Functions.</p>
 <td><code>extrema</code></td>
 <td>string</td>
 <td><code>none</code></td>
-<td><code>none</code>, <code>source</code>, <code>flight</code></td>
+<td><code>none</code>, <code>source</code></td>
 <td>Minimum tracked</td>
-<td>Source-tracked or session-tracked minimum.</td>
+<td><code>source</code> shows EdgeTX's own minimum. A saved <code>flight</code> loads as <code>source</code>.</td>
 </tr>
 <tr>
 <td><code>extremaSource</code></td>
@@ -1467,7 +1467,7 @@ flight-active logical switch and EdgeTX Special Functions.</p>
 <td><code>service</code></td>
 <td>string</td>
 <td><code>telemetry</code></td>
-<td><code>telemetry</code>, <code>model</code>, <code>control</code>, <code>extrema</code>, <code>navigation</code></td>
+<td><code>telemetry</code>, <code>model</code>, <code>control</code>, <code>navigation</code></td>
 <td>Service</td>
 <td>Selects the host service under inspection.</td>
 </tr>
@@ -1478,14 +1478,6 @@ flight-active logical switch and EdgeTX Special Functions.</p>
 <td>Any service/source name or blank</td>
 <td>Source</td>
 <td></td>
-</tr>
-<tr>
-<td><code>extra</code></td>
-<td>string</td>
-<td><code>""</code></td>
-<td>Physical-position/logical-switch name or blank</td>
-<td>Second source</td>
-<td>Legacy Extrema arm condition, overridden by saved model arming; unused by other services.</td>
 </tr>
 <tr>
 <td><code>index</code></td>
@@ -1822,7 +1814,7 @@ panels:
       rssiSource: RSSI
       qualitySource: RQly
       reading: auto
-      extrema: flight
+      extrema: source
   - id: altitude
     type: metric
     col: 0
