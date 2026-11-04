@@ -17,8 +17,11 @@ Classes are proposed, not decided (see the plan's open questions).
   `count / 200` exactly (`hook-check`).
 - Per-task costs come from windows around the real functions (service
   `update`, panel `refresh`/`render`/`apply`, chart stages, loader stages).
-  Bookkeeping runs with the counter paused. Instrumentation adds at most 27
-  instructions per window, calibrated and subtracted.
+  Bookkeeping runs with the counter paused. Each window costs about 35
+  instructions of probe (10 inside, up to 27 outside). Leaf costs are exact and
+  fixed-overhead figures subtract the probe, but a task's total includes about
+  35 for every window nested in it (a callback with 10 windows reads about
+  0.35k high).
 - Each panel runs at its smallest and largest legal span. Every numeric reading
   swings up to 40% on every poll, so panels and recorders always take their
   changed-value path. Chart history was filled to capacity (3 series x 6144
@@ -39,16 +42,18 @@ Reproduce: `python3 tools/audit-scheduler.py --all --traces`, then `--report`.
    projection 6.9k, `state` panel build 10.4k, theme read 9.0k.
 3. **Fixed overhead is small:** about 0.5k (refresh) and 0.3k (background) with
    one panel, growing about 20 per extra panel.
-4. **Services are cheap except telemetry,** 5.9k at its 8-source cap.
+4. **Services are cheap except telemetry,** about 5.9k as measured (5.5k
+   without probe cost) at its 8-source cap.
 
 ## Services and flight
 
 Unit = what one grant buys. "Per unit" is the worst cost of one unit including
-the recording it triggers.
+the recording it triggers. Maxima of different parts come from different calls
+and must not be added; telemetry's figures below are from single calls.
 
 | Task | Class | Unit (cap) | Worst at max units | Per unit | Fixed | Bounded | Split |
 |---|---|---|---|---|---|---|---|
-| telemetry (poll + record) | CRITICAL | source polled (8; 4 with Smart) | 5.9k at 8 (M) | 0.93k = poll 0.46k + history record 0.74k (M) | 0.37k, plus precision scan 0.15k (M) | Yes by cap; recording repeats per history entry on the same source (only one per source measured) | Already per source; resume = a cursor. Do not separate poll from record: the sample time must travel with the reading |
+| telemetry (poll + record) | CRITICAL | source polled (8; 4 with Smart) | Per call, 8 sources: 5.9k worst (M, stress: 6 recorded sources 0.72-0.83k each, 2 unrecorded 0.33k each = 5.15k; precision scan 0.15k; fixed and probe 0.55k). 3 recorded sources: 2.9k (M) | Per source, one call: 0.94k for a recorded source = poll 0.12k + history record 0.73k + loop 0.09k (M). Unrecorded source: 0.33k (M). Use 0.94k as the declared cost; 8 recorded sources would be about 7.9k (E) | Per call: 0.17-0.37k (loop, link publish), plus precision scan up to 0.15k on one source (M) | Yes by cap; recording repeats per history entry on the same source (only one per source measured) | Already per source; resume = a cursor. Do not separate poll from record: the sample time must travel with the reading |
 | history | CRITICAL | entry (1) | 0.44k (M) | 17 | 0.38k advance/boundaries (M) | Yes | Single small unit |
 | control | CRITICAL | entry (6) | 2.0k at 6 (M) | 0.21k (M) | 0.97k (M) | Yes | Already per entry |
 | flight tick (detection, count, output) | HIGH | 1 tick | 2.8k (M) | n/a | n/a | Yes | Phases (proposals, private services, Smart, advance, output) could be staged; `pumpedAt`/`lastTick` exist. Not needed at 2.8k |
@@ -139,6 +144,14 @@ check (21).
 | background, steady | 0.28k / 0.30k (1 panel); 0.40k / 0.41k (16) | plus 26 per panel `background` |
 | refresh during staged load | 0.15k / 0.26k | plus the stage |
 | create / update | 2.2k / 33 | once |
+
+## Known limits
+
+- Replay traces stop at 300 callbacks per scenario, so a long run (such as the
+  history fill) is represented by its measurement phase only.
+- `--report` merges every `results.json` in `build/scheduler-audit`, including
+  results from earlier runs; clear the directory before a full run you intend
+  to report.
 
 ## Not measured
 

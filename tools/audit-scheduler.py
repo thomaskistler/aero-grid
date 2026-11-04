@@ -18,7 +18,7 @@ import sys
 TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
 from scheduler_audit import (PROBE_DIR, ROOT, WIDGET, lua_literal, patch_chart, patch_loader, patch_main,  # noqa: E402
-                             aggregate, reduce_results, supported_spans, verify_hook)
+                             aggregate, hook_check_status, reduce_results, supported_spans)
 from capture_recipes import PANELS, RECIPE_DIR, fixture_inputs, load_recipe  # noqa: E402
 
 OUTPUT = ROOT / "build/scheduler-audit"
@@ -279,10 +279,16 @@ def main():
     if args.report:
         runs = {path.parent.name: json.loads(path.read_text()) for path in sorted(OUTPUT.glob("*/results.json"))
                 if "stats" in json.loads(path.read_text())}
+        status = 0
+        pair = [OUTPUT / name / "results.json" for name in ("hook-check", "hook-check-firmware")]
+        if all(path.exists() for path in pair):
+            ok, message = hook_check_status(*(json.loads(path.read_text()) for path in pair))
+            print(message, file=sys.stdout if ok else sys.stderr)
+            status = 0 if ok else 1
         print("task\tcalls\tmean\tmax\tself_max\tunits\tper_unit\tscenario")
         for label, row in sorted(aggregate(runs).items()):
             print(f"{label}\t{row['n']}\t{row['mean']}\t{row['max']}\t{row['selfMax']}\t{row['maxUnits']}\t{row['perUnit']}\t{row['scenario']}")
-        return 0
+        return status
     if args.list:
         print("\n".join(available))
         return 0
@@ -298,13 +304,15 @@ def main():
     executable = build_native(library)
     capture = capture_module()
     checks = {}
+    status = 0
     for name in names:
         data = run(capture, executable, library, name, available[name], args.timeout)
         if "loops" in available[name]:
             checks[name] = data
             if len(checks) == 2:
-                problems = verify_hook(checks["hook-check"], checks["hook-check-firmware"])
-                print("hook-check:", "exact counter agrees with getUsage" if not problems else f"MISMATCH {problems}")
+                ok, message = hook_check_status(checks["hook-check"], checks["hook-check-firmware"])
+                print(message, file=sys.stdout if ok else sys.stderr)
+                status = status or (0 if ok else 1)
             continue
         rows = reduce_results(data)
         worst = max((row["max"] for label, row in rows.items() if label.startswith("callback:")), default=0)
@@ -312,7 +320,7 @@ def main():
         if args.traces and data["trace"] and available[name].get("trace"):
             TRACE_DIR.mkdir(parents=True, exist_ok=True)
             (TRACE_DIR / f"{name}.txt").write_text("\n".join(data["trace"]) + "\n")
-    return 0
+    return status
 
 
 if __name__ == "__main__":

@@ -151,3 +151,11 @@ def aggregate(runs):
         row["mean"] = round(row.pop("weighted") / row["total"], 1)
         row["n"] = row.pop("total")
     return rows
+
+
+def hook_check_status(exact, firmware):
+    """Return (ok, message) for a pair of hook-check results."""
+    problems = verify_hook(exact, firmware)
+    if problems:
+        return False, f"hook-check MISMATCH between the exact counter and getUsage: {problems}"
+    return True, "hook-check: exact counter agrees with getUsage"

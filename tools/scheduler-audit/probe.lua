@@ -15,7 +15,7 @@ _G.getTime = function()
 end
 
 local stats, trace, errorsSeen, worst = {}, {}, {}, {}
-local depth, childSum, visits = 0, {}, {}
+local depth, childSum, visits, childList = 0, {}, {}, {}
 local top, topLabels, topSum = {}, {}, 0
 local callbackIndex, phaseIndex, phaseDone = 0, 1, 0
 local kindCounts = {}
@@ -26,7 +26,7 @@ local finished = false
 local recording = true
 local refreshFn, backgroundFn
 
-local function record(label, cost, own, units)
+local function record(label, cost, own, units, children)
     local entry = stats[label]
     if not entry then
         entry = { n = 0, sum = 0, max = 0, min = math.huge, selfMax = 0, units = {} }
@@ -36,6 +36,7 @@ local function record(label, cost, own, units)
     entry.sum = entry.sum + cost
     if cost > entry.max then
         entry.max = cost
+        entry.worstChildren = children
     end
     if cost < entry.min then
         entry.min = cost
@@ -67,6 +68,7 @@ local function finish(label, raw, leak)
     local cost = raw - K
     local own = cost - childSum[d]
     local units = visits[d]
+    local children = table.concat(childList[d], ",")
     depth = d - 1
     if type(label) ~= "string" then
         label = "unlabelled"
@@ -76,6 +78,8 @@ local function finish(label, raw, leak)
     end
     if depth >= 1 then
         childSum[depth] = childSum[depth] + raw + leak
+        local siblings = childList[depth]
+        siblings[#siblings + 1] = label .. "=" .. cost
     elseif label == "flight:identity" then
         -- Runs in every callback: part of the fixed overhead, not a schedulable task.
     else
@@ -84,7 +88,7 @@ local function finish(label, raw, leak)
         topLabels[#topLabels + 1] = label
     end
     if recording then
-        record(label, cost, own, units > 0 and units or 1)
+        record(label, cost, own, units > 0 and units or 1, children)
     end
 end
 
@@ -93,7 +97,7 @@ end
 local function core(leak, label, fn, a, b, c, d, e)
     pause(true)
     depth = depth + 1
-    childSum[depth], visits[depth] = 0, 0
+    childSum[depth], visits[depth], childList[depth] = 0, 0, {}
     local token
     if type(label) == "function" then
         token = label(nil, a, b, c, d, e)
@@ -372,6 +376,7 @@ local function report(context)
             max = entry.max,
             min = entry.min,
             selfMax = entry.selfMax,
+            worstChildren = entry.worstChildren,
             units = units,
         }
     end

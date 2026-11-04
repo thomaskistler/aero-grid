@@ -1,7 +1,13 @@
 # SPDX-License-Identifier: GPL-2.0-only
+import contextlib
 import importlib.util
+import io
+import json
 from pathlib import Path
+import sys
+import tempfile
 import unittest
+from unittest import mock
 
 from capture_recipes import PANELS
 import scheduler_audit as audit
@@ -90,6 +96,36 @@ class ReductionTests(unittest.TestCase):
         exact = {"counts": [10, 810, 1610]}
         self.assertEqual(audit.verify_hook(exact, {"usages": [0, 0, 4]}), [])
         self.assertEqual(len(audit.verify_hook(exact, {"usages": [0, 0, 9]})), 1)
+
+
+class HookCheckTests(unittest.TestCase):
+    def report(self, firmware_usages):
+        cli = load_cli()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name, body in (("hook-check", {"counts": [10, 810, 1610]}),
+                               ("hook-check-firmware", {"usages": firmware_usages})):
+                (root / name).mkdir()
+                (root / name / "results.json").write_text(json.dumps(body))
+            stderr = io.StringIO()
+            with mock.patch.object(cli, "OUTPUT", root), mock.patch.object(sys, "argv", ["audit", "--report"]), \
+                    contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+                status = cli.main()
+        return status, stderr.getvalue()
+
+    def test_status_reports_agreement_and_mismatch(self):
+        self.assertTrue(audit.hook_check_status({"counts": [10, 810]}, {"usages": [0, 0]})[0])
+        ok, message = audit.hook_check_status({"counts": [10, 810]}, {"usages": [0, 9]})
+        self.assertFalse(ok)
+        self.assertIn("MISMATCH", message)
+
+    def test_report_exits_nonzero_when_the_counter_disagrees_with_the_firmware(self):
+        status, errors = self.report([0, 0, 9])
+        self.assertEqual(status, 1)
+        self.assertIn("MISMATCH", errors)
+
+    def test_report_exits_zero_when_they_agree(self):
+        self.assertEqual(self.report([0, 0, 4]), (0, ""))
 
 
 if __name__ == "__main__":
