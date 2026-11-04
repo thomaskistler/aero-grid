@@ -222,7 +222,8 @@ the declared bound and validated by replaying recorded native traces.
    widget calls yet. Give it its own offline simulator and a per-task
    measurement path, replaying the audited costs and recorded native traces.
    Fault-inject cost steps, spikes and overload bursts and require zero
-   overruns.
+   overruns. Result: `lib/scheduler.lua` and its tests; measured framework cost
+   and implementation notes in [scheduler-framework.md](scheduler-framework.md), section 10.
 3. **Coexistence.** Add a host mode (`legacy`, `mixed`, `new`). In `mixed`
    every task is owned by exactly one scheduler, and a migrated task is skipped
    by the old one. The old scheduler's cost depends on which panels are due, so

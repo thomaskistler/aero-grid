@@ -718,3 +718,73 @@ No decision is open now except those deferred to the telemetry service migration
    source update-rate hint (one model-level value, or also per source), and the
    maximum number of history recordings per source, since a poll must record into
    all of them in one call (a deferred recording would be marked a gap).
+
+## 10. Implementation notes (Phase 2)
+
+Built as specified: `lib/scheduler.lua` (not called by the widget), with its
+offline simulator, admission test, trace replay and measurement path in
+`tests/support/scheduler_*.lua` and `tests/unit/lib/test_scheduler*.lua`. The
+native measurement is `python3 tools/audit-scheduler.py --framework` (macOS,
+Companion 2.12 x86_64); case files live in `tests/fixtures/scheduler-cases/`.
+Choices where the specification was silent or inconsistent:
+
+- **API.** `scheduler.new(overhead)`, `s:add{ id, decl, instance, due }` (returns
+  `true` or `false, reason`; `due` is an absolute tick), `s:remove(id)`,
+  `s:run(kind, now, used)`, `s:takeErrors()` and `s.lastPlan = { kind, U }` with
+  `U = overhead + used + planned`. `scheduler.stagger(index, interval)` takes the
+  registration index from 0. Declarations hold integer costs.
+- **Remove during a plan.** A task removed before its step runs is skipped, not
+  run once more; an add takes effect at the next plan, as specified.
+- **Examination limits.** Every ready task looked at counts toward `K_c` and
+  `K_n`, including ones refused by kind or `exclusive`, so the planner's cost
+  stays bounded. Consequence for Phase 3: six ready steady-only normal tasks at
+  the front of the list hide the normal tasks behind them from a `background`
+  callback.
+- **Reserve.** The normal reserve is applied literally: when `R` is below it,
+  critical work waits and normal work uses `R`. Admission test A keeps `R` far
+  above it.
+- **Malformed input.** A `want` that is not a number plans the stage's
+  `maxUnits`; below 1 it plans 1; a fraction is rounded down. A step that returns
+  anything but a whole number of ticks >= 1, raises, or names an unknown stage
+  retires that task (reported once through `takeErrors`). `instance.used` is
+  asserted by tests only, not at runtime, to keep `o` small.
+- **Measurement.** The `k` of 4.2 stops at 12, the `maxRun` cap (16 cannot run).
+  The go/no-go figure is the specification's `F0 + 16 c1 + 12 o`, which counts
+  the examination of the twelve tasks that run twice; the harness also measures
+  the worst real callback directly (ten critical tasks run, four normal tasks
+  examined and refused, two normal tasks run). The margin rule applies the
+  per-call constant `A` to an indivisible stage and to `fixed` only of a
+  divisible one; a hand declaration (for example telemetry per source) may
+  differ.
+- **Fault injection.** An injected excess of at most `20000 - ceiling` per
+  callback (cost steps, spikes, bursts) is added on top of the plan; since a plan
+  is at most `ceiling - margin`, the total must stay under 20000, and the
+  simulator counts an overrun otherwise.
+- **Left for later phases.** The near-miss tripwire and shadow mode
+  (`lib/scheduler_probe.lua`, section 6), layout admission and the host mode.
+  Admission tests A to E are test support, not radio code.
+- **Bounds table.** `tests/fixtures/scheduler-bounds.lua` holds the contracts'
+  declared bounds at the audit's labels (legacy granularity) for the trace
+  replay and the `M` check; labels without a contract bound are listed there.
+
+### Measured framework cost (native, 32 tasks, instructions)
+
+| Callback | Cost |
+|---|---|
+| nothing ready (`F0`) | 75 |
+| 1, 4, 8, 12 tasks run | 241, 671, 1239, 1816 |
+| 16 ready tasks examined, none fits | 597 (`c1` 33) |
+| worst real callback (12 run, 4 refused) | 1936 |
+| per task run `o` | 166 at one task, 145 at twelve |
+
+The specification's figure is 2589 against 500: **no-go**. The targets of 4.2
+(`F0` 40, `c1` 6, `o` 30) are below the cost of a `pcall`, the result checks and
+the list reinsertion in Lua (about 58 instructions to plan and 47 to run and put
+back one task). Heap: about 32 KiB for 128 registered tasks on the native
+simulator (43 KiB in the desktop Lua used by the tests); the library itself is
+about 12 KiB on the SD card. The 12 cap is the lever: with `K_c`/`K_n`/`maxRun`
+of 6/4/8, 4/3/6, 3/2/4 and 2/2/3 the worst real callback is about 1060, 750, 580
+and 440. The decision (keep 12 and raise the term to about 2000, which the
+margin rule makes 2520, lowering the room `C` of section 4 by about 2000; or
+lower the caps; or merge tasks) is the user's.
+
