@@ -6,71 +6,46 @@ local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local scheduler = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.lua"))()
 local sim = assert(loadfile(root .. "/tests/support/scheduler_sim.lua"))()
 local admission = assert(loadfile(root .. "/tests/support/scheduler_admission.lua"))()
+local mixes = assert(loadfile(root .. "/tests/support/scheduler_mixes.lua"))()
 local equal = assertions.assertEqual
 
 local LIMIT = scheduler.CEILING - scheduler.MARGIN
-local FRAMEWORK = 500
-local STEADY_OVERHEAD = 1250 + FRAMEWORK
+local CHARGE = scheduler.EXAMINE_COST + scheduler.RUN_COST
+local STEADY_OVERHEAD = 1250
 local RESET_POLL, TICK, SMART = 620, 1000, 2600
 
-local function once(class, bound, extra)
-    local decl = { class = class, stages = { run = { fixed = 0, perUnit = bound, maxUnits = 1 } } }
-    for key, value in pairs(extra or {}) do
-        decl[key] = value
-    end
-    return decl
-end
+local once = mixes.once
+local PANEL, CHART, HISTORY = mixes.PANEL, mixes.CHART, mixes.HISTORY
+local NEXT_CHART_STAGE = mixes.NEXT_CHART_STAGE
+local MIXES = mixes.MIXES
+local RECORDED = mixes.releases({ recorded = 1, interval = 10 }, 1)[1].decl
 
-local RECORDED = once("critical", 1180, { shared = { link = 560 } })
-local UNRECORDED = {
-    class = "critical",
-    shared = { link = 560 },
-    stages = { run = { fixed = 0, perUnit = 420, maxUnits = 4 } },
-}
-local HISTORY = once("critical", 650)
-local CONTROL_BASE = once("critical", 1300)
-local CONTROL_ENTRIES = once("critical", 1320)
-local PANEL = once("normal", 1800)
-local CHART = {
-    class = "normal",
-    exclusive = true,
-    kinds = { steady = true },
-    first = "begin",
-    stages = {
-        begin = { fixed = 0, perUnit = 1300, maxUnits = 1 },
-        project = { fixed = 200, perUnit = 830, maxUnits = 9 },
-        apply = { fixed = 0, perUnit = 1300, maxUnits = 1 },
+-- Peak and sustained load per callback, and the room left beside the peak in a
+-- callback with the tick (T), the tick and Smart (TS) and neither (R4), at one
+-- sensor per task and at two. Plan section 4.
+local EXPECTED = {
+    [1] = {
+        A = { peak = 5722, sustained = 4388, T = 5908, TS = 3308, R4 = 6908 },
+        B = { peak = 4334, sustained = 2401, T = 7296, TS = 4696, R4 = 8296 },
+        C = { peak = 4694, sustained = 4076, T = 6936, TS = 4336, R4 = 7936 },
+        D = { peak = 8498, sustained = 7684, T = 3132, TS = 532, R4 = 4132 },
+    },
+    [2] = {
+        A = { peak = 5514, sustained = 4113, T = 6116, TS = 3516, R4 = 7116 },
+        B = { peak = 5514, sustained = 2264, T = 6116, TS = 3516, R4 = 7116 },
+        C = { peak = 5514, sustained = 3893, T = 6116, TS = 3516, R4 = 7116 },
+        D = { peak = 8082, sustained = 7268, T = 3548, TS = 948, R4 = 4548 },
     },
 }
-local NEXT_CHART_STAGE = { begin = "project", project = "apply", apply = "begin" }
 
--- The telemetry mixes of specification section 4: a registration order that
--- gives the stagger index, history and control beside the sources.
-local MIXES = {
-    A = { recorded = 8, interval = 25, peak = 4890, sustained = 3750 },
-    B = { recorded = 8, interval = 100, peak = 3710, sustained = 2000 },
-    C = { recorded = 4, unrecorded = 4, interval = 20, peak = 4070, sustained = 3470 },
-    D = { recorded = 8, interval = 10, peak = 7250, sustained = 6590 },
-}
-
-local function releases(mix)
-    local list = {}
-    for _ = 1, mix.recorded do
-        list[#list + 1] = { decl = RECORDED, interval = mix.interval }
-    end
-    if mix.unrecorded then
-        list[#list + 1] = { decl = UNRECORDED, interval = mix.interval }
-    end
-    list[#list + 1] = { decl = HISTORY, interval = 5 }
-    list[#list + 1] = { decl = CONTROL_BASE, interval = 20 }
-    list[#list + 1] = { decl = CONTROL_ENTRIES, interval = 20 }
-    return list
+local function releases(mix, batch)
+    return mixes.releases(mix, batch or 2)
 end
 
 -- Registers a mix as periodic stubs; `delay` equals the interval, so the plan
 -- and the simulation see the same releases.
-local function addMix(simulation, mix)
-    for index, release in ipairs(releases(mix)) do
+local function addMix(simulation, mix, batch)
+    for index, release in ipairs(releases(mix, batch)) do
         simulation:add({
             id = "critical" .. index,
             decl = release.decl,
@@ -95,104 +70,97 @@ local function addNormalWork(simulation)
     end
 end
 
-local function testAdmissionReproducesTheSpecification()
-    local overhead = STEADY_OVERHEAD
-    for name, mix in pairs(MIXES) do
-        local peak, sustained = admission.load(scheduler, releases(mix))
-        equal(peak, mix.peak, "peak of mix " .. name)
-        assert(math.abs(sustained - mix.sustained) / mix.sustained < 0.03, "sustained of mix " .. name)
-    end
-    local function room(name, head)
-        local result = admission.check({
-            scheduler = scheduler,
-            overhead = overhead,
-            head = head,
-            releases = releases(MIXES[name]),
-        })
-        return result.base - result.peak, result
-    end
-    equal(room("A", RESET_POLL + TICK), 6340, "room T, mix A")
-    equal(room("A", RESET_POLL + TICK + SMART), 3740, "room TS, mix A")
-    equal(room("A", RESET_POLL), 7340, "room R4, mix A")
-    equal(room("B", RESET_POLL + TICK), 7520)
-    equal(room("C", RESET_POLL + TICK), 7160)
-    equal(room("D", RESET_POLL + TICK), 3980)
-    for name in pairs(MIXES) do
-        local _, result = room(name, RESET_POLL + TICK)
-        equal(
-            #result.failures,
-            0,
-            "mix " .. name .. " is admitted in a T callback: " .. table.concat(result.failures, "; ")
-        )
+local function testAdmissionReproducesTheRecomputedTables()
+    local heads = { T = RESET_POLL + TICK, TS = RESET_POLL + TICK + SMART, R4 = RESET_POLL }
+    for batch, rows in pairs(EXPECTED) do
+        for name, expected in pairs(rows) do
+            local label = "mix " .. name .. " at " .. batch .. " per task"
+            local peak, sustained = admission.load(scheduler, releases(MIXES[name], batch))
+            equal(peak, expected.peak, "peak of " .. label)
+            assert(math.abs(sustained - expected.sustained) < 1, "sustained of " .. label .. ": " .. sustained)
+            for kind, head in pairs(heads) do
+                local result = admission.check({
+                    scheduler = scheduler,
+                    overhead = STEADY_OVERHEAD,
+                    head = head,
+                    releases = releases(MIXES[name], batch),
+                })
+                equal(result.base - result.peak, expected[kind], "room " .. kind .. " of " .. label)
+                if kind ~= "TS" then
+                    equal(#result.failures, 0, label .. " " .. kind .. ": " .. table.concat(result.failures, "; "))
+                end
+            end
+        end
     end
 end
 
 local function testAdmissionRejectsOverloads()
     local function failed(config)
         config.scheduler, config.overhead = scheduler, STEADY_OVERHEAD
-        local text = table.concat(admission.check(config).failures, " ")
-        return text
+        return table.concat(admission.check(config).failures, " ")
     end
-    assert(string.find(failed({ head = RESET_POLL + TICK + SMART, releases = releases(MIXES.D) }), "C:", 1, true))
-    local sixteen = releases({ recorded = 16, interval = 10 })
-    assert(string.find(failed({ head = RESET_POLL, releases = sixteen }), "B:", 1, true))
-    assert(
-        string.find(
-            failed({ head = 0, releases = { { decl = once("critical", 11000), interval = 5 } } }),
-            "A:",
-            1,
-            true
-        )
-    )
+    -- Today's 10 Hz mix in the callback that also runs Smart (until R4).
+    assert(string.find(failed({ head = RESET_POLL + TICK + SMART, releases = releases(MIXES.D) }), "A:", 1, true))
+    local sixteen = mixes.releases({ recorded = 16, interval = 10 }, 2)
+    local text = failed({ head = RESET_POLL, releases = sixteen })
+    assert(string.find(text, "B:", 1, true) and string.find(text, "C:", 1, true))
+    assert(string.find(failed({ releases = { { decl = once("critical", 11000), interval = 5 } } }), "A:", 1, true))
     assert(string.find(failed({ releases = { { decl = once("critical", 4100), interval = 100 } } }), "E:", 1, true))
     local text = failed({ legacy = 6650, legacyBounds = { telemetry = 10190 }, releases = {} })
     assert(string.find(text, "D:", 1, true))
+    -- A two-sensor batch is a worthwhile task, a single 1180-instruction one is not.
+    local small =
+        admission.check({ scheduler = scheduler, overhead = STEADY_OVERHEAD, releases = releases(MIXES.A, 1) })
+    assert(#small.small > 0, "single sensors are below the minimum piece")
+    equal(admission.minimumPiece(scheduler), 1600)
 end
 
 local function testAMixedRunUnderJitter()
-    for name, mix in pairs(MIXES) do
-        local simulation = sim.new(scheduler, { steady = STEADY_OVERHEAD, background = 1130 })
-        addMix(simulation, mix)
-        addNormalWork(simulation)
-        local schedule = sim.schedule(11, 3000, 3, 15)
-        for _, item in ipairs(schedule) do
-            item.used = RESET_POLL
-        end
-        simulation:run(schedule)
-        local runs = {}
-        for _, report in ipairs(simulation.reports) do
-            assert(report.U <= LIMIT, "mix " .. name .. " planned " .. report.U)
-            equal(report.actual, report.U, "stubs cost exactly their bound")
-            assert(#report.plan <= scheduler.MAX_RUN)
-            local ids = {}
-            for _, entry in ipairs(report.plan) do
-                assert(not ids[entry.id], "a task ran twice in one callback")
-                ids[entry.id] = true
-                assert(entry.used <= entry.grant)
+    for _, batch in ipairs({ 1, 2 }) do
+        for name, mix in pairs(MIXES) do
+            local simulation = sim.new(scheduler, { steady = STEADY_OVERHEAD, background = 1130 })
+            addMix(simulation, mix, batch)
+            addNormalWork(simulation)
+            local schedule = sim.schedule(11, 3000, 3, 15)
+            for _, item in ipairs(schedule) do
+                item.used = RESET_POLL
             end
-        end
-        equal(simulation.overruns, 0)
-        for id, wait in pairs(simulation.maxWait) do
-            if string.sub(id, 1, 8) == "critical" then
-                assert(wait <= 2 * 15, "mix " .. name .. ": " .. id .. " waited " .. wait .. " ticks")
+            simulation:run(schedule)
+            local runs = {}
+            for _, report in ipairs(simulation.reports) do
+                assert(report.U <= LIMIT, "mix " .. name .. " planned " .. report.U)
+                equal(report.actual, report.U, "stubs cost exactly their bound")
+                assert(#report.plan <= scheduler.MAX_TASKS)
+                local ids = {}
+                for _, entry in ipairs(report.plan) do
+                    assert(not ids[entry.id], "a task ran twice in one callback")
+                    ids[entry.id] = true
+                    assert(entry.used <= entry.grant)
+                end
             end
+            equal(simulation.overruns, 0)
+            for id, wait in pairs(simulation.maxWait) do
+                if string.sub(id, 1, 8) == "critical" then
+                    assert(wait <= 2 * 15, "mix " .. name .. ": " .. id .. " waited " .. wait .. " ticks")
+                end
+            end
+            for index, release in ipairs(releases(mix, batch)) do
+                runs[index] = simulation.runs["critical" .. index]
+                local expected = 3000 * 9 // (release.interval + 2 * 15)
+                assert(
+                    runs[index] >= expected,
+                    "mix " .. name .. ": critical" .. index .. " ran " .. runs[index] .. " times"
+                )
+            end
+            assert(simulation.runs.chart > 0 and simulation.runs.panel1 > 0, "normal work still runs")
         end
-        for index, release in ipairs(releases(mix)) do
-            runs[index] = simulation.runs["critical" .. index]
-            local expected = 3000 * 9 // (release.interval + 2 * 15)
-            assert(
-                runs[index] >= expected,
-                "mix " .. name .. ": critical" .. index .. " ran " .. runs[index] .. " times"
-            )
-        end
-        assert(simulation.runs.chart > 0 and simulation.runs.panel1 > 0, "normal work still runs")
     end
 end
 
 -- A plain statement of the specification, used to check the library plan by plan.
 local function reference(simulation, kind, now, used)
     local overhead = simulation.overhead[kind]
-    local room = scheduler.CEILING - scheduler.MARGIN - overhead - used
+    local room = scheduler.CEILING - scheduler.MARGIN - overhead - used - scheduler.FIXED_COST
     local ready = { critical = {}, normal = {} }
     local smallest = math.huge
     for _, stub in pairs(simulation.stubs) do
@@ -204,6 +172,7 @@ local function reference(simulation, kind, now, used)
             table.insert(ready[decl.class], stub)
         end
     end
+    smallest = smallest + CHARGE
     local function older(a, b)
         return a.dueAt < b.dueAt or (a.dueAt == b.dueAt and a.seq < b.seq)
     end
@@ -211,13 +180,14 @@ local function reference(simulation, kind, now, used)
     table.sort(ready.normal, older)
     local plan, spent, exclusive, charged = {}, 0, false, {}
     for _, pass in ipairs({
-        { list = ready.critical, limit = room - scheduler.NORMAL_RESERVE, examine = scheduler.EXAMINE_CRITICAL },
-        { list = ready.normal, limit = room, examine = scheduler.EXAMINE_NORMAL },
+        { list = ready.critical, limit = room - scheduler.NORMAL_RESERVE },
+        { list = ready.normal, limit = room },
     }) do
-        for position = 1, math.min(#pass.list, pass.examine) do
-            if #plan >= scheduler.MAX_RUN or pass.limit - spent < smallest then
+        for position = 1, #pass.list do
+            if pass.limit - spent < smallest then
                 break
             end
+            spent = spent + scheduler.EXAMINE_COST
             local stub = pass.list[position]
             local decl = stub.spec.decl
             local kinds = decl.kinds or { steady = true, background = true }
@@ -229,10 +199,11 @@ local function reference(simulation, kind, now, used)
                     fixed = fixed + (charged[name] and 0 or cost)
                 end
                 local want = type(stub.want) == "number" and math.max(1, math.floor(stub.want)) or declared.maxUnits
-                local grant = math.min(want, declared.maxUnits, (pass.limit - spent - fixed) // declared.perUnit)
+                local fit = (pass.limit - spent - scheduler.RUN_COST - fixed) // declared.perUnit
+                local grant = math.min(want, declared.maxUnits, fit)
                 if grant >= 1 then
                     plan[#plan + 1] = { id = stub.id, stage = stage, grant = grant }
-                    spent = spent + fixed + grant * declared.perUnit
+                    spent = spent + scheduler.RUN_COST + fixed + grant * declared.perUnit
                     exclusive = exclusive or decl.exclusive == true
                     for name in pairs(decl.shared or {}) do
                         charged[name] = true
@@ -450,7 +421,7 @@ local function testFailingTasksRetireAlone()
     equal(simulation.library.count, before - 3)
     local errors = simulation.library:takeErrors()
     equal(#errors, 3)
-    for index = 1, 11 do
+    for index = 1, #releases(MIXES.A) do
         assert(simulation.runs["critical" .. index] >= 20, "critical" .. index .. " kept running")
     end
     equal(simulation.overruns, 0)
@@ -556,7 +527,7 @@ local function testAnOverloadBurstDrainsWithoutDroppingCriticalWork()
     end
 end
 
-testAdmissionReproducesTheSpecification()
+testAdmissionReproducesTheRecomputedTables()
 testAdmissionRejectsOverloads()
 testAMixedRunUnderJitter()
 testPlansMatchTheReferenceOnRandomTasks()

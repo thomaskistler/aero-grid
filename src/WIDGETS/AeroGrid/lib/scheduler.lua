@@ -4,7 +4,8 @@
 ---
 --- Tasks declare a worst-case cost per stage. Each callback the planner admits
 --- ready tasks against a fixed budget, oldest release first, so the plan never
---- exceeds the ceiling. Planning never reads `getUsage`. Nothing in the widget
+--- exceeds the ceiling. The planner charges its own cost to the same budget.
+--- Planning never reads `getUsage`. Nothing in the widget
 --- calls this library yet.
 ---
 --- A task is `{ id, decl, instance, due }`. `decl` is shared by all tasks of a
@@ -23,18 +24,22 @@ local scheduler = {
     CEILING = 15000,
     MARGIN = 400,
     NORMAL_RESERVE = 2000,
-    EXAMINE_CRITICAL = 10,
-    EXAMINE_NORMAL = 6,
-    MAX_RUN = 12,
     MAX_TASKS = 128,
+    -- The planner's own cost, charged against the budget: a callback, a task
+    -- examined, a task run or retired. Upper bounds from the instruction counts
+    -- of tests/support/scheduler_overhead.lua, which fails if one is exceeded.
+    FIXED_COST = 100,
+    EXAMINE_COST = 48,
+    RUN_COST = 160,
 }
 scheduler.__index = scheduler
 
 local CEILING, MARGIN, NORMAL_RESERVE = scheduler.CEILING, scheduler.MARGIN, scheduler.NORMAL_RESERVE
-local EXAMINE_CRITICAL, EXAMINE_NORMAL = scheduler.EXAMINE_CRITICAL, scheduler.EXAMINE_NORMAL
-local MAX_RUN, MAX_TASKS = scheduler.MAX_RUN, scheduler.MAX_TASKS
+local MAX_TASKS = scheduler.MAX_TASKS
+local FIXED_COST, EXAMINE_COST, RUN_COST = scheduler.FIXED_COST, scheduler.EXAMINE_COST, scheduler.RUN_COST
 local STEADY_AND_BACKGROUND = { steady = true, background = true }
 local STAGGER_SPACING = 5
+local MAX_SHARED = 2
 
 local floor, pcall, type = math.floor, pcall, type
 local move = table.move
@@ -44,7 +49,6 @@ local ORDER = 1 << 20
 local CRITICAL, NORMAL = 1, 2
 local CLASS = { critical = CRITICAL, normal = NORMAL }
 local RESERVE = { NORMAL_RESERVE, 0 }
-local EXAMINE = { EXAMINE_CRITICAL, EXAMINE_NORMAL }
 
 local checked = setmetatable({}, { __mode = "k" })
 
@@ -71,7 +75,12 @@ function scheduler.check(decl)
     if decl.kinds ~= nil and type(decl.kinds) ~= "table" then
         return "kinds must be a table"
     end
+    local names = 0
     for name, cost in pairs(decl.shared or {}) do
+        names = names + 1
+        if names > MAX_SHARED then
+            return "at most " .. MAX_SHARED .. " shared costs (the charged run cost assumes it)"
+        end
         if not whole(cost) or cost < 0 then
             return "shared cost " .. tostring(name) .. " must be a non-negative integer"
         end
@@ -112,7 +121,7 @@ function scheduler.new(overhead)
         lists = { {}, {} },
         minStep = math.huge,
         errors = {},
-        lastPlan = { kind = nil, U = 0 },
+        lastPlan = { kind = nil, U = 0, charged = 0, examined = 0, ran = 0 },
         planned = {},
         stages = {},
         grants = {},
@@ -251,6 +260,12 @@ end
 --- Plan and run one callback of `kind` at tick `now`. `used` is the declared
 --- cost of work the host already ran in this callback. Returns the number of
 --- tasks run.
+---
+--- The planner charges its own cost against the budget as it goes: FIXED_COST
+--- once, EXAMINE_COST for every task it looks at and RUN_COST for every task it
+--- plans or retires. The scan stops when the remaining room cannot admit another
+--- task. It needs no cap: the list holds at most MAX_TASKS tasks, and the
+--- measured cost of any scan is within what it charged (see lastPlan).
 ---@param kind string
 ---@param now integer
 ---@param used? integer
@@ -261,23 +276,24 @@ function scheduler:run(kind, now, used)
         error("unknown callback kind " .. tostring(kind), 2)
     end
     used = used or 0
-    local room = CEILING - MARGIN - overhead - used
-    local lists, minStep, charged = self.lists, self.minStep, self.charged
+    local room = CEILING - MARGIN - overhead - used - FIXED_COST
+    local lists, charged = self.lists, self.charged
     local records, stages, grants = self.planned, self.stages, self.grants
+    local smallest = self.minStep + EXAMINE_COST + RUN_COST
     local spent, planned, exclusive, sharedUsed = 0, 0, false, false
+    local examinedTotal, runTotal = 0, 0
 
     for class = 1, 2 do
         local list = lists[class]
         local limit = room - RESERVE[class]
-        local size = #list
-        local last = size < EXAMINE[class] and size or EXAMINE[class]
         local examined, taken = 0, 0
-        for index = 1, last do
+        for index = 1, #list do
             local record = list[index]
-            if record.due > now or planned >= MAX_RUN or limit - spent < minStep then
+            if record.due > now or limit - spent < smallest then
                 break
             end
             examined = index
+            spent = spent + EXAMINE_COST
             local decl, instance = record.decl, record.instance
             if (decl.kinds or STEADY_AND_BACKGROUND)[kind] and not (exclusive and decl.exclusive) then
                 local stage = instance.stage or decl.first or "run"
@@ -285,6 +301,8 @@ function scheduler:run(kind, now, used)
                 if declared == nil then
                     retire(self, record, "unknown stage " .. tostring(stage))
                     taken = taken + 1
+                    runTotal = runTotal + 1
+                    spent = spent + RUN_COST
                 else
                     local fixed, shared = declared.fixed, decl.shared
                     if shared then
@@ -294,7 +312,7 @@ function scheduler:run(kind, now, used)
                             end
                         end
                     end
-                    local grant = (limit - spent - fixed) // declared.perUnit
+                    local grant = (limit - spent - RUN_COST - fixed) // declared.perUnit
                     if grant >= 1 then
                         local cap, want = declared.maxUnits, instance.want
                         if type(want) == "number" and want < cap then
@@ -303,8 +321,9 @@ function scheduler:run(kind, now, used)
                         if grant > cap then
                             grant = cap
                         end
-                        spent = spent + fixed + grant * declared.perUnit
+                        spent = spent + RUN_COST + fixed + grant * declared.perUnit
                         planned = planned + 1
+                        runTotal = runTotal + 1
                         records[planned], stages[planned], grants[planned] = record, stage, grant
                         record.state = "planned"
                         taken = taken + 1
@@ -319,6 +338,7 @@ function scheduler:run(kind, now, used)
                 end
             end
         end
+        examinedTotal = examinedTotal + examined
         if taken > 0 then
             compact(list, examined, taken)
         end
@@ -329,7 +349,8 @@ function scheduler:run(kind, now, used)
         end
     end
     local plan = self.lastPlan
-    plan.kind, plan.U = kind, overhead + used + spent
+    plan.kind, plan.U, plan.examined, plan.ran = kind, overhead + used + FIXED_COST + spent, examinedTotal, runTotal
+    plan.charged = FIXED_COST + examinedTotal * EXAMINE_COST + runTotal * RUN_COST
 
     for index = 1, planned do
         local record = records[index]

@@ -7,7 +7,9 @@ local scheduler = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.l
 local equal = assertions.assertEqual
 
 local OVERHEAD = { steady = 1000, background = 800 }
-local ROOM = scheduler.CEILING - scheduler.MARGIN - OVERHEAD.steady
+local FIXED, EXAMINE, RUN = scheduler.FIXED_COST, scheduler.EXAMINE_COST, scheduler.RUN_COST
+local CHARGE = EXAMINE + RUN
+local ROOM = scheduler.CEILING - scheduler.MARGIN - OVERHEAD.steady - FIXED
 
 local function single(class, cost, extra)
     local decl = { class = class, stages = { run = { fixed = 0, perUnit = cost, maxUnits = 1 } } }
@@ -46,6 +48,7 @@ local function testDeclarationChecks()
         { class = "normal", stages = { run = { fixed = 0, perUnit = 1, maxUnits = 0 } } },
         { class = "normal", stages = good.stages, shared = { link = -5 } },
         { class = "normal", stages = good.stages, kinds = true },
+        { class = "normal", stages = good.stages, shared = { a = 1, b = 1, c = 1 } },
     }
     for index, decl in ipairs(bad) do
         assert(scheduler.check(decl), "declaration " .. index .. " should be rejected")
@@ -114,9 +117,11 @@ local function testPlanStaysUnderTheBudget()
     local limit = scheduler.CEILING - scheduler.MARGIN
     assert(s.lastPlan.U <= limit, "U " .. s.lastPlan.U .. " exceeds " .. limit)
     equal(s.lastPlan.kind, "steady")
-    local expected = (limit - OVERHEAD.steady - 500) // 2000
+    local expected = (limit - OVERHEAD.steady - FIXED - 500) // (2000 + CHARGE)
     equal(#log, expected, "as many as fit, no more")
-    equal(s.lastPlan.U, OVERHEAD.steady + 500 + expected * 2000)
+    equal(s.lastPlan.U, OVERHEAD.steady + FIXED + 500 + expected * (2000 + CHARGE))
+    equal(s.lastPlan.charged, FIXED + expected * CHARGE)
+    equal(s.lastPlan.examined, expected, "the scan stops when nothing more fits")
     equal(select("#", s:run("background", 2)), 1)
     assert(s.lastPlan.U <= limit)
     equal(s.lastPlan.kind, "background")
@@ -126,7 +131,7 @@ local function testSkipAndContinueKeepsTheWaiterFirst()
     local log = {}
     local s = scheduler.new(OVERHEAD)
     local room = ROOM
-    add(s, "big", single("normal", room - 100), task(log, "big", 1), 0)
+    add(s, "big", single("normal", room - 2 * CHARGE - 100), task(log, "big", 1), 0)
     add(s, "huge", single("normal", room + 1), task(log, "huge", 1), 1)
     add(s, "small", single("normal", 50), task(log, "small", 1), 2)
     equal(s:run("steady", 5), 2, "big and small fit together, huge never fits")
@@ -141,7 +146,7 @@ end
 local function testCriticalIsNeverDroppedAndKeepsItsPlace()
     local log = {}
     local s = scheduler.new(OVERHEAD)
-    local critical = ROOM - scheduler.NORMAL_RESERVE + 1
+    local critical = ROOM - scheduler.NORMAL_RESERVE - CHARGE + 1
     add(s, "c", single("critical", critical), task(log, "c"), 0)
     add(s, "n", single("normal", 100), task(log, "n"), 0)
     s:run("steady", 1)
@@ -159,9 +164,10 @@ end
 local function testNormalReserve()
     local log = {}
     local s = scheduler.new(OVERHEAD)
-    local half = (ROOM - scheduler.NORMAL_RESERVE) // 2
+    local limit = ROOM - scheduler.NORMAL_RESERVE - 2 * CHARGE
+    local half = limit // 2
     add(s, "c1", single("critical", half), task(log, "c1"), 0)
-    add(s, "c2", single("critical", half + 1), task(log, "c2"), 0)
+    add(s, "c2", single("critical", limit - half + 1), task(log, "c2"), 0)
     add(s, "n", single("normal", scheduler.NORMAL_RESERVE), task(log, "n"), 0)
     s:run("steady", 1)
     equal(table.concat(log, " "), "c1:run:1 n:run:1", "critical stops at the reserve and normal gets it")
@@ -190,7 +196,7 @@ local function testGrantsInUnits()
     instance.want = "many"
     s:run("steady", 500)
     equal(log[6], "chart:run:9")
-    local tight = scheduler.new({ steady = scheduler.CEILING - scheduler.MARGIN - 200 - 3 * 1000 - 5 })
+    local tight = scheduler.new({ steady = scheduler.CEILING - scheduler.MARGIN - FIXED - CHARGE - 200 - 3 * 1000 - 5 })
     local log2 = {}
     add(tight, "chart", decl, task(log2, "chart"), 0)
     tight:run("steady", 1)
@@ -228,21 +234,22 @@ end
 local function testSharedCostIsChargedOncePerPlan()
     local log = {}
     local decl = single("critical", 1000, { shared = { link = 560 } })
-    local limit = scheduler.CEILING - scheduler.MARGIN - OVERHEAD.steady - scheduler.NORMAL_RESERVE
+    local limit = ROOM - scheduler.NORMAL_RESERVE
     local s = scheduler.new(OVERHEAD)
     for index = 1, 12 do
         add(s, index, decl, task(log, index), 0)
     end
     s:run("steady", 1)
-    local fits = (limit - 560) // 1000
-    equal(#log, math.min(fits, scheduler.EXAMINE_CRITICAL))
-    equal(s.lastPlan.U, OVERHEAD.steady + 560 + #log * 1000)
-    local fitsBefore = #log
+    local fits = (limit - 560) // (1000 + CHARGE)
+    equal(#log, fits)
+    equal(s.lastPlan.U, OVERHEAD.steady + FIXED + 560 + #log * (1000 + CHARGE))
+    local before = #log
     s:run("steady", 100)
-    equal(s.lastPlan.U, OVERHEAD.steady + 560 + (#log - fitsBefore) * 1000, "the cost is charged again in a new plan")
+    local second = #log - before
+    equal(s.lastPlan.U, OVERHEAD.steady + FIXED + 560 + second * (1000 + CHARGE), "charged again in a new plan")
 end
 
-local function testExaminationAndRunLimits()
+local function testThePlannerChargesItsOwnCostAndNeedsNoCap()
     local log = {}
     local s = scheduler.new({ steady = 0 })
     for index = 1, 20 do
@@ -251,18 +258,57 @@ local function testExaminationAndRunLimits()
     for index = 1, 20 do
         add(s, "n" .. index, single("normal", 10), task(log, "n" .. index), 100 + index)
     end
-    equal(s:run("steady", 1000), 12, "at most 12 run")
-    for index = 1, 10 do
-        equal(log[index], "c" .. index .. ":run:1")
-    end
-    equal(log[11], "n1:run:1")
-    equal(log[12], "n2:run:1")
-    local more = {}
-    local t = scheduler.new({ steady = 0 })
+    equal(s:run("steady", 1000), 40, "every ready task that fits runs, with no count cap")
     for index = 1, 20 do
-        add(t, "n" .. index, single("normal", 10), task(more, "n" .. index), index)
+        equal(log[index], "c" .. index .. ":run:1")
+        equal(log[20 + index], "n" .. index .. ":run:1")
     end
-    equal(t:run("steady", 1000), 6, "at most 6 normal tasks are examined")
+    equal(s.lastPlan.charged, FIXED + 40 * CHARGE)
+    equal(s.lastPlan.U, FIXED + 40 * (10 + CHARGE))
+
+    local crowd = scheduler.new({ steady = 0 })
+    for index = 1, scheduler.MAX_TASKS do
+        add(crowd, index, single("normal", 10), task({}, index), 0)
+    end
+    local room = scheduler.CEILING - scheduler.MARGIN - FIXED
+    local ran = crowd:run("steady", 1)
+    equal(ran, room // (10 + CHARGE), "the budget, not a cap, ends the scan")
+    equal(crowd.lastPlan.examined, ran)
+    assert(crowd.lastPlan.U <= scheduler.CEILING - scheduler.MARGIN)
+
+    local refused = scheduler.new({ steady = 0 })
+    for index = 1, scheduler.MAX_TASKS - 1 do
+        add(refused, index, single("normal", 1000000), task({}, index), 0)
+    end
+    add(refused, "tiny", single("normal", 1), task({}, "tiny"), 10 ^ 9)
+    equal(refused:run("steady", 1), 0)
+    equal(refused.lastPlan.examined, scheduler.MAX_TASKS - 1, "tasks that do not fit are charged, all of them")
+    equal(refused.lastPlan.charged, FIXED + (scheduler.MAX_TASKS - 1) * EXAMINE)
+    assert(refused.lastPlan.U <= scheduler.CEILING - scheduler.MARGIN)
+end
+
+local function testSkippedTasksDoNotHideLaterOnes()
+    local log = {}
+    local s = scheduler.new({ steady = 0, background = 0 })
+    local steadyOnly = single("normal", 100, { kinds = { steady = true } })
+    for index = 1, 20 do
+        add(s, "chart" .. index, steadyOnly, task(log, "chart" .. index), index)
+    end
+    add(s, "service", single("normal", 100), task(log, "service"), 50)
+    equal(s:run("background", 100), 1)
+    equal(log[1], "service:run:1", "a background task behind twenty steady-only ones still runs")
+    equal(s.lastPlan.examined, 21)
+end
+
+local function testCriticalIsScannedFirstWhateverTheNormalBacklog()
+    local log = {}
+    local s = scheduler.new({ steady = 0 })
+    for index = 1, 100 do
+        add(s, "n" .. index, single("normal", 1000000), task(log, "n" .. index), 0)
+    end
+    add(s, "c", single("critical", 100), task(log, "c"), 1000)
+    equal(s:run("steady", 1000), 1)
+    equal(log[1], "c:run:1")
 end
 
 local function testStagesAreConsistent()
@@ -449,7 +495,9 @@ testNormalReserve()
 testGrantsInUnits()
 testExclusiveAndKinds()
 testSharedCostIsChargedOncePerPlan()
-testExaminationAndRunLimits()
+testThePlannerChargesItsOwnCostAndNeedsNoCap()
+testSkippedTasksDoNotHideLaterOnes()
+testCriticalIsScannedFirstWhateverTheNormalBacklog()
 testStagesAreConsistent()
 testFailuresRetireOnlyTheTask()
 testDelaysAreWholeTicks()

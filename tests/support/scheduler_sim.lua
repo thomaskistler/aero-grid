@@ -106,7 +106,8 @@ end
 
 --- Run one callback and return its report: `plan` (id, stage, grant, cost, wait
 --- per step), `U` (the planner's total), `actual` (the instructions the
---- callback really used, including injected excess), `used` and `now`.
+--- callback really used: the planner's measured-bounded charge, the stubs' costs
+--- and injected excess), `used` and `now`.
 function sim:callback(kind, now, used)
     used = used or 0
     local report = {
@@ -126,7 +127,7 @@ function sim:callback(kind, now, used)
     if self.burst then
         report.excess = report.excess + (self.burst(report.index, report) or 0)
     end
-    report.actual = self.overhead[kind] + used + report.spent + report.excess
+    report.actual = self.overhead[kind] + used + report.spent + self.library.lastPlan.charged + report.excess
     if report.actual > self.maxActual then
         self.maxActual = report.actual
     end

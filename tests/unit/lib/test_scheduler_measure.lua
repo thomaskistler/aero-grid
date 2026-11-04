@@ -6,6 +6,7 @@ local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local scheduler = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.lua"))()
 local measure = assert(loadfile(root .. "/tests/support/scheduler_measure.lua"))()
 local overhead = assert(loadfile(root .. "/tests/support/scheduler_overhead.lua"))()
+local mixes = assert(loadfile(root .. "/tests/support/scheduler_mixes.lua"))()
 local equal = assertions.assertEqual
 
 local function near(actual, expected, tolerance, message)
@@ -84,45 +85,75 @@ local function testMeasuringARealStep()
     equal(#report.findings > 0, true, "the loose hand-written declaration is reported")
 end
 
-local function testOverheadVerdict()
+local function testOverheadVerdictComparesMeasuredWithCharged()
+    local function row(name, measured, charged, examined, ran)
+        return {
+            name = name,
+            measured = measured,
+            charged = charged,
+            examined = examined,
+            ran = ran,
+            slack = charged - measured,
+        }
+    end
     local results = {
-        idle = { [32] = 40 },
-        run = { [32] = { [1] = 70, [12] = 400 } },
-        unfit = { [32] = 136 },
-        worst = { [32] = 450 },
+        rows = {
+            row("idle (8 tasks)", 90, 100, 0, 0),
+            row("none fits (8 tasks)", 330, 480, 7, 0),
+            row("run 4, delay 1 (8 tasks)", 800, 1000, 4, 4),
+        },
     }
-    local verdict = overhead.verdict(results, scheduler)
-    equal(verdict.F0, 40)
-    equal(verdict.c1, 6, "the cost of an examined task that does not fit")
-    equal(verdict.o, 30, "the worst added cost per task run")
-    equal(verdict.total, 40 + 16 * 6 + 12 * 30)
-    equal(verdict.go, true)
-    results.run[32][12] = 460
-    equal(overhead.verdict(results, scheduler).go, false)
+    local verdict = overhead.verdict(results)
+    equal(verdict.ok, true)
+    equal(verdict.fixed, 90)
+    near(verdict.examine, 240 / 7, 0.01)
+    near(verdict.perRun, 177.5, 0.01)
+    equal(verdict.slack, 10)
+    equal(verdict.tightest.name, "idle (8 tasks)")
+    results.rows[3].measured = 1001
+    verdict = overhead.verdict(results)
+    equal(verdict.ok, false, "a callback that cost more than was charged fails")
+    equal(verdict.failures[1].name, "run 4, delay 1 (8 tasks)")
 end
 
-local function testFrameworkCostIsMeasurable()
+-- Native counts equal these offline counts (checked on Companion 2.12), so this
+-- is the check that the charged constants stay conservative: every scenario,
+-- every task count and every mix measured no more than the planner charged.
+local function testChargedCostsAreConservative()
     local count, pause = overhead.hookCounter()
-    local results = overhead.measure(scheduler, count, pause)
+    local results = overhead.measure(scheduler, count, pause, mixes)
     debug.sethook()
-    for _, tasks in ipairs(overhead.TASK_COUNTS) do
-        assert(results.idle[tasks] > 0)
-        assert(results.run[tasks][4] > results.run[tasks][1], "more tasks run, more instructions")
+    local verdict = overhead.verdict(results)
+    for _, item in ipairs(verdict.failures) do
+        print("over budget: " .. item.name .. " measured " .. item.measured .. " charged " .. item.charged)
     end
-    assert(results.run[32][12] > results.run[32][8])
-    assert(results.unfit[32] > results.idle[32])
+    equal(verdict.ok, true, "the planner cost more than it charged")
+    assert(#results.rows > 55, "scenarios at every task count and every mix were measured")
+    local names = {}
+    for _, item in ipairs(results.rows) do
+        names[#names + 1] = item.name
+    end
+    local text = table.concat(names, "\n")
+    for _, want in ipairs({
+        "none fits (128 tasks)",
+        "all skipped, the last one runs (128 tasks)",
+        "stages, shared costs",
+        "mix D, 2 per task",
+    }) do
+        assert(string.find(text, want, 1, true), "no scenario " .. want)
+    end
+    assert(verdict.slack >= 0)
+    assert(verdict.fixed <= scheduler.FIXED_COST and verdict.examine <= scheduler.EXAMINE_COST)
+    assert(verdict.perRun <= scheduler.EXAMINE_COST + scheduler.RUN_COST)
     assert(results.heap.kib > 0 and results.heap.tasks == scheduler.MAX_TASKS)
-    local verdict = overhead.verdict(results, scheduler)
-    -- A regression guard on the planner's own cost; the go/no-go figure of the
-    -- specification is reported by the native measurement.
-    assert(results.worst[32] < 2500, "the worst callback costs " .. results.worst[32] .. " instructions")
     print(
         string.format(
-            "scheduler framework (offline count, 32 tasks): F0 %d, c1 %.0f, o %.0f, worst callback %d, heap %.0f KiB at %d tasks",
-            verdict.F0,
-            verdict.c1,
-            verdict.o,
-            verdict.direct,
+            "scheduler framework (offline count): idle %d, examine %.0f, run %.0f (examine included), least slack %d on %s, heap %.0f KiB at %d tasks",
+            verdict.fixed,
+            verdict.examine,
+            verdict.perRun,
+            verdict.slack,
+            verdict.tightest.name,
             results.heap.kib,
             results.heap.tasks
         )
@@ -133,7 +164,7 @@ testFitHoldsAtEveryMeasuredPoint()
 testDeclaredBoundsFollowTheMarginRule()
 testFindingsWarnAndFail()
 testMeasuringARealStep()
-testOverheadVerdict()
-testFrameworkCostIsMeasurable()
+testOverheadVerdictComparesMeasuredWithCharged()
+testChargedCostsAreConservative()
 
 print("Scheduler measurement passed")
