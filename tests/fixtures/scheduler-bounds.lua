@@ -1,0 +1,62 @@
+-- SPDX-License-Identifier: GPL-2.0-only
+
+-- Declared bounds of the audited tasks (plans/scheduler-contracts.md), keyed by
+-- the label the native audit uses in tests/fixtures/scheduler-traces. They are
+-- the legacy granularity of the audit, not the final per-task declarations.
+local function once(bound)
+    return { fixed = 0, perUnit = bound, maxUnits = 1 }
+end
+
+return {
+    bounds = {
+        ["chart:frame-begin"] = once(1300),
+        ["chart:axis"] = once(900),
+        ["chart:traces-select"] = once(7800),
+        ["chart:traces-project"] = { fixed = 200, perUnit = 830, maxUnits = 9 },
+        ["chart:traces-apply"] = once(1300),
+        ["chart:flights"] = once(500),
+        ["chart:arms"] = once(300),
+        ["chart:resumes"] = once(300),
+        ["flight:tick"] = once(3600),
+        ["flight:pollReset"] = once(620),
+        ["service:telemetry"] = { fixed = 750, perUnit = 1180, maxUnits = 8 },
+        ["service:history"] = once(650),
+        ["service:control"] = { fixed = 1300, perUnit = 220, maxUnits = 6 },
+        ["reset:extrema"] = once(200),
+        ["reset:history"] = once(200),
+        ["reset:navigation"] = once(200),
+        ["panel:chart:resetSession"] = once(1200),
+        ["panel:flight-counter:refresh"] = once(700),
+        ["panel:metric:refresh"] = once(4800),
+        ["load:theme-read"] = once(10000),
+        ["load:header"] = once(3600),
+        ["load:header-finalize"] = once(5100),
+        ["load:tokenize"] = once(2300),
+        ["load:services"] = once(1000),
+        ["load:panel-build:chart"] = once(11400),
+        ["load:panel-build:flight-counter"] = once(5900),
+        ["load:panel-build:metric"] = once(7000),
+    },
+    -- Labels the contracts give no bound: loader detail and one-line hooks.
+    unbounded = {
+        ["lifecycle:updateEmptyHint"] = true,
+        ["load:header-migrate"] = true,
+        ["load:panel-migrate"] = true,
+        ["load:panel-validate:chart"] = true,
+        ["load:panel-validate:flight-counter"] = true,
+        ["load:panel-validate:metric"] = true,
+        ["load:panels"] = true,
+        ["load:read"] = true,
+        ["load:theme-validate"] = true,
+    },
+    -- Bounds above the maximum task size that the migration must split (spec 4.2).
+    splitBeforeMigration = {
+        ["chart:traces-select"] = true,
+        ["panel:metric:refresh"] = true,
+        ["load:theme-read"] = true,
+        ["load:header-finalize"] = true,
+        ["load:panel-build:chart"] = true,
+        ["load:panel-build:flight-counter"] = true,
+        ["load:panel-build:metric"] = true,
+    },
+}
