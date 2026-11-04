@@ -590,11 +590,13 @@ Open:
    `service` (recommended), or run all ready critical services together. The
    latter fits only a slow telemetry mix (B: room 2370 in a Smart callback); at
    4 Hz recorded (A) it leaves 1190, too little for any panel or chart step.
-2. **Telemetry intervals (section 5.2).** Subscribers that state no interval
-   (flight motor source, link status, navigation, service probe) keep 10 ticks
-   and opt in later (recommended), or default to a slower rate. And the source
-   update rate: one model-level hint (recommended; applied only to telemetry
-   sources), or also a per-source override.
+2. **Telemetry intervals (section 5.2).** *Deferred to the telemetry service
+   migration; the user will answer then. Section 5.2 stands as the proposal.*
+   Subscribers that state no interval (flight motor source, link status,
+   navigation, service probe) keep 10 ticks and opt in later (recommended), or
+   default to a slower rate. And the source update rate: one model-level hint
+   (recommended; applied only to telemetry sources), or also a per-source
+   override.
 3. **Entries per source per call.** Cap telemetry recording at one history entry
    per source per call, or measure and declare a higher cap (contracts decision
    6); needed to declare telemetry's bound.
