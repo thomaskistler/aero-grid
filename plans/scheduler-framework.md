@@ -18,9 +18,9 @@ will move when they do.
 
 ## 1. Where the scheduler runs
 
-Today's scheduling is spread over eight call sites in `main.lua`. The framework
-is called only where a callback has budget left, and every other path keeps
-its existing behavior.
+Today's scheduling is spread over eight call sites in `main.lua`. The table is
+the starting point: a site keeps its existing behavior until it migrates, and
+every site migrates before the old scheduler is retired (section 7).
 
 | Site | Today | Version 1 |
 |---|---|---|
@@ -28,8 +28,8 @@ its existing behavior.
 | `background` tail (1653-1654) | `updateServices`, `dispatchAll("background")` | `background` kind: services only. Panel `background` hooks are not tasks; they stay in `overhead` (26 each) |
 | `pumpFlight`, head of `refresh` and `background` (1388, 1623) | every callback, before all early returns: identity check, reset poll, tick; it consumes the callback on a first document load and when Smart is running during a modal or loading callback | Stays at the head. Its costs are passed to the scheduler as `used` (below). The tick moves into the framework only under the preconditions in section 5 |
 | `pumpSessionReset` (1394, 1629) | consumes the callback; runs every service's and panel's `resetSession` | Unchanged. A consumed callback runs no scheduler |
-| loader, reflow, app rebuild, page retire and rebuild, menu, editor save, settings UI advance | consume the callback, each bounded by the audit | Unchanged; not framework tasks in version 1 |
-| settings UI with no pending work (1403), log viewer (1552, 1559), editor with panels (1567-1568) | `updateServices` (and `dispatchDue` for the editor) next to handler work that is unmeasured | **Modal sites.** See open decision 4. Until it is decided, the legacy loop keeps running these sites for every task whatever its owner (same step code, default grant, then `s:defer(id, due)` so the framework does not re-run it at once). They stay unbudgeted, as today |
+| loader, reflow, app rebuild, page retire and rebuild, menu, editor save, settings UI advance | consume the callback, each bounded by the audit (loader family) or unmeasured (UI) | Unchanged in Phase 1; become kinds in R5 and R6 (section 4) |
+| settings UI with no pending work (1403), log viewer (1552, 1559), editor with panels (1567-1568) | `updateServices` (and `dispatchDue` for the editor) next to handler work that is unmeasured | **Modal sites.** Temporarily, while unmeasured, the legacy loop keeps running them for every task whatever its owner (same step code, default grant, then `s:defer(id, due)` so the framework does not re-run it at once), unbudgeted as today. This is a migration state, not the end state: they become modal kinds in R5 (section 7) |
 
 **Consumed callbacks and `used`.** When a head step returns "callback
 consumed", the scheduler is not run, exactly as `updateServices` is not today.
@@ -226,6 +226,8 @@ mix A (`n = 3`, 4290) and assumes the telemetry change of section 5 is in first.
 | R2 | + panel refreshes | 4290 (telemetry) | 0 | 7040 | 4440 | Split metric (4800) and output (5700) below 4440; navigation (3700) fits. |
 | R3 | + services (group `service`) | 0 | 4290 | 7040 | 4440 | Telemetry measured at `n` and entries per source (open decision 3). |
 | R4 | + tick and Smart as tasks | 0 | 4290 | 8040 | | Section 5 preconditions; no head cost remains, only the reset poll. Atoms: tick 1000, Smart 2600. |
+| R5 | modal screens: settings UI, log viewer, editor, menu, fullscreen input, app rebuild, theme showcase | 0 | per kind | per kind | | Each measured natively first and split to fit its kind's room (section 7). Order: smallest handler first. |
+| R6 | loader, reflow, page retire and rebuild, session-reset pump, the head work | 0 | per kind | per kind | | Already measured in the audit; split where it exceeds the room (panel builds 3.5k to 11.5k, theme read 10.0k). |
 
 **Telemetry mixes.** Each source is due every `interval` ticks; with a callback
 about every 5 ticks (the 50 ms menu period) the sustained demand is
@@ -439,7 +441,7 @@ shipped in a release until the critical and chart tasks have migrated), `new`
 **One owner per task.** One table maps each task id to `legacy` or `new`; it is
 checked at load (a missing id fails the load). Every legacy site skips tasks
 the table gives to `new`, and the framework registers only its own. Modal sites
-are the one documented exception (section 1, open decision 4). Flipping a task is a
+are the one documented exception (section 1, a temporary migration state). Flipping a task is a
 one-line change; rollback is its revert.
 
 **Capped legacy share.** In `mixed` the legacy loop runs first and gets `L`
@@ -489,6 +491,40 @@ legacy loop, and nothing else:
    needs, its bound is measured, and its one-line contract (class, unit, stages,
    bound, group, why this tier) is written.
 
+**Modal screens (end state, R5).** Each modal screen (settings UI, log viewer,
+editor, menu, fullscreen input, app rebuild, theme showcase) becomes a callback
+**kind** with its own `overhead` (the screen's fixed work) and its own tasks.
+Services are eligible in every modal kind, so recording continues exactly as in
+`steady`; panels are eligible only where the screen shows them (the editor
+preview). The admission test runs per kind: `S` is the sum over groups, so a
+modal kind with `service` and `input` groups carries both. Cost depends on the
+user, so it is bounded structurally:
+
+- **One input event per callback.** EdgeTX hands `refresh` a single event and
+  touch state, so input handling is a critical task (group `input`) that handles
+  one event with a declared worst case, `maxUnits = 1`. A handler that cannot
+  meet its bound is cut: it changes state cheaply and queues redraw work.
+- **Redraw is staged.** Anything a screen paints, rebuilds or parses (a settings
+  page, a log index, an editor preview, a menu grid) is a `normal` task with
+  stages and unit grants (rows, lines, panels), as the audit already does for
+  `output` rows and `prepareIndex`. A screen must be safe to draw half finished.
+- **Worst cases are measured with scripted input**: each screen's case file
+  drives the counter harness with recorded touch and key sequences at the largest
+  legal content (longest list, full log, largest layout) and records the worst
+  step per stage. These are the audit's unmeasured rows, so no modal task is
+  registered, and no modal kind enabled, before its numbers exist. Needs
+  fullscreen and touch in the native harness.
+- A step above its kind's room is split before migration (the contracts' Flag
+  rule), the same precondition as for panels.
+
+**Retiring the old scheduler** (Phase 5) requires: every task has an owner `new`
+and a declaration; no call to `dispatchDue`, `updateServices`, `pumpFlight` or
+`pumpSessionReset` remains outside the framework (their work is tasks, `used`
+head costs or kinds, and the file-level call sites in section 1 are gone);
+`mixed`, `s:defer`, the owner table and the legacy share `L` are deleted; and
+the matched native harness passes in `new` with zero near-misses recorded by the
+dev tripwire.
+
 **Invariants and tests.**
 
 | # | Invariant | Test |
@@ -517,10 +553,11 @@ legacy loop, and nothing else:
 - Isolation probes, learned bounds, `getUsage`-driven grants; a runtime guard
   (the tripwire and shadow mode are dev tooling).
 - A separate filler. More than one service per callback.
-- Cross-callback group ownership and callback kinds other than
-  `steady` and `background`.
-- Loader, reflow, editor, menus, log viewer and other modal paths as tasks; and
-  the unmeasured UI tasks.
+- Cross-callback group ownership. Callback kinds beyond `steady` and
+  `background` are added with their phases (R5, R6), not in Phase 1.
+- Building the loader, reflow and modal kinds (R5, R6) in Phase 1: the library
+  supports them, but they are migrated after the critical, chart and panel
+  tasks, each only once measured.
 - Retiring the legacy scheduler (Phase 5).
 - Estimating a sensor's update rate from observed values; version 1 uses a hint.
 
@@ -528,6 +565,9 @@ legacy loop, and nothing else:
 
 Decided by the user:
 
+- The settings UI, log viewer, editor, menu, fullscreen input, app rebuild and
+  theme showcase move to the new scheduler as modal kinds (R5); the legacy loop
+  keeps them only temporarily, during migration.
 - The flight tick, Smart and session reset are `normal`, with no deadline. Their
   migration needs the Smart detection rewrite (1 Hz, delay tolerant) merged
   first (section 5). The extrema service is being removed in a separate change
@@ -558,7 +598,3 @@ Open:
 3. **Entries per source per call.** Cap telemetry recording at one history entry
    per source per call, or measure and declare a higher cap (contracts decision
    6); needed to declare telemetry's bound.
-4. **Unmeasured modal paths** (contracts decision 5). Keep the legacy loop
-   running them for every task, unbudgeted as today (the exception in section
-   1), or measure the handlers and budget them as kinds (`service`, `editor`),
-   which needs fullscreen and touch in the native harness.
