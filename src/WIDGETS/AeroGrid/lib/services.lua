@@ -41,7 +41,6 @@ services.DEFINITIONS = {
     { id = "control", file = "lib/control_service.lua" },
     { id = "flight", file = "lib/flight_service.lua" },
     { id = "armed", file = "lib/armed_service.lua" },
-    { id = "extrema", file = "lib/extrema_service.lua" },
     { id = "navigation", file = "lib/navigation_service.lua" },
     { id = "history", file = "lib/history_service.lua" },
     { id = "smart", file = "lib/smart_flight.lua" },

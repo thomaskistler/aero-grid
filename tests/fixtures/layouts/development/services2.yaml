@@ -1,14 +1,12 @@
 version: 2
 
-# Service diagnostics, page 2: model, control, and extrema.
+# Service diagnostics, page 2: model and control.
 #
 # Select `services2` as the widget's Layout to load this screen on any
 # model.
 #
 # `index` selects the model timer for the model service and the global
-# variable for the control service. `extra` names the arm switch the extrema
-# service uses to decide where one flight ends and the next begins; leave it
-# out to track one open-ended session instead.
+# variable for the control service.
 
 grid:
   columns: 4
@@ -38,15 +36,3 @@ panels:
       source: trim-ail
       index: 0
       accent: orange
-  - id: extrema
-    type: service-probe
-    col: 2
-    row: 0
-    colSpan: 2
-    rowSpan: 4
-    config:
-      service: extrema
-      label: Extrema
-      source: GAlt
-      extra: SAv
-      accent: cyan

@@ -18,6 +18,10 @@ local layout = { RUNTIME_API = 1 }
 layout.VERSION = 5
 
 function layout.normalizePanel(panel)
+    if panel.type == "link-status" and type(panel.config) == "table" and panel.config.extrema == "flight" then
+        -- Flight-session minimums were removed; EdgeTX's own minimum replaces them.
+        panel.config.extrema = "source"
+    end
     if panel.type == "flight-counter" and type(panel.config) == "table" then
         panel.config.announcements = nil
         panel.config.history = nil
@@ -200,8 +204,7 @@ end
 ---
 --- The arm switch bounds one flight, and a dashboard has one flight. It used
 --- to be a per-panel setting, which let two panels state different
---- switches; `extremaService:flight` takes the first caller's and ignores the
---- rest, so the second panel's was silently discarded. A setting whose
+--- switches and silently discarded all but the first. A setting whose
 --- value is thrown away is worse than no setting, because it reads like a
 --- choice. It belongs to the layout, which is the thing there is one of.
 ---@param value any

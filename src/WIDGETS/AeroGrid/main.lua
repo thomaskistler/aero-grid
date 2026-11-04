@@ -1616,7 +1616,7 @@ local function refresh(context, widgetEvent, touchState)
 end
 
 --- Keep panels updated while the dashboard screen is not visible.
---- Services keep running here too, so flight extrema and timers do not develop
+--- Services keep running here too, so flight timers do not develop
 --- a hole whenever the pilot looks at another screen.
 ---@param context AeroGridContext
 local function background(context)

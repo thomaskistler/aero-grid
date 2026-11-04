@@ -724,7 +724,7 @@ local function testAllPanelDrawersStartWithLabel()
             "showDelta",
             "accent",
         },
-        ["service-probe"] = { "label", "service", "source", "extra", "index", "accent" },
+        ["service-probe"] = { "label", "service", "source", "index", "accent" },
         state = { "entries", "accent" },
         ["tx-battery"] = {
             "label",

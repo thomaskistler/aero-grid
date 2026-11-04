@@ -36,7 +36,7 @@
 ---@field barMax? number Reading treated as full by the bar.
 ---@field rssiWarning? number
 ---@field rssiCritical? number
----@field extrema? "source"|"flight"|"none"
+---@field extrema? "source"|"none"
 ---@field extremaSource? string Explicit EdgeTX minimum source.
 ---@field visual? "bar"|"none"
 ---@field accent? string
@@ -94,7 +94,7 @@ local linkStatus = {
             label = "Minimum tracked",
             type = "string",
             default = "none",
-            choices = { "none", "source", "flight" },
+            choices = { "none", "source" },
         },
         { key = "extremaSource", label = "Minimum source", type = "string", default = "" },
         {
@@ -519,32 +519,20 @@ function linkStatus.sourceText(feed, state)
     return text
 end
 
---- Read whichever minimum the layout asked for.
---- `source` mode reads EdgeTX's own "<name>-" sensor, which the radio
---- maintains on its own schedule; `flight` mode reads the dashboard's session
---- minimum, which covers exactly one flight. The two are not interchangeable.
+--- Read EdgeTX's own "<name>-" minimum, which the radio maintains on its own
+--- schedule, when the layout asked for one.
 ---@param context AeroGridLinkContext
 ---@return number? value
 function linkStatus.minimumValue(context)
-    local mode = context.settings.extrema
-
-    if mode == "source" then
-        local feed = context.minimumFeed
-        if type(feed) ~= "table" or not feed.available then
-            return nil
-        end
-        return type(feed.value) == "number" and feed.value or nil
+    if context.settings.extrema ~= "source" then
+        return nil
     end
 
-    if mode == "flight" then
-        local track = context.sessionExtrema
-        if type(track) ~= "table" or not track.available then
-            return nil
-        end
-        return type(track.min) == "number" and track.min or nil
+    local feed = context.minimumFeed
+    if type(feed) ~= "table" or not feed.available then
+        return nil
     end
-
-    return nil
+    return type(feed.value) == "number" and feed.value or nil
 end
 
 --- Format the supporting detail row's left-hand text.
@@ -819,17 +807,13 @@ function linkStatus.create(parent, rect, settings, services)
         leading = settings.rssiSource
     end
 
-    local extrema = services.extrema
-    if extrema and settings.extrema == "source" then
+    if telemetry and settings.extrema == "source" then
         local named = settings.extremaSource
         if type(named) == "string" and named ~= "" then
-            context.minimumFeed = telemetry and telemetry:subscribe(named) or nil
-        else
-            context.minimumFeed = extrema:sourceExtreme(leading, "min")
+            context.minimumFeed = telemetry:subscribe(named)
+        elseif type(leading) == "string" and leading ~= "" then
+            context.minimumFeed = telemetry:subscribe(leading .. "-")
         end
-    elseif extrema and settings.extrema == "flight" then
-        local arm = services.session and services.session.armSource
-        context.sessionExtrema = extrema:sessionExtrema(leading, arm)
     end
 
     -- A dBm reading is the widest thing this panel prints, and the sample comes

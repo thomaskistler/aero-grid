@@ -114,7 +114,7 @@ function module.new(dependencies)
 
         return {
             theme = theme,
-            -- Retained layout-level fallback for flight-session extrema.
+            -- Retained layout-level session block.
             session = context.session or {},
             primitives = context.primitives,
             themeBuilder = builder,
@@ -139,7 +139,6 @@ function module.new(dependencies)
             model = byId.model,
             control = byId.control,
             armed = byId.armed,
-            extrema = byId.extrema,
             navigation = byId.navigation,
             history = byId.history,
             flight = byId.flight,

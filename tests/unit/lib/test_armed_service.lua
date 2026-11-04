@@ -83,19 +83,6 @@ local _, disabled = runtime("")
 assert(disabled:state("SFv") == disabled:state("SAv"))
 equal(disabled:state("SFv").configured, false, "saved None disables every legacy condition")
 
-local extrema = load("lib/extrema_service.lua").new(env, support, registry)
-registry.byId.control.failed = nil
-local a, b = extrema:flight("SFv"), extrema:flight("SAv")
-assert(a ~= b)
-local ta, tb = extrema:sessionExtrema("Alt", "SFv"), extrema:sessionExtrema("Alt", "SAv")
-assert(ta ~= tb, "legacy extrema consumers must not silently reconfigure one session")
-local nativeRegistry = support.runtime(env)
-nativeRegistry.modelArmed = "L01"
-nativeRegistry.byId.control = nativeControl
-nativeRegistry.byId.armed = native
-local unified = load("lib/extrema_service.lua").new(env, support, nativeRegistry)
-assert(unified:flight("SFv") == unified:flight("SAv"), "model condition unifies extrema sessions")
-
 local layout = load("lib/layout.lua")
 local counter = layout.migratePanel({ type = "flight-counter" }, 3)
 equal(counter.config.armSwitch, "SF^", "preserve old implicit Flight counter default")
@@ -103,30 +90,3 @@ local navigation = layout.migratePanel({ type = "navigation", config = { armSwit
 equal(navigation.config.homeMode, "first-arm")
 local edge = layout.migratePanel({ type = "navigation", config = {} }, 3)
 equal(edge.config.homeMode, "edgetx")
-
-local trackingRegistry, _, trackingControl = runtime()
-local reading = { value = 10, fresh = true }
-trackingRegistry.byId.telemetry = {
-    subscribe = function()
-        return reading
-    end,
-}
-local tracking = load("lib/extrema_service.lua").new(env, support, trackingRegistry)
-local tracks = {}
-for index = 11, 18 do
-    local name = string.format("L%02d", index)
-    ids[name], values[index] = index, true
-    tracks[#tracks + 1] = tracking:sessionExtrema("Alt", name)
-end
-trackingControl:update(now)
-trackingControl:update(now)
-tracking:update(now)
-tracking:update(now)
-local sampleCount = tracks[8].samples
-values[18], reading.value, now = false, 999, now + 20
-trackingControl:update(now)
-trackingControl:update(now)
-tracking.sessionCursor, tracking.cursor = 1, 8
-tracking:update(now)
-equal(tracks[8].samples, sampleCount, "a track must observe disarm before its session's next round-robin turn")
-assert(tracks[8].max ~= 999)

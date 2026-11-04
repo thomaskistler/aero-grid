@@ -30,7 +30,7 @@ local document = {
         placement("two", "chart", 2, 0, 1, { armSwitch = "L02", metrics = { { source = "Alt" } } }),
         placement("counter", "flight-counter", 0, 1, 1, { armSwitch = "L02" }),
         placement("capture", "navigation", 2, 1, 2, { homeMode = "first-arm", armSwitch = "L01" }),
-        placement("link", "link-status", 0, 2, 2, { extrema = "flight" }),
+        placement("link", "link-status", 0, 2, 2, {}),
         placement("edgetx", "navigation", 2, 3, 1, { homeMode = "edgetx" }),
     },
 }
@@ -85,7 +85,6 @@ local armed = first.serviceRuntime.byId.armed
 equal(armed:state().status, "unconfigured")
 assert(armed:state("L01") ~= armed:state("L02"), "unsaved model arming preserves legacy panel sessions")
 equal(fixture.instanceOf(first, "counter").arm.condition, "L02")
-assert(first.serviceRuntime.byId.extrema:flight("L01") ~= first.serviceRuntime.byId.extrema:flight("L02"))
 
 local function open(context)
     context.aeroMenuHandlers.modelSettings()
@@ -136,7 +135,6 @@ equal(owner.session.armKey, "L64", "the shared flight detector uses model arming
 local navigation = first.serviceRuntime.byId.navigation
 assert(navigation:subscribe("GPS", "L01", "first-arm") == navigation:subscribe("GPS", "L02", "first-arm"))
 assert(navigation:subscribe("GPS", nil, "edgetx") ~= navigation:subscribe("GPS", nil, "first-arm"))
-assert(first.serviceRuntime.byId.extrema:flight("L01") == first.serviceRuntime.byId.extrema:flight("L02"))
 
 local custom = first.serviceRuntime.byId.control:switch("L03")
 fixture.radio.logicalSwitches[3] = true

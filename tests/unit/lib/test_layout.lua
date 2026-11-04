@@ -166,6 +166,18 @@ local function testCurrentBatteryThresholdNormalization()
     assertions.assertEqual(panel.config.cellWarning, nil)
 end
 
+local function testRemovedFlightMinimumFallsBackToSource()
+    local panel = { type = "link-status", config = { extrema = "flight", reading = "rssi", label = "Link" } }
+    layout.normalizePanel(panel)
+    assertions.assertEqual(panel.config.extrema, "source")
+    assertions.assertEqual(panel.config.reading, "rssi", "other settings must be kept")
+    assertions.assertEqual(panel.config.label, "Link")
+
+    panel.config = { extrema = "none" }
+    layout.normalizePanel(panel)
+    assertions.assertEqual(panel.config.extrema, "none")
+end
+
 local function testAdjacentMigrationSteps()
     local header = { version = 1, grid = { columns = 4, rows = 4 }, panels = {} }
     local validated, errors, sourceVersion = layout.validateHeader(header)
@@ -304,6 +316,7 @@ local function run()
     testOverlapIsRejected()
     testVersionOneBatteryMigration()
     testCurrentBatteryThresholdNormalization()
+    testRemovedFlightMinimumFallsBackToSource()
     testAdjacentMigrationSteps()
     testUnsupportedFutureVersion()
     testNavigationMigration()

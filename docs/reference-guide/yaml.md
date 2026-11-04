@@ -45,7 +45,7 @@ Panel IDs and types are case-sensitive. Unknown top-level keys and extra placeme
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `armSource` | string | unset | Legacy physical-position or logical-switch fallback for flight-session extrema before model arming has been saved. Numeric sources such as `sa` or `ch5` are no longer supported: select a model switch instead. Without either condition, extrema maintain an open-ended session. |
+| `armSource` | string | unset | Accepted so existing layouts load, but no longer used. Configure **Arm switch** in Model settings instead. |
 
 Configure **Arm switch** in **AeroGrid → Model settings**, not in layout YAML.
 It is saved once per model and overrides `session.armSource` and panel
@@ -281,7 +281,7 @@ Drawer title: **Link status** · [drawer settings and behavior](../panels/link-s
 | `powerSource` | string | `""` | Any EdgeTX source name or blank | Transmit power source | |
 | `protocol` | string | `generic` | `generic`, `elrs4` | Protocol mapping | ELRS 4 mapping is needed for margin thresholds. |
 | `reading` | string | `auto` | `auto`, `rssi`, `quality` | Primary reading | `auto` chooses the best available primary reading. |
-| `extrema` | string | `none` | `none`, `source`, `flight` | Minimum tracked | Source-tracked or session-tracked minimum. |
+| `extrema` | string | `none` | `none`, `source` | Minimum tracked | `source` shows EdgeTX's own minimum. A saved `flight` loads as `source`. |
 | `extremaSource` | string | `""` | Any EdgeTX source name or blank | Minimum source | Used with source tracking; blank falls back to the primary reading source. |
 | `qualityWarning` | number | Unset (drawer: `Off`) | `0`–`100` percent; step `1` | Warning quality % | Requires `qualitySource`. |
 | `qualityCritical` | number | Unset (drawer: `Off`) | `0`–`100` percent; step `1` | Critical quality % | Requires `qualitySource`. |
@@ -484,9 +484,8 @@ Drawer title: **Service probe** · [drawer settings and behavior](../panels/serv
 
 | Key | Type | Default | Allowed values | Drawer label | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `service` | string | `telemetry` | `telemetry`, `model`, `control`, `extrema`, `navigation` | Service | Selects the host service under inspection. |
+| `service` | string | `telemetry` | `telemetry`, `model`, `control`, `navigation` | Service | Selects the host service under inspection. |
 | `source` | string | `""` | Any service/source name or blank | Source | |
-| `extra` | string | `""` | Physical-position/logical-switch name or blank | Second source | Legacy Extrema arm condition, overridden by saved model arming; unused by other services. |
 | `index` | number | `0` | Any number | Index | Service-specific lookup/index. |
 | `label` | string | `""` | Any string | Label | Blank derives the heading from the selected service. |
 | `accent` | string | `cyan` | `cyan`, `green`, `amber`, `orange` | Accent | |
@@ -633,7 +632,7 @@ panels:
       rssiSource: RSSI
       qualitySource: RQly
       reading: auto
-      extrema: flight
+      extrema: source
   - id: altitude
     type: metric
     col: 0

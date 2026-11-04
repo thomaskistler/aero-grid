@@ -22,7 +22,7 @@ aggregate health percentage or issue voice or haptic alerts.
 | **Transmit power source** | none | Optional transmit-power reading, such as `TPWR`. It does not trigger alarms. |
 | **Protocol mapping** | generic | **generic** preserves source units and the raw RF mode. **elrs4** decodes ExpressLRS 4.x RF modes and estimates RSSI margin above nominal receiver sensitivity. |
 | **Primary reading** | auto | **rssi** or **quality** selects the headline. **auto** prefers available quality, including a retained stale reading, and falls back to RSSI. |
-| **Minimum tracked** | none | **none** shows the other reading as supporting detail. **source** shows an EdgeTX minimum; **flight** shows the dashboard's session minimum. |
+| **Minimum tracked** | none | **none** shows the other reading as supporting detail. **source** shows EdgeTX's own minimum. Layouts that used the removed **flight** option load as **source**. |
 | **Minimum source** | automatic | Explicit EdgeTX minimum source for **Minimum tracked** set to **source**. With none selected, uses the tracked source's minimum, such as `RSSI-`. |
 | **Warning quality %** | Off | Low-quality warning threshold, 0 to 100 percent. Steps of 1. Requires **Link quality source**. |
 | **Critical quality %** | Off | Low-quality critical threshold, 0 to 100 percent. Steps of 1. Requires **Link quality source**. |
@@ -58,19 +58,11 @@ wins, with critical ahead of warning. Equal-severity conditions prefer RSSI,
 then link quality, then margin. Link-down takes precedence over alarms.
 Link-quality thresholds only apply to a source reporting percent.
 
-**Minimum tracked** set to **source** reads EdgeTX's own minimum, which EdgeTX
-resets on its own schedule. **Minimum source** overrides the automatic source.
-**flight** resets the minimum when the model's armed condition becomes active,
-tracks fresh readings while armed, and retains the result after disarming.
-Set **Arm switch** in **AeroGrid → Model settings**. Changes save automatically. Before model
-arming is saved, a legacy layout session switch remains in use. With no arm
-switch configured, it tracks one open-ended dashboard session instead.
-The tracked source is **RSSI source** when **Primary reading** is **rssi**;
+**Minimum tracked** set to **source** shows EdgeTX's own minimum (for example
+`RSSI-`), which EdgeTX resets on its own schedule. **Minimum source** overrides
+the automatic source. The tracked source is **RSSI source** when **Primary reading** is **rssi**;
 otherwise it is **Link quality source**, falling back to **RSSI source** when
 no quality source is selected. It does not switch with the automatic headline.
-
-The [Session reset switch](../user-guide/model-settings.md#session-reset) clears
-AeroGrid's flight-session minima on every dashboard, not EdgeTX's source minima.
 
 ## States
 

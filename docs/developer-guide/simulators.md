@@ -162,7 +162,7 @@ Modern Dark and Modern Light, or add a `.yml` theme file as described in
 [Customize themes](../user-guide/customize-themes.md).
 
 **Diagnostics** reports loading, package identity, and service errors; `services`
-and `services2` exercise the service-probe panel across all five services.
+and `services2` exercise the service-probe panel across the telemetry, model, control, and navigation services.
 `sim` and `sim2` are complementary live-data dashboards: the first focuses on
 telemetry, while the second focuses on radio-local values and metric modes.
 Development layouts are not included in the release ZIP.

@@ -10,9 +10,7 @@ local services = fixture.services
 local telemetryService = fixture.telemetryService
 local modelService = fixture.modelService
 local controlService = fixture.controlService
-local extremaService = fixture.extremaService
 local navigationService = fixture.navigationService
-local armedService = fixture.loadModule("lib/armed_service.lua")
 local assertEqual = fixture.assertEqual
 local telemetryHarness = fixture.telemetryHarness
 
@@ -547,89 +545,6 @@ local function testControlService()
     assertEqual(bare:trim("").state, "unavailable")
 end
 
---- Flight sessions are owned by the dashboard, and the arm switch is what
---- decides where one flight ends and the next begins.
-local function testExtremaService()
-    local harness = telemetryHarness()
-    local armedValue = false
-    harness.env.getSwitchIndex = function()
-        return 1
-    end
-    harness.env.getSwitchValue = function()
-        return armedValue
-    end
-
-    local runtime = services.runtime(harness.env)
-    local telemetry = harness.service
-    services.register(runtime, telemetry, 0)
-    local control = controlService.new(harness.env, services)
-    services.register(runtime, control, 0)
-    runtime.byId.armed = armedService.new(harness.env, services, runtime)
-    local service = extremaService.new(harness.env, services, runtime)
-    services.register(runtime, service, 0)
-
-    local flight = service:flight("L01")
-    local altitude = service:sessionExtrema("Alt", "L01")
-
-    -- EdgeTX's own extrema are ordinary sources, reached through the same poll.
-    local peak = service:sourceExtreme("Alt", "max")
-    assertEqual(peak.name, "Alt+")
-
-    telemetry:update(0)
-    control:update(0)
-    service:update(0)
-    assertEqual(flight.configured, true)
-    assertEqual(flight.armed, false)
-    assertEqual(flight.active, false)
-    assertEqual(altitude.available, false)
-
-    -- Arming starts a session and clears whatever the last one recorded.
-    harness.values[103] = 10
-    armedValue = true
-    control:update(1)
-    telemetry:update(1)
-    service:update(1)
-    assertEqual(flight.armed, true)
-    assertEqual(flight.active, true)
-    assertEqual(flight.count, 1)
-
-    for step, value in ipairs({ 10, 50, 20 }) do
-        harness.values[103] = value
-        telemetry:update(step + 1)
-        service:update(step + 1)
-    end
-    assertEqual(altitude.min, 10)
-    assertEqual(altitude.max, 50)
-    assertEqual(altitude.session, 1)
-    assert(altitude.samples >= 3, "samples were not counted")
-
-    -- Disarming freezes the session rather than discarding it.
-    armedValue = false
-    control:update(10)
-    telemetry:update(10)
-    service:update(10)
-    assertEqual(flight.active, false)
-    assertEqual(altitude.max, 50)
-
-    -- Re-arming starts a clean session.
-    armedValue = true
-    control:update(11)
-    harness.values[103] = 5
-    telemetry:update(11)
-    service:update(11)
-    assertEqual(flight.count, 2)
-    assertEqual(altitude.session, 2)
-    assertEqual(altitude.max, 5)
-
-    -- Without an arm source the dashboard still tracks one open session, so
-    -- extrema mean something on a radio with no arm switch.
-    local free = extremaService.new(harness.env, services, runtime)
-    local session = free:flight()
-    free:update(0)
-    assertEqual(session.configured, false)
-    assertEqual(session.active, true)
-end
-
 --- Navigation must never present a north-up bearing as model orientation, and
 --- must withhold everything it cannot actually know.
 local function testNavigationService()
@@ -737,5 +652,4 @@ testTelemetryLinkHeuristics()
 testTelemetryPollingIsBounded()
 testModelService()
 testControlService()
-testExtremaService()
 testNavigationService()
