@@ -166,22 +166,25 @@ def hook_check_status(exact, firmware):
 def framework_report(data):
     """Return (ok, lines) for the framework measurements of `--framework`.
 
-    `ok` is false when the framework is over its overhead budget or a task step
-    exceeds its declared bound.
+    `ok` is false when a callback cost more than the planner charged for it or a
+    task step exceeds its declared bound.
     """
-    verdict = data["verdict"]
-    lines = ["framework cost per callback (instructions)", "tasks\tidle\tunfit\tworst\truns by count"]
-    for tasks in sorted(data["overhead"]["idle"], key=int):
-        runs = data["overhead"]["run"][tasks]
-        counts = " ".join(f"{k}={runs[k]}" for k in sorted(runs, key=int))
-        lines.append(f"{tasks}\t{data['overhead']['idle'][tasks]}\t{data['overhead']['unfit'][tasks]}\t"
-                     f"{data['overhead']['worst'].get(tasks, '-')}\t{counts}")
-    lines.append(f"F0 {verdict['F0']:.0f} + 16 x c1 {verdict['c1']:.1f} + 12 x o {verdict['o']:.1f} = "
-                 f"{verdict['total']:.0f} against {verdict['limit']}: "
-                 f"{'GO' if verdict['go'] else 'NO-GO'} (worst callback measured directly: {verdict['direct']})")
+    verdict, charges = data["verdict"], data["charges"]
+    rows = sorted(data["overhead"]["rows"], key=lambda row: row["slack"])
+    lines = [f"framework cost per callback: charged {charges['fixed']} + {charges['examine']} per task examined "
+             f"+ {charges['run']} per task run",
+             "scenario\ttasks\tmeasured\tcharged\texamined\tran\tslack"]
+    for row in rows[:12]:
+        lines.append("\t".join(str(row[key]) for key in ("name", "tasks", "measured", "charged", "examined", "ran", "slack")))
+    lines.append(f"{len(rows)} scenarios and mixes measured; least slack {verdict['slack']} "
+                 f"({verdict['tightest']['name']})")
+    lines.append(f"measured: idle callback {verdict['fixed']}, {verdict['examine']:.1f} per task examined, "
+                 f"{verdict['perRun']:.1f} per task run (examination included)")
+    lines.append("OK: every measured callback is within its charge" if verdict["ok"] else
+                 "FAIL: over the charge: " + ", ".join(row["name"] for row in verdict["failures"]))
     heap = data["overhead"]["heap"]
     lines.append(f"heap: {heap['kib']:.1f} KiB for {heap['tasks']} tasks")
-    ok = verdict["go"]
+    ok = verdict["ok"]
     for task, report in sorted(data["cases"].items()):
         for stage, grants in sorted(report["worst"].items()):
             lines.append(f"{task}.{stage}: worst per grant " + " ".join(f"{g}={grants[g]}" for g in sorted(grants, key=int))

@@ -11,6 +11,7 @@ local config = assert(loadScript("/WIDGETS/AeroGrid/audit/config.lua"))()
 local scheduler = assert(loadScript("/WIDGETS/AeroGrid/lib/scheduler.lua"))()
 local overhead = assert(loadScript("/WIDGETS/AeroGrid/audit/scheduler_overhead.lua"))()
 local measure = assert(loadScript("/WIDGETS/AeroGrid/audit/scheduler_measure.lua"))()
+local mixes = assert(loadScript("/WIDGETS/AeroGrid/audit/scheduler_mixes.lua"))()
 
 local finished = false
 
@@ -55,8 +56,13 @@ local function write(path, text)
 end
 
 local function measureAll()
-    local results = { overhead = overhead.measure(scheduler, __count, __pause), cases = {} }
-    results.verdict = overhead.verdict(results.overhead, scheduler)
+    local results = { overhead = overhead.measure(scheduler, __count, __pause, mixes), cases = {} }
+    results.verdict = overhead.verdict(results.overhead)
+    results.charges = {
+        fixed = scheduler.FIXED_COST,
+        examine = scheduler.EXAMINE_COST,
+        run = scheduler.RUN_COST,
+    }
     for _, name in ipairs(config.cases) do
         local case = assert(loadScript("/WIDGETS/AeroGrid/audit/cases/" .. name .. ".lua"))()
         results.cases[case.id] = measure.report(case, __count, __pause)

@@ -274,7 +274,7 @@ def prepare_framework(capture, sd, cases):
     audit = widget / "audit"
     shutil.copyfile(PROBE_DIR / "framework-main.lua", widget / "main.lua")
     shutil.copyfile(PROBE_DIR / "framework.lua", audit / "framework.lua")
-    for name in ("scheduler_overhead.lua", "scheduler_measure.lua"):
+    for name in ("scheduler_overhead.lua", "scheduler_measure.lua", "scheduler_mixes.lua"):
         shutil.copyfile(SUPPORT_DIR / name, audit / name)
     (audit / "cases").mkdir()
     for case in cases:

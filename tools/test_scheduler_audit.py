@@ -41,7 +41,8 @@ class InstrumentationTests(unittest.TestCase):
         compile_source = runtime.eval("function(source) return load(source) end")
         sources = [audit.PROBE_DIR / "probe.lua", audit.PROBE_DIR / "inputs.lua",
                    audit.PROBE_DIR / "framework.lua", audit.PROBE_DIR / "framework-main.lua",
-                   audit.SUPPORT_DIR / "scheduler_overhead.lua", audit.SUPPORT_DIR / "scheduler_measure.lua"]
+                   audit.SUPPORT_DIR / "scheduler_overhead.lua", audit.SUPPORT_DIR / "scheduler_measure.lua",
+                   audit.SUPPORT_DIR / "scheduler_mixes.lua"]
         sources += [audit.patch_main((audit.WIDGET / "main.lua").read_text())]
         sources += [audit.patch_chart((audit.WIDGET / "panels/chart.lua").read_text())]
         for source in sources:
@@ -101,29 +102,30 @@ class ReductionTests(unittest.TestCase):
 
 
 class FrameworkReportTests(unittest.TestCase):
-    def data(self, total=450, level="high"):
+    def data(self, measured=450, level="high"):
+        row = {"name": "run 4 (32 tasks)", "tasks": 32, "measured": measured, "charged": 500, "examined": 4,
+               "ran": 4, "slack": 500 - measured}
         findings = [{"stage": "run", "grant": 1, "level": level, "ratio": 0.95}]
         return {
-            "verdict": {"F0": 40, "c1": 6.0, "o": 30.0, "total": total, "limit": 500, "go": total <= 500,
-                        "direct": 430},
-            "overhead": {"idle": {"32": 40}, "unfit": {"32": 136}, "worst": {"32": 430},
-                         "run": {"32": {"1": 70, "12": 400}}, "heap": {"kib": 12.5, "tasks": 128}},
+            "charges": {"fixed": 100, "examine": 48, "run": 160},
+            "verdict": {"ok": measured <= 500, "failures": [row] if measured > 500 else [], "fixed": 90,
+                        "examine": 35.0, "perRun": 187.0, "slack": row["slack"], "tightest": row},
+            "overhead": {"rows": [row], "heap": {"kib": 12.5, "tasks": 128}},
             "cases": {"stub": {"worst": {"run": {"1": 100}}, "proposed": {"run": {"perUnit": 130}},
                                "findings": findings}},
         }
 
-    def test_report_is_go_when_the_framework_fits_and_no_bound_is_exceeded(self):
+    def test_report_is_ok_when_every_callback_is_within_its_charge(self):
         ok, lines = audit.framework_report(self.data())
         self.assertTrue(ok)
         text = "\n".join(lines)
-        self.assertIn("GO", text)
-        self.assertNotIn("NO-GO", text)
+        self.assertIn("OK: every measured callback", text)
         self.assertIn("stub.run grant 1: high", text)
 
-    def test_report_fails_over_budget_or_over_a_declared_bound(self):
-        ok, lines = audit.framework_report(self.data(total=2589))
+    def test_report_fails_over_the_charge_or_over_a_declared_bound(self):
+        ok, lines = audit.framework_report(self.data(measured=501))
         self.assertFalse(ok)
-        self.assertIn("NO-GO", "\n".join(lines))
+        self.assertIn("FAIL", "\n".join(lines))
         self.assertFalse(audit.framework_report(self.data(level="exceeds"))[0])
 
     def test_framework_image_runs_the_measurements_only(self):
@@ -136,7 +138,8 @@ class FrameworkReportTests(unittest.TestCase):
             widget = sd / "WIDGETS/AeroGrid"
             self.assertEqual((widget / "main.lua").read_text(), (audit.PROBE_DIR / "framework-main.lua").read_text())
             self.assertTrue((widget / "lib/scheduler.lua").is_file())
-            for name in ("framework.lua", "scheduler_overhead.lua", "scheduler_measure.lua", "cases/stub.lua"):
+            for name in ("framework.lua", "scheduler_overhead.lua", "scheduler_measure.lua", "scheduler_mixes.lua",
+                         "cases/stub.lua"):
                 self.assertTrue((widget / "audit" / name).is_file(), name)
             self.assertIn('"stub"', (widget / "audit/config.lua").read_text())
 
