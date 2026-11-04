@@ -216,7 +216,7 @@ the declared bound and validated by replaying recorded native traces.
    invariants, and an explicit list of what version 1 leaves out), review it,
    and have it independently critiqued before any code is written. The design
    sections above describe the full target; version 1 builds only what the
-   specification keeps.
+   specification keeps. Result: [scheduler-framework.md](scheduler-framework.md).
 2. **Framework in isolation.** Build the scheduler as a separate library
    (task definition, planner, budget, near-miss guard) that nothing in the
    widget calls yet. Give it its own offline simulator and a per-task
