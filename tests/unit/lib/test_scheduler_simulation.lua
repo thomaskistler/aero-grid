@@ -7,7 +7,18 @@ local scheduler = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.l
 local sim = assert(loadfile(root .. "/tests/support/scheduler_sim.lua"))()
 local admission = assert(loadfile(root .. "/tests/support/scheduler_admission.lua"))()
 local mixes = assert(loadfile(root .. "/tests/support/scheduler_mixes.lua"))()
+local framework = assert(loadfile(root .. "/tests/support/scheduler_overhead.lua"))()
 local equal = assertions.assertEqual
+
+-- The planner's own cost is measured in the callbacks that ask for it.
+local count, pause = framework.hookCounter()
+local function newSim(overheads, start, measured)
+    local options = { start = start }
+    if measured then
+        options.count, options.pause = count, pause
+    end
+    return sim.new(scheduler, overheads, options)
+end
 
 local LIMIT = scheduler.CEILING - scheduler.MARGIN
 local CHARGE = scheduler.EXAMINE_COST + scheduler.RUN_COST
@@ -25,16 +36,16 @@ local RECORDED = mixes.releases({ recorded = 1, interval = 10 }, 1)[1].decl
 -- sensor per task and at two. Plan section 4.
 local EXPECTED = {
     [1] = {
-        A = { peak = 5722, sustained = 4388, T = 5908, TS = 3308, R4 = 6908 },
-        B = { peak = 4334, sustained = 2401, T = 7296, TS = 4696, R4 = 8296 },
-        C = { peak = 4694, sustained = 4076, T = 6936, TS = 4336, R4 = 7936 },
-        D = { peak = 8498, sustained = 7684, T = 3132, TS = 532, R4 = 4132 },
+        A = { peak = 5802, sustained = 4450, T = 5808, TS = 3208, R4 = 6808 },
+        B = { peak = 4394, sustained = 2439, T = 7216, TS = 4616, R4 = 8216 },
+        C = { peak = 4754, sustained = 4131, T = 6856, TS = 4256, R4 = 7856 },
+        D = { peak = 8618, sustained = 7794, T = 2992, TS = 392, R4 = 3992 },
     },
     [2] = {
-        A = { peak = 5514, sustained = 4113, T = 6116, TS = 3516, R4 = 7116 },
-        B = { peak = 5514, sustained = 2264, T = 6116, TS = 3516, R4 = 7116 },
-        C = { peak = 5514, sustained = 3893, T = 6116, TS = 3516, R4 = 7116 },
-        D = { peak = 8082, sustained = 7268, T = 3548, TS = 948, R4 = 4548 },
+        A = { peak = 5574, sustained = 4159, T = 6036, TS = 3436, R4 = 7036 },
+        B = { peak = 5574, sustained = 2298, T = 6036, TS = 3436, R4 = 7036 },
+        C = { peak = 5574, sustained = 3939, T = 6036, TS = 3436, R4 = 7036 },
+        D = { peak = 8162, sustained = 7338, T = 3448, TS = 848, R4 = 4448 },
     },
 }
 
@@ -112,47 +123,161 @@ local function testAdmissionRejectsOverloads()
     local small =
         admission.check({ scheduler = scheduler, overhead = STEADY_OVERHEAD, releases = releases(MIXES.A, 1) })
     assert(#small.small > 0, "single sensors are below the minimum piece")
-    equal(admission.minimumPiece(scheduler), 1600)
+    equal(admission.minimumPiece(scheduler), 10 * scheduler.RUN_COST)
+end
+
+-- The largest indivisible piece that fits beside the peak, per mix, phase and
+-- sensors per task, against the maximum task size. The combinations below the
+-- limit are listed, not hidden: M is kept at 4000 (decided) and the tasks of
+-- those combinations are reviewed in their own migrations.
+local function testLargestPieceAgainstTheMaximumTaskSize()
+    local gaps = {}
+    for batch, rows in pairs(EXPECTED) do
+        for name, expected in pairs(rows) do
+            for _, phase in ipairs({ "T", "TS", "R4" }) do
+                local piece = expected[phase] - CHARGE
+                if piece < admission.MAX_SIZE then
+                    gaps[#gaps + 1] = string.format("%s/%s/%d per task=%d", name, phase, batch, piece)
+                end
+            end
+        end
+    end
+    table.sort(gaps)
+    equal(
+        table.concat(gaps, "; "),
+        table.concat({
+            "A/TS/1 per task=2980",
+            "A/TS/2 per task=3208",
+            "B/TS/2 per task=3208",
+            "C/TS/2 per task=3208",
+            "D/R4/1 per task=3764",
+            "D/T/1 per task=2764",
+            "D/T/2 per task=3220",
+            "D/TS/1 per task=164",
+            "D/TS/2 per task=620",
+        }, "; ")
+    )
+    -- Every other combination fits M, and a piece of M is admitted there.
+    local result = admission.check({
+        scheduler = scheduler,
+        overhead = STEADY_OVERHEAD,
+        head = RESET_POLL,
+        releases = releases(MIXES.A, 2),
+        decls = { once("normal", admission.MAX_SIZE) },
+    })
+    equal(#result.failures, 0, "a piece of M fits beside mix A in R4")
+    result = admission.check({
+        scheduler = scheduler,
+        overhead = STEADY_OVERHEAD,
+        head = RESET_POLL + TICK,
+        releases = releases(MIXES.D, 2),
+        decls = { once("normal", admission.MAX_SIZE) },
+    })
+    assert(string.find(table.concat(result.failures, " "), "A:", 1, true), "a piece of M does not fit mix D before R4")
+end
+
+-- Callbacks every 3 to 15 ticks. R4: only the reset poll is legacy head work. R3:
+-- the tick is too, and legacy Smart adds its cost in every second callback.
+local PHASES = {
+    R4 = function()
+        return RESET_POLL
+    end,
+    R3 = function(index)
+        return index % 2 == 0 and RESET_POLL + TICK + SMART or RESET_POLL + TICK
+    end,
+}
+local PHASE_HEADS = { R4 = { RESET_POLL }, R3 = { RESET_POLL + TICK, RESET_POLL + TICK + SMART } }
+-- Combinations the admission test does not admit (they stay safe, not timely).
+local NOT_ADMITTED = { ["D/R3/1"] = true, ["D/R3/2"] = true }
+
+local function jitterRun(mix, batch, phase, start, callbacks, measured, withNormal)
+    local simulation = newSim({ steady = STEADY_OVERHEAD, background = 1130 }, start, measured)
+    addMix(simulation, mix, batch)
+    if withNormal then
+        addNormalWork(simulation)
+    end
+    local schedule = sim.schedule(11, callbacks, 3, 15)
+    for index, item in ipairs(schedule) do
+        item.used = PHASES[phase](index)
+    end
+    simulation:run(schedule)
+    return simulation, schedule
+end
+
+-- Admitted combinations run their critical tasks within two callback gaps of
+-- their release (three in R3, where legacy Smart can take a callback) and at
+-- least 85% of the runs an unlimited budget allows; mix D, 73% loaded, 70%.
+-- The same critical tasks on an unlimited budget: the runs the callbacks allow.
+local function idealRuns(mix, batch, schedule)
+    local simulation = sim.new(scheduler, { steady = -1000000, background = -1000000 })
+    addMix(simulation, mix, batch)
+    for _, item in ipairs(schedule) do
+        simulation:callback("steady", item.now, 0)
+    end
+    return simulation.runs
 end
 
 local function testAMixedRunUnderJitter()
+    local CALLBACKS = 1500
     for _, batch in ipairs({ 1, 2 }) do
-        for name, mix in pairs(MIXES) do
-            local simulation = sim.new(scheduler, { steady = STEADY_OVERHEAD, background = 1130 })
-            addMix(simulation, mix, batch)
-            addNormalWork(simulation)
-            local schedule = sim.schedule(11, 3000, 3, 15)
-            for _, item in ipairs(schedule) do
-                item.used = RESET_POLL
-            end
-            simulation:run(schedule)
-            local runs = {}
-            for _, report in ipairs(simulation.reports) do
-                assert(report.U <= LIMIT, "mix " .. name .. " planned " .. report.U)
-                equal(report.actual, report.U, "stubs cost exactly their bound")
-                assert(#report.plan <= scheduler.MAX_TASKS)
-                local ids = {}
-                for _, entry in ipairs(report.plan) do
-                    assert(not ids[entry.id], "a task ran twice in one callback")
-                    ids[entry.id] = true
-                    assert(entry.used <= entry.grant)
+        for _, phase in ipairs({ "R4", "R3" }) do
+            for _, name in ipairs({ "A", "B", "C", "D" }) do
+                local mix = MIXES[name]
+                local label = string.format("mix %s %s %d per task", name, phase, batch)
+                local simulation, schedule = jitterRun(mix, batch, phase, 0, CALLBACKS, true, true)
+                for _, report in ipairs(simulation.reports) do
+                    assert(report.U <= LIMIT, label .. " planned " .. report.U)
+                    assert(
+                        report.actual <= report.U,
+                        label .. ": a callback used " .. report.actual .. " of " .. report.U
+                    )
+                    assert(
+                        report.framework <= report.charged,
+                        label .. ": the planner cost " .. report.framework .. " of " .. report.charged
+                    )
+                    local ids = {}
+                    for _, entry in ipairs(report.plan) do
+                        assert(not ids[entry.id], "a task ran twice in one callback")
+                        ids[entry.id] = true
+                        assert(entry.used <= entry.grant)
+                    end
+                end
+                equal(simulation.overruns, 0, label)
+                assert(simulation.runs.chart > 0 and simulation.runs.panel1 > 0, label .. ": normal work still runs")
+                local admitted = true
+                for _, head in ipairs(PHASE_HEADS[phase]) do
+                    local result = admission.check({
+                        scheduler = scheduler,
+                        overhead = STEADY_OVERHEAD,
+                        head = head,
+                        releases = releases(mix, batch),
+                    })
+                    admitted = admitted and #result.failures == 0
+                end
+                equal(admitted, not NOT_ADMITTED[name .. "/" .. phase .. "/" .. batch], label .. ": admission")
+                if admitted then
+                    local ideal = idealRuns(mix, batch, schedule)
+                    local limit = phase == "R4" and 30 or 45
+                    for index in ipairs(releases(mix, batch)) do
+                        local id = "critical" .. index
+                        assert(
+                            simulation.maxWait[id] <= limit,
+                            label .. ": " .. id .. " waited " .. simulation.maxWait[id]
+                        )
+                        assert(
+                            simulation.runs[id] * 100 >= ideal[id] * (name == "D" and 70 or 85),
+                            label
+                                .. ": "
+                                .. id
+                                .. " ran "
+                                .. simulation.runs[id]
+                                .. " times, "
+                                .. ideal[id]
+                                .. " are possible"
+                        )
+                    end
                 end
             end
-            equal(simulation.overruns, 0)
-            for id, wait in pairs(simulation.maxWait) do
-                if string.sub(id, 1, 8) == "critical" then
-                    assert(wait <= 2 * 15, "mix " .. name .. ": " .. id .. " waited " .. wait .. " ticks")
-                end
-            end
-            for index, release in ipairs(releases(mix, batch)) do
-                runs[index] = simulation.runs["critical" .. index]
-                local expected = 3000 * 9 // (release.interval + 2 * 15)
-                assert(
-                    runs[index] >= expected,
-                    "mix " .. name .. ": critical" .. index .. " ran " .. runs[index] .. " times"
-                )
-            end
-            assert(simulation.runs.chart > 0 and simulation.runs.panel1 > 0, "normal work still runs")
         end
     end
 end
@@ -215,9 +340,11 @@ local function reference(simulation, kind, now, used)
     return plan
 end
 
-local function randomScenario(seed)
+local SHARED = { link = 150, scan = 100 }
+
+local function randomScenario(seed, start, measured)
     local random = sim.random(seed)
-    local simulation = sim.new(scheduler, { steady = random(1000, 2000), background = random(800, 1500) })
+    local simulation = newSim({ steady = random(1000, 2000), background = random(800, 1500) }, start, measured)
     local names = { "a", "b", "c" }
     for index = 1, random(5, 40) do
         local stages = {}
@@ -234,7 +361,7 @@ local function randomScenario(seed)
             stages = stages,
             exclusive = random(1, 6) == 1 or nil,
             kinds = random(1, 5) == 1 and { steady = true } or nil,
-            shared = random(1, 6) == 1 and { link = random(1, 6) * 50 } or nil,
+            shared = random(1, 4) == 1 and (random(1, 2) == 1 and { link = SHARED.link } or SHARED) or nil,
         }
         local stageNames = {}
         for name in pairs(stages) do
@@ -267,12 +394,12 @@ end
 
 local function testPlansMatchTheReferenceOnRandomTasks()
     for seed = 1, 80 do
-        local simulation, schedule = randomScenario(seed)
+        local simulation, schedule = randomScenario(seed, nil, seed <= 20)
         for _, item in ipairs(schedule) do
             local expected = reference(simulation, item.kind, item.now, item.used)
             local report = simulation:callback(item.kind, item.now, item.used)
             equal(#report.plan, #expected, "seed " .. seed .. " callback " .. report.index)
-            local exclusive = 0
+            local exclusive, previousClass, previousWait = 0, 1, math.huge
             for position, entry in ipairs(report.plan) do
                 local want = expected[position]
                 equal(entry.id, want.id, "seed " .. seed .. " callback " .. report.index .. " position " .. position)
@@ -283,10 +410,21 @@ local function testPlansMatchTheReferenceOnRandomTasks()
                 assert((decl.kinds or { steady = true, background = true })[item.kind], "task ran in a kind it refuses")
                 assert(entry.grant >= 1 and entry.grant <= decl.stages[entry.stage].maxUnits)
                 assert(entry.used <= entry.grant)
+                -- Properties that do not mirror the planner: critical before normal, oldest first.
+                local class = decl.class == "critical" and 1 or 2
+                assert(class >= previousClass, "a critical task was planned after a normal one")
+                if class ~= previousClass then
+                    previousWait = math.huge
+                end
+                assert(entry.wait <= previousWait, "a younger task was planned before an older one")
+                previousClass, previousWait = class, entry.wait
             end
             assert(exclusive <= 1, "two exclusive tasks in one callback")
             assert(report.U <= LIMIT, "plan " .. report.U .. " is above the limit")
-            equal(report.actual, report.U)
+            assert(report.actual <= report.U, "seed " .. seed .. ": a callback used more than it planned")
+            if report.framework then
+                assert(report.framework <= report.charged, "seed " .. seed .. ": the planner cost more than it charged")
+            end
         end
         equal(simulation.overruns, 0)
     end
@@ -312,6 +450,223 @@ local function testPlansAreDeterministic()
         local _, scheduleB = randomScenario(seed)
         second:run(scheduleB)
         equal(logOf(first), logOf(second), "seed " .. seed)
+    end
+end
+
+-- Start points on the tick clock: small, above 2^15 and 2^20, either side of the
+-- rebase at 2^29, and either side of the int32 wrap at 2^31.
+local STARTS =
+    { 0, 0x8000, 0x100000, 0x1FFFF830, 0x20000007, 0x40000005, 0x7FFFFE70, 0x7FFFFFF8, 0x7FFFFFFE, 0xFFFFEC78 }
+
+-- Only differences of ticks matter: the same run from any start gives the same
+-- plans, including across the wrap of the int32 clock and the epoch rebase.
+local function testStartOffsetsAndClockWrapDoNotChangePlans()
+    local expected
+    for _, start in ipairs(STARTS) do
+        local simulation = jitterRun(MIXES.D, 2, "R4", start, 800, false, true)
+        local log = logOf(simulation)
+        expected = expected or log
+        equal(log, expected, string.format("mix D from tick %d", start))
+    end
+    for seed = 1, 6 do
+        local first
+        for _, start in ipairs(STARTS) do
+            local simulation, schedule = randomScenario(seed, start)
+            simulation:run(schedule)
+            first = first or logOf(simulation)
+            equal(logOf(simulation), first, string.format("seed %d from tick %d", seed, start))
+        end
+    end
+end
+
+-- Callbacks hours or days apart: the clock wraps and the epoch moves many times.
+local function testLongGapsMoveTheEpochAndTheClockWraps()
+    local steps = 1 << 28
+    local library = scheduler.new({ steady = 0 })
+    local runs = { fast = 0, medium = 0, slow = 0 }
+    local function task(id, delay)
+        return {
+            step = function()
+                runs[id] = runs[id] + 1
+                return delay
+            end,
+        }
+    end
+    local decl = once("critical", 10)
+    assert(library:add({ id = "fast", decl = decl, instance = task("fast", 3) }))
+    assert(library:add({ id = "medium", decl = decl, instance = task("medium", steps) }))
+    assert(library:add({ id = "slow", decl = decl, instance = task("slow", scheduler.MAX_DELAY) }))
+    for step = 0, 40 do
+        library:run("steady", sim.wrap32(step * steps))
+    end
+    equal(runs.fast, 41, "ready at every callback")
+    equal(runs.medium, 41, "released once per 2^28 ticks")
+    equal(runs.slow, 11, "released once per 2^30 ticks, as often as the clock allows")
+    assert(library.epoch ~= 0, "the epoch moved")
+    for _, record in pairs(library.byId) do
+        assert(record.due >= -(1 << 30) and record.due <= (1 << 30) + (1 << 29), "a stored due stays inside int32")
+    end
+end
+
+local function testInputsAreValidated()
+    local library = scheduler.new({ steady = 1000, background = 800 })
+    local function instance()
+        return {
+            step = function()
+                return 1
+            end,
+        }
+    end
+    local decl = once("normal", 100)
+    local function rejected(task, text)
+        local ok, reason = library:add(task)
+        equal(ok, false, text)
+        assert(type(reason) == "string" and reason ~= "", text .. " needs a reason")
+    end
+    rejected({ id = "a", decl = decl, instance = instance(), due = "5" }, "a string due")
+    rejected({ id = "a", decl = decl, instance = instance(), due = 5.5 }, "a fractional due")
+    rejected({ id = "a", decl = decl, instance = instance(), due = math.huge }, "an infinite due")
+    rejected({ id = "a", decl = decl, instance = instance(), due = {} }, "a table due")
+    assert(library:add({ id = "a", decl = decl, instance = instance(), due = 5.0 }))
+    equal(math.type(library:dueOf("a")), "integer", "a whole float is stored as an integer")
+    for _, bad in ipairs({ "5", 5.5, {}, false }) do
+        equal(pcall(library.run, library, "steady", bad), false, "now " .. tostring(bad))
+    end
+    equal(pcall(library.run, library, "steady", 5.0), true)
+
+    local delays = { ["a delay of 2^30"] = 1 << 30, ["a whole float"] = 5.0 }
+    for text, delay in pairs(delays) do
+        local fine = scheduler.new({ steady = 1000 })
+        assert(fine:add({
+            id = "x",
+            decl = decl,
+            instance = {
+                step = function()
+                    return delay
+                end,
+            },
+        }))
+        fine:run("steady", 100)
+        equal(fine.byId.x ~= nil, true, text)
+        equal(math.type(fine:dueOf("x")), "integer", text)
+    end
+    local bads = { 1 << 30 | 1, 0, -3, "5", 2.5, math.huge, 0 / 0, true, {} }
+    for _, delay in ipairs(bads) do
+        local broken = scheduler.new({ steady = 1000 })
+        assert(broken:add({
+            id = "x",
+            decl = decl,
+            instance = {
+                step = function()
+                    return delay
+                end,
+            },
+        }))
+        broken:run("steady", 100)
+        equal(broken.byId.x, nil, "delay " .. tostring(delay) .. " retires the task")
+        equal(#broken:takeErrors(), 1)
+    end
+
+    rejected(
+        { id = "k1", decl = once("normal", 100, { kinds = { stedy = true } }), instance = instance() },
+        "a misspelled kind"
+    )
+    rejected({ id = "k2", decl = once("normal", 100, { kinds = {} }), instance = instance() }, "an empty kinds set")
+    rejected(
+        { id = "k3", decl = once("normal", 100, { kinds = { steady = false } }), instance = instance() },
+        "no allowed kind"
+    )
+    rejected(
+        { id = "k4", decl = once("normal", 100, { kinds = { steady = "yes" } }), instance = instance() },
+        "a non-boolean kind"
+    )
+    assert(library:add({
+        id = "k5",
+        decl = once("normal", 100, { kinds = { steady = true, background = false } }),
+        instance = instance(),
+    }))
+    -- The steady callback has 200 less room than the background one: it decides.
+    local STEADY_ONLY = { kinds = { steady = true } }
+    local room = scheduler.CEILING - scheduler.MARGIN - scheduler.FIXED_COST - 1000
+    rejected(
+        { id = "n1", decl = once("normal", room, STEADY_ONLY), instance = instance() },
+        "a stage that cannot fit with the planner's charge"
+    )
+    assert(library:add({ id = "n2", decl = once("normal", room - CHARGE, STEADY_ONLY), instance = instance() }))
+    rejected(
+        { id = "n3", decl = once("critical", room - CHARGE, STEADY_ONLY), instance = instance() },
+        "a critical stage above the reserved room"
+    )
+    rejected({
+        id = "n4",
+        decl = once("normal", room - CHARGE, { kinds = { steady = true }, shared = { big = 1 } }),
+        instance = instance(),
+    }, "a shared cost that no longer fits")
+    assert(library:add({ id = "n5", decl = once("normal", 100, { shared = { link = 560 } }), instance = instance() }))
+    rejected(
+        { id = "n6", decl = once("normal", 100, { shared = { link = 561 } }), instance = instance() },
+        "one shared name with two costs"
+    )
+    -- A kind the host does not have is not a reason to refuse the default kinds.
+    assert(scheduler.new({ steady = 0 }):add({ id = "only", decl = decl, instance = instance() }))
+    equal(scheduler.new({ modal = 0 }):add({ id = "none", decl = decl, instance = instance() }), false)
+
+    equal(scheduler.stagger(3, 0), 0)
+    equal(scheduler.stagger(3, -5), 0)
+    equal(scheduler.stagger(3, 1), 0)
+end
+
+-- The planner bills a shared cost to the first task it plans; the first task that
+-- really does the work pays it. The plan total is the same either way.
+local function testSharedCostIsPaidByWhoeverRunsFirst()
+    local link = once("critical", 1000, { shared = { link = 560 } })
+    local plain = once("critical", 100)
+    local variants = {
+        baseline = {},
+        removed = { removeFirst = true },
+        raises = {
+            fail = function()
+                error("broken")
+            end,
+        },
+        idle = {
+            idle = function()
+                return true
+            end,
+        },
+    }
+    for name, variant in pairs(variants) do
+        local simulation = newSim({ steady = STEADY_OVERHEAD })
+        simulation:add({ id = "x", decl = plain, due = 0, delay = 50 })
+        simulation:add({
+            id = "a",
+            decl = link,
+            due = 1,
+            delay = 50,
+            fail = variant.fail,
+            idle = variant.idle,
+        })
+        simulation:add({ id = "b", decl = link, due = 2, delay = 50 })
+        if variant.removeFirst then
+            simulation.stubs.x.spec.after = function()
+                simulation.library:remove("a")
+            end
+        end
+        local report = simulation:callback("steady", 10)
+        local planned = 100 + (1000 + 560) + 1000
+        equal(
+            report.U - STEADY_OVERHEAD - scheduler.FIXED_COST - 3 * CHARGE,
+            planned,
+            name .. ": the plan bills the cost once"
+        )
+        if name == "baseline" then
+            equal(report.spent, planned)
+            equal(report.actual, report.U)
+        else
+            equal(report.spent, 100 + 1000 + 560, name .. ": the second task pays it")
+            equal(report.U - report.actual, 1000, name .. ": the plan over-charged the task that did not run")
+        end
+        assert(report.actual <= report.U)
     end
 end
 
@@ -455,7 +810,7 @@ local function testThePlannedStageIsWhatTheStepReceives()
     assert(library:add({ id = "chart", decl = decl, instance = chart, due = 0 }))
     library:run("steady", 1)
     equal(seen[1], "begin/apply", "a state change after planning is seen by the step, which does no work")
-    equal(library.byId.chart.due, 2, "and asks to be released again")
+    equal(library:dueOf("chart"), 2, "and asks to be released again")
 end
 
 local function testFaultInjectionNeverReachesTheFirmwareLimit()
@@ -494,6 +849,14 @@ local function testFaultInjectionNeverReachesTheFirmwareLimit()
     end
     for seed = 1, 5 do
         local simulation = overloaded(seed)
+        local topPlan = 0
+        for _, report in ipairs(simulation.reports) do
+            topPlan = math.max(topPlan, report.U)
+        end
+        -- The limit check is arithmetic (a plan is at most the limit and the excess
+        -- at most what is left of 20000); what the run shows is that plans really
+        -- fill the budget, so the excess is injected on top of full callbacks.
+        assert(topPlan >= LIMIT - 1500, "plans reached only " .. topPlan)
         assert(simulation.maxActual >= sim.FIRMWARE_LIMIT - 1000, "the faults really pushed the callbacks")
         assert(simulation.maxActual < sim.FIRMWARE_LIMIT, "a callback reached " .. simulation.maxActual)
         equal(simulation.overruns, 0)
@@ -532,6 +895,11 @@ testAdmissionRejectsOverloads()
 testAMixedRunUnderJitter()
 testPlansMatchTheReferenceOnRandomTasks()
 testPlansAreDeterministic()
+testStartOffsetsAndClockWrapDoNotChangePlans()
+testLongGapsMoveTheEpochAndTheClockWraps()
+testInputsAreValidated()
+testSharedCostIsPaidByWhoeverRunsFirst()
+testLargestPieceAgainstTheMaximumTaskSize()
 testFirstReadyTaskRunsUnderConstantOverload()
 testNoStackingAfterLongSkips()
 testExclusiveChartsAndKinds()

@@ -16,19 +16,25 @@ overhead.TASK_COUNTS = { 8, 32, 128 }
 overhead.RUN_COUNTS = { 1, 4, 16, 128 }
 overhead.MIX_BATCHES = { 1, 2 }
 overhead.MIX_CALLBACKS = 400
+overhead.FUZZ_SEEDS = 12
+overhead.FUZZ_CALLBACKS = 60
 
---- An offline exact counter: every Lua instruction increments it.
+--- An offline exact counter: every Lua instruction increments it. The hook is
+--- installed only while counting (`pause(false)`) and removed again by
+--- `pause(true)`, so code between measurement windows runs at full speed.
 function overhead.hookCounter()
-    local counter, paused = 0, false
-    debug.sethook(function()
-        if not paused then
-            counter = counter + 1
-        end
-    end, "", 1)
+    local counter = 0
+    local function hook()
+        counter = counter + 1
+    end
     return function()
         return counter
     end, function(flag)
-        paused = flag
+        if flag then
+            debug.sethook()
+        else
+            debug.sethook(hook, "", 1)
+        end
     end
 end
 
@@ -60,13 +66,20 @@ end
 -- A tiny far-off task keeps `minStep` small, so a scan is never cut short by
 -- the stop rule and every ready task is really examined.
 local function withTiny(s)
-    assert(s:add({ id = "tiny", decl = declaration("normal", 1), instance = stub(1), due = 10 ^ 9 }))
+    assert(s:add({ id = "tiny", decl = declaration("normal", 1), instance = stub(1), due = 1000000000 }))
     return s
 end
 
-local HUGE = 1000000
+-- A task this large fits an empty callback but not the room left by `crowded`.
+local BIG = 13500
 
--- Each scenario builds a scheduler and names the callback kind to run.
+-- The `used` that leaves room for `n` examinations and the stop rule, and no more.
+local function crowded(scheduler, n)
+    local charge = scheduler.EXAMINE_COST + scheduler.RUN_COST
+    return scheduler.CEILING - scheduler.MARGIN - scheduler.FIXED_COST - n * scheduler.EXAMINE_COST - 2 * charge
+end
+
+-- Each scenario builds a scheduler and names the callback kind, `used` and tick.
 local function scenarios(scheduler, n)
     local list = {}
     local function add(name, build)
@@ -82,7 +95,8 @@ local function scenarios(scheduler, n)
         return fill(new(), n, function(index)
             return declaration(classOf(index), 10), stub(1)
         end, 0),
-            "steady"
+            "steady",
+            0
     end)
     for _, k in ipairs(overhead.RUN_COUNTS) do
         if k <= n then
@@ -91,35 +105,99 @@ local function scenarios(scheduler, n)
                     return fill(new(), n, function(index)
                         return declaration(classOf(index), 10), stub(delay)
                     end, k),
-                        "steady"
+                        "steady",
+                        0
                 end)
             end
+            add("shared run " .. k .. ", two distinct names each", function()
+                return fill(new(), n, function(index)
+                    local shared = { ["a" .. index] = 10, ["b" .. index] = 10 }
+                    return declaration(classOf(index), 10, { shared = shared }), stub(100000)
+                end, k),
+                    "steady",
+                    0
+            end)
         end
     end
+    add("epoch moves after a long gap, nothing ready", function()
+        local s = new()
+        local gap = 1 << 29
+        -- The first task added sets the epoch; take it away again.
+        assert(s:add({ id = "anchor", decl = declaration("normal", 10), instance = stub(1), due = 0 }))
+        s:remove("anchor")
+        for index = 1, n do
+            local decl = declaration(classOf(index), 10)
+            assert(s:add({ id = index, decl = decl, instance = stub(1), due = gap + 100 + index }))
+        end
+        return s, "steady", 0, gap + 3
+    end)
     add("none fits", function()
-        return withTiny(fill(new(), n - 1, function(index)
-            return declaration(classOf(index), HUGE), stub(1)
+        return withTiny(fill(new(), n - 1, function()
+            return declaration("normal", BIG), stub(1)
         end, n)),
-            "steady"
+            "steady",
+            crowded(scheduler, n)
     end)
     add("none fits, wrong kind", function()
         return withTiny(fill(new(), n - 1, function()
             return declaration("normal", 10, { kinds = { steady = true } }), stub(1)
         end, n)),
-            "background"
+            "background",
+            0
     end)
     add("exclusive after the first", function()
         return withTiny(fill(new(), n - 1, function()
             return declaration("normal", 10, { exclusive = true }), stub(100000)
         end, n)),
-            "steady"
+            "steady",
+            0
     end)
     add("all skipped, the last one runs", function()
         return withTiny(fill(new(), n - 1, function(index)
-            return declaration("normal", index < n - 1 and HUGE or 10), stub(100000)
+            return declaration("normal", index < n - 1 and BIG or 10), stub(100000)
         end, n)),
-            "steady"
+            "steady",
+            crowded(scheduler, n)
     end)
+    for names = 1, 2 do
+        local each = 12000 // names
+        add("skipped for shared cost, " .. names .. " name(s) each", function()
+            return withTiny(fill(new(), n - 1, function(index)
+                local shared = {}
+                for position = 1, names do
+                    shared["n" .. index .. "-" .. position] = each
+                end
+                return declaration("normal", 10, { shared = shared }), stub(1)
+            end, n)),
+                "steady",
+                crowded(scheduler, n)
+        end)
+        add("skipped for shared cost, the last one runs, " .. names .. " name(s)", function()
+            return withTiny(fill(new(), n - 1, function(index)
+                if index == n - 1 then
+                    return declaration("normal", 10), stub(100000)
+                end
+                local shared = {}
+                for position = 1, names do
+                    shared["n" .. index .. "-" .. position] = each
+                end
+                return declaration("normal", 10, { shared = shared }), stub(1)
+            end, n)),
+                "steady",
+                crowded(scheduler, n)
+        end)
+        add("skipped for size with shared costs, " .. names .. " name(s)", function()
+            return withTiny(fill(new(), n - 1, function(index)
+                local shared = {}
+                for position = 1, names do
+                    shared["m" .. index .. "-" .. position] = 100
+                end
+                return declaration("normal", BIG, { shared = shared }), stub(1)
+            end, n)),
+                "steady",
+                crowded(scheduler, n)
+        end)
+    end
     add("stages, shared costs and want", function()
         local stages = {
             run = { fixed = 100, perUnit = 40, maxUnits = 9 },
@@ -139,7 +217,8 @@ local function scenarios(scheduler, n)
             instance.want = index % 4 + 1
             return decl, instance
         end, n),
-            "steady"
+            "steady",
+            0
     end)
     add("failing steps", function()
         return fill(new(), n, function(index)
@@ -156,7 +235,8 @@ local function scenarios(scheduler, n)
             end
             return declaration(classOf(index), 10), instance
         end, n),
-            "steady"
+            "steady",
+            0
     end)
     add("unknown stage", function()
         return fill(new(), n, function(index)
@@ -164,15 +244,16 @@ local function scenarios(scheduler, n)
             instance.stage = index % 2 == 0 and "missing" or nil
             return declaration(classOf(index), 10), instance
         end, n),
-            "steady"
+            "steady",
+            0
     end)
     return list
 end
 
-local function window(count, pause, fn, a, b, c)
+local function window(count, pause, fn, a, b, c, d)
     pause(false)
     local first = count()
-    fn(a, b, c)
+    fn(a, b, c, d)
     local last = count()
     pause(true)
     return last - first
@@ -215,39 +296,107 @@ local function row(name, s, measured)
     }
 end
 
+-- An over-charged callback always wins; otherwise a callback that ran tasks
+-- beats an idle one.
+local function rank(item)
+    if item.slack < 0 then
+        return item.slack - 1000000000
+    end
+    return item.ran > 0 and item.slack or item.slack + 1000000
+end
+
+local function keepLeast(least, item)
+    item.rank = rank(item)
+    if least == nil or item.rank < least.rank then
+        return item
+    end
+    return least
+end
+
+local function random(seed)
+    local state = seed * 7919 + 13
+    return function(low, high)
+        state = (state * 1103515245 + 12345) & 0x7fffffff
+        return low + (state >> 8) % (high - low + 1)
+    end
+end
+
 local function mixRow(scheduler, mixes, count, pause, K, name, mix, batch)
     local s = installMix(scheduler, mixes, mix, batch)
     local least
-    local state, now = 7, 0
+    local next, now = random(7), 0
     for _ = 1, overhead.MIX_CALLBACKS do
-        state = (state * 1103515245 + 12345) & 0x7fffffff
-        now = now + 3 + (state >> 8) % 13
+        now = now + next(3, 15)
         local measured = window(count, pause, s.run, s, "steady", now) - K
-        local this = row(name, s, measured)
-        -- A callback that ran something is the interesting one, unless a
-        -- callback went over its charge, which always wins.
-        local rank = this.ran > 0 and this.slack or this.slack + 1000000
-        if least == nil or rank < least.rank then
-            least = this
-            least.rank = rank
+        least = keepLeast(least, row(name, s, measured))
+    end
+    return least
+end
+
+-- Random task sets with shared names, kinds, exclusive tasks, wants, stages and
+-- failing steps, run at random callbacks: the callback with the least slack.
+local function fuzzRow(scheduler, count, pause, K, seed)
+    local next = random(seed)
+    local s = scheduler.new({ steady = next(0, 2000), background = next(0, 2000) })
+    local shared = { link = 560, scan = 150, cache = 300, big = 3000, huge = 9000, tiny = 20 }
+    local names = { "link", "scan", "cache", "big", "huge", "tiny" }
+    for id = 1, next(8, 128) do
+        local stages = {}
+        local stageCount = next(1, 3)
+        for position = 1, stageCount do
+            stages["s" .. position] = { fixed = next(0, 6) * 100, perUnit = next(1, 60) * 50, maxUnits = next(1, 8) }
         end
+        local decl = {
+            class = next(1, 2) == 1 and "critical" or "normal",
+            first = "s1",
+            stages = stages,
+            exclusive = next(1, 5) == 1 or nil,
+            kinds = next(1, 4) == 1 and { steady = true } or nil,
+        }
+        local howMany = next(0, 2)
+        if howMany > 0 then
+            decl.shared = {}
+            for _ = 1, howMany do
+                local name = names[next(1, #names)]
+                decl.shared[name] = shared[name]
+            end
+        end
+        local instance = { stage = next(1, 12) == 1 and "missing" or "s" .. next(1, stageCount), want = next(0, 10) }
+        local behaviour = next(1, 14)
+        function instance.step()
+            if behaviour == 1 then
+                error("failure")
+            elseif behaviour == 2 then
+                return 0
+            end
+            return next(1, 60)
+        end
+        s:add({ id = id, decl = decl, instance = instance, due = next(0, 40) })
+    end
+    local least
+    local now = 0
+    for _ = 1, overhead.FUZZ_CALLBACKS do
+        now = now + next(3, 15)
+        local kind = next(1, 3) == 1 and "background" or "steady"
+        local measured = window(count, pause, s.run, s, kind, now, next(0, 9000)) - K
+        least = keepLeast(least, row("fuzz seed " .. seed, s, measured))
     end
     return least
 end
 
 --- Returns `{ K, rows, heap }`. A row is `{ name, tasks, measured, charged,
---- examined, ran, slack }`; for a mix it is the callback that ran tasks with the
---- least slack (an over-charged callback always wins).
+--- examined, ran, slack }`; for a mix or a fuzz seed it is the callback that ran
+--- tasks with the least slack (an over-charged callback always wins).
 function overhead.measure(scheduler, count, pause, mixes)
     pause = pause or function() end
     pause(true)
     local noop = function() end
-    local K = window(count, pause, noop, nil, nil, nil)
+    local K = window(count, pause, noop, nil, nil, nil, nil)
     local rows = {}
     for _, n in ipairs(overhead.TASK_COUNTS) do
         for _, scenario in ipairs(scenarios(scheduler, n)) do
-            local s, kind = scenario.build()
-            local measured = window(count, pause, s.run, s, kind, 0) - K
+            local s, kind, used, tick = scenario.build()
+            local measured = window(count, pause, s.run, s, kind, tick or 0, used) - K
             rows[#rows + 1] = row(scenario.name .. " (" .. n .. " tasks)", s, measured)
         end
     end
@@ -258,6 +407,9 @@ function overhead.measure(scheduler, count, pause, mixes)
                 rows[#rows + 1] = mixRow(scheduler, mixes, count, pause, K, label, mixes.MIXES[name], batch)
             end
         end
+    end
+    for seed = 1, overhead.FUZZ_SEEDS do
+        rows[#rows + 1] = fuzzRow(scheduler, count, pause, K, seed)
     end
     local instances = {}
     for index = 1, scheduler.MAX_TASKS do
