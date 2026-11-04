@@ -209,6 +209,8 @@ the declared bound and validated by replaying recorded native traces.
    audit notes where a split would go and what it would cost to resume. Chart
    stages are closest to ready; telemetry, flight and history services need the
    most work. Record native traces for replay. Result: [scheduler-audit.md](scheduler-audit.md).
+   The margin rule and per-task contracts built on it are in
+   [scheduler-contracts.md](scheduler-contracts.md).
 1. **Simulator.** Build an offline scheduler simulation from the audited costs
    and replay recorded native traces through it. Fault-inject cost steps,
    spikes and overload bursts and require zero overruns.
