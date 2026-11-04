@@ -203,8 +203,12 @@ the declared bound and validated by replaying recorded native traces.
 
 0. **Audit.** For every current task, record its class, unit, measured worst
    cost per unit, fixed overhead per callback kind, and whether it is bounded.
-   Chart stages are closest to ready; telemetry, flight and history services
-   need the most work. Record native traces for replay.
+   Also record whether it can be split into smaller pieces. Finer pieces let
+   the scheduler pack the budget tightly and keep each worst case close to the
+   typical cost, so for every task that is coarse or has a wide cost spread the
+   audit notes where a split would go and what it would cost to resume. Chart
+   stages are closest to ready; telemetry, flight and history services need the
+   most work. Record native traces for replay.
 1. **Simulator.** Build an offline scheduler simulation from the audited costs
    and replay recorded native traces through it. Fault-inject cost steps,
    spikes and overload bursts and require zero overruns.
