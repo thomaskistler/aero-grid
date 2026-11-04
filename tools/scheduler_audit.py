@@ -1,0 +1,153 @@
+# SPDX-License-Identifier: GPL-2.0-only
+"""Scheduler audit helpers: isolated-copy patches, scenarios and result reduction."""
+import json
+import re
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+WIDGET = ROOT / "src/WIDGETS/AeroGrid"
+PROBE_DIR = Path(__file__).with_name("scheduler-audit")
+
+MAIN_PREFIX = 'local AUDIT = assert(loadScript("/WIDGETS/AeroGrid/audit/probe.lua"))()\n'
+MAIN_PATCHES = (
+    ("    create = create,", "    create = function(...)\n        return AUDIT.plain(\"create\", create, ...)\n    end,"),
+    ("    update = update,", "    update = function(...)\n        return AUDIT.plain(\"update\", update, ...)\n    end,"),
+    ("    refresh = refresh,", "    refresh = function(context, event, touch)\n"
+     "        return AUDIT.entry(\"refresh\", context, refresh, event, touch)\n    end,"),
+    ("    background = background,", "    background = function(context)\n"
+     "        return AUDIT.entry(\"background\", context, background)\n    end,"),
+    ("return {\n    name = \"AeroGrid\",", "AUDIT.register(refresh, background)\n\nreturn {\n    name = \"AeroGrid\","),
+)
+LOADER_PATCHES = (
+    ("support.environment()", 'support.environment(assert(loadScript("/WIDGETS/AeroGrid/audit/inputs.lua"))())'),
+)
+# Call sites inside the chart's staged frame, wrapped so each stage is measured.
+CHART_PATCHES = (
+    ("chart.render(context)", "AUDIT_SPAN(\"chart.render\", chart.render, context)",
+     "    local readingsChanged = not context.projectionTurn and chart.render(context)\n"),
+    ("    updateHeader(context)\n    if not creating then\n        updateGrid(context)\n",
+     "    AUDIT_SPAN(\"chart.header\", updateHeader, context)\n    if not creating then\n"
+     "        AUDIT_SPAN(\"chart.grid\", updateGrid, context)\n", None),
+    ("        chart.ranges(context)\n        context.rangesReady = true\n",
+     "        AUDIT_SPAN(\"chart.ranges\", chart.ranges, context)\n        context.rangesReady = true\n", None),
+    ("            prepare(context, item)\n        end\n        if item.job.projecting then\n"
+     "            project(context, item, projectionCap)\n            return 5\n        end\n"
+     "        if applyRuns(context, item) then\n",
+     "            AUDIT_SPAN(\"chart.prepare\", prepare, context, item)\n        end\n"
+     "        if item.job.projecting then\n"
+     "            AUDIT_SPAN(\"chart.project\", project, context, item, projectionCap)\n            return 5\n        end\n"
+     "        if AUDIT_SPAN(\"chart.apply\", applyRuns, context, item) then\n", None),
+    ("            prepare(context, item)\n            project(context, item, projectionCap)\n            context.pending = item\n",
+     "            AUDIT_SPAN(\"chart.prepare\", prepare, context, item)\n"
+     "            AUDIT_SPAN(\"chart.project\", project, context, item, projectionCap)\n            context.pending = item\n",
+     None),
+    ("        if prepareAxis(context) then\n", "        if AUDIT_SPAN(\"chart.axis\", prepareAxis, context) then\n", None),
+    ("        if not updateFlights(context) then\n",
+     "        if not AUDIT_SPAN(\"chart.flights\", updateFlights, context) then\n", None),
+    ("        done = updateSessionMarkers(\n", "        done = AUDIT_SPAN(\n            \"chart.arms\",\n            updateSessionMarkers,\n", None),
+    ("            updateSessionMarkers(\n", "            AUDIT_SPAN(\n                \"chart.resumes\",\n                updateSessionMarkers,\n", None),
+)
+
+
+def lua_literal(value):
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return repr(value)
+    if isinstance(value, str):
+        return json.dumps(value)
+    if isinstance(value, (list, tuple)):
+        return "{" + ", ".join(lua_literal(item) for item in value) + "}"
+    if isinstance(value, dict):
+        return "{" + ", ".join(f"[{json.dumps(key)}] = {lua_literal(item)}" for key, item in value.items()) + "}"
+    raise TypeError(f"Cannot encode {type(value).__name__}")
+
+
+def replace_once(source, old, new, name):
+    if source.count(old) != 1:
+        raise RuntimeError(f"{name}: expected one occurrence of {old.splitlines()[0]!r}, "
+                           f"found {source.count(old)}; update the audit instrumentation")
+    return source.replace(old, new)
+
+
+def patch_main(source):
+    for old, new in MAIN_PATCHES:
+        source = replace_once(source, old, new, "main.lua")
+    return MAIN_PREFIX + source
+
+
+def patch_loader(source):
+    for old, new in LOADER_PATCHES:
+        source = replace_once(source, old, new, "dashboard_loader.lua")
+    return source
+
+
+def patch_chart(source):
+    for old, new, anchor in CHART_PATCHES:
+        if anchor:
+            source = replace_once(source, anchor, anchor.replace(old, new), "chart.lua")
+        else:
+            source = replace_once(source, old, new, "chart.lua")
+    return source
+
+
+def supported_spans(panel):
+    """Smallest and largest legal span of a panel, as (columns, rows)."""
+    text = (WIDGET / "panels" / f"{panel}.lua").read_text()
+    match = re.search(r"supportedSpans\s*=\s*\{([^}]*)\}", text)
+    names = re.findall(r'"([^"]+)"', match.group(1)) if match else ["any"]
+    spans = [(int(a), int(b)) for a, b in (name.split("x") for name in names if name != "any")]
+    if not spans:
+        spans = [(1, 1), (4, 4)]
+    spans.sort(key=lambda span: (span[0] * span[1], span))
+    return spans[0], spans[-1]
+
+
+def reduce_results(results):
+    """Flatten native results into per-label rows with per-unit worst cost."""
+    rows = {}
+    for label, stat in results["stats"].items():
+        units = {int(unit): bucket for unit, bucket in stat["units"].items()}
+        top = max(units)
+        rows[label] = {
+            "n": stat["n"], "mean": round(stat["mean"], 1), "min": stat["min"], "max": stat["max"],
+            "selfMax": stat["selfMax"], "maxUnits": top, "maxAtMaxUnits": units[top]["max"],
+            "perUnit": round(max(bucket["max"] / unit for unit, bucket in units.items()), 1),
+        }
+    return rows
+
+
+def verify_hook(exact, firmware, quantum=200, tolerance=1):
+    """Compare the exact counter with getUsage read one callback later."""
+    problems = []
+    for index in range(1, len(exact["counts"])):
+        expected = exact["counts"][index - 1] // quantum
+        reported = firmware["usages"][index]
+        if abs(expected - reported) > tolerance:
+            problems.append((index, exact["counts"][index - 1], reported))
+    return problems
+
+
+def aggregate(runs):
+    """Worst observed cost per task label across scenarios.
+
+    `runs` maps scenario name to native results. Each row keeps the scenario that
+    produced the maximum, the units in that call, and the worst cost per unit.
+    """
+    rows = {}
+    for scenario, results in runs.items():
+        for label, row in reduce_results(results).items():
+            best = rows.get(label)
+            if best is None:
+                rows[label] = dict(row, scenario=scenario, total=row["n"], weighted=row["mean"] * row["n"])
+                continue
+            best["total"] += row["n"]
+            best["weighted"] += row["mean"] * row["n"]
+            best["perUnit"] = max(best["perUnit"], row["perUnit"])
+            if row["max"] > best["max"]:
+                best.update(max=row["max"], scenario=scenario, maxUnits=row["maxUnits"],
+                            maxAtMaxUnits=row["maxAtMaxUnits"], selfMax=row["selfMax"])
+    for row in rows.values():
+        row["mean"] = round(row.pop("weighted") / row["total"], 1)
+        row["n"] = row.pop("total")
+    return rows
