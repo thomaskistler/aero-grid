@@ -283,7 +283,6 @@ function scheduler:run(kind, now, used)
                 local stage = instance.stage or decl.first or "run"
                 local declared = decl.stages[stage]
                 if declared == nil then
-                    record.state = "planned"
                     retire(self, record, "unknown stage " .. tostring(stage))
                     taken = taken + 1
                 else
@@ -338,11 +337,13 @@ function scheduler:run(kind, now, used)
         if record.state == "planned" then
             local instance = record.instance
             local ok, delay = pcall(instance.step, instance, grants[index], stages[index], now)
-            if not ok then
+            if record.state ~= "planned" then
+                -- Removed by its own step: nothing to put back or report.
+            elseif not ok then
                 retire(self, record, tostring(delay))
             elseif type(delay) ~= "number" or not (delay >= 1) or delay % 1 ~= 0 then
                 retire(self, record, "step returned an invalid delay: " .. tostring(delay))
-            elseif record.state == "planned" then
+            else
                 local due = now + delay
                 record.due, record.key, record.state = due, due * ORDER + record.key % ORDER, "listed"
                 insert(record.list, record)

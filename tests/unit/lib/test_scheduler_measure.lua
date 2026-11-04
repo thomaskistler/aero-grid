@@ -58,37 +58,20 @@ local function testFindingsWarnAndFail()
     equal(#measure.check(decl, { run = { [1] = 800 } }), 0)
 end
 
--- A stub task whose step spends 2 instructions per unit plus a few.
-local function stubCase()
-    local decl = { class = "normal", stages = { run = { fixed = 0, perUnit = 100, maxUnits = 8 } } }
-    local seeds = {}
-    local function setup(seed)
-        seeds[#seeds + 1] = seed
-        return {
-            step = function(_, grant)
-                local total = 0
-                for index = 1, grant * 10 + seed do
-                    total = total + index
-                end
-                return 5
-            end,
-        },
-            seed * 100
-    end
-    return {
-        id = "stub",
-        decl = decl,
-        cases = { { stage = "run", grant = 1, setup = setup }, { stage = "run", grant = 8, setup = setup } },
-    },
-        seeds
-end
-
 local function testMeasuringARealStep()
-    local case, seeds = stubCase()
+    local case = assert(loadfile(root .. "/tests/fixtures/scheduler-cases/stub.lua"))()
+    local seeds = 0
+    for _, item in ipairs(case.cases) do
+        local setup = item.setup
+        item.setup = function(seed)
+            seeds = seeds + 1
+            return setup(seed)
+        end
+    end
     local count, pause = overhead.hookCounter()
     local report = measure.report(case, count, pause)
     debug.sethook()
-    equal(#seeds, 2 * measure.SEEDS, "every case runs at several clock phases or seeds")
+    equal(seeds, #case.cases * measure.SEEDS, "every case runs at several clock phases or seeds")
     local one, eight = report.worst.run[1], report.worst.run[8]
     near(eight - one, 7 * 10 * 2, 20, "two instructions per unit of work")
     local proposed = report.proposed.run

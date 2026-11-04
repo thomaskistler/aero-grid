@@ -369,6 +369,15 @@ local function testAddAndRemoveDuringARun()
         end
     end
     equal(s.count, 2)
+    local leaving = {}
+    function leaving.step()
+        s:remove("leaving")
+        error("removed and failed")
+    end
+    add(s, "leaving", decl, leaving, 0)
+    s:run("steady", 200)
+    equal(s.count, 2, "a task that removes itself is counted once")
+    equal(s:takeErrors(), nil, "and its failure is not reported")
 end
 
 local function testOnePendingReleasePerTask()
@@ -393,7 +402,7 @@ local function testListsStayOrdered()
         for _, list in pairs(s.lists) do
             for index = 2, #list do
                 local a, b = list[index - 1], list[index]
-                assert(a.due < b.due or a.due == b.due and a.seq < b.seq, "list out of order")
+                assert(a.key < b.key and a.due <= b.due, "list out of order")
             end
         end
     end
