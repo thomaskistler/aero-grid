@@ -85,7 +85,7 @@ step(instance, grant, stage, now) -> delay
   only. A task with nothing to do is not registered.
 - Registration: `s:add{ id, decl, instance, due }`, `s:remove(id)`, at most 128
   tasks. `due` carries the phase offset. `s:wake(id)` re-releases a task now; it
-  is used only when a subscription lowers a source's interval (section 5).
+  is used only when a subscription lowers a source's interval (section 5.2).
 - `pcall` guards every step. An error or a rule violation retires that task and
   reports it once, as `panelHost.dispatch` and `services.update` do today.
 - A migrated task never ends the callback itself.
@@ -371,7 +371,7 @@ runs of different lengths, a gap over 100 ticks, a gap spanning a start, an end
 and a threshold crossing, and no false start or end after a gap (including a gap
 with stale readings). The rest of the parity method applies to the tick.
 
-**Precondition 2: loader callbacks.** At the head it runs in every callback,
+**Precondition: loader callbacks.** At the head it runs in every callback,
 including loader and reflow callbacks, so a long load never lets it wait. As a
 task it would stop during exclusive callbacks. So the loader family must first
 call `s:run("steady", now, used)` with `used` = that step's declared bound
