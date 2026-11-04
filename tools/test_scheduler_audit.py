@@ -39,7 +39,9 @@ class InstrumentationTests(unittest.TestCase):
             self.skipTest("lupa is not installed")
         runtime = lupa.LuaRuntime()
         compile_source = runtime.eval("function(source) return load(source) end")
-        sources = [audit.PROBE_DIR / "probe.lua", audit.PROBE_DIR / "inputs.lua"]
+        sources = [audit.PROBE_DIR / "probe.lua", audit.PROBE_DIR / "inputs.lua",
+                   audit.PROBE_DIR / "framework.lua", audit.PROBE_DIR / "framework-main.lua",
+                   audit.SUPPORT_DIR / "scheduler_overhead.lua", audit.SUPPORT_DIR / "scheduler_measure.lua"]
         sources += [audit.patch_main((audit.WIDGET / "main.lua").read_text())]
         sources += [audit.patch_chart((audit.WIDGET / "panels/chart.lua").read_text())]
         for source in sources:
@@ -96,6 +98,47 @@ class ReductionTests(unittest.TestCase):
         exact = {"counts": [10, 810, 1610]}
         self.assertEqual(audit.verify_hook(exact, {"usages": [0, 0, 4]}), [])
         self.assertEqual(len(audit.verify_hook(exact, {"usages": [0, 0, 9]})), 1)
+
+
+class FrameworkReportTests(unittest.TestCase):
+    def data(self, total=450, level="high"):
+        findings = [{"stage": "run", "grant": 1, "level": level, "ratio": 0.95}]
+        return {
+            "verdict": {"F0": 40, "c1": 6.0, "o": 30.0, "total": total, "limit": 500, "go": total <= 500,
+                        "direct": 430},
+            "overhead": {"idle": {"32": 40}, "unfit": {"32": 136}, "worst": {"32": 430},
+                         "run": {"32": {"1": 70, "12": 400}}, "heap": {"kib": 12.5, "tasks": 128}},
+            "cases": {"stub": {"worst": {"run": {"1": 100}}, "proposed": {"run": {"perUnit": 130}},
+                               "findings": findings}},
+        }
+
+    def test_report_is_go_when_the_framework_fits_and_no_bound_is_exceeded(self):
+        ok, lines = audit.framework_report(self.data())
+        self.assertTrue(ok)
+        text = "\n".join(lines)
+        self.assertIn("GO", text)
+        self.assertNotIn("NO-GO", text)
+        self.assertIn("stub.run grant 1: high", text)
+
+    def test_report_fails_over_budget_or_over_a_declared_bound(self):
+        ok, lines = audit.framework_report(self.data(total=2589))
+        self.assertFalse(ok)
+        self.assertIn("NO-GO", "\n".join(lines))
+        self.assertFalse(audit.framework_report(self.data(level="exceeds"))[0])
+
+    def test_framework_image_runs_the_measurements_only(self):
+        capture = load_cli().capture_module()
+        cases = sorted(audit.CASE_DIR.glob("*.lua"))
+        self.assertTrue(cases)
+        with tempfile.TemporaryDirectory() as directory:
+            sd = Path(directory) / "sd"
+            load_cli().prepare_framework(capture, sd, cases)
+            widget = sd / "WIDGETS/AeroGrid"
+            self.assertEqual((widget / "main.lua").read_text(), (audit.PROBE_DIR / "framework-main.lua").read_text())
+            self.assertTrue((widget / "lib/scheduler.lua").is_file())
+            for name in ("framework.lua", "scheduler_overhead.lua", "scheduler_measure.lua", "cases/stub.lua"):
+                self.assertTrue((widget / "audit" / name).is_file(), name)
+            self.assertIn('"stub"', (widget / "audit/config.lua").read_text())
 
 
 class HookCheckTests(unittest.TestCase):

@@ -17,8 +17,9 @@ import sys
 
 TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
-from scheduler_audit import (PROBE_DIR, ROOT, WIDGET, lua_literal, patch_chart, patch_loader, patch_main,  # noqa: E402
-                             aggregate, hook_check_status, reduce_results, supported_spans)
+from scheduler_audit import (CASE_DIR, PROBE_DIR, ROOT, SUPPORT_DIR, WIDGET, lua_literal, patch_chart,  # noqa: E402
+                             patch_loader, patch_main, aggregate, framework_report, hook_check_status,
+                             reduce_results, supported_spans)
 from capture_recipes import PANELS, RECIPE_DIR, fixture_inputs, load_recipe  # noqa: E402
 
 OUTPUT = ROOT / "build/scheduler-audit"
@@ -265,17 +266,70 @@ def run(capture, executable, library, name, spec, timeout):
     return data
 
 
+def prepare_framework(capture, sd, cases):
+    """An isolated image whose widget only runs the framework measurements."""
+    prepare(capture, "framework", {"recipe": "metric", "placements": {"subject": (0, 0, 1, 1)}, "expected": 1,
+                                   "baseInputs": True, "phases": []}, sd)
+    widget = sd / "WIDGETS/AeroGrid"
+    audit = widget / "audit"
+    shutil.copyfile(PROBE_DIR / "framework-main.lua", widget / "main.lua")
+    shutil.copyfile(PROBE_DIR / "framework.lua", audit / "framework.lua")
+    for name in ("scheduler_overhead.lua", "scheduler_measure.lua"):
+        shutil.copyfile(SUPPORT_DIR / name, audit / name)
+    (audit / "cases").mkdir()
+    for case in cases:
+        shutil.copyfile(case, audit / "cases" / case.name)
+    (audit / "config.lua").write_text("return " + lua_literal({"cases": [case.stem for case in cases]}) + "\n")
+
+
+def run_framework(capture, executable, library, cases, timeout):
+    directory = OUTPUT / "framework"
+    if directory.exists():
+        shutil.rmtree(directory)
+    directory.mkdir(parents=True)
+    sd = directory / "sdcard"
+    prepare_framework(capture, sd, cases)
+    with (directory / "simulator.log").open("w") as log:
+        result = subprocess.run([str(executable), str(library), str(sd), str(timeout)], stdout=log,
+                                stderr=subprocess.STDOUT, timeout=timeout + 30)
+    results = sd / "audit-results.json"
+    if result.returncode != 0 or not results.exists():
+        error = sd / "audit-error.txt"
+        raise RuntimeError(f"framework: native run failed; {error.read_text().strip() if error.exists() else ''}"
+                           f" inspect {directory / 'simulator.log'}")
+    data = json.loads(results.read_text())
+    (directory / "results.json").write_text(json.dumps(data, indent=1) + "\n")
+    return data
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("scenario", nargs="*", help="Scenario names; omit with --list or --all")
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--list", action="store_true")
+    parser.add_argument("--framework", nargs="*", metavar="CASE", help=f"Measure the scheduler framework's own cost "
+                        f"and the case files in {CASE_DIR.relative_to(ROOT)} (all, or the names given)")
     parser.add_argument("--report", action="store_true", help="Summarize the results already in build/scheduler-audit")
     parser.add_argument("--timeout", type=int, default=900, help="Seconds before a native run is abandoned")
     parser.add_argument("--traces", action="store_true", help=f"Copy callback traces to {TRACE_DIR}")
     parser.add_argument("--companion", type=Path, default=COMPANION)
     args = parser.parse_args()
     available = scenarios()
+    if args.framework is not None:
+        cases = sorted(CASE_DIR.glob("*.lua"))
+        if args.framework:
+            cases = [CASE_DIR / f"{name}.lua" for name in args.framework]
+        missing = [case.name for case in cases if not case.is_file()]
+        if missing:
+            parser.error(f"Unknown case files: {missing}")
+        if platform.system() != "Darwin":
+            parser.error("This measurement requires macOS and the EdgeTX Companion 2.12 simulator.")
+        library = args.companion / "Contents/Resources/libedgetx-tx16s-simulator.dylib"
+        if not library.is_file():
+            parser.error(f"Simulator library not found: {library}")
+        ok, lines = framework_report(run_framework(capture_module(), build_native(library), library, cases, args.timeout))
+        print("\n".join(lines))
+        return 0 if ok else 1
     if args.report:
         runs = {path.parent.name: json.loads(path.read_text()) for path in sorted(OUTPUT.glob("*/results.json"))
                 if "stats" in json.loads(path.read_text())}

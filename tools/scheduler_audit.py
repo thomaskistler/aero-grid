@@ -7,6 +7,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 WIDGET = ROOT / "src/WIDGETS/AeroGrid"
 PROBE_DIR = Path(__file__).with_name("scheduler-audit")
+SUPPORT_DIR = ROOT / "tests/support"
+CASE_DIR = ROOT / "tests/fixtures/scheduler-cases"
 
 MAIN_PREFIX = 'local AUDIT = assert(loadScript("/WIDGETS/AeroGrid/audit/probe.lua"))()\n'
 MAIN_PATCHES = (
@@ -159,3 +161,33 @@ def hook_check_status(exact, firmware):
     if problems:
         return False, f"hook-check MISMATCH between the exact counter and getUsage: {problems}"
     return True, "hook-check: exact counter agrees with getUsage"
+
+
+def framework_report(data):
+    """Return (ok, lines) for the framework measurements of `--framework`.
+
+    `ok` is false when the framework is over its overhead budget or a task step
+    exceeds its declared bound.
+    """
+    verdict = data["verdict"]
+    lines = ["framework cost per callback (instructions)", "tasks\tidle\tunfit\tworst\truns by count"]
+    for tasks in sorted(data["overhead"]["idle"], key=int):
+        runs = data["overhead"]["run"][tasks]
+        counts = " ".join(f"{k}={runs[k]}" for k in sorted(runs, key=int))
+        lines.append(f"{tasks}\t{data['overhead']['idle'][tasks]}\t{data['overhead']['unfit'][tasks]}\t"
+                     f"{data['overhead']['worst'].get(tasks, '-')}\t{counts}")
+    lines.append(f"F0 {verdict['F0']:.0f} + 16 x c1 {verdict['c1']:.1f} + 12 x o {verdict['o']:.1f} = "
+                 f"{verdict['total']:.0f} against {verdict['limit']}: "
+                 f"{'GO' if verdict['go'] else 'NO-GO'} (worst callback measured directly: {verdict['direct']})")
+    heap = data["overhead"]["heap"]
+    lines.append(f"heap: {heap['kib']:.1f} KiB for {heap['tasks']} tasks")
+    ok = verdict["go"]
+    for task, report in sorted(data["cases"].items()):
+        for stage, grants in sorted(report["worst"].items()):
+            lines.append(f"{task}.{stage}: worst per grant " + " ".join(f"{g}={grants[g]}" for g in sorted(grants, key=int))
+                         + f"; proposed {report['proposed'][stage]}")
+        for finding in report["findings"]:
+            lines.append(f"{task}.{finding['stage']} grant {finding['grant']}: {finding['level']} "
+                         f"({finding['ratio']:.0%} of the declared bound)")
+            ok = ok and finding["level"] != "exceeds"
+    return ok, lines
