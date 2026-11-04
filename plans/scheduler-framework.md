@@ -27,9 +27,10 @@ every site migrates before the old scheduler is retired (section 7).
 | `refresh` tail (1614-1615) | `updateServices`, `dispatchDue` | `steady` kind |
 | `background` tail (1653-1654) | `updateServices`, `dispatchAll("background")` | `background` kind: services only. Panel `background` hooks are not tasks; they stay in `overhead` (26 each) |
 | `pumpFlight`, head of `refresh` and `background` (1388, 1623) | every callback, before all early returns: identity check, reset poll, tick; it consumes the callback on a first document load and when Smart is running during a modal or loading callback | Stays at the head. Its costs are passed to the scheduler as `used` (below). The tick moves into the framework only under the preconditions in section 5 |
+| `configureFlight` calling `pumpFlight(host)` (main.lua 604-613; `dashboard_loader.lua` 631; `editor_controller.lua` 193) | a flight document load plus a tick inside the last loader stage or an editor save, unaccounted today | Counted in that stage's declared bound when the loader family moves (R6); an audit item |
 | `pumpSessionReset` (1394, 1629) | consumes the callback; runs every service's and panel's `resetSession` | Unchanged. A consumed callback runs no scheduler |
 | loader, reflow, app rebuild, page retire and rebuild, menu, editor save, settings UI advance | consume the callback, each bounded by the audit (loader family) or unmeasured (UI) | Unchanged in Phase 1; become kinds in R5 and R6 (section 4) |
-| settings UI with no pending work (1403), log viewer (1552, 1559), editor with panels (1567-1568) | `updateServices` (and `dispatchDue` for the editor) next to handler work that is unmeasured | **Modal sites.** Temporarily, while unmeasured, the legacy loop keeps running them for every task whatever its owner (same step code, default grant, then `s:defer(id, due)` so the framework does not re-run it at once), unbudgeted as today. This is a migration state, not the end state: they become modal kinds in R5 (section 7) |
+| settings UI with no pending work (1403), log viewer (1552, 1559), editor with panels (1567-1568) | `updateServices` (and `dispatchDue` for the editor) next to handler work that is unmeasured | **Modal sites.** Until R5 they keep the legacy loop. The owner is per callback kind: `steady` and `background` follow the owner table, modal kinds stay `legacy`. A split service and its legacy service object share one source of truth (`entry.due`, section 5.2), so a source polled by one is not due for the other and nothing runs twice; a piece that finds its entry not due does no work and returns the remaining delay. Recording in modal callbacks therefore behaves as today. At R5 they become modal kinds (section 7) |
 
 **Consumed callbacks and `used`.** When a head step returns "callback
 consumed", the scheduler is not run, exactly as `updateServices` is not today.
@@ -39,17 +40,24 @@ the reset poll (when a reset is configured), and the flight tick when it is
 still legacy-owned and ran. Recording continues in consumed callbacks no
 better or worse than today.
 
+**Widget contexts.** One scheduler per widget context. The flight broker is
+shared by contexts (main.lua 534-537), so the shared flight tick and Smart tasks
+are registered only by the context that owns the broker (the one `pumpFlight`
+runs for today), never twice.
+
 ## 2. Tasks
 
 A task is declared once as data and instantiated as a plain table with a
 `step` function. The declaration is loadable without the radio API, so the
 simulator and CI read the same bounds the widget uses. One declaration table is
-shared by all tasks of a type.
+shared by all tasks of a type; a task whose bound depends on load-time data (a
+telemetry source with `k` recordings) gets its own.
 
 ```lua
 declare = {
     class   = "critical" | "normal",
-    group   = nil,           -- at most one task of the group per callback
+    exclusive = false,       -- true for chart stages: at most one exclusive task per callback
+    shared  = nil,           -- { name = cost }: charged once per plan, whoever runs first
     kinds   = { steady = true, background = true },   -- default: both
     first   = "run",
     stages  = { run = { fixed = F, perUnit = U, maxUnits = N } },
@@ -83,35 +91,41 @@ step(instance, grant, stage, now) -> delay
 - `kinds`: a task is planned only in callbacks of those kinds. Services accept
   `steady` and `background`; panel refresh and chart stages accept `steady`
   only. A task with nothing to do is not registered.
-- Registration: `s:add{ id, decl, instance, due }`, `s:remove(id)`, at most 128
-  tasks. `due` carries the phase offset. `s:wake(id)` re-releases a task now; it
-  is used only when a subscription lowers a source's interval (section 5.2).
+- Registration: `s:add{ id, decl, instance, due }` and `s:remove(id)`, at most 128
+  tasks. `due` carries the phase offset (section 3). An add or remove during a
+  plan takes effect at the next plan.
 - `pcall` guards every step. An error or a rule violation retires that task and
-  reports it once, as `panelHost.dispatch` and `services.update` do today.
+  reports it once, as `panelHost.dispatch` and `services.update` do today. The
+  report (`addError`, `showErrors`, label creation) is a one-off path outside the
+  budget: the framework queues it and the host reports it at the head of the next
+  callback, which it treats as consumed (R6 measures it).
 - A migrated task never ends the callback itself.
 
 ### Example: a service piece (one telemetry sensor, critical)
 
 Services are split into independent tasks (section 4). Each subscription is its
-own task, created on subscribe, with the declaration for a recorded (1180) or an
-unrecorded (420) source.
+own task, created at load with a declaration for its `k` history recordings
+(known then; a poll records into all of them in the same call).
 
 ```lua
-telemetry.declareRecorded = {
-    class = "critical",
-    stages = { poll = { fixed = 0, perUnit = 1180, maxUnits = 1 } },
+declare = {                                        -- built per source from k
+    class = "critical", shared = { link = 560 },   -- link state, charged once per plan
+    stages = { poll = { fixed = 0, perUnit = 420 + 760 * k, maxUnits = 1 } },  -- k = 1 measured
 }
 function telemetry.step(self, grant, stage, now)    -- one sensor
-    self.service:poll(self.entry, now)              -- poll and record, time travels with it
-    return self.entry.interval                      -- effective interval, section 5.2
+    local entry = self.entry
+    if entry.due > now then return entry.due - now end   -- already polled elsewhere: no work
+    self.service:ensureLink(now)                    -- cached per callback
+    self.service:poll(entry, now)                   -- poll and record in one call; sets entry.due
+    return entry.interval                           -- effective interval, section 5.2
 end
 ```
 
-### Example: a staged chart (normal, group `chart`)
+### Example: a staged chart (normal, exclusive)
 
 ```lua
 chart.declare = {
-    class = "normal", group = "chart", first = "begin",
+    class = "normal", exclusive = true, first = "begin",
     kinds = { steady = true },
     stages = {
         begin   = { fixed = 0,   perUnit = 1300, maxUnits = 1 },
@@ -135,43 +149,45 @@ be declared (contracts, Flag rows).
 
 ## 3. Planner
 
-State: one array of task records sorted by `(due, seq)`, `seq` being the
-registration order. Insertion is a binary search; only tasks that ran are
-re-inserted and the shifting is done by `table.insert` and `table.remove`. Only
-the due prefix is read each callback.
+State: two arrays of task records, one per class, each sorted by `(due, seq)`,
+`seq` being the registration order. Insertion is a binary search; only tasks that
+ran are re-inserted and the shifting is done by `table.insert` and
+`table.remove`. Only the due prefix of each array is read.
 
 `R = ceiling - margin - overhead[kind] - used`. One pass:
 
-1. Take the ready (`due <= now`) tasks eligible for the kind, ordered by
-   `(class, due, seq)`: critical before normal, oldest release first within a
-   class.
-2. For each, skip it if its group is already planned. Otherwise grant
-   `g = min(want, maxUnits, floor((R - fixed) / perUnit))`; if `g >= 1` plan it
-   and subtract `fixed + g * perUnit`, else skip it and try the next
-   (work-conserving). Everything that is due runs together whenever it fits.
-3. **Stop** after `K = 16` tasks are examined or when `R` is below the smallest
-   `fixed + perUnit` of any registered stage.
-4. **Run** the plan in order. After each step set `due = now + delay`.
+1. **Critical.** Ready (`due <= now`) critical tasks eligible for the kind, oldest
+   first, at most `K_c = 10` examined, planned while the plan stays within
+   `R - normalReserve` (`normalReserve = 2000`, about the tick plus one small
+   chart stage). A critical task that does not fit waits and is first next
+   callback; it is never dropped.
+2. **Normal.** Ready normal tasks, oldest first, at most `K_n = 6` examined,
+   against what remains of `R`.
+3. Each task is skipped if it is `exclusive` and one is already planned.
+   Otherwise grant `g = min(want, maxUnits, floor((R - fixed) / perUnit))`; if
+   `g >= 1` plan it and subtract `fixed + g * perUnit`, else skip it and try the
+   next (work-conserving). A `shared` cost is subtracted the first time a task
+   naming it is planned.
+4. **Stop** after `maxRun = 12` planned tasks or when `R` is below the smallest
+   `fixed + perUnit` of any registered stage. **Run** the plan in order; after
+   each step set `due = now + delay`.
 
 | Rule | Why it is needed |
 |---|---|
-| Critical before normal | Telemetry, history and control are recording. A critical task is never dropped: it is ordered before all normal work and waits only behind older critical work. Safety never depends on this (`R` bounds every plan); only latency does. |
-| Group exclusivity | One chart per callback, as today (a legacy chart has `refreshCost = 6`, the whole cap). Not used for services: every service is split into independent tasks (section 4) and all that are due and fit run together. |
+| Critical before normal, with a normal reserve | Telemetry, history and control are recording and are never dropped. The reserve stops them from starving the tick, Smart, session reset and every chart and panel. Safety never depends on either (`R` bounds every plan); only latency does. |
+| `exclusive` | One chart per callback, as today (a legacy chart has `refreshCost = 6`, the whole cap). Used by chart stages only. |
 | Oldest release first | One rule gives fairness and bounded waiting. It replaces aging, deadlines and tolerances. |
-| Skip and continue | Uses the leftover budget. |
+| Skip and continue | Uses the leftover budget. Everything due runs together whenever it fits. |
 | Grants in units | A divisible task fills what is left instead of reserving its worst case. This is also the "filler". |
-| `K = 16` | Bounds the planner's own cost. The oldest ready task is examined first, so the cap cannot starve it. |
+| `K_c`, `K_n`, `maxRun` | Bound the planner's own cost; two lists mean a stall of critical work cannot hide normal work. |
 
-**Stagger.** Today's services run one per callback, and `services.register`
-offsets by one tick, which a 50 ms callback cannot see, so the rotation was the
-only real stagger. Periodic tasks (services, sensors) get an initial `due` on
-the 5-tick callback grid: tasks are placed largest first, each in the phase
-`0 .. interval/5 - 1` that minimises the peak critical load over the hyperperiod
-(deterministic; the same allocator is used by registration and by CI). This
-holds the peak load `P` of critical tasks that fall due in one callback close to
-the sustained average (section 4) instead of stacking. Phases drift when
-callbacks are irregular; safety never depends on them, only wait does, and the
-simulator reports wait under callback jitter.
+**Stagger.** Periodic tasks (services, sensors) get an initial `due` offset of
+`5 x (index mod ceil(interval / 5))` ticks, `index` being the registration order.
+It is a fixed rule, not an allocator, so it costs nothing on the radio and is
+reproducible; the peak `P` it gives is reported by the simulator for the mixes in
+section 4 (a hand placement can be a little lower, about 4.3k against 4.9k for
+mix A). Phases drift when callbacks are irregular and do not re-heal after a late
+run; safety never depends on them, only the tests (C) and wait do.
 
 **Design-time admission test** (CI, per ownership configuration and kind). Let
 `base = ceiling - margin - overhead - H - L`, `H` the largest `used` the host
@@ -181,13 +197,21 @@ can pass and `L` the legacy cap (section 7):
   first ready task always runs. Checked on the regular callback; while the tick
   and Smart are legacy, the callback that also runs Smart may delay a larger
   piece by one callback;
-- (B) sustained critical load `sum(cost x 5 / interval)` is at most `base`;
-  otherwise a backlog grows without bound;
-- (C) the peak `P`, from the stagger allocator, is at most `base`, so at nominal
-  timing no critical task waits;
+- (B) sustained critical load `sum(cost x 5 / interval)` is at most
+  `base - normalReserve`; otherwise a backlog grows or normal work stalls;
+- (C) the peak `P` of critical load due in one callback, from the simulator with
+  the stagger rule, is at most `base - normalReserve`;
 - (D) every legacy item's declared bound is at most `L`;
 - (E) every indivisible piece and every smallest step is at most the maximum task
   size (section 4).
+
+**Layout admission (at load, on the radio).** The tests above use fixed mixes, but
+layouts vary. The host sums the declared sustained load of the registered critical
+tasks; if it exceeds `base - normalReserve`, the telemetry service lengthens every
+source interval by the same factor (rounded up, never above 50 ticks, section
+5.2) and logs a notice once. Critical work is never shed and normal work does not
+stall: rates degrade. For example 16 recorded sources at 10 Hz is about 11.3k
+sustained against 9.2k, a factor of about 1.25.
 
 ## 4. Budget and feasibility
 
@@ -197,60 +221,70 @@ reports only the previous complete callback, in 200-instruction quanta, and
 cannot attribute cost between tasks.
 
 - `ceiling = 15000`, `margin = 400` (two quanta, fixed).
-- `overhead[kind]` is declared by the host as `base + slope * panels` and
-  includes the framework's cost bound. Callbacks have kinds `steady` and
-  `background` only.
+- `overhead[kind]` is declared by the host as the audited `base + slope * panels`
+  plus the framework term below, once. Callbacks have kinds `steady` and
+  `background` until the modal kinds of R5.
 - **Planning never reads `getUsage`.**
-- **Framework cost** per callback is `F0 + K*c1 + ran*o`: a fixed part, `c1` per
-  examined task and `o` per task run (section 4.2). Go/no-go for Phase 1: the
-  measured worst case at 32 tasks and 6 runs must be at most **400** (the margin;
-  more than that spends the headroom the framework exists to recover). Above it,
-  fix the design (lower `K`, merge tasks) or recompute the tables with the
-  measured value. Heap: one shared declaration per type and one small record per
-  task, reported from `collectgarbage("count")` at 128 tasks; the threshold is
-  set from that measurement because the radio's Lua heap limit is not in the
-  plan.
+- **Framework cost** per callback is `F0 + (K_c + K_n)*c1 + maxRun*o`: a fixed
+  part, `c1` per examined task and `o` per task run (section 4.2). Go/no-go for
+  Phase 1: the measured worst case at 32 tasks must be at most **500**, the term
+  added to `overhead` (more than that spends the headroom the framework exists to
+  recover). Above it, fix the design (lower the `K`s, merge tasks) or recompute the
+  tables with the measured value. Heap: one shared declaration per type and one
+  small record per task, reported from `collectgarbage("count")` at 128 tasks; the
+  threshold is set from that measurement because the radio's Lua heap limit is
+  not in the plan.
 
 ### Worked feasibility (16 panels)
 
-`C = 15000 - 400 - (1250 overhead + 400 framework) = 12950`. The Smart change
+`C = 15000 - 400 - (1250 audited overhead + 500 framework) = 12850`. The Smart change
 in the flight migration (5.1) splits today's 3600 flight tick into the tick proper (arm
 switch, counting, output; about 1000, estimated) at the current cadence and
 Smart (2600) at most once per second. Head `used` while both are legacy: reset
-poll 620 plus the tick, so **T** = a callback with the tick (room base 11330)
-and **TS** = the callback each second that also runs Smart (room base 8730).
+poll 620 plus the tick, so **T** = a callback with the tick (room base 11230)
+and **TS** = the callback each second that also runs Smart (room base 8630).
 Until R4 legacy Smart keeps its current cadence (about every 10 ticks), so in
 R1 to R3 a TS callback comes about every second callback rather than once per
 second; the 1 Hz cadence and these figures hold from R4.
-Room = base `- L - P`. `L` is the largest legacy item. `P` is the **peak load of
-critical tasks that fall due in one callback** after staggering, not the sum of
-all of them (all due together would be 13.3k) and not a group maximum. Declared
-values from the contracts; mix A below is the reference.
+Room = base `- L - P`. `L` is the largest legacy item, one share for
+`updateServices` and `dispatchDue` together (services first, panels get the rest).
+`P` is the **peak load of critical tasks that fall due in one callback** after
+staggering, not the sum of all of them (all due together would be 13.3k) and not a
+group maximum. While telemetry is legacy it is the largest legacy item: the
+legacy service runs every 10 ticks, so it must poll `2D` sources per update,
+`n_L = ceil(2D) + 1` (mix A: 5, cost `750 + 5 x 1180 = 6650`; mix D: the cap of 8,
+10190). That makes **5.2 a precondition of R1**, not R2, with the charts and
+panels opted in; without it `L` is 10190 and nothing fits. Declared values from
+the contracts; mix A below is the reference.
 
 | Phase | New-owned | `L` | `P` | Room T | Room TS | Preconditions |
 |---|---|---|---|---|---|---|
-| R1 | chart stages | 5700 (output refresh) | 0 | 5630 | 3030 | Split chart text (7800) under the cap (4.2). Other chart stages fit (900 to 1300; project grant 1 knot = 1030). |
-| R2 | + panel refreshes | 4290 (legacy telemetry, section 5.2) | 0 | 7040 | 4440 | Split metric relayout and output apply under the cap. |
-| R3 | + services as tasks | 0 | 4870 | 6460 | 3860 | Services split as in 4.1; telemetry and history measured (open decision 2, deferred). |
-| R4 | + tick and Smart as tasks | 0 | 4870 | 7460 | | Section 5.1 contract and loader-callback precondition; no head cost remains, only the reset poll. Atoms: tick 1000, Smart 2600. |
-| R5 | modal screens: settings UI, log viewer, editor, menu, fullscreen input, app rebuild, theme showcase | 0 | per kind | per kind | | Each measured natively first and split to fit its kind's room (section 7). Order: smallest handler first. |
-| R6 | loader, reflow, page retire and rebuild, session-reset pump, the head work | 0 | per kind | per kind | | Already measured in the audit; split where it exceeds the cap (4.2). |
+| R1 | chart stages | 6650 (legacy telemetry, 5.2 in) | 0 | 4580 | 1980 | Section 5.2 merged. Split chart text (7800) under the cap (4.2). Other chart stages fit (900 to 1300; project grant 1 knot = 1030). |
+| R2 | + panel refreshes | 6650 | 0 | 4580 | 1980 | Split metric relayout and output apply under the cap. Until R4, TS callbacks come about every second callback, so a piece above 1980 runs only in the others. |
+| R3 | + services as tasks | 0 | 4890 | 6340 | 3740 | Services split as in 4.1; telemetry and history measured (open decision 1, deferred). |
+| R4 | + tick and Smart as tasks | 0 | 4890 | 7340 | | Section 5.1 contract and loader-callback precondition. The 7340 is shared with the tick (1000) and Smart (2600, once per second), so net capacity equals R3. |
+| R5 | modal screens: settings UI, log viewer, editor, menu, fullscreen input, location details, app rebuild, theme showcase | 0 | per kind | per kind | | Each measured natively first and split to fit its kind's room (section 7). Order: smallest handler first. |
+| R6 | loader, reflow, page retire and rebuild, session-reset pump, the head work, `configureFlight` | 0 | per kind | per kind | | Already measured in the audit; split where it exceeds the cap (4.2). |
 
 **Telemetry mixes** (8 sources, per-source intervals from section 5.2, a callback
-about every 5 ticks, link 560 every 10 ticks, history 650 every 5, control base
-1300 and entries 1320 every 20). `P` is from the stagger allocator, the sustained
-load is `sum(cost x 5 / interval)`.
+about every 5 ticks, history 650 every 5, control base 1300 and entries 1320
+every 20, link 560 once per callback that polls a source). `P` is from the
+simulator with the stagger rule; the sustained load is the mean.
 
-| Mix | Sustained | Peak `P` | Room T / TS / R4 |
-|---|---|---|---|
-| A: 8 recorded, 4 Hz (25 ticks) | 3470 | 4870 | 6460 / 3860 / 7460 |
-| B: 8 recorded, 1 Hz (100 ticks) | 2060 | 2510 | 8820 / 6220 / 9820 |
-| C: 4 recorded and 4 unrecorded as one batch, 5 Hz (20 ticks) | 3190 | 3690 | 7640 / 5040 / 8640 |
-| D: 8 recorded, 10 Hz (today) | 6310 | 7230 | 4100 / 1500 / 5100 |
+| Mix | Sustained | Peak `P` | Room T / TS / R4 | Legacy `L` |
+|---|---|---|---|---|
+| A: 8 recorded, 4 Hz (25 ticks) | 3750 | 4890 | 6340 / 3740 / 7340 | 6650 |
+| B: 8 recorded, 1 Hz (100 ticks, so 50 after the cap) | 2000 | 3710 | 7520 / 4920 / 8520 | 3110 |
+| C: 4 recorded and 4 unrecorded as one batch, 5 Hz (20 ticks) | 3470 | 4070 | 7160 / 4560 / 8160 | 6650 |
+| D: 8 recorded, 10 Hz (today) | 6590 | 7250 | 3980 / 1380 / 4980 | 10190 |
 
 Per-source intervals are what make the numbers work: today's 10 Hz mix D needs
-`P` = 7.2k. Panel builds (3.5k to 11.5k) are not tasks in R1 to R4: they run in
-their own loader callbacks and do not use this room.
+`P` = 7.3k. Mix B is computed at 100 ticks; the 50-tick cap of 5.2 raises its
+sustained load to about 2.7k. Panel builds (3.5k to 11.5k) are not tasks in R1
+to R4: they run in their own loader callbacks. The `background` kind has the same
+shape with overhead about 1130 (0.41k plus 26 per panel at 16 panels; the
+contracts' 0.62k was too low), so about 12.4k before `P`, with only services
+eligible; its callback rate is unverified (section 8).
 
 ### 4.1 Service split granularity
 
@@ -263,9 +297,9 @@ separate tasks.
 
 | Service | Tasks | Audited cost | Declared | Flag |
 |---|---|---|---|---|
-| telemetry | one per recorded source; one batch task for unrecorded sources sharing an interval; a link task; a precision-scan task only while a precision is unresolved | recorded 0.94k (poll 0.12 + record 0.73 + loop 0.09); unrecorded 0.33k; link fixed 0.17 to 0.37k; scan 0.15k | 1.18k; 0.42k per source; link about 0.56k; scan about 0.29k | Recording can repeat per history entry and only one was measured (open decision 2, deferred). History records inside the poll, so the sample time still travels with the reading. |
-| history | one task, units = recordings | 0.44k at 1 recording (0.38k advance and boundaries plus 17 per recording) | 0.65k | Only 1 recording measured; if 6 exceeds the minimum useful size worth keeping together, split per recording (the cursor exists). |
-| control | a base task and one task of entries (units) | 0.97k fixed, 0.21k per entry (6 entries 2.0k) | 1.3k base, 1.32k for 6 entries (2.6k total) | The 0.97k fixed part is not itemised: measure it and split if it is not bounded. |
+| telemetry | one per recorded source (`k` recordings), one batch task for unrecorded sources sharing an interval, a precision scan queued as work of the next release, not a new task | recorded 0.94k at `k` = 1 (poll 0.12 + record 0.73 + loop 0.09); unrecorded 0.33k; link state 0.17 to 0.37k, once per plan; scan 0.15k | `420 + 760 k` per source (1.18k at `k` = 1), 0.42k unrecorded, link 0.56k shared | The bound is per instance and `k` > 1 is unmeasured (open decision 1, deferred). A poll records into all `k` recordings in the same call (`history` needs `updatedAt == now`), so a recording can never be deferred. |
+| history | one task: advance and boundaries, one entry per update | 0.44k (0.38k advance and boundaries plus 17 per entry) | 0.65k | Recording itself lives in the telemetry poll (observer), not here. |
+| control | outputs task (units = outputs, up to 32, interval 10 when an output panel exists), base task, entries task (6 entries) | fixed 0.97k and 0.21k per entry measured; the cost per output is not itemised | base 1.3k, entries 1.32k (2.6k total), outputs unmeasured | **Flag.** `update` reads every output each call (`control_service.lua` 616-619): split it into its own units task and measure it; the mixes assume no output panel and are re-run with one. |
 | model | one task, units = facets (4) | 0.06k fixed, 0.1k per facet | 0.54k | None. |
 | navigation | one task, units = entries (2) | 0.04k fixed, 0.28k per entry | 0.71k at 2 | 2 entries is estimated (E). |
 | flight tick | tick, and Smart as its own task | tick about 1.0k (E); Smart 2.0k (discovery scans 8 sensors, then 4 reads) | Smart 2.6k | Smart splits per sensor read if needed; the tick's nested `services.update` makes its total measured, not summed. |
@@ -283,16 +317,16 @@ record, `c1` per examined but skipped task, and the fixed part `F0`.
 **Measurement (native, Phase 1).** The harness runs `N` stub tasks whose `step`
 only returns a delay, at `N` = 8, 32 and 128, running `k` = 1, 4, 8 and 16 per
 callback. Count versus `k` gives `o` (slope) and `F0` (intercept); a callback
-with many ready but unfitting tasks gives `c1`. Go/no-go is the 400 rule of
-section 4 (`F0 + K*c1 + 6*o <= 400` at `N` = 32); the targets that satisfy it are
-about `F0` 60, `c1` 8 and `o` 35, all unmeasured. If `o` is higher, the tables
+with many ready but unfitting tasks gives `c1`. Go/no-go is the 500 rule of
+section 4 (`F0 + (K_c + K_n)*c1 + 12*o <= 500` at `N` = 32); the targets that
+satisfy it are about `F0` 40, `c1` 6 and `o` 30, all unmeasured. If `o` is higher, the tables
 and the minimum size below are recomputed with the measured value.
 
 **When to split.** Splitting a piece `P` into pieces of size `p` costs
 `o_eff = o + resume` per piece and wastes about `p / 2` of room per callback on
 packing (a piece of size `p` cannot use a smaller leftover), so total waste is
 about `p / 2 + (P / p) * o_eff`, smallest near `p = sqrt(2 * P * o_eff)`. For the
-chart text (`P` 7.8k, `o_eff` about 135) that is about 1.5k. Rules:
+chart text (`P` 7.8k, `o_eff` about 130) that is about 1.4k. Rules:
 
 - Split when a piece exceeds the maximum size `M`. Otherwise split only at a
   natural boundary, and only if each piece stays at or above the minimum useful
@@ -304,10 +338,10 @@ chart text (`P` 7.8k, `o_eff` about 135) that is about 1.5k. Rules:
 
 **Recommended maximum task size `M = 4000` declared**, for every indivisible
 piece and every smallest step. Against the room left after the peak critical load
-in a regular callback (table above): 6460 (A), 8820 (B), 7640 (C) and **4100 for
-today's 10 Hz mix D**, the heaviest. 4000 is the largest round cap that still
-fits D; 5000 does not, and 4000 fits A twice only just (1.6 times). The callback
-that also runs Smart while it is legacy has 3860 (A) and 1500 (D): a piece above
+in a regular callback (table above): 6340 (A), 7520 (B), 7160 (C) and **3980 for
+today's 10 Hz mix D**, the heaviest and effectively at the cap. 4000 is the round
+cap closest to D; 5000 does not fit it, and 4000 fits A 1.6 times. The callback
+that also runs Smart while it is legacy has 3740 (A) and 1380 (D): a piece above
 that waits one callback, and only until R4. The audited tasks above the cap, with
 declared values:
 
@@ -383,84 +417,67 @@ way as its own task.
 
 ### 5.2 Telemetry update intervals
 
-A telemetry-service change, done and reviewed **before** the telemetry
-migration (and before R2), in the legacy service. It is safer first because it
-changes sample rates, which the parity method (section 7) cannot separate from a
-scheduling change; it works under the legacy loop; and it lowers the legacy
-telemetry bound `L`. Today `INTERVAL = 10` ticks and `POLL_CAP = 8` apply to
-everything.
+A telemetry-service change, made and reviewed on its own **before R1** (the legacy
+service needs it for its bound, section 4). It changes sample rates, which the
+parity method cannot separate from a scheduling change. Today `INTERVAL = 10`
+ticks and `POLL_CAP = 8` apply to everything.
 
-**API.** `subscribe(name, linkEvidence, interval)`: `interval` is the slowest
-acceptable poll period in ticks (10 to 100); omitted means 10, today's rate, so
-a subscriber that says nothing pins the source at 10 Hz and migrates later.
-Requests: a chart asks per recorded source for the per-pixel part of
-`chart.intervalFor` (`window / pixels` clamped to 20..100; not its division by
-the series count, which is the redraw rate): 60 s over 240 px is 25 ticks (4 Hz),
-4 minutes or more reaches 100 (1 Hz). A metric panel asks for its refresh
-interval (20). The requested interval of a source is the **minimum over its
-subscribers**.
+**API.** `subscribe(name, linkEvidence, interval)`: `interval` is the wanted period
+in ticks, 10 to 50; omitted means 10 (today), so a subscriber that says nothing
+pins the source at 10 Hz and opts in later. The request travels through
+`history:subscribe` as well (`chart.lua` 1877, `history_service.lua` 547). A chart
+asks, per recorded source, for the per-pixel part of `chart.intervalFor`
+(`window / pixels`, not its division by the series count, which is the redraw
+rate): 60 s over 240 px is 25 ticks (4 Hz). A metric panel asks for its refresh
+interval (20). A source's effective interval is the **minimum over its
+subscribers**, **never above 50**: `flight_service` and `armed_service` treat a
+reading older than 100 ticks as unreliable (`flight_service.lua` 19-21 and 155,
+`armed_service.lua` 97-100), so a source polled every 100 would flap under any
+jitter.
 
-**Per-source release.** Each source is its own task (4.1) whose `delay` is its
-effective interval; a poll sets `due = now + interval` (no catch-up), and first
-releases come from the stagger allocator (section 3). Subscribing can only lower
-a source's interval (there is no unsubscribe; a layout reload rebuilds the
-registry); when it does the service calls `s:wake` for that source's task (in the
-legacy loop it moves the entry's `due`). There is no cap or demand scaling: which
-due sources run in a callback is the planner's decision (oldest first, skip and
-continue), and the mix is validated by the sustained and peak tests, so a crowded
-layout shows up as a failed admission test or as wait in the simulator, not as a
-silent rate change. While telemetry is still a legacy service it polls the due
-entries up to a per-update cap `n = ceil(D) + 1`, `D = sum(5 / interval)`, which
-is what the legacy bound `L` of R2 uses.
+**Per-source release.** Each source is its own task (4.1), and its `entry.due` is
+the one source of truth, shared with the legacy service object. A poll sets
+`due = now + interval` (no catch-up); first releases follow the stagger rule
+(section 3). Subscribing can only lower an interval (there is no unsubscribe; a
+layout reload rebuilds the registry), by `due = min(due, lastPoll + interval)`;
+the task notices at its next release, late by at most the old interval once, and
+layouts subscribe before steady callbacks. While telemetry is legacy it updates
+every 10 ticks and polls the due entries up to `n_L` (section 4). If a layout's
+sustained load is too high, layout admission (section 3) lengthens intervals up
+to the 50-tick cap.
 
-**Source update rate (never poll faster than a sensor updates).** The effective
-interval is `min(100, max(requested, sourceInterval))`. It only lowers the
-polling rate: it is never below the subscribers' request, so it can never raise a
-rate, and it is never above 100 ticks, so a real update is never read later than
-the freshness window, however slow the sensor.
+**Preserved:** the sample time travels with the reading into history (a poll
+records into all of the source's recordings in the same call); history's
+recording rules (knot spacing, slope-corridor compression, gap marking on stale or
+unavailable) apply unchanged to the samples it receives; link inference and the
+precision scan are unchanged; minimum and maximum read from EdgeTX's own `<name>-`
+and `<name>+` sensors stay exact at any poll rate.
+**Changes:** chart traces hold fewer samples (about one per pixel); the chart
+legend's minimum and maximum come from the sampled history state
+(`history_service.lua` 670-672, `chart.lua` 1359), so a peak shorter than the
+effective interval can be missed there; a reading can be up to one interval older
+than today; a dropout is seen at the next poll, up to 50 ticks late.
 
-- *Where `sourceInterval` comes from:* a **hint**, not an estimate. A model-level
-  setting (one value for the telemetry sources of the model, from its ELRS packet
-  rate and telemetry ratio) with an optional per-source override. It applies only
-  to sources the service already marks `state.telemetry`; timers, trims,
-  transmitter voltage and globals are not packet-limited and keep the request.
-  Absent a hint, nothing is lowered. Nothing in the service reads the packet rate
-  or telemetry ratio today.
-- *Why not estimate it:* `getValue` cannot tell an unchanged value from no new
-  packet, so a steady sensor (a voltage at rest) would look slow and be polled
-  slowly, then show its next real change up to 100 ticks late. What exists today
-  does not help: `fresh` and `updatedAt` record the last **poll** that returned a
-  live value, not the last packet, and `revision` counts changes only, so it is a
-  lower bound on the rate for sensors that are moving. Only the optional
-  `getSourceValue` API (per-sensor receipt and freshness flags, already required
-  by Smart) can see a packet; an estimator built on it may be added later, only
-  where that API exists, only lowering the rate and never past the cap above.
-  A dev log of observed change intervals can help choose the hint.
-- *Hint direction.* A hint at or below a sensor's true period costs only extra
-  polls; a hint above it delays real updates. Choose the fastest rate the link
-  can reach, since the ELRS packet rate can change in flight; the 100-tick cap
-  bounds the damage either way.
-- *Gaps.* Staleness and gap marking are decided at a poll (a nil or ambiguous
-  zero), and the sample time is the poll time. With a longer interval a dropout is
-  seen at the next poll, up to one effective interval late, and a dropout shorter
-  than that can be missed, which is no worse than the sensor itself reporting at
-  that rate. The 100-tick cap bounds it at 1 s.
+**Link order.** `poll` judges a zero with `linkLive`, which `update` sets at its
+top. Each source piece therefore calls `ensureLink(now)` first (cached per
+callback, declared as the `shared` link cost), so a zero at link loss is never
+stored as a genuine 0.
 
-**Preserved:** sample time travels with the reading into history; history's
-recording rules (knot spacing, slope-corridor compression, gap marking on stale
-or unavailable) apply unchanged to the samples it receives; link inference and
-the precision scan are unchanged; minimum and maximum values read from EdgeTX's
-own `<name>-` and `<name>+` sensors stay exact at any poll rate.
-**Changes:** chart traces hold fewer samples (about one per pixel, by
-construction), so a peak shorter than the effective interval can be missed by a
-trace; a reading can be up to one interval older than today.
+**Not in version 1: a source update-rate hint** (a model-level setting so that a
+source is polled no faster than its sensor updates, for example from the ELRS
+packet rate). It is in none of the mixes and needs a settings schema; it is
+deferred with open decision 1. Its rules when it comes: it only lowers a rate, is
+never applied to a source pinned by a subscriber that stated nothing, and never
+exceeds the 50-tick cap. Estimating the rate from observed values is unsafe
+(`getValue` cannot tell an unchanged value from no new packet, and `fresh` and
+`updatedAt` record the last poll, not the last packet).
 
 **Tests (own change).** A fixed-10 Hz golden against per-subscription intervals
 on recorded traces: samples per source match the interval, timestamps are poll
 times, a dropout is marked within one interval, minimum and maximum sensors are
-exact, mixes A to D of section 4 pass the sustained and peak tests, a lowered interval
-takes effect within 10 ticks, and the hint never produces an interval above 100
-or below the request.
+exact, a zero at link loss is not recorded, mixes A to D of section 4 pass the
+sustained and peak tests, a lowered interval takes effect within one old
+interval, and no interval is above 50 or below the request.
 
 ## 6. Simulator, measurement and dev tooling
 
@@ -529,12 +546,13 @@ shipped in a release until the critical and chart tasks have migrated), `new`
 
 **One owner per task.** One table maps each task id to `legacy` or `new`; it is
 checked at load (a missing id fails the load). Every legacy site skips tasks
-the table gives to `new`, and the framework registers only its own. Modal sites
-are the one documented exception (section 1, a temporary migration state). Flipping a task is a
+the table gives to `new`, and the framework registers only its own. Modal kinds stay
+`legacy` until R5 (section 1), so ownership is per callback kind. Flipping a task is a
 one-line change; rollback is its revert.
 
 **Capped legacy share.** In `mixed` the legacy loop runs first and gets `L`
-instructions, the framework gets the rest through `used`. What changes in the
+instructions for `updateServices` and `dispatchDue` together (services first, then
+panels), the framework gets the rest through `used`. What changes in the
 legacy loop, and nothing else:
 
 - `dispatchDue` charges each panel its **declared refresh bound** (the
@@ -564,9 +582,13 @@ legacy loop, and nothing else:
    `step`** the new scheduler will call (the stripped or split version), so the
    `legacy` run executes new code under the old loop. It must match the golden
    run exactly. This is what proves that stripping or splitting kept behavior.
-3. **Ownership flip, unlimited budget.** `mixed`, owner `legacy` against owner
-   `new` with no cap and the same virtual clock and grants. Outputs and state
-   must match call by call, which isolates the planner from the task.
+3. **Ownership flip by replay.** The legacy run's schedule (which task ran in
+   which callback, with what grant) is recorded and replayed into the new `step`
+   entry points at the same callbacks. Outputs and state must match. This isolates
+   the task from the planner; the two schedulers differ (the legacy loop runs at
+   most one service per callback and serializes charts across callbacks), so a
+   call-by-call comparison of the planners is not meaningful. The planner is
+   tested by the simulator and by step 4.
 4. **Budgeted.** The same trace under the real budget. Timing may differ but
    not unboundedly: no check is allowed to wait for "drain until idle" alone.
    Assert throughout the run: lateness of every task against the legacy run's
@@ -579,7 +601,7 @@ legacy loop, and nothing else:
 6. **Review checklist** (not a test): the task does only the minimal work it
    needs, its bound is measured, **its per-task overhead is measured and its split
    size chosen under the rules of 4.2**, and its one-line contract (class, unit,
-   stages, bound, group, why this tier, measured overhead, split size) is written.
+   stages, bound, exclusive flag, why this tier, measured overhead, split size) is written.
 
 **Modal screens (end state, R5).** Each modal screen (settings UI, log viewer,
 editor, menu, fullscreen input, app rebuild, theme showcase) becomes a callback
@@ -591,10 +613,11 @@ peak critical tests run per kind, so a modal kind carries the services' pieces
 and the `input` task. Cost depends on the
 user, so it is bounded structurally:
 
-- **One input event per callback.** EdgeTX hands `refresh` a single event and
-  touch state, so input handling is a critical task that handles
-  one event with a declared worst case, `maxUnits = 1`. A handler that cannot
-  meet its bound is cut: it changes state cheaply and queues redraw work.
+- **One input event per callback, with reserved room.** EdgeTX hands `refresh` a
+  single event and touch state and never redelivers it, so a task queue is the
+  wrong place for it: the handler's declared worst case per event is part of the
+  kind's `overhead`, run before the planner. A handler that cannot meet its bound
+  is cut: it changes state cheaply and queues redraw work as tasks.
 - **Redraw is staged.** Anything a screen paints, rebuilds or parses (a settings
   page, a log index, an editor preview, a menu grid) is a `normal` task with
   stages and unit grants (rows, lines, panels), as the audit already does for
@@ -612,7 +635,7 @@ user, so it is bounded structurally:
 and a declaration; no call to `dispatchDue`, `updateServices`, `pumpFlight` or
 `pumpSessionReset` remains outside the framework (their work is tasks, `used`
 head costs or kinds, and the file-level call sites in section 1 are gone);
-`mixed`, `s:defer`, the owner table and the legacy share `L` are deleted; and
+`mixed`, the owner table and the legacy share `L` are deleted; and
 the matched native harness passes in `new` with zero near-misses recorded by the
 dev tripwire.
 
@@ -623,15 +646,15 @@ dev tripwire.
 | 1 | `U <= ceiling - margin` for every plan, always: a plan is built only by admission. | Simulator, random task sets and callback jitter over many seeds. |
 | 2 | A ready critical task is never dropped: it is ordered before normal work and waits only behind older critical work. When the admission test (B, C) passes, its wait is bounded. | Simulator overload, burst and jitter; wait asserted. Negative cases must fail the admission test. |
 | 3 | The first ready task in plan order whose smallest step fits `R` runs in that callback; with admission (A) the first ready task always runs. | Simulator under constant overload. |
-| 4 | One owner: every task runs only under its owner, exactly once per release, and is not skipped by both. | Per-callback trace over a `mixed` mock run, plus a liveness count. The owner table is checked at load. |
+| 4 | One owner per callback kind: every task runs only under its kind's owner, exactly once per release, and is not skipped by both; a source is never polled twice (`entry.due`). | Per-callback trace over a `mixed` mock run, plus a liveness count. The owner table is checked at load. |
 | 5 | One pending release per task; no stacking. | Simulator with long skips. |
-| 6 | At most one task per group per callback (charts); kind eligibility holds. | Simulator with several charts and a `background` kind. |
+| 6 | At most one `exclusive` task per callback (charts); kind eligibility holds. | Simulator with several charts and a `background` kind. |
 | 7 | Deterministic: the same inputs give the same plan log. | Run each scenario and replayed trace twice and compare. No clock or randomness in the library. |
 | 8 | A step costs at most its declared bound; the units consumed are at most the grant. | Native measurement, trace replay, and `instance.used <= grant` in mock tests. |
 | 9 | A step runs exactly its planned stage or does no work. | Mock test: change state (reset, model, geometry) between plan and run. |
 | 10 | A failing or malformed task retires alone. | Simulator: raise, bad `delay`, bad stage. |
 | 11 | Under injected cost spikes the total stays under 20000. | Simulator fault injection. |
-| 12 | The framework's cost is within `overhead` and the go/no-go threshold; `o` is measured. | Native measurement at the extremes (4.2). |
+| 12 | The framework's cost is within the 500 term of `overhead` and `o` is measured. | Native measurement at the extremes (4.2). |
 | 13 | `legacy` mode is unchanged and the legacy loop never exceeds `L` in `mixed`. | Existing suites in `legacy`; mixed mock runs sum declared bounds per callback. |
 | 14 | Every declared piece and smallest step is at most `M` = 4000, and per-task overhead is at most 10% of a piece. | CI check of the bounds table and the measured `o`. |
 
@@ -644,7 +667,8 @@ dev tripwire.
   strict priority; margin growth, decay and adaptation.
 - Isolation probes, learned bounds, `getUsage`-driven grants; a runtime guard
   (the tripwire and shadow mode are dev tooling).
-- A separate filler.
+- A separate filler; a source update-rate hint; a runtime stagger allocator;
+  `s:wake` and `s:defer`; groups as a general feature (only `exclusive`).
 - Cross-callback group ownership. Callback kinds beyond `steady` and
   `background` are added with their phases (R5, R6), not in Phase 1.
 - Building the loader, reflow and modal kinds (R5, R6) in Phase 1: the library
@@ -652,6 +676,14 @@ dev tripwire.
   tasks, each only once measured.
 - Retiring the legacy scheduler (Phase 5).
 - Estimating a sensor's update rate from observed values; version 1 uses a hint.
+
+### Untested risks
+
+Background callback rate (only `refresh` is documented as 50 ms); the real
+per-task overhead `o`; `getUsage` attribution when `refresh` and `background`
+interleave; behavior with several widget contexts and the shared flight broker;
+the native cost of 8 recorded sources and of `k` > 1 recordings per source in one
+call; control's output read; the error and retire path.
 
 ## 9. Decisions needed
 
@@ -667,27 +699,22 @@ Decided by the user:
 - `mixed` is **not shipped in releases**: development and test only until the
   critical and chart tasks have migrated.
 - The legacy share `L` varies per migration phase and is derived from the
-  feasibility table in section 4 (the smallest value admission test D allows: 5700,
-  then 4290, then 0), not a fixed ratio. Half of capacity is not feasible.
+  feasibility table in section 4 (the smallest value admission test D allows: 6650,
+  6650, then 0), not a fixed ratio. Half of capacity is not feasible.
 - The 15000 ceiling, the contracts' margin factors and `margin = 400` stay until
   hardware shows zero near-misses.
 
 Also decided by the user: every service is split into independent tasks, and all
 due tasks run together whenever they fit, oldest first with skip and continue (no
 service group, no one-per-callback rule); telemetry polls each source at the
-fastest rate any subscriber needs, and no faster than the sensor updates (section 5.2). The spec
-puts that change **before** the telemetry migration, as its own reviewed change.
+fastest rate any subscriber needs (section 5.2; the no-faster-than-the-sensor hint
+is deferred). The spec puts that change **before R1**, as its own reviewed change.
 
-No decision is open now except the two deferred to the telemetry service
-migration:
+No decision is open now except those deferred to the telemetry service migration
+(the user will answer then; section 5.2 stands as the proposal):
 
-1. **Telemetry intervals (section 5.2).** *Deferred to the telemetry service
-   migration; the user will answer then. Section 5.2 stands as the proposal.*
-   Subscribers that state no interval (flight motor source, link status,
-   navigation, service probe) keep 10 ticks and opt in later (recommended), or
-   default to a slower rate. And the source update rate: one model-level hint
-   (recommended; applied only to telemetry sources), or also a per-source
-   override.
-2. **Entries per source per call.** *Deferred to the telemetry service
-   migration.* Cap telemetry recording at one history entry per source per call, or measure and declare a higher cap (contracts decision
-   6); needed to declare telemetry's bound.
+1. **Telemetry defaults and recordings.** Whether subscribers that state no
+   interval keep 10 ticks and opt in later (recommended), the scope of the
+   source update-rate hint (one model-level value, or also per source), and the
+   maximum number of history recordings per source, since a poll must record into
+   all of them in one call (a deferred recording would be marked a gap).
