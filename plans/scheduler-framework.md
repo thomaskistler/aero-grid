@@ -386,11 +386,9 @@ waste of about 2.2k per frame. Rules:
 **Recommended maximum task size `M = 4000` declared**, for every indivisible
 piece and every smallest step. Against the room left after the peak critical load
 in a regular callback (table above, two sources per task, less the charge `G` =
-208 a piece pays): pieces of 5908 (A, B, C) and **3340 for today's 10 Hz mix D**
-in R3, 4340 in R4. 4000 fits A to C 1.5 times and **does not fit D until R4**
-(admission test A fails for a 4000 piece beside D's peak in R1 to R3: a piece
-above 3340 would never run); D is today's unmodified rate for sources whose subscribers state
-no interval, and is the one mix where M = 3000 would be needed. The callback that
+208 a piece pays): pieces of 5908 (A, B, C) and 3340 for the 10 Hz mix D in R3 (4340 in R4). 4000
+fits A to C 1.5 times. D is today's rate; each task is reviewed, split and
+optimized in its own migration, so D does not decide `M`. The callback that
 also runs Smart while it is legacy has pieces of 3308 (A) and 740 (D): a piece
 above that waits one callback, and only until R4. The audited tasks above the
 cap, with declared values:
@@ -409,10 +407,8 @@ Under 4k and not split: navigation refresh and reflow 3.7k, panel item parse,
 header and navigation 3.6k, flight first tick 3.1k, Smart 2.6k; chart project
 (1030 per knot, scaled by room). So 5k needs 4 splits plus the 11 builds, and 4k
 adds only three (metric relayout and two builds). The extra cost of 4k is small
-and it fits A to C, so **4000** stays the recommendation, provisional on D (open
-decision: 4000 and accept that D is admitted only from R4, or 3000, which needs
-about six more splits: navigation refresh and reflow 3.7k, header 3.6k,
-panel item parse 3.6k, flight first tick 3.1k). Revisit 5000 only if hardware
+and it fits A to C, so **4000** is the recommendation; each migration reviews its
+own task's size. Revisit 5000 only if hardware
 shows zero near-misses and the heaviest real mix leaves 5000 of room.
 
 **Required in migration.** Each task's contract records the **charge `G` and its
@@ -834,7 +830,6 @@ Choices where the specification was silent or inconsistent:
 - **Mixes.** `tests/support/scheduler_mixes.lua` holds the declarations and
   releases of mixes A to D, shared by the simulator tests, the admission test
   and the native measurement. The tables of section 4 are asserted by the tests.
-- **Open for the user.** `M` = 4000 does not fit mix D in R1 to R3 (3340, 4.2).
 
 ### Measured framework cost (native, instructions)
 
