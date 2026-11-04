@@ -211,20 +211,26 @@ the declared bound and validated by replaying recorded native traces.
    most work. Record native traces for replay. Result: [scheduler-audit.md](scheduler-audit.md).
    The margin rule and per-task contracts built on it are in
    [scheduler-contracts.md](scheduler-contracts.md).
-1. **Framework in isolation.** Build the scheduler as a separate library
+1. **Framework specification.** Write the minimum specification for the
+   isolated framework (task API, planner, budget, simulator, coexistence,
+   invariants, and an explicit list of what version 1 leaves out), review it,
+   and have it independently critiqued before any code is written. The design
+   sections above describe the full target; version 1 builds only what the
+   specification keeps.
+2. **Framework in isolation.** Build the scheduler as a separate library
    (task definition, planner, budget, near-miss guard) that nothing in the
    widget calls yet. Give it its own offline simulator and a per-task
    measurement path, replaying the audited costs and recorded native traces.
    Fault-inject cost steps, spikes and overload bursts and require zero
    overruns.
-2. **Coexistence.** Add a host mode (`legacy`, `mixed`, `new`). In `mixed`
+3. **Coexistence.** Add a host mode (`legacy`, `mixed`, `new`). In `mixed`
    every task is owned by exactly one scheduler, and a migrated task is skipped
    by the old one. The old scheduler's cost depends on which panels are due, so
    it cannot be bounded by instructions. It gets a capped share of each
    callback, the new scheduler gets the remainder, and the split shifts toward
    the new scheduler as tasks move. Shadow mode (compute and log plans without
    applying them) is the first use of this switch.
-3. **Migrate one task at a time.** For each task, in this order:
+4. **Migrate one task at a time.** For each task, in this order:
    1. strip it to the minimal work it needs, splitting or capping it where the
       audit says it cannot meet a provable bound;
    2. measure it natively, set its bound, and write its contract;
@@ -233,10 +239,13 @@ the declared bound and validated by replaying recorded native traces.
    4. flip ownership and rerun the matched native harness.
    Start with the tasks closest to ready (chart stages), then services, then
    panel refreshes.
-4. **Near-miss guard.** Enable `getUsage` verification and margin back-off once
+5. **Near-miss guard.** Enable `getUsage` verification and margin back-off once
    enough tasks run on the new scheduler.
-5. **Retire the old scheduler** when no task remains on it.
-6. **Learned bounds.** Only if the measured gap still justifies it (see above).
+6. **Retire the old scheduler** when no task remains on it.
+7. **Learned bounds.** Only if the measured gap still justifies it (see above).
+
+Each phase is built in its own session and independently critiqued before the
+next starts, and all work lands in one pull request.
 
 Each phase is validated on the matched native harness: callbacks and time to
 first complete paint, worst callback usage at or below 15000, and zero pixel
