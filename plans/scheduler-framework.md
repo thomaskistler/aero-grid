@@ -202,58 +202,75 @@ cannot attribute cost between tasks.
   from `collectgarbage("count")` at 64 tasks; the threshold is set from that
   measurement because the radio's Lua heap limit is not in the plan.
 
-### Worked feasibility (Smart on, 16 panels)
+### Worked feasibility (16 panels)
 
-`C = 15000 - 400 - (1250 overhead + 400 framework) = 12950`. Head `used`: reset
-poll 620, plus the legacy flight tick 3600 in the callbacks where it runs
-(**T**; otherwise **N**). Room = `C - used - L - S`. Declared values from the
-contracts. `L` is the largest legacy item and `S` the telemetry step (Smart on:
-750 + 4 x 1180 = 5470).
+`C = 15000 - 400 - (1250 overhead + 400 framework) = 12950`. The Smart detection
+rewrite (section 5) splits today's 3600 flight tick into the tick proper (arm
+switch, counting, output; about 1000, estimated) at the current cadence and
+Smart (2600) at most once per second. Head `used` while both are legacy: reset
+poll 620 plus the tick, so **T** = a callback with the tick (room base 11330)
+and **TS** = the callback each second that also runs Smart (room base 8730).
+Room = base `- L - S`. `L` is the largest legacy item. `S` is the largest
+critical step of the group, telemetry for its per-update cap `n`:
+`750 + n x 1180` (n = 4: 5470). Declared values from the contracts.
 
-| Phase | New-owned | `L` | `S` | Room N | Room T | Preconditions |
+| Phase | New-owned | `L` | `S` | Room T | Room TS | Preconditions |
 |---|---|---|---|---|---|---|
-| R1 | chart stages | 5700 (output refresh) | 0 | 6630 | 3030 | Split chart text (7800) below 3030. Other chart stages fit (900 to 1300; project grant 1 knot = 1030). |
-| R2 | + panel refreshes | 5470 (telemetry) | 0 | 6860 | 3260 | Split metric (4800), output (5700) and navigation (3700) below 3260. |
-| R3 | + services (group `service`) | 0 | 5470 | 6860 | 3260 | Telemetry measured at its cap and entries per source (open decisions 2, 3). |
-| R4 | + flight tick | 0 | 5470 | 6860 | none | Section 5 preconditions; tick atom 3600 fits. |
+| R1 | chart stages | 5700 (output refresh) | 0 | 5630 | 3030 | Split chart text (7800) below 3030. Other chart stages fit (900 to 1300; project grant 1 knot = 1030). |
+| R2 | + panel refreshes | 5470 (telemetry) | 0 | 5860 | 3260 | Split metric (4800), output (5700) and navigation (3700) below 3260. |
+| R3 | + services (group `service`) | 0 | 5470 | 5860 | 3260 | Telemetry measured at its cap and entries per source (open decisions 2, 3). |
+| R4 | + tick and Smart as tasks | 0 | 5470 | 6860 | | Section 5 preconditions; no head cost remains, only the reset poll. Atoms: tick 1000, Smart 2600. |
 
-Consequences: with all ready critical services allowed together (`S` = 5470 +
-650 + 2600 = 8720) room is 3610 (N) and 10 (T): nothing else runs in a callback
-with a tick, so services stay in one group (open decision 1). With Smart off and
-telemetry at 8 recorded sources (10.0k, estimated), R1 is the best case (room
-2330 N, 1330 T), and R2 and later cannot hold a 1.3k to 3k atom: **telemetry's
-per-update bound must be capped (about 5.5k or below) before any phase past R1.**
+How the telemetry cap `n` and the services rule move the room (R3 and R4, no
+legacy share):
+
+| Telemetry per update | `S` group (one service per callback) | Room T / TS / R4 | `S` all ready together | Room T / TS / R4 |
+|---|---|---|---|---|
+| n = 8 (10000, estimated) | 10000 | 1330 / breach / 2330 | 13250 | breach |
+| n = 4 (5470) | 5470 | 5860 / 3260 / 6860 | 8720 | 2610 / 10 / 3610 |
+| n = 2 (3110) | 3110 | 8220 / 5620 / 9220 | 6360 | 4970 / 2370 / 5970 |
+
+("All ready together" adds history 650 and control 2600; "breach" = guaranteed
+work no longer fits the ceiling.) The Smart rewrite removes Smart's 2600 and
+its per-callback coupling from the tick, but not the telemetry, history and
+control costs, so the always-run critical sum falls to about 3.1k only if
+telemetry is capped at 2 sources per update. While Smart is still legacy, a
+telemetry step in the TS callback must fit beside it (`n = 8` cannot).
 Panel builds (3.5k to 11.5k) are not tasks: they run in their own loader
 callbacks and do not use this room.
 
 ## 5. Flight tick
 
-The flight tick is `normal` and has **no deadline**: a late tick only means a
-flight start or end is detected later. It fits the R4 room (3600 declared, Smart
-on, against 6860) and oldest-first bounds how long it waits. Smart off needs
-the telemetry cap of section 4.
+The flight tick (arm switch, counting, output) and Smart detection are two
+`normal` tasks with **no deadline**: a late run only means a flight start or end
+is detected later. They fit the R4 room (tick about 1000, Smart 2600, against
+6860) and oldest-first bounds how long they wait.
 
-**Precondition 1: delay-tolerant detection, as its own change.** Today
+**Precondition 1: Smart detection rewrite merged first.** Today
 `flight_service.lua` (655-667) discards detection progress when
 `now - lastTick > 100` ticks (`groundAt`, `altitudeSince`, `speedSince`,
 `wasArmed` and `altitudeReference` cleared; `starting` returns to `ground`,
 `ending` to `active`), and lines 655-657 skip a tick closer than 20 ticks.
-Before the tick moves, detection must be made tolerant to delay: a gap must not
-discard progress, and continuity is judged from reading freshness and
-timestamps, not tick spacing. This is a small behavior change with its own
-tests, done and reviewed separately, not as part of the scheduler framework.
+The rewrite, a separate change off `main` and not part of this framework, makes
+Smart detection run at most once per second and tolerant to delay: no reset on a
+late run, with continuity judged from reading timestamps. Its scope is Smart
+only; arm-switch handling, counting and output stay at the current tick cadence.
 Risk: a gap is no longer evidence that conditions held continuously, so the
-debounce windows must be evaluated from reading timestamps. The parity tests for
-this task must cover delayed ticks (gaps of different lengths, a gap spanning a
-start, an end and a threshold crossing).
+debounce windows must be evaluated from reading timestamps. Parity tests for
+these tasks must cover delayed runs (gaps of different lengths, a gap spanning a
+start, an end and a threshold crossing). Smart then becomes its own task
+(delay of at least 100 ticks, atom 2600, splittable per sensor read) instead of
+part of the tick.
 
 **Precondition 2: loader callbacks.** At the head it runs in every callback,
 including loader and reflow callbacks, so a long load never lets it wait. As a
 task it would stop during exclusive callbacks. So the loader family must first
 call `s:run("steady", now, used)` with `used` = that step's declared bound
 before the tick can move. The tick's declaration is its **measured total**
-(including the nested `services.update` of its private and Smart runtimes, all
-co-due), for Smart on and off, not a sum of parts.
+after the rewrite (including the nested `services.update` of its private
+runtime, all co-due), not a sum of parts; the 1000 above is an estimate (E), so
+the tick cannot be registered until it is measured. Smart is measured the same
+way as its own task.
 
 ## 6. Simulator, measurement and dev tooling
 
@@ -410,10 +427,10 @@ legacy loop, and nothing else:
 
 Decided by the user:
 
-- The flight tick and session reset are `normal`; the tick has no deadline and
-  its migration needs delay-tolerant detection first (section 5). The extrema
-  service is being removed in a separate change and is not in the task list,
-  migration order or admission arithmetic.
+- The flight tick, Smart and session reset are `normal`, with no deadline. Their
+  migration needs the Smart detection rewrite (1 Hz, delay tolerant) merged
+  first (section 5). The extrema service is being removed in a separate change
+  and is not in the task list, migration order or admission arithmetic.
 - `mixed` is **not shipped in releases**: development and test only until the
   critical and chart tasks have migrated.
 - The legacy share `L` varies per migration phase and is derived from the
@@ -425,13 +442,17 @@ Decided by the user:
 Open:
 
 1. **Services per callback.** Keep today's one per callback through group
-   `service` (recommended: room 6860 N, 3260 T), or run all ready critical
-   services together (room 3610 N, 10 T).
-2. **Telemetry per-update bound.** Cap sources per update (about 4) and tie it
-   to Smart: today's cap of 4 applies only in callbacks where the tick ran. A
-   static cap changes the sample rate, so the telemetry contract must keep
-   recorded samples per source at least today's. Needed before any phase past
-   R1 (contracts decision 1).
+   `service` (recommended: more room at every `n`, see the table in section 4),
+   or run all ready critical services together; the latter only works with
+   telemetry at about 2 sources per update (room 4970 T / 2370 TS / 5970 R4).
+   Depends on decision 2.
+2. **Telemetry per-update cap `n` and the minimum recording rate.** With the
+   Smart rewrite the cap no longer follows the tick; it is a free choice that
+   sets both the room and the rate: a source updates at 10 Hz divided by
+   `ceil(sources / n)` (8 sources: 10 Hz at n = 8, 5 Hz at n = 4, 2.5 Hz at
+   n = 2). n = 8 does not fit beside Smart while it is legacy and leaves 2330
+   at R4. What is the lowest per-source rate for 8 sources the recording must
+   keep (contracts decision 1)?
 3. **Entries per source per call.** Cap telemetry recording at one history entry
    per source per call, or measure and declare a higher cap (contracts decision
    6); needed to declare telemetry's bound.
