@@ -84,25 +84,29 @@ step(instance, grant, stage, now) -> delay
   `steady` and `background`; panel refresh and chart stages accept `steady`
   only. A task with nothing to do is not registered.
 - Registration: `s:add{ id, decl, instance, due }`, `s:remove(id)`, at most 64
-  tasks. `due` carries the phase offset.
+  tasks. `due` carries the phase offset. `s:wake(id)` re-releases a task now; it
+  is used only when a subscription lowers a source's interval (section 5).
 - `pcall` guards every step. An error or a rule violation retires that task and
   reports it once, as `panelHost.dispatch` and `services.update` do today.
 - A migrated task never ends the callback itself.
 
 ### Example: a service (telemetry, critical, group `service`)
 
+Each subscription is a unit with its own release time (`entry.due`), and the
+task's release is the soonest of them (section 5).
+
 ```lua
 telemetry.declare = {
     class = "critical", group = "service",
-    stages = { poll = { fixed = 750, perUnit = 1180, maxUnits = 8 } },   -- contracts
+    stages = { poll = { fixed = 750, perUnit = 1180, maxUnits = 3 } },   -- n, section 4
 }
-function telemetry.step(self, grant, stage, now)    -- grant = sources to poll
-    self.cursor = self.roundRobin(self.entries, self.cursor, grant, self.poll, self, now)
-    return self.interval                            -- 10 ticks
+function telemetry.step(self, grant, stage, now)    -- grant = sources, oldest due first
+    self:pollDue(grant, now)                        -- at most `grant` entries with due <= now
+    local soonest = self:soonestDue()
+    self.want = self:countDueBy(soonest + 5)        -- upper bound; may over-estimate
+    return math.max(1, soonest - now)
 end
 ```
-
-The instance sets `want` to the number of subscribed sources.
 
 ### Example: a staged chart (normal, group `chart`)
 
@@ -211,35 +215,48 @@ Smart (2600) at most once per second. Head `used` while both are legacy: reset
 poll 620 plus the tick, so **T** = a callback with the tick (room base 11330)
 and **TS** = the callback each second that also runs Smart (room base 8730).
 Room = base `- L - S`. `L` is the largest legacy item. `S` is the largest
-critical step of the group, telemetry for its per-update cap `n`:
-`750 + n x 1180` (n = 4: 5470). Declared values from the contracts.
+critical step of the group: telemetry at its per-update cap `n`
+(`750 + n x 1180`, worst case all recorded) or control (2600). Declared values
+from the contracts. `n` follows from the telemetry mix below; the table uses
+mix A (`n = 3`, 4290) and assumes the telemetry change of section 5 is in first.
 
 | Phase | New-owned | `L` | `S` | Room T | Room TS | Preconditions |
 |---|---|---|---|---|---|---|
 | R1 | chart stages | 5700 (output refresh) | 0 | 5630 | 3030 | Split chart text (7800) below 3030. Other chart stages fit (900 to 1300; project grant 1 knot = 1030). |
-| R2 | + panel refreshes | 5470 (telemetry) | 0 | 5860 | 3260 | Split metric (4800), output (5700) and navigation (3700) below 3260. |
-| R3 | + services (group `service`) | 0 | 5470 | 5860 | 3260 | Telemetry measured at its cap and entries per source (open decisions 2, 3). |
-| R4 | + tick and Smart as tasks | 0 | 5470 | 6860 | | Section 5 preconditions; no head cost remains, only the reset poll. Atoms: tick 1000, Smart 2600. |
+| R2 | + panel refreshes | 4290 (telemetry) | 0 | 7040 | 4440 | Split metric (4800) and output (5700) below 4440; navigation (3700) fits. |
+| R3 | + services (group `service`) | 0 | 4290 | 7040 | 4440 | Telemetry measured at `n` and entries per source (open decision 3). |
+| R4 | + tick and Smart as tasks | 0 | 4290 | 8040 | | Section 5 preconditions; no head cost remains, only the reset poll. Atoms: tick 1000, Smart 2600. |
 
-How the telemetry cap `n` and the services rule move the room (R3 and R4, no
-legacy share):
+**Telemetry mixes.** Each source is due every `interval` ticks; with a callback
+about every 5 ticks (the 50 ms menu period) the sustained demand is
+`D = sum(5 / interval)` sources per callback, and `n = ceil(D) + 1` leaves one
+unit of slack to drain a late source. Sources are staggered, so a step polls
+about `D` of them, not all eight at once.
 
-| Telemetry per update | `S` group (one service per callback) | Room T / TS / R4 | `S` all ready together | Room T / TS / R4 |
-|---|---|---|---|---|
-| n = 8 (10000, estimated) | 10000 | 1330 / breach / 2330 | 13250 | breach |
-| n = 4 (5470) | 5470 | 5860 / 3260 / 6860 | 8720 | 2610 / 10 / 3610 |
-| n = 2 (3110) | 3110 | 8220 / 5620 / 9220 | 6360 | 4970 / 2370 / 5970 |
+| Mix (8 sources) | `D` | `n` | `S` | Average per callback | Room T / TS / R4 | `S` all together | Room T / TS / R4 |
+|---|---|---|---|---|---|---|---|
+| A: recorded, 4 Hz (25 ticks) | 1.6 | 3 | 4290 | 2640 | 7040 / 4440 / 8040 | 7540 | 3790 / 1190 / 4790 |
+| B: recorded, 1 Hz (100 ticks) | 0.4 | 2 | 3110 | 770 | 8220 / 5620 / 9220 | 6360 | 4970 / 2370 / 5970 |
+| C: metric panels, 5 Hz (20 ticks), 4 recorded | 2.0 | 3 | 4290 | 2350 | 7040 / 4440 / 8040 | 7540 | 3790 / 1190 / 4790 |
+| D: recorded, 10 Hz (today) | 4.0 | 5 | 6650 | 5470 | 4680 / 2080 / 5680 | 9900 | 1430 / breach / 2430 |
 
-("All ready together" adds history 650 and control 2600; "breach" = guaranteed
-work no longer fits the ceiling.) The Smart rewrite removes Smart's 2600 and
-its per-callback coupling from the tick, but not the telemetry, history and
-control costs, so the always-run critical sum falls to about 3.1k only if
-telemetry is capped at 2 sources per update. While Smart is still legacy, a
-telemetry step in the TS callback must fit beside it (`n = 8` cannot).
+("All together" adds history 650 and control 2600; "breach" = guaranteed work no
+longer fits the ceiling. Today's single step of 8 sources costs 10.0k, estimated;
+spreading the same 10 Hz over the callbacks already lowers the peak to 6.65k.)
+The always-run critical sum is the telemetry step plus, if services run
+together, history and control. With per-source intervals it falls from 8.7k to
+3.1k to 4.3k (one service per callback), but only because a source is no longer
+polled faster than something can show it. While Smart is still legacy, a
+telemetry step in the TS callback must fit beside it.
 Panel builds (3.5k to 11.5k) are not tasks: they run in their own loader
 callbacks and do not use this room.
 
-## 5. Flight tick
+## 5. Prerequisite changes (separate, reviewed first)
+
+Two service changes are made and reviewed on their own, not inside the
+framework.
+
+### 5.1 Flight tick and Smart
 
 The flight tick (arm switch, counting, output) and Smart detection are two
 `normal` tasks with **no deadline**: a late run only means a flight start or end
@@ -271,6 +288,88 @@ after the rewrite (including the nested `services.update` of its private
 runtime, all co-due), not a sum of parts; the 1000 above is an estimate (E), so
 the tick cannot be registered until it is measured. Smart is measured the same
 way as its own task.
+
+### 5.2 Telemetry update intervals
+
+A telemetry-service change, done and reviewed **before** the telemetry
+migration (and before R2), in the legacy service. It is safer first because it
+changes sample rates, which the parity method (section 7) cannot separate from a
+scheduling change; it works under the legacy loop; and it lowers the legacy
+telemetry bound `L`. Today `INTERVAL = 10` ticks and `POLL_CAP = 8` apply to
+everything.
+
+**API.** `subscribe(name, linkEvidence, interval)`: `interval` is the slowest
+acceptable poll period in ticks (10 to 100); omitted means 10, today's rate, so
+a subscriber that says nothing pins the source at 10 Hz and migrates later.
+Requests: a chart asks per recorded source for the per-pixel part of
+`chart.intervalFor` (`window / pixels` clamped to 20..100; not its division by
+the series count, which is the redraw rate): 60 s over 240 px is 25 ticks (4 Hz),
+4 minutes or more reaches 100 (1 Hz). A metric panel asks for its refresh
+interval (20). The requested interval of a source is the **minimum over its
+subscribers**.
+
+**Per-source release.** Each entry has its own `due`; a poll sets
+`due = now + interval` (no catch-up). First releases are staggered by ordinal so
+sources spread over callbacks. The service computes its own next release (the
+soonest `due`), and the same semantics serve the legacy loop and the framework.
+Subscribing can only lower a source's interval (there is no unsubscribe; a layout
+reload rebuilds the registry); when it does, the entry's `due` moves earlier and
+the service is woken (`s:wake`, or its own `due` in the legacy loop).
+
+**Cap.** At most `n` sources are polled per update (the grant). At load the
+service checks the sustained demand `D = sum(5 / interval)` against `n - 1`; if
+it is exceeded it scales all effective intervals up by `D / (n - 1)` and logs
+once, so a crowded layout loses rate gracefully instead of building unbounded
+lateness.
+
+**Source update rate (never poll faster than a sensor updates).** The effective
+interval is `min(100, max(requested, sourceInterval))`. It only lowers the
+polling rate: it is never below the subscribers' request, so it can never raise a
+rate, and it is never above 100 ticks, so a real update is never read later than
+the freshness window, however slow the sensor.
+
+- *Where `sourceInterval` comes from:* a **hint**, not an estimate. A model-level
+  setting (one value for the telemetry sources of the model, from its ELRS packet
+  rate and telemetry ratio) with an optional per-source override. It applies only
+  to sources the service already marks `state.telemetry`; timers, trims,
+  transmitter voltage and globals are not packet-limited and keep the request.
+  Absent a hint, nothing is lowered. Nothing in the service reads the packet rate
+  or telemetry ratio today.
+- *Why not estimate it:* `getValue` cannot tell an unchanged value from no new
+  packet, so a steady sensor (a voltage at rest) would look slow and be polled
+  slowly, then show its next real change up to 100 ticks late. What exists today
+  does not help: `fresh` and `updatedAt` record the last **poll** that returned a
+  live value, not the last packet, and `revision` counts changes only, so it is a
+  lower bound on the rate for sensors that are moving. Only the optional
+  `getSourceValue` API (per-sensor receipt and freshness flags, already required
+  by Smart) can see a packet; an estimator built on it may be added later, only
+  where that API exists, only lowering the rate and never past the cap above.
+  A dev log of observed change intervals can help choose the hint.
+- *Hint direction.* A hint at or below a sensor's true period costs only extra
+  polls; a hint above it delays real updates. Choose the fastest rate the link
+  can reach, since the ELRS packet rate can change in flight; the 100-tick cap
+  bounds the damage either way.
+- *Gaps.* Staleness and gap marking are decided at a poll (a nil or ambiguous
+  zero), and the sample time is the poll time. With a longer interval a dropout is
+  seen at the next poll, up to one effective interval late, and a dropout shorter
+  than that can be missed, which is no worse than the sensor itself reporting at
+  that rate. The 100-tick cap bounds it at 1 s.
+
+**Preserved:** sample time travels with the reading into history; history's
+recording rules (knot spacing, slope-corridor compression, gap marking on stale
+or unavailable) apply unchanged to the samples it receives; link inference and
+the precision scan are unchanged; minimum and maximum values read from EdgeTX's
+own `<name>-` and `<name>+` sensors stay exact at any poll rate.
+**Changes:** chart traces hold fewer samples (about one per pixel, by
+construction), so a peak shorter than the effective interval can be missed by a
+trace; a reading can be up to one interval older than today.
+
+**Tests (own change).** A fixed-10 Hz golden against per-subscription intervals
+on recorded traces: samples per source match the interval, timestamps are poll
+times, a dropout is marked within one interval, minimum and maximum sensors are
+exact, mixes A to D of section 4 stay within `n` per update, a lowered interval
+takes effect within 10 ticks, and the hint never produces an interval above 100
+or below the request.
 
 ## 6. Simulator, measurement and dev tooling
 
@@ -305,9 +404,10 @@ least 5 clock phases or seeds, for every stage and every grant measured.
   contracts' margin factors then give the declared numbers.
 - Warn above 90% of a declared bound (re-declare) or below 60% (loose).
 - A declaration made from an estimate (E) or unmeasured (U) row cannot be
-  registered in `mixed` or `new`. This blocks critical tasks: telemetry at 8
-  recorded sources and navigation at 2 are estimates, so they wait until measured at their declared `maxUnits`, which in turn needs the
-  entries-per-source decision (open decision 3).
+  registered in `mixed` or `new`. This blocks critical tasks: telemetry at
+  its cap `n` and navigation at 2 are estimates until measured at their declared
+  `maxUnits`, which in turn needs the entries-per-source decision (open decision
+  3).
 - The framework's own `run` is measured at 8, 32 and 64 tasks and the largest
   ready count; its worst case must fit inside `overhead[kind]`.
 - Case files are test files and cost no radio memory.
@@ -417,11 +517,12 @@ legacy loop, and nothing else:
 - Isolation probes, learned bounds, `getUsage`-driven grants; a runtime guard
   (the tripwire and shadow mode are dev tooling).
 - A separate filler. More than one service per callback.
-- Cross-callback group ownership, a wake-up API, and callback kinds other than
+- Cross-callback group ownership and callback kinds other than
   `steady` and `background`.
 - Loader, reflow, editor, menus, log viewer and other modal paths as tasks; and
   the unmeasured UI tasks.
 - Retiring the legacy scheduler (Phase 5).
+- Estimating a sensor's update rate from observed values; version 1 uses a hint.
 
 ## 9. Decisions needed
 
@@ -439,20 +540,21 @@ Decided by the user:
 - The 15000 ceiling, the contracts' margin factors and `margin = 400` stay until
   hardware shows zero near-misses.
 
+Also decided by the user: telemetry polls each source at the fastest rate any
+subscriber needs, and no faster than the sensor updates (section 5.2). The spec
+puts that change **before** the telemetry migration, as its own reviewed change.
+
 Open:
 
 1. **Services per callback.** Keep today's one per callback through group
-   `service` (recommended: more room at every `n`, see the table in section 4),
-   or run all ready critical services together; the latter only works with
-   telemetry at about 2 sources per update (room 4970 T / 2370 TS / 5970 R4).
-   Depends on decision 2.
-2. **Telemetry per-update cap `n` and the minimum recording rate.** With the
-   Smart rewrite the cap no longer follows the tick; it is a free choice that
-   sets both the room and the rate: a source updates at 10 Hz divided by
-   `ceil(sources / n)` (8 sources: 10 Hz at n = 8, 5 Hz at n = 4, 2.5 Hz at
-   n = 2). n = 8 does not fit beside Smart while it is legacy and leaves 2330
-   at R4. What is the lowest per-source rate for 8 sources the recording must
-   keep (contracts decision 1)?
+   `service` (recommended), or run all ready critical services together. The
+   latter fits only a slow telemetry mix (B: room 2370 in a Smart callback); at
+   4 Hz recorded (A) it leaves 1190, too little for any panel or chart step.
+2. **Telemetry intervals (section 5.2).** Subscribers that state no interval
+   (flight motor source, link status, navigation, service probe) keep 10 ticks
+   and opt in later (recommended), or default to a slower rate. And the source
+   update rate: one model-level hint (recommended; applied only to telemetry
+   sources), or also a per-source override.
 3. **Entries per source per call.** Cap telemetry recording at one history entry
    per source per call, or measure and declare a higher cap (contracts decision
    6); needed to declare telemetry's bound.
