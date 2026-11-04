@@ -15,19 +15,27 @@ VIDEO_VENV_STAMP := $(VIDEO_VENV_DIR)/.requirements-installed
 SIMULATOR_FIXTURE := tests/fixtures/sdcard
 WIDGET_SOURCE := src/WIDGETS/AeroGrid
 WIDGET_DESTINATION := $(SDCARD_DIR)/WIDGETS/AeroGrid
-LUA_FILES := $(shell find src/WIDGETS tests -type f -name '*.lua' | sort)
+LUA_FILES := $(shell find src/WIDGETS tests tools/scheduler-audit -type f -name '*.lua' | sort)
 LUA_COMPILER ?= $(shell command -v edgetx-luac 2>/dev/null || command -v luac5.3 2>/dev/null || command -v luac 2>/dev/null)
 LUACHECK ?= $(shell command -v luacheck 2>/dev/null)
 LUA_LS ?= $(shell command -v lua-language-server 2>/dev/null)
 STYLUA ?= $(shell command -v stylua 2>/dev/null)
+# EdgeTX builds Lua 5.3 with LUA_32BITS (int32 integers, float32 floats). The
+# scheduler tests also run on a plain Lua 5.3.6 built that way from lua.org.
+LUA32_VERSION := 5.3.6
+LUA32_SHA256 := fc5fd69bb8736323f026672b1b7235da613d7177e72558893a0bdcd320466d60
+LUA32_DIR := $(BUILD_DIR)/lua32
+LUA32 := $(LUA32_DIR)/lua
+SCHEDULER_TESTS := $(sort $(wildcard tests/unit/lib/test_scheduler*.lua))
 
-.PHONY: help setup test test-installer check build clean lint format docs docs-serve capture-setup video-setup release-package
+.PHONY: help setup test test-lua32 test-installer check build clean lint format docs docs-serve capture-setup video-setup release-package
 
 help:
 	@printf '%s\n' \
 	  'make help    List the supported Make targets' \
 	  'make setup   Install development dependencies into build/venv' \
 	  'make test    Run pure Lua and mocked EdgeTX behavior tests' \
+	  'make test-lua32 Run the scheduler tests on a 32-bit-integer Lua 5.3 (EdgeTX build)' \
 	  'make test-installer Test browser installer and release mirroring' \
 	  'make check   Run behavior tests and syntax validation' \
 	  'make lint    Lint Lua files with lua-language-server' \
@@ -82,6 +90,18 @@ $(VENV_STAMP): requirements-dev.txt
 test: $(VENV_STAMP)
 	@"$(VENV_DIR)/bin/python" -m unittest discover -s tests -p 'test_*.py'
 	@"$(VENV_DIR)/bin/python" tests/run.py
+
+$(LUA32):
+	@mkdir -p "$(LUA32_DIR)"
+	@curl -fsSL -o "$(LUA32_DIR)/lua.tar.gz" "https://www.lua.org/ftp/lua-$(LUA32_VERSION).tar.gz"
+	@"$(PYTHON)" -c "import hashlib,sys; sys.exit(0 if hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest()==sys.argv[2] else 'Lua source checksum mismatch')" "$(LUA32_DIR)/lua.tar.gz" "$(LUA32_SHA256)"
+	@tar -xzf "$(LUA32_DIR)/lua.tar.gz" --strip-components=1 -C "$(LUA32_DIR)"
+	@$(MAKE) -C "$(LUA32_DIR)/src" generic MYCFLAGS=-DLUA_32BITS >/dev/null
+	@cp "$(LUA32_DIR)/src/lua" "$@"
+	@"$@" -e "assert(math.maxinteger == 2147483647 and string.packsize('n') == 4)"
+
+test-lua32: $(LUA32)
+	@for file in $(SCHEDULER_TESTS); do "$(LUA32)" "$$file" "$(CURDIR)" || exit 1; done
 
 test-installer:
 	@"$(PYTHON)" -m unittest discover -s tools -p 'test_installer_*.py'

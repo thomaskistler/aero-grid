@@ -20,9 +20,11 @@ local function json(value)
     if kind == "number" then
         return value == math.floor(value) and string.format("%d", value) or string.format("%.4f", value)
     elseif kind == "string" then
-        return '"' .. string.gsub(value, '[%c"\\]', function(char)
-            return string.format("\\u%04x", string.byte(char))
-        end) .. '"'
+        return '"'
+            .. string.gsub(value, '[%c"\\]', function(char)
+                return string.format("\\u%04x", string.byte(char))
+            end)
+            .. '"'
     elseif kind == "boolean" then
         return tostring(value)
     elseif kind == "table" then
