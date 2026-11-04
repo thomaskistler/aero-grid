@@ -182,7 +182,7 @@ the declared bound and validated by replaying recorded native traces.
 
 ## Relationship to the blind scheduler design
 
-`blind_scheduler_design.md` (simulation-validated, T = 10000) is the source for
+[`blind-scheduler-design.md`](blind-scheduler-design.md) (simulation-validated, T = 10000) is the source for
 the policy layer here: classes, tolerance, self-declared release, guarded
 due-first, margin cap, the admission test and the accumulating-work rules. This
 plan differs in three ways. Bounds are static and CI-measured rather than
