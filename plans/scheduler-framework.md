@@ -213,12 +213,15 @@ cannot attribute cost between tasks.
 
 ### Worked feasibility (16 panels)
 
-`C = 15000 - 400 - (1250 overhead + 400 framework) = 12950`. The Smart detection
-rewrite (section 5) splits today's 3600 flight tick into the tick proper (arm
+`C = 15000 - 400 - (1250 overhead + 400 framework) = 12950`. The Smart change
+in the flight migration (5.1) splits today's 3600 flight tick into the tick proper (arm
 switch, counting, output; about 1000, estimated) at the current cadence and
 Smart (2600) at most once per second. Head `used` while both are legacy: reset
 poll 620 plus the tick, so **T** = a callback with the tick (room base 11330)
 and **TS** = the callback each second that also runs Smart (room base 8730).
+Until R4 legacy Smart keeps its current cadence (about every 10 ticks), so in
+R1 to R3 a TS callback comes about every second callback rather than once per
+second; the 1 Hz cadence and these figures hold from R4.
 Room = base `- L - P`. `L` is the largest legacy item. `P` is the **peak load of
 critical tasks that fall due in one callback** after staggering, not the sum of
 all of them (all due together would be 13.3k) and not a group maximum. Declared
@@ -229,7 +232,7 @@ values from the contracts; mix A below is the reference.
 | R1 | chart stages | 5700 (output refresh) | 0 | 5630 | 3030 | Split chart text (7800) under the cap (4.2). Other chart stages fit (900 to 1300; project grant 1 knot = 1030). |
 | R2 | + panel refreshes | 4290 (legacy telemetry, section 5.2) | 0 | 7040 | 4440 | Split metric relayout and output apply under the cap. |
 | R3 | + services as tasks | 0 | 4870 | 6460 | 3860 | Services split as in 4.1; telemetry and history measured (open decision 2, deferred). |
-| R4 | + tick and Smart as tasks | 0 | 4870 | 7460 | | Section 5 preconditions; no head cost remains, only the reset poll. Atoms: tick 1000, Smart 2600. |
+| R4 | + tick and Smart as tasks | 0 | 4870 | 7460 | | Section 5.1 contract and loader-callback precondition; no head cost remains, only the reset poll. Atoms: tick 1000, Smart 2600. |
 | R5 | modal screens: settings UI, log viewer, editor, menu, fullscreen input, app rebuild, theme showcase | 0 | per kind | per kind | | Each measured natively first and split to fit its kind's room (section 7). Order: smallest handler first. |
 | R6 | loader, reflow, page retire and rebuild, session-reset pump, the head work | 0 | per kind | per kind | | Already measured in the audit; split where it exceeds the cap (4.2). |
 
@@ -330,40 +333,50 @@ overhead `o` and its share of the piece**, and the **chosen split size** (pieces
 and unit). CI checks `piece <= M` and the share at most 10%; section 7 makes it a
 checklist step.
 
-## 5. Prerequisite changes (separate, reviewed first)
+## 5. Flight tick, Smart and telemetry changes
 
-Two service changes are made and reviewed on their own, not inside the
-framework.
+Section 5.1 is part of the flight tick and Smart migration (R4). Section 5.2 is a
+separate telemetry-service change, made and reviewed on its own before the
+telemetry migration.
 
-### 5.1 Flight tick and Smart
+### 5.1 Flight tick and Smart (migration R4)
 
-The flight tick (arm switch, counting, output) and Smart detection are two
+The flight tick (arm switch, counting, output) and Smart detection become two
 `normal` tasks with **no deadline**: a late run only means a flight start or end
 is detected later. They fit the R4 room (tick about 1000, Smart 2600, against
-6860) and oldest-first bounds how long they wait.
+7460) and oldest-first bounds how long they wait. The tick keeps its current
+cadence. There is no separate rewrite first: the Smart change is part of
+this migration, with the usual strip-to-minimal-work and measurement steps.
 
-**Precondition 1: Smart detection rewrite merged first.** Today
-`flight_service.lua` (655-667) discards detection progress when
-`now - lastTick > 100` ticks (`groundAt`, `altitudeSince`, `speedSince`,
-`wasArmed` and `altitudeReference` cleared; `starting` returns to `ground`,
-`ending` to `active`), and lines 655-657 skip a tick closer than 20 ticks.
-The rewrite, a separate change off `main` and not part of this framework, makes
-Smart detection run at most once per second and tolerant to delay: no reset on a
-late run, with continuity judged from reading timestamps. Its scope is Smart
-only; arm-switch handling, counting and output stay at the current tick cadence.
-Risk: a gap is no longer evidence that conditions held continuously, so the
-debounce windows must be evaluated from reading timestamps. Parity tests for
-these tasks must cover delayed runs (gaps of different lengths, a gap spanning a
-start, an end and a threshold crossing). Smart then becomes its own task
-(delay of at least 100 ticks, atom 2600, splittable per sensor read) instead of
-part of the tick.
+**Smart task contract (behaviour changes on purpose).**
+
+- Runs at most once per second (`delay >= 100`), atom 2600, split per sensor read
+  if needed (discovery scans 8 sensors, then 4 reads). Its cost at this cadence
+  is the 2.6k in the tables.
+- Tolerant to delay. Today `flight_service.lua` (655-667) discards detection
+  progress when `now - lastTick > 100` ticks (`groundAt`, `altitudeSince`,
+  `speedSince`, `wasArmed` and `altitudeReference` cleared; `starting` returns to
+  `ground`, `ending` to `active`), and lines 655-657 skip a tick closer than 20
+  ticks. The task must not reset on a late run: continuity is judged from reading
+  timestamps, not tick spacing. Arm-switch handling, counting and output stay at
+  the tick's cadence and are not changed.
+- Risk: a gap is no longer evidence that conditions held continuously, so the
+  debounce windows must be evaluated from reading timestamps, and a stale or
+  missing reading must break a window.
+
+**Parity for this task is expected-behaviour tests, written first**, not an
+old-versus-new comparison, because behaviour changes for delayed runs. Golden
+cases: start and end detection at the normal cadence (unchanged result), delayed
+runs of different lengths, a gap over 100 ticks, a gap spanning a start, an end
+and a threshold crossing, and no false start or end after a gap (including a gap
+with stale readings). The rest of the parity method applies to the tick.
 
 **Precondition 2: loader callbacks.** At the head it runs in every callback,
 including loader and reflow callbacks, so a long load never lets it wait. As a
 task it would stop during exclusive callbacks. So the loader family must first
 call `s:run("steady", now, used)` with `used` = that step's declared bound
 before the tick can move. The tick's declaration is its **measured total**
-after the rewrite (including the nested `services.update` of its private
+(including the nested `services.update` of its private
 runtime, all co-due), not a sum of parts; the 1000 above is an estimate (E), so
 the tick cannot be registered until it is measured. Smart is measured the same
 way as its own task.
@@ -647,9 +660,9 @@ Decided by the user:
 - The settings UI, log viewer, editor, menu, fullscreen input, app rebuild and
   theme showcase move to the new scheduler as modal kinds (R5); the legacy loop
   keeps them only temporarily, during migration.
-- The flight tick, Smart and session reset are `normal`, with no deadline. Their
-  migration needs the Smart detection rewrite (1 Hz, delay tolerant) merged
-  first (section 5). The extrema service is being removed in a separate change
+- The flight tick, Smart and session reset are `normal`, with no deadline. The
+  Smart rewrite (1 Hz, delay tolerant) is part of their migration, not a prior
+  change (section 5.1). The extrema service is being removed in a separate change
   and is not in the task list, migration order or admission arithmetic.
 - `mixed` is **not shipped in releases**: development and test only until the
   critical and chart tasks have migrated.
