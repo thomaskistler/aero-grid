@@ -231,6 +231,9 @@ the declared bound and validated by replaying recorded native traces.
    callback, the new scheduler gets the remainder, and the split shifts toward
    the new scheduler as tasks move. Shadow mode (compute and log plans without
    applying them) is the first use of this switch.
+   Result: `lib/scheduler_host.lua`, `lib/scheduler_probe.lua`, the parity
+   harness and their tests; notes in [scheduler-framework.md](scheduler-framework.md),
+   section 11.
 4. **Migrate one task at a time.** For each task, in this order:
    1. strip it to the minimal work it needs, splitting or capping it where the
       audit says it cannot meet a provable bound;

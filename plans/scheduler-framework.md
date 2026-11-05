@@ -893,9 +893,9 @@ specification was silent or inconsistent:
 - **Fault injection.** An injected excess of at most `20000 - ceiling` per
   callback (cost steps, spikes, bursts) is added on top of the plan; the
   simulator counts an overrun otherwise.
-- **Left for later phases.** The near-miss tripwire and shadow mode
-  (`lib/scheduler_probe.lua`, section 6), layout admission and the host mode.
-  Admission tests A to E are test support, not radio code.
+- **Left for later phases.** Layout admission (the host mode, tripwire and shadow
+  mode are Phase 3, section 11). Admission tests A to E are test support, not
+  radio code.
 - **Bounds table.** `tests/fixtures/scheduler-bounds.lua` holds the contracts'
   declared bounds at the audit's labels (legacy granularity) for the trace
   replay and the `M` check; labels without a contract bound are listed there.
@@ -931,3 +931,87 @@ earlier targets of 4.2 (`F0` 40, `c1` 6, `o` 30) were below what these cost in
 Lua. Heap: about 33 KiB for 128 registered tasks on the native simulator (44 KiB
 in the desktop Lua used by the tests); the library itself is about 18 KiB on the
 SD card.
+
+## 11. Implementation notes (Phase 3)
+
+Built: the host mode, the owner table, the capped legacy share, the call-site
+handling, shadow mode and the tripwire, and the parity harness. No real task is
+migrated, and in `legacy` (the default) the widget runs the old code unchanged.
+
+**Where things are.** `main.lua` has two constants, `SCHEDULER_MODE` (`"legacy"`)
+and `SCHEDULER_PROBE` (`false`). `tools/package-release.py` refuses a package
+whose `main.lua` has anything else, so a release cannot enable `mixed`, `new` or
+the probe. `lib/scheduler_host.lua` (the owner table, declared legacy bounds,
+share, head costs and load checks) and `lib/scheduler_probe.lua` are loaded only
+when one of them is on. `tests/support/scheduler_host_fixture.lua` overrides the
+constants in the text it loads. `tests/support/scheduler_parity.lua` and
+`scheduler_standin.lua` are the parity harness and its stand-in task.
+
+**Verification of `legacy`.** `tests/integration/test_scheduler_legacy.lua` runs
+eight existing integration scenarios and hashes every service update and panel
+dispatch; the hashes were recorded from the code before this phase
+(`tests/fixtures/scheduler-legacy-golden.txt`) and match. The legacy loops
+differ from before only by `nil` checks of `context.schedulerHost` and
+`context.probe` and an unused `admit` argument of `services.update`. The native
+audit (`audit-scheduler.py --all --traces`, Companion 2.12) of the changed widget
+in `legacy`: the exact counter still agrees with `getUsage`, every task stays
+within its declared bound, and the overhead of a callback is 4 instructions
+higher (the `nil` checks; 7 to 16 in the chart scenario, which dispatches more).
+Native traces are phase dependent, so they were compared per callback by kind,
+tasks and overhead, not byte for byte. `mixed` has not been run natively.
+
+**Choices where the specification was silent.**
+
+- **Owner table.** Keys are `service:<id>` (each service of the registry) and
+  `panel:<type>` (a panel's refresh, the chart's stages included). A key is
+  checked, once per layout and registry, at the first scheduled callback after
+  the load: every loaded item needs an owner; a `legacy` one needs a declared
+  bound within the share (the chart is charged the whole share, so its largest
+  stage, 7800, is checked); a `new` one needs a task registered under its key.
+  A failure is logged once as `scheduler: <key> exceeds the legacy share` (or
+  `has no owner`, `has no declared bound`, `is owned by the scheduler but has no
+  task`, `is not owned by the scheduler`) and the context falls back to the
+  plain legacy loop for good. `new` needs every loaded task owned by the
+  framework and skips the legacy loop; panel `background` hooks still run. The
+  head work is not in the table: it stays at the head until R4 and R6.
+- **Declared legacy bounds** are in `lib/scheduler_host.lua`: the panels' and
+  services' values of the contracts; telemetry's is `750 + 1180 x min(sources,
+  poll cap)`, so it follows the layout; `flight` and `armed` have no scheduled
+  work (0); `theme-showcase` has none, so a layout with it cannot run in `mixed`.
+- **Legacy share.** `LEGACY_SHARE = 6650` (R1 and R2). It is a table constant, not
+  derived at run time, so test D is a load check. Consequence: until the chart
+  text is split (R1 precondition) and telemetry polls at most `n_L` sources
+  (5.2), the stock layouts with a chart or more than four recorded sources fail
+  the check in `mixed`. Tests raise the share to run a chart (10190). The share
+  limit is not reduced by `used`: the head work, the share and the plan are
+  counted by `U`, which the tripwire checks.
+- **`used`.** The head work that ran (`pumpFlight`: the reset poll 620, the tick
+  3600, the contracts' declared values) plus what the legacy loop actually
+  charged (not the whole share) are passed to `run`. Consumed callbacks run no
+  plan. The report of retired tasks is at the head of the next callback, which
+  is consumed.
+- **Modal callbacks** run the legacy loop exactly as in `legacy`: no share, no
+  owner skipping. A migrated service or panel is therefore also run by its
+  legacy object there, as the specification says; the migration must keep the
+  legacy object and the task on one source of truth.
+- **Overhead** is the contracts' declared value at 16 panels (steady 1250,
+  background 1130), whatever the panel count.
+- **Shadow mode** runs in `legacy` mode with the probe on: before the loop, a
+  fresh planner is given the ready items (services and panels, due ticks, declared
+  bounds, steady-only panels, the chart exclusive) and its choice is compared
+  with what the legacy loop ran; the differences are kept in `probe.differences`
+  and the first eight logged. The tripwire is not armed (`probe.armed`) until the
+  native simulator has confirmed which callback `getUsage` reports when `refresh`
+  and `background` interleave; the probe's own cost shows in `getUsage`.
+- **Starvation risk of services first.** A due panel at the cursor that does not
+  fit what the services left of the share waits for a callback where it does. With
+  callbacks exactly five ticks apart (every fourth one background) the metric
+  panel was never refreshed in a test run; with irregular callbacks (the radio's)
+  it was. If hardware shows it, the remedy is the order (panels first) or a
+  panel reserve inside the share, not a larger share.
+- **Parity harness.** `golden`, `extraction`, `replay` and `budgeted` run an
+  adapter over a trace (steps 1 to 4 of section 7; the native gate is by hand).
+  The legacy loop is the real `services.update`; the planner is the real one; the
+  budgeted run asserts the plan stays under the budget, and `timing` gives the
+  lateness against the legacy run and the longest gaps. A migration writes an
+  adapter and its trace; `test_scheduler_parity.lua` shows it on the stand-in.
