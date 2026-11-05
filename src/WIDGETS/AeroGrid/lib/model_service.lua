@@ -46,6 +46,18 @@ local INTERVAL = 20
 --- Facets refreshed per update, served round robin.
 local FACET_CAP = 4
 
+-- Sign extension of the low 32 bits: the wrap-safe difference of two ticks.
+local MASK, SIGN = 0xFFFFFFFF, 0x80000000
+
+--- The task the new scheduler runs (plans/scheduler-framework.md, section 2): one
+--- stage, one unit per facet. Measured natively at 137, 242, 347 and 408
+--- instructions for 1 to 4 facets (tests/fixtures/scheduler-cases/model.lua), fitted
+--- as 32 + 105 per facet and declared by the margin rule for the normal class.
+modelService.decl = {
+    class = "normal",
+    stages = { run = { fixed = 90, perUnit = 120, maxUnits = FACET_CAP } },
+}
+
 --- Ticks between model identity reads. Identity changes only when the model
 --- changes, which reloads the widget anyway, so it is polled rarely.
 local IDENTITY_INTERVAL = 500
@@ -66,6 +78,7 @@ function modelService.new(env, support)
         interval = INTERVAL,
         revision = 0,
         count = 0,
+        want = 0,
         due = 0,
         env = env,
         support = support,
@@ -81,6 +94,7 @@ end
 ---@return table view
 function modelService:add(state, read)
     local facet = self.support.addSubscription(self, self.facets, { state = state, read = read })
+    self.want = self.count
     return facet.view
 end
 
@@ -448,15 +462,51 @@ function modelService:txVoltage()
     return self.txVoltageView
 end
 
---- Refresh a bounded slice of the subscribed facets.
+--- Read up to `grant` subscribed facets, round robin from the cursor. This is the
+--- work of one release, shared by the legacy loop and the new scheduler. It does
+--- what `services.roundRobin` does for a facet list, without its per-facet callback.
+---@param grant integer
 ---@param now integer
-local function readFacet(service, facet, now)
-    facet.read(service, facet.state, now)
+function modelService:read(grant, now)
+    local facets = self.facets
+    local total = #facets
+    local cursor = self.cursor
+    if cursor > total then
+        cursor = 1
+    end
+    if grant > total then
+        grant = total
+    end
+    for _ = 1, grant do
+        local facet = facets[cursor]
+        cursor = cursor % total + 1
+        facet.read(self, facet.state, now)
+    end
+    self.cursor = cursor
 end
 
+--- The legacy loop's update: `services.update` has already advanced `due` and
+--- counts the revision.
+---@param now integer
 function modelService:update(now)
-    local facets = self.facets
-    self.cursor = self.support.roundRobin(facets, self.cursor, FACET_CAP, readFacet, self, now)
+    self:read(FACET_CAP, now)
+end
+
+--- The new scheduler's release: the same work, and what `services.update` does
+--- around it. A service the legacy loop has just served (a modal callback) is not
+--- due, so nothing runs twice. Returns the delay to the next release.
+---@param grant integer
+---@param now integer
+---@return integer delay
+function modelService:step(grant, _, now)
+    local wait = ((self.due - now) & MASK ~ SIGN) - SIGN
+    if wait > 0 then
+        return wait
+    end
+    self.due = now + self.interval
+    self:read(grant, now)
+    self.revision = self.revision + 1
+    return self.interval
 end
 
 --- Describe the subscribed model facets as diagnostic rows.

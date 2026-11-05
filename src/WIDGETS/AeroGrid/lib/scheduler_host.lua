@@ -17,10 +17,12 @@ host.__index = host
 --- The one owner of every task: `service:<id>` for a service update and
 --- `panel:<type>` for a panel's refresh (the chart's stages included). Flipping a
 --- task to `new` is a one-line change, and it needs a task registered under the
---- same id (`host.scheduler:add`). Modal callbacks stay legacy until phase R5.
+--- same id: a service carries its `decl` and `step` and the host registers it once
+--- it has subscribers (`host:enroll`); the others use `host.scheduler:add`. Modal
+--- callbacks stay legacy until phase R5.
 host.OWNERS = {
     ["service:telemetry"] = "legacy",
-    ["service:model"] = "legacy",
+    ["service:model"] = "new",
     ["service:control"] = "legacy",
     ["service:flight"] = "legacy",
     ["service:armed"] = "legacy",
@@ -50,13 +52,20 @@ host.OWNERS = {
 --- legacy item allows (spec section 4): 6650 until the services move.
 host.LEGACY_SHARE = 6650
 
+--- The declared cost of one release of a service that carries its task
+--- declaration, at its largest grant.
+local function declared(instance)
+    local stage = instance.decl.stages[instance.decl.first or "run"]
+    return stage.fixed + stage.maxUnits * stage.perUnit
+end
+
 --- Declared bounds of one legacy service update (plans/scheduler-contracts.md);
 --- telemetry's depends on how many sources it polls in one update.
 host.SERVICE_BOUNDS = {
     telemetry = function(instance)
         return 750 + 1180 * math.min(instance.count, instance.pollCap or 8)
     end,
-    model = 540,
+    model = declared,
     control = 2620,
     navigation = 710,
     history = 650,
@@ -115,6 +124,7 @@ function host.attach(context, options)
         headCosts = host.HEAD_COSTS,
         head = 0,
         active = false,
+        waiting = {},
     }, host)
 
     local share = { limit = host.LEGACY_SHARE, spent = 0 }
@@ -163,12 +173,13 @@ function host:verify(context)
     if self.mode == "legacy" then
         return nil
     end
-    local function problem(key, bound)
+    local function problem(key, bound, idle)
         local owner = self.owners[key]
         if owner ~= "legacy" and owner ~= "new" then
             return key .. " has no owner"
         elseif owner == "new" then
-            return not self.scheduler.byId[key] and key .. " is owned by the scheduler but has no task" or nil
+            return not idle and not self.scheduler.byId[key] and key .. " is owned by the scheduler but has no task"
+                or nil
         elseif self.mode == "new" then
             return key .. " is not owned by the scheduler"
         elseif not bound then
@@ -178,7 +189,7 @@ function host:verify(context)
         end
     end
     for _, instance in ipairs(context.serviceRuntime and context.serviceRuntime.order or {}) do
-        local message = problem("service:" .. instance.id, self:serviceBound(instance))
+        local message = problem("service:" .. instance.id, self:serviceBound(instance), instance.count == 0)
         if message then
             return message
         end
@@ -192,15 +203,63 @@ function host:verify(context)
     return nil
 end
 
+--- A new layout or service registry replaces the service instances: drop the tasks
+--- of the old ones and wait for subscribers to the new ones.
+---@param context table
+function host:resync(context)
+    local waiting = {}
+    for index, instance in ipairs(context.serviceRuntime and context.serviceRuntime.order or {}) do
+        local key = "service:" .. instance.id
+        if self.owners[key] == "new" then
+            self.scheduler:remove(key)
+            waiting[#waiting + 1] = { instance = instance, index = index - 1 }
+        end
+    end
+    self.waiting = waiting
+end
+
+--- Register the task of every service the scheduler owns once it has subscribers: a
+--- service nothing reads is not scheduled, and a panel the editor adds later
+--- subscribes after the load. Returns a message when the scheduler refuses a task.
+---@return string?
+function host:enroll()
+    local waiting, scheduler = self.waiting, self.scheduler
+    for position = #waiting, 1, -1 do
+        local item = waiting[position]
+        local instance = item.instance
+        if instance.count > 0 and not instance.failed then
+            table.remove(waiting, position)
+            local ok, reason = scheduler:add({
+                id = "service:" .. instance.id,
+                decl = instance.decl,
+                instance = instance,
+                due = getTime() + scheduler.stagger(item.index, instance.interval),
+            })
+            if not ok then
+                return "service:" .. instance.id .. ": " .. reason
+            end
+        end
+    end
+    return nil
+end
+
 --- True when the host can run this callback. A failed check is logged once and
 --- the caller falls back to the legacy scheduler for good.
 ---@param context table
 ---@return boolean
 function host:ready(context)
-    if self.checked == context.panels and self.registry == context.serviceRuntime then
+    local changed = self.checked ~= context.panels or self.registry ~= context.serviceRuntime
+    if not changed and self.waiting[1] == nil then
         return true
     end
-    local message = self:verify(context)
+    local message
+    if self.scheduler then
+        if changed then
+            self:resync(context)
+        end
+        message = self:enroll()
+    end
+    message = message or (changed and self:verify(context))
     if message then
         self.api.log(context, "scheduler: " .. message .. "; using the legacy scheduler")
         return false
@@ -268,6 +327,12 @@ function host:report(context)
     end
     for _, item in ipairs(errors) do
         self.api.error(context, "scheduler: " .. tostring(item.id) .. ": " .. item.message)
+        -- A service that failed is retired for good, as in the legacy loop.
+        local id = type(item.id) == "string" and string.match(item.id, "^service:(.+)$")
+        local instance = id and context.serviceRuntime and context.serviceRuntime.byId[id]
+        if instance then
+            instance.failed = true
+        end
     end
     self.api.show(context)
     return true

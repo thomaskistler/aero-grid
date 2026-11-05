@@ -24,6 +24,7 @@ function standin.new(options)
     local task = {
         id = "standin",
         interval = standin.INTERVAL,
+        decl = standin.decl,
         due = options and options.due or 0,
         count = 1,
         revision = 0,

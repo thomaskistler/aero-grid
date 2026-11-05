@@ -95,6 +95,43 @@ panels:
 ]]
 )
 
+layout(
+    "host-model",
+    [[
+version: 4
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: identity
+    type: model-identity
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 2
+  - id: mode
+    type: flight-mode
+    col: 2
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+  - id: timer
+    type: flight-timer
+    col: 2
+    row: 1
+    colSpan: 2
+    rowSpan: 1
+    config:
+      timer: 0
+  - id: battery
+    type: tx-battery
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+]]
+)
+
 -- Starts a widget in `mode` on `layoutName` and loads it. Every panel dispatch is
 -- logged as `{ tick, panel id, event }` in `context.dispatches`.
 local function start(mode, layoutName, probe)
@@ -187,8 +224,10 @@ do
     end
     listing:close()
     os.remove(listingPath)
+    -- The tasks migrated so far; every other one is `legacy` until its migration.
+    local migrated = { ["service:model"] = true }
     for key in pairs(expected) do
-        assert(host.OWNERS[key] == "legacy", key .. " needs an owner, `legacy` until it migrates")
+        equal(host.OWNERS[key], migrated[key] and "new" or "legacy", key .. " needs an owner")
     end
     for key in pairs(host.OWNERS) do
         assert(expected[key], key .. " is in the owner table but is no service or panel")
@@ -285,16 +324,9 @@ do
     equal(#calls.step, calls.legacy, "the extracted step is what the legacy loop calls")
     equal(context.scheduler.byId["service:standin"], nil)
 
-    -- Flip: the legacy loop skips it, the framework runs it.
+    -- Flip: the legacy loop skips it, and the host registers its task.
     host.owners["service:standin"] = "new"
     host.checked = nil
-    local added, reason = context.scheduler:add({
-        id = "service:standin",
-        decl = standin.decl,
-        instance = task,
-        due = getTime(),
-    })
-    assert(added, reason)
     local legacyBefore, stepsBefore = calls.legacy, #calls.step
     local ranOn = {}
     callbacks(definition, context, 200, function(index, kind)
@@ -305,6 +337,7 @@ do
         end
     end)
     assert(context.schedulerHost, "the flipped table still passes the load check")
+    assert(context.scheduler.byId["service:standin"], "the host registered the task of the service it owns")
     equal(calls.legacy, legacyBefore, "a task owned by the framework is not run by the legacy loop")
     assert(#calls.step - stepsBefore >= 15, "the framework runs it")
     for index = stepsBefore + 2, #calls.step do
@@ -363,8 +396,11 @@ loadError("no bound", function(host)
     host.panelBounds.metric = nil
 end, "panel:metric has no declared bound")
 loadError("owned but no task", function(host)
-    host.owners["service:model"] = "new"
-end, "service:model is owned by the scheduler but has no task")
+    host.owners["panel:metric"] = "new"
+end, "panel:metric is owned by the scheduler but has no task")
+loadError("owned and in use but not migrated", function(host)
+    host.owners["service:telemetry"] = "new"
+end, "service:telemetry: instance needs a step function")
 loadError("an unbounded chart", function(host)
     host.owners["panel:flight-counter"] = "legacy"
     host.panelBounds["flight-counter"] = host.share.limit + 1
@@ -382,24 +418,30 @@ do
     local definition, context = start("new", "host-light")
     local host = context.schedulerHost
     local runs = {}
-    local function dummy(key)
+    local function counting(key)
         runs[key] = 0
-        local ok, reason = context.scheduler:add({
-            id = key,
-            decl = standin.decl,
-            instance = {
-                step = function(_, _, _, _)
-                    runs[key] = runs[key] + 1
-                    return 10
-                end,
-            },
-            due = getTime(),
-        })
-        assert(ok, reason)
+        return function(_, _, _, _)
+            runs[key] = runs[key] + 1
+            return 10
+        end
+    end
+    -- The host registers the tasks of the services it owns, from their own declarations.
+    for _, instance in ipairs(context.serviceRuntime.order) do
+        local key = "service:" .. instance.id
+        instance.decl, instance.step = standin.decl, counting(key)
         host.owners[key] = "new"
     end
     for key in pairs(host.owners) do
-        dummy(key)
+        if string.sub(key, 1, 6) == "panel:" then
+            local ok, reason = context.scheduler:add({
+                id = key,
+                decl = standin.decl,
+                instance = { step = counting(key) },
+                due = getTime(),
+            })
+            assert(ok, reason)
+            host.owners[key] = "new"
+        end
     end
     callbacks(definition, context, 120)
     assert(context.schedulerHost, "every task owned by the framework passes")
@@ -498,6 +540,94 @@ do
     fixture.tick(5)
     definition.refresh(context)
     equal(#probe.nearMisses, flagged, "the callback after a consumed one is not compared")
+end
+
+-- 10. The model service is owned by the framework: the host registers its task once
+-- something subscribes, the legacy loop leaves it alone, and it publishes as before.
+do
+    local definition, context = start("mixed", "host-model")
+    local host, model = context.schedulerHost, context.serviceRuntime.byId.model
+    equal(host.owners["service:model"], "new")
+    equal(model.count, 5, "identity, flight mode, timer, TX voltage and battery range")
+    local calls = { update = 0, step = 0, grants = {} }
+    local update, step = model.update, model.step
+    model.update = function(self, now)
+        calls.update = calls.update + 1
+        return update(self, now)
+    end
+    model.step = function(self, grant, stage, now)
+        calls.step = calls.step + 1
+        calls.grants[grant] = true
+        return step(self, grant, stage, now)
+    end
+    fixture.radio.flightMode = 2
+    fixture.radio.flightModeNames[2] = "Sport"
+    local first, revision = getTime(), model.revision
+    callbacks(definition, context, 300, function(_, kind)
+        assert(context.scheduler.lastPlan.U <= LIMIT, "plan over the budget")
+        assert(context.schedulerHost, "the layout passes the load check")
+    end)
+    assert(context.scheduler.byId["service:model"], "the host registered the task")
+    equal(calls.update, 0, "the legacy loop never runs a service the framework owns")
+    local releases = (getTime() - first) // model.interval
+    assert(calls.step >= releases * 0.8 and calls.step <= releases + 1, "one release per interval: " .. calls.step)
+    equal(model.revision - revision, calls.step, "every release counts as an update")
+    equal(next(calls.grants), 4, "the grant is the cap, or what the subscriptions want")
+    equal(model.flightModeView.index, 2, "values are published")
+    equal(model.flightModeView.name, "Sport")
+    equal(#context.errors, 0)
+
+    -- The legacy loop of a modal callback shares the due time: nothing runs twice.
+    callbacks(definition, context, 3)
+    model.due = getTime()
+    local before = model.revision
+    equal(context.servicesModule.update(context.serviceRuntime, getTime()), "model", "served by the legacy loop")
+    equal(calls.update, 1)
+    equal(model.revision, before + 1)
+    local due = model.due
+    context.scheduler.byId["service:model"].due = getTime()
+    fixture.tick(1)
+    definition.refresh(context)
+    equal(model.revision, before + 1, "the task finds it not due")
+    equal(model.due, due)
+
+    -- A new layout or registry registers the tasks again, one task per service.
+    host.checked = nil
+    callbacks(definition, context, 3)
+    assert(context.scheduler.byId["service:model"], "registered again")
+    equal(context.scheduler.count, 1)
+
+    -- A failing service is reported once and retired for good, here and in the legacy loop.
+    model.facets[1].read = function()
+        error("radio failure")
+    end
+    callbacks(definition, context, 60)
+    equal(context.scheduler.byId["service:model"], nil, "retired")
+    equal(model.failed, true, "marked failed for the legacy loop too")
+    assert(logged(context, "radio failure"))
+    local failures = 0
+    for _, message in ipairs(context.errors) do
+        failures = failures + (string.find(message, "radio failure", 1, true) and 1 or 0)
+    end
+    equal(failures, 1, "reported once")
+    equal(calls.update, 1, "the legacy loop does not run it")
+end
+
+-- 11. A service nothing subscribes to has no task; the task appears with the first
+-- subscription, a panel the editor adds later included.
+do
+    local definition, context = start("mixed", "host-light")
+    local model = context.serviceRuntime.byId.model
+    equal(model.count, 0)
+    callbacks(definition, context, 40)
+    assert(context.schedulerHost, "an idle service passes the load check")
+    equal(context.scheduler.byId["service:model"], nil, "nothing subscribes: no task")
+    local voltage = model:txVoltage()
+    callbacks(definition, context, 1)
+    assert(context.scheduler.byId["service:model"], "registered with the first subscription")
+    callbacks(definition, context, 60)
+    equal(voltage.available, true, "and read")
+    equal(#context.errors, 0)
 end
 
 print("Scheduler host passed")
