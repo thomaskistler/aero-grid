@@ -164,6 +164,40 @@ local function logged(context, text)
     return false
 end
 
+-- 0. The owner table and the declared bounds cover every service and panel type, so
+-- a new one cannot be added without an owner and a bound (theme-showcase has no
+-- bound: a layout with it cannot run in mixed).
+do
+    local host = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler_host.lua"))()
+    local services = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/services.lua"))()
+    local expected, boundsExpected = {}, {}
+    for _, definition in ipairs(services.DEFINITIONS) do
+        expected["service:" .. definition.id] = true
+        assert(host.SERVICE_BOUNDS[definition.id], "service " .. definition.id .. " needs a declared bound")
+    end
+    local listingPath = root .. "/build/scheduler-panel-types.txt"
+    os.execute("ls '" .. root .. "/src/WIDGETS/AeroGrid/panels' > '" .. listingPath .. "'")
+    local listing = assert(hostIo.open(listingPath, "r"))
+    for name in listing:lines() do
+        local panel = string.match(name, "^(.+)%.lua$")
+        if panel then
+            expected["panel:" .. panel] = true
+            boundsExpected[panel] = panel ~= "theme-showcase"
+        end
+    end
+    listing:close()
+    os.remove(listingPath)
+    for key in pairs(expected) do
+        assert(host.OWNERS[key] == "legacy", key .. " needs an owner, `legacy` until it migrates")
+    end
+    for key in pairs(host.OWNERS) do
+        assert(expected[key], key .. " is in the owner table but is no service or panel")
+    end
+    for panel, wanted in pairs(boundsExpected) do
+        equal(host.PANEL_BOUNDS[panel] ~= nil, wanted, "declared bound of panel " .. panel)
+    end
+end
+
 -- 1. Mixed, every task legacy: the legacy loop stays inside its share and the plan
 -- inside the budget, and every panel and service is still served.
 do
