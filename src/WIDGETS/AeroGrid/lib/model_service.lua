@@ -39,9 +39,8 @@
 local modelService = { RUNTIME_API = 1 }
 modelService.__index = modelService
 
---- Ticks of 10ms between updates. Timers advance once a second, so this is
---- already far faster than anything the model can actually change.
-local INTERVAL = 20
+--- Read each model facet at most once a second.
+local INTERVAL = 100
 
 --- Facets refreshed per update, served round robin.
 local FACET_CAP = 4

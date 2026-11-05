@@ -20,6 +20,7 @@ local scheduler = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.l
 local services = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/services.lua"))()
 local overhead = assert(loadfile(root .. "/tests/support/scheduler_overhead.lua"))()
 local equal = assert(loadfile(root .. "/tests/support/assertions.lua"))().assertEqual
+local INTERVAL = 100
 
 local modelFile = root .. "/src/WIDGETS/AeroGrid/lib/model_service.lua"
 local modelService = assert(loadfile(modelFile))()
@@ -274,7 +275,7 @@ for _, variant in ipairs(ORDER) do
     end
     equal(published(tight), published(extraction), variant .. ": every facet ends as in the legacy run")
 end
-assert(released > 200)
+assert(released > 50)
 
 -- 5. The contract of `step` (checked on a service with all seven facets).
 local function service(variant, now)
@@ -299,6 +300,7 @@ do
     -- The declaration is one stage with a unit per facet, at the cap of the service.
     equal(scheduler.check(modelService.decl), nil, "a usable declaration")
     local stage = modelService.decl.stages.run
+    equal(modelService.new(services.environment({}), services).interval, INTERVAL, "at most once a second")
     equal(stage.maxUnits, 4)
     assert(stage.fixed + stage.perUnit <= 4000, "the smallest step is under the maximum task size")
     equal(modelService.decl.class, "normal")
@@ -312,15 +314,15 @@ do
     -- the revision as `services.update` does, and returns the interval.
     local instance, reads = service()
     equal(instance.want, 7, "the units wanted follow the subscriptions")
-    equal(instance:step(2, "run", 100), 20)
+    equal(instance:step(2, "run", 100), INTERVAL)
     equal(reads(), 2)
     equal(instance.revision, 1)
-    equal(instance.due, 120)
+    equal(instance.due, 100 + INTERVAL)
     equal(instance.cursor, 3)
-    equal(instance:step(4, "run", 120), 20)
+    equal(instance:step(4, "run", 200), INTERVAL)
     equal(reads(), 6, "four more facets")
     equal(instance.cursor, 7)
-    equal(instance:step(4, "run", 140), 20)
+    equal(instance:step(4, "run", 300), INTERVAL)
     equal(instance.cursor, 4, "the ring of seven wraps")
     equal(instance.revision, 3)
 
@@ -348,10 +350,10 @@ do
     equal(services.update(runtime, 100), "model")
     equal(reads(), 4)
     equal(instance.revision, 1)
-    equal(instance:step(4, "run", 105), 15, "served by the legacy loop: not due")
+    equal(instance:step(4, "run", 105), INTERVAL - 5, "served by the legacy loop: not due")
     equal(reads(), 4)
     equal(instance.revision, 1)
-    equal(instance:step(4, "run", 120), 20)
+    equal(instance:step(4, "run", 200), INTERVAL)
     equal(reads(), 8)
     equal(instance.revision, 2)
     equal(services.update(runtime, 125), nil, "served by the task: not due")
@@ -367,10 +369,10 @@ do
     local instance, reads = service("seven", due)
     equal(instance:step(4, "run", wrapped(due - 3)), 3, "three ticks early, before the wrap")
     equal(reads(), 0)
-    equal(instance:step(4, "run", wrapped(due + 5)), 20, "five ticks late, after the wrap")
+    equal(instance:step(4, "run", wrapped(due + 5)), INTERVAL, "five ticks late, after the wrap")
     equal(reads(), 4)
-    equal(instance.due, wrapped(due + 5) + 20)
-    equal(instance:step(4, "run", wrapped(due + 10)), scheduler.elapsed(wrapped(due + 5) + 20, wrapped(due + 10)))
+    equal(instance.due, wrapped(due + 5) + INTERVAL)
+    equal(instance:step(4, "run", wrapped(due + 10)), scheduler.elapsed(wrapped(due + 5) + INTERVAL, wrapped(due + 10)))
 end
 
 do

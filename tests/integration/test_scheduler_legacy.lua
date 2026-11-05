@@ -4,7 +4,10 @@
 -- is built. Each scenario below is an existing integration test; the host's
 -- scheduling decisions during it are hashed and compared with the hash recorded
 -- from the code before the host mode existed (tests/fixtures/scheduler-legacy-golden.txt).
--- Regenerate the file only for a deliberate change of the legacy scheduler:
+-- The model service's interval is a deliberate exception: it changed from 20
+-- to 100 ticks after the migration, so the goldens capture the user-requested
+-- cadence while still checking the legacy loop.
+-- Regenerate the file only for a deliberate change of legacy behavior:
 --   AEROGRID_WRITE_GOLDEN=1 make test
 
 local root = (... and ... ~= "" and ...) or "."

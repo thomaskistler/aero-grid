@@ -1048,15 +1048,17 @@ tasks and overhead, not byte for byte. `mixed` has not been run natively.
 
 ## 12. Implementation notes (first migration: the model service)
 
-`service:model` is owned by the new scheduler in `mixed` mode; `legacy` is unchanged
-(all eight legacy-hash scenarios match) and `mixed` and `new` still cannot ship.
+`service:model` is owned by the new scheduler in `mixed` mode; `mixed` and `new`
+still cannot ship. After the user's follow-up, the model interval changed from
+20 to 100 ticks in all modes; the legacy scheduler-hash fixture was regenerated
+for this intentional cadence change, and still checks the legacy loop.
 
 **Contract.** `service:model`, `normal` (nothing is recorded, so a late read only
 shows a value later; a critical task would also take the normal reserve), one stage
 `run`, unit = facet, not exclusive, `steady` and `background`, `want` = the facets
 subscribed to (at most 7 reach it: identity, flight mode, TX voltage, battery range
 and timers 0 to 2; an update reads up to `maxUnits` = 4, round robin), bound
-`90 + 120 x facets` (210 at one, 570 at four), next release 20 ticks after the one
+`90 + 120 x facets` (210 at one, 570 at four), next release 100 ticks after the one
 that ran (identity re-reads every 500 inside the facet), no split (the whole task is
 0.57k, far below `M`, and a split would add `G` per piece to pieces already below the
 minimum useful size). Declared in `model_service.lua` (`modelService.decl`), measured
@@ -1090,13 +1092,17 @@ costs about 10 on the changed read, which is the one that is declared; the plann
 charges the worst case, so the declared bound would rise 8% to save instructions it
 does not plan on: not done. `formatTime` with integer division saves 6 instructions per
 timer: not worth a change to a shared helper. Findings that change what is
-published or when, **for the user to decide** (nothing here was applied):
+published or when, **for the user to decide**:
 
-- The service runs every 20 ticks, but its fastest reader refreshes every 50 (flight
-  mode, TX battery; the flight timer every 100, the model identity every 500), so every
-  facet is read two to five times per reader refresh. At 50 ticks the task's sustained
-  load falls by 60% (570 + `G` per 20 ticks to per 50) and published values are up to
-  0.5 s old instead of 0.2 to 0.4 s.
+- **Applied per user direction:** read model facets at most once a second.
+  `INTERVAL` is 100 ticks; flight mode and TX voltage may therefore be up to one
+  second old, while the timer still refreshes every 100 ticks and identity every 500.
+  Service bounds and work are unchanged. The parity trace uses the new cadence, and
+  the eight legacy integration hashes were updated; the legacy scheduler and ownership
+  path are otherwise unchanged.
+
+Other candidate changes that were **not applied**:
+
 - The battery range is read at the service interval: the firmware builds a table for it on
   every call (its cost is not in the instruction count). It changes only when the pilot
   edits radio settings, so it could be read at the identity rate (500 ticks), showing a
