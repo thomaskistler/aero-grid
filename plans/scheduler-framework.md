@@ -221,7 +221,7 @@ a backlog of normal work is never scanned before critical work and cannot hide i
 
 | Rule | Why it is needed |
 |---|---|
-| Critical before normal, with a normal reserve | Telemetry, history and control are recording and are never dropped. The reserve stops them from starving the tick, Smart, session reset and every chart and panel. Safety never depends on either (`R` bounds every plan); only latency does. |
+| Critical before normal, with a normal reserve | Telemetry, history and control's arm/switch conditions needed for recording boundaries are never dropped when admitted. Trims, outputs and global variables are normal display work. The reserve stops critical work from starving the tick, Smart, session reset and every chart and panel. Safety never depends on either (`R` bounds every plan); only latency does. |
 | `exclusive` | One chart per callback, as today (a legacy chart has `refreshCost = 6`, the whole cap). Used by chart stages only. |
 | Oldest release first | One rule gives fairness and bounded waiting. It replaces aging, deadlines and tolerances. |
 | Skip and continue | Uses the leftover budget. Everything due runs together whenever it fits. |
@@ -330,24 +330,26 @@ sources (4.2).
 | R6 | loader, reflow, page retire and rebuild, session-reset pump, the head work, `configureFlight` | 0 | per kind | per kind | | Already measured in the audit; split where it exceeds the cap (4.2). |
 
 **Telemetry mixes** (8 sources, per-source intervals from section 5.2, a callback
-about every 5 ticks, history 650 every 5, control base 1300 and entries 1320
-every 20, link 560 once per callback that polls a source, `G` = 288 per release).
-Recorded sources are polled two per task; one per task is in brackets. `P` is from
-the simulator with the stagger rule; the sustained load is the mean. Both are
-computed by `tests/support/scheduler_admission.lua` and asserted in the tests.
+about every 5 ticks, history 650 every 5, critical control switches `200 + 100 n`
+at most 6 every 20 ticks, link 560 once per callback that polls a source, and
+`G` = 288 per release). The normal control entries and outputs are admitted after
+critical work and are not included in the critical peak. Recorded sources are
+polled two per task; one per task is in brackets. `P` is from the simulator with
+the stagger rule; the sustained load is the mean. Both are computed by
+`tests/support/scheduler_admission.lua` and asserted in the tests.
 
 | Mix | Sustained | Peak `P` | Room T / TS / R4 | Legacy `L` |
 |---|---|---|---|---|
-| A: 8 recorded, 4 Hz (25 ticks) | 4296 (4636) | 5754 (6042) | 5844 / 3244 / 6844 (5556 / 2956 / 6556) | 6650 |
-| B: 8 recorded, 1 Hz (100 ticks, so 50 after the cap) | 2400 (2553) | 5754 (4574) | 5844 / 3244 / 6844 (7024 / 4424 / 8024) | 3110 |
-| C: 4 recorded and 4 unrecorded as one batch, 5 Hz (20 ticks) | 4077 (4297) | 5754 (4934) | 5844 / 3244 / 6844 (6664 / 4064 / 7664) | 6650 |
-| D: 8 recorded, 10 Hz (today) | 7546 (8122) | 8402 (8978) | 3196 / 596 / 4196 (2620 / 20 / 3620) | 10190 |
+| A: 8 recorded, 4 Hz (25 ticks) | 4134 (3794) | 5522 (5234) | 6076 / 3476 / 7076 (6364 / 3764 / 7364) | 6650 |
+| B: 8 recorded, 1 Hz (100 ticks, so 50 after the cap) | 2033 (1880) | 4054 (5234) | 7544 / 4944 / 8544 (6364 / 3764 / 7364) | 3110 |
+| C: 4 recorded and 4 unrecorded as one batch, 5 Hz (20 ticks) | 3801 (3551) | 4934 (5234) | 6664 / 4064 / 7664 (6364 / 3764 / 7364) | 6650 |
+| D: 8 recorded, 10 Hz (today) | 7626 (7050) | 8458 (7882) | 3140 / 540 / 4140 (3716 / 1116 / 4716) | 10190 |
 
 Per-source intervals are what make the numbers work: today's 10 Hz mix D needs
-`P` = 8.4k. Mix B is computed at 100 ticks; the 50-tick cap of 5.2 raises its
+`P` = 8.5k. Mix B is computed at 100 ticks; the 50-tick cap of 5.2 raises its
 sustained load to about 3.0k. Two sources per task lower `P` for the busy mixes (A
 and D: the charge is paid once per two sources) and raise it for the quiet ones (B
-and C: one release is then twice as large beside history and control), so the
+and C: one release is then twice as large beside history and control switches), so the
 batch is about two, not fixed. Against the earlier table (500 reserved, nothing
 charged per task) one source per task loses 496 to 1360 of room (A 784, B 496, C 496,
 D 1360) and two per task loses 496 to 1676 (A 496, B 1676, C 1316, D 784); the
@@ -370,7 +372,7 @@ separate tasks.
 |---|---|---|---|---|
 | telemetry | one task per batch of about two recorded sources that share an interval (`k` recordings each; `maxUnits` = the batch), one batch task for unrecorded sources sharing an interval, a precision scan queued as work of the next release, not a new task | recorded 0.94k at `k` = 1 (poll 0.12 + record 0.73 + loop 0.09); unrecorded 0.33k; link state 0.17 to 0.37k, once per plan; scan 0.15k | `420 + 760 k` per source (1.18k at `k` = 1, so 2.36k for two), 0.42k unrecorded, link 0.56k shared | The bound is per instance and `k` > 1 is unmeasured (open decision 1, deferred). A poll records into all `k` recordings in the same call (`history` needs `updatedAt == now`), so a recording can never be deferred. |
 | history | one task: advance and boundaries, one entry per update | 0.44k (0.38k advance and boundaries plus 17 per entry) | 0.65k | Recording itself lives in the telemetry poll (observer), not here. Below the minimum size (4.2): the run charge is about a third of it. Kept as one task every 5 ticks; revisit with the measured contract. |
-| control | outputs task (units = outputs, up to 32, interval 10 when an output panel exists), base task, entries task (6 entries) | fixed 0.97k and 0.21k per entry measured; the cost per output is not itemised | base 1.3k, entries 1.32k (2.6k total), outputs unmeasured | **Flag.** `update` reads every output each call (`control_service.lua` 616-619): split it into its own units task and measure it; the mixes assume no output panel and are re-run with one. |
+| control | critical switch-condition task (6 entries); normal trim/global-variable task (6 entries); normal output task (up to 32 channels, interval 10 when an output panel exists) | critical: 153-553 at grants 1-6; entries: 282-1121 at grants 1-6; outputs: 113-1694 at grants 1-32 (M) | `200 + 100 n` critical, `130 + 240 n` entries, `120 + 60 n` outputs | Native cases cover every grant and partial batches; each task's bounded natural unit is kept together despite being below the minimum useful piece (4.2). |
 | model | one task, units = facets (4) | 0.03k fixed, 0.105k per facet (0.41k at 4) | 0.57k (90 + 120 per facet; migrated, section 12) | None. |
 | navigation | one task, units = entries (2) | 0.04k fixed, 0.28k per entry | 0.71k at 2 | 2 entries is estimated (E). |
 | flight tick | tick, and Smart as its own task | tick about 1.0k (E); Smart 2.0k (discovery scans 8 sensors, then 4 reads) | Smart 2.6k | Smart splits per sensor read if needed; the tick's nested `services.update` makes its total measured, not summed. |
@@ -1119,3 +1121,69 @@ with subscribers but no `step` is a load error naming it.
   `--report` and the traces) and a `model-panels` scenario; the probe wraps `step`
   for tasks the scheduler runs.
 - Not run: the native pixel comparison (step 5 of section 7) for `mixed`.
+
+## 13. Implementation notes (second migration: the control service)
+
+The shared dashboard `service:control` is scheduler-owned in `mixed`; the flight
+broker's private control runtime keeps its legacy `update()` path. The Phase 2
+`lib/scheduler.lua`, flight detection and Smart implementation were not changed.
+
+**Reader map and split.** Arm and switch-condition reads feed the shared Armed,
+state/navigation, and history/chart recording-boundary readers, so they remain
+critical. Trims feed the trim panel, channel outputs feed the output panel, and
+global variables feed the flight-counter and service-probe panels; these are
+normal display data. Flight detection and reset use the broker's private control
+runtime, not the shared service. The shared service now has a critical switch
+task, a normal trim/global-variable task, and a normal channel-output task.
+
+**Contracts.** All are non-exclusive `run` stages eligible in `steady` and
+`background`; the declaration lives on the service and the host registers only
+tasks with subscribers. Every task has a round-robin cursor, reads only its
+grant, and returns delay 1 while a partial release remains. Output polling
+retains its 10-tick interval when an output panel exists.
+
+| Task | Tier and unit | Declared bound | Native measured steps | Split size and reason |
+|---|---|---|---|---|
+| `service:control` | CRITICAL, switch condition, max 6 | `200 + 100 n` (800 max) | 153, 233, 313, 393, 473, 553 | One task; arm and boundary readers need this data first |
+| `service:control-normal` | NORMAL, trim/global-variable entry, max 6 | `130 + 240 n` (1570 max) | 282, 493, 704, 915, 1018, 1121 | Keep each natural entry atomic; the complete task is below 2240 |
+| `service:control-outputs` | NORMAL, channel output, max 32 | `120 + 60 n` (2040 max) | 113 at 1, then +51 per unit through 1694 at 32 | Keep each natural channel read atomic; the complete task is below 2240 |
+
+`tests/fixtures/scheduler-cases/control-{critical,normal,outputs}.lua` measure
+all grants and cursor starts with the expensive paths enabled; the parity tests
+also exercise delayed and partial grants. The two normal tasks are documented
+exceptions to the 2240 minimum useful size: their natural unit is indivisible,
+and merging their different work/cadences would make grants less useful. The
+critical task is smaller still, but only contains the small set of conditions
+needed before display work.
+
+| Measurement | Result |
+|---|---|
+| Framework cost per release | 243 native instructions against 420 charged (`G` = 288 inside the charge) |
+| Default gallery (9 panels), native legacy / mixed worst callback | 12707 / 14724 instructions; mixed control critical and normal tasks each ran 125 times over 469 refresh callbacks (worst task steps 411 / 159) |
+| Light control layout (2 panels), native legacy / mixed worst callback | 9168 / 9189 instructions including load; steady refresh maximum 1277 / 3826; control critical / normal task steps max 298 / 415 |
+| Output maximum (1 panel), native legacy / mixed worst callback | 9168 / 9189 including load; steady refresh maximum 1183 / 7369; output / normal task steps max 999 / 1110 |
+
+The mixed audit confirms that the critical task runs before normal work whenever
+room remains. Default's overloaded callback may have no room: control revisions
+stay unchanged there, and normal trims, outputs, and global-variable displays can
+remain stale until a later callback admits them. Native Default does admit both
+control tasks in some callbacks; the no-room behavior is per callback, not a
+permanent shutdown. The light layout has room for both classes. No scheduler
+policy was changed: negative room still defers every task without an error, and
+the 6650 legacy-share estimate remains unchanged.
+
+The resource-stability `review-chart` case can also leave chart buffers
+incomplete after 500 callbacks while the critical control task cannot fit; the
+chart task then has no opportunity to mount them. Its memory check now
+distinguishes a deferred mount from a reflow allocation, while the separate
+chart tests continue to verify completed rendering when the task has room. No
+chart code changed.
+
+**Behavior and parity.** The shared dashboard no longer performs all control
+reads in one legacy update. Only arm/switch conditions retain critical priority;
+trims, outputs, and global variables can lag under scheduler pressure. Completed
+reads preserve the published values, revisions, and error handling. The private
+flight runtime is unchanged. The native control case creates all 32 output
+subscriptions, matching the output panel's maximum read set, and measures every
+grant; the separate `output-max` audit exercises actual panel rendering. The
+remaining native mixed/legacy findings are recorded above.

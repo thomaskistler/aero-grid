@@ -182,7 +182,9 @@ Declared is by the rule from the audit's worst (M unless E).
 | Task | Class | Unit (cap) | Declared | Split or cap | Next release |
 |---|---|---|---|---|---|
 | history | CRITICAL | entry (1) | 0.65k | None | Every callback |
-| control | CRITICAL | entry (6) | 2.6k at 6 (M 2.0k) | Already per entry | Delay 1 while entries remain |
+| control switches | CRITICAL | switch condition (6) | `200 + 100 n` (max 800) | 153-553 at grants 1-6 (M); critical arm/boundary readers only |
+| control entries | NORMAL | trim/global-variable entry (6) | `130 + 240 n` (max 1570) | 282-1121 at grants 1-6 (M); natural-unit exception below 2.24k |
+| control outputs | NORMAL | channel output (32) | `120 + 60 n` (max 2040) | 113-1694 at grants 1-32 (M); output-panel cadence is 10 ticks; natural-unit exception below 2.24k | Delay 1 while entries remain |
 | flight tick | HIGH | tick | 3.6k (M 2.8k) | Within limit. Stage by phase only if the Smart share (2.6k) grows | Every callback |
 | Smart (in tick) | HIGH | update | 2.6k (M 2.0k) | Per sensor read; discovery already resumable | With the tick |
 | flight first tick | HIGH | load | 3.1k (M 2.4k) | **Flag.** Grows with the settings document; cap per call with `tokenizeChunk` | Delay 1 while loading |
