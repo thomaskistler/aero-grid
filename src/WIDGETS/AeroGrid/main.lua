@@ -65,6 +65,13 @@
 
 local WIDGET_PATH = "/WIDGETS/AeroGrid/"
 
+-- Development only. `legacy` is the shipped scheduler; `mixed` and `new` bring in
+-- the new one (lib/scheduler_host.lua). The probe adds the tripwire and shadow
+-- mode (lib/scheduler_probe.lua). tools/package-release.py refuses a package with
+-- anything else, so a release can never enable them.
+local SCHEDULER_MODE = "legacy"
+local SCHEDULER_PROBE = false
+
 local function directory(path)
     return string.sub(path, -1) == "/" and path or path .. "/"
 end
@@ -692,6 +699,23 @@ local function create(zone, widgetOptions, path)
             addError(context, "panel host: incompatible panel API")
             context.panelHost = nil
         end
+        if SCHEDULER_MODE ~= "legacy" or SCHEDULER_PROBE then
+            local scheduling = runtimeModule("lib/scheduler_host.lua")
+            local ok, message = false, "module did not load"
+            if scheduling then
+                ok, message = pcall(scheduling.attach, context, {
+                    mode = SCHEDULER_MODE,
+                    probe = SCHEDULER_PROBE,
+                    load = function(relative)
+                        return loadModule(path, relative)
+                    end,
+                    api = { log = logError, error = addError, show = showErrors },
+                })
+            end
+            if not ok then
+                addError(context, "scheduler: " .. tostring(message))
+            end
+        end
     end
 
     context.root = lvgl.box({
@@ -911,9 +935,14 @@ local REFRESH_CAP = 6
 
 --- Dispatch `refresh` to the panels that are due, newest cursor first.
 --- Returns the number dispatched so tests can observe the scheduling.
+--- In `mixed` mode `share` is the legacy share (lib/scheduler_host.lua): the same
+--- loop, charged each panel's declared bound against what the services left of the
+--- share instead of its slots against REFRESH_CAP, and skipping panels the new
+--- scheduler owns. A chart is charged the whole share, one per callback as today.
 ---@param context AeroGridContext
+---@param share? table
 ---@return integer dispatched
-local function dispatchDue(context)
+local function dispatchDue(context, share)
     local panels = context.panels
     local count = #panels
     if count == 0 then
@@ -926,21 +955,32 @@ local function dispatchDue(context)
         cursor = 1
     end
 
+    local limit = share and share.limit - share.spent or REFRESH_CAP
     local dispatched, failures, examined, work = 0, false, 0, 0
 
-    while examined < count and work < REFRESH_CAP do
+    while examined < count and work < limit do
         local entry = panels[cursor]
         examined = examined + 1
 
         local owner = context.refreshOwner
         local waiting = owner and entry ~= owner and entry.module.id == owner.module.id
-        if entry and not entry.failed and not waiting and now >= (entry.nextRefresh or 0) then
-            local cost = rawget(entry.module, "refreshCost") or 1
-            if work + cost > REFRESH_CAP then
+        if
+            entry
+            and not entry.failed
+            and not waiting
+            and not (share and share.skips(entry))
+            and now >= (entry.nextRefresh or 0)
+        then
+            local cost = share and share.panelCost(entry) or rawget(entry.module, "refreshCost") or 1
+            if work + cost > limit then
                 break
             end
             work = work + cost
             dispatched = dispatched + 1
+            if context.probe then
+                local scheduling = context.schedulerHost
+                context.probe:ran("panel:" .. entry.placement.id, scheduling.panelBounds[entry.module.id] or 0)
+            end
 
             local ok, dispatchError, _, unfinished = context.panelHost.dispatch(entry, "refresh")
             -- Advance from now, without accumulating missed deadlines.
@@ -963,6 +1003,9 @@ local function dispatchDue(context)
 
     -- Resume from where we stopped so every panel is served in turn.
     context.refreshCursor = cursor
+    if share then
+        share.spent = share.spent + work
+    end
     if failures then
         showErrors(context)
     end
@@ -975,26 +1018,68 @@ end
 --- polling all five every cycle is not affordable. Each service declares its
 --- own interval and caps how much it reads in one update, and the registry
 --- serves whichever due service is next in rotation.
+--- In `mixed` mode `share` is the legacy share: services the new scheduler owns,
+--- or whose declared bound does not fit it, are skipped.
 ---@param context AeroGridContext
+---@param share? table
 ---@return string? id Service updated, for tests and error reporting.
-local function updateServices(context)
+local function updateServices(context, share)
     local registry = context.serviceRuntime
     if not registry then
         return nil
     end
 
     registry.byId.telemetry.pollCap = context.flightPolled and 4 or nil
-    local id, serviceError = context.servicesModule.update(registry, getTime())
+    local id, serviceError = context.servicesModule.update(registry, getTime(), share and share.admit)
     if serviceError then
         addError(context, id .. ": " .. serviceError)
         showErrors(context)
+    end
+    if id and context.schedulerHost then
+        context.schedulerHost:served(registry.byId[id])
     end
 
     return id
 end
 
+--- The scheduled work of a steady or background callback with the development
+--- host attached: the legacy loop within its share, then the new scheduler with
+--- what is left (`new` mode has no legacy loop; panel `background` hooks are part
+--- of the callback's overhead and always run). A layout the owner table cannot
+--- cover falls back to the plain legacy loop for good.
+---@param context AeroGridContext
+---@param kind "steady"|"background"
+local function scheduled(context, kind)
+    local scheduling = context.schedulerHost
+    if not scheduling:ready(context) then
+        context.schedulerHost, context.scheduler, context.probe = nil, nil, nil
+        updateServices(context)
+        if kind == "steady" then
+            dispatchDue(context)
+        else
+            dispatchAll(context, "background")
+        end
+        return
+    end
+    local share = scheduling:begin(kind)
+    local legacy = scheduling.mode ~= "new"
+    if legacy then
+        updateServices(context, share)
+    end
+    if kind == "background" then
+        dispatchAll(context, "background")
+    elseif legacy then
+        dispatchDue(context, share)
+    end
+    scheduling:finish(kind)
+end
+
 pumpFlight = function(context, inputPending)
     context.flightPolled = nil
+    local scheduling = context.schedulerHost
+    if scheduling then
+        scheduling.head = 0
+    end
     local owner = context.flightFactory and context.flightFactory.broker
     if not owner then
         return false
@@ -1054,6 +1139,9 @@ pumpFlight = function(context, inputPending)
         if not resetOk then
             owner:error("reset", resetError)
         end
+        if scheduling then
+            scheduling:charge("reset")
+        end
     end
     if not owner.session and owner.dormantRevision == context.flightFactory.revision then
         if not owner.state.resetError and not context.flightErrorText then
@@ -1072,6 +1160,9 @@ pumpFlight = function(context, inputPending)
     local ok, message = pcall(owner.tick, owner, now, filename)
     if not ok then
         owner:error("detection", message)
+    end
+    if scheduling then
+        scheduling:charge("tick")
     end
     -- Share ordinary polling capacity, not whole chart callbacks. Construction
     -- still needs its own slice, with a fair turn for each widget's UI work.
@@ -1385,6 +1476,14 @@ end
 ---@param widgetEvent? number Fullscreen input supplied by EdgeTX.
 ---@param touchState? table
 local function refresh(context, widgetEvent, touchState)
+    if context.schedulerHost then
+        if context.probe then
+            context.probe:start()
+        end
+        if context.schedulerHost:report(context) then
+            return
+        end
+    end
     if pumpFlight(context, widgetEvent ~= nil and widgetEvent ~= 0) then
         return
     end
@@ -1611,6 +1710,10 @@ local function refresh(context, widgetEvent, touchState)
 
     -- Services are refreshed before panels so every panel rendering this
     -- cycle sees the same set of readings.
+    if context.schedulerHost then
+        scheduled(context, "steady")
+        return
+    end
     updateServices(context)
     dispatchDue(context)
 end
@@ -1620,6 +1723,14 @@ end
 --- a hole whenever the pilot looks at another screen.
 ---@param context AeroGridContext
 local function background(context)
+    if context.schedulerHost then
+        if context.probe then
+            context.probe:start()
+        end
+        if context.schedulerHost:report(context) then
+            return
+        end
+    end
     if pumpFlight(context) then
         return
     end
@@ -1648,6 +1759,10 @@ local function background(context)
         context.dashboardLoader.advanceLoad(context)
         return
     elseif context.reflowIndex then
+        return
+    end
+    if context.schedulerHost then
+        scheduled(context, "background")
         return
     end
     updateServices(context)

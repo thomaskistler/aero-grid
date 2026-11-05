@@ -15,7 +15,9 @@ local recorder = trace.install()
 local main = assert(hostIo.open(root .. "/src/WIDGETS/AeroGrid/main.lua", "r"))
 local source = main:read("a")
 main:close()
-assert(string.find(source, 'local SCHEDULER_MODE = "legacy"', 1, true) or not string.find(source, "SCHEDULER_MODE", 1, true))
+-- A release ships the legacy scheduler with the probe off.
+assert(string.find(source, 'local SCHEDULER_MODE = "legacy"', 1, true), "main.lua must ship the legacy scheduler")
+assert(string.find(source, "local SCHEDULER_PROBE = false", 1, true), "main.lua must ship without the probe")
 
 local SCENARIOS = {
     "test_shared_flight",
@@ -32,8 +34,9 @@ local lines = {}
 for _, name in ipairs(SCENARIOS) do
     recorder.reset()
     assert(loadfile(root .. "/tests/integration/widget/" .. name .. ".lua"))(root)
-    assert(recorder.events > 0, name .. " made no scheduling decisions")
-    lines[#lines + 1] = string.format("%s %d %08x", name, recorder.events, recorder.hash)
+    local events, hash = recorder.digest()
+    assert(events > 0, name .. " made no scheduling decisions")
+    lines[#lines + 1] = string.format("%s %d %08x", name, events, hash)
 end
 local actual = table.concat(lines, "\n") .. "\n"
 

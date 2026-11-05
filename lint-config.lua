@@ -38,6 +38,7 @@ return {
             "TINSIZE",
             "XXLSIZE",
             "fstat",
+            "getUsage",
             "getDateTime",
             "getFieldInfo",
             "getFlightMode",

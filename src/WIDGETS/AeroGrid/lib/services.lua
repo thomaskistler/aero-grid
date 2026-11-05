@@ -148,11 +148,14 @@ end
 --- Update at most one due service.
 --- Returns the service updated so the host can report a failure exactly once,
 --- and so tests can observe the scheduling instead of inferring it.
+--- With the development scheduler host, `admit(instance)` lets the host skip a
+--- service the new scheduler owns or one that does not fit the legacy share.
 ---@param runtime table
 ---@param now integer
+---@param admit? fun(instance: AeroGridServiceInstance): boolean
 ---@return string? id
 ---@return string? error
-function services.update(runtime, now)
+function services.update(runtime, now, admit)
     local order = runtime.order
     local count = #order
     if count == 0 then
@@ -169,7 +172,13 @@ function services.update(runtime, now)
         cursor = cursor % count + 1
 
         -- An idle service costs nothing: nothing loaded references it.
-        if instance and not instance.failed and instance.count > 0 and now >= instance.due then
+        if
+            instance
+            and not instance.failed
+            and instance.count > 0
+            and now >= instance.due
+            and (not admit or admit(instance))
+        then
             instance.due = now + instance.interval
             runtime.cursor = cursor
             runtime.updates = runtime.updates + 1

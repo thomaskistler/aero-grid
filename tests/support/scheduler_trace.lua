@@ -10,21 +10,29 @@ local trace = {}
 local MASK, PRIME = 0xFFFFFFFF, 16777619
 
 --- Wrap `loadfile` for the rest of the process; returns the recorder.
----@return table recorder `reset()`, `events`, `hash`
+--- Events are only collected while the scenario runs (scenarios count
+--- instructions, so the wrapper stays cheap); `digest()` hashes them.
+---@return table recorder `reset()`, `digest() -> count, hash`
 function trace.install()
-    local recorder = { events = 0, hash = 2166136261 }
+    local log = {}
+    local recorder = {}
 
     function recorder.reset()
-        recorder.events, recorder.hash = 0, 2166136261
+        log = {}
+    end
+
+    function recorder.digest()
+        local hash = 2166136261
+        for _, text in ipairs(log) do
+            for index = 1, #text do
+                hash = ((hash ~ string.byte(text, index)) * PRIME) & MASK
+            end
+        end
+        return #log, hash
     end
 
     local function record(...)
-        local text = table.concat({ ... }, "|")
-        local hash = recorder.hash
-        for index = 1, #text do
-            hash = ((hash ~ string.byte(text, index)) * PRIME) & MASK
-        end
-        recorder.events, recorder.hash = recorder.events + 1, hash
+        log[#log + 1] = table.concat({ ... }, "|")
     end
 
     local wrappers = {
