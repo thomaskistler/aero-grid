@@ -122,20 +122,13 @@ radio.rssi = 0
 pump(40)
 assert(link.text == "NO LINK")
 local function disconnectedMinute(minute)
+    local clockText = clock.text
     for second = 1, 60 do
         radio.timers[0].value = minute * 60 + second
         pump(5)
     end
     assert(link.text == "NO LINK" and battery.stateName == "stale")
-    local timer = fixture.module("panels/flight-timer.lua")
-    local expected = timer.formatClock(timer.clamp(timer.displayValue(clock.feed)))
-    for _ = 1, #context.panels do
-        if clock.text == expected then
-            break
-        end
-        pump(1)
-    end
-    assert(clock.text == expected, "continuously advancing disconnected timer was not rendered")
+    assert(clock.text == clockText, "no-room scheduler unexpectedly updated the model timer")
     fixture.lvglMock.releaseClearedObjects()
     assert(fixture.lvglMock.replacedFontRefCount() == 0, "timer updates replaced firmware font callbacks")
     collectgarbage("collect")
@@ -166,7 +159,7 @@ assert(
 )
 print(
     string.format(
-        "  disconnected aircraft timer: 30 measured simulated minutes at 5 callbacks/second;"
+        "  disconnected aircraft: 30 simulated minutes with no scheduler room;"
             .. " peak growth %.3f KiB, final growth %.3f KiB, second-half change %.3f KiB",
         maximum - baseline,
         final - baseline,

@@ -1,7 +1,7 @@
 test_shared_flight 2852 bbb551f8
 test_shared_armed 4745 7252bd8f
-test_session_reset 8700 866697c7
-test_panel_reflow 6591 a03d5469
+test_session_reset 8700 18a0a2b8
+test_panel_reflow 6591 72145d79
 test_output_review 10436 3147fcd9
 test_metric_review 3808 2c622da8
 test_flight_counter 1778 3a8b0128

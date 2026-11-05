@@ -71,10 +71,10 @@ class ReleaseTests(unittest.TestCase):
             checksum = archive.with_name(archive.name + ".sha256").read_text().split()[0]
             self.assertEqual(checksum, hashlib.sha256(first).hexdigest())
 
-    def test_release_refuses_development_scheduler_settings(self):
+    def test_release_requires_mixed_mode_without_probe(self):
         source = release.ROOT / "src/WIDGETS/AeroGrid"
         for old, new in (
-            ('local SCHEDULER_MODE = "legacy"', 'local SCHEDULER_MODE = "mixed"'),
+            ('local SCHEDULER_MODE = "mixed"', 'local SCHEDULER_MODE = "new"'),
             ("local SCHEDULER_PROBE = false", "local SCHEDULER_PROBE = true"),
         ):
             with self.subTest(setting=new), tempfile.TemporaryDirectory() as directory:

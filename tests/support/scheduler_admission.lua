@@ -58,13 +58,13 @@ function admission.minimumPiece(scheduler)
     return math.max(1000, admission.MIN_FACTOR * scheduler.RUN_COST)
 end
 
---- Check A to E. `config`: `scheduler` (the library), `overhead` (declared for the
---- kind), `head` (largest `used` the host passes), `legacy` (the capped legacy share
---- `L`), `releases` (critical load), `decls` (every declaration that may run,
---- default those of the releases) and `legacyBounds` (declared bound of each legacy
---- item). Returns `{ base, peak, sustained, failures, small }`; `failures` lists the
---- tests that fail, by letter, `small` the stages whose smallest release is below
---- the minimum piece (information, not a failure).
+--- Check A to C and E. `config`: `scheduler` (the library), `overhead` (declared
+--- for the kind), `head` (largest `used` the host passes), `legacy` (declared
+--- legacy work reserved in the feasibility model), `releases` (critical load),
+--- and `decls` (every declaration that may run, default those of the releases).
+--- Returns `{ base, peak, sustained, failures, small }`; `failures` lists the
+--- tests that fail, by letter, `small` the stages whose smallest release is
+--- below the minimum piece (information, not a failure).
 function admission.check(config)
     local scheduler = config.scheduler
     local base = scheduler.CEILING
@@ -105,11 +105,6 @@ function admission.check(config)
     end
     if peak > base - scheduler.NORMAL_RESERVE then
         fail("C", "peak " .. peak .. " is above " .. (base - scheduler.NORMAL_RESERVE))
-    end
-    for name, bound in pairs(config.legacyBounds or {}) do
-        if bound > (config.legacy or 0) then
-            fail("D", "legacy item " .. name .. " (" .. bound .. ") is above the legacy share")
-        end
     end
     return { base = base, peak = peak, sustained = sustained, failures = failures, small = small }
 end

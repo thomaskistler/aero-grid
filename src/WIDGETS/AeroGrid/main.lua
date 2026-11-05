@@ -65,11 +65,9 @@
 
 local WIDGET_PATH = "/WIDGETS/AeroGrid/"
 
--- Development only. `legacy` is the shipped scheduler; `mixed` and `new` bring in
--- the new one (lib/scheduler_host.lua). The probe adds the tripwire and shadow
--- mode (lib/scheduler_probe.lua). tools/package-release.py refuses a package with
--- anything else, so a release can never enable them.
-local SCHEDULER_MODE = "legacy"
+-- Mixed mode runs migrated tasks in the scheduler and the rest in the legacy loop.
+-- The probe is development-only; releases use the same mixed owner table without it.
+local SCHEDULER_MODE = "mixed"
 local SCHEDULER_PROBE = false
 
 local function directory(path)
@@ -935,14 +933,13 @@ local REFRESH_CAP = 6
 
 --- Dispatch `refresh` to the panels that are due, newest cursor first.
 --- Returns the number dispatched so tests can observe the scheduling.
---- In `mixed` mode `share` is the legacy share (lib/scheduler_host.lua): the same
---- loop, charged each panel's declared bound against what the services left of the
---- share instead of its slots against REFRESH_CAP, and skipping panels the new
---- scheduler owns. A chart is charged the whole share, one per callback as today.
+--- In `mixed` mode `legacy` accounts legacy work against the new scheduler's
+--- remaining budget without limiting the legacy loop; legacy panel slots and
+--- service cadence stay unchanged.
 ---@param context AeroGridContext
----@param share? table
+---@param legacy? table
 ---@return integer dispatched
-local function dispatchDue(context, share)
+local function dispatchDue(context, legacy)
     local panels = context.panels
     local count = #panels
     if count == 0 then
@@ -955,8 +952,8 @@ local function dispatchDue(context, share)
         cursor = 1
     end
 
-    local limit = share and share.limit - share.spent or REFRESH_CAP
-    local dispatched, failures, examined, work = 0, false, 0, 0
+    local limit = REFRESH_CAP
+    local dispatched, failures, examined, work, chargedWork = 0, false, 0, 0, 0
 
     while examined < count and work < limit do
         local entry = panels[cursor]
@@ -968,14 +965,17 @@ local function dispatchDue(context, share)
             entry
             and not entry.failed
             and not waiting
-            and not (share and share.skips(entry))
+            and not (legacy and legacy.skips(entry))
             and now >= (entry.nextRefresh or 0)
         then
-            local cost = share and share.panelCost(entry) or rawget(entry.module, "refreshCost") or 1
+            local cost = rawget(entry.module, "refreshCost") or 1
             if work + cost > limit then
                 break
             end
             work = work + cost
+            if legacy then
+                chargedWork = chargedWork + legacy.panelCost(entry)
+            end
             dispatched = dispatched + 1
             if context.probe then
                 local scheduling = context.schedulerHost
@@ -1003,8 +1003,8 @@ local function dispatchDue(context, share)
 
     -- Resume from where we stopped so every panel is served in turn.
     context.refreshCursor = cursor
-    if share then
-        share.spent = share.spent + work
+    if legacy then
+        legacy.spent = legacy.spent + chargedWork
     end
     if failures then
         showErrors(context)
@@ -1018,23 +1018,27 @@ end
 --- polling all five every cycle is not affordable. Each service declares its
 --- own interval and caps how much it reads in one update, and the registry
 --- serves whichever due service is next in rotation.
---- In `mixed` mode `share` is the legacy share: services the new scheduler owns,
---- or whose declared bound does not fit it, are skipped.
+--- In `mixed` mode `legacy` skips services owned by the new scheduler.
 ---@param context AeroGridContext
----@param share? table
+---@param legacy? table
 ---@return string? id Service updated, for tests and error reporting.
-local function updateServices(context, share)
+local function updateServices(context, legacy)
     local registry = context.serviceRuntime
     if not registry then
         return nil
     end
 
     registry.byId.telemetry.pollCap = context.flightPolled and 4 or nil
-    local id, serviceError = context.servicesModule.update(registry, getTime(), share and share.admit)
+    local admit = legacy and legacy.admit
+    if not admit and context.schedulerHost then
+        admit = context.schedulerHost.legacy.admit
+    end
+    local id, serviceError = context.servicesModule.update(registry, getTime(), admit)
     if serviceError then
         addError(context, id .. ": " .. serviceError)
         showErrors(context)
     end
+
     if id and context.schedulerHost then
         context.schedulerHost:served(registry.byId[id])
     end
@@ -1042,34 +1046,63 @@ local function updateServices(context, share)
     return id
 end
 
---- The scheduled work of a steady or background callback with the development
---- host attached: the legacy loop within its share, then the new scheduler with
+--- Update legacy-owned services and run scheduler-owned tasks during a modal
+--- callback. Panels remain on their existing modal paths until their migration.
+local function updateModalServices(context)
+    local scheduling = context.schedulerHost
+    if not scheduling then
+        updateServices(context)
+        return
+    end
+    local ready = scheduling:ready(context)
+    local legacy = scheduling:begin("steady")
+    updateServices(context, legacy)
+    if not ready then
+        legacy.spent = math.max(legacy.spent, scheduling.scheduler.CEILING)
+    end
+    scheduling:finish("steady")
+end
+
+--- The scheduled work of a steady or background callback with the host attached:
+--- the legacy loop, then the new scheduler with
 --- what is left (`new` mode has no legacy loop; panel `background` hooks are part
 --- of the callback's overhead and always run). A layout the owner table cannot
---- cover falls back to the plain legacy loop for good.
+--- cover keeps its legacy behavior but schedules no new tasks until corrected.
 ---@param context AeroGridContext
 ---@param kind "steady"|"background"
 local function scheduled(context, kind)
     local scheduling = context.schedulerHost
     if not scheduling:ready(context) then
-        context.schedulerHost, context.scheduler, context.probe = nil, nil, nil
-        updateServices(context)
+        if scheduling.mode == "new" then
+            context.schedulerHost, context.scheduler, context.probe = nil, nil, nil
+            updateServices(context)
+            if kind == "steady" then
+                dispatchDue(context)
+            else
+                dispatchAll(context, "background")
+            end
+            return
+        end
+        local legacy = scheduling:begin(kind)
+        updateServices(context, legacy)
         if kind == "steady" then
-            dispatchDue(context)
+            dispatchDue(context, legacy)
         else
             dispatchAll(context, "background")
         end
+        legacy.spent = math.max(legacy.spent, scheduling.scheduler.CEILING)
+        scheduling:finish(kind)
         return
     end
-    local share = scheduling:begin(kind)
-    local legacy = scheduling.mode ~= "new"
-    if legacy then
-        updateServices(context, share)
+    local legacyAccounting = scheduling:begin(kind)
+    local hasLegacy = scheduling.mode ~= "new"
+    if hasLegacy then
+        updateServices(context, legacyAccounting)
     end
     if kind == "background" then
         dispatchAll(context, "background")
-    elseif legacy then
-        dispatchDue(context, share)
+    elseif hasLegacy then
+        dispatchDue(context, legacyAccounting)
     end
     scheduling:finish(kind)
 end
@@ -1499,7 +1532,7 @@ local function refresh(context, widgetEvent, touchState)
     if context.modelSettingsUi then
         context.modelSettingsUiModule.handle(context, widgetEvent, touchState)
         if not context.modelSettingsUiModule.advance(context) then
-            updateServices(context)
+            updateModalServices(context)
         end
         return
     end
@@ -1648,14 +1681,14 @@ local function refresh(context, widgetEvent, touchState)
         -- Input rendering gets its own callback budget, separate from live panels.
         if context.editorUi or context.logViewer or wasLogViewer then
             if context.logViewer or wasLogViewer then
-                updateServices(context)
+                updateModalServices(context)
             end
             return
         end
     end
 
     if context.logViewer then
-        updateServices(context)
+        updateModalServices(context)
         if context.logViewer.prepareIndex then
             context.logViewerModule.advance(context)
         end
@@ -1663,7 +1696,7 @@ local function refresh(context, widgetEvent, touchState)
     end
 
     if context.editorUi then
-        updateServices(context)
+        updateModalServices(context)
         dispatchDue(context)
         return
     end

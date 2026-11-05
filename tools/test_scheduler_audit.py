@@ -28,10 +28,11 @@ class InstrumentationTests(unittest.TestCase):
             patched = patch((audit.WIDGET / relative).read_text())
             self.assertNotEqual(patched, (audit.WIDGET / relative).read_text(), relative)
 
-    def test_the_host_mode_is_patched_only_when_asked(self):
+    def test_the_host_mode_is_patched_for_new_mode(self):
         source = (audit.WIDGET / "main.lua").read_text()
-        self.assertEqual(audit.patch_mode(source, "legacy"), source)
-        self.assertIn('local SCHEDULER_MODE = "mixed"', audit.patch_mode(source, "mixed"))
+        self.assertEqual(audit.patch_mode(source, "mixed"), source)
+        self.assertIn('local SCHEDULER_MODE = "new"', audit.patch_mode(source, "new"))
+        self.assertIn('local SCHEDULER_MODE = "legacy"', audit.patch_mode(source, "legacy"))
 
     def test_a_missing_anchor_is_reported(self):
         with self.assertRaisesRegex(RuntimeError, "expected one occurrence"):

@@ -9,6 +9,7 @@ local theme = fixture.theme
 local services = fixture.services
 local telemetryService = fixture.telemetryService
 local modelService = fixture.modelService
+local scheduler = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.lua"))()
 local controlService = fixture.controlService
 local navigationService = fixture.navigationService
 local assertEqual = fixture.assertEqual
@@ -362,9 +363,11 @@ local function testModelService()
     local countdown = service:timer(0)
     local countUp = service:timer(1)
     local absent = service:timer(2)
+    assertEqual(service.update, nil, "the migrated model service has no legacy update path")
 
     for step = 0, 3 do
-        service:update(step)
+        service.tickElapsed = scheduler.elapsed
+        service:step(service.count, "run", step * 100)
     end
 
     assertEqual(identity.name, "Test")
@@ -393,7 +396,7 @@ local function testModelService()
     -- A countdown that runs past zero must read as expired, not as elapsed.
     timers[0].value = -8
     for step = 4, 9 do
-        service:update(step)
+        service:step(service.count, "run", step * 100)
     end
     assertEqual(countdown.expired, true)
     assertEqual(countdown.text, "-0:08")
@@ -408,14 +411,16 @@ local function testModelService()
         services
     )
     local mode = unnamed:flightMode()
-    unnamed:update(0)
+    unnamed.tickElapsed = scheduler.elapsed
+    unnamed:step(unnamed.count, "run", 0)
     assertEqual(mode.name, "FM0")
 
     -- Firmware without the model API must not raise.
     local bare = modelService.new(services.environment({ model = {} }), services)
     local bareIdentity = bare:identity()
     local bareTimer = bare:timer(0)
-    bare:update(0)
+    bare.tickElapsed = scheduler.elapsed
+    bare:step(bare.count, "run", 0)
     assertEqual(bareIdentity.available, false)
     assertEqual(bareTimer.state, "unavailable")
 end

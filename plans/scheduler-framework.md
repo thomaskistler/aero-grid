@@ -30,7 +30,7 @@ every site migrates before the old scheduler is retired (section 7).
 | `configureFlight` calling `pumpFlight(host)` (main.lua 604-613; `dashboard_loader.lua` 631; `editor_controller.lua` 193) | a flight document load plus a tick inside the last loader stage or an editor save, unaccounted today | Counted in that stage's declared bound when the loader family moves (R6); an audit item |
 | `pumpSessionReset` (1394, 1629) | consumes the callback; runs every service's and panel's `resetSession` | Unchanged. A consumed callback runs no scheduler |
 | loader, reflow, app rebuild, page retire and rebuild, menu, editor save, settings UI advance | consume the callback, each bounded by the audit (loader family) or unmeasured (UI) | Unchanged in Phase 1; become kinds in R5 and R6 (section 4) |
-| settings UI with no pending work (1403), log viewer (1552, 1559), editor with panels (1567-1568) | `updateServices` (and `dispatchDue` for the editor) next to handler work that is unmeasured | **Modal sites.** Until R5 they keep the legacy loop. The owner is per callback kind: `steady` and `background` follow the owner table, modal kinds stay `legacy`. A split service and its legacy service object share one source of truth (`entry.due`, section 5.2), so a source polled by one is not due for the other and nothing runs twice; a piece that finds its entry not due does no work and returns the remaining delay. Recording in modal callbacks therefore behaves as today. At R5 they become modal kinds (section 7) |
+| settings UI with no pending work (1403), log viewer (1552, 1559), editor with panels (1567-1568) | `updateServices` (and `dispatchDue` for the editor) next to handler work that is unmeasured | **Modal sites.** Scheduler-owned services run through the scheduler on these callbacks; remaining services use the legacy loop. Panels stay legacy until R5. The migrated model task uses the `steady` kind here, so no task-specific legacy update method or second source of truth is needed. Modal panel tasks become explicit kinds at R5 (section 7). |
 
 **Consumed callbacks and `used`.** When a head step returns "callback
 consumed", the scheduler is not run, exactly as `updateServices` is not today.
@@ -306,8 +306,10 @@ Until R4 legacy Smart keeps its current cadence (about every 10 ticks), so in
 R1 to R3 a TS callback comes about every second callback rather than once per
 second; the 1 Hz cadence and these figures hold from R4.
 Room = base `- L - P`; a piece must also pay its own `G`, so the largest piece
-that fits is room `- 288`. `L` is the largest legacy item, one share for
-`updateServices` and `dispatchDue` together (services first, panels get the rest).
+that fits is room `- 288`. These are migration feasibility estimates from the
+bounded-share design. The shipped `mixed` host no longer caps legacy work at
+`L`: it charges actual declared legacy work as `used`, and defers scheduler
+tasks when no room remains.
 `P` is the **peak load of critical tasks that fall due in one callback** after
 staggering, with `G` per release, not the sum of all of them (all due together
 would be 15.3k) and not a group maximum. While telemetry is legacy it is the largest legacy item: the
@@ -636,48 +638,35 @@ and for the framework check `charged`, `examined`, `ran`).
 ## 7. Coexistence, parity and invariants
 
 **Host mode**, a constant in `main.lua` (overridable by tests), default
-`legacy`: `legacy` (library not loaded), `mixed` (development and test only, never
-shipped in a release until the critical and chart tasks have migrated), `new`
-(allowed only when every steady-state task has a declaration).
+`mixed`: migrated tasks run in the framework and remaining tasks keep their
+existing legacy cadence and limits. `new` is allowed only when every
+steady-state task has a declaration.
 
 **One owner per task.** One table maps each task id to `legacy` or `new`; it is
 checked at load (a missing id fails the load). Every legacy site skips tasks
-the table gives to `new`, and the framework registers only its own. Modal kinds stay
-`legacy` until R5 (section 1), so ownership is per callback kind. Flipping a task is a
-one-line change; rollback is its revert.
+the table gives to `new`, and the framework registers only its own. Scheduler-owned
+services also run through the framework on modal callbacks; panel modal kinds are
+added at R5 (section 1). Flipping a task is a one-line change; rollback is its revert.
 
-**Capped legacy share.** In `mixed` the legacy loop runs first and gets `L`
-instructions for `updateServices` and `dispatchDue` together (services first, then
-panels), the framework gets the rest through `used`. What changes in the
-legacy loop, and nothing else:
-
-- `dispatchDue` charges each panel its **declared refresh bound** (the
-  contracts' declared values, which include the margin, not observed maxima)
-  instead of `refreshCost`, against `L` instead of `REFRESH_CAP`. It keeps its
-  `break` when an item does not fit, and its cursor, so it stays the old
-  scheduler rather than becoming a third one. A panel with `refreshCost = 6`
-  (the chart) is charged all of `L`: one per callback and nothing else from
-  legacy, as today.
-- `updateServices` still serves one due legacy-owned service per callback and
-  skips `new`-owned ones; it serves it only if its declared bound fits `L`.
-- Because `L` is at least the largest legacy bound (admission test D), the item at the
-  cursor always eventually fits, so nothing is starved.
-- A legacy item above `L`, or without a declared bound, is a **load error**: the
-  host logs `scheduler: <id> exceeds the legacy share` once, falls back to
-  `legacy` mode, and CI fails on the same condition.
-- Unconditional head costs and the consumed-callback paths are not part of `L`;
-  they reach the scheduler as `used` (section 1). One-time paths (metric
-  relayout, reload) run in `update`, reload or loader callbacks, not in
-  `refresh`.
+**Mixed-mode accounting.** Legacy services and panels keep their existing
+cadence and limits; they are not capped by a shared legacy share. Their declared
+bounds, plus head work, are passed to the scheduler as `used`. If that leaves
+negative room, the scheduler simply runs no tasks in that callback; this is not
+a task error. Missing owners or bounds remain load errors, because the host
+cannot account for that legacy work safely. `L` is retained only in the
+feasibility tables as a planning estimate, not as a runtime admission limit.
+Unconditional head work and consumed-callback paths are not part of `L`; they
+reach the scheduler as `used` (section 1). One-time paths (metric relayout,
+reload) run in `update`, reload or loader callbacks, not in `refresh`.
 
 **Parity test for migrating one task**, in this order:
 
 1. **Golden.** Record the task's outputs and state from the pre-migration code
    on the recorded input trace (a checked-in fixture).
-2. **Extraction.** In `legacy` mode the legacy loop calls the **same extracted
-   `step`** the new scheduler will call (the stripped or split version), so the
-   `legacy` run executes new code under the old loop. It must match the golden
-   run exactly. This is what proves that stripping or splitting kept behavior.
+2. **Extraction.** A test-only adapter runs the extracted work on the legacy
+   schedule and must match the golden run exactly. When ownership flips, remove
+   the migrated task's production legacy entry point; no parallel legacy work
+   remains for that task.
 3. **Ownership flip by replay.** The legacy run's schedule (which task ran in
    which callback, with what grant) is recorded and replayed into the new `step`
    entry points at the same callbacks. Outputs and state must match. This isolates
@@ -739,7 +728,7 @@ dev tripwire.
 
 | # | Invariant | Test |
 |---|---|---|
-| 1 | `U <= ceiling - margin` for every plan, always: a plan is built only by admission, and `U` includes the planner's own charge. | Simulator, random task sets and callback jitter over many seeds. |
+| 1 | Scheduler-planned work never exceeds the remaining budget. If prior work leaves negative room, no task runs and no error is raised; `U` may exceed the ceiling because it includes that already-run work. | Simulator, random task sets and callback jitter over many seeds; negative-room unit test. |
 | 2 | A ready critical task is never dropped: it is ordered before normal work and waits only behind older critical work. When the admission test (B, C) passes, its wait is bounded. | Simulator overload, burst and jitter; wait asserted. Negative cases must fail the admission test. |
 | 3 | The first ready task in plan order whose smallest step plus `G` fits `R` runs in that callback; with admission (A) the first ready task always runs. | Simulator under constant overload. |
 | 4 | One owner per callback kind: every task runs only under its kind's owner, exactly once per release, and is not skipped by both; a source is never polled twice (`entry.due`). | Per-callback trace over a `mixed` mock run, plus a liveness count. The owner table is checked at load. |
@@ -751,7 +740,7 @@ dev tripwire.
 | 10 | A failing or malformed task retires alone. | Simulator: raise, bad `delay`, bad stage. |
 | 11 | Under injected cost spikes the total stays under 20000. | Simulator fault injection. |
 | 12 | The planner's measured cost in a callback is at most what it charged (`F + E` per task examined `+ W` per task run), so the unaccounted framework cost is zero; a scan of every ready task is bounded by the 128-task list. | Native measurement at 8, 32 and 128 tasks in the scenarios and mixes of 4.2, and the same rows offline in CI. |
-| 13 | `legacy` mode is unchanged and the legacy loop never exceeds `L` in `mixed`. | Existing suites in `legacy`; mixed mock runs sum declared bounds per callback. |
+| 13 | Migrated tasks have no production legacy entry point; remaining legacy-owned work keeps its cadence in `mixed`, with declared cost charged before planning. | Migration ownership and no-legacy-entry-point tests; mixed golden and host accounting tests. |
 | 14 | Every declared piece and smallest step is at most `M` = 4000, and the run charge is at most 10% of a piece (a piece of 2240 or more). | CI check of the bounds table for `M`; the admission test reports indivisible stages below the minimum; the largest piece per mix and phase is tested against `M`, listing the known gaps (4.2). |
 | 15 | Time wraps: plans depend only on differences of ticks, so the same run from any start on the int32 clock (above 2^15, 2^20, around 2^29 and 2^31) gives the same plans; `step` receives the host tick; `elapsed` is exact across the wrap. | Simulator from ten start ticks, long gaps with many wraps, a step that records `now`, on 64-bit Lua and on a Lua 5.3 built with `LUA_32BITS` (`make test-lua32`, in CI). |
 | 16 | What a task or declaration supplies is validated where it enters: `due`, delays, declarations (types, costs up to the ceiling), kinds, shared names, stages that can never fit. A bad one is refused by `add` or retires its task; a declaration is copied, so later changes cannot break the planner. `run` raises only for a call the host got wrong (unknown kind, `now` or `used` not a number). | Unit tests of `add`, `run` and step results, including a declaration changed after `add`. |
@@ -800,11 +789,13 @@ Decided by the user:
   Smart rewrite (1 Hz, delay tolerant) is part of their migration, not a prior
   change (section 5.1). The extrema service is being removed in a separate change
   and is not in the task list, migration order or admission arithmetic.
-- `mixed` is **not shipped in releases**: development and test only until the
-  critical and chart tasks have migrated.
-- The legacy share `L` varies per migration phase and is derived from the
-  feasibility table in section 4 (the smallest value admission test D allows: 6650,
-  6650, then 0), not a fixed ratio. Half of capacity is not feasible.
+- `mixed` is enabled in releases: migrated tasks run in the framework; all other
+  tasks remain on their existing legacy paths until individually migrated. Their
+  declared costs are charged to the scheduler; negative remaining room simply
+  defers tasks. `new` remains development-only until every task has moved.
+- The legacy-work estimate `L` in section 4 varies by migration phase and is used
+  for feasibility comparisons, not enforced as a runtime cap. Half of capacity
+  is not feasible for the original bounded-share model.
 - The 15000 ceiling, the contracts' margin factors and `margin = 400` stay until
   hardware shows zero near-misses.
 
@@ -964,66 +955,48 @@ SD card.
 
 ## 11. Implementation notes (Phase 3)
 
-Built: the host mode, the owner table, the capped legacy share, the call-site
-handling, shadow mode and the tripwire, and the parity harness. No real task is
-migrated, and in `legacy` (the default) the widget runs the old code unchanged.
+Built: the host mode, the owner table, legacy-work accounting, call-site
+handling, shadow mode and the tripwire, and the parity harness. The model service
+is the first migrated task; `mixed` is the release mode.
 
-**Where things are.** `main.lua` has two constants, `SCHEDULER_MODE` (`"legacy"`)
-and `SCHEDULER_PROBE` (`false`). `tools/package-release.py` refuses a package
-whose `main.lua` has anything else, so a release cannot enable `mixed`, `new` or
-the probe. `lib/scheduler_host.lua` (the owner table, declared legacy bounds,
-share, head costs and load checks) and `lib/scheduler_probe.lua` are loaded only
-when one of them is on. `tests/support/scheduler_host_fixture.lua` overrides the
-constants in the text it loads. `tests/support/scheduler_parity.lua` and
-`scheduler_standin.lua` are the parity harness and its stand-in task.
+**Where things are.** `main.lua` enables `SCHEDULER_MODE = "mixed"` and
+`SCHEDULER_PROBE = false`. Release packaging enforces these settings and rejects
+`new` mode. `lib/scheduler_host.lua` owns task registration, legacy cost
+accounting and load checks. Modal callbacks run scheduler-owned services as
+well. `tests/support/scheduler_host_fixture.lua` overrides the mode for tests;
+`scheduler_parity.lua` is the task parity harness.
 
-**Verification of `legacy`.** `tests/integration/test_scheduler_legacy.lua` runs
-eight existing integration scenarios and hashes every service update and panel
-dispatch; the hashes were recorded from the code before this phase
-(`tests/fixtures/scheduler-legacy-golden.txt`) and match. The legacy loops
-differ from before only by `nil` checks of `context.schedulerHost` and
-`context.probe` and an unused `admit` argument of `services.update`. The native
-audit (`audit-scheduler.py --all --traces`, Companion 2.12) of the changed widget
-in `legacy`: the exact counter still agrees with `getUsage`, every task stays
-within its declared bound, and the overhead of a callback is 4 instructions
-higher (the `nil` checks; 7 to 16 in the chart scenario, which dispatches more).
-Native traces are phase dependent, so they were compared per callback by kind,
+**Verification of mixed mode.** `tests/integration/test_scheduler_mixed.lua`
+runs eight existing integration scenarios and hashes service updates and panel
+dispatches to guard the remaining legacy-owned work and mixed coexistence. Native
+legacy-vs-mixed measurements are recorded per callback kind; migrated-task parity
+is covered by `test_scheduler_model.lua` and the model golden. Native traces are
+phase dependent, so they were compared per callback by kind,
 tasks and overhead, not byte for byte. `mixed` has not been run natively.
 
 **Choices where the specification was silent.**
 
 - **Owner table.** Keys are `service:<id>` (each service of the registry) and
   `panel:<type>` (a panel's refresh, the chart's stages included). A key is
-  checked, once per layout and registry, at the first scheduled callback after
-  the load: every loaded item needs an owner; a `legacy` one needs a declared
-  bound within the share (the chart is charged the whole share, so its largest
-  stage, 7800, is checked); a `new` one needs a task registered under its key.
-  A failure is logged once as `scheduler: <key> exceeds the legacy share` (or
-  `has no owner`, `has no declared bound`, `is owned by the scheduler but has no
-  task`, `is not owned by the scheduler`) and the context falls back to the
-  plain legacy loop for good. `new` needs every loaded task owned by the
-  framework and skips the legacy loop; panel `background` hooks still run. The
-  head work is not in the table: it stays at the head until R4 and R6.
+  checked when the layout or registry changes: every loaded item needs an owner;
+  a `legacy` one needs a declared bound for accounting; a `new` one needs a task
+  registered under its key. A failure is logged as `has no owner`, `has no
+  declared bound`, `is owned by the scheduler but has no task`, or `is not owned
+  by the scheduler`. `new` needs every loaded task owned by the framework and
+  skips the legacy loop; panel `background` hooks still run. The head work is
+  not in the table: it stays at the head until R4 and R6.
 - **Declared legacy bounds** are in `lib/scheduler_host.lua`: the panels' and
   services' values of the contracts; telemetry's is `750 + 1180 x min(sources,
   poll cap)`, so it follows the layout; `flight` and `armed` have no scheduled
-  work (0); `theme-showcase` has none, so a layout with it cannot run in `mixed`.
-- **Legacy share.** `LEGACY_SHARE = 6650` (R1 and R2). It is a table constant, not
-  derived at run time, so test D is a load check. Consequence: until the chart
-  text is split (R1 precondition) and telemetry polls at most `n_L` sources
-  (5.2), the stock layouts with a chart or more than four recorded sources fail
-  the check in `mixed`. Tests raise the share to run a chart (10190). The share
-  limit is not reduced by `used`: the head work, the share and the plan are
-  counted by `U`, which the tripwire checks.
-- **`used`.** The head work that ran (`pumpFlight`: the reset poll 620, the tick
-  3600, the contracts' declared values) plus what the legacy loop actually
-  charged (not the whole share) are passed to `run`. Consumed callbacks run no
-  plan. The report of retired tasks is at the head of the next callback, which
-  is consumed.
-- **Modal callbacks** run the legacy loop exactly as in `legacy`: no share, no
-  owner skipping. A migrated service or panel is therefore also run by its
-  legacy object there, as the specification says; the migration must keep the
-  legacy object and the task on one source of truth.
+  work (0); `theme-showcase` has no refresh work and is charged 0.
+- **Legacy accounting.** The previous `LEGACY_SHARE` cap is removed. `used`
+  contains the head work and declared costs for legacy services and panels that
+  actually ran. If `used` leaves no room, the scheduler plans no task and raises
+  no error. Missing bounds still block scheduler work because they cannot be
+  accounted safely.
+- **Modal callbacks** keep legacy panel handling until R5. They run legacy-owned
+  services without a share cap, then run scheduler-owned tasks through the same
+  framework. A migrated task has no legacy update method.
 - **Overhead** is the contracts' declared value at 16 panels (steady 1250,
   background 1130), whatever the panel count.
 - **Shadow mode** runs in `legacy` mode with the probe on: before the loop, a
@@ -1048,10 +1021,9 @@ tasks and overhead, not byte for byte. `mixed` has not been run natively.
 
 ## 12. Implementation notes (first migration: the model service)
 
-`service:model` is owned by the new scheduler in `mixed` mode; `mixed` and `new`
-still cannot ship. After the user's follow-up, the model interval changed from
-20 to 100 ticks in all modes; the legacy scheduler-hash fixture was regenerated
-for this intentional cadence change, and still checks the legacy loop.
+`service:model` is owned by the new scheduler in `mixed` mode, which is enabled
+in releases. At the user's direction, the model interval is 100 ticks and the
+production service no longer has a parallel legacy `update()` path.
 
 **Contract.** `service:model`, `normal` (nothing is recorded, so a late read only
 shows a value later; a critical task would also take the normal reserve), one stage
@@ -1071,23 +1043,30 @@ every facet on its most expensive path and on the opposite one.
 | Declared (margin rule, normal) | 90 + 120 per facet: 67% to 78% of the bound at the measured grants |
 | Framework cost of one release | 243 native (245 offline), against 420 charged (`G` = 288 inside it) |
 | Share of the piece | `G` is 50% of the 570 at four facets (137% of the 210 at one): the task is divisible and below the minimum useful size 2240, a natural exception like history |
-| Legacy `update` | 34 instructions cheaper than before (464 to 430 at the worst four facets, offline) |
-| Matched native run (`model-panels`: identity, flight mode, timer, TX battery; five facets) | 25 releases in both modes at the one-second cadence. Steady callback 740 mean (legacy) to 1011 (`mixed`); background 558 to 765. Model-service mean/max: 228/274 legacy, 248/294 mixed. Worst steady callback 4197 / 2832; worst loading callback 9168 / 9189. A scheduled release costs 4 more instructions for the shared tick helper. |
+| Shared `read` work | 34 instructions cheaper than the pre-migration update (464 to 430 at four facets, offline); production service has no `update` method |
+| Matched native run (`model-panels`: identity, flight mode, timer, TX battery; five facets) | At the one-second cadence, the current mixed run has 25 model releases (mean/max 248/294 instructions); legacy mode has none because the production `update()` path is removed. The pre-removal one-second legacy baseline measured 25 releases at mean/max 228/274. Current legacy-to-mixed callback mean/max: refresh 704/1626 to 1011/2783, background 550/550 to 768/1199, and refresh-at-load 1474/9168 to 1495/9189. The mixed worst callback is 9189 instructions. |
 
-**What changed in the service.** `update(now)` (the legacy loop's entry point) and
-`step(grant, stage, now)` (the scheduler's) share `read(grant, now)`, the round robin over
-the facets, which no longer goes through `services.roundRobin` and its per-facet
-callback (34 instructions less per update at four facets, 7%); published values,
-revisions and errors are unchanged. `step` does what `services.update` does around an
-update (advance `due`, count the revision) because the scheduler has no such loop:
-the extracted work the legacy loop runs is `read`, and the harness records the legacy
-schedule at `update`, not at `step` (`parity.extraction`). `step` returns the remaining
-delay when `due` is in the future: in modal callbacks the legacy loop still serves the
-service, and `due` is the one source of truth, so a release is never run twice (section
-1; tested in both orders). Ticks are compared by the wrapped difference.
+**What changed in the service.** `step(grant, stage, now)` is the production entry
+point; `read(grant, now)` holds the bounded round robin over facets, which no longer
+goes through `services.roundRobin` and its per-facet callback (34 instructions less
+than the pre-migration update at four facets, 7%). The production service has no
+`update()` method, and the registry skips scheduler-only services. The parity harness
+supplies a test-only `update` adapter to compare the extracted work against the old
+legacy golden. `step` advances `due` and the revision itself. It returns the remaining
+delay when `due` is in the future; modal callbacks also run this task through the
+scheduler, so no task-specific legacy path is needed. Ticks are compared by the
+wrapped difference.
 `step` calls the scheduler's shared `elapsed` helper; the planner keeps its
 measured inline comparisons on its hot path. The helper adds 4 measured
 instructions to a model release; the declared task bound is unchanged.
+
+**Mixed-mode budget consequence.** When declared legacy work leaves negative room, the model task remains due and
+eligible for a later callback with room; the scheduler reports no task error.
+If no callback leaves room, it can remain overdue indefinitely. The shipped
+gallery fixture leaves no room across its 80 callbacks, so model-dependent
+values such as the flight timer remain unavailable there. Preserving those
+values in this overloaded layout would require deferring legacy work, which the
+user chose not to do.
 
 **What was looked at and left.** A skip of the timer derivation and text when the
 timer is unchanged saves 45 instructions of an unchanged timer read (123 to 78) but
@@ -1100,9 +1079,8 @@ published or when, **for the user to decide**:
 - **Applied per user direction:** read model facets at most once a second.
   `INTERVAL` is 100 ticks; flight mode and TX voltage may therefore be up to one
   second old, while the timer still refreshes every 100 ticks and identity every 500.
-  Service bounds and work are unchanged. The parity trace uses the new cadence, and
-  the eight legacy integration hashes were updated; the legacy scheduler and ownership
-  path are otherwise unchanged.
+  Service bounds and work are unchanged. The parity trace uses the new cadence;
+  mixed integration hashes cover the coexistence path.
 
 Other candidate changes that were **not applied**:
 

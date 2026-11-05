@@ -118,8 +118,6 @@ local function testAdmissionRejectsOverloads()
     assert(string.find(text, "B:", 1, true) and string.find(text, "C:", 1, true))
     assert(string.find(failed({ releases = { { decl = once("critical", 11000), interval = 5 } } }), "A:", 1, true))
     assert(string.find(failed({ releases = { { decl = once("critical", 4100), interval = 100 } } }), "E:", 1, true))
-    local text = failed({ legacy = 6650, legacyBounds = { telemetry = 10190 }, releases = {} })
-    assert(string.find(text, "D:", 1, true))
     -- A two-sensor batch is a worthwhile task, a single 1180-instruction one is not.
     local small =
         admission.check({ scheduler = scheduler, overhead = STEADY_OVERHEAD, releases = releases(MIXES.A, 1) })

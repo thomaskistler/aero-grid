@@ -861,14 +861,21 @@ local function testShippedLayout()
     assertEqual(altitude.value.properties.text, "100")
 
     -- And the panels that read the radio rather than the link.
-    assertEqual(entryById(context, "flight-clock").instance.text, "1:30")
-    assertEqual(entryById(context, "mode").instance.text, "Sport")
+    local model = context.serviceRuntime.byId.model
+    assertEqual(entryById(context, "flight-clock").instance.text, "--:--")
+    assertEqual(model.revision, 0, "legacy work leaves no scheduler room for the model task")
+    assertEqual(context.scheduler.lastPlan.ran, 0, "negative room defers tasks without an error")
+    assert(
+        context.scheduler.lastPlan.U > context.scheduler.CEILING - context.scheduler.MARGIN,
+        "the plan includes legacy bounds that exceed the scheduler budget"
+    )
+    assertEqual(entryById(context, "mode").instance.text, "--")
     -- Digits alone: the `V` is its own label riding beside them.
     local radioBattery = entryById(context, "radio-battery").instance
-    assertEqual(radioBattery.text, "7.9")
+    assertEqual(radioBattery.text, "--")
     assertEqual(radioBattery.unit.properties.text, "V")
     assertEqual(entryById(context, "rates").instance.text, "4.5")
-    assertEqual(entryById(context, "identity").instance.text, "Test Model")
+    assertEqual(entryById(context, "identity").instance.text, "--")
     assertEqual(entryById(context, "trims").instance.indicators[1].valueText, "+23% A")
 
     -- The three telemetry panels, reading what the radio really reports.
@@ -9793,7 +9800,18 @@ local function testCorePanels()
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
     assertEqual(#context.panels, 9)
-    settle(context)
+    local modelService = context.serviceRuntime.byId.model
+    local function settlePanels(count)
+        -- This is a panel-rendering test; the nine-panel legacy load leaves no
+        -- scheduler room. Seed the shared service directly, as the scheduler
+        -- integration tests cover admission and release timing separately.
+        for _ = 1, count or 60 do
+            tick(20)
+            modelService:read(modelService.count, getTime())
+            definition.refresh(context)
+        end
+    end
+    settlePanels()
 
     -- A countdown shows what EdgeTX's timer says, takes its name from the
     -- model, and states the total it is counting down from.
@@ -9818,7 +9836,7 @@ local function testCorePanels()
 
     -- An expired countdown must never read like a healthy timer.
     radio.timers[0].value = -15
-    settle(context, 12)
+    settlePanels(12)
     assertEqual(countdown.text, "-0:15", "an expired countdown lost its sign")
     assertEqual(countdown.rendered.detail, nil, "a shed caption was still being formatted every frame")
     assertEqual(countdown.stateName, "critical")
@@ -9830,10 +9848,10 @@ local function testCorePanels()
     -- 300 second timer with 90 seconds left must read 3:30 used, not 1:30 left,
     -- and it is no longer a countdown to warn about.
     radio.timers[0].showElapsed = true
-    settle(context, 12)
+    settlePanels(12)
     assertEqual(countdown.text, "3:30", "showElapsed did not flip the timer")
     radio.timers[0].showElapsed = false
-    settle(context, 12)
+    settlePanels(12)
     assertEqual(countdown.text, "1:30", "the timer did not flip back")
 
     local mode = entryById(context, "mode").instance
@@ -9862,7 +9880,7 @@ local function testCorePanels()
     assertEqual(battery.rendered.detail, nil, "a shed percentage was still being formatted every frame")
     assertEqual(battery.stateName, "normal")
     radio.values[320] = 6.7
-    settle(context, 12)
+    settlePanels(12)
     assertEqual(battery.stateName, "critical")
     assertEqual(battery.badge.properties.text, "CRIT")
     radio.values[320] = 7.9
@@ -9880,17 +9898,17 @@ local function testCorePanels()
     -- answered the same number for every mode. It was asserting the fixture's
     -- limitation and calling it firmware behaviour.
     radio.flightMode, radio.flightModeName = 2, "Land"
-    settle(context, 12)
+    settlePanels(12)
     assertEqual(gv.text, "60", "the value stored for the new flight mode was not read")
 
     -- A mode with no value of its own does inherit, and that is a different
     -- observation from never having looked.
     radio.flightMode, radio.flightModeName = 3, "Cruise"
-    settle(context, 12)
+    settlePanels(12)
     assertEqual(gv.text, "10", "an inherited value was not inherited")
 
     radio.flightMode, radio.flightModeName = 1, "Sport"
-    settle(context, 12)
+    settlePanels(12)
     assertEqual(gv.text, "10")
     assertEqual(gv.unitText, "", "GV metadata is not supplied by the ordinary source interface")
 

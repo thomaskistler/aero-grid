@@ -459,8 +459,8 @@ function modelService:txVoltage()
 end
 
 --- Read up to `grant` subscribed facets, round robin from the cursor. This is the
---- work of one release, shared by the legacy loop and the new scheduler. It does
---- what `services.roundRobin` does for a facet list, without its per-facet callback.
+--- bounded work of one scheduler release. It does what `services.roundRobin` does
+--- for a facet list, without its per-facet callback.
 ---@param grant integer
 ---@param now integer
 function modelService:read(grant, now)
@@ -481,16 +481,8 @@ function modelService:read(grant, now)
     self.cursor = cursor
 end
 
---- The legacy loop's update: `services.update` has already advanced `due` and
---- counts the revision.
----@param now integer
-function modelService:update(now)
-    self:read(FACET_CAP, now)
-end
-
---- The new scheduler's release: the same work, and what `services.update` does
---- around it. A service the legacy loop has just served (a modal callback) is not
---- due, so nothing runs twice. Uses the scheduler's wrap-safe tick helper.
+--- The scheduler's release. It advances the shared due time and revision, and
+--- uses the scheduler's wrap-safe tick helper.
 --- Returns the delay to the next release.
 ---@param grant integer
 ---@param now integer

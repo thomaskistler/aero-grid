@@ -174,6 +174,16 @@ local function testRunRaisesOnlyForAWrongCall()
     equal(pcall(s.run, s, "steady", 5, 100), true)
 end
 
+local function testNegativeRoomDefersTasksWithoutAnError()
+    local log = {}
+    local s = scheduler.new(OVERHEAD)
+    add(s, "a", single("normal", 10), task(log, "a"), 0)
+    equal(s:run("steady", 1, scheduler.CEILING), 0)
+    equal(#log, 0, "no task runs without room")
+    equal(s:dueOf("a"), 0, "a deferred task keeps its release")
+    equal(s:takeErrors(), nil, "lack of room is not a task error")
+end
+
 local function testDeclarationChecks()
     local good = single("normal", 100)
     equal(scheduler.check(good), nil)
@@ -631,6 +641,7 @@ testDeclarationsAreReadOnceAndCostsBounded()
 testSharedNamesAreFreedWithTheirLastTask()
 testDueIsRequiredAndStaggerGivesIntegers()
 testRunRaisesOnlyForAWrongCall()
+testNegativeRoomDefersTasksWithoutAnError()
 testTaskLimit()
 testStagger()
 testOldestFirstAndClassOrder()

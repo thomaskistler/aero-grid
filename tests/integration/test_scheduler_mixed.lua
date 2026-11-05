@@ -1,13 +1,8 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
--- Legacy mode is the shipped behaviour and must not change while the new scheduler
--- is built. Each scenario below is an existing integration test; the host's
--- scheduling decisions during it are hashed and compared with the hash recorded
--- from the code before the host mode existed (tests/fixtures/scheduler-legacy-golden.txt).
--- The model service's interval is a deliberate exception: it changed from 20
--- to 100 ticks after the migration, so the goldens capture the user-requested
--- cadence while still checking the legacy loop.
--- Regenerate the file only for a deliberate change of legacy behavior:
+-- Mixed mode keeps the remaining legacy-owned services and panels on their
+-- existing loops while migrated tasks run through the scheduler. Hash the
+-- scenarios to catch unintended changes to that coexistence behavior.
 --   AEROGRID_WRITE_GOLDEN=1 make test
 
 local root = (... and ... ~= "" and ...) or "."
@@ -18,8 +13,8 @@ local recorder = trace.install()
 local main = assert(hostIo.open(root .. "/src/WIDGETS/AeroGrid/main.lua", "r"))
 local source = main:read("a")
 main:close()
--- A release ships the legacy scheduler with the probe off.
-assert(string.find(source, 'local SCHEDULER_MODE = "legacy"', 1, true), "main.lua must ship the legacy scheduler")
+-- Releases use mixed mode with the development probe off.
+assert(string.find(source, 'local SCHEDULER_MODE = "mixed"', 1, true), "main.lua must enable mixed mode")
 assert(string.find(source, "local SCHEDULER_PROBE = false", 1, true), "main.lua must ship without the probe")
 
 local SCENARIOS = {
@@ -43,7 +38,7 @@ for _, name in ipairs(SCENARIOS) do
 end
 local actual = table.concat(lines, "\n") .. "\n"
 
-local goldenPath = root .. "/tests/fixtures/scheduler-legacy-golden.txt"
+local goldenPath = root .. "/tests/fixtures/scheduler-mixed-golden.txt"
 if os.getenv("AEROGRID_WRITE_GOLDEN") then
     local file = assert(hostIo.open(goldenPath, "w"))
     file:write(actual)
@@ -52,6 +47,6 @@ end
 local file = assert(hostIo.open(goldenPath, "r"))
 local golden = file:read("a")
 file:close()
-assert(actual == golden, "legacy scheduling changed.\nexpected:\n" .. golden .. "actual:\n" .. actual)
+assert(actual == golden, "mixed scheduling changed.\nexpected:\n" .. golden .. "actual:\n" .. actual)
 
-print(string.format("Scheduler legacy parity passed (%d scenarios)", #SCENARIOS))
+print(string.format("Scheduler mixed parity passed (%d scenarios)", #SCENARIOS))

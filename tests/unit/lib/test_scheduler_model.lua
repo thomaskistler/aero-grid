@@ -178,6 +178,11 @@ local function adapter(variant)
             local box = { world = trace[1].world }
             local service = recordedService.new(radio(box), services)
             service.tickElapsed = scheduler.elapsed
+            if type(service.update) ~= "function" then
+                service.update = function(self, now)
+                    return self:read(self.decl.stages.run.maxUnits, now)
+                end
+            end
             VARIANTS[variant](service)
             service.box = box
             return service
@@ -301,6 +306,7 @@ end
 do
     -- The declaration is one stage with a unit per facet, at the cap of the service.
     equal(scheduler.check(modelService.decl), nil, "a usable declaration")
+    equal(modelService.update, nil, "migrated services have no legacy update entry point")
     local stage = modelService.decl.stages.run
     equal(modelService.new(services.environment({}), services).interval, INTERVAL, "at most once a second")
     equal(stage.maxUnits, 4)
@@ -344,22 +350,16 @@ do
 end
 
 do
-    -- The legacy loop of a modal callback and the task share one due time, so
-    -- neither runs the other's release again.
+    -- The legacy registry never runs a scheduler-owned service.
     local instance, reads = service("seven", 100)
     local runtime = services.runtime({})
     runtime.order[1], runtime.byId.model = instance, instance
-    equal(services.update(runtime, 100), "model")
+    equal(services.update(runtime, 100), nil)
+    equal(reads(), 0)
+    equal(instance.revision, 0)
+    equal(instance:step(4, "run", 100), INTERVAL)
     equal(reads(), 4)
     equal(instance.revision, 1)
-    equal(instance:step(4, "run", 105), INTERVAL - 5, "served by the legacy loop: not due")
-    equal(reads(), 4)
-    equal(instance.revision, 1)
-    equal(instance:step(4, "run", 200), INTERVAL)
-    equal(reads(), 8)
-    equal(instance.revision, 2)
-    equal(services.update(runtime, 125), nil, "served by the task: not due")
-    equal(instance.revision, 2)
 end
 
 do

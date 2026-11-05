@@ -2,14 +2,12 @@
 
 --- Development host for the new scheduler (plans/scheduler-framework.md, section 7).
 ---
---- Loaded by `main.lua` only when its `SCHEDULER_MODE` is not `legacy` or its
---- `SCHEDULER_PROBE` is on. Releases ship `legacy` and `false`, so none of this
---- runs on a radio that is not a development build.
+--- Loaded by `main.lua` when its `SCHEDULER_MODE` is not `legacy` or its
+--- `SCHEDULER_PROBE` is on. Releases ship `mixed` and `false`.
 ---
---- Modes: `legacy` (this host only observes), `mixed` (each task has one owner;
---- the legacy loop serves what the table gives to `legacy` within a capped share
---- and the framework gets the rest of the budget), `new` (every task is owned by
---- the framework).
+--- Modes: `legacy` (this host only observes), `mixed` (legacy work keeps its
+--- existing limits and scheduling; the framework gets only the remaining budget),
+--- `new` (every task is owned by the framework).
 
 local host = { RUNTIME_API = 1 }
 host.__index = host
@@ -19,7 +17,7 @@ host.__index = host
 --- task to `new` is a one-line change, and it needs a task registered under the
 --- same id: a service carries its `decl` and `step` and the host registers it once
 --- it has subscribers (`host:enroll`); the others use `host.scheduler:add`. Modal
---- callbacks stay legacy until phase R5.
+--- callbacks also run migrated service tasks through the scheduler.
 host.OWNERS = {
     ["service:telemetry"] = "legacy",
     ["service:model"] = "new",
@@ -47,11 +45,6 @@ host.OWNERS = {
     ["panel:tx-battery"] = "legacy",
 }
 
---- The instructions the legacy loop (`updateServices` and `dispatchDue`) may
---- charge per callback, together. Per phase, the smallest value that the largest
---- legacy item allows (spec section 4): 6650 until the services move.
-host.LEGACY_SHARE = 6650
-
 --- The declared cost of one release of a service that carries its task
 --- declaration, at its largest grant.
 local function declared(instance)
@@ -76,9 +69,7 @@ host.SERVICE_BOUNDS = {
 
 host.SERVICE_CLASS = { telemetry = "critical", history = "critical", control = "critical" }
 
---- Declared bounds of one legacy panel refresh. The chart's is its largest
---- stage; the legacy loop charges it the whole share. theme-showcase has none,
---- so a layout that uses it cannot run in `mixed`.
+--- Declared bounds of one legacy panel refresh. theme-showcase has no refresh work.
 host.PANEL_BOUNDS = {
     chart = 7800,
     metric = 4800,
@@ -95,6 +86,7 @@ host.PANEL_BOUNDS = {
     ["flight-mode"] = 600,
     ["host-diagnostics"] = 500,
     ["service-probe"] = 500,
+    ["theme-showcase"] = 0,
 }
 
 --- Declared fixed cost of a callback at 16 panels (contracts, callback overhead).
@@ -103,9 +95,6 @@ host.OVERHEAD = { steady = 1250, background = 1130 }
 --- Declared cost of the head work `pumpFlight` runs before the scheduler: the
 --- reset poll and the flight tick (which stay legacy at the head until R4).
 host.HEAD_COSTS = { reset = 620, tick = 3600 }
-
--- Panels with this refreshCost take a whole callback in the legacy loop.
-local EXCLUSIVE_COST = 6
 
 --- Attach a host to `context`. `options`: `mode`, `probe` (boolean), `load`
 --- (relative path -> module) and `api` (`log`, `error`, `show` of main.lua).
@@ -127,20 +116,16 @@ function host.attach(context, options)
         waiting = {},
     }, host)
 
-    local share = { limit = host.LEGACY_SHARE, spent = 0 }
-    self.share = share
-    function share.admit(instance)
+    local legacy = { spent = 0 }
+    self.legacy = legacy
+    function legacy.admit(instance)
         return self.owners["service:" .. instance.id] ~= "new"
-            and self:serviceBound(instance) <= share.limit - share.spent
     end
-    function share.skips(entry)
+    function legacy.skips(entry)
         return self.owners["panel:" .. entry.module.id] == "new"
     end
-    function share.panelCost(entry)
-        if (rawget(entry.module, "refreshCost") or 1) >= EXCLUSIVE_COST then
-            return share.limit
-        end
-        return self.panelBounds[entry.module.id]
+    function legacy.panelCost(entry)
+        return self.panelBounds[entry.module.id] or self.scheduler.CEILING
     end
 
     if self.mode ~= "legacy" then
@@ -165,8 +150,8 @@ function host:serviceBound(instance)
 end
 
 --- Check the owner table against what is loaded; returns a message, or nil.
---- Every item needs an owner. A legacy one needs a declared bound that fits the
---- share, a new one needs a registered task. `new` mode needs all of them new.
+--- Every legacy item needs a declared bound for scheduler accounting; every new
+--- item needs a registered task. `new` mode needs all items owned by the scheduler.
 ---@param context table
 ---@return string?
 function host:verify(context)
@@ -184,8 +169,6 @@ function host:verify(context)
             return key .. " is not owned by the scheduler"
         elseif not bound then
             return key .. " has no declared bound"
-        elseif bound > self.share.limit then
-            return key .. " exceeds the legacy share"
         end
     end
     for _, instance in ipairs(context.serviceRuntime and context.serviceRuntime.order or {}) do
@@ -245,8 +228,8 @@ function host:enroll()
     return nil
 end
 
---- True when the host can run this callback. A failed check is logged once and
---- the caller falls back to the legacy scheduler for good.
+--- True when the host can run this callback. A failed check is logged and the
+--- caller uses the legacy path for unowned work while retaining scheduled tasks.
 ---@param context table
 ---@return boolean
 function host:ready(context)
@@ -263,7 +246,7 @@ function host:ready(context)
     end
     message = message or (changed and self:verify(context))
     if message then
-        self.api.log(context, "scheduler: " .. message .. "; using the legacy scheduler")
+        self.api.log(context, "scheduler: " .. message .. "; using legacy fallback for unowned work")
         return false
     end
     self.checked, self.registry = context.panels, context.serviceRuntime
@@ -276,18 +259,18 @@ function host:charge(what)
     self.head = self.head + self.headCosts[what]
 end
 
---- Start the scheduled part of a callback. Returns the legacy share, or nil
---- when the legacy loop runs unbounded (`legacy` mode).
+--- Start the scheduled part of a callback. Returns legacy accounting, or nil
+--- when the host only observes the legacy loop (`legacy` mode).
 ---@param kind string
----@return table? share
+---@return table? legacy accounting
 function host:begin(kind)
     self.active = true
-    self.share.spent = 0
+    self.legacy.spent = 0
     if self.probe then
         self.probe:before(kind, getTime(), self.head, self.mode == "legacy")
     end
     if self.mode ~= "legacy" then
-        return self.share
+        return self.legacy
     end
 end
 
@@ -296,7 +279,7 @@ end
 function host:served(instance)
     if self.active then
         local bound = self:serviceBound(instance) or 0
-        self.share.spent = self.share.spent + bound
+        self.legacy.spent = self.legacy.spent + bound
         if self.probe then
             self.probe:ran("service:" .. instance.id, bound)
         end
@@ -304,13 +287,13 @@ function host:served(instance)
 end
 
 --- Finish the callback: the framework plans and runs its tasks with the head work
---- and the legacy share as `used`.
+--- and declared legacy cost as `used`.
 ---@param kind string
 function host:finish(kind)
     self.active = false
     local plan
     if self.scheduler then
-        self.scheduler:run(kind, getTime(), self.head + self.share.spent)
+        self.scheduler:run(kind, getTime(), self.head + self.legacy.spent)
         plan = self.scheduler.lastPlan.U
     end
     if self.probe then

@@ -79,10 +79,12 @@ def patch_main(source):
 
 
 def patch_mode(source, mode):
-    """The development host mode of main.lua (`mixed` or `new`); `legacy` is what ships."""
-    if mode == "legacy":
+    """The host mode of main.lua (`mixed` ships; other modes are audit baselines)."""
+    if mode not in ("legacy", "mixed", "new"):
+        raise ValueError(f"Unsupported scheduler audit mode: {mode}")
+    if mode == "mixed":
         return source
-    return replace_once(source, 'local SCHEDULER_MODE = "legacy"', f'local SCHEDULER_MODE = "{mode}"', "main.lua")
+    return replace_once(source, 'local SCHEDULER_MODE = "mixed"', f'local SCHEDULER_MODE = "{mode}"', "main.lua")
 
 
 def patch_loader(source):

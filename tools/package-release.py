@@ -28,8 +28,8 @@ ASSETS = {
     "satellite-light.svg",
 }
 THEMES = {"modern-dark.yml", "modern-light.yml"}
-# Development-only settings of main.lua: a release keeps the legacy scheduler and no probe.
-SCHEDULER_SETTINGS = ('local SCHEDULER_MODE = "legacy"', "local SCHEDULER_PROBE = false")
+# Releases use mixed mode without the development-only probe.
+SCHEDULER_SETTINGS = ('local SCHEDULER_MODE = "mixed"', "local SCHEDULER_PROBE = false")
 
 
 def version(source):
@@ -81,6 +81,8 @@ def package(source, output, developer_build=None):
     for setting in SCHEDULER_SETTINGS:
         if setting not in main:
             raise ValueError(f"A release must keep the shipped scheduler setting in main.lua: {setting}")
+    if 'local SCHEDULER_MODE = "new"' in main:
+        raise ValueError("A release cannot use new scheduler mode before all tasks are migrated")
     output.mkdir(parents=True, exist_ok=True)
     archive = output / ("AeroGrid-dev.zip" if developer_build else f"AeroGrid-{release}.zip")
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:

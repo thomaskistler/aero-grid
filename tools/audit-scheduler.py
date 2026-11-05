@@ -323,9 +323,8 @@ def main():
     parser.add_argument("--report", action="store_true", help="Summarize the results already in build/scheduler-audit")
     parser.add_argument("--timeout", type=int, default=900, help="Seconds before a native run is abandoned")
     parser.add_argument("--traces", action="store_true", help=f"Copy callback traces to {TRACE_DIR}")
-    parser.add_argument("--mode", choices=("legacy", "mixed"), default="legacy",
-                        help="Host mode of the widget under test; mixed runs the tasks the owner table gives to "
-                             "the new scheduler (results go to <scenario>-mixed)")
+    parser.add_argument("--mode", choices=("legacy", "mixed"), default="mixed",
+                        help="Run migrated tasks in mixed mode, or use legacy mode as a baseline for remaining tasks")
     parser.add_argument("--companion", type=Path, default=COMPANION)
     args = parser.parse_args()
     available = scenarios()
@@ -386,7 +385,7 @@ def main():
         worst = max((row["max"] for label, row in rows.items() if label.startswith("callback:")), default=0)
         print(f"{name} ({args.mode}): {data['panels']} panels, worst callback {worst} instructions, "
               f"{len(rows)} measured tasks")
-        if args.traces and args.mode == "legacy" and data["trace"] and available[name].get("trace"):
+        if args.traces and data["trace"] and available[name].get("trace"):
             TRACE_DIR.mkdir(parents=True, exist_ok=True)
             (TRACE_DIR / f"{name}.txt").write_text("\n".join(data["trace"]) + "\n")
     return status

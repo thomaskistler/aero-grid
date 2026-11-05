@@ -9,7 +9,7 @@
 --- 1. A service only reads what a loaded panel actually subscribed to. A
 ---    service with no subscriptions is skipped entirely, so a dashboard of
 ---    metrics never pays for GPS, trims, or global variables.
---- 2. At most one service is updated per host cycle, chosen round robin among
+--- 2. At most one legacy-owned service is updated per host cycle, chosen round robin among
 ---    those due, and each service further caps how many subscriptions it
 ---    refreshes in one update. Per-callback cost is therefore bounded by the
 ---    caps rather than by how much the layout asks for.
@@ -26,7 +26,8 @@
 ---@field revision integer Incremented on every completed update.
 ---@field count integer Number of live subscriptions.
 ---@field failed? boolean Set after an update raises, which retires the service.
----@field update fun(self: AeroGridServiceInstance, now: integer)
+---@field update? fun(self: AeroGridServiceInstance, now: integer) Legacy-owned service entry point.
+---@field step? fun(self: AeroGridServiceInstance, grant: integer, stage: string, now: integer): integer
 ---@field resetSession? fun(self: AeroGridServiceInstance, now: integer, index: integer): integer? Next reset item, or nil when finished.
 
 local services = { RUNTIME_API = 1 }
@@ -148,8 +149,8 @@ end
 --- Update at most one due service.
 --- Returns the service updated so the host can report a failure exactly once,
 --- and so tests can observe the scheduling instead of inferring it.
---- With the development scheduler host, `admit(instance)` lets the host skip a
---- service the new scheduler owns or one that does not fit the legacy share.
+--- `admit(instance)` lets the host skip scheduler-owned services. Scheduler-only
+--- services also have no `update` method.
 ---@param runtime table
 ---@param now integer
 ---@param admit? fun(instance: AeroGridServiceInstance): boolean
@@ -171,11 +172,13 @@ function services.update(runtime, now, admit)
         local instance = order[cursor]
         cursor = cursor % count + 1
 
-        -- An idle service costs nothing: nothing loaded references it.
+        -- Scheduler-only services have no legacy update entry point. The host
+        -- releases them from the task table instead.
         if
             instance
             and not instance.failed
             and instance.count > 0
+            and type(instance.update) == "function"
             and now >= instance.due
             and (not admit or admit(instance))
         then

@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 -- The development scheduler host in the real widget: `mixed` and `new` modes, the
--- owner table, the legacy share, the call sites, the load errors, and the probe.
+-- owner table, legacy accounting, call sites, load errors, and the probe.
 -- Nothing here migrates a real task; a stand-in service shows the ownership flip.
 local root = (... and ... ~= "" and ...) or "."
 local hostIo = io
@@ -219,7 +219,7 @@ do
         local panel = string.match(name, "^(.+)%.lua$")
         if panel then
             expected["panel:" .. panel] = true
-            boundsExpected[panel] = panel ~= "theme-showcase"
+            boundsExpected[panel] = true
         end
     end
     listing:close()
@@ -237,8 +237,8 @@ do
     end
 end
 
--- 1. Mixed, every task legacy: the legacy loop stays inside its share and the plan
--- inside the budget, and every panel and service is still served.
+-- 1. Mixed, every task legacy: legacy work keeps its original cadence, its
+-- declared cost is charged to the plan, and every panel and service is served.
 do
     local definition, context = start("mixed", "host-light")
     local host = context.schedulerHost
@@ -248,13 +248,16 @@ do
     callbacks(definition, context, 400, function(_, kind)
         local plan = context.scheduler.lastPlan
         equal(plan.kind, kind)
-        assert(host.share.spent <= host.share.limit, "the legacy loop passed its share: " .. host.share.spent)
-        assert(plan.U <= LIMIT, "plan over the budget: " .. plan.U)
         assert(
-            plan.U >= host.overhead[kind] + host.head + host.share.spent + scheduler.FIXED_COST,
-            "the plan must count the head work and the legacy share as used"
+            plan.U >= host.overhead[kind] + host.head + host.legacy.spent + scheduler.FIXED_COST,
+            "the plan must count the head work and legacy cost as used"
         )
-        served = math.max(served, host.share.spent)
+        if host.overhead[kind] + host.head + host.legacy.spent + scheduler.FIXED_COST > LIMIT then
+            equal(plan.ran, 0, "negative room defers scheduled tasks without an error")
+        else
+            assert(plan.U <= LIMIT, "plan over the budget: " .. plan.U)
+        end
+        served = math.max(served, host.legacy.spent)
     end)
     assert(context.schedulerHost, "a layout the table covers stays on the host")
     assert(context.serviceRuntime.updates > 20, "services are still served")
@@ -269,11 +272,10 @@ do
     assert(host.head >= host.headCosts.tick, "the flight tick is passed as used")
 end
 
--- 2. A chart takes the whole legacy share: one per callback, nothing else from legacy.
+-- 2. A chart keeps its exclusive legacy slot and its declared cost is charged.
 do
     local definition, context = start("mixed", "host-chart")
     local host = context.schedulerHost
-    host.share.limit = 10190
     local from, charts = 1, 0
     callbacks(definition, context, 300, function(_, kind)
         if kind == "steady" then
@@ -286,10 +288,9 @@ do
             if chart then
                 charts = charts + 1
                 equal(#ran, 1, "a chart callback runs nothing else from the legacy loop")
-                equal(host.share.spent, host.share.limit, "the chart is charged the whole share")
+                assert(host.legacy.spent >= host.PANEL_BOUNDS.chart, "the chart's declared cost is charged")
             end
         end
-        assert(host.share.spent <= host.share.limit)
     end)
     assert(context.schedulerHost, "the chart layout loads with a share that covers the chart")
     assert(charts > 5, "the chart is still refreshed")
@@ -375,20 +376,16 @@ do
     assert(ranBefore <= context.serviceRuntime.updates)
 end
 
--- 4. Load errors: the host logs once and falls back to the plain legacy loop.
+-- 4. Invalid owner metadata is reported, but legacy work keeps running.
 local function loadError(name, damage, expected)
     local definition, context = start("mixed", "host-light")
     damage(context.schedulerHost)
     callbacks(definition, context, 60)
-    equal(context.schedulerHost, nil, name .. ": falls back to legacy")
-    equal(context.scheduler, nil)
+    assert(context.schedulerHost, name .. ": retains the migrated scheduler task")
+    assert(context.scheduler, name .. ": keeps the scheduler available")
     assert(logged(context, "scheduler: " .. expected), name .. ": logs '" .. expected .. "'")
-    assert(#refreshesIn(context, 1) > 5, name .. ": the legacy loop keeps serving")
-    assert(context.serviceRuntime.updates > 5)
+    assert(#refreshesIn(context, 1) > 5, name .. ": legacy-owned panels keep serving")
 end
-loadError("share too small", function(host)
-    host.share.limit = 1000
-end, "service:telemetry exceeds the legacy share")
 loadError("no owner", function(host)
     host.owners["panel:metric"] = nil
 end, "panel:metric has no owner")
@@ -401,10 +398,14 @@ end, "panel:metric is owned by the scheduler but has no task")
 loadError("owned and in use but not migrated", function(host)
     host.owners["service:telemetry"] = "new"
 end, "service:telemetry: instance needs a step function")
-loadError("an unbounded chart", function(host)
-    host.owners["panel:flight-counter"] = "legacy"
-    host.panelBounds["flight-counter"] = host.share.limit + 1
-end, "panel:flight-counter exceeds the legacy share")
+do
+    local definition, context = start("mixed", "host-light")
+    context.schedulerHost.panelBounds.metric = context.schedulerHost.panelBounds.metric + 1000
+    callbacks(definition, context, 60)
+    assert(context.schedulerHost, "large legacy bounds do not invalidate mixed mode")
+    equal(#context.errors, 0, "no-room handling is not an error")
+    assert(#refreshesIn(context, 1) > 5, "legacy panels keep their original cadence")
+end
 
 -- 5. `new`: every loaded task must be owned by the framework, and there is no
 -- legacy loop. Panel `background` hooks still run.
@@ -465,7 +466,7 @@ do
     )
     assert(first.scheduler and second.scheduler and first.scheduler ~= second.scheduler)
     assert(first.schedulerHost ~= second.schedulerHost)
-    assert(first.schedulerHost.share ~= second.schedulerHost.share)
+    assert(first.schedulerHost.legacy ~= second.schedulerHost.legacy)
 end
 
 -- 7. Callbacks the head consumes run no plan (a session reset here), and modal
@@ -549,12 +550,8 @@ do
     local host, model = context.schedulerHost, context.serviceRuntime.byId.model
     equal(host.owners["service:model"], "new")
     equal(model.count, 5, "identity, flight mode, timer, TX voltage and battery range")
-    local calls = { update = 0, step = 0, grants = {} }
-    local update, step = model.update, model.step
-    model.update = function(self, now)
-        calls.update = calls.update + 1
-        return update(self, now)
-    end
+    local calls = { step = 0, grants = {} }
+    local step = model.step
     model.step = function(self, grant, stage, now)
         calls.step = calls.step + 1
         calls.grants[grant] = true
@@ -569,7 +566,7 @@ do
     end)
     assert(context.scheduler.byId["service:model"], "the host registered the task")
     equal(model.tickElapsed, context.scheduler.elapsed, "uses the scheduler's wrap-safe tick helper")
-    equal(calls.update, 0, "the legacy loop never runs a service the framework owns")
+    equal(model.update, nil, "the migrated service has no legacy update path")
     local releases = (getTime() - first) // model.interval
     assert(calls.step >= releases * 0.8 and calls.step <= releases + 1, "one release per interval: " .. calls.step)
     equal(model.revision - revision, calls.step, "every release counts as an update")
@@ -578,19 +575,29 @@ do
     equal(model.flightModeView.name, "Sport")
     equal(#context.errors, 0)
 
-    -- The legacy loop of a modal callback shares the due time: nothing runs twice.
+    -- Modal callbacks also run the migrated service through the scheduler.
     callbacks(definition, context, 3)
     model.due = getTime()
-    local before = model.revision
-    equal(context.servicesModule.update(context.serviceRuntime, getTime()), "model", "served by the legacy loop")
-    equal(calls.update, 1)
-    equal(model.revision, before + 1)
-    local due = model.due
     context.scheduler.byId["service:model"].due = getTime()
-    fixture.tick(1)
-    definition.refresh(context)
-    equal(model.revision, before + 1, "the task finds it not due")
-    equal(model.due, due)
+    context.editorUi = {}
+    local before = model.revision
+    local previousSteps = calls.step
+    local isFullScreen = lvgl.isFullScreen
+    lvgl.isFullScreen = function()
+        return true
+    end
+    for _ = 1, 10 do
+        fixture.tick(1)
+        definition.refresh(context)
+        if calls.step > previousSteps then
+            break
+        end
+    end
+    lvgl.isFullScreen = isFullScreen
+    context.editorUi = nil
+    equal(model.update, nil, "the migrated service has no legacy update path")
+    equal(calls.step, previousSteps + 1, "modal callback releases it through the scheduler")
+    equal(model.revision, before + 1)
 
     -- A new layout or registry registers the tasks again, one task per service.
     host.checked = nil
@@ -611,7 +618,7 @@ do
         failures = failures + (string.find(message, "radio failure", 1, true) and 1 or 0)
     end
     equal(failures, 1, "reported once")
-    equal(calls.update, 1, "the legacy loop does not run it")
+    equal(model.update, nil, "the retired task still has no legacy update path")
 end
 
 -- 11. A service nothing subscribes to has no task; the task appears with the first
