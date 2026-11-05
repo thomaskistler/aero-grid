@@ -30,8 +30,148 @@ local function task(log, name, delay)
 end
 
 local function add(s, id, decl, instance, due)
-    local ok, message = s:add({ id = id, decl = decl, instance = instance, due = due })
+    local ok, message = s:add({ id = id, decl = decl, instance = instance, due = due or 0 })
     assert(ok, message)
+end
+
+local function testRemovingAnIdleListedTaskUnlistsIt()
+    local log = {}
+    local s = scheduler.new(OVERHEAD)
+    add(s, "a", single("critical", 100), task(log, "a"), 500)
+    add(s, "b", single("normal", 100), task(log, "b"), 500)
+    equal(s:remove("a"), true)
+    equal(s:remove("b"), true)
+    equal(#s.lists[1] + #s.lists[2], 0, "nothing stays listed")
+    equal(s:run("steady", 1000), 0)
+    equal(#log, 0, "a removed task never runs")
+    equal(s.count, 0)
+    add(s, "a", single("critical", 100), task(log, "a"), 0)
+    equal(s:run("steady", 1000), 1, "its id can return")
+end
+
+local function testRetiredTasksAreChargedAndCounted()
+    local s = scheduler.new({ steady = 0 })
+    for index = 1, 3 do
+        local instance = task({}, index)
+        instance.stage = "missing"
+        add(s, index, single("normal", 100), instance, 0)
+    end
+    equal(s:run("steady", 1), 0, "nothing runs")
+    equal(s.lastPlan.ran, 3, "a retired task counts as run")
+    equal(s.lastPlan.examined, 3)
+    equal(s.lastPlan.charged, FIXED + 3 * CHARGE)
+    equal(s.lastPlan.U, FIXED + 3 * CHARGE, "and its charge is in the plan")
+    equal(#s:takeErrors(), 3)
+end
+
+local function testKindsAreCheckedWithReasons()
+    local s = scheduler.new({ steady = 1000, background = 800 })
+    local decl = function(kinds)
+        return single("normal", 100, { kinds = kinds })
+    end
+    local function refused(kinds, text)
+        local ok, reason = s:add({ id = text, decl = decl(kinds), instance = task({}, text), due = 0 })
+        equal(ok, false, text)
+        assert(
+            string.find(reason, text == "empty" and "no callback" or "kind", 1, true),
+            text .. ": " .. tostring(reason)
+        )
+    end
+    refused({ stedy = true }, "unknown name")
+    refused({ steady = true, stedy = true }, "unknown name beside a known one")
+    refused({ steady = false }, "all false")
+    refused({ steady = false, background = false }, "all false, two kinds")
+    refused({ steady = "yes" }, "non-boolean value")
+    refused({ steady = true, background = 1 }, "non-boolean beside a boolean")
+    refused({}, "empty")
+    add(s, "ok1", decl({ steady = true }), task({}, "x"), 0)
+    add(s, "ok2", decl({ steady = false, background = true }), task({}, "x"), 0)
+    equal(s:run("steady", 1), 1, "only the steady task ran in a steady callback")
+    equal(
+        scheduler.new({ modal = 0 }):add({ id = "m", decl = single("normal", 10), instance = task({}, "m"), due = 0 }),
+        false
+    )
+end
+
+local function testDeclarationsAreReadOnceAndCostsBounded()
+    local decl = single("normal", 100)
+    local s = scheduler.new({ steady = 0 })
+    local log = {}
+    add(s, "a", decl, task(log, "a"), 0)
+    decl.stages.run.perUnit = 0
+    decl.stages.run.maxUnits = 1 << 40
+    decl.kinds = { nowhere = true }
+    add(s, "b", decl, task(log, "b"), 0)
+    local ok = pcall(s.run, s, "steady", 1)
+    equal(ok, true, "changing a declaration after the first add cannot make run raise")
+    equal(#log, 2)
+    for _, bad in ipairs({
+        single("normal", math.maxinteger - 100),
+        single("normal", scheduler.CEILING + 1),
+        { class = "normal", stages = { run = { fixed = scheduler.CEILING + 1, perUnit = 1, maxUnits = 1 } } },
+        { class = "normal", stages = { run = { fixed = 0, perUnit = 1, maxUnits = scheduler.CEILING + 1 } } },
+        single("normal", 10, { shared = { x = math.maxinteger } }),
+        single("normal", 10, { shared = { x = scheduler.CEILING + 1 } }),
+        single("normal", 10, { shared = "link" }),
+        single("normal", 10, { shared = 5 }),
+    }) do
+        local fresh = scheduler.new({ steady = 0 })
+        local added, reason = fresh:add({ id = "x", decl = bad, instance = task({}, "x"), due = 0 })
+        equal(added, false)
+        assert(type(reason) == "string")
+    end
+end
+
+local function testSharedNamesAreFreedWithTheirLastTask()
+    local s = scheduler.new({ steady = 0 })
+    local a = single("normal", 10, { shared = { link = 100 } })
+    local b = single("normal", 10, { shared = { link = 200 } })
+    add(s, "a1", a, task({}, "a1"), 0)
+    add(s, "a2", a, task({}, "a2"), 0)
+    equal(s:add({ id = "b", decl = b, instance = task({}, "b"), due = 0 }), false, "one name, one cost")
+    s:remove("a1")
+    equal(s:add({ id = "b", decl = b, instance = task({}, "b"), due = 0 }), false, "still used by a2")
+    s:remove("a2")
+    equal(next(s.sharedCost), nil, "the last user frees the name")
+    equal(next(s.sharedRefs), nil)
+    add(s, "b", b, task({}, "b"), 0)
+    equal(s.sharedCost.link, 200)
+    local retiring = task({}, "r")
+    retiring.stage = "missing"
+    add(s, "r", single("normal", 10, { shared = { gone = 5 } }), retiring, 0)
+    s:run("steady", 1)
+    equal(s.sharedCost.gone, nil, "a retired task frees its names")
+    -- A name freed by one declaration can be taken by another with a new cost,
+    -- and the first declaration is checked again at every add.
+    s:remove("b")
+    add(s, "a3", a, task({}, "a3"), 0)
+    equal(s:add({ id = "b2", decl = b, instance = task({}, "b2"), due = 0 }), false)
+end
+
+local function testDueIsRequiredAndStaggerGivesIntegers()
+    local s = scheduler.new(OVERHEAD)
+    local ok, reason = s:add({ id = "a", decl = single("normal", 10), instance = task({}, "a") })
+    equal(ok, false)
+    assert(string.find(reason, "due", 1, true))
+    equal(math.type(scheduler.stagger(3, 25.0)), "integer")
+    equal(math.type(scheduler.stagger(3.0, 25)), "integer")
+    equal(scheduler.stagger(3, 25.0), 15)
+end
+
+local function testRunRaisesOnlyForAWrongCall()
+    local s = scheduler.new(OVERHEAD)
+    add(s, "a", single("normal", 10), task({}, "a"), 0)
+    for _, call in ipairs({
+        { "nowhere", 1 },
+        { "steady", "1" },
+        { "steady", 1.5 },
+        { "steady", 1, {} },
+        { "steady", 1, "5" },
+    }) do
+        local called = pcall(s.run, s, call[1], call[2], call[3])
+        equal(called, false, "call " .. tostring(call[1]) .. " " .. tostring(call[2]) .. " " .. tostring(call[3]))
+    end
+    equal(pcall(s.run, s, "steady", 5, 100), true)
 end
 
 local function testDeclarationChecks()
@@ -54,15 +194,15 @@ local function testDeclarationChecks()
         assert(scheduler.check(decl), "declaration " .. index .. " should be rejected")
     end
     local s = scheduler.new(OVERHEAD)
-    local ok = s:add({ id = "x", decl = bad[1], instance = task({}, "x") })
+    local ok = s:add({ due = 0, id = "x", decl = bad[1], instance = task({}, "x") })
     equal(ok, false)
-    ok = s:add({ id = "x", decl = good, instance = {} })
+    ok = s:add({ due = 0, id = "x", decl = good, instance = {} })
     equal(ok, false, "an instance needs a step")
-    equal(s:add({ id = "x", decl = good, instance = task({}, "x") }), true)
-    equal(s:add({ id = "x", decl = good, instance = task({}, "x") }), false, "ids are unique")
+    equal(s:add({ due = 0, id = "x", decl = good, instance = task({}, "x") }), true)
+    equal(s:add({ due = 0, id = "x", decl = good, instance = task({}, "x") }), false, "ids are unique")
     equal(s:remove("x"), true)
     equal(s:remove("x"), false)
-    equal(s:add({ id = "x", decl = good, instance = task({}, "x") }), true, "a removed id can return")
+    equal(s:add({ due = 0, id = "x", decl = good, instance = task({}, "x") }), true, "a removed id can return")
 end
 
 local function testTaskLimit()
@@ -71,7 +211,7 @@ local function testTaskLimit()
     for index = 1, scheduler.MAX_TASKS do
         add(s, index, decl, task({}, index))
     end
-    equal(s:add({ id = "extra", decl = decl, instance = task({}, "extra") }), false)
+    equal(s:add({ due = 0, id = "extra", decl = decl, instance = task({}, "extra") }), false)
 end
 
 local function testStagger()
@@ -484,6 +624,13 @@ local function testDeterminism()
 end
 
 testDeclarationChecks()
+testRemovingAnIdleListedTaskUnlistsIt()
+testRetiredTasksAreChargedAndCounted()
+testKindsAreCheckedWithReasons()
+testDeclarationsAreReadOnceAndCostsBounded()
+testSharedNamesAreFreedWithTheirLastTask()
+testDueIsRequiredAndStaggerGivesIntegers()
+testRunRaisesOnlyForAWrongCall()
 testTaskLimit()
 testStagger()
 testOldestFirstAndClassOrder()

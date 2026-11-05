@@ -21,11 +21,20 @@
 --- exactly the planned stage with at most `grant` units, or does no work and
 --- returns 1.
 ---
---- Time is the host's tick counter, which wraps like EdgeTX's int32 `getTime()`:
---- the library only uses differences, kept relative to an epoch that moves
---- forward, so no stored value grows past about 2^30. The dues given to `add`
---- must lie within about 2^30 ticks of each other and of the clock, as `now +
---- offset` does. All numbers are integers; EdgeTX Lua has 32-bit integers.
+--- Time is the host's tick counter, which wraps like EdgeTX's int32 `getTime()`.
+--- Due times are stored as given (absolute ticks) and only ever compared by
+--- difference, `scheduler.elapsed(a, b)`, which wraps on any Lua. That is exact
+--- while two ticks are less than 2^31 apart: a task is at most MAX_DELAY (2^30)
+--- ahead of the clock and runs when it is behind it, so a task starved for more
+--- than 2^31 ticks (248 days) would look as if it were in the future. `step`
+--- receives the host's `now` unchanged, not a stored value. All numbers are
+--- integers; EdgeTX Lua has 32-bit integers.
+---
+--- `run` raises for a call the host got wrong (unknown kind, `now` or `used` not
+--- a number). Everything a task supplies is validated by `add` or retires the
+--- task. A step that adds or removes tasks costs instructions the planner does
+--- not charge (`add` up to about 700 for a new declaration, about 400 otherwise,
+--- `remove` about 400 with 128 tasks): it declares that margin in its bound.
 
 local scheduler = {
     CEILING = 15000,
@@ -36,28 +45,21 @@ local scheduler = {
     -- The planner's own cost, charged against the budget: a callback, a task
     -- examined, a task run or retired. Upper bounds from the instruction counts
     -- of tests/support/scheduler_overhead.lua, which fails if one is exceeded.
-    FIXED_COST = 120,
-    EXAMINE_COST = 52,
-    RUN_COST = 176,
-    -- Moving the epoch (once per 2^29 ticks): a fixed part and one per task.
-    REBASE_COST = 60,
-    REBASE_TASK_COST = 16,
+    FIXED_COST = 132,
+    EXAMINE_COST = 64,
+    RUN_COST = 224,
 }
 scheduler.__index = scheduler
 
 local CEILING, MARGIN, NORMAL_RESERVE = scheduler.CEILING, scheduler.MARGIN, scheduler.NORMAL_RESERVE
 local MAX_TASKS, MAX_DELAY = scheduler.MAX_TASKS, scheduler.MAX_DELAY
 local FIXED_COST, EXAMINE_COST, RUN_COST = scheduler.FIXED_COST, scheduler.EXAMINE_COST, scheduler.RUN_COST
-local REBASE_COST, REBASE_TASK_COST = scheduler.REBASE_COST, scheduler.REBASE_TASK_COST
 local STEADY_AND_BACKGROUND = { steady = true, background = true }
 local STAGGER_SPACING = 5
 local MAX_SHARED = 2
 
--- Moves the epoch forward when the relative clock gets this far, and keeps a
--- task that has waited longer than FLOOR from falling off the int32 range.
-local REBASE = 1 << 29
-local FLOOR = -(1 << 30)
--- Sign extension of the low 32 bits: wraps a difference of ticks on any Lua.
+-- Sign extension of the low 32 bits: wraps a difference of ticks on any Lua
+-- (the identity on EdgeTX's 32-bit integers). Written out where it is hot.
 local MASK, SIGN = 0xFFFFFFFF, 0x80000000
 
 local floor, pcall, type = math.floor, pcall, type
@@ -70,6 +72,14 @@ local RESERVE = { NORMAL_RESERVE, 0 }
 
 local function whole(value)
     return mtype(value) == "integer"
+end
+
+--- The wrap-safe difference `a - b` of two ticks, as a signed 32-bit number.
+---@param a integer
+---@param b integer
+---@return integer
+function scheduler.elapsed(a, b)
+    return ((a - b) & MASK ~ SIGN) - SIGN
 end
 
 --- Return a message when `decl` is not a usable declaration, else nil.
@@ -91,14 +101,17 @@ function scheduler.check(decl)
     if decl.kinds ~= nil and type(decl.kinds) ~= "table" then
         return "kinds must be a table"
     end
+    if decl.shared ~= nil and type(decl.shared) ~= "table" then
+        return "shared must be a table"
+    end
     local names = 0
     for name, cost in pairs(decl.shared or {}) do
         names = names + 1
         if names > MAX_SHARED then
             return "at most " .. MAX_SHARED .. " shared costs (the charged run cost assumes it)"
         end
-        if not whole(cost) or cost < 0 then
-            return "shared cost " .. tostring(name) .. " must be a non-negative integer"
+        if not whole(cost) or cost < 0 or cost > CEILING then
+            return "shared cost " .. tostring(name) .. " must be an integer from 0 to the ceiling"
         end
     end
     for name, stage in pairs(decl.stages) do
@@ -106,12 +119,17 @@ function scheduler.check(decl)
             type(stage) ~= "table"
             or not whole(stage.fixed)
             or stage.fixed < 0
+            or stage.fixed > CEILING
             or not whole(stage.perUnit)
             or stage.perUnit < 1
+            or stage.perUnit > CEILING
             or not whole(stage.maxUnits)
             or stage.maxUnits < 1
+            or stage.maxUnits > CEILING
         then
-            return "stage " .. tostring(name) .. " needs integer fixed >= 0, perUnit >= 1 and maxUnits >= 1"
+            return "stage "
+                .. tostring(name)
+                .. " needs integers: fixed 0 to the ceiling, perUnit and maxUnits 1 to the ceiling"
         end
     end
     return nil
@@ -123,8 +141,8 @@ end
 ---@param interval integer
 ---@return integer
 function scheduler.stagger(index, interval)
-    local slots = (interval + STAGGER_SPACING - 1) // STAGGER_SPACING
-    return STAGGER_SPACING * (index % (slots > 1 and slots or 1))
+    local slots = (floor(interval) + STAGGER_SPACING - 1) // STAGGER_SPACING
+    return STAGGER_SPACING * (floor(index) % (slots > 1 and slots or 1))
 end
 
 --- `overhead[kind]` is the host's declared fixed cost of a callback of that kind.
@@ -135,7 +153,6 @@ function scheduler.new(overhead)
         byId = {},
         count = 0,
         seq = 0,
-        epoch = 0,
         stamp = 0,
         lists = { {}, {} },
         minStep = math.huge,
@@ -146,29 +163,35 @@ function scheduler.new(overhead)
         grants = {},
         charged = {},
         sharedCost = {},
+        sharedRefs = {},
         metas = setmetatable({}, { __mode = "k" }),
     }, scheduler)
 end
 
--- Lists are sorted by (due, seq). A task that ran usually goes to the end.
+-- Lists are sorted by (due, seq), due by wrapped difference. A task that ran
+-- usually goes to the end.
 local function insert(list, record)
     local due, seq, size = record.due, record.seq, #list
-    local last = size > 0 and list[size]
-    if not last or last.due < due or (last.due == due and last.seq < seq) then
-        list[size + 1] = record
-        return
-    end
-    local low, high = 1, size
-    while low < high do
-        local middle = (low + high) // 2
-        local at = list[middle]
-        if at.due < due or (at.due == due and at.seq < seq) then
-            low = middle + 1
-        else
-            high = middle
+    local last = list[size]
+    if last then
+        local d = ((last.due - due) & MASK ~ SIGN) - SIGN
+        if d > 0 or (d == 0 and last.seq > seq) then
+            local low, high = 1, size
+            while low < high do
+                local middle = (low + high) // 2
+                local at = list[middle]
+                d = ((at.due - due) & MASK ~ SIGN) - SIGN
+                if d < 0 or (d == 0 and at.seq < seq) then
+                    low = middle + 1
+                else
+                    high = middle
+                end
+            end
+            table.insert(list, low, record)
+            return
         end
     end
-    table.insert(list, low, record)
+    list[size + 1] = record
 end
 
 -- The kinds a declaration runs in, checked against the host's kinds: a
@@ -222,9 +245,11 @@ local function neverFits(self, decl, kinds)
 end
 
 --- Register a task. Returns true, or false and a reason; a host must check it (the
---- list holds at most MAX_TASKS tasks). `due` is a tick of the host's clock. An
---- add during a plan takes effect at the next plan.
----@param task { id: any, decl: table, instance: table, due?: integer }
+--- list holds at most MAX_TASKS tasks). `due` is required: the tick of the host's
+--- clock the task is first ready at (`now` plus a stagger offset), within 2^30
+--- ticks of it. A declaration is read once; changing it afterwards has no effect.
+--- An add during a plan takes effect at the next plan.
+---@param task { id: any, decl: table, instance: table, due: integer }
 ---@return boolean ok
 ---@return string? reason
 function scheduler:add(task)
@@ -238,9 +263,8 @@ function scheduler:add(task)
     if type(instance) ~= "table" or type(instance.step) ~= "function" then
         return false, "instance needs a step function"
     end
-    if due == nil then
-        due = 0
-    elseif type(due) ~= "number" or not tointeger(due) then
+    local tick = type(due) == "number" and tointeger(due)
+    if not tick then
         return false, "due must be a whole number of ticks"
     end
     local meta = self.metas[decl]
@@ -257,26 +281,25 @@ function scheduler:add(task)
         if message then
             return false, message
         end
-        local shared = {}
-        for name, cost in pairs(decl.shared or {}) do
-            if self.sharedCost[name] ~= nil and self.sharedCost[name] ~= cost then
-                return false, "shared cost " .. tostring(name) .. " is declared with two different costs"
-            end
-            shared[#shared + 1] = { name, cost }
-        end
-        for _, item in ipairs(shared) do
-            self.sharedCost[item[1]] = item[2]
-        end
-        for _, stage in pairs(decl.stages) do
+        -- Copies, so a host that changes its declaration cannot break the planner.
+        local stages, shared = {}, {}
+        for name, stage in pairs(decl.stages) do
+            stages[name] = { fixed = stage.fixed, perUnit = stage.perUnit, maxUnits = stage.maxUnits }
             if stage.fixed + stage.perUnit < self.minStep then
                 self.minStep = stage.fixed + stage.perUnit
             end
         end
-        -- One per declaration, so a task record stays small.
+        for name, cost in pairs(decl.shared or {}) do
+            shared[#shared + 1] = { name, cost }
+        end
+        local copy = {}
+        for kind, allowed in pairs(kinds) do
+            copy[kind] = allowed
+        end
         meta = {
             list = self.lists[CLASS[decl.class]],
-            kinds = kinds,
-            stages = decl.stages,
+            kinds = kinds == STEADY_AND_BACKGROUND and kinds or copy,
+            stages = stages,
             first = decl.first or "run",
             exclusive = decl.exclusive,
             s1 = shared[1] and shared[1][1],
@@ -286,10 +309,19 @@ function scheduler:add(task)
         }
         self.metas[decl] = meta
     end
-    if self.seq == 0 then
-        -- Dues are stored as offsets from an epoch near the first of them, so the
-        -- order of the numbers is the order in time even where the clock wraps.
-        self.epoch = tointeger(due)
+    -- A shared name has one cost while any task uses it.
+    local costs = self.sharedCost
+    if
+        (meta.s1 and costs[meta.s1] ~= nil and costs[meta.s1] ~= meta.c1)
+        or (meta.s2 and costs[meta.s2] ~= nil and costs[meta.s2] ~= meta.c2)
+    then
+        return false, "a shared cost is declared with two different costs"
+    end
+    for _, name in ipairs({ meta.s1 or false, meta.s2 or false }) do
+        if name then
+            costs[name] = name == meta.s1 and meta.c1 or meta.c2
+            self.sharedRefs[name] = (self.sharedRefs[name] or 0) + 1
+        end
     end
     self.seq = self.seq + 1
     self.count = self.count + 1
@@ -298,7 +330,7 @@ function scheduler:add(task)
         instance = instance,
         meta = meta,
         list = meta.list,
-        due = ((tointeger(due) - self.epoch) & MASK ~ SIGN) - SIGN,
+        due = tick,
         seq = self.seq,
         state = "listed",
     }
@@ -307,10 +339,24 @@ function scheduler:add(task)
     return true
 end
 
+-- Frees the shared names no other task uses.
+local function release(self, meta)
+    for _, name in ipairs({ meta.s1 or false, meta.s2 or false }) do
+        if name then
+            local refs = self.sharedRefs[name] - 1
+            self.sharedRefs[name] = refs > 0 and refs or nil
+            if refs <= 0 then
+                self.sharedCost[name] = nil
+            end
+        end
+    end
+end
+
 local function retire(self, record, message)
     record.state = "removed"
     self.byId[record.id] = nil
     self.count = self.count - 1
+    release(self, record.meta)
     self.errors[#self.errors + 1] = { id = record.id, message = message }
 end
 
@@ -334,6 +380,7 @@ function scheduler:remove(id)
     record.state = "removed"
     self.byId[id] = nil
     self.count = self.count - 1
+    release(self, record.meta)
     return true
 end
 
@@ -371,26 +418,12 @@ local function compact(list, examined, taken)
     end
 end
 
--- Moves the epoch to now, so every stored due is a small offset from the present
--- and the raw order of the numbers is the order in time. Dues are shifted by the
--- same amount, which keeps their order; a task that has waited longer than FLOOR
--- (more than 120 days) is held at FLOOR and may lose its place among such tasks.
-local function rebase(self, elapsed)
-    self.epoch = ((self.epoch + elapsed) & MASK ~ SIGN) - SIGN
-    for _, list in ipairs(self.lists) do
-        for _, record in ipairs(list) do
-            local due = ((record.due - elapsed) & MASK ~ SIGN) - SIGN
-            record.due = due < FLOOR and FLOOR or due
-        end
-    end
-end
-
---- The tick a task is next due at, in the host's clock, or nil.
+--- The tick a task is next due at, or nil.
 ---@param id any
 ---@return integer?
 function scheduler:dueOf(id)
     local record = self.byId[id]
-    return record and ((record.due + self.epoch) & MASK ~ SIGN) - SIGN
+    return record and ((record.due & MASK) ~ SIGN) - SIGN
 end
 
 --- Plan and run one callback of `kind` at tick `now`. `used` is the declared
@@ -415,15 +448,12 @@ function scheduler:run(kind, now, used)
     if not tick then
         error("now must be a whole number of ticks", 2)
     end
-    local t = ((tick - self.epoch) & MASK ~ SIGN) - SIGN
-    local fixed = FIXED_COST
-    if t >= REBASE then
-        fixed = FIXED_COST + REBASE_COST + self.count * REBASE_TASK_COST
-        rebase(self, t)
-        t = 0
+    if used == nil then
+        used = 0
+    elseif type(used) ~= "number" then
+        error("used must be a number", 2)
     end
-    used = used or 0
-    local room = CEILING - MARGIN - overhead - used - fixed
+    local room = CEILING - MARGIN - overhead - used - FIXED_COST
     local lists, charged = self.lists, self.charged
     local records, stages, grants = self.planned, self.stages, self.grants
     local smallest = self.minStep + EXAMINE_COST + RUN_COST
@@ -438,7 +468,7 @@ function scheduler:run(kind, now, used)
         local examined, taken = 0, 0
         for index = 1, #list do
             local record = list[index]
-            if record.due > t or limit - spent < smallest then
+            if ((record.due - tick) & MASK ~ SIGN) - SIGN > 0 or limit - spent < smallest then
                 break
             end
             examined = index
@@ -503,8 +533,8 @@ function scheduler:run(kind, now, used)
         end
     end
     local plan = self.lastPlan
-    plan.kind, plan.U, plan.examined, plan.ran = kind, overhead + used + fixed + spent, examinedTotal, runTotal
-    plan.charged = fixed + examinedTotal * EXAMINE_COST + runTotal * RUN_COST
+    plan.kind, plan.U, plan.examined, plan.ran = kind, overhead + used + FIXED_COST + spent, examinedTotal, runTotal
+    plan.charged = FIXED_COST + examinedTotal * EXAMINE_COST + runTotal * RUN_COST
 
     for index = 1, planned do
         local record = records[index]
@@ -520,7 +550,7 @@ function scheduler:run(kind, now, used)
             elseif not ticks or ticks < 1 or ticks > MAX_DELAY then
                 retire(self, record, "step returned an invalid delay: " .. tostring(delay))
             else
-                record.due, record.state = t + ticks, "listed"
+                record.due, record.state = tick + ticks, "listed"
                 insert(record.list, record)
             end
         end
