@@ -143,17 +143,21 @@ local function testChargedCostsAreConservative()
         assert(string.find(text, want, 1, true), "no scenario " .. want)
     end
     assert(verdict.slack >= 0)
+    -- The charges are not the exact worst cases: a different luac point release or
+    -- one more instruction must not flip the invariant.
+    assert(verdict.headroom >= 1.04, "headroom " .. verdict.headroom .. " on " .. verdict.tightestRatio.name)
     assert(verdict.fixed <= scheduler.FIXED_COST and verdict.examine <= scheduler.EXAMINE_COST)
     assert(verdict.perRun <= scheduler.EXAMINE_COST + scheduler.RUN_COST)
     assert(results.heap.kib > 0 and results.heap.tasks == scheduler.MAX_TASKS)
     print(
         string.format(
-            "scheduler framework (offline count): idle %d, examine %.0f, run %.0f (examine included), least slack %d on %s, heap %.0f KiB at %d tasks",
+            "scheduler framework (offline count): idle %d, examine %.0f, run %.0f (examine included), least slack %d on %s, least headroom %.3f, heap %.0f KiB at %d tasks",
             verdict.fixed,
             verdict.examine,
             verdict.perRun,
             verdict.slack,
             verdict.tightest.name,
+            verdict.headroom,
             results.heap.kib,
             results.heap.tasks
         )

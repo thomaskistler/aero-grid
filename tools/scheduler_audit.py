@@ -178,6 +178,7 @@ def framework_report(data):
         lines.append("\t".join(str(row[key]) for key in ("name", "tasks", "measured", "charged", "examined", "ran", "slack")))
     lines.append(f"{len(rows)} scenarios and mixes measured; least slack {verdict['slack']} "
                  f"({verdict['tightest']['name']})")
+    lines.append(f"least headroom (charged / measured) {verdict['headroom']:.3f} ({verdict['tightestRatio']['name']})")
     lines.append(f"measured: idle callback {verdict['fixed']}, {verdict['examine']:.1f} per task examined, "
                  f"{verdict['perRun']:.1f} per task run (examination included)")
     lines.append("OK: every measured callback is within its charge" if verdict["ok"] else

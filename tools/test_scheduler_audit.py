@@ -109,7 +109,8 @@ class FrameworkReportTests(unittest.TestCase):
         return {
             "charges": {"fixed": 100, "examine": 48, "run": 160},
             "verdict": {"ok": measured <= 500, "failures": [row] if measured > 500 else [], "fixed": 90,
-                        "examine": 35.0, "perRun": 187.0, "slack": row["slack"], "tightest": row},
+                        "examine": 35.0, "perRun": 187.0, "slack": row["slack"], "tightest": row,
+                        "headroom": 1.1, "tightestRatio": row},
             "overhead": {"rows": [row], "heap": {"kib": 12.5, "tasks": 128}},
             "cases": {"stub": {"worst": {"run": {"1": 100}}, "proposed": {"run": {"perUnit": 130}},
                                "findings": findings}},

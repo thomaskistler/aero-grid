@@ -36,16 +36,16 @@ local RECORDED = mixes.releases({ recorded = 1, interval = 10 }, 1)[1].decl
 -- sensor per task and at two. Plan section 4.
 local EXPECTED = {
     [1] = {
-        A = { peak = 5802, sustained = 4450, T = 5808, TS = 3208, R4 = 6808 },
-        B = { peak = 4394, sustained = 2439, T = 7216, TS = 4616, R4 = 8216 },
-        C = { peak = 4754, sustained = 4131, T = 6856, TS = 4256, R4 = 7856 },
-        D = { peak = 8618, sustained = 7794, T = 2992, TS = 392, R4 = 3992 },
+        A = { peak = 6042, sustained = 4636, T = 5556, TS = 2956, R4 = 6556 },
+        B = { peak = 4574, sustained = 2553, T = 7024, TS = 4424, R4 = 8024 },
+        C = { peak = 4934, sustained = 4297, T = 6664, TS = 4064, R4 = 7664 },
+        D = { peak = 8978, sustained = 8122, T = 2620, TS = 20, R4 = 3620 },
     },
     [2] = {
-        A = { peak = 5574, sustained = 4159, T = 6036, TS = 3436, R4 = 7036 },
-        B = { peak = 5574, sustained = 2298, T = 6036, TS = 3436, R4 = 7036 },
-        C = { peak = 5574, sustained = 3939, T = 6036, TS = 3436, R4 = 7036 },
-        D = { peak = 8162, sustained = 7338, T = 3448, TS = 848, R4 = 4448 },
+        A = { peak = 5754, sustained = 4296, T = 5844, TS = 3244, R4 = 6844 },
+        B = { peak = 5754, sustained = 2400, T = 5844, TS = 3244, R4 = 6844 },
+        C = { peak = 5754, sustained = 4077, T = 5844, TS = 3244, R4 = 6844 },
+        D = { peak = 8402, sustained = 7546, T = 3196, TS = 596, R4 = 4196 },
     },
 }
 
@@ -68,6 +68,7 @@ end
 
 local function addNormalWork(simulation)
     simulation:add({
+        due = 0,
         id = "chart",
         decl = CHART,
         stage = "begin",
@@ -146,15 +147,17 @@ local function testLargestPieceAgainstTheMaximumTaskSize()
     equal(
         table.concat(gaps, "; "),
         table.concat({
-            "A/TS/1 per task=2980",
-            "A/TS/2 per task=3208",
-            "B/TS/2 per task=3208",
-            "C/TS/2 per task=3208",
-            "D/R4/1 per task=3764",
-            "D/T/1 per task=2764",
-            "D/T/2 per task=3220",
-            "D/TS/1 per task=164",
-            "D/TS/2 per task=620",
+            "A/TS/1 per task=2668",
+            "A/TS/2 per task=2956",
+            "B/TS/2 per task=2956",
+            "C/TS/1 per task=3776",
+            "C/TS/2 per task=2956",
+            "D/R4/1 per task=3332",
+            "D/R4/2 per task=3908",
+            "D/T/1 per task=2332",
+            "D/T/2 per task=2908",
+            "D/TS/1 per task=-268",
+            "D/TS/2 per task=308",
         }, "; ")
     )
     -- Every other combination fits M, and a piece of M is admitted there.
@@ -480,7 +483,7 @@ local function testStartOffsetsAndClockWrapDoNotChangePlans()
 end
 
 -- Callbacks hours or days apart: the clock wraps and the epoch moves many times.
-local function testLongGapsMoveTheEpochAndTheClockWraps()
+local function testLongGapsAndTheClockWrap()
     local steps = 1 << 28
     local library = scheduler.new({ steady = 0 })
     local runs = { fast = 0, medium = 0, slow = 0 }
@@ -493,19 +496,58 @@ local function testLongGapsMoveTheEpochAndTheClockWraps()
         }
     end
     local decl = once("critical", 10)
-    assert(library:add({ id = "fast", decl = decl, instance = task("fast", 3) }))
-    assert(library:add({ id = "medium", decl = decl, instance = task("medium", steps) }))
-    assert(library:add({ id = "slow", decl = decl, instance = task("slow", scheduler.MAX_DELAY) }))
+    assert(library:add({ due = 0, id = "fast", decl = decl, instance = task("fast", 3) }))
+    assert(library:add({ due = 0, id = "medium", decl = decl, instance = task("medium", steps) }))
+    assert(library:add({ due = 0, id = "slow", decl = decl, instance = task("slow", scheduler.MAX_DELAY) }))
     for step = 0, 40 do
         library:run("steady", sim.wrap32(step * steps))
     end
     equal(runs.fast, 41, "ready at every callback")
     equal(runs.medium, 41, "released once per 2^28 ticks")
     equal(runs.slow, 11, "released once per 2^30 ticks, as often as the clock allows")
-    assert(library.epoch ~= 0, "the epoch moved")
-    for _, record in pairs(library.byId) do
-        assert(record.due >= -(1 << 30) and record.due <= (1 << 30) + (1 << 29), "a stored due stays inside int32")
+end
+
+-- `step` receives the host's tick unchanged: across the int32 wrap, and from any
+-- start. (Every stub elsewhere ignores `now`.)
+local function testStepsReceiveTheHostTick()
+    for _, start in ipairs({ 0, 5, 0x8000, 0x1FFFFFF0, 0x7FFFFFF0, 0xFFFFFFF0 }) do
+        local library = scheduler.new({ steady = 0 })
+        local seen = {}
+        local decl = once("critical", 10)
+        local first = sim.wrap32(start)
+        assert(library:add({
+            id = "a",
+            decl = decl,
+            due = first,
+            instance = {
+                step = function(_, _, _, now)
+                    seen[#seen + 1] = now
+                    return 7
+                end,
+            },
+        }))
+        local expected = {}
+        for index = 0, 12 do
+            local tick = sim.wrap32(start + index * 7)
+            expected[#expected + 1] = tick
+            library:run("steady", tick)
+        end
+        equal(table.concat(seen, ","), table.concat(expected, ","), "steps at start " .. start)
+        equal(library:dueOf("a"), sim.wrap32(start + 12 * 7 + 7), "dueOf is a host tick")
     end
+end
+
+-- Wrap-safe differences, including the extremes of the window.
+local function testElapsedIsWrapSafe()
+    local elapsed = scheduler.elapsed
+    equal(elapsed(10, 4), 6)
+    equal(elapsed(4, 10), -6)
+    equal(elapsed(sim.wrap32(0x80000003), sim.wrap32(0x7FFFFFFD)), 6, "across the wrap")
+    equal(elapsed(sim.wrap32(0x7FFFFFFD), sim.wrap32(0x80000003)), -6)
+    equal(elapsed(1 << 30, 0), 1 << 30)
+    equal(elapsed(0, 1 << 30), -(1 << 30))
+    equal(elapsed(0x7FFFFFFF, 0), 0x7FFFFFFF)
+    equal(elapsed(0x80000000, 0), -0x80000000, "2^31 apart is the edge of the window")
 end
 
 local function testInputsAreValidated()
@@ -538,6 +580,7 @@ local function testInputsAreValidated()
     for text, delay in pairs(delays) do
         local fine = scheduler.new({ steady = 1000 })
         assert(fine:add({
+            due = 0,
             id = "x",
             decl = decl,
             instance = {
@@ -554,6 +597,7 @@ local function testInputsAreValidated()
     for _, delay in ipairs(bads) do
         local broken = scheduler.new({ steady = 1000 })
         assert(broken:add({
+            due = 0,
             id = "x",
             decl = decl,
             instance = {
@@ -581,6 +625,7 @@ local function testInputsAreValidated()
         "a non-boolean kind"
     )
     assert(library:add({
+        due = 0,
         id = "k5",
         decl = once("normal", 100, { kinds = { steady = true, background = false } }),
         instance = instance(),
@@ -592,7 +637,9 @@ local function testInputsAreValidated()
         { id = "n1", decl = once("normal", room, STEADY_ONLY), instance = instance() },
         "a stage that cannot fit with the planner's charge"
     )
-    assert(library:add({ id = "n2", decl = once("normal", room - CHARGE, STEADY_ONLY), instance = instance() }))
+    assert(
+        library:add({ due = 0, id = "n2", decl = once("normal", room - CHARGE, STEADY_ONLY), instance = instance() })
+    )
     rejected(
         { id = "n3", decl = once("critical", room - CHARGE, STEADY_ONLY), instance = instance() },
         "a critical stage above the reserved room"
@@ -602,14 +649,19 @@ local function testInputsAreValidated()
         decl = once("normal", room - CHARGE, { kinds = { steady = true }, shared = { big = 1 } }),
         instance = instance(),
     }, "a shared cost that no longer fits")
-    assert(library:add({ id = "n5", decl = once("normal", 100, { shared = { link = 560 } }), instance = instance() }))
+    assert(library:add({
+        due = 0,
+        id = "n5",
+        decl = once("normal", 100, { shared = { link = 560 } }),
+        instance = instance(),
+    }))
     rejected(
         { id = "n6", decl = once("normal", 100, { shared = { link = 561 } }), instance = instance() },
         "one shared name with two costs"
     )
     -- A kind the host does not have is not a reason to refuse the default kinds.
-    assert(scheduler.new({ steady = 0 }):add({ id = "only", decl = decl, instance = instance() }))
-    equal(scheduler.new({ modal = 0 }):add({ id = "none", decl = decl, instance = instance() }), false)
+    assert(scheduler.new({ steady = 0 }):add({ due = 0, id = "only", decl = decl, instance = instance() }))
+    equal(scheduler.new({ modal = 0 }):add({ due = 0, id = "none", decl = decl, instance = instance() }), false)
 
     equal(scheduler.stagger(3, 0), 0)
     equal(scheduler.stagger(3, -5), 0)
@@ -674,6 +726,7 @@ local function testFirstReadyTaskRunsUnderConstantOverload()
     local simulation = sim.new(scheduler, { steady = STEADY_OVERHEAD })
     for index = 1, 60 do
         simulation:add({
+            due = 0,
             id = index,
             decl = once(index % 2 == 0 and "critical" or "normal", 300 + index * 20),
             delay = 1,
@@ -706,7 +759,7 @@ end
 local function testNoStackingAfterLongSkips()
     local simulation = sim.new(scheduler, { steady = STEADY_OVERHEAD })
     for index = 1, 30 do
-        simulation:add({ id = index, decl = once(index % 3 == 0 and "critical" or "normal", 200), delay = 5 })
+        simulation:add({ due = 0, id = index, decl = once(index % 3 == 0 and "critical" or "normal", 200), delay = 5 })
     end
     for now = 1000, 20000, 1000 do
         local report = simulation:callback("steady", now, 0)
@@ -737,7 +790,7 @@ local function testExclusiveChartsAndKinds()
             end,
         })
     end
-    simulation:add({ id = "service", decl = RECORDED, delay = 10 })
+    simulation:add({ due = 0, id = "service", decl = RECORDED, delay = 10 })
     local ran = {}
     for now = 10, 3000, 10 do
         local report = simulation:callback(now % 100 == 0 and "background" or "steady", now, 0)
@@ -760,6 +813,7 @@ local function testFailingTasksRetireAlone()
     local simulation = sim.new(scheduler, { steady = STEADY_OVERHEAD })
     addMix(simulation, MIXES.A)
     simulation:add({
+        due = 0,
         id = "raises",
         decl = PANEL,
         delay = 5,
@@ -767,8 +821,8 @@ local function testFailingTasksRetireAlone()
             error("broken task")
         end,
     })
-    simulation:add({ id = "bad delay", decl = PANEL, delay = 0 })
-    simulation:add({ id = "bad stage", decl = PANEL, delay = 5, stage = "nowhere" })
+    simulation:add({ due = 0, id = "bad delay", decl = PANEL, delay = 0 })
+    simulation:add({ due = 0, id = "bad stage", decl = PANEL, delay = 5, stage = "nowhere" })
     local before = simulation.library.count
     for now = 10, 1000, 10 do
         simulation:callback("steady", now, 0)
@@ -821,6 +875,7 @@ local function testFaultInjectionNeverReachesTheFirmwareLimit()
         addNormalWork(simulation)
         for index = 1, 20 do
             simulation:add({
+                due = 0,
                 id = "filler" .. index,
                 decl = { class = "normal", stages = { run = { fixed = 100, perUnit = 400, maxUnits = 12 } } },
                 delay = 1,
@@ -863,7 +918,7 @@ local function testFaultInjectionNeverReachesTheFirmwareLimit()
     end
     local simulation = overloaded(1)
     local unbounded = sim.new(scheduler, { steady = STEADY_OVERHEAD })
-    unbounded:add({ id = "x", decl = RECORDED, delay = 1 })
+    unbounded:add({ due = 0, id = "x", decl = RECORDED, delay = 1 })
     unbounded.burst = function()
         return sim.FIRMWARE_LIMIT
     end
@@ -896,7 +951,9 @@ testAMixedRunUnderJitter()
 testPlansMatchTheReferenceOnRandomTasks()
 testPlansAreDeterministic()
 testStartOffsetsAndClockWrapDoNotChangePlans()
-testLongGapsMoveTheEpochAndTheClockWraps()
+testLongGapsAndTheClockWrap()
+testStepsReceiveTheHostTick()
+testElapsedIsWrapSafe()
 testInputsAreValidated()
 testSharedCostIsPaidByWhoeverRunsFirst()
 testLargestPieceAgainstTheMaximumTaskSize()

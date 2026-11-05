@@ -79,7 +79,7 @@ local function crowded(scheduler, n)
     return scheduler.CEILING - scheduler.MARGIN - scheduler.FIXED_COST - n * scheduler.EXAMINE_COST - 2 * charge
 end
 
--- Each scenario builds a scheduler and names the callback kind, `used` and tick.
+-- Each scenario builds a scheduler and names the callback kind and `used`.
 local function scenarios(scheduler, n)
     local list = {}
     local function add(name, build)
@@ -119,18 +119,6 @@ local function scenarios(scheduler, n)
             end)
         end
     end
-    add("epoch moves after a long gap, nothing ready", function()
-        local s = new()
-        local gap = 1 << 29
-        -- The first task added sets the epoch; take it away again.
-        assert(s:add({ id = "anchor", decl = declaration("normal", 10), instance = stub(1), due = 0 }))
-        s:remove("anchor")
-        for index = 1, n do
-            local decl = declaration(classOf(index), 10)
-            assert(s:add({ id = index, decl = decl, instance = stub(1), due = gap + 100 + index }))
-        end
-        return s, "steady", 0, gap + 3
-    end)
     add("none fits", function()
         return withTiny(fill(new(), n - 1, function()
             return declaration("normal", BIG), stub(1)
@@ -238,6 +226,15 @@ local function scenarios(scheduler, n)
             "steady",
             0
     end)
+    add("all retired (unknown stage)", function()
+        return fill(new(), n, function(index)
+            local instance = stub(100000)
+            instance.stage = "missing"
+            return declaration(classOf(index), 10), instance
+        end, n),
+            "steady",
+            0
+    end)
     add("unknown stage", function()
         return fill(new(), n, function(index)
             local instance = stub(100000)
@@ -276,7 +273,7 @@ local function installMix(scheduler, mixes, mix, batch)
         instance.stage = mixes.NEXT_CHART_STAGE[instance.stage]
         return 1
     end
-    assert(s:add({ id = "chart", decl = mixes.CHART, instance = chart }))
+    assert(s:add({ due = 0, id = "chart", decl = mixes.CHART, instance = chart }))
     for index = 1, 4 do
         assert(s:add({ id = "panel" .. index, decl = mixes.PANEL, instance = stub(20), due = index }))
     end
@@ -395,8 +392,8 @@ function overhead.measure(scheduler, count, pause, mixes)
     local rows = {}
     for _, n in ipairs(overhead.TASK_COUNTS) do
         for _, scenario in ipairs(scenarios(scheduler, n)) do
-            local s, kind, used, tick = scenario.build()
-            local measured = window(count, pause, s.run, s, kind, tick or 0, used) - K
+            local s, kind, used = scenario.build()
+            local measured = window(count, pause, s.run, s, kind, 0, used) - K
             rows[#rows + 1] = row(scenario.name .. " (" .. n .. " tasks)", s, measured)
         end
     end
@@ -420,7 +417,7 @@ function overhead.measure(scheduler, count, pause, mixes)
     collectgarbage()
     local before = collectgarbage("count")
     for index = 1, scheduler.MAX_TASKS do
-        s:add({ id = index, decl = decl, instance = instances[index] })
+        s:add({ due = 0, id = index, decl = decl, instance = instances[index] })
     end
     collectgarbage()
     return { K = K, rows = rows, heap = { tasks = scheduler.MAX_TASKS, kib = collectgarbage("count") - before } }
@@ -430,9 +427,11 @@ end
 --- took no more than the planner charged for it. It also reports what the
 --- measurements show per part: `fixed` (an idle callback), `examine` (per task
 --- examined, from scenarios that run nothing), `perRun` (per task examined and
---- run, from scenarios where every examined task runs), and the least slack.
+--- run, from scenarios where every examined task runs), the least slack and the
+--- least headroom (charged / measured).
 function overhead.verdict(results)
-    local verdict = { ok = true, failures = {}, fixed = 0, examine = 0, perRun = 0, slack = math.huge }
+    local verdict =
+        { ok = true, failures = {}, fixed = 0, examine = 0, perRun = 0, slack = math.huge, headroom = math.huge }
     for _, item in ipairs(results.rows) do
         if string.find(item.name, "^idle") then
             verdict.fixed = math.max(verdict.fixed, item.measured)
@@ -442,6 +441,9 @@ function overhead.verdict(results)
         if item.measured > item.charged then
             verdict.ok = false
             verdict.failures[#verdict.failures + 1] = item
+        end
+        if item.measured > 0 and item.charged / item.measured < verdict.headroom then
+            verdict.headroom, verdict.tightestRatio = item.charged / item.measured, item
         end
         if item.slack < verdict.slack then
             verdict.slack, verdict.tightest = item.slack, item
