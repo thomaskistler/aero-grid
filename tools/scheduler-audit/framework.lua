@@ -66,8 +66,13 @@ local function measureAll()
         run = scheduler.RUN_COST,
     }
     for _, name in ipairs(config.cases) do
-        local case = assert(loadScript("/WIDGETS/AeroGrid/audit/cases/" .. name .. ".lua"))()
-        results.cases[case.id] = measure.report(case, __count, __pause)
+        local case = measure.open(
+            assert(loadScript("/WIDGETS/AeroGrid/audit/cases/" .. name .. ".lua"))(),
+            function(relative)
+                return assert(loadScript("/WIDGETS/AeroGrid/" .. relative))()
+            end
+        )
+        results.cases[case.id] = measure.report(case, __count, __pause, scheduler)
     end
     return results
 end

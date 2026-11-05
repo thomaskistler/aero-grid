@@ -15,7 +15,8 @@
 -- adapter = {
 --   id        the task id,
 --   decl      the declaration the new scheduler runs,
---   new()     a fresh task: `step`, `update` (the legacy shim around `step`),
+--   new()     a fresh task: `step` (the new scheduler's entry point), `update` (the
+--             legacy loop's entry point: the extracted work at the full cap),
 --             `interval` and the fields the registry needs (see standin),
 --   feed(task, callback)     applies the callback's recorded input,
 --   old(task, now)           the pre-migration update,
@@ -33,18 +34,25 @@ local services = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/services.lua
 local parity = {}
 
 -- Runs the task under the real legacy loop (the services registry), calling
--- `update` (default: the task's own) in callbacks where it is due.
+-- `update` in callbacks where it is due: the one given (the golden run) or the
+-- task's own, whose calls are recorded as the schedule (the extraction run). The
+-- loop runs the first stage at its full cap.
 local function legacy(adapter, trace, update)
     local task = adapter.new()
-    task.update = update or task.update
+    local run, current = { snapshots = {}, schedule = {}, task = task }, 0
+    if update then
+        task.update = update
+    else
+        local own = task.update
+        local first = adapter.decl.first or "run"
+        local cap = adapter.decl.stages[first].maxUnits
+        task.update = function(self, now)
+            run.schedule[#run.schedule + 1] = { index = current, now = now, grant = cap, stage = first }
+            return own(self, now)
+        end
+    end
     local runtime = services.runtime({})
     services.register(runtime, task, trace[1].now)
-    local run, current = { snapshots = {}, schedule = {}, task = task }, 0
-    local step = task.step
-    task.step = function(self, grant, stage, now)
-        run.schedule[#run.schedule + 1] = { index = current, now = now, grant = grant, stage = stage }
-        return step(self, grant, stage, now)
-    end
     for index, callback in ipairs(trace) do
         current = index
         adapter.feed(task, callback)

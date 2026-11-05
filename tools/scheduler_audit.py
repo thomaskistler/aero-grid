@@ -78,6 +78,13 @@ def patch_main(source):
     return MAIN_PREFIX + source
 
 
+def patch_mode(source, mode):
+    """The development host mode of main.lua (`mixed` or `new`); `legacy` is what ships."""
+    if mode == "legacy":
+        return source
+    return replace_once(source, 'local SCHEDULER_MODE = "legacy"', f'local SCHEDULER_MODE = "{mode}"', "main.lua")
+
+
 def patch_loader(source):
     for old, new in LOADER_PATCHES:
         source = replace_once(source, old, new, "dashboard_loader.lua")
@@ -188,8 +195,14 @@ def framework_report(data):
     ok = verdict["ok"]
     for task, report in sorted(data["cases"].items()):
         for stage, grants in sorted(report["worst"].items()):
+            if isinstance(grants, list):  # the native encoder writes grants 1..n as an array
+                grants = {str(grant): cost for grant, cost in enumerate(grants, 1)}
             lines.append(f"{task}.{stage}: worst per grant " + " ".join(f"{g}={grants[g]}" for g in sorted(grants, key=int))
                          + f"; proposed {report['proposed'][stage]}")
+        if "planner" in report:
+            planner = report["planner"]
+            lines.append(f"{task}: framework cost of one release {planner['measured']}, charged {planner['charged']}")
+            ok = ok and planner["measured"] <= planner["charged"]
         for finding in report["findings"]:
             lines.append(f"{task}.{finding['stage']} grant {finding['grant']}: {finding['level']} "
                          f"({finding['ratio']:.0%} of the declared bound)")

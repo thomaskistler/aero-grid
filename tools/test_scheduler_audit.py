@@ -28,6 +28,11 @@ class InstrumentationTests(unittest.TestCase):
             patched = patch((audit.WIDGET / relative).read_text())
             self.assertNotEqual(patched, (audit.WIDGET / relative).read_text(), relative)
 
+    def test_the_host_mode_is_patched_only_when_asked(self):
+        source = (audit.WIDGET / "main.lua").read_text()
+        self.assertEqual(audit.patch_mode(source, "legacy"), source)
+        self.assertIn('local SCHEDULER_MODE = "mixed"', audit.patch_mode(source, "mixed"))
+
     def test_a_missing_anchor_is_reported(self):
         with self.assertRaisesRegex(RuntimeError, "expected one occurrence"):
             audit.patch_main("return {}")
@@ -62,6 +67,12 @@ class ScenarioTests(unittest.TestCase):
             self.assertLessEqual(small[0] * small[1], large[0] * large[1])
             for tag in ("min", "max"):
                 self.assertIn(f"{panel}-{tag}", scenarios)
+
+    def test_the_model_panels_scenario_reads_every_model_facet(self):
+        spec = self.cli.scenarios()["model-panels"]
+        self.assertEqual(spec["expected"], 4)
+        for panel in ("model-identity", "flight-mode", "flight-timer", "tx-battery"):
+            self.assertIn(f"type: {panel}", spec["layout"])
 
     def test_every_scenario_names_its_expected_panels(self):
         for name, spec in self.cli.scenarios().items():
@@ -129,6 +140,20 @@ class FrameworkReportTests(unittest.TestCase):
         self.assertIn("FAIL", "\n".join(lines))
         self.assertFalse(audit.framework_report(self.data(level="exceeds"))[0])
 
+    def test_report_fails_when_a_release_costs_more_than_the_planner_charged(self):
+        data = self.data()
+        data["cases"]["stub"]["planner"] = {"measured": 250, "charged": 420}
+        ok, lines = audit.framework_report(data)
+        self.assertTrue(ok)
+        self.assertIn("stub: framework cost of one release 250, charged 420", "\n".join(lines))
+        data["cases"]["stub"]["planner"]["measured"] = 421
+        self.assertFalse(audit.framework_report(data)[0])
+
+    def test_grants_one_to_n_arrive_as_an_array_from_the_native_encoder(self):
+        data = self.data()
+        data["cases"]["stub"]["worst"] = {"run": [100, 190, 280]}
+        self.assertIn("stub.run: worst per grant 1=100 2=190 3=280", "\n".join(audit.framework_report(data)[1]))
+
     def test_framework_image_runs_the_measurements_only(self):
         capture = load_cli().capture_module()
         cases = sorted(audit.CASE_DIR.glob("*.lua"))
@@ -159,6 +184,26 @@ class HookCheckTests(unittest.TestCase):
                     contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
                 status = cli.main()
         return status, stderr.getvalue()
+
+    def test_report_leaves_out_mixed_runs(self):
+        cli = load_cli()
+
+        def results(maximum):
+            bucket = {"n": 1, "max": maximum, "selfMax": maximum}
+            return {"stats": {"service:model": {"n": 1, "mean": maximum, "min": maximum, "max": maximum,
+                                                "selfMax": maximum, "units": {"1": bucket}}}}
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name, maximum in (("scenario", 220), ("scenario-mixed", 999)):
+                (root / name).mkdir()
+                (root / name / "results.json").write_text(json.dumps(results(maximum)))
+            out = io.StringIO()
+            with mock.patch.object(cli, "OUTPUT", root), mock.patch.object(sys, "argv", ["audit", "--report"]), \
+                    contextlib.redirect_stdout(out):
+                cli.main()
+        self.assertIn("service:model\t1\t220", out.getvalue())
+        self.assertNotIn("999", out.getvalue())
 
     def test_status_reports_agreement_and_mismatch(self):
         self.assertTrue(audit.hook_check_status({"counts": [10, 810]}, {"usages": [0, 0]})[0])

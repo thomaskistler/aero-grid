@@ -18,7 +18,7 @@ import sys
 TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
 from scheduler_audit import (CASE_DIR, PROBE_DIR, ROOT, SUPPORT_DIR, WIDGET, lua_literal, patch_chart,  # noqa: E402
-                             patch_loader, patch_main, aggregate, framework_report, hook_check_status,
+                             patch_loader, patch_main, patch_mode, aggregate, framework_report, hook_check_status,
                              reduce_results, supported_spans)
 from capture_recipes import PANELS, RECIPE_DIR, fixture_inputs, load_recipe  # noqa: E402
 
@@ -162,6 +162,17 @@ def scenarios():
         "recipe": "metric", "layout": custom_layout(cells), "expected": 10, "sources": 30, "settings": True,
         "phases": standard_phases(),
     }
+    # Every panel that reads the model service: identity, flight mode, a timer, and
+    # TX voltage with battery range (five facets, one more than an update reads).
+    model_cells = [("model-identity", 0, 0, 2, 2), ("flight-mode", 2, 0, 2, 1), ("flight-timer", 2, 1, 2, 1),
+                   ("tx-battery", 0, 2, 2, 2)]
+    result["model-panels"] = {
+        "recipe": "flight-timer", "expected": len(model_cells),
+        "layout": custom_layout([f"  - id: {panel}\n    type: {panel}\n    col: {col}\n    row: {row}\n"
+                                 f"    colSpan: {cols}\n    rowSpan: {rows}\n" for panel, col, row, cols, rows
+                                 in model_cells]),
+        "phases": standard_phases(),
+    }
     result["flight-smart"] = {
         "recipe": "metric", "expected": 2, "sources": 3, "settings": True, "smart": True,
         "layout": custom_layout([chart_cell("chart-a", 0, 2, (1, 2, 3)),
@@ -204,7 +215,7 @@ def build_native(library):
     return executable
 
 
-def prepare(capture, name, spec, sd):
+def prepare(capture, name, spec, sd, mode="legacy"):
     recipe_path = RECIPE_DIR / f"{spec['recipe']}.yaml"
     recipe = load_recipe(recipe_path)
     if "placements" in spec:
@@ -218,7 +229,7 @@ def prepare(capture, name, spec, sd):
     # Capture's own readiness hooks are replaced; start again from the shipped sources.
     shutil.copyfile(WIDGET / "main.lua", widget / "main.lua")
     shutil.copyfile(WIDGET / "lib/dashboard_loader.lua", widget / "lib/dashboard_loader.lua")
-    (widget / "main.lua").write_text(patch_main((WIDGET / "main.lua").read_text()))
+    (widget / "main.lua").write_text(patch_mode(patch_main((WIDGET / "main.lua").read_text()), mode))
     (widget / "lib/dashboard_loader.lua").write_text(patch_loader((WIDGET / "lib/dashboard_loader.lua").read_text()))
     (widget / "panels/chart.lua").write_text(patch_chart((WIDGET / "panels/chart.lua").read_text()))
     if "layout" in spec:
@@ -244,13 +255,13 @@ def prepare(capture, name, spec, sd):
         shutil.copyfile(PROBE_DIR / file, audit / file)
 
 
-def run(capture, executable, library, name, spec, timeout):
-    directory = OUTPUT / name
+def run(capture, executable, library, name, spec, timeout, mode="legacy"):
+    directory = OUTPUT / (name if mode == "legacy" else f"{name}-{mode}")
     if directory.exists():
         shutil.rmtree(directory)
     directory.mkdir(parents=True)
     sd = directory / "sdcard"
-    prepare(capture, name, spec, sd)
+    prepare(capture, name, spec, sd, mode)
     command = [str(executable), str(library), str(sd), str(timeout)]
     if name.endswith("-firmware"):
         command.append("passthrough")
@@ -312,6 +323,9 @@ def main():
     parser.add_argument("--report", action="store_true", help="Summarize the results already in build/scheduler-audit")
     parser.add_argument("--timeout", type=int, default=900, help="Seconds before a native run is abandoned")
     parser.add_argument("--traces", action="store_true", help=f"Copy callback traces to {TRACE_DIR}")
+    parser.add_argument("--mode", choices=("legacy", "mixed"), default="legacy",
+                        help="Host mode of the widget under test; mixed runs the tasks the owner table gives to "
+                             "the new scheduler (results go to <scenario>-mixed)")
     parser.add_argument("--companion", type=Path, default=COMPANION)
     args = parser.parse_args()
     available = scenarios()
@@ -332,7 +346,7 @@ def main():
         return 0 if ok else 1
     if args.report:
         runs = {path.parent.name: json.loads(path.read_text()) for path in sorted(OUTPUT.glob("*/results.json"))
-                if "stats" in json.loads(path.read_text())}
+                if "stats" in json.loads(path.read_text()) and not path.parent.name.endswith("-mixed")}
         status = 0
         pair = [OUTPUT / name / "results.json" for name in ("hook-check", "hook-check-firmware")]
         if all(path.exists() for path in pair):
@@ -360,7 +374,7 @@ def main():
     checks = {}
     status = 0
     for name in names:
-        data = run(capture, executable, library, name, available[name], args.timeout)
+        data = run(capture, executable, library, name, available[name], args.timeout, args.mode)
         if "loops" in available[name]:
             checks[name] = data
             if len(checks) == 2:
@@ -370,8 +384,9 @@ def main():
             continue
         rows = reduce_results(data)
         worst = max((row["max"] for label, row in rows.items() if label.startswith("callback:")), default=0)
-        print(f"{name}: {data['panels']} panels, worst callback {worst} instructions, {len(rows)} measured tasks")
-        if args.traces and data["trace"] and available[name].get("trace"):
+        print(f"{name} ({args.mode}): {data['panels']} panels, worst callback {worst} instructions, "
+              f"{len(rows)} measured tasks")
+        if args.traces and args.mode == "legacy" and data["trace"] and available[name].get("trace"):
             TRACE_DIR.mkdir(parents=True, exist_ok=True)
             (TRACE_DIR / f"{name}.txt").write_text("\n".join(data["trace"]) + "\n")
     return status

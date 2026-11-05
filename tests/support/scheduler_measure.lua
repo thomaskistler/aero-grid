@@ -27,6 +27,16 @@ local function ceil10(value)
     return math.ceil(value / 10 - 1e-9) * 10
 end
 
+--- A case file returns the case, or a function of `load(relative)` that builds it
+--- from modules of the widget (`load("lib/model_service.lua")`), so the native
+--- harness and the offline tests each supply their own loader.
+function measure.open(loaded, load)
+    if type(loaded) == "function" then
+        return loaded(load)
+    end
+    return loaded
+end
+
 --- Worst measured cost per stage and grant: `worst[stage][grant]`.
 function measure.run(case, count, pause)
     pause = pause or function() end
@@ -136,10 +146,59 @@ function measure.propose(case, worst)
     return stages
 end
 
---- Measure a case: `{ worst, proposed, findings }`.
-function measure.report(case, count, pause)
+--- The framework's own cost of one release of the real task: a planner pass that
+--- plans and runs it alone, less what its step cost. `charged` is what the planner
+--- charged for the pass (`lastPlan.charged`), which must cover `measured`. The
+--- bracket around the step adds a few instructions that count as framework cost.
+---@param scheduler table The scheduler library.
+---@return { measured: integer, charged: integer }
+function measure.planner(case, scheduler, count, pause)
+    pause = pause or function() end
+    pause(true)
+    local function window(run)
+        pause(false)
+        local first = count()
+        run()
+        local last = count()
+        pause(true)
+        return last - first
+    end
+    local probe = window(function() end)
+    local worst, charged = 0, 0
+    for _, item in ipairs(case.cases) do
+        for seed = 1, measure.SEEDS do
+            local instance, now = item.setup(seed)
+            local s = scheduler.new({ steady = 1250, background = 1130 })
+            local tick = now or seed
+            assert(s:add({ id = case.id, decl = case.decl, instance = instance, due = tick }))
+            local step, inside = instance.step, 0
+            instance.step = function(self, grant, stage, at)
+                local first = count()
+                local delay = step(self, grant, stage, at)
+                inside = count() - first
+                return delay
+            end
+            local total = window(function()
+                s:run("steady", tick, 0)
+            end)
+            assert(s.lastPlan.ran == 1, "the task must be planned and run")
+            worst = math.max(worst, total - inside - probe)
+            charged = s.lastPlan.charged
+        end
+    end
+    return { measured = worst, charged = charged }
+end
+
+--- Measure a case: `{ worst, proposed, findings }`, and `planner` when the
+--- scheduler library is given.
+function measure.report(case, count, pause, scheduler)
     local worst = measure.run(case, count, pause)
-    return { worst = worst, proposed = measure.propose(case, worst), findings = measure.check(case.decl, worst) }
+    return {
+        worst = worst,
+        proposed = measure.propose(case, worst),
+        findings = measure.check(case.decl, worst),
+        planner = scheduler and measure.planner(case, scheduler, count, pause) or nil,
+    }
 end
 
 return measure
