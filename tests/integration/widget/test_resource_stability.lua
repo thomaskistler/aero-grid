@@ -101,9 +101,10 @@ for cycle = 1, 21 do
         local memory = collectgarbage("count")
         assert(fixture.lvglMock.replacedFontRefCount() == 0, dashboard .. " replaced font callbacks during reflow")
         peakObjects = math.max(peakObjects, fullObjects)
-        if cycle == 1 then
+        -- The first cycle loads every dashboard's module code, which then stays shared.
+        if cycle == 2 then
             baseline[dashboard] = { memory = memory, objects = fullObjects }
-        else
+        elseif cycle > 2 then
             local growth = memory - baseline[dashboard].memory
             maxGrowth = math.max(maxGrowth, growth)
             assert(fullObjects == baseline[dashboard].objects, dashboard .. " grew its live object count")
@@ -127,7 +128,7 @@ print(
     string.format(
         "  mock resource stability: %d reloads after warm-up, peak %d objects, growth %.1f KiB;"
             .. " worst average %.3f ms/refresh (%s)",
-        20 * #dashboards,
+        19 * #dashboards,
         peakObjects,
         maxGrowth,
         worstRefreshMs,

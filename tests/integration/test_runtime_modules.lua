@@ -2,7 +2,7 @@
 
 local root = ... or "."
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(root).new()
-local definition = fixture.module("main.lua")
+local definition
 local originalLoadScript = loadScript
 local path = root .. "/build/test-widget-fixture/"
 local originalPrint, logs = print, {}
@@ -43,6 +43,8 @@ for _, relative in ipairs({
             end
             return originalLoadScript(filename)
         end
+        -- Loaded chunks are cached per widget script, so inject into a fresh one.
+        definition = fixture.module("main.lua")
         local zone = { x = 0, y = 0, w = 480, h = 272 }
         local context = definition.create(zone, { Layout = "main", Theme = "modern-dark" }, path)
         assert(context.runtimeFailed and not context.stage, relative .. " should fail before staging")
@@ -70,6 +72,7 @@ for _, relative in ipairs({
     end
 end
 loadScript = originalLoadScript
+definition = fixture.module("main.lua")
 
 local context = fixture.createLoaded()
 assert(not context.runtimeFailed and #context.errors == 0)
