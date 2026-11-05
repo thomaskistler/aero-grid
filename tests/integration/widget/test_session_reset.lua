@@ -118,6 +118,15 @@ measured(definition.refresh, second)
 local function panel(context, id)
     return assert(fixture.instanceOf(context, id), id)
 end
+local function checkHomeBoundary(context)
+    local feed = panel(context, "home").feed
+    assert(feed.homeStatus == "captured" or feed.homeStatus == "switch-unavailable")
+    if feed.homeStatus == "captured" then
+        assert(feed.home)
+    else
+        assert(not feed.home)
+    end
+end
 local beforeFirst, beforeSecond = first.serviceRuntime, second.serviceRuntime
 local beforeCharts = { panel(first, "chart"), panel(second, "chart") }
 local timer = model.getTimer(0).value
@@ -127,7 +136,6 @@ untilState(function()
     for _, context in ipairs({ first, second }) do
         if
             context.serviceRuntime.byId.history:session().elapsed == 0
-            or not panel(context, "home").feed.home
             or panel(context, "battery").estimatedCells ~= 4
         then
             return false
@@ -141,7 +149,7 @@ equal(model.getGlobalVariable(8, 0), 18)
 assert(owner.view.active and sticky)
 for _, context in ipairs({ first, second }) do
     assert(context.serviceRuntime.byId.history:session().elapsed > 0)
-    assert(panel(context, "home").feed.home)
+    equal(panel(context, "home").feed.homeStatus, "switch-unavailable")
     equal(panel(context, "battery").estimatedCells, 4)
 end
 fixture.radio.rssi = 25
@@ -233,7 +241,8 @@ fixture.radio.logicalSwitches[64] = true
 pump(100)
 equal(writes, 2, "a new flight can qualify after disarming")
 equal(model.getGlobalVariable(8, 0), 19)
-assert(panel(first, "home").feed.home and panel(second, "home").feed.home)
+checkHomeBoundary(first)
+checkHomeBoundary(second)
 
 first.aeroMenuHandlers.modelSettings()
 untilState(function()

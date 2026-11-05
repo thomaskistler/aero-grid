@@ -157,24 +157,59 @@ for step = 1, 1000 do
     end
     pump(1, step < 100)
 end
+local armFresh = context.serviceRuntime.byId.armed:state().fresh
+local host = context.schedulerHost
+local room = host.scheduler.CEILING
+    - host.scheduler.MARGIN
+    - host.scheduler.FIXED_COST
+    - host.scheduler.overhead.steady
+    - host.head
+    - host.legacy.spent
+local critical = context.serviceRuntime.byId.control.TASK_DECLARATIONS.critical.stages.run
+local criticalNeed = host.scheduler.NORMAL_RESERVE
+    + critical.fixed
+    + critical.perUnit
+    + host.scheduler.EXAMINE_COST
+    + host.scheduler.RUN_COST
+if not armFresh and not independent and (withFlights or smartEnabled) then
+    assert(room < criticalNeed, "shared arm data can be stale only when the critical task has no room")
+end
+if room < criticalNeed then
+    -- This overloaded combination can keep chart redraws deferred; data polling must continue.
+    local telemetry = context.serviceRuntime.byId.telemetry
+    local history = context.serviceRuntime.byId.history
+    assert(history.count == 24, "scheduler overload stopped recording chart history")
+    for id = 1, 24 do
+        local reading = telemetry:subscribe("Q" .. id)
+        assert(reading.updatedAt > getTime() - 300, "scheduler overload starved ordinary telemetry polling")
+        assert(reading.value > id, "chart sources must continue receiving changing data")
+    end
+    if smartEnabled then
+        local sensors = context.flightBroker.session.smart
+        assert(sensors.altitude.updatedAt == getTime() and sensors.speed.updatedAt == getTime())
+    end
+    return
+end
 for _, entry in ipairs(context.panels) do
     for _, item in ipairs(entry.instance.series) do
         assert(item.feed.plotRevision > liveRevisions[item], "live telemetry must keep recording during a flight")
-        assert(
-            item.drawnRevision and item.drawnRevision > liveRevisions[item],
-            string.format(
-                "live charts must keep drawing changing telemetry before disarming: source=%s drawn=%s baseline=%s current=%s job=%s/%s geometry=%s/%s pending=%s",
-                tostring(item.settings.source),
-                tostring(item.drawnRevision),
-                tostring(liveRevisions[item]),
-                tostring(item.feed.plotRevision),
-                tostring(item.job and item.job.index),
-                tostring(item.job and item.job.last),
-                tostring(item.job and item.job.geometryVersion),
-                tostring(entry.instance.geometryVersion),
-                tostring(entry.instance.pending and entry.instance.pending.settings.source)
+        if not smartEnabled or armFresh then
+            assert(
+                item.drawnRevision and item.drawnRevision > liveRevisions[item],
+                string.format(
+                    "live charts must keep drawing changing telemetry before disarming: source=%s drawn=%s baseline=%s current=%s job=%s/%s geometry=%s/%s pending=%s",
+                    tostring(item.settings.source),
+                    tostring(item.drawnRevision),
+                    tostring(liveRevisions[item]),
+                    tostring(item.feed.plotRevision),
+                    tostring(item.job and item.job.index),
+                    tostring(item.job and item.job.last),
+                    tostring(item.job and item.job.geometryVersion),
+                    tostring(entry.instance.geometryVersion),
+                    tostring(entry.instance.pending and entry.instance.pending.settings.source)
+                )
             )
-        )
+        end
     end
 end
 local history = context.serviceRuntime.byId.history

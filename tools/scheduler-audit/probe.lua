@@ -266,7 +266,13 @@ local function install(context)
                     instance.update = wrap("service:" .. tostring(instance.id), update)
                 end
                 -- A task the new scheduler owns runs from `step`, not from `update`.
-                wrapField(instance, "step", "service:" .. tostring(instance.id))
+                if instance.schedulerTasks then
+                    for _, task in ipairs(instance.schedulerTasks) do
+                        wrapField(task.instance, "step", task.id)
+                    end
+                else
+                    wrapField(instance, "step", "service:" .. tostring(instance.id))
+                end
                 wrapField(instance, "resetSession", "reset:" .. tostring(instance.id))
                 if instance.id == "telemetry" then
                     wrapField(instance, "scanPrecision", "telemetry:scan")

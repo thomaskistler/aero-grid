@@ -36,16 +36,16 @@ local RECORDED = mixes.releases({ recorded = 1, interval = 10 }, 1)[1].decl
 -- sensor per task and at two. Plan section 4.
 local EXPECTED = {
     [1] = {
-        A = { peak = 6042, sustained = 4636, T = 5556, TS = 2956, R4 = 6556 },
-        B = { peak = 4574, sustained = 2553, T = 7024, TS = 4424, R4 = 8024 },
-        C = { peak = 4934, sustained = 4297, T = 6664, TS = 4064, R4 = 7664 },
-        D = { peak = 8978, sustained = 8122, T = 2620, TS = 20, R4 = 3620 },
+        A = { peak = 5522, sustained = 4134, T = 6076, TS = 3476, R4 = 7076 },
+        B = { peak = 4054, sustained = 2033, T = 7544, TS = 4944, R4 = 8544 },
+        C = { peak = 4934, sustained = 3801, T = 6664, TS = 4064, R4 = 7664 },
+        D = { peak = 8458, sustained = 7626, T = 3140, TS = 540, R4 = 4140 },
     },
     [2] = {
-        A = { peak = 5754, sustained = 4296, T = 5844, TS = 3244, R4 = 6844 },
-        B = { peak = 5754, sustained = 2400, T = 5844, TS = 3244, R4 = 6844 },
-        C = { peak = 5754, sustained = 4077, T = 5844, TS = 3244, R4 = 6844 },
-        D = { peak = 8402, sustained = 7546, T = 3196, TS = 596, R4 = 4196 },
+        A = { peak = 5234, sustained = 3794, T = 6364, TS = 3764, R4 = 7364 },
+        B = { peak = 5234, sustained = 1880, T = 6364, TS = 3764, R4 = 7364 },
+        C = { peak = 5234, sustained = 3551, T = 6364, TS = 3764, R4 = 7364 },
+        D = { peak = 7882, sustained = 7050, T = 3716, TS = 1116, R4 = 4716 },
     },
 }
 
@@ -69,6 +69,13 @@ end
 local function addNormalWork(simulation)
     simulation:add({
         due = 0,
+        id = "control-normal",
+        decl = mixes.CONTROL_NORMAL,
+        delay = 20,
+        want = 6,
+    })
+    simulation:add({
+        due = 0,
         id = "chart",
         decl = CHART,
         stage = "begin",
@@ -80,6 +87,16 @@ local function addNormalWork(simulation)
     for index = 1, 4 do
         simulation:add({ id = "panel" .. index, decl = PANEL, due = index, delay = 20 })
     end
+end
+
+local function addOutputWork(simulation)
+    simulation:add({
+        due = 0,
+        id = "control-outputs",
+        decl = mixes.CONTROL_OUTPUTS,
+        delay = 10,
+        want = 32,
+    })
 end
 
 local function testAdmissionReproducesTheRecomputedTables()
@@ -96,6 +113,10 @@ local function testAdmissionReproducesTheRecomputedTables()
                     overhead = STEADY_OVERHEAD,
                     head = head,
                     releases = releases(MIXES[name], batch),
+                    decls = {
+                        mixes.CONTROL_NORMAL,
+                        mixes.CONTROL_OUTPUTS,
+                    },
                 })
                 equal(result.base - result.peak, expected[kind], "room " .. kind .. " of " .. label)
                 if kind ~= "TS" then
@@ -145,17 +166,16 @@ local function testLargestPieceAgainstTheMaximumTaskSize()
     equal(
         table.concat(gaps, "; "),
         table.concat({
-            "A/TS/1 per task=2668",
-            "A/TS/2 per task=2956",
-            "B/TS/2 per task=2956",
+            "A/TS/1 per task=3188",
+            "A/TS/2 per task=3476",
+            "B/TS/2 per task=3476",
             "C/TS/1 per task=3776",
-            "C/TS/2 per task=2956",
-            "D/R4/1 per task=3332",
-            "D/R4/2 per task=3908",
-            "D/T/1 per task=2332",
-            "D/T/2 per task=2908",
-            "D/TS/1 per task=-268",
-            "D/TS/2 per task=308",
+            "C/TS/2 per task=3476",
+            "D/R4/1 per task=3852",
+            "D/T/1 per task=2852",
+            "D/T/2 per task=3428",
+            "D/TS/1 per task=252",
+            "D/TS/2 per task=828",
         }, "; ")
     )
     -- Every other combination fits M, and a piece of M is admitted there.
@@ -216,6 +236,30 @@ local function idealRuns(mix, batch, schedule)
         simulation:callback("steady", item.now, 0)
     end
     return simulation.runs
+end
+
+local function testOutputTaskRemainsDivisibleUnderLoad()
+    local simulation = newSim({ steady = STEADY_OVERHEAD, background = 1130 }, 0)
+    addMix(simulation, MIXES.A, 2)
+    addNormalWork(simulation)
+    addOutputWork(simulation)
+    local schedule = sim.schedule(23, 1000, 3, 15)
+    for index, item in ipairs(schedule) do
+        item.used = index % 4 == 0 and RESET_POLL + TICK or RESET_POLL
+    end
+    simulation:run(schedule)
+    local partial = false
+    for _, report in ipairs(simulation.reports) do
+        for _, task in ipairs(report.plan) do
+            assert(task.used <= task.grant)
+            if task.id == "control-outputs" and task.grant < 32 then
+                partial = true
+            end
+        end
+        assert(report.U <= LIMIT)
+        assert(report.actual <= report.U)
+    end
+    assert(partial, "the 32-channel task receives partial grants when the room is tight")
 end
 
 local function testAMixedRunUnderJitter()
@@ -945,6 +989,7 @@ end
 
 testAdmissionReproducesTheRecomputedTables()
 testAdmissionRejectsOverloads()
+testOutputTaskRemainsDivisibleUnderLoad()
 testAMixedRunUnderJitter()
 testPlansMatchTheReferenceOnRandomTasks()
 testPlansAreDeterministic()

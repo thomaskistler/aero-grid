@@ -862,8 +862,10 @@ local function testShippedLayout()
 
     -- And the panels that read the radio rather than the link.
     local model = context.serviceRuntime.byId.model
+    local control = context.serviceRuntime.byId.control
     assertEqual(entryById(context, "flight-clock").instance.text, "--:--")
     assertEqual(model.revision, 0, "legacy work leaves no scheduler room for the model task")
+    assertEqual(control.revision, 0, "negative room defers the normal control task")
     assertEqual(context.scheduler.lastPlan.ran, 0, "negative room defers tasks without an error")
     assert(
         context.scheduler.lastPlan.U > context.scheduler.CEILING - context.scheduler.MARGIN,
@@ -876,7 +878,7 @@ local function testShippedLayout()
     assertEqual(radioBattery.unit.properties.text, "V")
     assertEqual(entryById(context, "rates").instance.text, "4.5")
     assertEqual(entryById(context, "identity").instance.text, "--")
-    assertEqual(entryById(context, "trims").instance.indicators[1].valueText, "+23% A")
+    assertEqual(entryById(context, "trims").instance.indicators[1].valueText, "-- A")
 
     -- The three telemetry panels, reading what the radio really reports.
     local pack = entryById(context, "pack").instance
@@ -9801,6 +9803,7 @@ local function testCorePanels()
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
     assertEqual(#context.panels, 9)
     local modelService = context.serviceRuntime.byId.model
+    local controlService = context.serviceRuntime.byId.control
     local function settlePanels(count)
         -- This is a panel-rendering test; the nine-panel legacy load leaves no
         -- scheduler room. Seed the shared service directly, as the scheduler
@@ -9808,6 +9811,9 @@ local function testCorePanels()
         for _ = 1, count or 60 do
             tick(20)
             modelService:read(modelService.count, getTime())
+            controlService:stepEntries(controlService.criticalEntries, "critical", 6, getTime())
+            controlService:stepEntries(controlService.normalEntries, "normal", 6, getTime())
+            controlService:stepOutputs(32, getTime())
             definition.refresh(context)
         end
     end

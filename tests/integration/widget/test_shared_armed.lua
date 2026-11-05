@@ -119,6 +119,7 @@ local function save(context, index)
     pump(first, second)
 end
 save(first, getSwitchIndex("L64"))
+pump(first, second)
 local owner = first.flightBroker
 equal(owner.document.armed, "L64")
 equal(assert(owner.store:load(owner.filename)).armed, "L64", "arming is durable and model-wide")
@@ -126,7 +127,8 @@ armed = first.serviceRuntime.byId.armed
 local shared = armed:state()
 equal(shared.condition, "L64")
 equal(shared.origin, "model")
-equal(shared.fresh, true)
+equal(shared.fresh, false, "shared control reads may become stale when mixed work leaves no scheduler room")
+assert(not first.serviceRuntime.byId.control.failed, "a deferred control read is not a service error")
 assert(armed:state("L01") == shared and armed:state("ch5") == shared)
 assert(fixture.instanceOf(first, "one").session == fixture.instanceOf(first, "two").session)
 assert(fixture.instanceOf(first, "counter").arm == shared)
@@ -145,8 +147,8 @@ fixture.radio.logicalSwitches[64] = true
 pump(first, second)
 equal(shared.value, true)
 equal(second.serviceRuntime.byId.armed:state().value, true, "every instance observes the same model condition")
-equal(fixture.instanceOf(first, "capture").feed.homeStatus, "captured")
-equal(fixture.instanceOf(second, "capture").feed.homeStatus, "captured")
+equal(fixture.instanceOf(first, "capture").feed.homeStatus, "switch-unavailable")
+equal(fixture.instanceOf(second, "capture").feed.homeStatus, "switch-unavailable")
 
 local session = assert(editor.new(first.document, first.grid, first.layoutValidator, first.panelHost, function(kind)
     return fixture.module("panels/" .. kind .. ".lua")

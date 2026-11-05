@@ -27,8 +27,18 @@ local function telemetry(batch, unit)
 end
 
 mixes.HISTORY = once("critical", 650)
-mixes.CONTROL_BASE = once("critical", 1300)
-mixes.CONTROL_ENTRIES = once("critical", 1320)
+mixes.CONTROL_CRITICAL = {
+    class = "critical",
+    stages = { run = { fixed = 200, perUnit = 100, maxUnits = 6 } },
+}
+mixes.CONTROL_NORMAL = {
+    class = "normal",
+    stages = { run = { fixed = 130, perUnit = 240, maxUnits = 6 } },
+}
+mixes.CONTROL_OUTPUTS = {
+    class = "normal",
+    stages = { run = { fixed = 120, perUnit = 60, maxUnits = 32 } },
+}
 mixes.PANEL = once("normal", 1800)
 mixes.CHART = {
     class = "normal",
@@ -69,8 +79,7 @@ function mixes.releases(mix, batch)
         list[#list + 1] = { decl = telemetry(cheap, 420), interval = mix.interval, units = cheap }
     end
     list[#list + 1] = { decl = mixes.HISTORY, interval = 5 }
-    list[#list + 1] = { decl = mixes.CONTROL_BASE, interval = 20 }
-    list[#list + 1] = { decl = mixes.CONTROL_ENTRIES, interval = 20 }
+    list[#list + 1] = { decl = mixes.CONTROL_CRITICAL, interval = 20, units = 6 }
     return list
 end
 

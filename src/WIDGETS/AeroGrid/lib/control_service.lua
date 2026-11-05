@@ -47,8 +47,24 @@ controlService.__index = controlService
 local INTERVAL = 20
 local OUTPUT_INTERVAL = 10
 
---- Subscriptions refreshed per update, served round robin.
+--- Subscriptions refreshed in bounded round-robin batches.
 local POLL_CAP = 6
+local OUTPUT_CAP = 32
+
+controlService.TASK_DECLARATIONS = {
+    critical = {
+        class = "critical",
+        stages = { run = { fixed = 200, perUnit = 100, maxUnits = POLL_CAP } },
+    },
+    normal = {
+        class = "normal",
+        stages = { run = { fixed = 130, perUnit = 240, maxUnits = POLL_CAP } },
+    },
+    outputs = {
+        class = "normal",
+        stages = { run = { fixed = 120, perUnit = 60, maxUnits = OUTPUT_CAP } },
+    },
+}
 
 --- Ticks between attempts to resolve a source or switch the radio rejects.
 local RESOLVE_RETRY = 500
@@ -73,8 +89,8 @@ local RESX = 1024
 ---@param env table Result of services.environment.
 ---@param support table The loaded lib/services.lua module.
 ---@return table
-function controlService.new(env, support)
-    return setmetatable({
+function controlService.new(env, support, runtime)
+    local service = setmetatable({
         id = "control",
         interval = INTERVAL,
         revision = 0,
@@ -85,13 +101,69 @@ function controlService.new(env, support)
         support = support,
         entries = {},
         cursor = 1,
+        criticalEntries = {},
+        criticalCursor = 1,
+        criticalRemaining = nil,
+        normalEntries = {},
+        normalCursor = 1,
+        normalRemaining = nil,
         trims = {},
         outputs = {},
         outputEntries = {},
+        outputCursor = 1,
+        outputRemaining = nil,
         variables = {},
         switches = {},
         variableEntries = {},
     }, controlService)
+
+    local critical = { decl = controlService.TASK_DECLARATIONS.critical, want = 0 }
+    local normal = { decl = controlService.TASK_DECLARATIONS.normal, want = 0 }
+    local outputs = { decl = controlService.TASK_DECLARATIONS.outputs, want = 0 }
+    local function taskStep(run)
+        return function(_, grant, stage, now)
+            if service.failed then
+                return 1
+            end
+            local ok, delay = pcall(run, grant, stage, now)
+            if not ok then
+                service.failed = true
+                error(delay, 0)
+            end
+            return delay
+        end
+    end
+    critical.step = taskStep(function(grant, _, now)
+        return service:stepEntries(service.criticalEntries, "critical", grant, now)
+    end)
+    normal.step = taskStep(function(grant, _, now)
+        return service:stepEntries(service.normalEntries, "normal", grant, now)
+    end)
+    outputs.step = taskStep(function(grant, _, now)
+        return service:stepOutputs(grant, now)
+    end)
+    service.criticalTask, service.normalTask, service.outputTask = critical, normal, outputs
+    service.schedulerTasks = {
+        { id = "service:control", instance = critical, critical = true },
+        { id = "service:control-normal", instance = normal },
+        { id = "service:control-outputs", instance = outputs },
+    }
+
+    -- The flight broker has a private registry updated from the legacy flight
+    -- tick. Keep that isolated runtime on its existing path; the dashboard-owned
+    -- service is scheduled exclusively through the host tasks above.
+    if runtime and runtime.host then
+        setmetatable(service, {
+            __index = function(_, key)
+                if key ~= "update" then
+                    return controlService[key]
+                end
+            end,
+        })
+    else
+        service.update = controlService.update
+    end
+    return service
 end
 
 local AXES = { "rud", "ele", "thr", "ail" }
@@ -255,6 +327,90 @@ function controlService:readOutputValue(entry)
     end
 end
 
+local function markScheduledUpdate(service, now)
+    if service.lastScheduledAt ~= now then
+        service.lastScheduledAt = now
+        service.revision = service.revision + 1
+    end
+end
+
+--- Read the next bounded batch of switch conditions or normal control entries.
+---@param entries table[]
+---@param kind "critical"|"normal"
+---@param grant integer
+---@param now integer
+---@return integer delay
+function controlService:stepEntries(entries, kind, grant, now)
+    local total = #entries
+    if total == 0 then
+        return INTERVAL
+    end
+
+    local cursorKey = kind == "critical" and "criticalCursor" or "normalCursor"
+    local remainingKey = kind == "critical" and "criticalRemaining" or "normalRemaining"
+    local cursor = self[cursorKey]
+    if cursor > total then
+        cursor = 1
+    end
+
+    local remaining = self[remainingKey]
+    if remaining == nil then
+        remaining = math.min(POLL_CAP, total)
+    end
+    local reads = math.min(grant, remaining)
+    for _ = 1, reads do
+        local entry = entries[cursor]
+        cursor = cursor % total + 1
+        entry.read(self, entry, now)
+    end
+
+    self[cursorKey] = cursor
+    remaining = remaining - reads
+    if remaining > 0 then
+        self[remainingKey] = remaining
+        markScheduledUpdate(self, now)
+        return 1
+    end
+
+    self[remainingKey] = nil
+    markScheduledUpdate(self, now)
+    return INTERVAL
+end
+
+--- Read a bounded round-robin slice of final channel outputs.
+---@param grant integer
+---@param now integer
+---@return integer delay
+function controlService:stepOutputs(grant, now)
+    local entries = self.outputEntries
+    local total = #entries
+    if total == 0 then
+        return OUTPUT_INTERVAL
+    end
+
+    local cursor = self.outputCursor
+    if cursor > total then
+        cursor = 1
+    end
+    local remaining = self.outputRemaining or total
+    local reads = math.min(grant, remaining)
+    for _ = 1, reads do
+        self:readOutputValue(entries[cursor])
+        cursor = cursor % total + 1
+    end
+    self.outputCursor = cursor
+    remaining = remaining - reads
+    if reads > 0 then
+        markScheduledUpdate(self, now)
+    end
+    if remaining > 0 then
+        self.outputRemaining = remaining
+        return 1
+    end
+    self.outputRemaining = nil
+    return OUTPUT_INTERVAL
+end
+
 function controlService:readOutput(entry)
     local state, env = entry.state, self.env
     local mode = env.getFlightMode and env.getFlightMode() or 0
@@ -286,6 +442,7 @@ function controlService:output(index)
         }, controlService.readOutput)
         self.outputs[index] = entry.view
         self.outputEntries[#self.outputEntries + 1] = entry
+        self.outputTask.want = #self.outputEntries
         self.interval = OUTPUT_INTERVAL
     end
     return self.outputs[index]
@@ -357,11 +514,19 @@ end
 ---@param read fun(self: table, entry: table, now: integer)
 ---@return table entry
 function controlService:add(state, read)
-    return self.support.addSubscription(self, self.entries, {
+    local entry = self.support.addSubscription(self, self.entries, {
         state = state,
         read = read,
         nextResolve = 0,
     })
+    if read == controlService.readSwitch then
+        self.criticalEntries[#self.criticalEntries + 1] = entry
+        self.criticalTask.want = math.min(POLL_CAP, #self.criticalEntries)
+    else
+        self.normalEntries[#self.normalEntries + 1] = entry
+        self.normalTask.want = math.min(POLL_CAP, #self.normalEntries)
+    end
+    return entry
 end
 
 --- Read one trim position.

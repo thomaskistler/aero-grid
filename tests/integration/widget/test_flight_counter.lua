@@ -107,6 +107,12 @@ for _, span in ipairs({ { 1, 1 }, { 2, 1 }, { 2, 2 }, { 4, 2 } }) do
         return panel.flight.phase == "active"
     end)
     equal(model.getGlobalVariable(8, 0), 40)
+    assert(
+        fixture.pumpUntil(context, function()
+            return panel.value.properties.text == "40"
+        end, 100),
+        "normal control task eventually publishes the incremented flight count"
+    )
     equal(panel.value.properties.text, "40")
     equal(panel.stateName, "active")
     equal(panel.panel.background.properties.color, context.theme.alertColor.active)
@@ -230,6 +236,12 @@ backgroundUntil(context, function()
     return panel.flight.phase == "active"
 end)
 equal(owner.view.reason, "smart-altitude")
+assert(
+    fixture.pumpUntil(context, function()
+        return panel.value.properties.text == "40"
+    end, 100),
+    "normal control task keeps the unchanged flight count visible"
+)
 equal(panel.value.properties.text, "40")
 fixture.radio.values[305] = -1024
 backgroundUntil(context, function()

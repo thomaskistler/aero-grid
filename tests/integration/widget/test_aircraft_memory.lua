@@ -10,11 +10,14 @@ radio.fields["VSpd+"] = { id = 151, name = "VSpd+", unit = fixture.firmware.UNIT
 fixture.radioMock.indexFields()
 radio.globalDetails[0].prec = 0
 local context = fixture.createLoaded(nil, { Layout = "Default", Theme = "modern-dark" })
+local control = context.serviceRuntime.byId.control
 
 local callbacks = 0
 local function pump(count)
     for _ = 1, count do
         fixture.tick(20)
+        -- Exercise panel updates independently of Default's scheduler admission.
+        control:stepEntries(control.normalEntries, "normal", 6, getTime())
         definition.refresh(context)
         fixture.lvglMock.settle()
         callbacks = callbacks + 1

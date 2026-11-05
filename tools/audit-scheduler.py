@@ -173,6 +173,22 @@ def scenarios():
                                  in model_cells]),
         "phases": standard_phases(),
     }
+    result["default-gallery"] = {
+        "recipe": "metric", "layout": (WIDGET / "layouts/Default.yaml").read_text(),
+        "expected": 9, "settings": True, "toggleSwitches": True, "phases": standard_phases(),
+    }
+    result["light-control"] = {
+        "recipe": "trim-panel", "expected": 2, "toggleSwitches": True,
+        "layout": custom_layout([
+            "  - id: mode\n    type: state\n    col: 0\n    row: 0\n    colSpan: 2\n    rowSpan: 1\n"
+            "    config:\n      entries:\n        - label: MODE\n          states:\n"
+            "            - switch: SF^\n              text: DISARMED\n"
+            "            - switch: SFv\n              text: ARMED\n",
+            "  - id: trims\n    type: trim-panel\n    col: 2\n    row: 0\n    colSpan: 2\n    rowSpan: 2\n"
+            "    config:\n      scale: standard\n      readout: percent\n",
+        ]),
+        "phases": standard_phases(),
+    }
     result["flight-smart"] = {
         "recipe": "metric", "expected": 2, "sources": 3, "settings": True, "smart": True,
         "layout": custom_layout([chart_cell("chart-a", 0, 2, (1, 2, 3)),
@@ -246,7 +262,8 @@ def prepare(capture, name, spec, sd, mode="legacy"):
     if inputs:
         (audit / "base-inputs.lua").write_text(inputs)
     config = {"scenario": name, "expectedPanels": spec["expected"], "phases": spec["phases"],
-              "baseInputs": bool(inputs), "swing": 0.4, "toggleSwitches": spec["recipe"] == "state",
+              "baseInputs": bool(inputs), "swing": 0.4,
+              "toggleSwitches": spec.get("toggleSwitches", spec["recipe"] == "state"),
               "failOnError": True, "traceLimit": 300}
     if "loops" in spec:
         config["loops"] = spec["loops"]

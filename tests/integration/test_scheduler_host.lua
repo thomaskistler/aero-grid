@@ -225,7 +225,14 @@ do
     listing:close()
     os.remove(listingPath)
     -- The tasks migrated so far; every other one is `legacy` until its migration.
-    local migrated = { ["service:model"] = true }
+    expected["service:control-normal"] = true
+    expected["service:control-outputs"] = true
+    local migrated = {
+        ["service:model"] = true,
+        ["service:control"] = true,
+        ["service:control-normal"] = true,
+        ["service:control-outputs"] = true,
+    }
     for key in pairs(expected) do
         equal(host.OWNERS[key], migrated[key] and "new" or "legacy", key .. " needs an owner")
     end
@@ -619,6 +626,52 @@ do
     end
     equal(failures, 1, "reported once")
     equal(model.update, nil, "the retired task still has no legacy update path")
+end
+
+-- Control is split into one critical switch task and two normal tasks. The
+-- dashboard service has no legacy update path, while the flight broker's private
+-- runtime retains its existing update path.
+do
+    local definition, context = start("mixed", "host-light")
+    local control = context.serviceRuntime.byId.control
+    assert(control.update == nil, "the dashboard control service is scheduler-only")
+    callbacks(definition, context, 120)
+    assert(context.scheduler.byId["service:control"], "critical switch task is registered")
+    assert(context.scheduler.byId["service:control-normal"], "normal entry task is registered")
+    equal(context.scheduler.byId["service:control-outputs"], nil, "no output task without output subscriptions")
+    equal(control.criticalTask.decl.class, "critical")
+    equal(control.normalTask.decl.class, "normal")
+    assert(control.revision > 0, "scheduled control reads advance the shared revision")
+
+    local feed
+    for _, candidate in pairs(control.switches) do
+        feed = candidate
+        break
+    end
+    assert(feed and feed.available, "the critical task publishes switch conditions")
+
+    control.criticalEntries[1].read = function()
+        error("control task failure")
+    end
+    for _ = 1, 20 do
+        local task = context.scheduler.byId["service:control"]
+        if not task then
+            break
+        end
+        task.due = getTime()
+        fixture.tick(5)
+        definition.refresh(context)
+        if control.failed then
+            break
+        end
+    end
+    assert(control.failed, "the failed critical read retires the service")
+    fixture.tick(5)
+    definition.refresh(context)
+    equal(context.scheduler.byId["service:control"], nil, "a failed control task is retired")
+    equal(context.scheduler.byId["service:control-normal"], nil, "sibling control tasks are retired")
+    equal(control.failed, true, "the service remains failed for legacy consumers")
+    assert(logged(context, "control task failure"), "the failure is reported")
 end
 
 -- 11. A service nothing subscribes to has no task; the task appears with the first

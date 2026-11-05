@@ -21,7 +21,9 @@ host.__index = host
 host.OWNERS = {
     ["service:telemetry"] = "legacy",
     ["service:model"] = "new",
-    ["service:control"] = "legacy",
+    ["service:control"] = "new",
+    ["service:control-normal"] = "new",
+    ["service:control-outputs"] = "new",
     ["service:flight"] = "legacy",
     ["service:armed"] = "legacy",
     ["service:navigation"] = "legacy",
@@ -67,7 +69,7 @@ host.SERVICE_BOUNDS = {
     armed = 0,
 }
 
-host.SERVICE_CLASS = { telemetry = "critical", history = "critical", control = "critical" }
+host.SERVICE_CLASS = { telemetry = "critical", history = "critical" }
 
 --- Declared bounds of one legacy panel refresh. theme-showcase has no refresh work.
 host.PANEL_BOUNDS = {
@@ -114,6 +116,7 @@ function host.attach(context, options)
         head = 0,
         active = false,
         waiting = {},
+        registeredTasks = {},
     }, host)
 
     local legacy = { spent = 0 }
@@ -172,9 +175,27 @@ function host:verify(context)
         end
     end
     for _, instance in ipairs(context.serviceRuntime and context.serviceRuntime.order or {}) do
-        local message = problem("service:" .. instance.id, self:serviceBound(instance), instance.count == 0)
-        if message then
-            return message
+        if instance.schedulerTasks then
+            for _, item in ipairs(instance.schedulerTasks) do
+                local task = item.instance
+                local owner = self.owners[item.id]
+                if owner ~= "legacy" and owner ~= "new" then
+                    return item.id .. " has no owner"
+                elseif owner == "new" then
+                    if instance.count > 0 and (task.want or 0) > 0 and not self.scheduler.byId[item.id] then
+                        return item.id .. " is owned by the scheduler but has no task"
+                    end
+                elseif self.mode == "new" then
+                    return item.id .. " is not owned by the scheduler"
+                elseif not self.serviceBounds[instance.id] then
+                    return item.id .. " has no declared bound"
+                end
+            end
+        else
+            local message = problem("service:" .. instance.id, self:serviceBound(instance), instance.count == 0)
+            if message then
+                return message
+            end
         end
     end
     for _, entry in ipairs(context.panels) do
@@ -190,15 +211,32 @@ end
 --- of the old ones and wait for subscribers to the new ones.
 ---@param context table
 function host:resync(context)
-    local waiting = {}
+    for id in pairs(self.registeredTasks) do
+        self.scheduler:remove(id)
+    end
+    local waiting, registered = {}, {}
     for index, instance in ipairs(context.serviceRuntime and context.serviceRuntime.order or {}) do
         local key = "service:" .. instance.id
-        if self.owners[key] == "new" then
-            self.scheduler:remove(key)
-            waiting[#waiting + 1] = { instance = instance, index = index - 1 }
+        if instance.schedulerTasks then
+            for taskIndex, item in ipairs(instance.schedulerTasks) do
+                if self.owners[item.id] == "new" then
+                    waiting[#waiting + 1] = {
+                        instance = instance,
+                        task = item.instance,
+                        id = item.id,
+                        critical = item.critical,
+                        index = (index - 1) * 3 + taskIndex - 1,
+                    }
+                    registered[item.id] = instance
+                end
+            end
+        elseif self.owners[key] == "new" then
+            waiting[#waiting + 1] = { instance = instance, task = instance, id = key, index = index - 1 }
+            registered[key] = instance
         end
     end
     self.waiting = waiting
+    self.registeredTasks = registered
 end
 
 --- Register the task of every service the scheduler owns once it has subscribers: a
@@ -210,18 +248,21 @@ function host:enroll()
     for position = #waiting, 1, -1 do
         local item = waiting[position]
         local instance = item.instance
-        if instance.count > 0 and not instance.failed then
+        local task = item.task
+        if instance.count > 0 and not instance.failed and (task.want == nil or task.want > 0) then
             table.remove(waiting, position)
             -- The service step may need the same wrap-safe time comparison.
-            instance.tickElapsed = scheduler.elapsed
+            task.tickElapsed = scheduler.elapsed
+            local interval = task.interval or instance.interval
+            local due = getTime() + (item.critical and 0 or scheduler.stagger(item.index, interval))
             local ok, reason = scheduler:add({
-                id = "service:" .. instance.id,
-                decl = instance.decl,
-                instance = instance,
-                due = getTime() + scheduler.stagger(item.index, instance.interval),
+                id = item.id,
+                decl = task.decl,
+                instance = task,
+                due = due,
             })
             if not ok then
-                return "service:" .. instance.id .. ": " .. reason
+                return item.id .. ": " .. reason
             end
         end
     end
@@ -314,9 +355,21 @@ function host:report(context)
         self.api.error(context, "scheduler: " .. tostring(item.id) .. ": " .. item.message)
         -- A service that failed is retired for good, as in the legacy loop.
         local id = type(item.id) == "string" and string.match(item.id, "^service:(.+)$")
-        local instance = id and context.serviceRuntime and context.serviceRuntime.byId[id]
+        local instance = self.registeredTasks[item.id]
+            or id and context.serviceRuntime and context.serviceRuntime.byId[id]
         if instance then
             instance.failed = true
+            for taskId, owner in pairs(self.registeredTasks) do
+                if owner == instance then
+                    self.scheduler:remove(taskId)
+                    self.registeredTasks[taskId] = nil
+                end
+            end
+            for index = #self.waiting, 1, -1 do
+                if self.waiting[index].instance == instance then
+                    table.remove(self.waiting, index)
+                end
+            end
         end
     end
     self.api.show(context)
