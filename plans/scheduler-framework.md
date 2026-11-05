@@ -369,7 +369,7 @@ separate tasks.
 | telemetry | one task per batch of about two recorded sources that share an interval (`k` recordings each; `maxUnits` = the batch), one batch task for unrecorded sources sharing an interval, a precision scan queued as work of the next release, not a new task | recorded 0.94k at `k` = 1 (poll 0.12 + record 0.73 + loop 0.09); unrecorded 0.33k; link state 0.17 to 0.37k, once per plan; scan 0.15k | `420 + 760 k` per source (1.18k at `k` = 1, so 2.36k for two), 0.42k unrecorded, link 0.56k shared | The bound is per instance and `k` > 1 is unmeasured (open decision 1, deferred). A poll records into all `k` recordings in the same call (`history` needs `updatedAt == now`), so a recording can never be deferred. |
 | history | one task: advance and boundaries, one entry per update | 0.44k (0.38k advance and boundaries plus 17 per entry) | 0.65k | Recording itself lives in the telemetry poll (observer), not here. Below the minimum size (4.2): the run charge is about a third of it. Kept as one task every 5 ticks; revisit with the measured contract. |
 | control | outputs task (units = outputs, up to 32, interval 10 when an output panel exists), base task, entries task (6 entries) | fixed 0.97k and 0.21k per entry measured; the cost per output is not itemised | base 1.3k, entries 1.32k (2.6k total), outputs unmeasured | **Flag.** `update` reads every output each call (`control_service.lua` 616-619): split it into its own units task and measure it; the mixes assume no output panel and are re-run with one. |
-| model | one task, units = facets (4) | 0.06k fixed, 0.1k per facet | 0.54k | None. |
+| model | one task, units = facets (4) | 0.03k fixed, 0.105k per facet (0.41k at 4) | 0.57k (90 + 120 per facet; migrated, section 12) | None. |
 | navigation | one task, units = entries (2) | 0.04k fixed, 0.28k per entry | 0.71k at 2 | 2 entries is estimated (E). |
 | flight tick | tick, and Smart as its own task | tick about 1.0k (E); Smart 2.0k (discovery scans 8 sensors, then 4 reads) | Smart 2.6k | Smart splits per sensor read if needed; the tick's nested `services.update` makes its total measured, not summed. |
 | session reset steps | one task, units = items (8) | history 0.07k, navigation 0.01k | 0.2k | None. |
@@ -1045,3 +1045,90 @@ tasks and overhead, not byte for byte. `mixed` has not been run natively.
   budgeted run asserts the plan stays under the budget, and `timing` gives the
   lateness against the legacy run and the longest gaps. A migration writes an
   adapter and its trace; `test_scheduler_parity.lua` shows it on the stand-in.
+
+## 12. Implementation notes (first migration: the model service)
+
+`service:model` is owned by the new scheduler in `mixed` mode; `legacy` is unchanged
+(all eight legacy-hash scenarios match) and `mixed` and `new` still cannot ship.
+
+**Contract.** `service:model`, `normal` (nothing is recorded, so a late read only
+shows a value later; a critical task would also take the normal reserve), one stage
+`run`, unit = facet, not exclusive, `steady` and `background`, `want` = the facets
+subscribed to (at most 7 reach it: identity, flight mode, TX voltage, battery range
+and timers 0 to 2; an update reads up to `maxUnits` = 4, round robin), bound
+`90 + 120 x facets` (210 at one, 570 at four), next release 20 ticks after the one
+that ran (identity re-reads every 500 inside the facet), no split (the whole task is
+0.57k, far below `M`, and a split would add `G` per piece to pieces already below the
+minimum useful size). Declared in `model_service.lua` (`modelService.decl`), measured
+by `tests/fixtures/scheduler-cases/model.lua` at every cursor start and grant, with
+every facet on its most expensive path and on the opposite one.
+
+| | |
+|---|---|
+| Measured step (native = offline, 32-bit Lua) | 137, 242, 347, 408 for 1 to 4 facets; fit 32 + 105 per facet |
+| Declared (margin rule, normal) | 90 + 120 per facet: 65% to 77% of the bound at the measured grants |
+| Framework cost of one release | 243 native (245 offline), against 420 charged (`G` = 288 inside it) |
+| Share of the piece | `G` is 50% of the 570 at four facets (137% of the 210 at one): the task is divisible and below the minimum useful size 2240, a natural exception like history |
+| Legacy `update` | 34 instructions cheaper than before (464 to 430 at the worst four facets, offline) |
+| Matched native run (`model-panels`: identity, flight mode, timer, TX battery; five facets) | 125 releases in both modes. Steady callback 811 mean (legacy) to 1108 (`mixed`); background 612 to 846; a callback with no release +239, with one +372 (planner idle 117, planner release 243, the host's bookkeeping, the step's 16 for the due check and revision). Worst steady callback 4200 (legacy, all four panels and the service in one callback) to 3063 (`mixed`: the legacy loop's share spreads them). One-off 1.9k at the first scheduled callback (registration, `add` of a new declaration). Worst callback 9168 / 9189 (the theme read, a loader callback) |
+
+**What changed in the service.** `update(now)` (the legacy loop's entry point) and
+`step(grant, stage, now)` (the scheduler's) share `read(grant, now)`, the round robin over
+the facets, which no longer goes through `services.roundRobin` and its per-facet
+callback (34 instructions less per update at four facets, 7%); published values,
+revisions and errors are unchanged. `step` does what `services.update` does around an
+update (advance `due`, count the revision) because the scheduler has no such loop:
+the extracted work the legacy loop runs is `read`, and the harness records the legacy
+schedule at `update`, not at `step` (`parity.extraction`). `step` returns the remaining
+delay when `due` is in the future: in modal callbacks the legacy loop still serves the
+service, and `due` is the one source of truth, so a release is never run twice (section
+1; tested in both orders). Ticks are compared by the wrapped difference.
+
+**What was looked at and left.** A skip of the timer derivation and text when the
+timer is unchanged saves 45 instructions of an unchanged timer read (123 to 78) but
+costs about 10 on the changed read, which is the one that is declared; the planner
+charges the worst case, so the declared bound would rise 8% to save instructions it
+does not plan on: not done. `formatTime` with integer division saves 6 instructions per
+timer: not worth a change to a shared helper. Findings that change what is
+published or when, **for the user to decide** (nothing here was applied):
+
+- The service runs every 20 ticks, but its fastest reader refreshes every 50 (flight
+  mode, TX battery; the flight timer every 100, the model identity every 500), so every
+  facet is read two to five times per reader refresh. At 50 ticks the task's sustained
+  load falls by 60% (570 + `G` per 20 ticks to per 50) and published values are up to
+  0.5 s old instead of 0.2 to 0.4 s.
+- The battery range is read at the service interval: the firmware builds a table for it on
+  every call (its cost is not in the instruction count). It changes only when the pilot
+  edits radio settings, so it could be read at the identity rate (500 ticks), showing a
+  change up to 5 s later.
+
+**Host.** The host registers the task of every service the owner table gives to `new`
+(`host:enroll`) from the service's own declaration, staggered by its registry position,
+and only once it has subscribers (a service nothing reads has no task, as specified; a
+panel the editor adds later registers it at the next callback). A new layout or service
+registry drops the old tasks and registers again (`host:resync`). A retired task marks its
+service `failed`, so the legacy loop of a modal callback does not run it either, as a
+failed service is retired in `legacy`. The one cost of the registration check is a
+table test per callback. `SERVICE_BOUNDS.model` is read from the declaration (one
+number, and flipping the owner back to `legacy` keeps a bound). A task owned by `new`
+with subscribers but no `step` is a load error naming it.
+
+**Spec gaps found.**
+
+- The fit rule (steepest slope from one unit, largest offset) bounds four facets at 570
+  against 408 measured (140%): the three expensive units are the timers, the fourth
+  is cheaper, and a line cannot say that. Accepted rather than adding a per-grant table.
+- The 90% re-declaration warning sits below 1 / 1.10 = 91%, so a per-unit bound at
+  the normal margin and no fixed part warns "high" at the measured point. This task's
+  fixed part keeps it at 65% to 77%.
+- Case files are now a table or a function of `load(relative)`, so a case can build the
+  real widget module (`measure.open`); the native harness and the offline tests each
+  supply a loader. `measure.planner` measures the framework's cost of one release of
+  the real task, and `test_scheduler_cases.lua` enforces in CI (offline counts equal the
+  native counts) that every case file's measured cost is within its declaration and not
+  above 90% of it, and that the planner's cost is within the charge. The native report
+  printed grants 1 to n as a JSON array that the report could not read (fixed).
+- The native audit takes `--mode mixed` (results in `<scenario>-mixed`, left out of
+  `--report` and the traces) and a `model-panels` scenario; the probe wraps `step`
+  for tasks the scheduler runs.
+- Not run: the native pixel comparison (step 5 of section 7) for `mixed`.

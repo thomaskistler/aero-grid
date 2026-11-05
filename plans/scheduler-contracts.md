@@ -189,7 +189,7 @@ Declared is by the rule from the audit's worst (M unless E).
 | session reset check | HIGH | check | 0.62k | None | Every callback |
 | reset steps | HIGH | 8 items | 0.2k | Already capped | Delay 1 while items remain |
 | extrema | HIGH | track (6) | 1.35k at 6 (E) | Already per track. Provisional until measured at 6 | Delay 1 while tracks remain |
-| model | NORMAL | facet (4) | 0.54k | Already per facet | Delay 1 while facets remain |
+| model | NORMAL | facet (4) | 0.57k at 4 (90 + 120 per facet; M 0.41k) | Already per facet | 20 ticks after each release; a grant below the facets subscribed to reads the next facets at the next release (framework section 12) |
 | navigation service | NORMAL | entry (2) | 0.71k at 2 (E) | Already per entry. Provisional until measured at 2 | Delay 1 while entries remain |
 | theme read | NORMAL | theme file | 10.0k | **Flag.** Chunk the parse like `tokenizeChunk` | Delay 1 while chunks remain |
 | header finalize | NORMAL | 1 | 5.1k | **Flag.** Split per field | Delay 1 |
