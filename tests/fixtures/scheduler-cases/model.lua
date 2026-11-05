@@ -11,6 +11,7 @@
 -- not, so the figures are slightly high.
 return function(load)
     local services = load("lib/services.lua")
+    local scheduler = load("lib/scheduler.lua")
     local modelService = load("lib/model_service.lua")
 
     local FACETS = 7
@@ -53,6 +54,7 @@ return function(load)
                 },
             })
             local service = modelService.new(env, services)
+            service.tickElapsed = scheduler.elapsed
             service:identity()
             service:flightMode()
             service:txVoltage()

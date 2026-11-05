@@ -45,13 +45,10 @@ local INTERVAL = 100
 --- Facets refreshed per update, served round robin.
 local FACET_CAP = 4
 
--- Sign extension of the low 32 bits: the wrap-safe difference of two ticks.
-local MASK, SIGN = 0xFFFFFFFF, 0x80000000
-
 --- The task the new scheduler runs (plans/scheduler-framework.md, section 2): one
---- stage, one unit per facet. Measured natively at 137, 242, 347 and 408
+--- stage, one unit per facet. Measured natively at 141, 246, 351 and 412
 --- instructions for 1 to 4 facets (tests/fixtures/scheduler-cases/model.lua), fitted
---- as 32 + 105 per facet and declared by the margin rule for the normal class.
+--- as 36 + 105 per facet and declared by the margin rule for the normal class.
 modelService.decl = {
     class = "normal",
     stages = { run = { fixed = 90, perUnit = 120, maxUnits = FACET_CAP } },
@@ -493,12 +490,13 @@ end
 
 --- The new scheduler's release: the same work, and what `services.update` does
 --- around it. A service the legacy loop has just served (a modal callback) is not
---- due, so nothing runs twice. Returns the delay to the next release.
+--- due, so nothing runs twice. Uses the scheduler's wrap-safe tick helper.
+--- Returns the delay to the next release.
 ---@param grant integer
 ---@param now integer
 ---@return integer delay
 function modelService:step(grant, _, now)
-    local wait = ((self.due - now) & MASK ~ SIGN) - SIGN
+    local wait = self.tickElapsed(self.due, now)
     if wait > 0 then
         return wait
     end

@@ -229,6 +229,8 @@ function host:enroll()
         local instance = item.instance
         if instance.count > 0 and not instance.failed then
             table.remove(waiting, position)
+            -- The service step may need the same wrap-safe time comparison.
+            instance.tickElapsed = scheduler.elapsed
             local ok, reason = scheduler:add({
                 id = "service:" .. instance.id,
                 decl = instance.decl,

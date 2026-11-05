@@ -177,6 +177,7 @@ local function adapter(variant)
         new = function()
             local box = { world = trace[1].world }
             local service = recordedService.new(radio(box), services)
+            service.tickElapsed = scheduler.elapsed
             VARIANTS[variant](service)
             service.box = box
             return service
@@ -281,6 +282,7 @@ assert(released > 50)
 local function service(variant, now)
     local box = { world = trace[1].world }
     local instance = modelService.new(radio(box), services)
+    instance.tickElapsed = scheduler.elapsed
     VARIANTS[variant or "seven"](instance)
     instance.due = now or 100
     local reads = 0

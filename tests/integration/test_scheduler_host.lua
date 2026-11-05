@@ -568,6 +568,7 @@ do
         assert(context.schedulerHost, "the layout passes the load check")
     end)
     assert(context.scheduler.byId["service:model"], "the host registered the task")
+    equal(model.tickElapsed, context.scheduler.elapsed, "uses the scheduler's wrap-safe tick helper")
     equal(calls.update, 0, "the legacy loop never runs a service the framework owns")
     local releases = (getTime() - first) // model.interval
     assert(calls.step >= releases * 0.8 and calls.step <= releases + 1, "one release per interval: " .. calls.step)

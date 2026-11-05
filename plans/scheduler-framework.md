@@ -1067,12 +1067,12 @@ every facet on its most expensive path and on the opposite one.
 
 | | |
 |---|---|
-| Measured step (native = offline, 32-bit Lua) | 137, 242, 347, 408 for 1 to 4 facets; fit 32 + 105 per facet |
-| Declared (margin rule, normal) | 90 + 120 per facet: 65% to 77% of the bound at the measured grants |
+| Measured step (native = offline, 32-bit Lua) | 141, 246, 351, 412 for 1 to 4 facets; fit 36 + 105 per facet |
+| Declared (margin rule, normal) | 90 + 120 per facet: 67% to 78% of the bound at the measured grants |
 | Framework cost of one release | 243 native (245 offline), against 420 charged (`G` = 288 inside it) |
 | Share of the piece | `G` is 50% of the 570 at four facets (137% of the 210 at one): the task is divisible and below the minimum useful size 2240, a natural exception like history |
 | Legacy `update` | 34 instructions cheaper than before (464 to 430 at the worst four facets, offline) |
-| Matched native run (`model-panels`: identity, flight mode, timer, TX battery; five facets) | 125 releases in both modes. Steady callback 811 mean (legacy) to 1108 (`mixed`); background 612 to 846; a callback with no release +239, with one +372 (planner idle 117, planner release 243, the host's bookkeeping, the step's 16 for the due check and revision). Worst steady callback 4200 (legacy, all four panels and the service in one callback) to 3063 (`mixed`: the legacy loop's share spreads them). One-off 1.9k at the first scheduled callback (registration, `add` of a new declaration). Worst callback 9168 / 9189 (the theme read, a loader callback) |
+| Matched native run (`model-panels`: identity, flight mode, timer, TX battery; five facets) | 25 releases in both modes at the one-second cadence. Steady callback 740 mean (legacy) to 1011 (`mixed`); background 558 to 765. Model-service mean/max: 228/274 legacy, 248/294 mixed. Worst steady callback 4197 / 2832; worst loading callback 9168 / 9189. A scheduled release costs 4 more instructions for the shared tick helper. |
 
 **What changed in the service.** `update(now)` (the legacy loop's entry point) and
 `step(grant, stage, now)` (the scheduler's) share `read(grant, now)`, the round robin over
@@ -1085,6 +1085,9 @@ schedule at `update`, not at `step` (`parity.extraction`). `step` returns the re
 delay when `due` is in the future: in modal callbacks the legacy loop still serves the
 service, and `due` is the one source of truth, so a release is never run twice (section
 1; tested in both orders). Ticks are compared by the wrapped difference.
+`step` calls the scheduler's shared `elapsed` helper; the planner keeps its
+measured inline comparisons on its hot path. The helper adds 4 measured
+instructions to a model release; the declared task bound is unchanged.
 
 **What was looked at and left.** A skip of the timer derivation and text when the
 timer is unchanged saves 45 instructions of an unchanged timer read (123 to 78) but
