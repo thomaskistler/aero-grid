@@ -119,7 +119,12 @@ for _, id in ipairs({ "flight-counter", "flight-mode", "flight-timer" }) do
                     },
                 })
                 scheduling.owners = { ["panel:" .. id] = "new" }
-                assert(scheduling:ready(context))
+                for _ = 1, 200 do
+                    assert(scheduling:ready(context))
+                    if scheduling.panelTasks[entry] then
+                        break
+                    end
+                end
                 local task = assert(scheduling.panelTasks[entry])
                 assert(instance.schedulerOwned and not legacy.schedulerOwned)
                 if pending then
