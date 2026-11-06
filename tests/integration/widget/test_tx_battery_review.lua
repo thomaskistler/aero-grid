@@ -7,6 +7,9 @@ local battery = fixture.module("panels/tx-battery.lua")
 
 fixture.reset()
 local context = fixture.createLoaded(nil, { Layout = "review-tx-battery", Theme = "modern-dark" })
+assert(fixture.pumpUntil(context, function(value)
+    return value.serviceRuntime.byId.model.revision > 0
+end, 400), "transmitter battery model data must receive an initial update")
 fixture.pump(context, 40)
 equal(#context.errors, 0, table.concat(context.errors, "\n"))
 
@@ -146,6 +149,9 @@ local small = fixture.createLoaded({ x = 0, y = 0, w = 120, h = 120 }, {
     Layout = "review-tx-battery",
     Theme = "modern-dark",
 })
+assert(fixture.pumpUntil(small, function(value)
+    return value.serviceRuntime.byId.model.revision > 0
+end, 400), "small transmitter battery model data must receive an initial update")
 fixture.pump(small, 40)
 equal(#small.errors, 0, table.concat(small.errors, "\n"))
 local grown = fixture.instanceOf(small, "smallest")
