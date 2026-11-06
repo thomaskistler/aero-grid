@@ -60,28 +60,34 @@ local finishStart = assert(string.find(source, "local function finish(", 1, true
 local finishEnd = assert(string.find(source, "-- A labelled measurement window.", finishStart, true))
 local gateProbe = assert(load(
     [[
-local P, loaderDeclarations, config = {}, {}, { scenario = "" }
+local P, loaderDeclarations, config = { readinessBound = 900 }, {}, { scenario = "" }
 local depth, childSum, visits, childList = 1, { 0 }, { 0 }, { {} }
 local top, topLabels, topSum = {}, {}, 0
 local K, calibrating, recording, previewTasks = 0, false, false, false
 local failures = {}
 local function gate(ok, message) if not ok then failures[#failures + 1] = message end end
+local function record() end
 ]]
         .. string.sub(source, fitStart, fitEnd - 1)
         .. string.sub(source, finishStart, finishEnd - 1)
         .. [[
-return function(cost)
+return function(label, cost)
     depth, childSum, visits, childList, failures = 1, { 0 }, { 0 }, { {} }, {}
-    finish("load:read", cost, 0)
+    recording = label == "scheduler:ready:panels"
+    finish(label, cost, 0)
     return failures
 end
 ]],
     "@probe-loading-gate",
     "t",
-    { math = math, string = string, table = table, type = type }
+    { math = math, string = string, table = table, type = type, tonumber = tonumber }
 ))()
-assert(#gateProbe(630) == 0, "a fitted loading cost at its charge must pass")
-local failures = gateProbe(700)
+assert(#gateProbe("load:read", 630) == 0, "a fitted loading cost at its charge must pass")
+local failures = gateProbe("load:read", 700)
 assert(#failures == 1 and string.find(failures[1], "700 -> ", 1, true),
     "a raw cost within its charge must still fail when its fitted cost exceeds it")
+assert(#gateProbe("scheduler:ready:panels", 750) == 0, "fitted readiness within charge must pass")
+failures = gateProbe("scheduler:ready:panels", 800)
+assert(#failures == 1 and string.find(failures[1], "host readiness exceeds its work charge", 1, true),
+    "readiness must be checked against its fitted cost")
 print("Scheduler audit probe: lifecycle arguments and return values preserved")

@@ -186,8 +186,9 @@ local function finish(label, raw, leak)
         record(label, cost, own, units > 0 and units or 1, children)
         if string.match(label, "^scheduler:ready:") then
             record("scheduler:ready", cost, own, units > 0 and units or 1, children)
-            gate(cost <= 4000, "host readiness exceeds its atom cap: " .. cost)
-            gate(cost <= P.readinessBound, "host readiness exceeds its work charge: " .. cost)
+            local fitted = fit(cost)
+            gate(fitted <= 4000, "host readiness exceeds its fitted atom cap: " .. cost .. " -> " .. fitted)
+            gate(fitted <= P.readinessBound, "host readiness exceeds its work charge: " .. cost .. " -> " .. fitted)
         end
         if string.match(label, "^editor:input:") then
             gate(cost <= 4000, label .. " exceeds the editor input atom cap: " .. cost)
