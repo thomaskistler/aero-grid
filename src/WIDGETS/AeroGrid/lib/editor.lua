@@ -56,6 +56,19 @@ local function startCopy(value)
     return copyReference(job, value), job
 end
 
+local function copyStep(job)
+    local frame = job.stack[#job.stack]
+    if not frame then return false end
+    local key, value = next(frame.source, frame.key)
+    if key == nil then
+        job.stack[#job.stack] = nil
+    else
+        frame.key = key
+        frame.target[copyReference(job, key)] = copyReference(job, value)
+    end
+    return true
+end
+
 local function safeIdentifier(value)
     return type(value) == "string" and string.match(value, "^[%w_-]+$") ~= nil
 end
@@ -873,6 +886,43 @@ function editor.appendItem(session, key, path)
     return true
 end
 
+function editor.startAppendItem(session, key, path)
+    local setting, value, message = tableSetting(session, key, path)
+    if not setting then return nil, message end
+    if #value >= (setting.maxItems or 3) then
+        return nil, key .. " already has the maximum number of entries"
+    end
+    local item, job = startCopy(setting.itemDefault or value[#value] or {})
+    return {
+        session = session, draft = session.draft, selected = session.selected,
+        placement = session.draft.panels[session.selected],
+        target = value, length = #value, item = item, copy = job, key = key, path = path,
+    }
+end
+
+function editor.advanceAppendItem(job)
+    if job.done then return true, job.ok, job.error end
+    local session = job.session
+    local config = job.placement.config
+    local target = type(config) == "table" and config[job.key]
+    for _, key in ipairs(job.path or {}) do
+        target = type(target) == "table" and target[key] or nil
+    end
+    if session.draft ~= job.draft or session.selected ~= job.selected
+        or session.draft.panels[job.selected] ~= job.placement or target ~= job.target or #job.target ~= job.length then
+        job.done, job.ok, job.error = true, false, "table entry changed while adding an item"
+        return true, false, job.error
+    end
+    for _ = 1, 8 do
+        if not copyStep(job.copy) then
+            job.target[job.length + 1], session.dirty = job.item, true
+            job.done, job.ok = true, true
+            return true, true
+        end
+    end
+    return false
+end
+
 function editor.removeItem(session, key, index, path)
     local setting, value, err = tableSetting(session, key, path)
     if not setting or type(value) ~= "table" then
@@ -935,8 +985,13 @@ function editor.orderFields(fields, entry)
 end
 
 --- Optional selection limits entry expansion to one drawer's key and item path.
-function editor.formFields(session, selection)
-    local settings, config, module = editor.settings(session)
+function editor.formFields(session, selection, snapshot)
+    local settings, config, module
+    if snapshot then
+        settings, config, module = snapshot.settings, snapshot.config, snapshot.module
+    else
+        settings, config, module = editor.settings(session)
+    end
     if not settings or type(config) ~= "table" or not module then
         return nil, config
     end
@@ -998,7 +1053,7 @@ function editor.formFields(session, selection)
                         type = "drawer",
                         action = "group",
                         drawerGroup = group.key,
-                        text = editor.drawerSummary(session, group.key),
+                        text = editor.drawerSummary(session, group.key, config, module, snapshot and snapshot.groups),
                         visibleWhen = { key = "sourceType", value = group.sourceType },
                     }
                 end
@@ -1009,8 +1064,13 @@ function editor.formFields(session, selection)
 end
 
 --- Build flat-setting controls for one metadata-defined source drawer.
-function editor.drawerFields(session, groupKey)
-    local settings, config, module = editor.settings(session)
+function editor.drawerFields(session, groupKey, snapshot)
+    local settings, config, module
+    if snapshot then
+        settings, config, module = snapshot.settings, snapshot.config, snapshot.module
+    else
+        settings, config, module = editor.settings(session)
+    end
     if not settings or type(config) ~= "table" or not module then
         return nil, config
     end
@@ -1029,9 +1089,9 @@ function editor.drawerFields(session, groupKey)
         byKey[setting.key] = setting
     end
     local fields = {}
-    for _, key in ipairs(group.fields or {}) do
+    for index, key in ipairs(group.fields or {}) do
         local setting = byKey[key]
-        if setting then
+        if setting and (not snapshot or not snapshot.groupIndex or snapshot.groupIndex == index) then
             fields[#fields + 1] = {
                 key = key,
                 label = setting.label or key,
@@ -1106,31 +1166,33 @@ function editor.startSettings(session)
     local module, moduleError = getPanelModule(session, placement.type)
     if not module then return nil, moduleError end
     local config, job = startCopy(placement.config or {})
-    return { config = config, copy = job, module = module, index = 1, groups = {}, phase = "settings" }
+    return {
+        config = config, copy = job, module = module, index = 1, groups = {}, phase = "settings",
+        settings = {}, byKey = {}, modelArmed = session.modelArmed,
+    }
 end
 
 --- Copy/default/index at most eight graph entries or metadata declarations per turn.
 function editor.advanceSettings(pending)
     if pending.done then return true, pending.config, pending.module, pending.groups end
     for _ = 1, 8 do
-        local job = pending.copy
-        local frame = job.stack[#job.stack]
-        if frame then
-            local key, value = next(frame.source, frame.key)
-            if key == nil then
-                job.stack[#job.stack] = nil
-            else
-                frame.key = key
-                frame.target[copyReference(job, key)] = copyReference(job, value)
-            end
+        if copyStep(pending.copy) then
+            -- Copying and metadata share the same per-turn grant.
         elseif pending.phase == "settings" then
             local setting = (pending.module.settings or {})[pending.index]
             if not setting then
                 pending.phase, pending.index = "groups", 1
-            elseif pending.config[setting.key] == nil then
-                pending.config[setting.key], pending.copy = startCopy(setting.default)
+            else
+                if pending.config[setting.key] == nil then
+                    pending.config[setting.key], pending.copy = startCopy(setting.default)
+                end
+                if not setting.legacyFlight
+                    and (not setting.legacyArm or (pending.modelArmed == nil and pending.config[setting.key] ~= "")) then
+                    pending.settings[#pending.settings + 1] = setting
+                    pending.byKey[setting.key] = setting
+                end
+                pending.index = pending.index + 1
             end
-            if setting then pending.index = pending.index + 1 end
         elseif pending.phase == "groups" then
             local group = (pending.module.drawerGroups or {})[pending.index]
             if not group then

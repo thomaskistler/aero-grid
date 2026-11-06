@@ -3,7 +3,7 @@
 local uiModule = { RUNTIME_API = 1 }
 uiModule.RENDER_BOUNDS = { rows = 1700, finish = 1400 }
 uiModule.INPUT_BOUNDS = { open = 200, tap = 900, select = 350, modal = 100, release = 120, cancel = 120 }
-uiModule.DRAWER_OPEN_BOUNDS = { configure = 3900, add = 300 }
+uiModule.DRAWER_OPEN_BOUNDS = { configure = 1500, add = 300 }
 
 local function label(parent, rect, text, color, font)
     return lvgl.label(parent, {
@@ -347,7 +347,9 @@ function uiModule.advance(context)
         if pending.mode == "configure" then
             assert(state.handlers.editor.select(state.session, pending.selected))
         end
-        context.editorDrawerModule.open(context, state, pending.mode)
+        context.editorDrawerModule.open(
+            context, state, pending.mode, pending.listKey, pending.itemIndex, pending.itemPath, pending.groupKey
+        )
         render(context, state)
         return true
     end
@@ -357,7 +359,7 @@ function uiModule.advance(context)
     end
     if state.drawerBuild ~= nil or state.drawerPending then
         context.editorDrawerModule.advance(context, state)
-        if state.drawerBuild == nil then
+        if state.drawerBuild == nil and not state.drawerPending and not state.drawerOpen then
             render(context, state)
         end
         return true

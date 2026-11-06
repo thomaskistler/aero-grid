@@ -202,7 +202,7 @@ local function finish(label, raw, leak)
                 label .. " exceeds the editor paint charge: " .. cost
             )
         end
-        local drawerStage = string.match(label, "^editor:drawer:advance:(%a+)")
+        local drawerStage = string.match(label, "^editor:drawer:advance:([%w_%-]+)")
         if label == "editor:drawer:open" then
             gate(cost <= 4000, label .. " exceeds the drawer opening atom cap: " .. cost)
         end
@@ -646,7 +646,9 @@ local function install(context)
             if token then
                 return "editor:drawer:advance:" .. token
             end
-            if state.drawerLayout then
+            if state.drawerOpening then
+                return state.drawerOpening.phase
+            elseif state.drawerLayout then
                 return "layout"
             elseif state.drawerRefresh then
                 return state.drawerRefresh.phase
@@ -655,7 +657,11 @@ local function install(context)
                         and "build:" .. tostring(state.drawerFields[state.drawerBuild].type)
                     or "finish"
             end
-            return state.drawerPending and state.drawerPending.action or "command"
+            local action = state.drawerPending and state.drawerPending.action
+            if action == "parent" or action == "group" or action == "item" then
+                return "navigate:" .. action
+            end
+            return action or "command"
         end)
     end
     if context.diagnosticsLog then
@@ -1422,6 +1428,52 @@ actions = {
         end
         error("native drawer scenario has no nested entry")
     end,
+    ["command-drawer"] = function(context)
+        local state, phase = assert(context.editorUi), config.phases[phaseIndex]
+        assert(not state.drawerBuild and not state.drawerPending and not state.drawerOpen)
+        for _, field in ipairs(state.drawerFields) do
+            if field.action == phase.command then
+                if phase.command == "item" then
+                    P.drawerListCount = #state.session.draft.panels[state.session.selected].config[field.key]
+                    P.drawerListKey = field.key
+                end
+                state.drawerPending = field
+                return
+            end
+        end
+        error("native drawer scenario has no " .. tostring(phase.command) .. " command")
+    end,
+    ["return-drawer"] = function(context)
+        local state = assert(context.editorUi)
+        lvgl.close(assert(state.nativeDrawer))
+        assert(not state.nativeDrawer and state.drawerPending, "native Return must queue its navigation")
+    end,
+    ["pad-drawer-config"] = function(context)
+        local config = assert(context.editorSession).draft.panels[context.editorSession.selected].config
+        config.audit = {}
+        for index = 1, 128 do config.audit[index] = { label = "row", nested = { index } } end
+    end,
+    ["check-drawer-removed"] = function(context)
+        local state = assert(context.editorUi)
+        assert(state.session.selected == 0 and #state.session.draft.panels == 0 and state.session.dirty)
+        assert(not state.nativeDrawer and not state.drawerPending and not state.drawerOpen)
+    end,
+    ["check-drawer-error"] = function(context)
+        local state = assert(context.editorUi)
+        assert(state.statusError and not state.session.dirty and not state.drawerPending)
+        assert(context.errorLog and next(context.errorLog.messages))
+    end,
+    ["check-drawer-return"] = function(context)
+        local state = assert(context.editorUi)
+        assert(state.mode == "menu" and not state.nativeDrawer and not state.drawerPending and not state.drawerOpen)
+    end,
+    ["check-drawer-list"] = function(context)
+        local state = assert(context.editorUi)
+        assert(state.nativeDrawer and not state.drawerBuild and not state.drawerPending and not state.drawerOpen)
+        local config = state.session.draft.panels[state.session.selected].config
+        assert(#config[assert(P.drawerListKey)] == assert(P.drawerListCount) and state.session.dirty)
+        assert(not state.statusError, tostring(state.status))
+    end,
     ["write-drawer"] = function(context)
         local state, phase = assert(context.editorUi), config.phases[phaseIndex]
         assert(not state.drawerBuild and not state.drawerPending)
@@ -1540,6 +1592,9 @@ local function callbackSurface(kind, context)
         end
         if ui.renderStage then
             return "editor-render:" .. tostring(ui.renderStage)
+        end
+        if ui.drawerOpening then
+            return "editor-drawer:" .. ui.drawerOpening.phase
         end
         if ui.drawerRefresh then
             return "editor-drawer:" .. (ui.drawerLayout and "layout" or ui.drawerRefresh.phase)

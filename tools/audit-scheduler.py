@@ -642,6 +642,45 @@ def scenarios():
     phases = list(result["editor-write-link-status"]["phases"])
     phases[-3] = dict(phases[-3], nativeError=True)
     result["editor-write-picker-error"] = dict(result["editor-write-link-status"], phases=phases)
+    for panel in ("metric", "chart", "state"):
+        base = result[f"editor-drawer-{panel}"]
+        phases = list(base["phases"][:-1])
+        for command in ("item", "remove-item", "append"):
+            phases.append({"name": f"list-{command}", "kind": "refresh", "action": "command-drawer",
+                           "command": command, "callbacks": 240, "step": 5, "perCall": 4})
+        phases += [
+            {"name": "list-check", "kind": "refresh", "action": "check-drawer-list",
+             "callbacks": 1, "step": 5},
+            {"name": "editor-discard", "kind": "refresh", "action": "discard-editor",
+             "callbacks": 20, "step": 5},
+        ]
+        result[f"editor-list-{panel}"] = dict(base, phases=phases)
+    base = result["editor-drawer-metric"]
+    result["editor-list-remove-panel"] = dict(base, phases=list(base["phases"][:-1]) + [
+        {"name": "remove-panel", "kind": "refresh", "action": "command-drawer", "command": "remove",
+         "callbacks": 1, "step": 5},
+        {"name": "removed-check", "kind": "refresh", "action": "check-drawer-removed",
+         "callbacks": 1, "step": 5},
+    ])
+    result["editor-list-append-error"] = dict(base, phases=list(base["phases"][:-1]) + [
+        {"name": "append-error", "kind": "refresh", "action": "command-drawer", "command": "append",
+         "callbacks": 40, "step": 5},
+        {"name": "error-check", "kind": "refresh", "action": "check-drawer-error",
+         "callbacks": 1, "step": 5},
+    ])
+    phases = list(base["phases"])
+    phases.insert(2, {"name": "large-config", "kind": "refresh", "action": "pad-drawer-config",
+                      "callbacks": 1, "step": 5})
+    result["editor-drawer-large-config"] = dict(base, phases=phases)
+    base = result["editor-entry-state"]
+    result["editor-list-return"] = dict(base, phases=list(base["phases"][:-1]) + [
+        {"name": "return-parent", "kind": "refresh", "action": "return-drawer",
+         "callbacks": 240, "step": 5, "perCall": 4},
+        {"name": "return-root", "kind": "refresh", "action": "return-drawer",
+         "callbacks": 1, "step": 5},
+        {"name": "return-check", "kind": "refresh", "action": "check-drawer-return",
+         "callbacks": 1, "step": 5},
+    ])
     phases = list(result["editor-entry-state"]["phases"])
     phases[-1:-1] = [
         {"name": "state-build", "kind": "refresh", "action": "open-entry-drawer",

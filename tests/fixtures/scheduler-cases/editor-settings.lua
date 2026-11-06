@@ -16,6 +16,11 @@ return function(load)
         local module = { settings = {
             { key = "a", default = shared }, { key = "b", default = shared }, { key = "enabled", default = false },
         } }
+        if shape == "settings" then
+            for index = 1, 128 do
+                module.settings[#module.settings + 1] = { key = "setting" .. index, default = false }
+            end
+        end
         if shape == "groups" then
             config.source, config.cells, module.drawerGroups = "Cels", 0, {}
             for index = 1, 128 do module.drawerGroups[index] = { key = "group" .. index, sourceType = "pack" } end
@@ -27,7 +32,7 @@ return function(load)
         }
     end
     local cases = {}
-    for _, shape in ipairs({ "plain", "deep", "keys", "cycles", "groups" }) do
+    for _, shape in ipairs({ "plain", "deep", "keys", "cycles", "groups", "settings" }) do
         cases[#cases + 1] = {
             stage = "start", grant = 1,
             setup = function()
@@ -72,7 +77,7 @@ return function(load)
         id = "editor:settings-snapshot",
         decl = { class = "normal", first = "start", kinds = { steady = true }, stages = {
             start = { fixed = 0, perUnit = 150, maxUnits = 1 },
-            advance = { fixed = 0, perUnit = 500, maxUnits = 1 },
+            advance = { fixed = 0, perUnit = 620, maxUnits = 1 },
             summary = { fixed = 0, perUnit = 110, maxUnits = 1 },
         } },
         cases = cases,

@@ -3,7 +3,8 @@
 local drawer = { RUNTIME_API = 1 }
 drawer.WORK_BOUNDS = {
     build = 1700, layout = 500, finish = 200,
-    write = 1000, error = 500, snapshot = 700, summaries = 300,
+    write = 1000, error = 500, snapshot = 700, summaries = 300, forms = 1800,
+    append = 1000, ["remove-item"] = 1000, remove = 500, navigate = 400, back = 400,
 }
 
 local function blocked(state)
@@ -12,15 +13,21 @@ end
 
 function drawer.workBound(state)
     if blocked(state) then return nil end
-    if state.drawerRefresh then
+    if state.drawerOpening then
+        return drawer.WORK_BOUNDS[state.drawerOpening.phase]
+    elseif state.drawerRefresh then
         return state.drawerLayout and drawer.WORK_BOUNDS.layout
             or drawer.WORK_BOUNDS[state.drawerRefresh.phase]
     elseif state.drawerLayout then
         return drawer.WORK_BOUNDS.layout
     elseif state.drawerBuild then
         return state.drawerBuild <= #state.drawerFields and drawer.WORK_BOUNDS.build or drawer.WORK_BOUNDS.finish
-    elseif state.drawerPending and (state.drawerPending.action == "write" or state.drawerPending.action == "error") then
-        return drawer.WORK_BOUNDS[state.drawerPending.action]
+    elseif state.drawerPending then
+        local action = state.drawerPending.action
+        if action == "parent" or action == "item" then
+            return drawer.WORK_BOUNDS.navigate
+        end
+        return drawer.WORK_BOUNDS[action]
     end
 end
 
@@ -92,6 +99,7 @@ local function closeDialog(state)
     state.drawerBuild = nil
     state.drawerLayout, state.drawerLayoutY, state.drawerBuildConfig = nil, nil, nil
     state.drawerRefresh = nil
+    state.drawerOpening = nil
     if dialog then
         state.drawerClosing = true
         lvgl.close(dialog)
@@ -142,6 +150,8 @@ end
 
 function drawer.close(state)
     closeDialog(state)
+    state.drawerOpen = nil
+    if state.drawerPending then state.drawerPending.job = nil end
     state.drawerPending = nil
     state.drawerDismiss = nil
 end
@@ -200,14 +210,14 @@ local function entrySummary(state, key, index, defaults, path)
     return table.concat(summary, "  ")
 end
 
-local function fieldsFor(state, listKey, itemIndex, itemPath, groupKey)
+local function fieldsFor(state, listKey, itemIndex, itemPath, groupKey, snapshot, omitRemove)
     local editor = state.handlers.editor
     local selected = itemPath or (listKey and { itemIndex } or {})
     local fields, config
     if groupKey then
-        fields, config = editor.drawerFields(state.session, groupKey)
+        fields, config = editor.drawerFields(state.session, groupKey, snapshot)
     else
-        fields, config = editor.formFields(state.session, { key = listKey, path = selected })
+        fields, config = editor.formFields(state.session, { key = listKey, path = selected }, snapshot)
     end
     if not fields then
         error(config)
@@ -277,7 +287,9 @@ local function fieldsFor(state, listKey, itemIndex, itemPath, groupKey)
             result[#result + 1] = field
         end
     end
-    if listKey then
+    if omitRemove then
+        return result, config
+    elseif listKey then
         local path = editor.clone(selected)
         local index = table.remove(path)
         result[#result + 1] = {
@@ -326,6 +338,8 @@ function drawer.open(context, state, mode, listKey, itemIndex, itemPath, groupKe
         end
     end
     state.mode = mode
+    local snapshot, snapshotError = state.handlers.editor.startSettings(state.session)
+    assert(snapshot, snapshotError)
     local placement = state.session.draft.panels[state.session.selected]
     local title = placement.type
     for _, item in ipairs(state.handlers.editor.CATALOG) do
@@ -336,8 +350,7 @@ function drawer.open(context, state, mode, listKey, itemIndex, itemPath, groupKe
     end
     itemPath = itemPath or (listKey and { itemIndex } or nil)
     if groupKey then
-        local _, _, module = state.handlers.editor.settings(state.session)
-        for _, group in ipairs(module.drawerGroups or {}) do
+        for _, group in ipairs(snapshot.module.drawerGroups or {}) do
             if group.key == groupKey then
                 title = title .. " / " .. group.label
                 break
@@ -349,12 +362,11 @@ function drawer.open(context, state, mode, listKey, itemIndex, itemPath, groupKe
     if itemPath and #itemPath > 1 then
         title = title .. " / State " .. itemPath[#itemPath]
     end
-    local fields, config = fieldsFor(state, listKey, itemIndex, itemPath, groupKey)
     state.drawerListKey, state.drawerItemIndex, state.drawerGroupKey = listKey, itemIndex, groupKey
     state.drawerItemPath = itemPath
-    state.drawerFields, state.drawerControls = fields, {}
+    state.drawerFields, state.drawerControls = {}, {}
     state.drawerBuild = 1
-    state.drawerBuildConfig = config
+    state.drawerOpening = { phase = "snapshot", job = snapshot, index = 1 }
     state.drawerControlHeight = lvgl.UI_ELEMENT_HEIGHT or 32
     state.drawerPadding = math.floor(state.drawerControlHeight / 16 + 0.5)
     state.drawerRowHeight = state.drawerControlHeight + state.drawerPadding * 2
@@ -373,6 +385,7 @@ function drawer.open(context, state, mode, listKey, itemIndex, itemPath, groupKe
                     state.drawerBuild = nil
                     state.drawerLayout, state.drawerLayoutY, state.drawerBuildConfig = nil, nil, nil
                     state.drawerRefresh = nil
+                    state.drawerOpening = nil
                     local command = {
                         action = (listKey or groupKey) and "parent" or "back",
                         key = listKey,
@@ -855,8 +868,61 @@ local function fieldError(state, control, message)
     refreshVisibility(state)
 end
 
+local function reopen(state, listKey, itemIndex, itemPath, groupKey)
+    if state.drawerDismiss then return end
+    closeDialog(state)
+    state.drawerOpen = {
+        mode = "configure", selected = state.session.selected, listKey = listKey,
+        itemIndex = itemIndex, itemPath = itemPath, groupKey = groupKey,
+    }
+end
+
 function drawer.advance(context, state)
     if blocked(state) then return false end
+    if state.drawerOpening then
+        local opening, editor = state.drawerOpening, state.handlers.editor
+        if opening.phase == "snapshot" then
+            if editor.advanceSettings(opening.job) then
+                opening.phase = "forms"
+                state.drawerBuildConfig = opening.job.config
+            end
+        elseif opening.phase == "forms" then
+            local job = opening.job
+            local setting
+            if state.drawerGroupKey then
+                local group = assert(job.groups[state.drawerGroupKey], "unknown settings drawer " .. state.drawerGroupKey)
+                local key = (group.fields or {})[opening.index]
+                setting = key and job.byKey[key]
+                if key and not setting then
+                    opening.index = opening.index + 1
+                    return true
+                end
+            else
+                setting = job.settings[opening.index]
+            end
+            local snapshot = {
+                config = job.config, module = job.module, groups = job.groups,
+                settings = setting and { setting } or {},
+                groupIndex = state.drawerGroupKey and opening.index,
+            }
+            local fields = fieldsFor(
+                state, state.drawerListKey, state.drawerItemIndex, state.drawerItemPath, state.drawerGroupKey,
+                snapshot, setting ~= nil
+            )
+            for _, field in ipairs(fields) do state.drawerFields[#state.drawerFields + 1] = field end
+            if setting then
+                opening.index = opening.index + 1
+            else
+                if not state.drawerGroupKey then
+                    state.drawerFields = editor.orderFields(state.drawerFields, state.drawerListKey ~= nil)
+                end
+                state.drawerOpening = nil
+            end
+        else
+            error("invalid drawer opening phase: " .. tostring(opening.phase))
+        end
+        return true
+    end
     if state.drawerLayout then
         local last = math.min(#state.drawerControls, state.drawerLayout + 3)
         state.drawerLayoutY = relayout(state, state.drawerLayout, last, state.drawerLayoutY)
@@ -928,19 +994,11 @@ function drawer.advance(context, state)
         state.mode = "menu"
         state.previewPending = true
     elseif command.action == "parent" then
-        drawer.open(
-            context,
-            state,
-            "configure",
-            command.itemPath and command.key,
-            nil,
-            command.itemPath,
-            command.groupKey
-        )
+        reopen(state, command.itemPath and command.key, nil, command.itemPath, command.groupKey)
     elseif command.action == "group" then
-        drawer.open(context, state, "configure", nil, nil, nil, command.drawerGroup)
+        reopen(state, nil, nil, nil, command.drawerGroup)
     elseif command.action == "item" then
-        drawer.open(context, state, "configure", command.key, command.index, command.itemPath)
+        reopen(state, command.key, command.index, command.itemPath)
     elseif command.action == "write" then
         ok, err = writeField(state, command.field, command.value)
         -- Return may dismiss the native dialog before its queued edit runs.
@@ -955,13 +1013,28 @@ function drawer.advance(context, state)
             if ok then fieldError(state, command.control, nil) end
         end
     elseif command.action == "append" then
-        ok, err = editor.appendItem(state.session, command.key, command.path)
+        if not command.job then
+            command.job, err = editor.startAppendItem(state.session, command.key, command.path)
+            if command.job then
+                state.drawerPending = command
+                return true
+            end
+            ok = false
+        else
+            local done
+            done, ok, err = editor.advanceAppendItem(command.job)
+            if not done then
+                state.drawerPending = command
+                return true
+            end
+            command.job = nil
+        end
         if ok then
             local parent = command.path and editor.clone(command.path)
             if parent then
                 table.remove(parent)
             end
-            drawer.open(context, state, "configure", parent and command.key, nil, parent)
+            reopen(state, parent and command.key, nil, parent)
         end
     elseif command.action == "remove-item" then
         ok, err = editor.removeItem(state.session, command.key, command.index, command.path)
@@ -970,7 +1043,7 @@ function drawer.advance(context, state)
             if parent then
                 table.remove(parent)
             end
-            drawer.open(context, state, "configure", parent and command.key, nil, parent)
+            reopen(state, parent and command.key, nil, parent)
         end
     elseif command.action == "remove" or command.action == "add" then
         if command.action == "remove" then

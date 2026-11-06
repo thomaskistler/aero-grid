@@ -499,8 +499,8 @@ synchronization and higher-priority save/preview commands keep their own gates.
 Settings drawers construct one control and lay out at most four rows per
 advance. Ordinary selection and modal input admit services under `editor-input`.
 Enter/tap queues a separately bounded `editor-drawer` opening; Return can cancel
-before construction. Drawer commands and drag enumeration retain separate
-admission gates.
+before construction. Opening snapshots settings in bounded grants and expands
+one metadata declaration per advance before constructing controls.
 Compatible saved-layout adoption starts bounded Flight registration when the
 host exposes `beginFlightRegistration`. Editor entry, preview work and native
 drawer edits pause while registration/publication or its pending error drains;
@@ -510,6 +510,11 @@ four-row visibility layout and cached group summaries separately. Snapshot
 copying/defaulting/indexing advances at most eight entries per turn. Controls
 stay disabled until refresh completes; closing drops pending UI work without
 undoing an applied edit.
+List append copies at most eight graph entries per turn before committing once.
+List removal, panel removal and item/parent/Return navigation admit services;
+reopening runs separately, keeping controls disabled until construction finishes.
+Native Return during append retains the edit and queues navigation after its
+commit. Panel Add, drag enumeration and preview geometry retain separate gates.
 
 Put the module at `panels/<type>.lua` and reference that type in a layout.
 Regular panels declare `supportedSpans = { "any" }` and adapt their contents to

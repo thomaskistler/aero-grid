@@ -4455,3 +4455,49 @@ Production owners remain unchanged, Telemetry/History retain their ten-tick
 policy, and preparation/constructor/reflow co-admission remains gated. The
 unchanged first-arm expectation still blocks production activation; this wiring
 and its prototype measurements do not authorize a policy change.
+## 83. Bounded drawer opening and list/navigation mutations (R5)
+
+Configure opening no longer copies the whole settings graph or constructs all
+field descriptors in one callback. It starts the existing bounded snapshot,
+then expands one metadata declaration per turn before building controls.
+Entry/group ordering, defaults, retained unknown configuration, first-match
+groups and native cancellation are preserved. The complete queued opening
+charge falls from 3900 to 1500 rather than reserving the old synchronous cost.
+
+List append uses `editor.startAppendItem/advanceAppendItem`: at most eight
+graph entries per turn, followed by one guarded commit. Shared/cyclic values
+remain independent copies; replaced drafts, selections or lists fail explicitly.
+Removal and item/parent/Return navigation queue reopening separately.
+Native Return during append retains its requested edit and delays navigation
+until commit; editor cancellation drops the uncommitted copy. Completed and
+cancelled commands release their copy graph even if old native fields survive.
+
+| Complete measured advance | Native maximum | Charge |
+|---|---:|---:|
+| Queued Configure opening | 1375 | 1500 |
+| Snapshot advance | 482 | 700 |
+| One declaration's field descriptors | 1652 | 1800 |
+| Append, including rejection/reporting | 600 | 1000 |
+| Remove list item | 572 | 1000 |
+| Remove panel | 137 | 500 |
+| Item/parent navigation | 106 | 400 |
+| Return to editor | 77 | 400 |
+
+Twenty-four actual native cases cover all fifteen production roots, nested
+State entries, list removal/append, explicit maximum-list errors, native Return,
+and opening with 128 retained unknown rows. Newly admitted complete callbacks
+peak at 6962; the largest one-panel whole scenario is 10710. The sixteen-panel
+tap scenario retains its separate unadmitted legacy steady maximum of 26033.
+The native drawer fixture measures every declared stage. Dense 128-setting
+metadata coverage exposes a 517-instruction settings API advance; its fixture
+charge is fitted to 620, still below the unchanged production snapshot charge
+of 700. Start/cached-summary API maxima are 88/47 with charges 150/110.
+
+Lua53/int32 graph, drawer, actual widget list/write/input and unchanged strict
+reset regressions pass, together with the full int32 scheduler suite and 38
+audit-tool tests; reset remains 13900 with both original XFAILs. The
+parent confirmed the resized RX/Navigation assertions with real simulated
+ticks, not relaxed assertions: its intact full editor passes under an in-memory
+all-panel ownership override. Production owners are unchanged here.
+Panel Add, drag enumeration, general preview geometry/adoption and compatibility
+group-navigation admission remain separate gates.

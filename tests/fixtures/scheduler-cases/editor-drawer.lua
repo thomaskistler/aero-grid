@@ -73,7 +73,7 @@ return function(load)
         end
     end
     local editor = load("lib/editor.lua")
-    for _, stage in ipairs({ "write", "error", "snapshot", "summaries" }) do
+    for _, stage in ipairs({ "write", "error", "snapshot", "summaries", "forms", "navigate", "append", "remove-item", "remove", "back" }) do
         for _, part in ipairs({ "start", "advance", "finish" }) do
             cases[#cases + 1] = {
                 stage = stage, grant = 1,
@@ -104,7 +104,11 @@ return function(load)
                             field = { drawerGroup = part == "finish" and "group128" or nil },
                         }
                     end
-                    if stage == "snapshot" or stage == "summaries" then
+                    if stage == "forms" then
+                        local job = assert(editor.startSettings(state.session))
+                        while not editor.advanceSettings(job) do end
+                        state.drawerOpening = { phase = "forms", job = job, index = part == "finish" and 2 or 1 }
+                    elseif stage == "snapshot" or stage == "summaries" then
                         state.drawerBuild, state.drawerBuildConfig = 1, config
                         state.drawerRefresh = { phase = stage, index = 1, module = definition, groups = groups }
                         if stage == "snapshot" and part ~= "start" then
@@ -112,6 +116,22 @@ return function(load)
                             if part == "finish" then while not editor.advanceSettings(job) do end end
                             state.drawerRefresh.job = job
                         end
+                    elseif stage == "append" or stage == "remove-item" then
+                        local values = { { label = "row", nested = {} } }
+                        for index = 1, 128 do values[1].nested[index] = { index } end
+                        config.rows = values
+                        definition.settings[2] = { key = "rows", type = "table", maxItems = 3 }
+                        state.drawerPending = { action = stage, key = "rows", index = 1 }
+                        if stage == "append" and part ~= "start" then
+                            local job = assert(editor.startAppendItem(state.session, "rows"))
+                            if part == "finish" then while not editor.advanceAppendItem(job) do end end
+                            state.drawerPending.job = job
+                        end
+                    elseif stage == "navigate" then
+                        state.drawerPending = { action = part == "start" and "group" or part == "advance" and "item" or "parent",
+                            key = "rows", index = 1, itemPath = { 1 }, drawerGroup = "test" }
+                    elseif stage == "remove" or stage == "back" then
+                        state.drawerPending = { action = stage }
                     else
                         state.drawerPending = {
                             action = stage, field = { key = "enabled", type = "boolean" },

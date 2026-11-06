@@ -49,4 +49,47 @@ session.selected = 1
 session.loadPanel = function() return nil, "panel unavailable" end
 job, message = editor.startSettings(session)
 assert(not job and message == "panel unavailable")
+
+session.loadPanel = function() return module end
+module.settings[#module.settings + 1] = { key = "items", type = "table", maxItems = 3 }
+config.items = { { first = shared, second = shared, records = config.records } }
+local original = config.items[1]
+session.dirty = false
+job = assert(editor.startAppendItem(session, "items"))
+assert(not editor.advanceAppendItem(job) and #config.items == 1 and not session.dirty)
+turns = 1
+while not job.done do
+    editor.advanceAppendItem(job)
+    turns = turns + 1
+    assert(turns < 1000)
+end
+assert(turns > 64 and job.ok and session.dirty and #config.items == 2)
+local added = config.items[2]
+assert(added ~= original and added.first == added.second and added.first ~= shared and added.first.self == added.first)
+assert(added.records ~= original.records and added.records[128].nested[1] == 128)
+assert(editor.advanceAppendItem(job) and #config.items == 2, "terminal append cannot repeat the mutation")
+session.dirty = false
+job = assert(editor.startAppendItem(session, "items"))
+session.selected = 0
+local completed, ok, reason = editor.advanceAppendItem(job)
+assert(completed and not ok and reason and #config.items == 2 and not session.dirty)
+session.selected = 1
+job = assert(editor.startAppendItem(session, "items"))
+local retained = config.items
+config.items = { retained[1], retained[2] }
+completed, ok, reason = editor.advanceAppendItem(job)
+assert(completed and not ok and reason and #retained == 2 and #config.items == 2 and not session.dirty)
+assert(editor.appendItem(session, "items"))
+job, message = editor.startAppendItem(session, "items")
+assert(not job and string.find(message, "maximum", 1, true))
+module.settings[#module.settings + 1] = { key = "retired", default = true, legacyFlight = true }
+module.settings[#module.settings + 1] = { key = "arm", default = "SAv", legacyArm = true }
+for _, armed in ipairs({ false, true }) do
+    session.modelArmed = armed and {} or nil
+    local fields = editor.settings(session)
+    job = assert(editor.startSettings(session))
+    while not editor.advanceSettings(job) do end
+    assert(#job.settings == #fields and job.byKey.retired == nil)
+    for index, field in ipairs(fields) do assert(job.settings[index] == field and job.byKey[field.key] == field) end
+end
 print("Bounded editor settings snapshots: defaults, graphs, errors and terminal identity passed")

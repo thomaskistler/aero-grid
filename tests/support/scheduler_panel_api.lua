@@ -25,6 +25,7 @@ local native = {
     line = node,
     show = noop,
     hide = noop,
+    close = noop,
 }
 local screen = {
     RGB = function(value)

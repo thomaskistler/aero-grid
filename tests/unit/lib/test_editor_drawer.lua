@@ -79,6 +79,16 @@ for position = 0, 4 do
     assert(not state.drawerBuild and not state.drawerLayout and not state.drawerBuildConfig)
 end
 
+for _, phase in ipairs({ "snapshot", "forms" }) do
+    local state = stateFor(16)
+    local command = { action = "append", job = {} }
+    state.drawerPending = command
+    state.drawerOpening = { phase = phase, job = {} }
+    drawer.close(state)
+    assert(not state.drawerOpening and not drawer.advance({}, state), "closing must cancel unfinished opening")
+    assert(command.job == nil, "cancelled native commands must release their copy graph")
+end
+
 do
     local config = { enabled = true }
     local state = {
@@ -143,6 +153,32 @@ for _, rejected in ipairs({ false, true }) do
     assert(state.drawerRefresh and state.status == "source unavailable")
     drawer.close(state)
     assert(not state.drawerRefresh and not state.drawerBuild and not drawer.advance({}, state))
+end
+
+do
+    local editor = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/editor.lua"))()
+    local module = {
+        settings = {
+            { key = "a", type = "boolean", default = true }, { key = "b", type = "boolean", default = false },
+            { key = "label", type = "boolean", default = true },
+        },
+        drawerGroups = { { key = "group", label = "Options", fields = { "b", "missing", "a", "label", "b" } } },
+    }
+    local state = {
+        screen = node(), session = {
+            selected = 1, draft = { panels = { { type = "test", config = {} } } },
+            loadPanel = function() return module end, panelHost = { validateModule = function() return true end },
+        },
+        handlers = { editor = editor },
+    }
+    lvgl.box, lvgl.dialog, lvgl.button, lvgl.choice = node, node, node, node
+    lvgl.numberEdit, lvgl.textEdit = node, node
+    drawer.open({ zone = { w = 480 } }, state, "configure", nil, nil, nil, "group")
+    while state.drawerOpening do drawer.advance({}, state) end
+    assert(#state.drawerFields == 4 and state.drawerFields[1].key == "b" and state.drawerFields[2].key == "a"
+        and state.drawerFields[3].key == "label" and state.drawerFields[4].key == "b",
+        "staged groups preserve metadata order, duplicates and skipped unknown keys")
+    drawer.close(state)
 end
 
 lvgl = previous
