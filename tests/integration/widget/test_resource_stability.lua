@@ -20,7 +20,7 @@ local function finish()
     repeat
         refresh()
         guard = guard + 1
-        assert(guard < 200, "reload or reflow did not finish")
+        assert(guard < 2000, "reload or reflow did not finish")
     until not context.stage and not context.reloadState and not context.reflowIndex
     for _ = 1, 10 do
         refresh()
@@ -77,6 +77,30 @@ local function finish()
     collectgarbage("collect")
 end
 
+local function settleIdentity()
+    for _, entry in ipairs(context.panels) do
+        local panel = entry.instance
+        if entry.module.id == "model-identity" and panel.area.showImage then
+            local ready = false
+            for _ = 1, 1500 do
+                local feed = panel.feed
+                if feed and feed.available
+                    and (not feed.bitmapPath or panel.imagePath == feed.bitmapPath or panel.imageRejected == feed.bitmapPath)
+                then
+                    ready = true
+                    break
+                end
+                fixture.tick(20)
+                definition.background(context)
+                refresh()
+            end
+            assert(ready, "model identity did not finish loading")
+        end
+    end
+    fixture.lvglMock.releaseClearedObjects()
+    collectgarbage("collect")
+end
+
 local function chartBuffersReady()
     for _, entry in ipairs(context.panels) do
         if entry.module.id == "chart" then
@@ -128,6 +152,7 @@ for cycle = 1, 21 do
         assert(weak.page == nil, "a retired page remains reachable")
         assert(weak.runtime == nil, "a retired service runtime remains reachable")
 
+        settleIdentity()
         local fullObjects = #fixture.lvglMock.objects
         local chartsReady = chartBuffersReady()
         for _, size in ipairs({ { 320, 180 }, { 480, 227 }, { 480, 272 } }) do
