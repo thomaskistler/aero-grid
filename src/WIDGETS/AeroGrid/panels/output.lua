@@ -443,7 +443,15 @@ local function render(context, names)
     end
 end
 
+function output.cancelRefresh(context)
+    if context.pendingDrawn then
+        context.rendered = nil
+    end
+    context.pendingDrawn, context.applyRow, context.renderReady, context.captionWork = nil, nil, nil, nil
+end
+
 function output.refresh(context)
+    output.cancelRefresh(context)
     local drawn = prepare(context) and render(context)
     if drawn then
         output.apply(context, drawn)
@@ -491,7 +499,7 @@ function output.step(context, grant, stage)
 end
 
 function output.update(context, rect, settings)
-    context.pendingDrawn, context.applyRow, context.renderReady, context.captionWork = nil, nil, nil, nil
+    output.cancelRefresh(context)
     context.settings = settings
     context.area = output.regionsFor(context, rect)
     context.primitives.resizeHeader(context, rect, context.area.frame, settings.label)

@@ -855,7 +855,9 @@ specification was silent or inconsistent:
 
 - **API.** `scheduler.new(overhead)`, `s:add{ id, decl, instance, due }` (returns
   `true` or `false, reason`; `due` is a tick of the host's clock), `s:remove(id)`,
-  `s:run(kind, now, used)`, `s:takeErrors()`, `s:dueOf(id)` and
+  `s:reschedule(id, due)` (returns `true` or `false, reason` for an unregistered,
+  invalid or already-planned release), `s:run(kind, now, used)`,
+  `s:takeErrors()`, `s:dueOf(id)` and
   `s.lastPlan = { kind, U, charged, examined, ran }` with
   `U = overhead + used + F + the plan` (task bounds and charges) and
   `charged = F + E * examined + W * ran`. `scheduler.stagger(index, interval)`
@@ -2368,3 +2370,61 @@ not the synchronous legacy reflow or construction envelope. Remaining panel
 families, reset release scheduling, full lifecycle/loader/modal/reflow accounting
 and Flight/Smart admission remain gates. Production owners, ten-tick
 Telemetry/History and deferred chart-recording stress assertions are unchanged.
+
+## 35. Bounded lifecycle primitives (reset integration still gated)
+
+`scheduler:reschedule(id, due)` removes and reinserts a listed release without
+changing its record, sequence, class, shared references or task count. It never
+mutates a due value in a sorted list. Unknown ids, non-integral ticks and releases
+already selected by a plan return explicit failures without changing the release.
+Normal step completion still owns the release of a planned/running task.
+
+Metric, Navigation and Output expose idempotent `cancelRefresh` hooks rather than
+adding otherwise unnecessary legacy `resetSession` callbacks. They discard
+captured work and unpainted render caches. Output synchronous refresh now also
+invalidates partially applied rows and caption/capture work. Cancelling Metric
+after preparation revealed a coupled issue: sizing metadata had already changed,
+but geometry had not been applied. Cancellation now retains that obligation
+until a new bounded geometry/layout pass or synchronous reflow finishes it.
+
+| Primitive body, including measurement wrapper | Native / Lua32 worst | Calibrated fixture declaration |
+|---|---:|---:|
+| Requeue one release among up to 128 tasks | 561 | 670 |
+| Cancel one captured refresh | 15 | 70 |
+
+`lifecycle-release.lua` covers 1/8/32/128 queued tasks, both classes, front/middle/
+last records, earlier/equal/later releases and signed/full clock wrapping.
+Scheduler unit tests additionally check stable tie-breaking, preserved identity
+and shared references, untouched sibling releases, invalid values and rejection
+inside running/planned steps. The existing 101 native framework scenarios still
+fit their original charges; least slack is 15 instructions.
+
+Integration coverage cancels and resumes each pending Metric/Navigation stage,
+plus Output caption preparation, capture, first apply and partial two-row grants.
+Metric also resumes synchronous refresh from every pending stage, and its native
+fixture now covers the retained geometry obligation. A stale stage consumes zero
+units; completed output matches actual `93d8df1` synchronous source. All three
+integration suites pass both the usual runner and standalone Lua32.
+
+```sh
+python3 tools/audit-scheduler.py --framework lifecycle-release metric-panel navigation-panel output-panel --timeout 180
+python3 tools/audit-scheduler.py metric-tasks-16 navigation-tasks-4 output-max default-gallery --timeout 180
+make test-lua32
+build/lua32/lua tests/integration/widget/test_metric_task.lua "$PWD"
+build/lua32/lua tests/integration/widget/test_navigation_task.lua "$PWD"
+build/lua32/lua tests/integration/widget/test_output_task.lua "$PWD"
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+```
+
+All commands exit 0. Native whole-callback maxima for those four images are
+10384/9351/9189/12646 respectively; `output-max` remains legacy-owned. The
+affected per-stage adapter declarations still pass. Host, editor initialization,
+shared-module and session-reset regressions pass; retained growth is 0.1 KiB.
+Reset remains at 14300 mock instructions and its two existing first-arm XFAILs.
+All 30 audit-tool tests pass.
+
+These are measured primitives, not admission of complete reset callbacks.
+`pumpSessionReset` still only updates service `due` and placement `nextRefresh`;
+host cancellation, registered-release wakeup, complete callback accounting and
+eligibility remain the next gate. No production owners, ten-tick recording policy
+or deferred chart-recording stress assertions changed.

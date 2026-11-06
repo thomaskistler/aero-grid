@@ -87,6 +87,25 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
             assert(step() == 20 and instance.value.writes == writes, "a stable frame must not repaint")
 
             for _, target in ipairs({ "geometry", "layout", "render", "apply" }) do
+                for _, action in ipairs({ "cancelRefresh", "refresh" }) do
+                    states[1].value, states[1].available = 55.25, true
+                    states[1].precision = (instance.sampleDigits + 1) % 4
+                    metric.refresh(legacy)
+                    for _ = 1, 5 do
+                        if task.stage == target then
+                            break
+                        end
+                        assert(step() == 1)
+                    end
+                    assert(task.stage == target and instance.refreshWork)
+                    metric[action](instance)
+                    metric.cancelRefresh(instance)
+                    assert(not instance.refreshWork)
+                    assert(step() == 1 and task.used == 0 and task.stage == "prepare")
+                    finish()
+                    sameTree(legacy.panel.root, instance.panel.root, action .. " after " .. target)
+                end
+
                 for _, state in ipairs(states) do
                     state.available, state.value = true, 12.5
                     state.precision = (instance.sampleDigits + 1) % 4

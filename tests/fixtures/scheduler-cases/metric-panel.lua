@@ -44,7 +44,7 @@ return function(load)
                 end,
             })
             api.withApi(metric.refresh, context)
-            if variant == 2 or variant == 4 then
+            if variant == 2 or variant == 4 or variant == 7 then
                 for index, state in ipairs(states) do
                     state.value, state.precision = -seed * index * 98765.4321, seed % 3 + 1
                     state.unitText = variant == 4 and string.rep("mAh", seed * 820) or "mAh"
@@ -59,6 +59,13 @@ return function(load)
                 for index, state in ipairs(states) do
                     state.value = seed + index
                 end
+            end
+            if variant == 7 then
+                api.withApi(metric.step, context, 1, "prepare")
+                api.withApi(metric.step, context, 1, "geometry")
+                assert(metric.stageOf(context) == "layout")
+                metric.cancelRefresh(context)
+                assert(context.refreshGeometry)
             end
             if target == "layout" and variant == 3 then
                 assert(count == 3)
@@ -95,13 +102,13 @@ return function(load)
         local span = { colSpan = shape[1], rowSpan = shape[2] }
         for _, count in ipairs({ 1, 3 }) do
             for _, visual in ipairs({ "none", "bar", "radial" }) do
-                for variant = 1, 6 do
+                for variant = 1, 7 do
                     for stage in pairs(metric.decl.stages) do
                         local eligible = stage == "prepare"
                             or variant ~= 5 and stage == "render"
                             or variant ~= 1 and variant ~= 5 and stage == "apply"
                             or (stage == "layout" or stage == "geometry")
-                                and (variant == 2 or variant == 4 or (variant == 3 or variant == 6) and count == 3)
+                                and (variant == 2 or variant == 4 or variant == 7 or (variant == 3 or variant == 6) and count == 3)
                         if eligible then
                             cases[#cases + 1] = {
                                 stage = stage,

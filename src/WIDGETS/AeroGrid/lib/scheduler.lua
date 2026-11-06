@@ -384,6 +384,36 @@ function scheduler:remove(id)
     return true
 end
 
+--- Change a queued release without changing its identity or tie-breaking order.
+--- Planned/running releases must finish or be removed before being rescheduled.
+---@param id any
+---@param due integer
+---@return boolean ok
+---@return string? reason
+function scheduler:reschedule(id, due)
+    local record = self.byId[id]
+    if not record then
+        return false, "task is not registered"
+    end
+    local tick = type(due) == "number" and tointeger(due)
+    if not tick then
+        return false, "due must be a whole number of ticks"
+    end
+    if record.state ~= "listed" then
+        return false, "task is already planned"
+    end
+    local list = record.list
+    for index = 1, #list do
+        if list[index] == record then
+            table.remove(list, index)
+            record.due = tick
+            insert(list, record)
+            return true
+        end
+    end
+    return false, "task is not queued"
+end
+
 --- Errors of tasks retired since the last call, as `{ id, message }`, or nil.
 --- The host reports them at the head of the next callback.
 ---@return table[]?

@@ -343,6 +343,12 @@ Navigation freezes its rendered output, then applies readings, tape frame/style
 and bearing marks in separate stages. Cold tape geometry and alert-surface
 colors must not share an atom with scrolling the full mark pool. Its synchronous
 refresh/update APIs still compose the same helpers.
+Metric, Navigation and Output also expose `cancelRefresh(instance)` for discarding
+a captured task frame without invoking a legacy session-reset callback. Metric
+retains a geometry-dirty flag when cancelled sizing metadata has not yet been
+applied; the next bounded refresh or synchronous reflow must finish that geometry.
+Output synchronous refresh also cancels partial caption/capture/row work before
+painting current readings. These hooks are not yet wired into host session reset.
 RX Battery gathers a bounded cells summary before yielding, then searches one
 supporting-row presence mask per geometry step. Geometry placement, rendering
 and painting have separate stages; synchronous callers compose the same search

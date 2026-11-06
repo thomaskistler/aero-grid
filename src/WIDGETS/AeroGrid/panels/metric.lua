@@ -38,6 +38,7 @@
 ---@field stateName string Current resolved state name.
 ---@field settings AeroGridResolvedMetricSettings
 ---@field refreshWork? table Frozen readings and pending refresh stage.
+---@field refreshGeometry? boolean Cancelled metadata changes still need geometry application.
 ---@field used? integer Granted units consumed by the last task step.
 
 local metric = {
@@ -576,16 +577,25 @@ local function prepareSupporting(context)
     end
 end
 
+function metric.cancelRefresh(context)
+    if context.refreshWork then
+        local stage = context.refreshWork.stage
+        if stage == "geometry" or stage == "layout" then
+            -- Preparation publishes sizing metadata before geometry is applied.
+            context.refreshGeometry = true
+        end
+        context.refreshWork, context.rendered = nil, nil
+    end
+end
+
 --- Advance the panel, repainting only when something drawn changed.
 ---@param context AeroGridMetricContext
 function metric.refresh(context)
-    if context.refreshWork then
-        context.refreshWork, context.rendered = nil, nil
-    end
+    metric.cancelRefresh(context)
     if not context.feed then
         return
     end
-    if preparePrecision(context) then
+    if preparePrecision(context) or context.refreshGeometry then
         metric.update(context, context.rect)
         context.rendered = nil
     end
@@ -625,7 +635,7 @@ end
 
 local function prepareTask(context)
     local precision, supporting = preparePrecision(context), prepareSupporting(context)
-    if precision or supporting then
+    if precision or supporting or context.refreshGeometry then
         context.rendered = nil
         return true
     end
@@ -633,6 +643,7 @@ end
 
 local function layoutTask(context)
     applyGeometry(context, context.rect, context.refreshWork.area)
+    context.refreshGeometry = nil
 end
 
 local function geometryTask(context)
@@ -1227,10 +1238,9 @@ reflow = function(context, rect)
 end
 
 function metric.update(context, rect)
-    if context.refreshWork then
-        context.refreshWork, context.rendered = nil, nil
-    end
+    metric.cancelRefresh(context)
     reflow(context, rect)
+    context.refreshGeometry = nil
 end
 
 return metric

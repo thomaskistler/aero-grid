@@ -153,6 +153,22 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                         assert(step() == 1)
                     end
                     assert(task.stage == target and instance.refreshWork)
+                    navigation.cancelRefresh(instance)
+                    navigation.cancelRefresh(instance)
+                    assert(not instance.refreshWork)
+                    assert(step() == 1 and task.used == 0 and task.stage == "render")
+                    finish()
+                    sameTree(legacy.panel.root, instance.panel.root, "cancelled " .. target)
+
+                    state.distance = state.distance + 12345.6
+                    navigation.refresh(legacy)
+                    for _ = 1, 3 do
+                        if task.stage == target then
+                            break
+                        end
+                        assert(step() == 1)
+                    end
+                    assert(task.stage == target and instance.refreshWork)
                     local changed = { x = 0, y = 0, w = rect.w + 20, h = rect.h + 30 }
                     navigation.update(legacy, changed)
                     navigation.update(instance, changed)

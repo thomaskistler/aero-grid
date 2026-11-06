@@ -49,6 +49,74 @@ local function testRemovingAnIdleListedTaskUnlistsIt()
     equal(s:run("steady", 1000), 1, "its id can return")
 end
 
+local function testReschedulingPreservesIdentityAndOrder()
+    for _, class in ipairs({ "critical", "normal" }) do
+        local log, s = {}, scheduler.new(OVERHEAD)
+        local decl = single(class, 100, { shared = { sample = 50 } })
+        for index = 1, 4 do
+            add(s, index, decl, task(log, index), index * 100)
+        end
+        local record, seq, refs = s.byId[4], s.seq, s.sharedRefs.sample
+        assert(s:reschedule(4, 50))
+        equal(record.list[1], record)
+        assert(s:reschedule(4, 500))
+        equal(record.list[4], record)
+        assert(s:reschedule(4, 100))
+        equal(record.list[1].id, 1, "equal releases retain original tie-breaking order")
+        equal(record.list[2], record)
+        equal(s.byId[4], record)
+        equal(s.count, 4)
+        equal(s.seq, seq)
+        equal(s.sharedRefs.sample, refs)
+        equal(s:run("steady", 100), 2)
+        equal(table.concat(log, ","), "1:run:1,4:run:1")
+        equal(s:dueOf(2), 200, "unrelated releases are untouched")
+        equal(s:dueOf(3), 300)
+        equal(s:dueOf(4), 110)
+    end
+end
+
+local function testReschedulingWrapsAndRejectsInvalidReleases()
+    for _, base in ipairs({ 0x7ffffff0, 0xfffffff0 }) do
+        local log, s = {}, scheduler.new(OVERHEAD)
+        add(s, "first", single("normal", 100), task(log, "first"), base + 10)
+        add(s, "last", single("normal", 100), task(log, "last"), base + 20)
+        assert(s:reschedule("last", base - 10))
+        equal(s.lists[2][1].id, "last")
+        equal(s:run("steady", base), 1)
+        equal(log[1], "last:run:1")
+        assert(s:reschedule("first", base + 30))
+        equal(s.lists[2][2].id, "first")
+    end
+    local s = scheduler.new(OVERHEAD)
+    add(s, "a", single("normal", 100), task({}, "a"), 50)
+    for _, due in ipairs({ false, "10", 1.5, 0 / 0, math.huge }) do
+        local ok, reason = s:reschedule("a", due)
+        equal(ok, false)
+        equal(reason, "due must be a whole number of ticks")
+        equal(s:dueOf("a"), 50)
+    end
+    local ok, reason = s:reschedule("missing", 0)
+    equal(ok, false)
+    equal(reason, "task is not registered")
+    local callback = {
+        step = function()
+            for _, id in ipairs({ "a", "b" }) do
+                local accepted, message = s:reschedule(id, 100)
+                equal(accepted, false, "running and already planned releases are rejected")
+                equal(message, "task is already planned")
+            end
+            return 10
+        end,
+    }
+    s:remove("a")
+    add(s, "a", single("normal", 100), callback, 0)
+    add(s, "b", single("normal", 100), task({}, "b"), 0)
+    equal(s:run("steady", 0), 2)
+    equal(s:dueOf("a"), 10)
+    equal(s:dueOf("b"), 10)
+end
+
 local function testRetiredTasksAreChargedAndCounted()
     local s = scheduler.new({ steady = 0 })
     for index = 1, 3 do
@@ -635,6 +703,8 @@ end
 
 testDeclarationChecks()
 testRemovingAnIdleListedTaskUnlistsIt()
+testReschedulingPreservesIdentityAndOrder()
+testReschedulingWrapsAndRejectsInvalidReleases()
 testRetiredTasksAreChargedAndCounted()
 testKindsAreCheckedWithReasons()
 testDeclarationsAreReadOnceAndCostsBounded()

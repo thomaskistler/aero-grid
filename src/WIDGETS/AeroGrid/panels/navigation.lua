@@ -1039,12 +1039,16 @@ function navigation.apply(context, drawn)
     applyTape(context, drawn)
 end
 
---- Advance the panel, repainting only when something drawn changed.
----@param context AeroGridNavigationContext
-function navigation.refresh(context)
+function navigation.cancelRefresh(context)
     if context.refreshWork then
         context.refreshWork, context.rendered = nil, nil
     end
+end
+
+--- Advance the panel, repainting only when something drawn changed.
+---@param context AeroGridNavigationContext
+function navigation.refresh(context)
+    navigation.cancelRefresh(context)
     if not context.feed and not (context.tape and context.tape.pending) then
         return
     end
@@ -1185,9 +1189,7 @@ reflow = function(context, rect, span)
 end
 
 function navigation.update(context, rect, settings, _, span)
-    if context.refreshWork then
-        context.refreshWork, context.rendered = nil, nil
-    end
+    navigation.cancelRefresh(context)
     reflow(context, rect, span)
     local _, drawn = context.primitives.changed(context, navigation.render)
     navigation.apply(context, drawn)
