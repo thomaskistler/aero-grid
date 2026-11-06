@@ -94,6 +94,53 @@ local function workBound(context)
     return loadBounds[context.stage]
 end
 
+--- Advance to the next layout candidate after a read or parse failure.
+local function recoverLayout(context, reason)
+    local candidates = context.loadCandidates
+    if type(candidates) ~= "table" then
+        return false
+    end
+    local index = context.loadCandidateIndex or 0
+    local nextIndex = index + 1
+    local candidate = candidates[nextIndex]
+    if not candidate then
+        return false
+    end
+    context.recoveryCandidate = {
+        candidate = candidate,
+        index = nextIndex,
+        reason = context.recoveryReason or reason,
+    }
+    context.recoveryReason = context.recoveryCandidate.reason
+    context.reloadState = "clear"
+    return true
+end
+
+--- The rectangle one placement occupies inside the host zone.
+local function panelRect(context, placement)
+    return context.grid.rect(context.zone, placement, 4, 4, 4)
+end
+
+local function beginPreparation(context, placement, preview)
+    return {
+        placement = placement,
+        preview = preview,
+        page = context.page,
+        panels = context.panels,
+        phase = "module",
+    }
+end
+
+local function publishPanel(context, entry)
+    local interval = context.panelHost.refreshInterval(entry.module)
+    entry.interval = interval
+    entry.nextRefresh = getTime() + context.panelHost.phaseOffset(interval, #context.panels + 1)
+    context.panels[#context.panels + 1] = entry
+    context.panelTasksDirty = true
+    lvgl.show(entry.container)
+    return entry
+end
+
 --- Bind host operations once; callbacks retain their original work limits.
 ---@param dependencies table
 ---@return table
@@ -104,43 +151,6 @@ function module.new(dependencies)
     local loadModule = dependencies.loadModule
     local isFullScreen = dependencies.isFullScreen
     local readThemeSource = dependencies.readThemeSource
-
-    --- Advance to the next layout candidate after a read or parse failure.
-    ---@param context AeroGridContext
-    ---@param reason string
-    ---@return boolean recovered
-    local function recoverLayout(context, reason)
-        local candidates = context.loadCandidates
-        if type(candidates) ~= "table" then
-            return false
-        end
-
-        local index = context.loadCandidateIndex or 0
-        local nextIndex = index + 1
-        local candidate = candidates[nextIndex]
-        if not candidate then
-            return false
-        end
-
-        context.recoveryCandidate = {
-            candidate = candidate,
-            index = nextIndex,
-            reason = context.recoveryReason or reason,
-        }
-        context.recoveryReason = context.recoveryCandidate.reason
-        context.reloadState = "clear"
-        return true
-    end
-
-    --- The rectangle one placement occupies inside the host zone.
-    --- Both building and reflow go through this, so the two cannot drift apart.
-    ---@param context AeroGridContext
-    ---@param placement table
-    ---@return AeroGridRect? rect
-    ---@return string? error
-    local function panelRect(context, placement)
-        return context.grid.rect(context.zone, placement, 4, 4, 4)
-    end
 
     --- The part of one placement's own rectangle the menu button covers.
     ---
@@ -248,16 +258,6 @@ function module.new(dependencies)
         return nil, tostring(reason)
     end
 
-    local function beginPreparation(context, placement, preview)
-        return {
-            placement = placement,
-            preview = preview,
-            page = context.page,
-            panels = context.panels,
-            phase = "module",
-        }
-    end
-
     local function rejectPreparation(context, work, reason)
         work.done = true
         work.prepared, work.error = rejectPanel(context, work.placement, work.preview, reason)
@@ -350,16 +350,6 @@ function module.new(dependencies)
         while not advancePreparation(context, work) do
         end
         return work.prepared, work.error
-    end
-
-    local function publishPanel(context, entry)
-        local interval = context.panelHost.refreshInterval(entry.module)
-        entry.interval = interval
-        entry.nextRefresh = getTime() + context.panelHost.phaseOffset(interval, #context.panels + 1)
-        context.panels[#context.panels + 1] = entry
-        context.panelTasksDirty = true
-        lvgl.show(entry.container)
-        return entry
     end
 
     --- Synchronous callers prepare immediately; staged loading retains that work

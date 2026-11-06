@@ -276,11 +276,11 @@ end
 -- Every instance shares one copy of each compiled module (about 1 MiB of
 -- bytecode) instead of loading its own; EdgeTX's Lua heap is capped at 6 MiB.
 -- Each instance runs the chunk to get fresh module state, except for the
--- stateless dashboard loader factory, which creates a bound instance per widget.
+-- stateless loader and scheduler factories, which create per-widget instances.
 -- The cost is that edited files are not re-read until EdgeTX
 -- restarts this Lua state.
 local chunkCache = {}
-local loaderFactories = {}
+local sharedFactories = {}
 
 --- Load a compiled module chunk once per Lua state; failures are not cached.
 ---@param filename string
@@ -677,11 +677,11 @@ local function create(zone, widgetOptions, path)
             context.primitives = runtimeModule("lib/primitives.lua", reading)
         end
         local loaderKey = joinPath(path, "lib/dashboard_loader.lua")
-        local loader = loaderFactories[loaderKey]
+        local loader = sharedFactories[loaderKey]
         if not loader then
             loader = runtimeModule("lib/dashboard_loader.lua")
             if loader then
-                loaderFactories[loaderKey] = loader
+                sharedFactories[loaderKey] = loader
             end
         end
         local lifecycle = runtimeModule("lib/dashboard_lifecycle.lua")
@@ -766,6 +766,19 @@ local function create(zone, widgetOptions, path)
                     mode = SCHEDULER_MODE,
                     probe = SCHEDULER_PROBE,
                     load = function(relative)
+                        if relative == "lib/scheduler.lua" then
+                            local key = joinPath(path, relative)
+                            local scheduler = sharedFactories[key]
+                            if scheduler then
+                                return scheduler
+                            end
+                            local message
+                            scheduler, message = loadModule(path, relative)
+                            if scheduler then
+                                sharedFactories[key] = scheduler
+                            end
+                            return scheduler, message
+                        end
                         return loadModule(path, relative)
                     end,
                     api = { log = logError, error = addError, show = showErrors },
