@@ -2,6 +2,49 @@
 
 local module = { RUNTIME_API = 1 }
 
+local loadBounds = {
+    ["theme-read"] = 240,
+    ["theme-tokenize"] = 3200,
+    ["theme-parse"] = 900,
+    ["theme-validate"] = 1800,
+    ["theme-resolve-begin"] = 240,
+    ["theme-publish"] = 500,
+    read = 750,
+    tokenize = 3300,
+    header = 950,
+    ["header-parse"] = 1650,
+    ["header-migrate"] = 300,
+    ["header-validate"] = 350,
+    ["header-finalize"] = 350,
+    ["panel-tokens"] = 1120,
+    ["panel-parse"] = 1650,
+    ["panel-migrate"] = 400,
+    panels = 250,
+    services = 1200,
+    ["load-error"] = 1500,
+    ["flight-identity"] = 800,
+    ["flight-store-module"] = 2000,
+    ["flight-store-writer"] = 2000,
+    ["flight-store-armed"] = 2000,
+    ["flight-store-create"] = 1200,
+    ["flight-load-begin"] = 300,
+    ["flight-load-wait"] = 100,
+    ["flight-load-notice"] = 400,
+    ["flight-register-begin"] = 320,
+    ["flight-register-error"] = 1500,
+    ["load-finish"] = 1500,
+}
+local resolutionBounds = { legibility = 2400, chart = 1800, alert = 2200, display = 650, finalize = 180 }
+local sharedFlightStages = {
+    ["flight-identity"] = true,
+    ["flight-store-module"] = true,
+    ["flight-store-writer"] = true,
+    ["flight-store-armed"] = true,
+    ["flight-store-create"] = true,
+    ["flight-load-begin"] = true,
+    ["flight-load"] = true,
+}
+
 --- Bind host operations once; callbacks retain their original work limits.
 ---@param dependencies table
 ---@return table
@@ -12,48 +55,6 @@ function module.new(dependencies)
     local loadModule = dependencies.loadModule
     local isFullScreen = dependencies.isFullScreen
     local readThemeSource = dependencies.readThemeSource
-    local loadBounds = {
-        ["theme-read"] = 240,
-        ["theme-tokenize"] = 3200,
-        ["theme-parse"] = 900,
-        ["theme-validate"] = 1800,
-        ["theme-resolve-begin"] = 240,
-        ["theme-publish"] = 500,
-        read = 750,
-        tokenize = 3300,
-        header = 950,
-        ["header-parse"] = 1650,
-        ["header-migrate"] = 300,
-        ["header-validate"] = 350,
-        ["header-finalize"] = 350,
-        ["panel-tokens"] = 1120,
-        ["panel-parse"] = 1650,
-        ["panel-migrate"] = 400,
-        panels = 250,
-        services = 1200,
-        ["load-error"] = 1500,
-        ["flight-identity"] = 800,
-        ["flight-store-module"] = 2000,
-        ["flight-store-writer"] = 2000,
-        ["flight-store-armed"] = 2000,
-        ["flight-store-create"] = 1200,
-        ["flight-load-begin"] = 300,
-        ["flight-load-wait"] = 100,
-        ["flight-load-notice"] = 400,
-        ["flight-register-begin"] = 320,
-        ["flight-register-error"] = 1500,
-        ["load-finish"] = 1500,
-    }
-    local resolutionBounds = { legibility = 2400, chart = 1800, alert = 2200, display = 650, finalize = 180 }
-    local sharedFlightStages = {
-        ["flight-identity"] = true,
-        ["flight-store-module"] = true,
-        ["flight-store-writer"] = true,
-        ["flight-store-armed"] = true,
-        ["flight-store-create"] = true,
-        ["flight-load-begin"] = true,
-        ["flight-load"] = true,
-    }
 
     local function sharedFlightContext(context)
         local work = context.flightLoading

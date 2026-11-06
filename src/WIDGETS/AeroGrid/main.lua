@@ -275,10 +275,12 @@ end
 
 -- Every instance shares one copy of each compiled module (about 1 MiB of
 -- bytecode) instead of loading its own; EdgeTX's Lua heap is capped at 6 MiB.
--- Only the compiled chunk is shared. Each instance still runs it to get fresh
--- module state. The cost is that edited files are not re-read until EdgeTX
+-- Each instance runs the chunk to get fresh module state, except for the
+-- stateless dashboard loader factory, which creates a bound instance per widget.
+-- The cost is that edited files are not re-read until EdgeTX
 -- restarts this Lua state.
 local chunkCache = {}
+local loaderFactories = {}
 
 --- Load a compiled module chunk once per Lua state; failures are not cached.
 ---@param filename string
@@ -674,7 +676,14 @@ local function create(zone, widgetOptions, path)
         if reading then
             context.primitives = runtimeModule("lib/primitives.lua", reading)
         end
-        local loader = runtimeModule("lib/dashboard_loader.lua")
+        local loaderKey = joinPath(path, "lib/dashboard_loader.lua")
+        local loader = loaderFactories[loaderKey]
+        if not loader then
+            loader = runtimeModule("lib/dashboard_loader.lua")
+            if loader then
+                loaderFactories[loaderKey] = loader
+            end
+        end
         local lifecycle = runtimeModule("lib/dashboard_lifecycle.lua")
         local controller = runtimeModule("lib/editor_controller.lua")
         local function bindHost(module, relative, dependencies, operations)
