@@ -13,7 +13,14 @@ EVT_TOUCH_TAP = 9103
 EVT_VIRTUAL_EXIT = 9106
 
 local function input(event, touch)
+    local wasModal = context.locationDetails ~= nil
+    local dispatch = context.panelHost.dispatch
+    context.panelHost.dispatch = function(entry, operation, ...)
+        assert(not wasModal or operation ~= "refresh", "location details must not refresh hidden panels")
+        return dispatch(entry, operation, ...)
+    end
     definition.refresh(context, event, touch)
+    context.panelHost.dispatch = dispatch
     fixture.lvglMock.settle()
 end
 local function tap()

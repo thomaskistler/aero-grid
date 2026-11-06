@@ -405,6 +405,10 @@ freezes the bounded ring at entry, then stages demand checks, snapshot copying,
 row construction, wrapping and painting. Model settings construction and idle
 callbacks have measured UI bounds; save/cancel handlers retain separate
 lifecycle gates.
+Menu and location overlays also use service-only callbacks: hidden panels do
+not refresh behind them. Menu action handlers consume their callback separately
+from popup construction and input; unmeasured action handlers do not inherit
+service eligibility.
 
 Put the module at `panels/<type>.lua` and reference that type in a layout.
 Regular panels declare `supportedSpans = { "any" }` and adapt their contents to

@@ -96,9 +96,13 @@ host.PANEL_BOUNDS = {
 host.OVERHEAD = {
     steady = 1250, background = 1130, ["editor-build"] = 2400,
     ["modal-log"] = 2400, ["modal-settings"] = 2400,
+    ["modal-menu"] = 2400, ["modal-location"] = 2400,
 }
 
-host.SERVICE_KINDS = { ["editor-build"] = true, ["modal-log"] = true, ["modal-settings"] = true }
+host.SERVICE_KINDS = {
+    ["editor-build"] = true, ["modal-log"] = true, ["modal-settings"] = true,
+    ["modal-menu"] = true, ["modal-location"] = true,
+}
 
 --- Reserve registration/validation before admitting scheduled work.
 host.PANEL_ENROLL_COST = 4000

@@ -1464,9 +1464,13 @@ local function prepareAeroMenu(context, widgetEvent)
             return true
         end
     end
-    context.aeroMenuModule.advance(context)
+    local bound = context.aeroMenuModule.workBound(context.aerogridMenu)
+    local advanced = context.aeroMenuModule.advance(context)
     if not fullscreen then
         lvgl.hide(context.chromeRoot)
+    end
+    if advanced then
+        return true, bound
     end
     return false
 end
@@ -1613,7 +1617,11 @@ local function refresh(context, widgetEvent, touchState)
     if pumpSessionReset(context) then
         return
     end
-    if prepareAeroMenu(context, widgetEvent) then
+    local menuConsumed, menuBound = prepareAeroMenu(context, widgetEvent)
+    if menuConsumed then
+        if menuBound then
+            updateModalServices(context, menuBound, "modal-menu")
+        end
         return
     end
     if context.modelSettingsUi then
@@ -1627,6 +1635,11 @@ local function refresh(context, widgetEvent, touchState)
     end
     if context.aeroMenuModule and context.aeroMenuModule.handle(context, widgetEvent, touchState) then
         context.editorPress = nil
+        updateModalServices(context, 300, "modal-menu")
+        return
+    end
+    if context.aerogridMenu and context.aerogridMenu.open then
+        updateModalServices(context, 0, "modal-menu")
         return
     end
     if context.runtimeFailed then
@@ -1759,6 +1772,7 @@ local function refresh(context, widgetEvent, touchState)
     -- EdgeTX delivers fullscreen input through refresh, not an event callback.
     if widgetEvent ~= nil and widgetEvent ~= 0 and isFullScreen() then
         local wasLogViewer = context.logViewer ~= nil
+        local wasLocation = context.locationDetails ~= nil
         if widgetEvent == _G.EVT_TOUCH_FIRST then
             context.touchTapHandled = false
         end
@@ -1773,12 +1787,15 @@ local function refresh(context, widgetEvent, touchState)
             return
         end
         -- Input rendering gets its own callback budget, separate from live panels.
-        if context.editorUi or context.logViewer or wasLogViewer then
+        if context.editorUi or context.logViewer or wasLogViewer or context.locationDetails or wasLocation then
             if context.logViewer or wasLogViewer then
                 -- Opening includes module loading and snapshotting; only an
                 -- already-open viewer has the measured input-handler bound.
                 if wasLogViewer then
                     updateModalServices(context, context.logViewerModule.WORK_BOUNDS.input, "modal-log")
+                end
+                if wasLocation then
+                    updateModalServices(context, 300, "modal-location")
                 end
             end
             return
@@ -1790,6 +1807,10 @@ local function refresh(context, widgetEvent, touchState)
         local bound = module.WORK_BOUNDS[module.stageOf(context.logViewer)]
         module.advance(context)
         updateModalServices(context, bound, "modal-log")
+        return
+    end
+    if context.locationDetails then
+        updateModalServices(context, 0, "modal-location")
         return
     end
 

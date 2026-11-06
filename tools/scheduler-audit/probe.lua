@@ -15,6 +15,12 @@ _G.getTime = function()
 end
 
 local stats, trace, errorsSeen, worst = {}, {}, {}, {}
+local gateErrors = {}
+local function gate(condition, message)
+    if not condition then
+        gateErrors[message] = true
+    end
+end
 local depth, childSum, visits, childList = 0, {}, {}, {}
 local top, topLabels, topSum = {}, {}, 0
 local callbackIndex, phaseIndex, phaseDone = 0, 1, 0
@@ -72,6 +78,12 @@ local function finish(label, raw, leak)
     depth = d - 1
     if type(label) ~= "string" then
         label = "unlabelled"
+    end
+    if string.sub(config.scenario, 1, 6) == "modal-" and string.sub(label, 1, 6) == "modal:" then
+        gate(cost <= 4000, label .. " exceeds the modal atom cap: " .. cost)
+        local stage = string.match(label, "^modal:log:advance:(.+)$")
+        local bound = stage and P.logBounds and P.logBounds[stage]
+        gate(not bound or cost <= bound, label .. " exceeds its declared modal charge: " .. cost)
     end
     if string.sub(label, 1, 5) == "unit:" and depth >= 1 then
         visits[depth] = visits[depth] + 1
@@ -329,6 +341,9 @@ local function install(context)
     }) do
         local module = context[surface[1]]
         if module then
+            if surface[2] == "log" then
+                P.logBounds = module.WORK_BOUNDS
+            end
             for _, name in ipairs({ "open", "advance", "handle", "close", "ensure" }) do
                 wrapField(module, name, function(token, current)
                     if token then
@@ -467,6 +482,13 @@ local function feeds(context)
 end
 
 local function report(context)
+    local errors = {}
+    for _, message in ipairs(context and context.errors or errorsSeen) do
+        errors[#errors + 1] = message
+    end
+    for message in pairs(gateErrors) do
+        errors[#errors + 1] = message
+    end
     local labels = {}
     for label, entry in pairs(stats) do
         local units = {}
@@ -489,7 +511,7 @@ local function report(context)
             scenario = config.scenario,
             calibration = { K = K, leakWrap = LEAK_WRAP, leakSpan = LEAK_SPAN, callbackK = K_CALLBACK },
             panels = context and #context.panels or 0,
-            errors = context and context.errors or errorsSeen,
+            errors = errors,
             callbacks = kindCounts,
             feeds = feeds(context),
             stats = labels,
@@ -518,6 +540,32 @@ local function ready(context)
 end
 
 local actions = {
+    ["open-location"] = function(context)
+        local entry = assert(context.panels[1])
+        assert(entry.module.id == "navigation" and entry.instance.feed.fix)
+        local rect = context.dashboardLoader.panelRect(context, entry.placement)
+        local point = { x = rect.x + rect.w / 2, y = rect.y + rect.h / 2 }
+        refreshFn(context, EVT_TOUCH_FIRST, point)
+        refreshFn(context, EVT_TOUCH_TAP, point)
+        assert(context.locationDetails and context.locationDetails.code)
+    end,
+    ["close-location"] = function(context)
+        refreshFn(context, EVT_VIRTUAL_EXIT)
+        assert(not context.locationDetails)
+    end,
+    ["open-menu"] = function(context)
+        refreshFn(context, EVT_TOUCH_FIRST, { x = 10, y = 10 })
+        refreshFn(context, EVT_TOUCH_TAP, { x = 10, y = 10 })
+    end,
+    ["check-menu"] = function(context)
+        assert(context.aerogridMenu.open and context.aerogridMenu.screen)
+    end,
+    ["select-menu"] = function(context)
+        refreshFn(context, EVT_ROT_RIGHT)
+    end,
+    ["close-menu"] = function(context)
+        refreshFn(context, EVT_VIRTUAL_EXIT)
+    end,
     ["open-log"] = function(context)
         local point
         for _, entry in ipairs(context.panels) do
@@ -648,6 +696,12 @@ local function callbackSurface(kind, context)
     if context.modelSettingsUi then
         return "settings:" .. tostring(context.modelSettingsUi.build or context.modelSettingsUi.pending and "pending" or "idle")
     end
+    if context.locationDetails then
+        return "location"
+    end
+    if context.aerogridMenu and context.aerogridMenu.open then
+        return "menu"
+    end
     return nil
 end
 
@@ -660,6 +714,13 @@ local function runCallback(kind, context, fn, e, t)
     local c1 = count()
     pause(true)
     local total = c1 - c0 - K_CALLBACK
+    if string.sub(config.scenario, 1, 6) == "modal-" and surface and kind == "refresh" then
+        gate(total <= 15000, surface .. " exceeds the complete callback ceiling: " .. total)
+        for _, label in ipairs(topLabels) do
+            gate(not string.match(label, "^panel:") and not string.match(label, "^chart:")
+                and not string.match(label, "^task:panel:"), surface .. " refreshed a hidden panel: " .. label)
+        end
+    end
     local overhead = total - topSum
     local suffix = P.loaded and "" or "@load"
     if recording then

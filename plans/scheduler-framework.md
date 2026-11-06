@@ -2816,3 +2816,35 @@ maximum falls from 14100 to 10200. Host tests explicitly reject hidden panels
 and background-only services in both new modal kinds. Settings save/cancel,
 editor drawers/input/preview admission, location/menu callbacks and R6 lifecycle
 accounting remain gates, not implicitly admitted kinds.
+
+## 42. Explicit menu/location eligibility and native modal gates (R5 slice)
+
+Location and menu overlays no longer fall through to ordinary panel refresh.
+Their idle/input callbacks run services only, under `modal-location` and
+`modal-menu` with the same measured 2400 host overhead. Location input reserves
+300; menu input/selection/dismiss reserves 300 and popup construction 1000.
+Menu advance now consumes the callback when it performs work, preventing an
+action handler from being combined with settings construction or live panels.
+Action handlers remain ineligible until their own lifecycle bounds are measured.
+
+Native location opening already fits the atom cap (1436); no staged rewrite
+was needed. Native menu popup construction reaches 805, input 173, ordinary
+advance 173 and mask setup 1794. Complete scenarios reach 9334 for location and
+9676 for menu; these include ordinary/load callbacks. Native gate checks now
+fail the run for any measured modal atom over 4000, modal callback over 15000,
+log stage over its production work charge, or hidden panel/chart dispatch.
+Violations are retained in the native result's errors instead of aborting the
+instruction counter while paused. An explicit idle-log charge of 50 covers its
+11-instruction no-work advance.
+
+```sh
+python3 tools/audit-scheduler.py modal-location modal-menu modal-log-recording modal-settings --timeout 180
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+```
+
+All strict native gates and 35 audit-tool tests pass. Location interaction,
+menu unit and host eligibility suites pass; location interaction now explicitly
+rejects hidden panel refresh. The complete Lua32 scheduler suite and first
+slice's targeted logger/viewer/settings suites pass. No production owner or
+recording cadence changes. Settings save/cancel, editor input/drawers and R6
+lifecycle accounting remain distinct gates.

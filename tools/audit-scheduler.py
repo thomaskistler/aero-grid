@@ -215,6 +215,26 @@ def scenarios():
             "  - id: log\n    type: host-diagnostics\n    col: 0\n    row: 2\n"
             "    colSpan: 4\n    rowSpan: 2\n    config:\n      section: log\n      maxEntries: 256\n",
         ]))
+    result["modal-location"] = dict(result["navigation-max"], fullscreen=True, phases=[
+        {"name": "settle", "kind": "refresh", "callbacks": 80, "step": 5, "perCall": 4},
+        {"name": "location-open", "kind": "refresh", "action": "open-location",
+         "callbacks": 40, "step": 5, "perCall": 4},
+        {"name": "location-close", "kind": "refresh", "action": "close-location",
+         "callbacks": 10, "step": 5, "perCall": 1},
+        {"name": "location-reopen", "kind": "refresh", "action": "open-location",
+         "callbacks": 40, "step": 5, "perCall": 4},
+    ])
+    result["modal-menu"] = dict(result["chart-max"], fullscreen=True, phases=[
+        {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 4},
+        {"name": "menu-open", "kind": "refresh", "action": "open-menu",
+         "callbacks": 40, "step": 5, "perCall": 4},
+        {"name": "menu-idle", "kind": "refresh", "action": "check-menu",
+         "callbacks": 40, "step": 5, "perCall": 4},
+        {"name": "menu-select", "kind": "refresh", "action": "select-menu",
+         "callbacks": 20, "step": 5, "perCall": 4},
+        {"name": "menu-close", "kind": "refresh", "action": "close-menu",
+         "callbacks": 10, "step": 5, "perCall": 1},
+    ])
     for panel in ("navigation", "metric", "chart"):
         result[f"editor-rebuild-{panel}"] = dict(result[f"{panel}-max"], fullscreen=True, phases=[
             {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 4},

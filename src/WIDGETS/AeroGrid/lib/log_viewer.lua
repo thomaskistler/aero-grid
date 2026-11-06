@@ -3,7 +3,7 @@
 local viewer = { RUNTIME_API = 1 }
 
 viewer.WORK_BOUNDS = {
-    snapshot = 400, header = 250, rows = 400, wrap = 700, render = 250, idle = 0, input = 300,
+    snapshot = 400, header = 250, rows = 400, wrap = 700, render = 250, idle = 50, input = 300,
 }
 
 function viewer.stageOf(state)
