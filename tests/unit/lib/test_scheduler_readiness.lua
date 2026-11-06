@@ -10,6 +10,25 @@ local case = assert(loadfile(root .. "/tests/fixtures/scheduler-cases/host-readi
 local support, telemetryModule = load("lib/services.lua"), load("lib/telemetry_service.lua")
 local equal = load("@support/assertions.lua").assertEqual
 
+do
+    local service = { id = "single", count = 1 }
+    local context = { panels = {}, serviceRuntime = { order = { service } } }
+    local host = load("lib/scheduler_host.lua").attach(context, {
+        mode = "mixed",
+        load = load,
+        api = {},
+    })
+    host.owners = { ["service:single"] = "new" }
+    local id = "service:single"
+    equal(host:verify(context), id .. " is owned by the scheduler but has no task")
+    host.pendingServices[id], host.registeredTasks[id] = service, service
+    equal(host:verify(context), nil, "a genuinely pending single-task service is accepted")
+    host.pendingServices[id] = nil
+    equal(host:verify(context), id .. " is owned by the scheduler but has no task")
+    service.count = 0
+    equal(host:verify(context), nil, "a service without demand does not need a task")
+end
+
 for _, item in ipairs(case.cases) do
     local task, now, state = item.setup()
     local host, scheduler = state.scheduling, state.scheduling.scheduler

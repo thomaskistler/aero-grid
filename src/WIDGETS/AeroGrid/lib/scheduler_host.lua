@@ -245,7 +245,7 @@ function host:verify(context, panelsVerified)
     if self.mode == "legacy" then
         return nil
     end
-    local function problem(key, bound, idle)
+    local function problem(key, bound, idle, instance)
         local owner = self.owners[key]
         if owner ~= "legacy" and owner ~= "new" then
             return key .. " has no owner"
@@ -287,7 +287,8 @@ function host:verify(context, panelsVerified)
                     end
                 end
             else
-                local message = problem("service:" .. instance.id, self:serviceBound(instance), instance.count == 0)
+                local message =
+                    problem("service:" .. instance.id, self:serviceBound(instance), instance.count == 0, instance)
                 if message then
                     return message
                 end
