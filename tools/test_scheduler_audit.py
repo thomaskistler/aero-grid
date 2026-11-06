@@ -143,6 +143,21 @@ class InstrumentationTests(unittest.TestCase):
             self.assertEqual({key: value for key, value in scheduled.items()
                               if key not in ("owners", "flightTasks")}, original)
 
+    def test_matched_flight_smart_clock_cases_keep_identical_inputs(self):
+        cases = load_cli().scenarios()
+        for name, original in (("flight-smart-clock", "flight-smart"),
+                               ("flight-smart-clock-flight-tasks", "flight-smart-tasks"),
+                               ("migration-tasks-flight-smart-clock", "migration-tasks-flight-smart")):
+            case = cases[name]
+            self.assertTrue(case["deterministicClock"])
+            self.assertEqual({key: value for key, value in case.items() if key != "deterministicClock"},
+                             cases[original])
+        panel_case = cases["flight-smart-clock-panel-tasks"]
+        self.assertTrue(panel_case["deterministicClock"])
+        self.assertEqual(panel_case["owners"], [f"panel:{panel}" for panel in PANELS])
+        self.assertEqual({key: value for key, value in panel_case.items()
+                          if key not in ("deterministicClock", "owners")}, cases["flight-smart"])
+
     def test_remaining_reflow_matrices_cover_each_kind_with_separate_cleanup(self):
         cases = load_cli().scenarios()
         kinds = ("metric", "link-status", "tx-battery", "flight-timer", "navigation", "chart", "output",

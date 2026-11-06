@@ -920,6 +920,13 @@ def scenarios():
         result[f"migration-tasks-{tag}"] = dict(
             result[base], flightTasks=True,
             owners=["service:flight", "service:smart"] + [f"panel:{panel}" for panel in PANELS])
+    result["flight-smart-clock"] = dict(result["flight-smart"], deterministicClock=True)
+    result["flight-smart-clock-flight-tasks"] = dict(
+        result["flight-smart-tasks"], deterministicClock=True)
+    result["flight-smart-clock-panel-tasks"] = dict(
+        result["flight-smart"], deterministicClock=True, owners=[f"panel:{panel}" for panel in PANELS])
+    result["migration-tasks-flight-smart-clock"] = dict(
+        result["migration-tasks-flight-smart"], deterministicClock=True)
     loops = [0, 100, 400, 800, 1600, 3000, 6000, 9000]
     for name in ("hook-check", "hook-check-firmware"):
         result[name] = {"recipe": "metric", "placements": {"subject": (0, 0, 1, 1)}, "expected": 1,
@@ -997,6 +1004,7 @@ def prepare(capture, name, spec, sd, mode="legacy"):
     if inputs:
         (audit / "base-inputs.lua").write_text(inputs)
     config = {"scenario": name, "expectedPanels": spec["expected"], "phases": spec["phases"],
+              "deterministicClock": spec.get("deterministicClock", False),
               "sharedFlightLoad": spec.get("sharedFlightLoad", False),
               "sharedFlightRevision": spec.get("sharedFlightRevision", 0),
               "constructionParity": spec.get("constructionParity", False),

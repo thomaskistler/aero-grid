@@ -19,12 +19,19 @@ local boundedConstructors = {
 }
 
 local realTime = getTime
-_G.getTime = function()
-    return realTime() + P.offset
+if config.deterministicClock then
+    _G.getTime = function()
+        return P.offset
+    end
+else
+    _G.getTime = function()
+        return realTime() + P.offset
+    end
 end
 
 local stats, trace, errorsSeen, worst = {}, {}, {}, {}
 local gateErrors = {}
+local historySamples = {}
 -- Declarations must cover the framework margin rule, not only the raw sample.
 local function fit(cost)
     return math.ceil((cost * 1.10 + 50) / 10) * 10
@@ -493,6 +500,34 @@ end
 
 local function install(context)
     pause(true)
+    local history = context.serviceRuntime and context.serviceRuntime.byId.history
+    if config.deterministicClock and history and not historySamples[history] then
+        local samples, sample = {}, history.sample
+        historySamples[history] = samples
+        history.sample = function(self, reading, now)
+            local result = sample(self, reading, now)
+            pause(true)
+            if
+                reading.fresh and reading.updatedAt == now and reading.kind == "number"
+                and type(reading.value) == "number" and reading.value == reading.value
+                and reading.value ~= math.huge and reading.value ~= -math.huge
+            then
+                for _, entry in ipairs(self.sources[reading.name] or {}) do
+                    if entry.session.state.recording and entry.sampledAt == now then
+                        local row = samples[entry]
+                        if not row then
+                            row = { count = 0, first = now, last = now, maxGap = 0 }
+                            samples[entry] = row
+                        end
+                        row.maxGap = math.max(row.maxGap, now - row.last)
+                        row.count, row.last = row.count + 1, now
+                    end
+                end
+            end
+            pause(false)
+            return result
+        end
+    end
     local scheduling = context.schedulerHost
     if scheduling and not installed[scheduling] then
         installed[scheduling] = true
@@ -806,7 +841,10 @@ local function install(context)
             for _, task in ipairs(instance.schedulerTasks or {}) do
                 if task.id == "service:flight" or task.id == "service:smart" then
                     local id = task.id
-                    wrapField(task.instance, "step", function(token, _, _, stage)
+                    wrapField(task.instance, "step", function(token, _, _, stage, now)
+                        if token == nil and config.deterministicClock and id == "service:flight" then
+                            P.firstFlightStep = P.firstFlightStep or now
+                        end
                         return token == nil and stage or "task:" .. id .. ":" .. tostring(token)
                     end)
                 else
@@ -894,11 +932,18 @@ end
 -- How much history the charts hold when the run ends: proves the fill reached capacity.
 local function feeds(context)
     local rows = {}
+    local history = context and context.serviceRuntime and context.serviceRuntime.byId.history
+    local samples = history and historySamples[history]
     for _, entry in ipairs(context and context.panels or {}) do
         for _, item in ipairs(entry.instance.series or {}) do
             local feed = item.feed
             if feed and feed.last then
-                rows[#rows + 1] = { first = feed.first, last = feed.last, full = feed.full == true }
+                rows[#rows + 1] = {
+                    first = feed.first,
+                    last = feed.last,
+                    full = feed.full == true,
+                    samples = samples and samples[history.views[feed]],
+                }
             end
         end
     end
@@ -974,6 +1019,7 @@ local function report(context)
             expectedError = config.expectedError and { message = config.expectedError, observed = P.expectedErrorSeen },
             callbacks = kindCounts,
             feeds = feeds(context),
+            firstFlightStep = P.firstFlightStep,
             construction = P.construction and {
                 checked = P.construction.checked,
                 total = P.construction.total,
@@ -1958,7 +2004,7 @@ local function runCallback(kind, context, fn, e, t)
     local phase = config.phases[phaseIndex]
     if phase and phase.trace and #trace < (config.traceLimit or 3000) then
         trace[#trace + 1] =
-            string.format("%s|%d|%d|%d|%s", kind, realTime() + P.offset, total, overhead, table.concat(top, ","))
+            string.format("%s|%d|%d|%d|%s", kind, getTime(), total, overhead, table.concat(top, ","))
     end
     pause(false)
     return total

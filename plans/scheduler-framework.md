@@ -4836,3 +4836,20 @@ The reset fixture now checks the callback containing capture for a Navigation
 revision advance and verifies the captured coordinates. The separate explicit
 no-room regression still requires capture to remain waiting. The mixed-mode
 reset fixture retains its two switch-unavailable XFAILs.
+
+The matched Flight/Smart clock cases replace the simulator's wall-clock
+component with a deterministic clock and count valid History samples per
+source, rather than treating compressed knot indices as samples. Both runs
+execute 916 refresh and 100 background callbacks. Legacy owners record
+248/425/425 valid samples, with maximum gaps 20/20/20 ticks; all-new owners
+record 422/422/423, with maximum gaps 10/10/10. The latter two totals fall
+short of the at-least-legacy gate, despite the improved gaps. Repeating the
+untracked captures yields identical compressed indices.
+
+With Flight/Smart alone switched, sample totals are 422/423/423; with panel
+owners alone switched, totals are 428/429/429. The Flight/Smart capture's
+first scheduled Flight step is at tick 110, versus the legacy head tick at
+tick 5. This isolates an activation-delay parity concern; it does not justify
+changing the ten-tick policy or the deferred chart-recording stress tests.
+The deterministic scenarios instrument History sampling and are comparison
+fixtures, not substitutes for uninstrumented native instruction proofs.
