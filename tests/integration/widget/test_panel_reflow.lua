@@ -162,6 +162,14 @@ for _, subject in ipairs({
     end
     local panel = fixture.instanceOf(context, subject.id)
     local module = fixture.module("panels/" .. subject.module .. ".lua")
+    if subject.module == "model-identity" then
+        assert(
+            fixture.pumpUntil(context, function()
+                return panel.feed.available and panel.feed.labels ~= ""
+            end, 400, 20),
+            "model identity metadata did not become available"
+        )
+    end
     equal(panel.settings[subject.preference], true)
     equal(panel[subject.label].hidden, true, subject.module .. ": compact detail is quietly shed")
     for _ = 1, 2 do

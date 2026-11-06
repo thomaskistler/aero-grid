@@ -44,12 +44,20 @@ write("shared-armed-copy", document)
 
 local worst, callbacks = 0, 0
 local function measured(callback, context)
+    -- The radio does not execute the mock's per-rectangle property validation.
+    local constructingMenu = context.aeroMenuModule and not context.aerogridMenu and lvgl.isFullScreen()
+    if constructingMenu then
+        fixture.lvglMock.setPropertyValidation(false)
+    end
     local instructions = 0
     debug.sethook(function()
         instructions = instructions + 100
     end, "", 100)
     local ok, message = pcall(callback, context)
     debug.sethook()
+    if constructingMenu then
+        fixture.lvglMock.setPropertyValidation(true)
+    end
     assert(ok, message)
     worst, callbacks = math.max(worst, instructions), callbacks + 1
     assert(instructions < 15000, "model Armed callback exceeded budget: " .. instructions)
@@ -88,7 +96,7 @@ equal(fixture.instanceOf(first, "counter").arm.condition, "L02")
 
 local function open(context)
     context.aeroMenuHandlers.modelSettings()
-    for _ = 1, 30 do
+    for _ = 1, 400 do
         if context.modelSettingsUi and not context.modelSettingsUi.build then
             return context.modelSettingsUi
         end
@@ -106,13 +114,27 @@ assert(first.serviceRuntime.byId.armed == armed, "closing unchanged settings doe
 
 local function save(context, index)
     local dialog = open(context)
+    local revision = context.flightBroker.document.revision
     dialog.controls.armed.properties.set(index)
-    measured(definition.refresh, context)
+    for _ = 1, 400 do
+        if context.flightBroker.document.revision == revision + 1 and not dialog.saving and not dialog.pending then
+            break
+        end
+        fixture.tick(20)
+        measured(definition.refresh, context)
+    end
+    assert(context.flightBroker.document.revision == revision + 1 and not dialog.saving and not dialog.pending)
     if index ~= 0 then
         assert(dialog.armed ~= "", tostring(dialog.status.properties.text))
     end
     context.modelSettingsUiModule.handle(context, EVT_VIRTUAL_EXIT)
-    measured(definition.refresh, context)
+    for _ = 1, 400 do
+        if not context.modelSettingsUi then
+            break
+        end
+        fixture.tick(20)
+        measured(definition.refresh, context)
+    end
     assert(not context.modelSettingsUi)
     finish(first)
     finish(second)

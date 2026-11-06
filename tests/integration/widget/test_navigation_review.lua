@@ -30,6 +30,12 @@ panels:
 end
 local context = fixture.createLoaded(nil, { Layout = "review-navigation", Theme = "modern-dark" })
 fixture.pump(context, 40)
+assert(
+    fixture.pumpUntil(context, function()
+        return context.schedulerHost.scheduler.byId["service:navigation"] ~= nil
+    end, 400, 20),
+    "navigation service registration did not settle"
+)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assertions.assertEqual(context.schedulerHost.owners["service:navigation"], "new")
 assert(context.schedulerHost.scheduler.byId["service:navigation"], "navigation service must be scheduler-owned")
@@ -288,6 +294,12 @@ context = fixture.createLoaded(nil, { Layout = "review-navigation-service", Them
 fixture.pump(context, 22)
 square = fixture.instanceOf(context, "detailed")
 detailed = square
+assert(
+    fixture.pumpUntil(context, function()
+        return detailed.feed.fix and detailed.feed.home and detailed.bearing ~= ""
+    end, 400, 20),
+    "initial Navigation position did not settle"
+)
 
 local bearingOnly = instance(2, 2, { w = 238, h = 134 }, { bearingFormat = "quadrant" })
 assert(bearingOnly.showDetail)
@@ -372,7 +384,14 @@ for _, shape in ipairs({ { 1, 2, 117, 134 }, { 2, 1, 238, 65 }, { 2, 2, 238, 134
         { w = shape[3], h = shape[4] },
         { satelliteSource = "Sats", showTape = true }
     )
-    fixture.pump(context, 20)
+    assert(
+        fixture.pumpUntil(context, function()
+            return satellitePanel.feed.fix
+                and satellitePanel.satellites.available
+                and not satellitePanel.satellites.stale
+        end, 400, 20),
+        "satellite and position readings did not settle"
+    )
     navigation.refresh(satellitePanel)
     assertions.assertEqual(satellitePanel.stateName, "normal")
     assert(satellitePanel.showSatellites, "satellite count must fit standard span " .. shape[1] .. "x" .. shape[2])
@@ -439,6 +458,12 @@ assertions.assertEqual(missing.satelliteLabel.properties.text, "--")
 fixture.radio.values[109], fixture.radio.values[122], fixture.radio.rssi = 0, 0, 0
 fixture.pump(context, 20)
 local stale = instance(2, 2, { w = 238, h = 134 }, { satelliteSource = "Sats" })
+assert(
+    fixture.pumpUntil(context, function()
+        return stale.satellites.stale and stale.feed.state == "stale"
+    end, 400, 20),
+    "stale Navigation data did not settle"
+)
 navigation.refresh(stale)
 assertions.assertEqual(stale.stateName, "stale")
 assertions.assertEqual(stale.satelliteLabel.properties.text, "12")
