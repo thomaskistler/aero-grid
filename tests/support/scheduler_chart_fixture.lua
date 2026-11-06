@@ -70,7 +70,16 @@ return function(load)
                 metrics = metrics,
                 label = options.longText and string.rep("W", seed * 820) or nil,
             }))
-            local panel = chart.create(api.node(), options.rect or { x = 0, y = 0, w = 800, h = 480 }, settings, {
+            if options.staged and options.warm then
+                for _, metric in ipairs(metrics) do
+                    history:subscribe(metric.source, {
+                        armSwitch = settings.armSwitch,
+                        windowSeconds = 30,
+                        timeRange = "rolling",
+                    })
+                end
+            end
+            local dependencies = {
                 theme = api.theme,
                 themeBuilder = builder,
                 primitives = primitives,
@@ -81,7 +90,10 @@ return function(load)
                 state = function(state, accent)
                     return builder.state(api.theme, state, accent)
                 end,
-            })
+                staged = options.staged,
+            }
+            local panel =
+                chart.create(api.node(), options.rect or { x = 0, y = 0, w = 800, h = 480 }, settings, dependencies)
             for index = 1, options.points or 256 do
                 now, arm.updatedAt = index * 10, index * 10
                 if options.boundaries then
@@ -110,7 +122,7 @@ return function(load)
                 assert(panel.session.flightLast > 0 and not panel.session.flightActive, "fixture needs a closed flight")
                 assert(panel.session.resumeLast > 1 and panel.session.armLast > 1, "fixture needs lifecycle boundaries")
             end
-            return panel
+            return panel, dependencies
         end)
     end
 end

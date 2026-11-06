@@ -308,6 +308,7 @@ Use `panels/flight-mode.lua` as a small working example and
 | `refreshInterval` | Desired foreground interval in 10 ms ticks; work still shares the host budget. |
 | `refreshCost` | Whole-number share of the six host refresh slots (default 1). Chart uses all six so dense layouts cannot batch expensive redraws into one callback. |
 | `create(parent, rect, settings, services)` | Build LVGL objects, subscribe to data, and return private instance state. |
+| `construct(context, rect)` | Optional bounded construction step. When `services.staged` is true, `create` returns partial state and the loader calls this once per callback until it returns `true`; return `false` while unfinished. |
 | `refresh(context)` | Optional callback to update existing objects from snapshots. May return a whole-number interval of 1–6000 ticks; nil preserves the current interval. A second result of `true` reserves subsequent turns among panels of the same type until the update completes; other panel types and services continue running. |
 | `update(context, rect, settings, detailsOnly, placement)` | Optional geometry/configuration update. Host reflows and editor resizes pass the current grid placement as the fifth argument, leaving the internal `detailsOnly` argument unset. |
 | `background(context)` | Optional work when the dashboard is not visible. |
@@ -315,6 +316,15 @@ Use `panels/flight-mode.lua` as a small working example and
 | `event(context, event)` | Optional event handling; return true when consumed. |
 | `destroy(context)` | Optional cleanup of panel-owned references. |
 | `validateSettings(settings, span, config)` | Optional cross-field and span-dependent validation. |
+
+Staged construction keeps its container hidden and its instance outside the live
+panel registry until completion. Each step receives current container-local
+geometry and must handle resizing while unfinished. Exceptions or non-boolean
+results reject the placement and clear its container. Reload or page retirement
+discards partial state, so partial construction must not leave external resources
+outside its container and shared service subscriptions. Without `services.staged`,
+`create` must still return a complete instance; editor and preview callers retain
+their synchronous behavior.
 
 Put the module at `panels/<type>.lua` and reference that type in a layout.
 Regular panels declare `supportedSpans = { "any" }` and adapt their contents to

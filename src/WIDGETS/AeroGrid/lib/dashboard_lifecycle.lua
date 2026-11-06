@@ -220,6 +220,7 @@ function module.new(dependencies)
         context.logViewer = nil
         context.logOverlay = nil
         dispatchAll(context, "destroy")
+        context.pendingConstruction, context.pendingPanel = nil, nil
 
         -- Discard the whole page. EdgeTX collects the clear whenever it next runs
         -- callRefs, which is not guaranteed to be this callback: it is skipped

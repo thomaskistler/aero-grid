@@ -23,6 +23,7 @@ local prepared = assert(context.pendingPanel)
 assert(context.stage == "panel-build" and #context.panels == count, "preparation must not construct a panel")
 
 local create, calls = prepared.module.create, 0
+context.panelTasksDirty = false
 prepared.module.create = function(...)
     calls = calls + 1
     return create(...)
@@ -31,8 +32,31 @@ context.zone = { x = 0, y = 0, w = 640, h = 360 }
 local rect = assert(context.dashboardLoader.panelRect(context, placement))
 assert(context.dashboardLoader.advanceLoad(context))
 prepared.module.create = create
+local partial = assert(context.pendingConstruction)
+assert(
+    context.stage == "panel-construct"
+        and #context.panels == count
+        and partial.container.hidden
+        and not context.panelTasksDirty,
+    "a partially constructed panel stays hidden and outside the live registry"
+)
+local resized = false
+for _ = 1, 50 do
+    if context.stage ~= "panel-construct" then
+        break
+    end
+    if partial.instance.createStage == "position" and not resized then
+        context.zone = { x = 0, y = 0, w = 800, h = 480 }
+        rect = assert(context.dashboardLoader.panelRect(context, placement))
+        resized = true
+    end
+    assert(#context.panels == count and partial.container.hidden)
+    context.dashboardLoader.advanceLoad(context)
+end
 local entry = assert(context.panels[count + 1])
 assert(calls == 1 and context.stage == "panels" and context.pendingPanel == nil)
+assert(resized and not entry.container.hidden and not context.pendingConstruction)
+assert(context.panelTasksDirty, "only a completed panel invalidates scheduler enrollment")
 assert(entry.module == prepared.module and entry.settings == prepared.settings, "construction reuses prepared inputs")
 assert(
     entry.container.properties.w == rect.w and entry.container.properties.h == rect.h,
@@ -73,13 +97,55 @@ assert(
     "failed construction retires prepared state and advances loading"
 )
 
+for _, failure in ipairs({ "raise", "invalid-result" }) do
+    context.pendingPlacement, context.stage = placement, "panel-prepare"
+    context.dashboardLoader.advanceLoad(context)
+    context.dashboardLoader.advanceLoad(context)
+    local pending = assert(context.pendingConstruction)
+    local construct = pending.module.construct
+    pending.module.construct = function()
+        if failure == "raise" then
+            error("expected construction step failure")
+        end
+    end
+    errors, rejected = #context.errors, #context.rejected
+    context.dashboardLoader.advanceLoad(context)
+    pending.module.construct = construct
+    assert(#context.errors == errors + 1 and #context.rejected == rejected + 1)
+    assert(not context.pendingConstruction and not context.pendingPlacement and context.stage == "panels")
+    assert(
+        pending.container.hidden and #context.panels == count + 1,
+        "failed or malformed construction steps cannot publish a panel"
+    )
+end
+
 context.pendingPlacement, context.stage = placement, "panel-prepare"
 context.dashboardLoader.advanceLoad(context)
 assert(context.pendingPanel)
+context.dashboardLoader.advanceLoad(context)
+local cancelled = assert(context.pendingConstruction)
 context.dashboardLoader.beginLoad(context)
 assert(
-    context.pendingPanel == nil and context.pendingPlacement == nil and context.stage == "theme-read",
-    "a replacement load invalidates unconstructed prepared state"
+    context.pendingPanel == nil
+        and context.pendingPlacement == nil
+        and not context.pendingConstruction
+        and context.stage == "theme-read"
+        and cancelled.container.hidden,
+    "a replacement load invalidates and hides partial construction"
+)
+
+context.pendingPlacement, context.stage = placement, "panel-prepare"
+context.dashboardLoader.advanceLoad(context)
+context.dashboardLoader.advanceLoad(context)
+assert(context.pendingConstruction)
+context.dashboardLifecycle.retirePage(context)
+fixture.lvglMock.settle()
+assert(not context.pendingConstruction and not context.pendingPanel and context.reloadState == "rebuild")
+context.dashboardLifecycle.rebuildPage(context)
+context.dashboardLoader.beginLoad(context)
+assert(
+    context.stage == "theme-read" and not context.pendingConstruction,
+    "page retirement must not retain constructor references to deleted native objects"
 )
 
 print("Panel preparation and construction lifecycle passed")

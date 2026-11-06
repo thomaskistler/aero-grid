@@ -20,6 +20,7 @@
 ---@field refreshCost? integer Host refresh slots consumed, 1 to 6; defaults to 1.
 ---@field settings? AeroGridPanelSetting[]
 ---@field create fun(parent: any, rect: table, settings: table, services: table): any
+---@field construct? fun(instance: any, rect: table): boolean Finish one staged construction step; true when ready.
 ---@field update? fun(instance: any, rect: table, settings: table)
 ---@field refresh? fun(instance: any)
 ---@field decl? table Scheduler declaration for a migrated panel.
@@ -48,7 +49,8 @@ local panelHost = { RUNTIME_API = 1 }
 panelHost.API_VERSION = 1
 
 --- Optional lifecycle callbacks, in a fixed order so errors stay deterministic.
-local OPTIONAL_CALLBACKS = { "update", "refresh", "step", "stageOf", "background", "resetSession", "event", "destroy" }
+local OPTIONAL_CALLBACKS =
+    { "construct", "update", "refresh", "step", "stageOf", "background", "resetSession", "event", "destroy" }
 
 --- Restrict module identifiers to the same path-safe characters as layout types.
 ---@param value any

@@ -2231,40 +2231,32 @@ function chart.step(context, grant, stage)
     return nil, true
 end
 
-function chart.create(parent, rect, settings, services)
-    local warnings = chart.validateSettings(settings, nil, nil, services.host and services.host.modelArmed)
-    assert(#warnings == 0, table.concat(warnings, "; "))
-    local context = {
-        theme = services.theme,
-        themeBuilder = services.themeBuilder,
-        primitives = services.primitives,
-        settings = settings,
-        history = services.history and (services.preview and services.history:preview() or services.history),
-        preview = services.preview == true,
-        clock = services.clock or getTime,
-        series = {},
-        version = 0,
-        cursor = 1,
-        rect = rect,
-        span = services.span,
-        area = {},
-        grid = {},
-        gridCursor = 1,
-        flightKeys = {},
-    }
-    local presentation = services.state("normal", settings.accent or "cyan")
-    context.panel = context.primitives.panel(parent, rect, context.theme, presentation)
-    context.plotHost = lvgl.box(context.panel.root, { x = 0, y = 0, w = rect.w, h = rect.h })
-    context.plotRoot = lvgl.box(context.plotHost, { x = 0, y = 0, w = rect.w, h = rect.h })
-    context.flightRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
-    context.gapRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
-    context.gridRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
-    context.session = context.history and context.history:session(settings.armSwitch)
-        or { elapsed = 0, configured = false, available = false, recording = false }
-    if context.preview then
-        context.previewMissing = context.session.previewMissing
+local function resizeShell(context, rect)
+    context.rect = rect
+    context.legendFont, context.legendIndex, context.legendWidth = nil, nil, nil
+    context.primitives.resizePanel(context.panel, rect)
+    context.plotHost:set({ w = rect.w, h = rect.h })
+    context.plotRoot:set({ w = rect.w, h = rect.h })
+    context.flightRoot:set({ w = rect.w, h = rect.h })
+    context.gapRoot:set({ w = rect.w, h = rect.h })
+    context.gridRoot:set({ w = rect.w, h = rect.h })
+end
+
+function chart.construct(context, rect)
+    if rect and (context.rect.w ~= rect.w or context.rect.h ~= rect.h) then
+        resizeShell(context, rect)
+        if context.createGeometry then
+            context.createGeometry, context.createLayout, context.createStage = nil, nil, "layout"
+        end
     end
-    for index, entry in ipairs(settings.metrics) do
+    local stage = context.createStage
+    if not stage then
+        return true
+    end
+    if stage == "series" then
+        local index = context.createIndex
+        local settings = context.settings
+        local entry = settings.metrics[index]
         local color = context.theme.chartColor[entry.accent or COLORS[index]]
         local item = {
             settings = entry,
@@ -2301,40 +2293,103 @@ function chart.create(parent, rect, settings, services)
             color = context.theme.color.textFaint,
         })
         context.series[index] = item
+        context.createIndex = index + 1
+        if index == #settings.metrics then
+            context.createStage = "controls"
+        end
+    elseif stage == "controls" then
+        context.durationBackground = lvgl.rectangle(context.panel.root, {
+            x = 0,
+            y = 0,
+            w = 1,
+            h = 1,
+            color = context.theme.color.surface,
+            filled = true,
+        })
+        context.title, context.duration, context.status = label(context), label(context), label(context)
+        context.baseline =
+            lvgl.hline(context.plotRoot, { x = 0, y = 0, w = 1, h = 1, color = context.theme.chartColor.grid })
+        context.window, context.start, context.pixelStart = timeWindow(context.settings, 0), 0, 0
+        context.createStage = "layout"
+    elseif stage == "layout" then
+        if not context.createGeometry then
+            context.createGeometry = startGeometry(context, context.rect)
+            context.createStage = "font"
+        else
+            context.createLayout = layoutGeometry(context, context.rect, context.createGeometry)
+            context.createIndex, context.createStage = 1, "position"
+        end
+    elseif stage == "font" then
+        if selectLegendFont(context, context.createGeometry) then
+            context.createStage = "layout"
+        end
+    else
+        local item = context.series[context.createIndex]
+        if item then
+            positionLegend(context, context.createIndex, item, context.createLayout)
+        end
+        context.createIndex = context.createIndex + 1
+        if context.createIndex > #context.series then
+            finishGeometry(context)
+            text(
+                context.status,
+                not context.history and "HISTORY N/A"
+                    or context.preview and (context.previewMissing and "PREVIEW: NO DATA" or "PREVIEW")
+                    or not context.session.configured and "SET ARM SOURCE"
+                    or "",
+                context.theme.color.textFaint
+            )
+            context.createStage, context.createIndex, context.createGeometry, context.createLayout = nil, nil, nil, nil
+            return true
+        end
     end
-    context.durationBackground = lvgl.rectangle(context.panel.root, {
-        x = 0,
-        y = 0,
-        w = 1,
-        h = 1,
-        color = context.theme.color.surface,
-        filled = true,
-    })
-    context.title, context.duration, context.status = label(context), label(context), label(context)
-    context.baseline =
-        lvgl.hline(context.plotRoot, { x = 0, y = 0, w = 1, h = 1, color = context.theme.chartColor.grid })
-    context.window, context.start, context.pixelStart = timeWindow(settings, 0), 0, 0
-    chart.geometry(context, rect)
-    text(
-        context.status,
-        not context.history and "HISTORY N/A"
-            or context.preview and (context.previewMissing and "PREVIEW: NO DATA" or "PREVIEW")
-            or not context.session.configured and "SET ARM SOURCE"
-            or "",
-        context.theme.color.textFaint
-    )
+    return false
+end
+
+function chart.create(parent, rect, settings, services)
+    local warnings = chart.validateSettings(settings, nil, nil, services.host and services.host.modelArmed)
+    assert(#warnings == 0, table.concat(warnings, "; "))
+    local context = {
+        theme = services.theme,
+        themeBuilder = services.themeBuilder,
+        primitives = services.primitives,
+        settings = settings,
+        history = services.history and (services.preview and services.history:preview() or services.history),
+        preview = services.preview == true,
+        clock = services.clock or getTime,
+        series = {},
+        version = 0,
+        cursor = 1,
+        rect = rect,
+        span = services.span,
+        area = {},
+        grid = {},
+        gridCursor = 1,
+        flightKeys = {},
+        createStage = #settings.metrics > 0 and "series" or "controls",
+        createIndex = 1,
+    }
+    local presentation = services.state("normal", settings.accent or "cyan")
+    context.panel = context.primitives.panel(parent, rect, context.theme, presentation)
+    context.plotHost = lvgl.box(context.panel.root, { x = 0, y = 0, w = rect.w, h = rect.h })
+    context.plotRoot = lvgl.box(context.plotHost, { x = 0, y = 0, w = rect.w, h = rect.h })
+    context.flightRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
+    context.gapRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
+    context.gridRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
+    context.session = context.history and context.history:session(settings.armSwitch)
+        or { elapsed = 0, configured = false, available = false, recording = false }
+    if context.preview then
+        context.previewMissing = context.session.previewMissing
+    end
+    if not services.staged then
+        while not chart.construct(context) do
+        end
+    end
     return context
 end
 
 function chart.update(context, rect)
-    context.rect = rect
-    context.legendFont, context.legendIndex, context.legendWidth = nil, nil, nil
-    context.primitives.resizePanel(context.panel, rect)
-    context.plotHost:set({ w = rect.w, h = rect.h })
-    context.plotRoot:set({ w = rect.w, h = rect.h })
-    context.flightRoot:set({ w = rect.w, h = rect.h })
-    context.gapRoot:set({ w = rect.w, h = rect.h })
-    context.gridRoot:set({ w = rect.w, h = rect.h })
+    resizeShell(context, rect)
     chart.geometry(context, rect)
     if context.framePhase then
         context.framePhase, context.pending, context.axisWork = "axis", nil, nil

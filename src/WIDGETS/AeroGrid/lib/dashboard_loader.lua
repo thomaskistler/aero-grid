@@ -200,6 +200,16 @@ function module.new(dependencies)
         return { module = panel, settings = settings, rect = rect }
     end
 
+    local function publishPanel(context, entry)
+        local interval = context.panelHost.refreshInterval(entry.module)
+        entry.interval = interval
+        entry.nextRefresh = getTime() + context.panelHost.phaseOffset(interval, #context.panels + 1)
+        context.panels[#context.panels + 1] = entry
+        context.panelTasksDirty = true
+        lvgl.show(entry.container)
+        return entry
+    end
+
     --- Synchronous callers prepare immediately; staged loading retains that work
     --- for a separate construction callback.
     local function buildPanel(context, placement, container, preview, prepared)
@@ -216,7 +226,6 @@ function module.new(dependencies)
             end
             preparation.rect = rect
         end
-        local host = context.panelHost
         local panel, settings, rect = preparation.module, preparation.settings, preparation.rect
 
         -- Each panel draws inside its own container, so it cannot reach the
@@ -242,12 +251,15 @@ function module.new(dependencies)
 
         local services = buildServices(context, placement)
         services.preview = preview == true
+        services.staged = prepared ~= nil and type(rawget(panel, "construct")) == "function"
+        if services.staged then
+            lvgl.hide(container)
+        end
         local ok, instance =
             pcall(panel.create, container, { x = 0, y = 0, w = rect.w, h = rect.h }, settings, services)
 
         if ok then
-            local interval = host.refreshInterval(panel)
-            context.panels[#context.panels + 1] = {
+            local entry = {
                 placement = placement,
                 module = panel,
                 instance = instance,
@@ -255,13 +267,12 @@ function module.new(dependencies)
                 container = container,
                 -- Boxes built in fullscreen stay touchable in App mode.
                 builtFullscreen = isFullScreen() or nil,
-                interval = interval,
-                -- Stagger panels that share an interval so they do not all fall
-                -- due on the same frame.
-                nextRefresh = getTime() + host.phaseOffset(interval, #context.panels + 1),
             }
-            context.panelTasksDirty = true
-            return context.panels[#context.panels]
+            if services.staged then
+                context.pendingConstruction = entry
+                return
+            end
+            return publishPanel(context, entry)
         else
             -- Discard whatever the failed panel managed to build.
             container:clear()
@@ -724,8 +735,37 @@ function module.new(dependencies)
         if stage == "panel-build" then
             buildPanel(context, context.pendingPlacement, nil, nil, context.pendingPanel)
             context.pendingPanel = nil
+            if context.pendingConstruction then
+                context.stage = "panel-construct"
+                return true
+            end
             context.pendingPlacement = nil
             context.panelMigrationVersion = nil
+            context.stage = "panels"
+            return true
+        end
+
+        if stage == "panel-construct" then
+            local entry = assert(context.pendingConstruction, "pending panel construction is missing")
+            local rect, message = panelRect(context, entry.placement)
+            local ok, done = false, message
+            if rect then
+                entry.container:set({ x = rect.x, y = rect.y, w = rect.w, h = rect.h })
+                ok, done = pcall(entry.module.construct, entry.instance, { x = 0, y = 0, w = rect.w, h = rect.h })
+                if ok and type(done) ~= "boolean" then
+                    ok, done = false, "construct must return a boolean"
+                end
+            end
+            if not ok then
+                entry.container:clear()
+                lvgl.hide(entry.container)
+                rejectPanel(context, entry.placement, false, done)
+            elseif done then
+                publishPanel(context, entry)
+            else
+                return true
+            end
+            context.pendingConstruction, context.pendingPlacement, context.panelMigrationVersion = nil, nil, nil
             context.stage = "panels"
             return true
         end
@@ -736,6 +776,11 @@ function module.new(dependencies)
     --- Begin a staged load, discarding anything already on screen.
     ---@param context AeroGridContext
     local function beginLoad(context)
+        if context.pendingConstruction then
+            context.pendingConstruction.container:clear()
+            lvgl.hide(context.pendingConstruction.container)
+            context.pendingConstruction = nil
+        end
         if context.flightFactory then
             local member = context.flightFactory.members[context]
             if member then

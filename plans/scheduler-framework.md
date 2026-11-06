@@ -1553,3 +1553,76 @@ initialization, panel reflow/schema, shared module code, session reset and the
 chart parity/preview/flight/reset suites pass. Shared-module retained growth is
 0.1 KiB; session reset remains at 14300 mock instructions and still reports its
 existing first-arm mixed-load XFAIL. The 21 audit-tool tests pass.
+
+## 22. Staged chart construction (R6, ownership unchanged)
+
+Panels may optionally expose `construct(instance, rect)`. The ordinary loader
+sets `services.staged` only for that validated callback: `create` returns a
+partial instance, and each following callback performs one construction step.
+The host requires a boolean result, keeps the container hidden and the instance
+outside the live registry until completion, and reports/clears failed or malformed
+steps. Reload and page retirement discard unfinished instances before their
+native objects can be reused. Editor/preview and other synchronous callers still
+receive a complete instance from `create`.
+
+Chart construction now has a shell, one History subscription/series per step,
+controls, geometry setup, one font candidate, geometry application and one series'
+position per step. The final position publishes initial geometry/status. It
+shares the synchronous helpers rather than maintaining a second implementation.
+Construction receives current local geometry; resizing while a geometry pass is
+unfinished restarts that pass, without publishing the partial panel.
+
+| Construction body | Native worst instructions | Fixture cost declaration |
+|---|---:|---:|
+| Shell / initial session | 784 | 920 |
+| One series and History subscription | 833 | 970 |
+| Plot/header controls | 414 | 510 |
+| Geometry setup/application | 792 | 930 |
+| One font candidate | 971 | 1120 |
+| One position / final header and status | 2628 | 2950 |
+| Framework release | 242 | 420 |
+
+`chart-construction.lua` measures cold/warm History, zero/one/three series,
+all series/font cursors, both geometry phases, top/side/narrow layouts, long
+headings/captions and resize invalidation. The fixture isolates construction
+bodies; its `steady` kind is only the measurement runner's admission context,
+not new runtime eligibility. Production still drives construction through its
+legacy loading callback. The real loader also includes rectangle/container,
+dispatch and registration work; its largest observed chart shell/series/control/
+layout/font/position spans are approximately 1567/1279/533/1270/1165/1506
+instructions. Those complete legacy spans remain separately labeled for future
+host accounting, not silently equated with the fixture's body declarations.
+
+Commands:
+
+```sh
+python3 tools/audit-scheduler.py --framework chart-construction chart-frame chart-readings chart-traces --timeout 180
+python3 tools/audit-scheduler.py chart-min chart-max chart-full default-gallery --timeout 180
+make test-lua32
+```
+
+Latest native mixed whole-callback maxima are 9189/9398/10612/11845 for
+chart-min/chart-max/chart-full/default-gallery. No chart construction phase now
+requires the prior 9911-instruction atom. The historical trace bounds retain
+their old construction bound until traces are regenerated; new construction
+labels remain explicit host-accounting gates.
+
+The loader integration suite now also checks hidden/unregistered partial state,
+enrollment only after completion, resize during positioning, construction
+exceptions/non-boolean results, cancellation and retirement across native
+cleanup. Chart unit/reading/trace/preview/flight/reset, all-panel spans, builder
+matrix, background initialization, reflow, panel contract, shared-module code,
+Output task, Lua32 and 21 audit-tool tests pass. Retained shared-module growth
+remains 0.1 KiB; session reset remains at 14300 mock instructions with its existing
+first-arm XFAIL.
+
+The deferred recording suites still fail at the line-192 live-drawing assertion,
+not the initial budget check. Longer staged initialization changes which source
+is first stalled: the ordinary case reports Q7, revisions 2/93, and independent
+arms Q1, revisions 0/42 in this run. No drawing-progress assertion was weakened
+and no telemetry scheduling policy was changed.
+
+This closes chart construction's oversized-body gate, not R6 as a whole.
+Other constructors, theme/header loading, reflow, input/modal accounting and
+callback-kind eligibility still require their own splits and complete callback
+checks. Flight/Smart and all production panel owners remain legacy.

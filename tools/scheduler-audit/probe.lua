@@ -206,6 +206,12 @@ local function loadLabel(token, context)
     if token == nil then
         local stage = context.stage or "idle"
         local placement = context.pendingPlacement
+        if stage == "panel-construct" and context.pendingConstruction then
+            local label = stage .. ":" .. placement.type
+            return placement.type == "chart"
+                    and label .. ":" .. tostring(context.pendingConstruction.instance.createStage)
+                or label
+        end
         if (stage == "panel-build" or stage == "panel-prepare" or stage == "panel-validate") and placement then
             return stage .. ":" .. tostring(placement.type)
         end
