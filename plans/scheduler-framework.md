@@ -3925,3 +3925,30 @@ unchanged at 13900 with its two original first-arm XFAILs. Audit phase waits
 now stop when their requested stage is reached, rather than accidentally
 relying on a fixed callback count. Production ownership, editor mutation/drag
 eligibility and the parent's lifecycle/registration gates remain unchanged.
+
+## 71. Five-panel constructor integration and asynchronous readiness (R6)
+
+Metric, Link Status, RX/TX Battery and Flight Timer now use bounded construction
+stages for cold loading and App reconstruction. The independent native cost and
+tree-parity matrices each cover 1632 legal span/theme/options cases; cost
+measurement runs four cold/App/reserved/resize paths per case. Complete enclosing
+maximum fitted charges are 3560 for Metric geometry, 3720 for Link geometry,
+3530 for RX fitting, 2240 for TX geometry and 2930 for Flight Timer geometry.
+Each passes the unchanged 4000 ceiling. Metric's coupled task guards/font
+placement use measured prepare/layout/render declarations 610/1310/840.
+No constructor commit activates ownership or declares common loader eligibility.
+
+Combined actual-source configured seven-panel settings, model panels and modal
+opening/publication captures pass, with whole callback maxima 9018, 4786 and
+9167 respectively. The constructor tree/resize/invalidation regression passes
+all 1632 cases on Lua53. The separate RX 1x1 bar synchronous reflow gate and
+Link side-layout absent-Telemetry baseline remain explicit, not silently fixed.
+
+Fixed delays in reset/editor regressions could stop halfway through legitimate
+staged reloading. They now wait for actual reload/readiness state with existing
+bounded wait helpers. The strict reset assertions, 15000 instruction ceiling
+and both first-arm XFAILs are unchanged; reset passes at 10800. Editor assertions
+are unchanged and progress past the previous premature reload failures. The
+remaining RX resized-preview glyph assertion observes a live feed but no panel
+refresh while production panel ownership is still legacy; it remains a final
+owner-activation gate rather than a passing full-editor claim.

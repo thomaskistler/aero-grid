@@ -145,6 +145,15 @@ local function settleSave()
     end
     error("save did not settle")
 end
+local function settleReload()
+    for _ = 1, 400 do
+        if not context.stage and not context.reloadState and not context.appRebuild and not context.reflowIndex then
+            return
+        end
+        refresh()
+    end
+    error("dashboard reload did not settle")
+end
 --- Leave the editor with RTN and, when changes ask, pick `choice` in the menu.
 local function exitWith(choice)
     refresh(EVT_VIRTUAL_EXIT)
@@ -871,7 +880,7 @@ widget.lvglMock.setFullScreen(false)
 refresh()
 equal(context.editorUi, nil, "fullscreen exit cancels incomplete startup")
 widget.lvglMock.setFullScreen(true)
-widget.pump(context, 150)
+settleReload()
 open()
 widget.lvglMock.setFullScreen(false)
 refresh()
@@ -1014,15 +1023,19 @@ for _, stage in ipairs({ "fields", "layout", "complete" }) do
     elseif stage == "layout" then
         for _ = 1, 150 do
             refresh()
-            if state.drawerLayout then break end
+            if state.drawerLayout then
+                break
+            end
         end
         assert(state.drawerLayout, "native cancellation reaches partial layout")
     end
     local dismissedDialog = state.nativeDrawer
     assert(dismissedDialog.registeredParent, "configuration dialog is registered under its host")
     lvgl.close(dismissedDialog)
-    assert(not state.drawerBuild and not state.drawerLayout and not state.drawerBuildConfig,
-        "native Return cancels every construction stage before its objects retire")
+    assert(
+        not state.drawerBuild and not state.drawerLayout and not state.drawerBuildConfig,
+        "native Return cancels every construction stage before its objects retire"
+    )
     settleDrawer()
     equal(dismissedDialog.invalid, true, "closed native dialog wrapper is unregistered")
     equal(state.nativeDrawerHost, nil, "dialog host is released")
@@ -1197,9 +1210,7 @@ equal(context.editorUi.statusLabel.hidden, true, "corrected preview hides its ol
 equal(context.panels[1].container, container, "corrected preview reuses the retired container")
 context.editorUi.handlers.close(false)
 equal(context.reloadState, "clear", "discarding content previews reloads original layout")
-for _ = 1, 70 do
-    refresh()
-end
+settleReload()
 equal(context.panels[1].instance.label.properties.text, "ALT", "discard restores original panel contents")
 equal(context.document.panels[1].config.metrics[1].label, "ALT", "previews never mutate committed layout")
 assert(not hostIo.open(path .. "AEROGRID/layouts/edit-sparse.yaml", "r"), "discard does not write a layout")
@@ -1248,7 +1259,7 @@ for _, presentation in ipairs({ "image", "both" }) do
     )
     equal(widget.lvglMock.message().details, context.editorUi.previewError, "custom heading conflict is fully readable")
     context.editorUi.handlers.close(false)
-    widget.pump(context, 70)
+    settleReload()
 end
 
 write(
@@ -1453,9 +1464,7 @@ equal(context.editorUi.mode, "menu", "RTN on the exit menu keeps editing")
 exitWith("Discard changes")
 equal(context.editorUi, nil, "Discard leaves the editor")
 equal(savedLabel("edit-sparse"), nil, "Discard writes nothing")
-for _ = 1, 70 do
-    refresh()
-end
+settleReload()
 equal(context.document.panels[1].config.metrics[1].label, "ALT", "Discard keeps the committed layout")
 
 os.remove(path .. "AEROGRID/layouts/" .. model.getInfo().name .. "1.yaml")
@@ -1575,7 +1584,7 @@ refresh()
 equal(context.editorUi, nil, "App mode shows no editor")
 equal(context.editorStash, stashed, "the changed draft is kept")
 equal(savedLabel("edit-sparse"), nil, "leaving fullscreen does not save")
-widget.pump(context, 80)
+settleReload()
 equal(context.panels[1].instance.label.properties.text, "ALT", "App mode shows the committed layout")
 widget.lvglMock.setFullScreen(true)
 settle()

@@ -288,7 +288,9 @@ assert(saved, document)
 owner:setDocument(document)
 untilState(settled)
 owner:reset(owner.filename)
-pump(100)
+untilState(function()
+    return settled() and owner.documentLoaded and owner.dormantRevision
+end)
 assert(owner.documentLoaded and not owner.session and owner.dormantRevision, "unarmed models leave detection dormant")
 local dormantEpoch, dormantRuntime = owner.epoch, second.serviceRuntime
 fixture.radio.logicalSwitches[3] = false
