@@ -325,6 +325,33 @@ def scenarios():
             {"name": "retire-check", "kind": "refresh", "action": "check-lifecycle",
              "callbacks": 1, "step": 5, "perCall": 1},
         ])
+    construction_parity = dict(result["metric-max"], fullscreen=True, constructionParity=True, phases=[
+        {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 1},
+        {"name": "begin", "kind": "refresh", "action": "construction-parity",
+         "callbacks": 1, "step": 5, "perCall": 1},
+        {"name": "compare", "kind": "refresh", "advance": "construction-parity-step",
+         "untilConstruction": True, "callbacks": 10000, "step": 5, "perCall": 1},
+        {"name": "checked", "kind": "refresh", "action": "construction-parity-check",
+         "callbacks": 1, "step": 5, "perCall": 1},
+    ])
+    construction_cost = dict(construction_parity, phases=[
+        dict(phase, **({"action": "construction-cost"} if phase.get("action") == "construction-parity" else {}))
+        for phase in construction_parity["phases"]
+    ])
+    construction_cost["phases"][2]["callbacks"] = 40000
+    for kind in ("metric", "link-status", "rx-battery", "tx-battery", "flight-timer"):
+        for operation in ("parity", "cost"):
+            result[f"construction-{operation}-{kind}"] = dict(
+                construction_parity if operation == "parity" else construction_cost, constructionKind=kind)
+    for kind in ("metric", "link-status", "rx-battery", "tx-battery", "flight-timer"):
+        for size in ("min", "max"):
+            for visual in (("bar", "radial") if kind == "metric" else
+                           ("bar", "battery") if kind.endswith("battery") else
+                           ("bar", "none") if kind == "link-status" else ("none",)):
+                base = result[f"{kind}-{size}"]
+                result[f"lifecycle-construct-{kind}-{size}-{visual}"] = dict(
+                    base, fullscreen=True, config=dict(base.get("config", {}), visual=visual),
+                    phases=result["lifecycle-app-model"]["phases"])
     result["lifecycle-cancel"] = dict(result["modal-settings-reset"], fullscreen=True, phases=[
         {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 4},
         {"name": "partial", "kind": "refresh", "action": "lifecycle-app",
@@ -634,6 +661,8 @@ def prepare(capture, name, spec, sd, mode="legacy"):
               "toggleLink": spec.get("toggleLink", False),
               "logEntries": spec.get("logEntries", 0), "diagnosticsSources": spec.get("diagnosticsSources", 0),
               "failOnError": True, "traceLimit": 300}
+    if spec.get("constructionKind"):
+        config["constructionKind"] = spec["constructionKind"]
     if spec.get("expectedError"):
         config["expectedError"] = spec["expectedError"]
     if name.startswith("lifecycle-"):
@@ -643,6 +672,9 @@ def prepare(capture, name, spec, sd, mode="legacy"):
     (audit / "config.lua").write_text("return " + lua_literal(config) + "\n")
     for file in ("probe.lua", "inputs.lua"):
         shutil.copyfile(PROBE_DIR / file, audit / file)
+    if spec.get("constructionParity"):
+        for file in ("construction_cases.lua", "panel_tree.lua", "native_construction.lua", "native_construction_cost.lua"):
+            shutil.copyfile(SUPPORT_DIR / file, audit / file)
 
 
 def run(capture, executable, library, name, spec, timeout, mode="legacy"):
@@ -665,6 +697,17 @@ def run(capture, executable, library, name, spec, timeout, mode="legacy"):
     data = json.loads(results.read_text())
     if data.get("errors"):
         raise RuntimeError(f"{name}: widget errors: {data['errors']}")
+    if spec.get("constructionParity"):
+        matrix = data.get("construction", {})
+        if not matrix.get("done") or matrix.get("checked", 0) != matrix.get("total") or not matrix.get("checked"):
+            raise RuntimeError(f"{name}: native construction matrix was not completed")
+        if name.startswith("construction-cost"):
+            kinds = [spec["constructionKind"]] if spec.get("constructionKind") else [
+                "metric", "link-status", "rx-battery", "tx-battery", "flight-timer"]
+            for kind in kinds:
+                for label in (f"load:panel-build:{kind}", f"lifecycle:advanceAppRebuild:build:{kind}"):
+                    if not data.get("stats", {}).get(label, {}).get("n"):
+                        raise RuntimeError(f"{name}: missing complete construction measurement for {label}")
     actions = [phase["action"] for phase in spec["phases"] if phase.get("action")]
     for action in set(actions):
         samples = data.get("stats", {}).get(f"callback:action:{action}", {}).get("n", 0)
@@ -686,7 +729,8 @@ def prepare_framework(capture, sd, cases):
     for name in ("scheduler_overhead.lua", "scheduler_measure.lua", "scheduler_mixes.lua",
                  "scheduler_panel_api.lua", "scheduler_chart_fixture.lua", "scheduler_flight_readout.lua",
                  "scheduler_probe_fixture.lua", "scheduler_diagnostics_fixture.lua", "scheduler_flight_fixture.lua",
-                 "theme_resolution_fixture.lua", "scheduler_registration_fixture.lua", "memory_files.lua"):
+                 "theme_resolution_fixture.lua", "scheduler_registration_fixture.lua", "memory_files.lua",
+                 "construction_cases.lua"):
         shutil.copyfile(SUPPORT_DIR / name, audit / name)
     (audit / "cases").mkdir()
     for case in cases:

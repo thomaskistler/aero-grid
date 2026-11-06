@@ -3,7 +3,15 @@
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(root).new()
 local definition = fixture.module("main.lua")
-for _, layout in ipairs({ "review-chart", "review-navigation", "review-metric" }) do
+for _, layout in ipairs({
+    "review-chart",
+    "review-navigation",
+    "review-metric",
+    "review-link-status",
+    "review-rx-battery",
+    "review-tx-battery",
+    "review-flight-timer",
+}) do
     local context = definition.create(
         { x = 0, y = 0, w = 480, h = 272 },
         { Layout = layout, Theme = "modern-dark" },

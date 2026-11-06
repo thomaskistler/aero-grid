@@ -38,7 +38,9 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                 end
                 local synchronous, staged = create(false), create(true)
                 assert(staged.createStage == "frame" and not staged.panel)
-                assert(not metric.construct(staged, rect) and staged.createStage == "controls")
+                assert(not metric.construct(staged, rect) and staged.createStage == "geometry" and not staged.panel)
+                assert(not metric.construct(staged, rect) and staged.createStage == "header" and not staged.panel)
+                assert(not metric.construct(staged, rect) and staged.createStage == "controls" and staged.panel)
                 assert(metric.construct(staged, rect))
                 assert(not staged.createParent and not staged.createPresentation and not staged.createStage)
                 assert(metric.construct(staged, rect), "completed construction is idempotent")
@@ -47,33 +49,40 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                 metric.refresh(staged)
                 sameTree(synchronous.panel.root, staged.panel.root)
 
-                for _, resizeAt in ipairs({ "frame", "controls", "reflow", "publish" }) do
-                    local partial = create(true)
-                    local changed = { x = 1, y = 2, w = rect.w + 20, h = rect.h + 30 }
-                    if resizeAt ~= "frame" then
-                        assert(not metric.construct(partial, rect))
-                    end
-                    if resizeAt == "reflow" or resizeAt == "publish" then
-                        assert(not metric.construct(partial, changed) and partial.createStage == "reflow")
-                        if resizeAt == "publish" then
-                            assert(not metric.construct(partial, changed) and partial.createStage == "publish")
+                for _, resizeAt in ipairs({ "frame", "geometry", "header", "controls", "reflow", "place", "publish" }) do
+                    for _, event in ipairs({ "cancelRefresh", "update" }) do
+                        local partial = create(true)
+                        local changed = { x = 1, y = 2, w = rect.w + 20, h = rect.h + 30 }
+                        if resizeAt == "reflow" or resizeAt == "place" or resizeAt == "publish" then
+                            while partial.createStage ~= "controls" do
+                                assert(not metric.construct(partial, rect))
+                            end
+                            assert(not metric.construct(partial, changed) and partial.createStage == "reflow")
+                            while partial.createStage ~= resizeAt do
+                                assert(not metric.construct(partial, changed))
+                            end
+                            changed = { x = 3, y = 4, w = rect.w + 40, h = rect.h + 60 }
+                        else
+                            while partial.createStage ~= resizeAt do
+                                assert(not metric.construct(partial, rect))
+                            end
                         end
-                        changed = { x = 3, y = 4, w = rect.w + 40, h = rect.h + 60 }
-                    end
-                    local done = false
-                    for _ = 1, 8 do
-                        done = metric.construct(partial, changed)
-                        assert(type(done) == "boolean")
-                        if done then
-                            break
+                        metric[event](partial, changed)
+                        local done = false
+                        for _ = 1, 8 do
+                            done = metric.construct(partial, changed)
+                            assert(type(done) == "boolean")
+                            if done then
+                                break
+                            end
                         end
-                    end
-                    assert(done and not partial.createStage and not partial.createParent)
-                    assert(partial.panel.root.properties.w == changed.w)
-                    assert(partial.panel.root.properties.h == changed.h)
-                    metric.refresh(partial)
-                    if partial.unit and not partial.unit.hidden then
-                        assert(partial.unit.properties.font() == partial.area.unitFont)
+                        assert(done and not partial.createStage and not partial.createParent)
+                        assert(partial.panel.root.properties.w == changed.w)
+                        assert(partial.panel.root.properties.h == changed.h)
+                        metric.refresh(partial)
+                        if partial.unit and not partial.unit.hidden then
+                            assert(partial.unit.properties.font() == partial.area.unitFont)
+                        end
                     end
                 end
             end

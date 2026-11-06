@@ -9,7 +9,16 @@ return function(load)
     local primitives = load("lib/primitives.lua", load("lib/reading.lua"))
     local api = load("@support/scheduler_panel_api.lua")
     local decl = { class = "normal", first = "begin", kinds = { steady = true }, stages = {} }
-    for stage, bound in pairs({ begin = 1540, frame = 3300, controls = 1410, reflow = 3390, publish = 890 }) do
+    for stage, bound in pairs({
+        begin = 1540,
+        frame = 520,
+        geometry = 1710,
+        header = 1400,
+        controls = 1420,
+        reflow = 320,
+        place = 1730,
+        publish = 900,
+    }) do
         decl.stages[stage] = { fixed = 0, perUnit = bound, maxUnits = 1 }
     end
     local function setup(target, rect, span, count, visual, variant)
@@ -57,13 +66,20 @@ return function(load)
             local resized = { x = 1, y = 2, w = 320, h = 200 }
             if target ~= "begin" and target ~= "frame" then
                 assert(not api.withApi(metric.construct, context, rect))
-                assert(context.createStage == "controls")
-                if target ~= "controls" then
-                    assert(not api.withApi(metric.construct, context, resized))
-                    assert(context.createStage == "reflow")
-                    if target == "publish" then
-                        assert(not api.withApi(metric.construct, context, resized))
-                        assert(context.createStage == "publish")
+                assert(context.createStage == "geometry")
+                if target ~= "geometry" then
+                    assert(not api.withApi(metric.construct, context, rect))
+                    assert(context.createStage == "header")
+                    if target ~= "header" then
+                        assert(not api.withApi(metric.construct, context, rect))
+                        assert(context.createStage == "controls")
+                        if target ~= "controls" then
+                            assert(not api.withApi(metric.construct, context, resized))
+                            assert(context.createStage == "reflow")
+                            while context.createStage ~= target do
+                                assert(not api.withApi(metric.construct, context, resized))
+                            end
+                        end
                     end
                 end
             end
@@ -81,7 +97,7 @@ return function(load)
                     api.withApi(
                         metric.construct,
                         context,
-                        (target == "reflow" or target == "publish") and resized or rect
+                        (target == "reflow" or target == "place" or target == "publish") and resized or rect
                     )
                 end
                 return 1

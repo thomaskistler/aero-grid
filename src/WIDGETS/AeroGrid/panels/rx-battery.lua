@@ -675,13 +675,7 @@ local function fitOrDrop(context, variants, width)
     return text
 end
 
---- Build the panel's LVGL objects.
----@param parent any
----@param rect AeroGridRect
----@param settings AeroGridRxBatterySettings
----@param services table
----@return AeroGridRxBatteryContext
-function rxBattery.create(parent, rect, settings, services)
+local function beginConstruction(parent, rect, settings, services)
     local theme = services.theme
     local primitives = services.primitives
     local fonts = services.fonts
@@ -727,25 +721,48 @@ function rxBattery.create(parent, rect, settings, services)
         unit = "V",
     }
     context.sample = sample
+    context.createParent, context.createPresentation, context.createStage = parent, presentation, "geometry"
+    return context
+end
 
+local function createGeometry(context, rect)
+    context.createInvalidated = nil
     rxBattery.measureSupporting(context)
-    local area = rxBattery.regionsFor(theme, services.themeBuilder, rect, layout, fonts, sample, nil, primitives)
+    context.createGeometry = regionPlan(
+        context.theme,
+        context.themeBuilder,
+        rect,
+        context.layout,
+        context.fonts,
+        context.sample,
+        nil,
+        context.primitives
+    )
+    context.rect, context.createStage = rect, "fit"
+end
+
+local function createFrame(context)
+    local area = context.area
     context.showDetail = area.countShown or area.deltaShown or area.packShown
     context.detailWidth = area.detailWidth
 
-    local panel
-    context.panel, context.label, context.badge = primitives.panelWithHeader(
-        parent,
-        rect,
-        theme,
-        presentation,
+    context.panel, context.label, context.badge = context.primitives.panelWithHeader(
+        context.createParent,
+        context.rect,
+        context.theme,
+        context.createPresentation,
         area.frame,
-        fonts,
-        settings.label,
-        services.themeBuilder
+        context.fonts,
+        context.settings.label,
+        context.themeBuilder
     )
-    panel = context.panel
+    context.createParent, context.createStage = nil, "controls"
+end
 
+local function createControls(context)
+    local theme, primitives, fonts = context.theme, context.primitives, context.fonts
+    local area, panel, layout = context.area, context.panel, context.layout
+    local presentation, settings, sample = context.createPresentation, context.settings, context.sample
     -- LVGL userdata cannot report its text; keep it for reading/unit placement.
     context.unitText = sample.unit
     context.value, context.unit = primitives.reading(panel.root, theme, area, presentation, sample.unit)
@@ -793,7 +810,7 @@ function rxBattery.create(parent, rect, settings, services)
             h = area.glyphHeight,
             fraction = 0,
             color = presentation.accent,
-            border = primitives.batteryStroke(services.themeBuilder, area.value, area.glyphWidth),
+            border = primitives.batteryStroke(context.themeBuilder, area.value, area.glyphWidth),
         })
     end
 
@@ -818,13 +835,27 @@ function rxBattery.create(parent, rect, settings, services)
         lvgl.hide(context.bar.track)
         lvgl.hide(context.bar.fill)
     end
+end
 
-    local _, drawn = primitives.changed(context, rxBattery.render)
-    rxBattery.apply(context, drawn)
+--- Build synchronously unless the loader requests hidden staged construction.
+---@param parent any
+---@param rect AeroGridRect
+---@param settings AeroGridRxBatterySettings
+---@param services table
+---@return AeroGridRxBatteryContext
+function rxBattery.create(parent, rect, settings, services)
+    local context = beginConstruction(parent, rect, settings, services)
+    if services.staged ~= true then
+        while not rxBattery.construct(context, rect) do
+        end
+    end
     return context
 end
 
 local function invalidate(context)
+    if context.createStage then
+        context.createInvalidated, context.gathered, context.rendered = true, nil, nil
+    end
     if context.refreshWork then
         context.refreshWork, context.rendered, context.gathered = nil, nil, nil
     end
@@ -1114,6 +1145,9 @@ local function applyGeometry(context, rect, area, detailsOnly)
 end
 
 function rxBattery.update(context, rect, _, detailsOnly)
+    while context.createStage do
+        rxBattery.construct(context, rect)
+    end
     invalidate(context)
     local area = rxBattery.regionsFor(
         context.theme,
@@ -1193,6 +1227,49 @@ function rxBattery.step(context, _, stage)
         return
     end
     return nil, true
+end
+
+function rxBattery.construct(context, rect)
+    local stage = context.createStage
+    if stage == "geometry" then
+        createGeometry(context, rect)
+    elseif stage == "fit" then
+        if resolveRegion(context.createGeometry) then
+            context.area = finishRegion(context.createGeometry)
+            context.createGeometry = nil
+            context.createStage = context.panel and "place" or "header"
+        end
+    elseif stage == "header" then
+        createFrame(context)
+    elseif stage == "controls" then
+        createControls(context)
+        context.createStage = "publish"
+    elseif stage == "place" then
+        applyGeometry(context, context.rect, context.area)
+        context.primitives.setFont(context.unit, context.area.unitFont)
+        context.createStage = "publish"
+    elseif stage == "publish" then
+        local previous = context.rect
+        if
+            context.createInvalidated
+            or previous.x ~= rect.x
+            or previous.y ~= rect.y
+            or previous.w ~= rect.w
+            or previous.h ~= rect.h
+        then
+            context.createStage = "geometry"
+        else
+            local _, drawn = context.primitives.changed(context, rxBattery.render)
+            rxBattery.apply(context, drawn)
+            context.createStage, context.createPresentation = nil, nil
+            return true
+        end
+    elseif not stage then
+        return true
+    else
+        error("unknown rx-battery construction stage: " .. tostring(stage))
+    end
+    return false
 end
 
 return rxBattery

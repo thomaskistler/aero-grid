@@ -10,6 +10,13 @@ local previewTasks = string.match(config.scenario, "^editor%-preview%-.+%-tasks$
 local count, pause
 local P = { offset = 0 }
 local loaderDeclarations = {}
+local boundedConstructors = {
+    metric = true,
+    ["link-status"] = true,
+    ["rx-battery"] = true,
+    ["tx-battery"] = true,
+    ["flight-timer"] = true,
+}
 
 local realTime = getTime
 _G.getTime = function()
@@ -109,10 +116,13 @@ local function finish(label, raw, leak)
     if label == "lifecycle:advanceReflow" then
         gate(cost <= 4000, "complete geometry advance exceeds the atom cap: " .. cost)
     end
+    local loadingConstructor = string.match(label, "^load:panel%-build:([^:]+)$")
+        or string.match(label, "^load:panel%-construct:([^:]+):")
     if
         string.match(label, "^lifecycle:advanceAppRebuild:")
         or string.match(label, "^lifecycle:retirePage:")
         or label == "lifecycle:rebuildPage"
+        or loadingConstructor and boundedConstructors[loadingConstructor]
     then
         local fitted = math.ceil((cost * 1.10 + 50) / 10) * 10
         gate(fitted <= 4000, label .. " exceeds the fitted lifecycle atom cap: " .. cost .. " -> " .. fitted)
@@ -330,9 +340,7 @@ local function loadLabel(token, context)
         local placement = context.pendingPlacement
         if stage == "panel-construct" and context.pendingConstruction then
             local label = stage .. ":" .. placement.type
-            return (placement.type == "chart" or placement.type == "theme-showcase")
-                    and label .. ":" .. tostring(context.pendingConstruction.instance.createStage)
-                or label
+            return label .. ":" .. tostring(context.pendingConstruction.instance.createStage)
         end
         if (stage == "panel-build" or stage == "panel-prepare" or stage == "panel-validate") and placement then
             return stage .. ":" .. tostring(placement.type)
@@ -752,6 +760,11 @@ local function report(context)
             expectedError = config.expectedError and { message = config.expectedError, observed = P.expectedErrorSeen },
             callbacks = kindCounts,
             feeds = feeds(context),
+            construction = P.construction and {
+                checked = P.construction.checked,
+                total = P.construction.total,
+                done = P.construction.done,
+            },
             stats = labels,
             worst = (function()
                 local rows = {}
@@ -782,6 +795,45 @@ end
 
 local actions
 actions = {
+    ["construction-parity"] = function(context, costOnly)
+        local function load(relative)
+            if relative == "lib/theme.lua" then
+                return context.themeBuilder
+            elseif relative == "lib/primitives.lua" then
+                return context.primitives
+            end
+            return assert(loadScript("/WIDGETS/AeroGrid/" .. relative))()
+        end
+        local cases = assert(loadScript("/WIDGETS/AeroGrid/audit/construction_cases.lua"))()(
+            load,
+            context.themeBuilder,
+            config.constructionKind
+        )
+        if costOnly then
+            P.construction =
+                assert(loadScript("/WIDGETS/AeroGrid/audit/native_construction_cost.lua"))()(context, cases)
+        else
+            local sameTree = assert(loadScript("/WIDGETS/AeroGrid/audit/panel_tree.lua"))()
+            P.construction = assert(loadScript("/WIDGETS/AeroGrid/audit/native_construction.lua"))()(
+                lvgl,
+                cases,
+                sameTree,
+                context.page
+            )
+        end
+    end,
+    ["construction-cost"] = function(context)
+        actions["construction-parity"](context, true)
+    end,
+    ["construction-parity-step"] = function()
+        P.construction.done = P.construction:step()
+    end,
+    ["construction-parity-check"] = function()
+        assert(
+            P.construction.done and P.construction.checked == P.construction.total,
+            "native construction matrix did not finish"
+        )
+    end,
     ["lifecycle-app"] = function(context)
         P.lifecycleStarted = true
         P.lifecycleOriginals = {}
@@ -1091,8 +1143,8 @@ actions = {
 }
 
 for name, action in pairs(actions) do
-    actions[name] = function(context)
-        local ok, message = pcall(action, context)
+    actions[name] = function(context, ...)
+        local ok, message = pcall(action, context, ...)
         gate(ok, "action " .. name .. ": " .. tostring(message))
     end
 end
@@ -1269,6 +1321,9 @@ local function advance(context)
         return
     end
     phaseDone = phaseDone + 1
+    if phase.untilConstruction and P.construction.done then
+        phaseDone = phase.callbacks
+    end
     if phase.untilSettings then
         local state = context.modelSettingsUi
         local reached = phase.untilSettings == "closed" and not state
@@ -1392,7 +1447,9 @@ local function entry(kind, context, fn, e, t)
         return
     end
     recording = phase.record ~= false
-    local target = phase.kind == "background" and backgroundFn or fn
+    local target = phase.advance and assert(actions[phase.advance], "unknown native advance")
+        or phase.kind == "background" and backgroundFn
+        or fn
     local callbackEvent = e
     if phase.event and not phase.eventSent then
         callbackEvent = assert(_G[phase.event], "unknown native event: " .. phase.event)

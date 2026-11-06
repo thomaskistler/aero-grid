@@ -751,13 +751,7 @@ function linkStatus.regionsFor(theme, themeBuilder, rect, layout, fonts, sample,
     return area
 end
 
---- Build the panel's LVGL objects.
----@param parent any
----@param rect AeroGridRect
----@param settings AeroGridLinkSettings
----@param services table
----@return AeroGridLinkContext
-function linkStatus.create(parent, rect, settings, services)
+local function beginConstruction(parent, rect, settings, services)
     local theme = services.theme
     local primitives = services.primitives
     local fonts = services.fonts
@@ -836,7 +830,20 @@ function linkStatus.create(parent, rect, settings, services)
     context.sample = { digits = "-100", unit = "dBm" }
     context.rect = rect
 
-    local area = linkStatus.regionsFor(theme, services.themeBuilder, rect, layout, fonts, context.sample)
+    context.createParent, context.createPresentation, context.createStage = parent, presentation, "geometry"
+    return context
+end
+
+local function createGeometry(context, rect)
+    context.createInvalidated = nil
+    local area =
+        linkStatus.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts, context.sample)
+    context.area, context.rect = area, rect
+    context.createStage = context.panel and "place" or "header"
+end
+
+local function createFrame(context)
+    local area = context.area
     context.detailWidth = area.detailWidth
     context.rowRightWidth = area.rowRightWidth
     context.showDetail = area.showDetail
@@ -850,19 +857,23 @@ function linkStatus.create(parent, rect, settings, services)
     context.unitText = ""
     context.area = area
 
-    local panel
-    context.panel, context.label, context.badge = primitives.panelWithHeader(
-        parent,
-        rect,
-        theme,
-        presentation,
+    context.panel, context.label, context.badge = context.primitives.panelWithHeader(
+        context.createParent,
+        context.rect,
+        context.theme,
+        context.createPresentation,
         area.frame,
-        fonts,
-        settings.label,
-        services.themeBuilder
+        context.fonts,
+        context.settings.label,
+        context.themeBuilder
     )
-    panel = context.panel
+    context.createParent, context.createStage = nil, "controls"
+end
 
+local function createControls(context)
+    local theme, primitives, fonts = context.theme, context.primitives, context.fonts
+    local area, panel, layout = context.area, context.panel, context.layout
+    local presentation, settings = context.createPresentation, context.settings
     context.value, context.unit = primitives.reading(panel.root, theme, area, presentation, "")
 
     context.detailLabel = primitives.label(panel.root, theme, {
@@ -925,9 +936,20 @@ function linkStatus.create(parent, rect, settings, services)
         lvgl.hide(context.bar.track)
         lvgl.hide(context.bar.fill)
     end
+end
 
-    local _, drawn = primitives.changed(context, linkStatus.render)
-    linkStatus.apply(context, drawn)
+--- Build synchronously unless the loader requests hidden staged construction.
+---@param parent any
+---@param rect AeroGridRect
+---@param settings AeroGridLinkSettings
+---@param services table
+---@return AeroGridLinkContext
+function linkStatus.create(parent, rect, settings, services)
+    local context = beginConstruction(parent, rect, settings, services)
+    if services.staged ~= true then
+        while not linkStatus.construct(context, rect) do
+        end
+    end
     return context
 end
 
@@ -1112,6 +1134,9 @@ function linkStatus.apply(context, drawn)
 end
 
 function linkStatus.cancelRefresh(context)
+    if context.createStage then
+        context.createInvalidated = true
+    end
     if context.refreshWork then
         context.refreshWork, context.rendered = nil, nil
     end
@@ -1344,10 +1369,50 @@ end
 ---@param context AeroGridLinkContext
 ---@param rect AeroGridRect
 function linkStatus.update(context, rect)
+    while context.createStage do
+        linkStatus.construct(context, rect)
+    end
     linkStatus.cancelRefresh(context)
     local area =
         linkStatus.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts, context.sample)
     applyGeometry(context, rect, area)
+end
+
+function linkStatus.construct(context, rect)
+    local stage = context.createStage
+    if stage == "geometry" then
+        createGeometry(context, rect)
+    elseif stage == "header" then
+        createFrame(context)
+    elseif stage == "controls" then
+        createControls(context)
+        context.createStage = "publish"
+    elseif stage == "place" then
+        applyGeometry(context, context.rect, context.area)
+        context.primitives.setFont(context.unit, context.area.unitFont)
+        context.createStage = "publish"
+    elseif stage == "publish" then
+        local previous = context.rect
+        if
+            context.createInvalidated
+            or previous.x ~= rect.x
+            or previous.y ~= rect.y
+            or previous.w ~= rect.w
+            or previous.h ~= rect.h
+        then
+            context.createStage = "geometry"
+        else
+            local _, drawn = context.primitives.changed(context, linkStatus.render)
+            linkStatus.apply(context, drawn)
+            context.createStage, context.createPresentation = nil, nil
+            return true
+        end
+    elseif not stage then
+        return true
+    else
+        error("unknown link-status construction stage: " .. tostring(stage))
+    end
+    return false
 end
 
 return linkStatus

@@ -451,13 +451,7 @@ local function createGlyph(context, area)
     lvgl.hide(context.glyph.fill)
 end
 
---- Build the panel's LVGL objects.
----@param parent any
----@param rect AeroGridRect
----@param settings AeroGridTxBatterySettings
----@param services table
----@return AeroGridTxBatteryContext
-function txBattery.create(parent, rect, settings, services)
+local function beginConstruction(parent, rect, settings, services)
     local theme = services.theme
     local primitives = services.primitives
     local fonts = services.fonts
@@ -465,8 +459,6 @@ function txBattery.create(parent, rect, settings, services)
     local layout = txBattery.presentationFor(span.colSpan, span.rowSpan, settings.showPercent)
     layout.visual = settings.visual
     local presentation = services.state("normal", settings.accent)
-    local area = txBattery.regionsFor(theme, services.themeBuilder, primitives, rect, layout, fonts)
-
     local context = {
         theme = theme,
         themeBuilder = services.themeBuilder,
@@ -478,9 +470,7 @@ function txBattery.create(parent, rect, settings, services)
         stateName = "normal",
         text = "--",
         detail = "",
-        -- `render` needs this: the percentage is fitted to the column it lands
-        -- in, which is the glyph's when it sits under one.
-        detailWidth = area.detailWidth,
+        rect = rect,
     }
 
     local modelService = services.model
@@ -492,19 +482,44 @@ function txBattery.create(parent, rect, settings, services)
         context.range = modelService:batteryRange()
     end
 
-    local panel
-    context.panel, context.label, context.badge = primitives.panelWithHeader(
-        parent,
-        rect,
-        theme,
-        presentation,
-        area.frame,
-        fonts,
-        settings.label,
-        services.themeBuilder
-    )
-    panel = context.panel
+    context.createParent, context.createPresentation, context.createStage = parent, presentation, "geometry"
+    return context
+end
 
+local function createGeometry(context, rect)
+    context.createInvalidated = nil
+    context.area = txBattery.regionsFor(
+        context.theme,
+        context.themeBuilder,
+        context.primitives,
+        rect,
+        context.layout,
+        context.fonts
+    )
+    context.rect = rect
+    context.createStage = context.panel and "reading" or "header"
+end
+
+local function createFrame(context)
+    local area = context.area
+    context.detailWidth = area.detailWidth
+    context.panel, context.label, context.badge = context.primitives.panelWithHeader(
+        context.createParent,
+        context.rect,
+        context.theme,
+        context.createPresentation,
+        area.frame,
+        context.fonts,
+        context.settings.label,
+        context.themeBuilder
+    )
+    context.createParent, context.createStage = nil, "controls"
+end
+
+local function createControls(context)
+    local theme, primitives, fonts = context.theme, context.primitives, context.fonts
+    local area, panel, layout = context.area, context.panel, context.layout
+    local presentation, settings = context.createPresentation, context.settings
     context.value, context.unit = primitives.reading(panel.root, theme, area, presentation, txBattery.UNIT)
 
     -- Built only where the layout asked for the estimate: on every other
@@ -562,8 +577,20 @@ function txBattery.create(parent, rect, settings, services)
         lvgl.hide(context.bar.track)
         lvgl.hide(context.bar.fill)
     end
-    local _, drawn = primitives.changed(context, txBattery.render)
-    txBattery.apply(context, drawn)
+end
+
+--- Build synchronously unless the loader requests hidden staged construction.
+---@param parent any
+---@param rect AeroGridRect
+---@param settings AeroGridTxBatterySettings
+---@param services table
+---@return AeroGridTxBatteryContext
+function txBattery.create(parent, rect, settings, services)
+    local context = beginConstruction(parent, rect, settings, services)
+    if services.staged ~= true then
+        while not txBattery.construct(context, rect) do
+        end
+    end
     return context
 end
 
@@ -802,12 +829,18 @@ local function publishGeometry(context)
 end
 
 function txBattery.cancelRefresh(context)
+    if context.createStage then
+        context.createInvalidated = true
+    end
     if context.reflowWork then
         context.reflowWork = { invalidated = true }
     end
 end
 
 function txBattery.update(context, rect)
+    while context.createStage do
+        txBattery.construct(context, rect)
+    end
     txBattery.cancelRefresh(context)
     local area = geometry(context, rect)
     placeReading(context, rect, area)
@@ -834,6 +867,45 @@ function txBattery.reflow(context, rect, _, _, _, begin)
         publishGeometry(context)
         context.reflowWork = nil
         return true
+    end
+    return false
+end
+
+function txBattery.construct(context, rect)
+    local stage = context.createStage
+    if stage == "geometry" then
+        createGeometry(context, rect)
+    elseif stage == "header" then
+        createFrame(context)
+    elseif stage == "controls" then
+        createControls(context)
+        context.createStage = "publish"
+    elseif stage == "reading" then
+        placeReading(context, context.rect, context.area)
+        context.primitives.setFont(context.unit, context.area.unitFont)
+        context.createStage = "visual"
+    elseif stage == "visual" then
+        placeVisual(context, context.area)
+        context.createStage = "publish"
+    elseif stage == "publish" then
+        local previous = context.rect
+        if
+            context.createInvalidated
+            or previous.x ~= rect.x
+            or previous.y ~= rect.y
+            or previous.w ~= rect.w
+            or previous.h ~= rect.h
+        then
+            context.createStage = "geometry"
+        else
+            publishGeometry(context)
+            context.createStage, context.createPresentation = nil, nil
+            return true
+        end
+    elseif not stage then
+        return true
+    else
+        error("unknown tx-battery construction stage: " .. tostring(stage))
     end
     return false
 end

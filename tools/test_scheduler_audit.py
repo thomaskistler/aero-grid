@@ -23,14 +23,25 @@ def load_cli():
 class InstrumentationTests(unittest.TestCase):
     def test_lifecycle_captures_allow_native_cleanup_between_turns(self):
         cases = load_cli().scenarios()
-        for name in ("lifecycle-app-metric", "lifecycle-app-multi", "lifecycle-app-model",
-                     "lifecycle-app-output", "lifecycle-cancel", "lifecycle-settings-drain"):
+        for name in [key for key in cases if key.startswith(("lifecycle-", "construction-"))]:
             phases = cases[name]["phases"]
             self.assertTrue(cases[name]["fullscreen"])
-            self.assertIn(phases[-1]["action"], ("check-lifecycle", "check-lifecycle-settings"))
+            self.assertIn(phases[-1]["action"],
+                          ("check-lifecycle", "check-lifecycle-settings", "construction-parity-check"))
             for phase in phases:
                 if phase["name"] != "settle":
                     self.assertEqual(phase["perCall"], 1, (name, phase["name"]))
+
+    def test_constructor_matrices_keep_cost_actions_and_serialize_every_phase(self):
+        cli = load_cli()
+        cases = cli.scenarios()
+        for kind in ("metric", "link-status", "rx-battery", "tx-battery", "flight-timer"):
+            for operation in ("parity", "cost"):
+                case = cases[f"construction-{operation}-{kind}"]
+                self.assertEqual(case["constructionKind"], kind)
+                self.assertEqual(case["phases"][1]["action"], f"construction-{operation}")
+                self.assertTrue(case["phases"][2]["untilConstruction"])
+                self.assertTrue(audit.lua_literal(case["phases"]))
 
     def test_framework_measures_uninstrumented_chart_and_packages_shared_fixture(self):
         cli = load_cli()

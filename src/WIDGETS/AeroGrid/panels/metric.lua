@@ -578,6 +578,9 @@ local function prepareSupporting(context)
 end
 
 function metric.cancelRefresh(context)
+    if context.createStage then
+        context.createInvalidated = true
+    end
     if context.reflowWork then
         context.reflowWork.invalidated = true
     end
@@ -757,15 +760,16 @@ end
 ---@param layout table
 ---@param fonts table
 ---@param sample? string[] Lossless forms of the reading, longest first.
+---@param frame? table Precomputed shared frame for resumable construction.
 ---@return table
-function metric.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, unit, out)
+function metric.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, unit, out, frame)
     -- The whole arrangement, from the shared builder. A radial is a compact
     -- visual and takes the right slot; a bar spans the panel and is exempt, so
     -- the same panel splits under one setting and not the other.
     local area = themeBuilder.panel(theme, rect, fonts, {
         -- Built through this panel's own builder, which the host may have
         -- wrapped to lay the panel out around the menu button's corner.
-        frame = themeBuilder.frame(theme, rect, fonts),
+        frame = frame or themeBuilder.frame(theme, rect, fonts),
         -- Only the longest form is offered, because a reading carrying a unit is
         -- fitted as a pair and `fitReadingUnit` takes one string. The shorter
         -- forms exist for `primitives.reconcile` to fall back to at draw time,
@@ -890,27 +894,32 @@ local function beginMetric(parent, rect, config, services)
     return context
 end
 
-local function createFrame(context, rect)
-    local theme, primitives, fonts = context.theme, context.primitives, context.fonts
-    local settings, layout = context.settings, context.layout
-    local sample = metric.widestSample(settings, metric.digitsFor(context))
-    context.unitText = tostring(settings.unit or "")
-    local area = metric.regionsFor(theme, context.themeBuilder, rect, layout, fonts, sample, context.unitText)
-    context.sample = sample
-    context.sampleDigits = metric.digitsFor(context)
+local function prepareFrame(context, rect)
+    context.createInvalidated = nil
+    context.createGeometry = context.themeBuilder.frame(context.theme, rect, context.fonts)
+    context.createRect, context.createStage = rect, "geometry"
+end
 
+local function prepareGeometry(context, rect)
+    context.sample = metric.widestSample(context.settings, metric.digitsFor(context))
+    context.unitText = tostring(context.settings.unit or "")
+    context.sampleDigits = metric.digitsFor(context)
+    context.rect = rect
+    prepareFrame(context, rect)
+end
+
+local function createFrame(context)
+    local theme, primitives, fonts = context.theme, context.primitives, context.fonts
     context.panel, context.label, context.badge = primitives.panelWithHeader(
         context.createParent,
-        rect,
+        context.rect,
         theme,
         context.createPresentation,
-        area.frame,
+        context.area.frame,
         fonts,
-        settings.label,
+        context.settings.label,
         context.themeBuilder
     )
-    context.area = area
-    context.rect = rect
     context.createParent = nil
     context.createStage = "controls"
 end
@@ -1055,7 +1064,13 @@ end
 
 local function finishConstruction(context, rect)
     local previous = context.rect
-    if previous.x ~= rect.x or previous.y ~= rect.y or previous.w ~= rect.w or previous.h ~= rect.h then
+    if
+        context.createInvalidated
+        or previous.x ~= rect.x
+        or previous.y ~= rect.y
+        or previous.w ~= rect.w
+        or previous.h ~= rect.h
+    then
         context.createStage = "reflow"
         return false
     end
@@ -1069,17 +1084,43 @@ end
 function metric.construct(context, rect)
     local stage = context.createStage
     if stage == "frame" then
-        createFrame(context, rect)
+        prepareGeometry(context, rect)
+    elseif stage == "geometry" then
+        context.area = metric.regionsFor(
+            context.theme,
+            context.themeBuilder,
+            context.createRect,
+            context.layout,
+            context.fonts,
+            context.sample,
+            context.unitText,
+            nil,
+            context.createGeometry
+        )
+        context.createGeometry = nil
+        context.createStage = context.panel and "place" or "header"
+        if not context.panel then
+            context.createRect = nil
+        end
+    elseif stage == "header" then
+        createFrame(context)
     elseif stage == "controls" then
         createControls(context)
         createSupporting(context)
         context.createPresentation = nil
         return finishConstruction(context, rect)
     elseif stage == "reflow" then
-        metric.update(context, rect)
-        if context.unit then
-            context.primitives.setFont(context.unit, context.area.unitFont)
+        if
+            not context.unit
+            and (rect.w > context.rect.w or rect.h > context.rect.h)
+            and not context.suppressSensorUnit
+        then
+            context.unitText = context.feed and context.feed.unitText or ""
         end
+        prepareFrame(context, rect)
+    elseif stage == "place" then
+        applyGeometry(context, context.createRect, context.area)
+        context.createGeometry, context.createRect, context.refreshGeometry = nil, nil, nil
         context.createStage = "publish"
     elseif stage == "publish" then
         return finishConstruction(context, rect)
@@ -1158,6 +1199,9 @@ applyGeometry = function(context, rect, area)
     context.rect = rect
 
     context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
+    if context.unit then
+        context.primitives.setFont(context.unit, area.unitFont)
+    end
     context.primitives.setFont(context.value, area.value)
     context.value:set({
         x = area.pad,
@@ -1241,6 +1285,9 @@ reflow = function(context, rect)
 end
 
 function metric.update(context, rect)
+    while context.createStage do
+        metric.construct(context, rect)
+    end
     if context.reflowWork then
         context.reflowWork = { invalidated = true }
     end
