@@ -92,29 +92,6 @@ def patch_mode(source, mode):
     return replace_once(source, 'local SCHEDULER_MODE = "mixed"', f'local SCHEDULER_MODE = "{mode}"', "main.lua")
 
 
-def patch_flight_tasks(source):
-    """Steady-only adapter eligibility fixture; never changes production owners."""
-    start = source.index("pumpFlight = function(context, inputPending)")
-    end = source.index("\nlocal function openModelSettings", start)
-    pump = source[start:end]
-    pump = replace_once(pump, "    local now = getTime()\n",
-                        "    local now = getTime()\n"
-                        "    if not owner.schedulerEnabled and not context.stage and not context.reloadState then\n"
-                        "        owner:enableScheduler(context)\n"
-                        "        scheduling.registry = nil\n"
-                        "    end\n", "Flight task fixture")
-    pump = pump.replace("if owner.smartRuntime then", "if owner.smartRuntime and not owner.schedulerEnabled then")
-    pump = replace_once(pump, "    local ok, message = pcall(owner.tick, owner, now, filename)\n",
-                        "    local ok, message = true, nil\n"
-                        "    if not owner.schedulerEnabled then\n"
-                        "        ok, message = pcall(owner.tick, owner, now, filename)\n"
-                        "    end\n", "Flight task fixture")
-    pump = replace_once(pump, '    if scheduling then\n        scheduling:charge("tick")',
-                        '    if scheduling and not owner.schedulerEnabled then\n        scheduling:charge("tick")',
-                        "Flight task fixture")
-    return source[:start] + pump + source[end:]
-
-
 def patch_owners(source, owners):
     """Override only named legacy owners in the isolated native image."""
     for task_id in owners:

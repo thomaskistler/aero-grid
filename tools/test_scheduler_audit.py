@@ -172,15 +172,13 @@ class InstrumentationTests(unittest.TestCase):
         self.assertIn('local SCHEDULER_MODE = "new"', audit.patch_mode(source, "new"))
         self.assertIn('local SCHEDULER_MODE = "legacy"', audit.patch_mode(source, "legacy"))
 
-    def test_flight_adapter_fixture_keeps_production_activation_isolated(self):
+    def test_flight_adapter_fixture_uses_real_paired_owner_activation(self):
         source = (audit.WIDGET / "main.lua").read_text()
-        changed = audit.patch_flight_tasks(source)
-        self.assertIn("owner:enableScheduler(context)", changed)
-        self.assertNotIn("owner:enableScheduler(context)", source)
-        self.assertIn('if scheduling and not owner.schedulerEnabled then\n        scheduling:charge("tick")', changed)
-        self.assertIn("not context.stage and not context.reloadState", changed)
-        with self.assertRaises(RuntimeError):
-            audit.patch_flight_tasks(source.replace("    local now = getTime()\n", ""))
+        self.assertIn("owner:enableScheduler(context)", source)
+        self.assertIn('and scheduling.owners["service:flight"] == "new"', source)
+        self.assertIn('and scheduling.owners["service:smart"] == "new"', source)
+        self.assertIn('if scheduling and not owner.schedulerEnabled then\n        scheduling:charge("tick")', source)
+        self.assertNotIn("patch_flight_tasks", Path(load_cli().__file__).read_text())
 
     def test_owner_overrides_only_patch_named_legacy_owners(self):
         source = (audit.WIDGET / "lib/scheduler_host.lua").read_text()
@@ -209,7 +207,6 @@ class InstrumentationTests(unittest.TestCase):
                    audit.SUPPORT_DIR / "scheduler_overhead.lua", audit.SUPPORT_DIR / "scheduler_measure.lua",
                    audit.SUPPORT_DIR / "scheduler_mixes.lua"]
         sources += [audit.patch_main((audit.WIDGET / "main.lua").read_text())]
-        sources += [audit.patch_flight_tasks((audit.WIDGET / "main.lua").read_text())]
         sources += [audit.patch_chart((audit.WIDGET / "panels/chart.lua").read_text())]
         for source in sources:
             text = source.read_text() if isinstance(source, Path) else source

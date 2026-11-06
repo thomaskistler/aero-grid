@@ -88,6 +88,10 @@ local function finish(label, raw, leak)
     if type(label) ~= "string" then
         label = "unlabelled"
     end
+    if label == "flight:enableScheduler" then
+        local fitted = math.ceil((cost * 1.10 + 50) / 10) * 10
+        gate(fitted <= 3600, "Flight handoff exceeds its one-time head reservation: " .. fitted)
+    end
     if P.lifecycleServiceOnly or P.lifecycleOperation then
         gate(
             not string.match(label, "^task:panel:")
@@ -761,6 +765,7 @@ local function install(context)
     if broker and not installed[broker] then
         installed[broker] = true
         wrapField(broker, "tick", "flight:tick")
+        wrapField(broker, "enableScheduler", "flight:enableScheduler")
         wrapField(broker, "pollReset", "flight:pollReset")
         wrapField(broker, "identity", "flight:identity")
     end

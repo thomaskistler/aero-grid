@@ -19,7 +19,7 @@ import sys
 TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
 from scheduler_audit import (CASE_DIR, PROBE_DIR, ROOT, SUPPORT_DIR, WIDGET, lua_literal, patch_chart,  # noqa: E402
-                             patch_loader, patch_main, patch_mode, patch_owners, patch_flight_tasks, aggregate, framework_report, hook_check_status,
+                             patch_loader, patch_main, patch_mode, patch_owners, aggregate, framework_report, hook_check_status,
                              reduce_results, supported_spans)
 from capture_recipes import PANELS, RECIPE_DIR, fixture_inputs, load_recipe  # noqa: E402
 
@@ -807,8 +807,6 @@ def prepare(capture, name, spec, sd, mode="legacy"):
             '        return\n'
             '    end\n' + anchor)
         (widget / "main.lua").write_text(source)
-    if spec.get("flightTasks"):
-        (widget / "main.lua").write_text(patch_flight_tasks((widget / "main.lua").read_text()))
     (widget / "lib/dashboard_loader.lua").write_text(patch_loader((WIDGET / "lib/dashboard_loader.lua").read_text()))
     (widget / "lib/scheduler_host.lua").write_text(
         patch_owners((WIDGET / "lib/scheduler_host.lua").read_text(), spec.get("owners", [])))

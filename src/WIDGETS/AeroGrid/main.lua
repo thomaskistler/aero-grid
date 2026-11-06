@@ -1311,6 +1311,28 @@ pumpFlight = function(context, inputPending)
         return false
     end
     local now = getTime()
+    if
+        scheduling
+        and scheduling.mode ~= "legacy"
+        and scheduling.owners["service:flight"] == "new"
+        and scheduling.owners["service:smart"] == "new"
+        and not context.stage
+        and not context.reloadState
+    then
+        local current = owner:owningContext()
+        local facade = context.serviceRuntime and context.serviceRuntime.byId.flight
+        if
+            (current == context or current == nil)
+            and (not owner.schedulerEnabled or current == nil)
+            and facade
+            and facade.broker == owner
+        then
+            owner:enableScheduler(context)
+            context.flightDashboardDue = nil
+            -- The old head reservation also covers this one-time handoff.
+            scheduling:charge("tick")
+        end
+    end
     if resetConfigured or owner.resetRuntime or owner.errors.reset then
         local resetOk, resetError = pcall(owner.pollReset, owner, now)
         if not resetOk then
@@ -1325,7 +1347,7 @@ pumpFlight = function(context, inputPending)
             return false
         end
     end
-    if owner.smartRuntime then
+    if owner.smartRuntime and not owner.schedulerEnabled then
         if inputPending or context.flightDashboardDue then
             context.flightDashboardDue = nil
             return false
@@ -1334,17 +1356,20 @@ pumpFlight = function(context, inputPending)
             return false
         end
     end
-    local ok, message = pcall(owner.tick, owner, now, filename)
+    local ok, message = true, nil
+    if not owner.schedulerEnabled then
+        ok, message = pcall(owner.tick, owner, now, filename)
+    end
     if not ok then
         owner:error("detection", message)
     end
-    if scheduling then
+    if scheduling and not owner.schedulerEnabled then
         scheduling:charge("tick")
     end
     -- Share ordinary polling capacity, not whole chart callbacks. Construction
     -- still needs its own slice, with a fair turn for each widget's UI work.
     local reserved = false
-    if owner.smartRuntime then
+    if owner.smartRuntime and not owner.schedulerEnabled then
         context.flightPolled = true
         owner.nextPumpAt = now + 10
         reserved = not not (

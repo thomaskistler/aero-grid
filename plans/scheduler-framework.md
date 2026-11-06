@@ -4409,3 +4409,34 @@ build/lua32/lua tests/integration/widget/test_dashboard_lifecycle.lua "$PWD"
 build/lua32/lua tests/integration/widget/test_dashboard_lifecycle_admission.lua "$PWD"
 python3 -m unittest discover -s tools -p test_scheduler_audit.py
 ```
+
+## 82. Real-main paired Flight/Smart handoff (R4; owners unchanged)
+
+Main now calls the broker's existing `enableScheduler` API before host readiness
+at a settled dashboard boundary, only in non-legacy mode with both Flight and
+Smart owned by the scheduler. No Flight-panel subscription is required. Another
+live owner cannot be displaced; a matching surviving facade may reclaim a
+broker whose weak owner has been collected. Readiness observes the canonical
+service pointer directly, without forced registry invalidation or synchronous
+resynchronization.
+
+The handoff keeps the existing one-time 3600 tick-head reservation. Subsequent
+callbacks do not run the legacy tick, Smart throttle, or duplicate fallback,
+including while canonical enrollment is pending. Reset polling remains at the
+head. Canonical task records retain their releases across dashboard replacement;
+a different surviving host enrolls fresh releases after owner collection.
+
+The native fixtures no longer patch main's pump behavior. All four composed
+`migration-tasks-*` captures execute this production path with empty error lists.
+Complete handoff cost is 185 native / 260 fitted. Their maximum complete
+callbacks are gallery 11059, stress 13832, model 3938, and Flight/Smart 9919,
+all below 15000. Native framework/readiness/registration/idle/release captures
+also pass. Lua53/int32 widget regressions cover paired and partial ownership,
+legacy observation, subscriber-free activation, pending enrollment, registry
+replacement, live-owner exclusion, and nil-owner reclaim. The full int32
+scheduler suite passes; strict reset remains 8400 with both original XFAILs.
+
+Production owners remain unchanged, Telemetry/History retain their ten-tick
+policy, and preparation/constructor/reflow co-admission remains gated. The
+unchanged first-arm expectation still blocks production activation; this wiring
+and its prototype measurements do not authorize a policy change.
