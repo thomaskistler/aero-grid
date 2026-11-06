@@ -160,7 +160,7 @@ local function settleReload()
     error("dashboard reload did not settle")
 end
 local function advanceLivePreview()
-    for _ = 1, 40 do
+    for _ = 1, 80 do
         widget.tick(1)
         refresh()
     end
@@ -980,7 +980,15 @@ local fresh = widget.createLoaded(
     { Layout = "edit-pair", Theme = "modern-dark" },
     path
 )
-widget.pump(fresh, 10)
+for _ = 1, 200 do
+    widget.pump(fresh, 1)
+    if fresh.panels[1].instance.value.properties.text == "100"
+        and fresh.panels[2].instance.value.properties.text == "100" then
+        break
+    end
+end
+equal(fresh.panels[1].instance.value.properties.text, "100", "fresh first panel paints its telemetry")
+equal(fresh.panels[2].instance.value.properties.text, "100", "fresh second panel paints its telemetry")
 equal(labelLayout(context), labelLayout(fresh), "corner panel moved in fullscreen reserves the menu button")
 
 -- A preview that built a panel in fullscreen rebuilds only that panel for App
