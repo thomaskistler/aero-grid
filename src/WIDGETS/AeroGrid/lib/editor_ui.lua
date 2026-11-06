@@ -189,7 +189,7 @@ function uiModule.drawerWorkBound(context)
         return uiModule.DRAWER_OPEN_BOUNDS[state.drawerOpen.mode]
     end
     if
-        state.drawerBuild
+        (state.drawerBuild or state.drawerPending)
         and not state.session.initializing
         and not state.previewPending
         and not state.previewRefresh

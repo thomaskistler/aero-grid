@@ -72,6 +72,63 @@ return function(load)
             end
         end
     end
+    local editor = load("lib/editor.lua")
+    for _, stage in ipairs({ "write", "error", "snapshot", "summaries" }) do
+        for _, part in ipairs({ "start", "advance", "finish" }) do
+            cases[#cases + 1] = {
+                stage = stage, grant = 1,
+                setup = function()
+                    local config = { enabled = true, source = "Cels", cells = 0, rows = {} }
+                    for index = 1, 128 do config.rows[index] = { label = "row", nested = { index } } end
+                    local definition = {
+                        settings = { { key = "enabled", type = "boolean", default = false } }, drawerGroups = {},
+                    }
+                    local groups = {}
+                    for index = 1, 128 do
+                        local group = { key = "group" .. index, sourceType = "pack" }
+                        definition.drawerGroups[index], groups[group.key] = group, group
+                    end
+                    local state = {
+                        drawerFields = {}, drawerControls = {}, drawerGeneration = 1,
+                        nativeDrawer = api.node(), drawerPadding = 2, drawerErrorHeight = 18,
+                        session = {
+                            selected = 1, draft = { panels = { { type = "test", config = config } } },
+                            loadPanel = function() return definition end,
+                            panelHost = { validateModule = function() return true end },
+                        },
+                        handlers = { editor = editor, logError = function() end },
+                    }
+                    for index = 1, 16 do
+                        state.drawerControls[index] = {
+                            object = api.node(), row = api.node(), errorLabel = api.node(), height = 36,
+                            field = { drawerGroup = part == "finish" and "group128" or nil },
+                        }
+                    end
+                    if stage == "snapshot" or stage == "summaries" then
+                        state.drawerBuild, state.drawerBuildConfig = 1, config
+                        state.drawerRefresh = { phase = stage, index = 1, module = definition, groups = groups }
+                        if stage == "snapshot" and part ~= "start" then
+                            local job = assert(editor.startSettings(state.session))
+                            if part == "finish" then while not editor.advanceSettings(job) do end end
+                            state.drawerRefresh.job = job
+                        end
+                    else
+                        state.drawerPending = {
+                            action = stage, field = { key = "enabled", type = "boolean" },
+                            value = part == "finish" and {} or false, control = state.drawerControls[1],
+                            message = "source unavailable",
+                        }
+                    end
+                    local task = { stage = stage, want = 1 }
+                    function task:step()
+                        api.withApi(drawer.advance, {}, state)
+                        return 1
+                    end
+                    return task, 1000000
+                end,
+            }
+        end
+    end
     local stages = {}
     for stage, bound in pairs(drawer.WORK_BOUNDS) do
         stages[stage] = { fixed = 0, perUnit = bound, maxUnits = 1 }

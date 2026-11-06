@@ -501,6 +501,11 @@ Compatible saved-layout adoption starts bounded Flight registration when the
 host exposes `beginFlightRegistration`. Editor entry, preview work and native
 drawer edits pause while registration/publication or its pending error drains;
 queued work resumes afterward. Native window retirement is still recorded.
+Drawer scalar writes and validation feedback stage their settings snapshot,
+four-row visibility layout and cached group summaries separately. Snapshot
+copying/defaulting/indexing advances at most eight entries per turn. Controls
+stay disabled until refresh completes; closing drops pending UI work without
+undoing an applied edit.
 
 Put the module at `panels/<type>.lua` and reference that type in a layout.
 Regular panels declare `supportedSpans = { "any" }` and adapt their contents to

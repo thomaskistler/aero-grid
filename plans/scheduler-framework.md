@@ -4100,3 +4100,40 @@ first-arm `captured` result against the unchanged temporary mixed-mode
 `waiting`/`switch-unavailable` expectation. Activation remains blocked on that
 explicit policy gate; neither the assertion nor production ownership changed.
 All 48 audit-tool tests pass.
+
+## 76. Drawer scalar mutations and bounded visibility refresh (R5)
+
+Scalar/nested writes and picker/validation failures no longer synchronously
+relayout every row or repeatedly resolve the whole settings document.
+`editor.startSettings/advanceSettings` reuses the graph-copy mechanism, advancing
+at most eight graph entries/default/group declarations per turn. Independent
+defaults, shared references/cycles and first-match group lookup retain their
+old semantics. A completed snapshot supplies constant-time group summaries.
+The drawer keeps its construction sentinel until the snapshot, four-row layout
+and bounded summary scan finish. Native retirement cancels that UI work while
+retaining already-applied edits and the queued return command.
+
+| Complete drawer advance | Native maximum | Charge |
+|---|---:|---:|
+| Scalar / nested write, including validation failure | 711 | 1000 |
+| Picker error/reporting | 188 | 500 |
+| Settings snapshot creation/advance/completion | 467 | 700 |
+| Four-row visibility/error layout | 233 | 500 |
+| Four-slot summary scan | 82 | 300 |
+
+Twenty actual native scenarios cover all fifteen roots, Metric/Chart/State
+entries, visibility changes, validation failures and picker errors, with every
+new stage receiving complete-callback/hidden-refresh gates. The admitted drawer
+maximum is 6430; the largest whole scenario is 14079. Separate native fixtures
+enumerate graph/default/group advances (128 rows/depth/table keys/cycles/groups):
+settings API start/advance/cached-summary maxima 82/405/47 with charges
+150/500/110. The complete drawer fixture also measures every declared stage.
+Error labels now use the same callable font property as other native labels;
+the actual widget error path exposed the old numeric property in the mock.
+
+Lua53/int32 graph, drawer and actual widget admission/error/cancellation
+regressions pass, as do the full int32 scheduler suite and 38 audit-tool tests.
+The unchanged strict reset is 13900 with its two original first-arm XFAILs.
+Append/remove/reopen/Add, drag and whole adoption/geometry gates are not admitted
+by this scalar slice. The parent's resized RX preview assertion remains intact
+and requires a separate integration proof; owner activation alone is not a fix.

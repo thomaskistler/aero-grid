@@ -588,12 +588,14 @@ local function install(context)
             end
             if state.drawerLayout then
                 return "layout"
+            elseif state.drawerRefresh then
+                return state.drawerRefresh.phase
             elseif state.drawerBuild then
                 return state.drawerBuild <= #state.drawerFields
                         and "build:" .. tostring(state.drawerFields[state.drawerBuild].type)
                     or "finish"
             end
-            return "command"
+            return state.drawerPending and state.drawerPending.action or "command"
         end)
     end
     if context.diagnosticsLog then
@@ -1243,6 +1245,56 @@ actions = {
         end
         error("native drawer scenario has no nested entry")
     end,
+    ["write-drawer"] = function(context)
+        local state, phase = assert(context.editorUi), config.phases[phaseIndex]
+        assert(not state.drawerBuild and not state.drawerPending)
+        for _, entry in ipairs(state.drawerControls) do
+            local field = entry.field
+            local value = state.session.draft.panels[state.session.selected].config[field.key]
+            for _, key in ipairs(field.path or {}) do
+                if type(value) == "table" then value = value[key] else value = nil end
+            end
+            if value == nil then value = field.value end
+            if not field.action and field.type ~= "section" and value ~= nil and type(value) ~= "table"
+                and (not phase.key or field.key == phase.key) then
+                if field.choices then
+                    for index, choice in ipairs(field.choices) do
+                        if choice == value then value = field.choices[index % #field.choices + 1]; break end
+                    end
+                elseif field.type == "boolean" then
+                    value = not value
+                end
+                P.drawerMutation = {
+                    entry = entry, value = value, rejected = phase.reject or phase.nativeError, dirty = state.session.dirty,
+                }
+                state.drawerPending = {
+                    action = phase.nativeError and "error" or "write", field = field, control = entry,
+                    value = phase.reject and {} or value, message = "injected picker error",
+                }
+                return
+            end
+        end
+        error("native mutation scenario has no scalar field")
+    end,
+    ["check-drawer-write"] = function(context)
+        local state, mutation = assert(context.editorUi), assert(P.drawerMutation)
+        assert(not state.drawerBuild and not state.drawerRefresh and not state.drawerPending and not state.renderStage)
+        if mutation.rejected then
+            assert(mutation.entry.errorShown and state.statusError and state.session.dirty == mutation.dirty)
+            assert(context.errorLog and next(context.errorLog.messages), "validation failures must remain explicit")
+        else
+            assert(state.session.dirty and not mutation.entry.errorShown)
+            local field = mutation.entry.field
+            local value = state.session.draft.panels[state.session.selected].config[field.key]
+            for _, key in ipairs(field.path or {}) do value = value[key] end
+            assert(value == mutation.value)
+        end
+        for _, entry in ipairs(state.drawerControls) do
+            if entry.object and entry.field.visibleWhen then
+                assert(state.drawerBuildConfig == nil, "completed mutation releases its snapshot")
+            end
+        end
+    end,
     ["close-editor"] = function(context)
         assert(context.editorUi and context.editorSession and not context.editorSession.dirty)
         context.editorUiModule.close(context, false)
@@ -1312,6 +1364,9 @@ local function callbackSurface(kind, context)
         if ui.renderStage then
             return "editor-render:" .. tostring(ui.renderStage)
         end
+        if ui.drawerRefresh then
+            return "editor-drawer:" .. (ui.drawerLayout and "layout" or ui.drawerRefresh.phase)
+        end
         if ui.drawerBuild then
             return "editor-drawer:"
                 .. (ui.drawerLayout and "layout" or ui.drawerBuild <= #ui.drawerFields and "build" or "finish")
@@ -1324,6 +1379,9 @@ local function callbackSurface(kind, context)
                 or not action.prepared and "prepare"
                 or "construct"
             return "editor-preview:" .. stage
+        end
+        if ui.drawerPending and context.editorDrawerModule.workBound(ui) then
+            return "editor-drawer:" .. ui.drawerPending.action
         end
         for _, stage in ipairs({
             "saving",

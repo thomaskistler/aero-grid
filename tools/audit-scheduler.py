@@ -549,6 +549,35 @@ def scenarios():
              "callbacks": 1, "step": 5, "perCall": 1},
         ]
         result[f"editor-entry-{panel}"] = dict(base, phases=phases)
+    for panel in PANELS:
+        base = result[f"editor-drawer-{panel}"]
+        phases = list(base["phases"][:-1]) + [
+            {"name": "drawer-write", "kind": "refresh", "action": "write-drawer",
+             "key": {"navigation": "showTape", "rx-battery": "visual", "chart": "timeRange"}.get(panel, False),
+             "callbacks": 100, "step": 5, "perCall": 4},
+            {"name": "drawer-written", "kind": "refresh", "action": "check-drawer-write",
+             "callbacks": 1, "step": 5},
+            {"name": "editor-discard", "kind": "refresh", "action": "discard-editor",
+             "callbacks": 20, "step": 5},
+        ]
+        result[f"editor-write-{panel}"] = dict(base, phases=phases)
+    for panel in ("metric", "chart", "state"):
+        base = result[f"editor-entry-{panel}"]
+        phases = list(base["phases"][:-1]) + [
+            {"name": "entry-write", "kind": "refresh", "action": "write-drawer",
+             "callbacks": 100, "step": 5, "perCall": 4},
+            {"name": "entry-written", "kind": "refresh", "action": "check-drawer-write",
+             "callbacks": 1, "step": 5},
+            {"name": "editor-discard", "kind": "refresh", "action": "discard-editor",
+             "callbacks": 20, "step": 5},
+        ]
+        result[f"editor-write-entry-{panel}"] = dict(base, phases=phases)
+    phases = list(result["editor-write-link-status"]["phases"])
+    phases[-3] = dict(phases[-3], reject=True)
+    result["editor-write-error"] = dict(result["editor-write-link-status"], phases=phases)
+    phases = list(result["editor-write-link-status"]["phases"])
+    phases[-3] = dict(phases[-3], nativeError=True)
+    result["editor-write-picker-error"] = dict(result["editor-write-link-status"], phases=phases)
     phases = list(result["editor-entry-state"]["phases"])
     phases[-1:-1] = [
         {"name": "state-build", "kind": "refresh", "action": "open-entry-drawer",

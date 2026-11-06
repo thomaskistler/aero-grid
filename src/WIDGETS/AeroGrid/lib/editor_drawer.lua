@@ -1,7 +1,10 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 local drawer = { RUNTIME_API = 1 }
-drawer.WORK_BOUNDS = { build = 1700, layout = 500, finish = 200 }
+drawer.WORK_BOUNDS = {
+    build = 1700, layout = 500, finish = 200,
+    write = 1000, error = 500, snapshot = 700, summaries = 300,
+}
 
 local function blocked(state)
     return state.handlers.blocked and state.handlers.blocked()
@@ -9,10 +12,15 @@ end
 
 function drawer.workBound(state)
     if blocked(state) then return nil end
-    if state.drawerLayout then
+    if state.drawerRefresh then
+        return state.drawerLayout and drawer.WORK_BOUNDS.layout
+            or drawer.WORK_BOUNDS[state.drawerRefresh.phase]
+    elseif state.drawerLayout then
         return drawer.WORK_BOUNDS.layout
     elseif state.drawerBuild then
         return state.drawerBuild <= #state.drawerFields and drawer.WORK_BOUNDS.build or drawer.WORK_BOUNDS.finish
+    elseif state.drawerPending and (state.drawerPending.action == "write" or state.drawerPending.action == "error") then
+        return drawer.WORK_BOUNDS[state.drawerPending.action]
     end
 end
 
@@ -83,6 +91,7 @@ local function closeDialog(state)
     state.drawerGeneration = (state.drawerGeneration or 0) + 1
     state.drawerBuild = nil
     state.drawerLayout, state.drawerLayoutY, state.drawerBuildConfig = nil, nil, nil
+    state.drawerRefresh = nil
     if dialog then
         state.drawerClosing = true
         lvgl.close(dialog)
@@ -363,6 +372,7 @@ function drawer.open(context, state, mode, listKey, itemIndex, itemPath, groupKe
                     retireDialogHost(state)
                     state.drawerBuild = nil
                     state.drawerLayout, state.drawerLayoutY, state.drawerBuildConfig = nil, nil, nil
+                    state.drawerRefresh = nil
                     local command = {
                         action = (listKey or groupKey) and "parent" or "back",
                         key = listKey,
@@ -554,13 +564,8 @@ local function relayout(state, first, last, y)
 end
 
 local function refreshVisibility(state)
-    relayout(state)
-    local editor = state.handlers.editor
-    for _, entry in ipairs(state.drawerControls or {}) do
-        if entry.field.drawerGroup then
-            entry.object:set({ text = editor.drawerSummary(state.session, entry.field.drawerGroup) })
-        end
-    end
+    state.drawerRefresh = { phase = "snapshot", index = 1 }
+    state.drawerBuild = #state.drawerFields + 1
 end
 
 local function addControl(context, state, field, index)
@@ -821,7 +826,7 @@ local function addControl(context, state, field, index)
         w = width - 8,
         h = state.drawerErrorHeight,
         text = "",
-        font = SMLSIZE,
+        font = function() return SMLSIZE end,
         color = context.theme.color.critical,
     })
     lvgl.hide(errorLabel)
@@ -846,13 +851,8 @@ local function fieldError(state, control, message)
     else
         lvgl.hide(control.errorLabel)
     end
-    local shown = message ~= nil
-    if (control.errorShown == true) == shown then
-        relayout(state)
-        return
-    end
-    control.errorShown = shown
-    relayout(state)
+    control.errorShown = message ~= nil
+    refreshVisibility(state)
 end
 
 function drawer.advance(context, state)
@@ -862,7 +862,47 @@ function drawer.advance(context, state)
         state.drawerLayoutY = relayout(state, state.drawerLayout, last, state.drawerLayoutY)
         state.drawerLayout = last + 1
         if state.drawerLayout > #state.drawerControls then
-            state.drawerLayout, state.drawerLayoutY, state.drawerBuild, state.drawerBuildConfig = nil, nil, nil, nil
+            state.drawerLayout, state.drawerLayoutY = nil, nil
+            if not state.drawerRefresh then
+                state.drawerBuild, state.drawerBuildConfig = nil, nil
+            end
+        end
+        return true
+    end
+    if state.drawerRefresh then
+        local refresh, editor = state.drawerRefresh, state.handlers.editor
+        if refresh.phase == "snapshot" then
+            if not refresh.job then
+                local job, message = editor.startSettings(state.session)
+                assert(job, message)
+                refresh.job = job
+            else
+                local done, config, module, groups = editor.advanceSettings(refresh.job)
+                if done then
+                    state.drawerBuildConfig, refresh.module, refresh.groups = config, module, groups
+                    state.drawerLayout, refresh.phase = 1, "summaries"
+                    refresh.job = nil
+                end
+            end
+        elseif refresh.phase == "summaries" then
+            for _ = 1, 4 do
+                local entry = state.drawerControls[refresh.index]
+                if not entry then
+                    state.drawerRefresh, state.drawerBuild, state.drawerBuildConfig = nil, nil, nil
+                    break
+                end
+                refresh.index = refresh.index + 1
+                if entry.field.drawerGroup then
+                    entry.object:set({
+                        text = editor.drawerSummary(
+                            state.session, entry.field.drawerGroup, state.drawerBuildConfig, refresh.module, refresh.groups
+                        ),
+                    })
+                    break
+                end
+            end
+        else
+            error("invalid drawer refresh phase: " .. tostring(refresh.phase))
         end
         return true
     end
@@ -912,7 +952,7 @@ function drawer.advance(context, state)
             if command.control.kind == "textEdit" then
                 command.control.object:set({ value = tostring(current(state, command.field) or "") })
             end
-            fieldError(state, command.control, not ok and tostring(err) or nil)
+            if ok then fieldError(state, command.control, nil) end
         end
     elseif command.action == "append" then
         ok, err = editor.appendItem(state.session, command.key, command.path)

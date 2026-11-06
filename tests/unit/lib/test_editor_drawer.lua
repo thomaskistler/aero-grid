@@ -115,5 +115,35 @@ do
     assert(state.drawerPending and state.drawerPending.action == "write", "controls resume after registration")
 end
 
+for _, rejected in ipairs({ false, true }) do
+    local state, calls = stateFor(128), 0
+    drawer.advance({}, state)
+    while state.drawerLayout do drawer.advance({}, state) end
+    state.session = {}
+    state.handlers.logError = function() calls = calls + 1 end
+    state.handlers.editor.setValue = function() return not rejected, "rejected" end
+    state.handlers.editor.startSettings = function() return {} end
+    state.handlers.editor.advanceSettings = function() return true, { enabled = false }, {} end
+    local control = state.drawerControls[1]
+    control.object, control.kind = node(), "toggle"
+    state.drawerPending = { action = "write", field = { key = "enabled" }, value = false, control = control }
+    writes = 0
+    assert(drawer.workBound(state) == drawer.WORK_BOUNDS.write and drawer.advance({}, state))
+    assert(writes <= 1 and state.drawerRefresh and state.drawerBuild, "writes must not synchronously relayout")
+    assert(calls == (rejected and 1 or 0) and control.errorShown == rejected)
+    while state.drawerBuild do
+        writes = 0
+        assert(drawer.workBound(state) and drawer.advance({}, state))
+        assert(writes <= 8, "mutation visibility advances touch at most four rows")
+    end
+    assert(not state.drawerRefresh and not state.drawerBuildConfig)
+    assert(not state.drawerControls[1].row.hidden and state.drawerControls[2].row.hidden)
+    state.drawerPending = { action = "error", message = "source unavailable", control = control }
+    drawer.advance({}, state)
+    assert(state.drawerRefresh and state.status == "source unavailable")
+    drawer.close(state)
+    assert(not state.drawerRefresh and not state.drawerBuild and not drawer.advance({}, state))
+end
+
 lvgl = previous
 print("Editor drawer construction: bounded layout, frozen visibility and cancellation passed")

@@ -1050,12 +1050,17 @@ function editor.drawerFields(session, groupKey)
 end
 
 --- Short live summary shown on the source-specific drawer row.
-function editor.drawerSummary(session, groupKey)
-    local settings, config, module = editor.settings(session)
-    if not settings or type(config) ~= "table" or not module then
+function editor.drawerSummary(session, groupKey, config, module, groups)
+    if not module then
+        local settings
+        settings, config, module = editor.settings(session)
+        if not settings then return "--" end
+    end
+    if type(config) ~= "table" or not module then
         return "--"
     end
-    for _, group in ipairs(module.drawerGroups or {}) do
+    local candidates = groups and (groups[groupKey] and { groups[groupKey] } or {}) or module.drawerGroups or {}
+    for _, group in ipairs(candidates) do
         if group.key == groupKey then
             local source = tostring(config.source or "--")
             if group.sourceType == "pack" then
@@ -1093,6 +1098,52 @@ function editor.settings(session)
         end
     end
     return fields, config, module
+end
+
+function editor.startSettings(session)
+    local placement, _, selectionError = findSelected(session)
+    if not placement then return nil, selectionError end
+    local module, moduleError = getPanelModule(session, placement.type)
+    if not module then return nil, moduleError end
+    local config, job = startCopy(placement.config or {})
+    return { config = config, copy = job, module = module, index = 1, groups = {}, phase = "settings" }
+end
+
+--- Copy/default/index at most eight graph entries or metadata declarations per turn.
+function editor.advanceSettings(pending)
+    if pending.done then return true, pending.config, pending.module, pending.groups end
+    for _ = 1, 8 do
+        local job = pending.copy
+        local frame = job.stack[#job.stack]
+        if frame then
+            local key, value = next(frame.source, frame.key)
+            if key == nil then
+                job.stack[#job.stack] = nil
+            else
+                frame.key = key
+                frame.target[copyReference(job, key)] = copyReference(job, value)
+            end
+        elseif pending.phase == "settings" then
+            local setting = (pending.module.settings or {})[pending.index]
+            if not setting then
+                pending.phase, pending.index = "groups", 1
+            elseif pending.config[setting.key] == nil then
+                pending.config[setting.key], pending.copy = startCopy(setting.default)
+            end
+            if setting then pending.index = pending.index + 1 end
+        elseif pending.phase == "groups" then
+            local group = (pending.module.drawerGroups or {})[pending.index]
+            if not group then
+                pending.done = true
+                return true, pending.config, pending.module, pending.groups
+            end
+            if group.key ~= nil and pending.groups[group.key] == nil then pending.groups[group.key] = group end
+            pending.index = pending.index + 1
+        else
+            error("invalid settings snapshot phase: " .. tostring(pending.phase))
+        end
+    end
+    return false
 end
 
 function editor.restoreDefault(session, document)
