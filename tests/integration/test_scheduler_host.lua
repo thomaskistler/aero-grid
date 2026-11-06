@@ -445,6 +445,13 @@ loadError("no bound", function(host)
 end, "panel:metric has no declared bound")
 loadError("owned but no task", function(host)
     host.owners["panel:metric"] = "new"
+    local entry = host.context.panels[1]
+    local module = {}
+    for key, value in pairs(entry.module) do
+        module[key] = value
+    end
+    module.step = nil
+    entry.module = module
 end, "panel:metric is owned by the scheduler but has no task")
 loadError("Telemetry task missing step", function(host)
     local telemetry = host.context.serviceRuntime.byId.telemetry
@@ -500,6 +507,7 @@ do
             stages = standin.decl.stages,
         }
         entry.module.step = counting(key)
+        entry.module.stageOf = nil
         host.owners[key] = "new"
     end
     callbacks(definition, context, 120)

@@ -49,6 +49,17 @@ class InstrumentationTests(unittest.TestCase):
         self.assertIn('local SCHEDULER_MODE = "new"', audit.patch_mode(source, "new"))
         self.assertIn('local SCHEDULER_MODE = "legacy"', audit.patch_mode(source, "legacy"))
 
+    def test_owner_overrides_only_patch_named_legacy_owners(self):
+        source = (audit.WIDGET / "lib/scheduler_host.lua").read_text()
+        self.assertEqual(audit.patch_owners(source, []), source)
+        changed = audit.patch_owners(source, ["panel:metric"])
+        self.assertIn('["panel:metric"] = "new"', changed)
+        self.assertIn('["service:flight"] = "legacy"', changed)
+        with self.assertRaises(RuntimeError):
+            audit.patch_owners(source, ["panel:not-installed"])
+        with self.assertRaises(ValueError):
+            audit.patch_owners(source, ['panel:metric"'])
+
     def test_a_missing_anchor_is_reported(self):
         with self.assertRaisesRegex(RuntimeError, "expected one occurrence"):
             audit.patch_main("return {}")
@@ -136,6 +147,12 @@ class ScenarioTests(unittest.TestCase):
         for name, spec in self.cli.scenarios().items():
             self.assertIn("expected", spec, name)
             self.assertTrue(spec["phases"] or "loops" in spec, name)
+
+    def test_metric_task_scenarios_override_only_the_metric_owner(self):
+        for tag in ("min", "max", "16"):
+            spec = self.cli.scenarios()[f"metric-tasks-{tag}"]
+            self.assertEqual(spec["owners"], ["panel:metric"])
+            self.assertEqual([phase["name"] for phase in spec["phases"]], ["refresh", "background"])
 
     def test_lua_literal_round_trips_through_lua(self):
         try:

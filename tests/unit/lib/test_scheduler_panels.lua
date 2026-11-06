@@ -65,6 +65,10 @@ do
     local context, host, add, run = fixture()
     local first, second = add("first"), add("second")
     run()
+    assert(first.instance.runs == 1 and second.instance.runs == 0, "enrollment is bounded to one placement")
+    assert(host.pendingPanels[second] and host.legacy.spent == scheduling.PANEL_ENROLL_COST)
+    run()
+    assert(not host.pendingPanels)
     assert(first.instance.runs == 1 and second.instance.runs == 1, "same-type placements have independent releases")
     assert(host.scheduler.byId["panel:first"] and host.scheduler.byId["panel:second"])
     local task = host.panelTasks[first]
@@ -88,6 +92,7 @@ end
 do
     local context, host, add, run = fixture()
     local first, second = add("first"), add("second")
+    run()
     run()
     local kept = host.panelTasks[second]
     table.remove(context.panels, 1)
@@ -146,14 +151,67 @@ for _, failure in ipairs({ "raise", "interval" }) do
         bad.instance.delay = 0
     end
     run()
-    assert(bad.failed and healthy.instance.runs == 1, "one failed panel cannot stop another")
+    assert(bad.failed and healthy.instance.runs == 0, "later placements wait for bounded enrollment")
     assert(#errors == 0, "task errors are reported at the next callback head")
     assert(host:report(context) and #errors == 1)
     assert(not host:report(context) and #errors == 1, "a retired task is reported once")
     assert(host.panelTasks[bad] == nil and not host.scheduler.byId["panel:bad"])
+    run()
+    assert(healthy.instance.runs == 1, "one failed panel cannot stop another")
     now = now + 10
     run()
     assert(healthy.instance.runs == 2)
+end
+
+do
+    local context, host, add, run = fixture()
+    local first, pending, last = add("first"), add("pending"), add("last")
+    run()
+    assert(host.pendingPanels[pending] and host.pendingPanels[last])
+    context.panels = { last }
+    run()
+    assert(not host.pendingPanels and host.panelTasks[last])
+    assert(not host.panelTasks[first] and not host.panelTasks[pending])
+    assert(not host.scheduler.byId["panel:first"] and not host.scheduler.byId["panel:pending"])
+    assert(first.instance.runs == 1 and pending.instance.runs == 0 and last.instance.runs == 1)
+end
+
+do
+    local context, host, add, run = fixture()
+    local releases = {}
+    local clock = {
+        id = "clock",
+        count = 1,
+        interval = 10,
+        decl = { class = "normal", stages = { run = { fixed = 0, perUnit = 100, maxUnits = 1 } } },
+        step = function()
+            releases[#releases + 1] = now
+            return 10
+        end,
+    }
+    host.owners["service:clock"] = "new"
+    context.serviceRuntime = { order = { clock }, byId = { clock = clock } }
+    local entries = {}
+    for index = 1, 16 do
+        entries[index] = add("placement-" .. index)
+    end
+    local serviceTask
+    for index = 1, 16 do
+        run()
+        local count = 0
+        for _ in pairs(host.panelTasks) do
+            count = count + 1
+        end
+        assert(count == index and host.panelTasks[entries[index]], "each callback enrolls exactly one placement")
+        assert(#releases == index and releases[index] == now, "enrollment preserves ten-tick service releases")
+        local current = host.scheduler.byId["service:clock"]
+        serviceTask = serviceTask or current
+        assert(current == serviceTask, "partial enrollment must not resync service tasks")
+        now = now + 10
+    end
+    assert(not host.pendingPanels and host:verify(context) == nil)
+    run()
+    assert(host.legacy.spent == 0, "steady callbacks do not retain the setup reservation")
 end
 
 print("Scheduler panel lifecycle passed")

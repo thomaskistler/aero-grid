@@ -2008,3 +2008,80 @@ reset peaks at 14300 mock instructions and retains its two existing first-arm
 XFAILs. Both deferred chart-recording stress modes were rerun without edits:
 they still fail at line 192, ordinary Q7 revisions 2/93 and independent-arms Q1
 revisions 0/42, matching the prior checkpoint rather than failing during loading.
+
+## 29. Bounded metric refresh and placement enrollment (R1/R5/R6, owners unchanged)
+
+Metric's optional task adapter freezes scalar fields from all three readings
+before preparing precision, supporting text and unit metadata. It shares the
+legacy preparation, geometry and paint helpers; synchronous refresh retains its
+original precision-reflow then supporting-reflow ordering. Task execution
+coalesces those geometry requests, then advances through separate geometry,
+placement, render and apply stages. Stable frames skip painting. External reflow,
+forced readings and legacy refresh invalidate pending work, including a render
+cache that was prepared but not yet painted. A stale plan reports `used=0`,
+republishes the current stage and resumes after one tick.
+
+The original task layout stage measured 3684 instructions with real LVGL fonts,
+despite a much smaller API-stand-in result. Raising its declaration would not
+leave the required margin below 4000. Geometry resolution and LVGL placement
+are now separate atoms, measured through both the fixture's real panel task
+bridge and the native callback's complete task bridge:
+
+| Refresh stage | Native fixture worst | Real native bridge worst | Declaration |
+|---|---:|---:|---:|
+| Prepare / freeze | 500 | 413 | 600 |
+| Geometry resolution | 1821 | 3329 | 3720 |
+| Geometry application | 1125 | 1016 | 1290 |
+| Render | 708 | 606 | 830 |
+| Apply | 882 | 729 | 1030 |
+
+The geometry fixture's loose-bound warning is intentional: actual font fitting
+determines admission, not the stand-in's smaller count. No atom exceeds 4000.
+Metric construction's shared reflow now measures 3032, with a 3390 fixture
+declaration; controls/publication and separate publication measure 1233/761.
+
+An isolated native owner override exposed another real gate: enrolling sixteen
+placements at once produced a 25006-instruction callback. The host now enrolls
+at most one placement per callback and reserves 4000 before planning tasks.
+Surviving placements retain their scheduler records and due ticks. Pending
+placements are explicitly tracked rather than treated as missing tasks; service
+resynchronization is not repeated merely to continue panel enrollment. A
+sixteen-placement test checks one enrollment per callback, stable service task
+identity and uninterrupted ten-tick service releases. Retired and failed
+placements retain their existing handling.
+
+Native metric enrollment itself peaks at 1199; complete readiness, including
+cold service enrollment, peaks at 3909 in the sixteen-metric case. That
+scenario's complete callback maximum falls to 10543. One small/large metric
+peaks at 9189 each, and production-owner default-gallery at 12533, all below
+15000. Other panel families and mass retirement still need their own complete
+callback gates before ownership changes; this is not a blanket readiness bound
+for every layout or modal callback.
+
+Verification commands:
+
+```sh
+python3 tools/audit-scheduler.py --framework metric-panel metric-construction --timeout 180
+python3 tools/audit-scheduler.py metric-tasks-min metric-tasks-max metric-tasks-16 default-gallery --timeout 180
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+make test-lua32
+```
+
+The native cases override only `panel:metric` in their isolated SD images.
+Production ownership is unchanged. The metric integration suite checks both
+themes, four geometries, three visual modes and eight data cycles, including
+frozen readings/metadata, completed-frame legacy parity, every stale stage,
+stable frames, forced values, absent feeds and restoration of subscriptions
+before propagating stage errors. Host regression stand-ins explicitly remove
+the real metric adapter when testing missing steps or a replacement `run` stage.
+The same completed-frame suite also passes against actual pre-extraction
+`f6a8207` metric source, not only the extracted legacy helpers. Targeted metric,
+host, loading, reflow, full editor UI, shared-module, session-reset and chart
+recording/reset suites pass under the supported Lua 5.3 runner. Editor UI
+remains at 15000 mock instructions and session reset at 14300, retaining its
+two existing first-arm XFAILs. Lua32 task bounds and all 26 audit-tool tests pass.
+
+The remaining panel adapters, multi-panel editor preview accounting,
+loader/modal/reflow eligibility and Flight/Smart admission remain open.
+Telemetry/History keep their ten-tick policy. Deferred chart-recording stress
+assertions and production owners are untouched.

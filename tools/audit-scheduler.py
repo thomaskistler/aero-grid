@@ -18,7 +18,7 @@ import sys
 TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
 from scheduler_audit import (CASE_DIR, PROBE_DIR, ROOT, SUPPORT_DIR, WIDGET, lua_literal, patch_chart,  # noqa: E402
-                             patch_loader, patch_main, patch_mode, aggregate, framework_report, hook_check_status,
+                             patch_loader, patch_main, patch_mode, patch_owners, aggregate, framework_report, hook_check_status,
                              reduce_results, supported_spans)
 from capture_recipes import PANELS, RECIPE_DIR, fixture_inputs, load_recipe  # noqa: E402
 
@@ -202,6 +202,9 @@ def scenarios():
         ])
     result["editor-rebuild-navigation-tape"] = dict(result["editor-rebuild-navigation"],
                                                      config={"showTape": False})
+    for tag in ("min", "max", "16"):
+        result[f"metric-tasks-{tag}"] = dict(result[f"metric-{tag}"], owners=["panel:metric"],
+                                            phases=standard_phases())
     result["light-control"] = {
         "recipe": "trim-panel", "expected": 2, "toggleSwitches": True,
         "layout": custom_layout([
@@ -272,6 +275,8 @@ def prepare(capture, name, spec, sd, mode="legacy"):
     shutil.copyfile(WIDGET / "lib/dashboard_loader.lua", widget / "lib/dashboard_loader.lua")
     (widget / "main.lua").write_text(patch_mode(patch_main((WIDGET / "main.lua").read_text()), mode))
     (widget / "lib/dashboard_loader.lua").write_text(patch_loader((WIDGET / "lib/dashboard_loader.lua").read_text()))
+    (widget / "lib/scheduler_host.lua").write_text(
+        patch_owners((WIDGET / "lib/scheduler_host.lua").read_text(), spec.get("owners", [])))
     (widget / "panels/chart.lua").write_text(patch_chart((WIDGET / "panels/chart.lua").read_text()))
     if "layout" in spec:
         (widget / "layouts/capture-panels.yaml").write_text(spec["layout"])

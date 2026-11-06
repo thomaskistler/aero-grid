@@ -182,6 +182,9 @@ local function panelLabel(token, entry, event)
     local module = entry and entry.module
     local id = module and rawget(module, "id") or "unknown"
     local instance = entry and entry.instance
+    if event == "step" and module and type(module.stageOf) == "function" then
+        return token == nil and module.stageOf(instance) or "panel:" .. id .. ":step:" .. tostring(token)
+    end
     if id ~= "chart" or event ~= "refresh" or type(instance) ~= "table" then
         return token == nil and true or "panel:" .. id .. ":" .. tostring(event)
     end
@@ -261,6 +264,20 @@ end
 
 local function install(context)
     pause(true)
+    local scheduling = context.schedulerHost
+    if scheduling and not installed[scheduling] then
+        installed[scheduling] = true
+        wrapField(scheduling, "ready", "scheduler:ready")
+        wrapField(scheduling, "syncPanels", "scheduler:panels")
+    end
+    for _, task in pairs(context.schedulerHost and context.schedulerHost.panelTasks or {}) do
+        if not installed[task] then
+            installed[task] = true
+            task.step = wrap(function(token, current, _, stage)
+                return token == nil and stage or "task:panel:" .. current.entry.module.id .. ":" .. tostring(token)
+            end, task.step)
+        end
+    end
     for _, entry in ipairs(context.panels) do
         local module = entry.module
         if module and not installed[module] then

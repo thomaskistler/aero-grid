@@ -9,7 +9,7 @@ return function(load)
     local primitives = load("lib/primitives.lua", load("lib/reading.lua"))
     local api = load("@support/scheduler_panel_api.lua")
     local decl = { class = "normal", first = "begin", kinds = { steady = true }, stages = {} }
-    for stage, bound in pairs({ begin = 1540, frame = 3300, controls = 1410, reflow = 3370, publish = 890 }) do
+    for stage, bound in pairs({ begin = 1540, frame = 3300, controls = 1410, reflow = 3390, publish = 890 }) do
         decl.stages[stage] = { fixed = 0, perUnit = bound, maxUnits = 1 }
     end
     local function setup(target, rect, span, count, visual, variant)

@@ -88,6 +88,16 @@ def patch_mode(source, mode):
     return replace_once(source, 'local SCHEDULER_MODE = "mixed"', f'local SCHEDULER_MODE = "{mode}"', "main.lua")
 
 
+def patch_owners(source, owners):
+    """Override only named legacy owners in the isolated native image."""
+    for task_id in owners:
+        if not re.fullmatch(r"(?:panel|service):[\w-]+", task_id):
+            raise ValueError(f"Invalid scheduler owner: {task_id}")
+        source = replace_once(source, f'["{task_id}"] = "legacy"',
+                              f'["{task_id}"] = "new"', "scheduler_host.lua")
+    return source
+
+
 def patch_loader(source):
     for old, new in LOADER_PATCHES:
         source = replace_once(source, old, new, "dashboard_loader.lua")

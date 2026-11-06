@@ -37,6 +37,8 @@
 ---@field reading? number Last applied reading.
 ---@field stateName string Current resolved state name.
 ---@field settings AeroGridResolvedMetricSettings
+---@field refreshWork? table Frozen readings and pending refresh stage.
+---@field used? integer Granted units consumed by the last task step.
 
 local metric = {
     id = "metric",
@@ -113,6 +115,21 @@ local metric = {
             default = "cyan",
             choices = { "cyan", "green", "amber", "orange" },
         },
+    },
+}
+
+local reflow, geometry, applyGeometry
+
+metric.decl = {
+    class = "normal",
+    first = "prepare",
+    kinds = { steady = true },
+    stages = {
+        prepare = { fixed = 0, perUnit = 600, maxUnits = 1 },
+        geometry = { fixed = 0, perUnit = 3720, maxUnits = 1 },
+        layout = { fixed = 0, perUnit = 1290, maxUnits = 1 },
+        render = { fixed = 0, perUnit = 830, maxUnits = 1 },
+        apply = { fixed = 0, perUnit = 1030, maxUnits = 1 },
     },
 }
 
@@ -530,19 +547,16 @@ function metric.apply(context, drawn)
     end
 end
 
---- Advance the panel, repainting only when something drawn changed.
----@param context AeroGridMetricContext
-function metric.refresh(context)
-    if not context.feed then
-        return
-    end
+local function preparePrecision(context)
     local digits = metric.digitsFor(context)
     if digits ~= context.sampleDigits then
         context.sampleDigits = digits
         context.sample = metric.widestSample(context.settings, digits)
-        metric.update(context, context.rect)
-        context.rendered = nil
+        return true
     end
+end
+
+local function prepareSupporting(context)
     if context.layout.supporting then
         local first = metric.detailText(context)
         local second = context.metrics[3] and metric.secondaryText(context) or nil
@@ -557,14 +571,117 @@ function metric.refresh(context)
             if context.unit then
                 context.unit:set({ text = unit })
             end
-            metric.update(context, context.rect)
-            context.rendered = nil
+            return true
         end
+    end
+end
+
+--- Advance the panel, repainting only when something drawn changed.
+---@param context AeroGridMetricContext
+function metric.refresh(context)
+    if context.refreshWork then
+        context.refreshWork, context.rendered = nil, nil
+    end
+    if not context.feed then
+        return
+    end
+    if preparePrecision(context) then
+        metric.update(context, context.rect)
+        context.rendered = nil
+    end
+    if prepareSupporting(context) then
+        metric.update(context, context.rect)
+        context.rendered = nil
     end
     local changed, drawn = context.primitives.changed(context, metric.render)
     if changed then
         metric.apply(context, drawn)
     end
+end
+
+local function snapshot(feed)
+    if feed then
+        return {
+            available = feed.available,
+            value = feed.value,
+            stale = feed.stale,
+            precision = feed.precision,
+            unitText = feed.unitText,
+        }
+    end
+end
+
+local function frozenRefresh(context, fn)
+    local work = context.refreshWork
+    local feed, detail, secondary = context.feed, context.detailFeed, context.secondaryFeed
+    context.feed, context.detailFeed, context.secondaryFeed = work.feed, work.detail, work.secondary
+    local ok, first, second = pcall(fn, context)
+    context.feed, context.detailFeed, context.secondaryFeed = feed, detail, secondary
+    if not ok then
+        error(first, 0)
+    end
+    return first, second
+end
+
+local function prepareTask(context)
+    local precision, supporting = preparePrecision(context), prepareSupporting(context)
+    if precision or supporting then
+        context.rendered = nil
+        return true
+    end
+end
+
+local function layoutTask(context)
+    applyGeometry(context, context.rect, context.refreshWork.area)
+end
+
+local function geometryTask(context)
+    context.refreshWork.area = geometry(context, context.rect)
+end
+
+local function renderTask(context)
+    return context.primitives.changed(context, metric.render)
+end
+
+function metric.stageOf(context)
+    return context.refreshWork and context.refreshWork.stage or "prepare", 1
+end
+
+function metric.step(context, _, stage)
+    context.used = 0
+    if stage ~= metric.stageOf(context) then
+        return nil, true
+    end
+    context.used = 1
+    if stage == "prepare" then
+        if not context.feed then
+            return
+        end
+        context.refreshWork = {
+            feed = snapshot(context.feed),
+            detail = snapshot(context.detailFeed),
+            secondary = snapshot(context.secondaryFeed),
+        }
+        context.refreshWork.stage = frozenRefresh(context, prepareTask) and "geometry" or "render"
+    elseif stage == "geometry" then
+        frozenRefresh(context, geometryTask)
+        context.refreshWork.stage = "layout"
+    elseif stage == "layout" then
+        frozenRefresh(context, layoutTask)
+        context.refreshWork.stage = "render"
+    elseif stage == "render" then
+        local changed, drawn = frozenRefresh(context, renderTask)
+        if not changed then
+            context.refreshWork = nil
+            return
+        end
+        context.refreshWork.drawn, context.refreshWork.stage = drawn, "apply"
+    else
+        metric.apply(context, context.refreshWork.drawn)
+        context.refreshWork = nil
+        return
+    end
+    return nil, true
 end
 
 --- Convert a reading into a 0..1 fraction of the configured range.
@@ -980,6 +1097,7 @@ end
 ---@param value any
 ---@param stale? boolean
 function metric.setValue(context, value, stale)
+    context.refreshWork = nil
     -- Kept as the way a caller forces a reading, and routed through the same
     -- render-and-paint path so it cannot draw something `render` would not.
     context.forced = { value = value, stale = stale == true }
@@ -995,12 +1113,12 @@ end
 --- and objects whose region returned are shown again.
 ---@param context AeroGridMetricContext
 ---@param rect AeroGridRect
-function metric.update(context, rect)
+geometry = function(context, rect)
     if not context.unit and (rect.w > context.rect.w or rect.h > context.rect.h) and not context.suppressSensorUnit then
         context.unitText = context.feed and context.feed.unitText or ""
     end
     local theme = context.theme
-    local area = metric.regionsFor(
+    return metric.regionsFor(
         theme,
         context.themeBuilder,
         rect,
@@ -1009,6 +1127,10 @@ function metric.update(context, rect)
         context.sample,
         context.unitText
     )
+end
+
+applyGeometry = function(context, rect, area)
+    local theme = context.theme
     if not context.unit and area.showUnit and (rect.w > context.rect.w or rect.h > context.rect.h) then
         context.unit = context.primitives.unit(context.panel.root, theme, {
             x = area.valueX,
@@ -1098,6 +1220,17 @@ function metric.update(context, rect)
             context.radial.radius = area.radius
         end
     end
+end
+
+reflow = function(context, rect)
+    applyGeometry(context, rect, geometry(context, rect))
+end
+
+function metric.update(context, rect)
+    if context.refreshWork then
+        context.refreshWork, context.rendered = nil, nil
+    end
+    reflow(context, rect)
 end
 
 return metric

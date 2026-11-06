@@ -95,6 +95,9 @@ host.PANEL_BOUNDS = {
 --- Declared fixed cost of a callback at 16 panels (contracts, callback overhead).
 host.OVERHEAD = { steady = 1250, background = 1130, ["editor-build"] = 2400 }
 
+--- Reserve registration/validation before admitting scheduled work.
+host.PANEL_ENROLL_COST = 4000
+
 --- Declared cost of the head work `pumpFlight` runs before the scheduler: the
 --- reset poll and the flight tick (which stay legacy at the head until R4).
 host.HEAD_COSTS = { reset = 620, tick = 3600 }
@@ -115,6 +118,7 @@ function host.attach(context, options)
         overhead = host.OVERHEAD,
         headCosts = host.HEAD_COSTS,
         head = 0,
+        panelSetup = 0,
         active = false,
         waiting = {},
         registeredTasks = {},
@@ -225,9 +229,10 @@ function host:verify(context)
         local key = "panel:" .. entry.module.id
         local owner = self.owners[key]
         local task = self.panelTasks[entry]
+        local pending = self.pendingPanels and self.pendingPanels[entry]
         local message
         if owner == "new" then
-            if not entry.failed and (not task or not self.scheduler.byId[task.id]) then
+            if not entry.failed and not pending and (not task or not self.scheduler.byId[task.id]) then
                 message = key .. " is owned by the scheduler but has no task"
             end
         else
@@ -242,6 +247,7 @@ end
 
 --- Preserve releases of surviving placements through editor changes and service
 --- subscription changes. Retire removed placements before their boxes are reused.
+--- Enroll at most one placement per callback; declarations are validated at add.
 ---@param context table
 ---@return string?
 function host:syncPanels(context)
@@ -257,25 +263,36 @@ function host:syncPanels(context)
             self.panelTasks[entry] = nil
         end
     end
+    local enrolled, pending = false, {}
     for _, entry in ipairs(context.panels) do
         if present[entry] and not self.panelTasks[entry] then
-            local ok, task = pcall(context.panelHost.task, entry)
-            if not ok then
-                return "panel:" .. entry.module.id .. " is owned by the scheduler but has no task: " .. tostring(task)
+            if enrolled then
+                pending[entry] = true
+            else
+                self.panelSetup = host.PANEL_ENROLL_COST
+                local ok, task = pcall(context.panelHost.task, entry)
+                if not ok then
+                    return "panel:"
+                        .. entry.module.id
+                        .. " is owned by the scheduler but has no task: "
+                        .. tostring(task)
+                end
+                task.id = "panel:" .. entry.placement.id
+                local accepted, reason = self.scheduler:add({
+                    id = task.id,
+                    decl = task.decl,
+                    instance = task,
+                    due = entry.nextRefresh,
+                })
+                if not accepted then
+                    return task.id .. ": " .. reason
+                end
+                self.panelTasks[entry] = task
+                enrolled = true
             end
-            task.id = "panel:" .. entry.placement.id
-            local accepted, reason = self.scheduler:add({
-                id = task.id,
-                decl = task.decl,
-                instance = task,
-                due = entry.nextRefresh,
-            })
-            if not accepted then
-                return task.id .. ": " .. reason
-            end
-            self.panelTasks[entry] = task
         end
     end
+    self.pendingPanels = next(pending) and pending or nil
 end
 
 --- A new layout or service registry replaces the service instances: drop the tasks
@@ -347,18 +364,19 @@ end
 ---@param context table
 ---@return boolean
 function host:ready(context)
+    self.panelSetup = 0
     local telemetry = context.serviceRuntime and context.serviceRuntime.byId.telemetry
     local taskRevision = telemetry and telemetry.schedulerRevision or 0
     local changed = self.checked ~= context.panels
         or self.registry ~= context.serviceRuntime
         or context.panelTasksDirty
         or self.taskRevision ~= taskRevision
-    if not changed and self.waiting[1] == nil then
+    if not changed and not self.pendingPanels and self.waiting[1] == nil then
         return true
     end
     local message
     if self.scheduler then
-        local panelsChanged = self.checked ~= context.panels or context.panelTasksDirty
+        local panelsChanged = self.checked ~= context.panels or context.panelTasksDirty or self.pendingPanels ~= nil
         if panelsChanged then
             message = self:syncPanels(context)
         end
@@ -389,7 +407,7 @@ end
 ---@return table? legacy accounting
 function host:begin(kind)
     self.active = true
-    self.legacy.spent = 0
+    self.legacy.spent = self.panelSetup
     if self.probe then
         self.probe:before(kind, getTime(), self.head, self.mode == "legacy")
     end

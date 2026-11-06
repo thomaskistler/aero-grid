@@ -333,6 +333,18 @@ Metric separates validation/subscriptions, fitted frame creation, and controls
 with publication. Pending geometry changes use separate reflow/publication
 steps; ordinary construction does not add an empty publication callback.
 
+Metric also exposes a scheduler-only refresh adapter: prepare a frozen copy of
+the three readings, resolve geometry if needed, apply geometry, render and
+paint. Geometry resolution and placement are separate bounded stages. Resizes,
+forced values and synchronous refreshes invalidate a pending frame; a stale
+planned stage consumes no work. Its production owner remains legacy until the
+remaining callback/lifecycle gates pass.
+
+Scheduler-owned placements enroll one per callback with an explicit setup
+reservation. Existing placements retain their releases, and pending enrollment
+does not recreate service tasks or reset their recording cadence. Hidden panels
+remain ineligible for refresh.
+
 Put the module at `panels/<type>.lua` and reference that type in a layout.
 Regular panels declare `supportedSpans = { "any" }` and adapt their contents to
 every in-bounds span of the 4 x 4 grid. Use an explicit span list when there is a
