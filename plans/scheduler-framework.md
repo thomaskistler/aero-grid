@@ -3480,7 +3480,7 @@ backup-recovered and edited documents, including 31-character hash/escaped
 filenames, long quoted/unquoted hash scans, comments and nested legacy sequences.
 The UI charges the current store bound plus 200; command validation/start costs
 at most 552 against 800, including a real configured Sticky L63 output.
-Seven-panel complete settings callbacks peak at 8574; whole native scenarios
+Seven-panel complete settings callbacks peak at 8857; whole native scenarios
 peak at 12417. Hidden panels remain excluded.
 
 Return, fullscreen loss and explicit close cannot orphan a confirmed save:
