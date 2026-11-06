@@ -3860,3 +3860,25 @@ Companion 2.12 remain ineligible. Lua53/int32 editor units, actual widget
 admission/cancellation, shared-host eligibility and all 38 audit-tool tests pass.
 Unchanged strict reset remains 13900 with its two original first-arm XFAILs;
 its assertions and the existing full-editor loader guard are unchanged.
+
+## 69. Service initialization and fixed loader bookkeeping admission (R6)
+
+Theme catalog validation, header/panel migration, panel-token dispatch and service
+initialization now reserve 1800/300/400/250/1200 respectively before service-only
+admission. Partial registries can be served before Telemetry exists; the optional
+poll cap is applied only once that service has been constructed. Error reporting
+and module failure semantics are unchanged.
+
+Actual-source native dense/error loading and Flight/Smart/session-reset captures
+pass the complete callback and declared loader-atom gates. Whole maxima are
+6198, 3072, 10801 and 10565 respectively. Lua53 loading/theme/host regressions
+pass, including admission with an initially empty registry. Panel preparation,
+validation and construction keep their separate gates.
+
+Integrated editor input tap/cancel/keys retain passing admitted callback gates.
+The sixteen-panel capture's legacy steady maximum remains 23134, not an input
+atom or an activated-owner pass. The broad editor test still has the recorded
+fullscreen-return long-press readiness failure; its assertions remain intact.
+Host invalid-metadata tests explicitly request panel revalidation and retire the
+injected missing-step task before checking fresh admission, since loader callbacks
+now legitimately enroll services before those tests mutate metadata.

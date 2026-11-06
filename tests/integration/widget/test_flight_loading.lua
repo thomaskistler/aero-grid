@@ -34,7 +34,7 @@ local function create()
     )
 end
 local first, second = create(), create()
-local seen, waiting, replaced, maximum = {}, false, false, 0
+local seen, waiting, replaced, partialRuntime, maximum = {}, false, false, false, 0
 local expectedArmed = "SFv"
 local function step(context, callback)
     if context.stage then
@@ -54,6 +54,7 @@ local function step(context, callback)
         replaced = true
     end
     local runtime = context.serviceRuntime
+    local initializing = context.stage == "services" and runtime and not runtime.byId.telemetry
     if runtime and runtime.byId.armed then
         local owner = context.flightBroker
         assert(owner.documentLoaded and (owner.document and owner.document.armed) == expectedArmed)
@@ -69,6 +70,10 @@ local function step(context, callback)
     local ok, message = pcall(callback, context)
     debug.sethook()
     assert(ok, message)
+    if initializing then
+        assert(context.scheduler.lastPlan.kind == "loader", "empty service registries must admit bounded setup work")
+        partialRuntime = true
+    end
     maximum = math.max(maximum, instructions)
     assert(instructions <= 15000, "staged Flight loading callback exceeded budget: " .. instructions)
 end
@@ -81,7 +86,7 @@ for _ = 1, 2000 do
     step(second, definition.background)
 end
 assert(not first.stage and not first.reloadState and not second.stage and not second.reloadState)
-assert(waiting and replaced and not first.flightPublicationJob)
+assert(waiting and replaced and partialRuntime and not first.flightPublicationJob)
 assert(first.flightBroker == second.flightBroker and first.flightBroker.document.revision == 7)
 assert(first.flightBroker.document.flight.history == nil)
 assert(#first.errors == 0 and #second.errors == 0)

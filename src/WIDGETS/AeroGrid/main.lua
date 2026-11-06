@@ -1076,7 +1076,10 @@ local function updateServices(context, legacy)
         return nil
     end
 
-    registry.byId.telemetry.pollCap = context.flightPolled and 4 or nil
+    local telemetry = registry.byId.telemetry
+    if telemetry then
+        telemetry.pollCap = context.flightPolled and 4 or nil
+    end
     local admit = legacy and legacy.admit
     if not admit and context.schedulerHost then
         admit = context.schedulerHost.legacy.admit
