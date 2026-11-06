@@ -328,14 +328,10 @@ local function candidateSpans(module)
             end
             local width, height
             if type(span) == "string" then
-                width, height = string.match(span, "^(%d+)x(%d+)$")
+                width, height = string.match(span, "^([1-4])x([1-4])$")
             end
             width, height = tonumber(width), tonumber(height)
-            if
-                width and height
-                and width >= 1 and width <= 4 and height >= 1 and height <= 4
-                and span == tostring(width) .. "x" .. tostring(height)
-            then
+            if width and height then
                 seen[width * 8 + height] = true
             end
         end
