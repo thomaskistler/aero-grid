@@ -14,12 +14,21 @@ EVT_VIRTUAL_EXIT = 9106
 
 local function input(event, touch)
     local wasModal = context.locationDetails ~= nil
+    local modalCallback = wasModal and lvgl.isFullScreen()
+    local scheduling, admitted = context.schedulerHost
+    local finish = scheduling.finish
+    scheduling.finish = function(self, kind)
+        admitted = kind
+        return finish(self, kind)
+    end
     local dispatch = context.panelHost.dispatch
     context.panelHost.dispatch = function(entry, operation, ...)
         assert(not wasModal or operation ~= "refresh", "location details must not refresh hidden panels")
         return dispatch(entry, operation, ...)
     end
     definition.refresh(context, event, touch)
+    scheduling.finish = finish
+    assert(not modalCallback or admitted == "modal-location", "location input and idle must retain service eligibility")
     context.panelHost.dispatch = dispatch
     fixture.lvglMock.settle()
 end

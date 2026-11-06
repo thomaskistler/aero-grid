@@ -1829,9 +1829,8 @@ local function refresh(context, widgetEvent, touchState)
                 if wasLogViewer then
                     updateModalServices(context, context.logViewerModule.WORK_BOUNDS.input, "modal-log")
                 end
-                if wasLocation then
-                    updateModalServices(context, 300, "modal-location")
-                end
+            elseif wasLocation then
+                updateModalServices(context, 300, "modal-location")
             end
             return
         end

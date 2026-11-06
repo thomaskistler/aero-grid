@@ -3179,3 +3179,13 @@ same pre-existing broker-registration high finding on1520866 after the seventh
 service kind; the R4 follow-up is bounding enrollment rather than inflating its
 cap. Theme/header building, reflow, error/lifecycle callbacks and owning-service
 admission remain R6 gates. This slice does not enable them or flip owners.
+
+## 53. Location input retains measured service admission (R5 correction)
+
+The location-input service branch was incorrectly nested under log-viewer
+input, so only location idle callbacks actually admitted services. Location
+input/dismissal now uses its existing measured 300 prior-work charge and
+`modal-location` kind independently. A regression first reproduced the missing
+admission, then passed while still rejecting hidden panel refresh. Native
+`modal-location` passes with a 3021 complete modal callback maximum and 9532
+across the whole scenario. No new kind, bound, owner or recording policy changed.
