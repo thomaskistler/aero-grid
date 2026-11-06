@@ -1130,6 +1130,15 @@ local function advanceLoading(context)
     loader.advanceLoad(context)
 end
 
+local function advanceLifecycle(context, operation)
+    local lifecycle = context.dashboardLifecycle
+    local bound = lifecycle.workBound(context, operation)
+    if bound then
+        updateModalServices(context, bound, "loader")
+    end
+    lifecycle[operation](context)
+end
+
 local function advanceFlightJob(context)
     if context.pendingFlightError then
         updateModalServices(context, 1500, "loader")
@@ -1794,13 +1803,13 @@ local function refresh(context, widgetEvent, touchState)
         context.reloadState = "clear"
     end
 
-    -- A reload takes two callbacks on purpose. EdgeTX defers the cleanup that
+    -- Retirement and rebuilding use separate callbacks. EdgeTX defers cleanup that
     -- follows `clear()` until after the callback returns, and that cleanup
     -- invalidates every object in the cleared object's child list, including
     -- ones created after the clear in the same callback. Anything rebuilt here
     -- would therefore be swept before it was ever drawn.
     if context.reloadState == "clear" then
-        context.dashboardLifecycle.retirePage(context)
+        advanceLifecycle(context, "retirePage")
         return
     end
 
@@ -1977,7 +1986,7 @@ local function refresh(context, widgetEvent, touchState)
         end
     end
     if context.appRebuild then
-        context.dashboardLifecycle.advanceAppRebuild(context)
+        advanceLifecycle(context, "advanceAppRebuild")
         return
     end
 
@@ -2029,7 +2038,7 @@ local function background(context)
         return
     end
     if context.reloadState == "clear" then
-        context.dashboardLifecycle.retirePage(context)
+        advanceLifecycle(context, "retirePage")
         return
     elseif context.reloadState == "rebuild" then
         context.dashboardLifecycle.rebuildPage(context)
@@ -2039,6 +2048,9 @@ local function background(context)
         advanceLoading(context)
         return
     elseif context.reflowIndex then
+        return
+    elseif context.appRebuild then
+        advanceLifecycle(context, "advanceAppRebuild")
         return
     end
     if context.schedulerHost then

@@ -429,6 +429,19 @@ def scenarios():
             expectedError=("Model settings: injected opening identity failure" if mode == "identity" else
                 "Model settings: Cannot load model settings: Unsupported model settings schema; expected version 1; "
                 "Unsupported model settings schema; expected version 1" if mode == "invalid" else None))
+    result["lifecycle-admission-background"] = dict(result["lifecycle-app-output"], phases=[
+        dict(phase, kind="background", action="lifecycle-app-background") if phase["name"] == "app-rebuild"
+        else dict(phase, kind="background") if phase["name"] == "retire" else dict(phase)
+        for phase in result["lifecycle-app-output"]["phases"]
+    ])
+    result["lifecycle-retire-admission-16"] = dict(result["metric-16"], fullscreen=True,
+        owners=["panel:metric"], phases=[
+            {"name": "settle", "kind": "refresh", "callbacks": 80, "step": 5, "perCall": 1},
+            {"name": "retire", "kind": "refresh", "action": "lifecycle-retire",
+             "callbacks": 400, "step": 5, "perCall": 1, "trace": True},
+            {"name": "retire-check", "kind": "refresh", "action": "check-lifecycle",
+             "callbacks": 1, "step": 5, "perCall": 1},
+        ])
     result["modal-log-recording"] = dict(result["modal-log"], recipe="chart", sources=1, expected=2,
         settings=True, layout=custom_layout([
             chart_cell("chart", 0, 2, [1]),
@@ -681,12 +694,13 @@ def prepare(capture, name, spec, sd, mode="legacy"):
     (widget / "main.lua").write_text(patch_mode(patch_main((WIDGET / "main.lua").read_text()), mode))
     if spec.get("lifecycleDrain"):
         source = (widget / "main.lua").read_text()
-        anchor = '    if context.modelSettingsUi then\n        local bound = context.modelSettingsUiModule.workBound(context)\n'
+        anchor = ('    if context.modelSettingsUi then\n'
+                  '        local bound = context.modelSettingsUiModule.workBound(context, widgetEvent)\n')
         if source.count(anchor) != 1:
             raise RuntimeError("Lifecycle settings drain requires one foreground modal gate")
         source = source.replace(anchor,
             '    if _G.AUDIT_LIFECYCLE_DRAIN and context.reloadState == "clear" then\n'
-            '        context.dashboardLifecycle.retirePage(context)\n'
+            '        advanceLifecycle(context, "retirePage")\n'
             '        return\n'
             '    end\n' + anchor)
         (widget / "main.lua").write_text(source)

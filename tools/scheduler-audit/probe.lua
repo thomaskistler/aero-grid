@@ -88,6 +88,15 @@ local function finish(label, raw, leak)
     if type(label) ~= "string" then
         label = "unlabelled"
     end
+    if P.lifecycleServiceOnly or P.lifecycleOperation then
+        gate(
+            not string.match(label, "^task:panel:")
+                and not string.match(label, "^panel:[^:]+:refresh")
+                and not string.match(label, "^panel:[^:]+:background")
+                and not string.match(label, "^chart:"),
+            "lifecycle callback dispatched hidden panel work: " .. label
+        )
+    end
     local loadBound = loaderDeclarations[label]
         or ({
             ["load:theme-read"] = 240,
@@ -417,6 +426,10 @@ local function install(context)
             if kind == "editor-input" then
                 P.editorInputAdmission = true
             end
+            P.lifecycleAdmissionKind = kind
+            if kind == "loader" and (context.reloadState == "clear" or context.appRebuild) then
+                P.lifecycleServiceOnly = true
+            end
             return kind or "steady"
         end)
         wrapField(scheduling, "syncPanels", "scheduler:panels")
@@ -501,6 +514,12 @@ local function install(context)
                         P.lifecycleBounds = P.lifecycleBounds or {}
                         P.lifecycleBounds["lifecycle:" .. name .. ":" .. phase] = lifecycle.workBound
                             and lifecycle.workBound(current, name)
+                        P.lifecycleOperation = name .. ":" .. phase
+                        local bound = P.lifecycleBounds["lifecycle:" .. name .. ":" .. phase]
+                        gate(
+                            (bound ~= nil) == (P.lifecycleAdmissionKind == "loader"),
+                            P.lifecycleOperation .. " has incorrect administrative service admission"
+                        )
                         return phase
                     end
                 end
@@ -929,6 +948,10 @@ actions = {
         P.lifecyclePage = context.page
         context.reloadState = "clear"
     end,
+    ["lifecycle-app-background"] = function(context)
+        actions["lifecycle-app"](context)
+        context.appRebuild = { entry = context.panels[1], index = 1 }
+    end,
     ["lifecycle-cancel"] = function(context)
         assert(context.appRebuild and context.pendingConstruction, "cancel must interrupt actual partial construction")
         P.lifecyclePartial = context.pendingConstruction
@@ -1342,6 +1365,7 @@ local function runCallback(kind, context, fn, e, t)
     depth, topSum, top, topLabels = 0, 0, {}, {}
     local surface = callbackSurface(kind, context)
     P.editorInputSeen, P.editorInputAdmission = nil, nil
+    P.lifecycleOperation, P.lifecycleAdmissionKind, P.lifecycleServiceOnly = nil, nil, nil
     local c0 = count()
     fn(context, e, t)
     local c1 = count()
@@ -1349,7 +1373,26 @@ local function runCallback(kind, context, fn, e, t)
     if P.editorInputSeen or P.editorInputAdmission then
         surface = "editor-input"
     end
+    if P.lifecycleOperation then
+        surface = "lifecycle:" .. P.lifecycleOperation
+        for _, label in ipairs(topLabels) do
+            gate(
+                not string.match(label, "^task:panel:")
+                    and not string.match(label, "^panel:[^:]+:refresh")
+                    and not string.match(label, "^panel:[^:]+:background")
+                    and not string.match(label, "^chart:"),
+                surface .. " refreshed a hidden panel: " .. label
+            )
+        end
+    end
     local total = c1 - c0 - K_CALLBACK
+    if P.lifecycleOperation then
+        gate(total <= 15000, surface .. " exceeds the complete lifecycle callback ceiling: " .. total)
+        if P.lifecycleServiceOnly then
+            local fitted = math.ceil(((total - topSum) * 1.10 + 50) / 10) * 10
+            gate(fitted <= 2400, surface .. " exceeds the service-only fixed overhead: " .. fitted)
+        end
+    end
     if surface and string.sub(surface, 1, 7) == "loader:" then
         gate(total <= 15000, surface .. " exceeds the complete loading callback ceiling: " .. total)
         for _, label in ipairs(topLabels) do

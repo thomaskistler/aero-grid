@@ -3952,6 +3952,7 @@ are unchanged and progress past the previous premature reload failures. The
 remaining RX resized-preview glyph assertion observes a live feed but no panel
 refresh while production panel ownership is still legacy; it remains a final
 owner-activation gate rather than a passing full-editor claim.
+
 ## 72. Editor adoption and asynchronous Flight registration (R5/R6 interface)
 
 The actual saved-layout adoption call site now prefers
@@ -3991,3 +3992,67 @@ Constructor cost proof alone therefore does not close their parity/activation
 gate. No Navigation behavior, reset assertion or instruction ceiling was changed.
 Native loader declaration tracking now follows exact typed/staged labels so
 future admission cannot evade its declared-charge check.
+
+## 74. Service-only administrative dashboard lifecycle admission (R6)
+
+Foreground and background retirement now reserve the pre-mutation lifecycle
+charge and run services through the existing `loader` service-only kind
+(fixed overhead 2400). An already-started App reconstruction also advances in
+background instead of falling through to hidden panel callbacks. The common
+helper does not alter production owners, head policy, task deadlines, or the
+loader/Flight/editor/modal branches.
+
+The measured administrative declarations from section 64 remain unchanged:
+cancel 100, empty settings/menu gates 100, one placement or partial retirement
+200, page release 200, finalize 100, App retirement 250, successful App finish
+150. Native complete-operation maxima remain 24, 7/13, 97/95, 26, 28, 130, and
+44 respectively in these admission fixtures. Their fitted normal charges all
+fit their declarations and the 4000 ceiling.
+
+`prepare`/`build`/`construct`, active settings drain, actual menu close,
+custom destroy callbacks, and error presentation still return `nil`.
+Reflow remains ineligible. `rebuildPage`'s standalone declaration is not used
+to admit the combined `rebuildPage` + `beginLoad` callback. Constructor and
+combined-rebuild eligibility require separate enclosing proofs.
+
+Native fixtures cover foreground and background App reconstruction/retirement,
+sixteen scheduler-owned hidden placements, partial-construction cancellation,
+and a confirmed save draining through persistence/publication before cleanup.
+The save-drain injection targets the foreground modal gate explicitly; the
+older anchor had moved to background after Model settings gained event-aware
+work bounds. Every lifecycle operation checks actual service-admission presence
+against its pre-mutation declaration. Hidden work checks include nested
+scheduler panel tasks, not just top-level spans. Complete callbacks enforce
+15000, lifecycle atoms enforce fitted 4000 and their declarations, and admitted
+fixed overhead enforces its fitted 2400 allowance.
+
+| Native scenario on `66d3b8d` prerequisites | Whole callback maximum | Lifecycle callback maximum |
+|---|---:|---:|
+| Output foreground App rebuild/retirement | 8132 | 4795 |
+| Output background App rebuild/retirement | 7074 | 4170 |
+| Sixteen-placement retirement | 11129 | 5240 |
+| Partial-construction cancellation | 8496 | 8496 |
+| Confirmed settings-save drain | 8344 | 8344 |
+
+All five captures have empty error lists. Unlabelled lifecycle callback overhead
+peaks at 939 (fitted 1090), below the existing 2400 reservation. The complete
+active settings-drain atom peaks at 1754 (fitted 1980), but stays ineligible in
+this slice rather than borrowing a child save-stage declaration.
+
+The real-widget Lua53/int32 regression verifies both callback paths, actual due
+service execution, no future-deadline rewrites, pending hidden-panel deadlines,
+no panel refresh/background dispatch, and retained constructor/reflow/combined
+rebuild gates. Existing lifecycle/tree-parity, loading, reflow, Flight loading,
+shared-Flight, Model settings admission, and editor-input admission tests pass.
+The readiness fixes from `66d3b8d` are prerequisites; reset assertions and both
+first-arm XFAILs remain unchanged. No constructor eligibility follows from this
+administrative admission: constructor cost proofs alone do not establish timing
+parity for first-arm capture. Strict reset passes at 10800 on both Lua53 and
+int32 with its two original first-arm XFAILs.
+
+```sh
+python3 tools/audit-scheduler.py lifecycle-app-output lifecycle-admission-background lifecycle-retire-admission-16 lifecycle-cancel lifecycle-settings-drain --timeout 240
+build/lua32/lua tests/integration/widget/test_dashboard_lifecycle_admission.lua "$PWD"
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+make test-lua32
+```
