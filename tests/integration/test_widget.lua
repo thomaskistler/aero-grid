@@ -882,6 +882,22 @@ local function testShippedLayout()
         definition.refresh(context)
     end
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+    local galleryReady = false
+    for _ = 1, 2000 do
+        local plan = context.scheduler.lastPlan
+        if
+            context.serviceRuntime.byId.model.revision > 0
+            and entryById(context, "flight-clock").instance.text ~= "--:--"
+            and plan.ran == 0
+            and plan.U > context.scheduler.CEILING - context.scheduler.MARGIN
+        then
+            galleryReady = true
+            break
+        end
+        tick(20)
+        definition.refresh(context)
+    end
+    assert(galleryReady, "gallery did not reach its charged steady state")
 
     -- The altitude metric uses the explicit fixture settings.
     local altitude = entryById(context, "altitude").instance
