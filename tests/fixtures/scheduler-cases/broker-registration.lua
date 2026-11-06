@@ -2,90 +2,128 @@
 
 return function(load)
     local host, panelHost = load("lib/scheduler_host.lua"), load("lib/panel_host.lua")
-    local declaration = { class = "normal", stages = { run = { fixed = 0, perUnit = 3690, maxUnits = 1 } } }
+    local flight, support = load("lib/flight_service.lua"), load("lib/services.lua")
+    local fixture = load("@support/scheduler_flight_fixture.lua")(load)
+    local declaration = { class = "normal", stages = { run = { fixed = 0, perUnit = 3960, maxUnits = 1 } } }
     local cases = {}
     for _, size in ipairs({ 0, 16 }) do
-        for _, action in ipairs({ "enroll", "registry-gap", "partial", "facade", "disable" }) do
+        for _, action in ipairs({
+            "enroll",
+            "registry-gap",
+            "partial",
+            "facade",
+            "model-reset",
+            "session-reset",
+            "handoff",
+            "disable",
+        }) do
             cases[#cases + 1] = {
                 stage = "run",
                 grant = 1,
                 setup = function()
-                    local source = { id = "flight", count = 1, interval = 20, schedulerTasks = {} }
-                    for index, name in ipairs({ "flight", "smart" }) do
-                        source.schedulerTasks[index] = {
-                            id = "service:" .. name,
-                            instance = {
-                                decl = {
-                                    class = "normal",
-                                    stages = { run = { fixed = 0, perUnit = 100, maxUnits = 1 } },
-                                },
-                                interval = index * 20,
-                                want = 1,
-                                step = function()
-                                    return 20
+                    local owner, radio, _, context = fixture("run")
+                    radio.now = 0
+                    local factory = { broker = owner, members = owner.members, revision = 1 }
+                    owner.factory = factory
+                    local function registry(target)
+                        target.flightFactory = factory
+                        local runtime = support.runtime(owner.env)
+                        runtime.host, runtime.modules = target, owner.modules
+                        local facade = flight.new(owner.env, support, runtime)
+                        support.register(runtime, facade, radio.now)
+                        target.serviceRuntime = runtime
+                        return facade
+                    end
+                    local facade = registry(context)
+                    local function attach(target)
+                        target.panels, target.panelHost = {}, panelHost
+                        for index = 1, size do
+                            target.panels[index] = {
+                                placement = { id = "p" .. index },
+                                module = { id = "sample", idle = true },
+                                instance = {},
+                            }
+                        end
+                        local scheduling = host.attach(target, {
+                            mode = "mixed",
+                            load = load,
+                            api = {
+                                log = function(_, message)
+                                    error(message)
                                 end,
                             },
-                        }
+                        })
+                        scheduling.owners = {}
+                        for key, value in pairs(host.OWNERS) do
+                            scheduling.owners[key] = value
+                        end
+                        scheduling.owners["service:flight"], scheduling.owners["service:smart"] = "new", "new"
+                        scheduling.owners["panel:sample"] = "new"
+                        return scheduling
                     end
-                    local enabled = true
-                    local context = { panels = {}, panelHost = panelHost, serviceRuntime = { order = {}, byId = {} } }
-                    context.flightFactory = {
-                        broker = {
-                            schedulerService = function()
-                                return enabled and source or nil
-                            end,
-                        },
-                    }
-                    for index = 1, size do
-                        context.panels[index] = {
-                            placement = { id = "p" .. index },
-                            module = { id = "sample", idle = true },
-                            instance = {},
-                        }
-                    end
-                    local scheduling = host.attach(context, {
-                        mode = "mixed",
-                        load = load,
-                        api = {
-                            log = function(_, message)
-                                error(message)
-                            end,
-                        },
-                    })
-                    scheduling.owners = {
-                        ["service:flight"] = "new",
-                        ["service:smart"] = "new",
-                        ["panel:sample"] = "new",
-                    }
-                    local function ready()
+                    local scheduling = attach(context)
+                    local function ready(target, scheduler)
                         local previous = getTime
                         getTime = function()
-                            return 0
+                            return radio.now
                         end
-                        local ok, result = pcall(scheduling.ready, scheduling, context)
+                        local ok, result = pcall(scheduler.ready, scheduler, target)
                         getTime = previous
                         assert(ok, result)
                         return assert(result)
                     end
+                    local stable = owner:schedulerService(context)
+                    local state = {
+                        owner = owner,
+                        context = context,
+                        scheduling = scheduling,
+                        stable = stable,
+                        facade = facade,
+                        action = action,
+                        size = size,
+                        ready = ready,
+                    }
                     if action ~= "enroll" then
-                        ready()
-                        context.serviceRuntime = { order = {}, byId = {} }
+                        ready(context, scheduling)
+                        assert(scheduling.scheduler:reschedule("service:flight", 47))
+                        assert(scheduling.scheduler:reschedule("service:smart", 83))
                         if action == "registry-gap" then
                             context.serviceRuntime = nil
+                        elseif action == "partial" then
+                            context.serviceRuntime = { order = {}, byId = {} }
                         elseif action == "facade" then
-                            context.serviceRuntime.order[1] =
-                                { id = "flight", count = 1, schedulerTasks = source.schedulerTasks }
-                        elseif action == "disable" then
-                            enabled = false
+                            state.replaced = registry(context)
+                        elseif action == "model-reset" then
+                            owner.taskService.failed, owner.failed = true, true
+                            owner:reset("other.yml")
+                            context.serviceRuntime = nil
+                        elseif action == "session-reset" then
+                            owner:resetSession(1)
+                            context.serviceRuntime = nil
+                        elseif action == "disable" or action == "handoff" then
+                            owner:disableScheduler(context)
+                            context.serviceRuntime = nil
+                            if action == "handoff" then
+                                ready(context, scheduling)
+                                local replacement = {}
+                                state.replaced = registry(replacement)
+                                local nextScheduling = attach(replacement)
+                                owner:enableScheduler(replacement)
+                                state.previous = context
+                                state.previousScheduling = scheduling
+                                state.context, state.scheduling = replacement, nextScheduling
+                                context, scheduling = replacement, nextScheduling
+                            end
                         end
                     end
                     return {
                         step = function()
-                            ready()
+                            ready(context, scheduling)
                             return 1
                         end,
                     },
-                        0
+                        radio.now,
+                        state
                 end,
             }
         end

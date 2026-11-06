@@ -418,7 +418,8 @@ scheduler-owned previews never also use legacy refresh.
 An enabled owning Flight broker supplies a stable scheduler registration source
 across dashboard reloads. Host resynchronization preserves its releases and
 deadlines while retiring replaced dashboard services; Flight facades do not
-register duplicate tasks.
+register duplicate tasks. Same-owner model/session resets retain release times;
+explicit cross-host handoff removes old releases and enrolls afresh instead.
 
 Modal service eligibility is explicit in `scheduler_host.SERVICE_KINDS`;
 only steady-eligible service declarations inherit these kinds, never panels.

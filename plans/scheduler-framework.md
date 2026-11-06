@@ -2939,21 +2939,55 @@ retire/rebuild normally. Disabling or changing task ownership removes the
 canonical releases. Verification also covers the canonical source when there
 is no runtime facade.
 
-The complete native registration fixture covers initial enrollment, a nil
-registry gap, partial registry, facade replacement and disable, with zero and
-sixteen idle placements. The initial implementation reached 3953 and did not
+The complete native registration fixture now uses the actual enabled Flight
+broker, its private Control/Telemetry/Smart runtime, real dashboard Flight
+facades and `broker:schedulerService(context)`, not a service-like stand-in.
+Sixteen cases cover initial enrollment, a nil registry gap, partial registry,
+facade replacement, model reset, session reset, handoff and disable, with zero
+and sixteen idle placements. The initial implementation reached 3953 and did not
 have the required margin below the 4000 atom cap. A single `ready` call now
 reuses its own completed idle-contract synchronization rather than validating
 the same idle modules twice. Direct verification still validates contracts.
-Worst complete registration is 3307 against a fitted 3690; idle-only admission
+With the six inherited service kinds in `75dd12f`, actual broker registration
+reaches 3549 native / 3545 Lua32 against a fitted 3960, below the 4000 atom cap.
+Including the exact seventh `editor-drawer` kind and overhead from `f44445b`
+raises native complete registration to 3625. Its required normal declaration is
+4040 (`ceil10(3625 * 1.10 + 50)`), so **the admission gate is not closed**.
+The fixture retains the six-kind 3960 declaration and correctly reports `high`;
+the scheduler case suite must reject that finding until enrollment is bounded.
+The native CLI's exit status alone is not evidence of this gate passing.
+No bound is raised above 4000 and no host logic is changed by this fixture.
+The measured host and panel contract match the parent implementations,
+including inherited service-kind cloning and validation. The measurement includes
+the complete `ready` call, actual canonical getter, declaration cloning,
+registration, verification and clock/error-isolation adapter, not only
+`resync` or the getter. Idle-only admission
 falls to 2187 without changing its existing conservative 3130 declaration.
 No callback can reuse another callback's validation allowance.
 
-The focused int32 unit checks exact due times 47/83 across nil/partial/replaced
-registries, no facade duplication, retirement of an ordinary Model service and
-removal on disable. The fixture isolates host registration with a service-like
-broker source; actual broker activation and combined loader/modal eligibility
-remain separate integration gates.
+| Inherited kinds | Complete ready | Required normal declaration | Gate |
+|---|---:|---:|---|
+| 6 (before drawer) | 3549 native | 3960 | Fits |
+| 7 (with drawer) | 3625 native / Lua32 | 4040 | Blocked |
+| 8 | 3705 Lua32 | 4130 | Blocked |
+| 9 | 3785 Lua32 | 4220 | Blocked |
+| 10 | 3865 Lua32 | 4310 | Blocked |
+
+The last three rows add audit-only kinds in memory, not production declarations,
+to show sensitivity before R6 adds loader/lifecycle eligibility. Additional
+kinds cost about 80 instructions each while enrolling the two tasks. Parent
+integration must separately bound admission rather than increasing the atom cap.
+
+The focused unit checks exact due times 47/83 and task identities across
+nil/partial/replaced registries, model/session reset and idempotent same-owner
+activation. It verifies no facade duplication, retirement of a real Model
+service, actual private arm/motor/Smart polling during a nil-registry gap,
+failure clearing on model reset and removal on disable. Explicit cross-host
+handoff removes the old releases and enrolls afresh on the replacement host;
+absolute deadlines are not transferred. The original host cannot re-enroll the
+broker after handoff. Both int32 Lua and the normal ASCII/Lupa runner pass.
+These passing behavior checks do not waive the admission cost finding or
+combined loader/modal whole-callback eligibility; both remain integration gates.
 
 ```sh
 python3 tools/audit-scheduler.py --framework broker-registration idle-panels --timeout 180
