@@ -4689,6 +4689,7 @@ python3 -m unittest discover -s tools -p test_scheduler_audit.py
 Production changes are confined to `dashboard_loader.lua`. Live/nil scheduler
 ownership, first-arm/reset expectations, ten-tick policy, main and editor are
 unchanged.
+
 ## 87. Fitted editor gates and staged panel Add (R5)
 
 Probe gates for modal log, settings, editor input/paint, drawer opening and
@@ -4719,11 +4720,11 @@ Integration fixtures now wait on state, not elapsed callbacks: the Add picker
 waits for the deferred opener, and chart preview reopens after the Flight
 registration job drains. Neither changed an assertion.
 
-Open: preview retirement sets `panelTasksDirty`, so the host performs a full
-reconciliation that admits only persistent tasks. History is therefore
-suspended during preview (`test_editor_initialization:88`). The host change
-is R6-owned. Drag and the general preview remain to be bounded. Owners, the
-recording policy and the deferred stress assertions are unchanged.
+At this point, preview retirement set `panelTasksDirty`, so the host performed a
+full reconciliation that admitted only persistent tasks. History was suspended
+during preview (`test_editor_initialization:88`); see section 88 for the
+subsequent host fix. Drag and the general preview remain to be bounded. Owners,
+the recording policy and the deferred stress assertions are unchanged.
 
 ## 88. Panel-only host reconciliation (R6)
 
@@ -4773,9 +4774,9 @@ refreshes) is unchanged from baseline. The original 40-callback scenarios
 legitimately run full reconciliation, because services are still enrolling and
 the Telemetry revision changes.
 
-`test_editor_initialization.lua:88` now passes. Its line 119 still fails, as on
-baseline once line 88 is bypassed: one refresh after `close(false)` leaves
-bounded `retirePage` in `clear`. That assertion is unchanged. Host regressions
+`test_editor_initialization.lua:88` now passes. Its cancellation test also
+waits for bounded retirement to reach `rebuild`, checking that the cancelled
+container stays hidden throughout. Host regressions
 cover owned and unowned panels, unchanged service records, no dispatch of the
 removed task, revision escalation, full-job precedence, and late service
 growth or dormant demand replacing panel-only work. In those cases the
