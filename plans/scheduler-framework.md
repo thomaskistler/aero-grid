@@ -1421,3 +1421,88 @@ suites, all measured scheduler cases, Lua32 and the 20 audit-tool tests pass.
 Matched native mixed `chart-max` / `default-gallery` callbacks peak at
 11600 / 11845 instructions. The deferred recording stress failure still
 reproduces at the same line 192 and state recorded in section 18.
+
+## 20. Complete chart frame adapter (R1, ownership still legacy)
+
+`chart.step` now composes frame capture, frozen readings/legend work, axis,
+grid/range preparation, grant-sized traces, flight bands, resume/arm markers
+and explicit double-buffer publication. The synchronous renderer shares the
+same helpers and keeps its original quotas. Task axis work scans at most eight
+boundaries, grid preparation changes one pool slot, and session-marker work
+scans or applies one boundary/marker per release. The previous root remains
+visible until the publication stage. Expired history rolls back the incomplete
+buffer; reset and reflow invalidate a previously planned stage.
+
+| Complete adapter stage | Native worst instructions | Declared charge |
+|---|---:|---:|
+| Frame capture, including cold buffers / cached comparison | 1318 | 1500 |
+| Axis, grants 1 through 8 | 335, 386, 405, 456, 507, 558, 650, 650 | `370 + 60 n` (850 max) |
+| Plot/header/ranges and one grid slot | 1775 | 2010 |
+| Flight-band update | 530 | 640 |
+| Resume marker scan/application | 374 | 470 |
+| Arm marker scan/application | 380 | 470 |
+| Explicit plot-root publication | 205 | 280 |
+| Frozen reading capture / one series | 720 | 850 |
+| Reading width measurement | 656 | 780 |
+| Geometry setup/application | 953 | 1100 |
+| One font candidate | 1130 | 1300 |
+| One position / final header | 2740 | 3070 |
+| Trace selection | 354 | 440 |
+| Projection, grants 1 / 2 in the enclosing-frame cases | 828 / 1215 | 1560 / 2840 |
+| Trace application / bounded coordinate retirement | 661 | 780 |
+| Framework release | 242 | 420 |
+
+The reading and trace declarations share their stage tables with the complete
+adapter and now include its binding margin; these charges supersede sections
+18/19. Projection deliberately retains the heavier subpipeline coverage
+(1252 / 2299 instructions), rather than tightening its bound to the cheaper
+enclosing-frame cases. The native report flags those enclosing projection
+cases as loose. Smaller frame/marker/grid pieces are natural-stage exceptions
+to the 2240 useful-work target. The 4000 atom cap is unchanged.
+
+`chart-frame.lua` drives actual steps to every declared stage, including axis
+finalization at all grants, both layout phases, series/font/projection cursors,
+cold/cached capture, header invalidation, marker creation/finalization, expiry,
+and 4096-coordinate retirement. Its shared fixture uses real packed History
+data and asserts that resume/arm boundaries and a closed flight were recorded.
+Native framework images restore the uninstrumented chart source: otherwise
+the new enclosing dispatcher reaches production probe calls that do not exist
+in the framework image. A Python regression test checks that isolation and
+the shared fixture's packaging.
+
+The integration suite compares complete axis/grid geometry, flight bands,
+resume/arm markers, header/status, traces and root publication with legacy
+output under both projection grants. It also covers cold/cached frames, frozen
+readings/session time, reflow during pending stages, reset before publication,
+expiry rollback, and unavailable History. Chart unit, reading/trace, preview,
+flight-recording and session-reset suites pass, as do Output task, panel
+lifecycle/host, Lua32 and all 21 audit-tool tests.
+
+Verification commands:
+
+```sh
+python3 tools/audit-scheduler.py --framework chart-frame chart-traces chart-readings --timeout 180
+build/lua32/lua tests/unit/lib/test_scheduler_cases.lua "$PWD"
+python3 tools/audit-scheduler.py chart-min chart-max chart-full default-gallery --timeout 180
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+make test-lua32
+```
+
+Matched native mixed callbacks peak at 10638 / 11694 / 11173 / 11845 instructions
+for chart-min / chart-max / chart-full / default-gallery, respectively. These
+still exercise legacy production owners, not scheduler-owned chart execution.
+
+**Eligibility and loader gates remain open.** The recording and independent-arm
+stress suites are not passing: in this tree they can fail earlier at their strict
+loading-callback assertion (`test_chart_recording.lua:93`, callback 30, 15000
+mock instructions). The archived `c280232` baseline reaches the deferred
+live-drawing assertion at line 192 instead. The extra module initialization
+therefore remains an explicit loader-budget gate, not evidence that the old
+stress failure was repaired or reproduced identically. Sharing declarations
+removed an additional initial construction loop; flight-recording passes,
+but that does not close the other loading/stress gates.
+
+No ownership, modal dispatcher, History/Telemetry ten-tick policy, or stress
+assertion has changed. Measured modal/lifecycle/loader accounting, hidden/editor
+preview eligibility and full scheduler-owned callback checks are still required
+before enabling the adapter or claiming the migration complete.

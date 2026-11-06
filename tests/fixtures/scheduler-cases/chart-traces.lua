@@ -3,65 +3,13 @@
 return function(load)
     local chart = load("panels/chart.lua")
     local panelHost = load("lib/panel_host.lua")
-    local services = load("lib/services.lua")
-    local historyService = load("lib/history_service.lua")
-    local builder = load("lib/theme.lua", load("lib/typography.lua"), load("lib/panel_layout.lua"))
-    local primitives = load("lib/primitives.lua", load("lib/reading.lua"))
     local api = load("@support/scheduler_panel_api.lua")
+    local create = load("@support/scheduler_chart_fixture.lua")(load)
     local module = { decl = chart.traceDecl, step = chart.traceStep, stageOf = chart.traceStageOf }
     local function setup(mode, remaining, cursor)
         return function(seed)
             local context = api.withApi(function()
-                local now = 0
-                local runtime = services.runtime(services.environment({
-                    getTime = function()
-                        return now
-                    end,
-                }))
-                local arm =
-                    { key = "SAv", configured = true, available = true, fresh = true, value = true, updatedAt = 0 }
-                runtime.byId.armed = {
-                    state = function()
-                        return arm
-                    end,
-                }
-                runtime.byId.telemetry = {
-                    subscribe = function()
-                        return {}
-                    end,
-                    observe = function() end,
-                }
-                local history = historyService.new(runtime.env, services, runtime)
-                local settings = assert(panelHost.resolveSettings(chart, {
-                    armSwitch = "SAv",
-                    duration = "30s",
-                    timeRange = "rolling",
-                    metrics = { { source = "Q1" }, { source = "Q2" }, { source = "Q3" } },
-                }))
-                local panel = chart.create(api.node(), { x = 0, y = 0, w = 800, h = 480 }, settings, {
-                    theme = api.theme,
-                    themeBuilder = builder,
-                    primitives = primitives,
-                    history = history,
-                    state = function(state, accent)
-                        return builder.state(api.theme, state, accent)
-                    end,
-                })
-                for index = 1, mode == "seek" and 512 or 256 do
-                    now, arm.updatedAt = index * 10, index * 10
-                    history:advance(now)
-                    for series = 1, 3 do
-                        history:sample({
-                            name = "Q" .. series,
-                            value = index % 2 == 0 and index * seed or -index * seed,
-                            kind = "number",
-                            fresh = index % 13 ~= 0,
-                            updatedAt = now,
-                            precision = 0,
-                            unitText = "V",
-                        }, now)
-                    end
-                end
+                local panel = create(seed, { points = mode == "seek" and 512 or 256 })
                 chart.render(panel)
                 chart.ranges(panel)
                 if mode == "block" then

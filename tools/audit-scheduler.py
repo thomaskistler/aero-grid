@@ -301,8 +301,10 @@ def prepare_framework(capture, sd, cases):
     widget = sd / "WIDGETS/AeroGrid"
     audit = widget / "audit"
     shutil.copyfile(PROBE_DIR / "framework-main.lua", widget / "main.lua")
+    shutil.copyfile(WIDGET / "panels/chart.lua", widget / "panels/chart.lua")
     shutil.copyfile(PROBE_DIR / "framework.lua", audit / "framework.lua")
-    for name in ("scheduler_overhead.lua", "scheduler_measure.lua", "scheduler_mixes.lua", "scheduler_panel_api.lua"):
+    for name in ("scheduler_overhead.lua", "scheduler_measure.lua", "scheduler_mixes.lua",
+                 "scheduler_panel_api.lua", "scheduler_chart_fixture.lua"):
         shutil.copyfile(SUPPORT_DIR / name, audit / name)
     (audit / "cases").mkdir()
     for case in cases:

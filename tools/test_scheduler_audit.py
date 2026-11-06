@@ -21,6 +21,21 @@ def load_cli():
 
 
 class InstrumentationTests(unittest.TestCase):
+    def test_framework_measures_uninstrumented_chart_and_packages_shared_fixture(self):
+        cli = load_cli()
+        with tempfile.TemporaryDirectory() as directory:
+            sd = Path(directory)
+            widget = sd / "WIDGETS/AeroGrid"
+            (widget / "panels").mkdir(parents=True)
+            (widget / "audit").mkdir()
+            (widget / "panels/chart.lua").write_text("instrumented chart")
+            with mock.patch.object(cli, "prepare"):
+                cli.prepare_framework(None, sd, [audit.CASE_DIR / "chart-frame.lua"])
+            self.assertEqual((widget / "panels/chart.lua").read_text(),
+                             (audit.WIDGET / "panels/chart.lua").read_text())
+            self.assertEqual((widget / "audit/scheduler_chart_fixture.lua").read_text(),
+                             (audit.SUPPORT_DIR / "scheduler_chart_fixture.lua").read_text())
+
     def test_patches_still_match_the_shipped_sources(self):
         # A refactor that moves an instrumented call site must update the audit.
         for relative, patch in (("main.lua", audit.patch_main), ("lib/dashboard_loader.lua", audit.patch_loader),

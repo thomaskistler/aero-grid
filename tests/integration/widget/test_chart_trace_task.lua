@@ -37,7 +37,7 @@ local settings = assert(panelHost.resolveSettings(chart, {
     duration = "30s",
     metrics = metrics,
 }))
-local function create()
+local function create(cold, boundaries)
     local cursor = 0
     local panel = chart.create(
         lvgl.box({ x = 0, y = 0, w = 800, h = 480 }),
@@ -63,10 +63,14 @@ local function create()
                         recording = true,
                         elapsed = 700,
                         armFirst = 1,
-                        armLast = 0,
+                        armLast = boundaries and 4 or 0,
+                        armRevision = 1,
                         resumeFirst = 1,
-                        resumeLast = 0,
-                        flightLast = 0,
+                        resumeLast = boundaries and 2 or 0,
+                        resumeRevision = 1,
+                        flightFirst = 1,
+                        flightLast = boundaries and 2 or 0,
+                        flightRevision = 1,
                     }
                 end,
                 subscribe = function()
@@ -80,9 +84,22 @@ local function create()
                     end
                 end,
                 block = function() end,
+                recordingBreak = function(_, _, index)
+                    return ({ 200, 400 })[index]
+                end,
+                armBoundary = function(_, _, index)
+                    return ({ 10, 180, 300, 600 })[index], index % 2 == 1
+                end,
+                FLIGHT_CAPACITY = 32,
+                flight = function(_, _, index)
+                    return ({ 100, 350 })[index], ({ 300, 650 })[index]
+                end,
             },
         }
     )
+    if cold then
+        return panel
+    end
     chart.render(panel)
     assert(select(2, chart.refresh(panel)))
     assert(select(2, chart.refresh(panel)))
@@ -180,5 +197,183 @@ points[1][1] = first
 chart.resetSession(expired)
 assert(expired.pending == nil and expired.frameExpired == nil)
 assert(task:step(1, "project", getTime()) == 1 and task.used == 0 and task.stage == "trace")
+
+for grant = 1, 2 do
+    local legacy, panel = create(), create()
+    local completed
+    for _ = 1, 10000 do
+        if not select(2, chart.refresh(legacy)) then
+            break
+        end
+    end
+    local full = panelHost.task({ module = chart, instance = panel, interval = 10 })
+    for _ = 1, 10000 do
+        local stage = full.stage
+        if panel.framePhase and stage ~= "publish" then
+            assert(not panel.displayRoot.hidden, "the previous plot remains visible until publication")
+        end
+        local units = stage == "project" and grant or full.want
+        local delay = full:step(units, stage, getTime())
+        assert(full.used <= units)
+        if delay ~= 1 and not panel.framePhase then
+            completed = true
+            break
+        end
+    end
+    assert(completed, "the full scheduler-owned frame must complete")
+    assert(panel.displayRoot.hidden and not panel.plotRoot.hidden, "publication swaps both plot roots together")
+    assert(snapshot(panel) == snapshot(legacy), "the full frame adapter preserves completed legacy traces")
+end
+
+local function fullTask(panel)
+    return panelHost.task({ module = chart, instance = panel, interval = 10 })
+end
+local function reach(task, panel, target)
+    for _ = 1, 10000 do
+        if task.stage == target then
+            return
+        end
+        task:step(task.want, task.stage, getTime())
+    end
+    error("full frame did not reach " .. target .. " from " .. tostring(panel.taskPhase))
+end
+local function finishFrame(task, panel)
+    for _ = 1, 10000 do
+        local delay = task:step(task.want, task.stage, getTime())
+        if delay ~= 1 and not panel.framePhase then
+            return delay
+        end
+    end
+    error("full frame did not finish")
+end
+
+local function frameSnapshot(panel)
+    local result = { snapshot(panel), tostring(panel.axis.start), tostring(panel.axis.scale) }
+    local function object(node)
+        result[#result + 1] = tostring(node.hidden)
+        for _, name in ipairs({ "x", "y", "w", "h", "text" }) do
+            result[#result + 1] = name .. "=" .. tostring(node.properties[name])
+        end
+        for _, point in ipairs(node.properties.pts or {}) do
+            result[#result + 1] = point[1] .. ":" .. point[2]
+        end
+    end
+    for _, node in ipairs({ panel.baseline, panel.title, panel.duration, panel.status }) do
+        object(node)
+    end
+    for _, at in ipairs(panel.axis.breaks) do
+        result[#result + 1] = tostring(at)
+    end
+    for _, line in ipairs(panel.grid) do
+        object(line.object)
+    end
+    for _, band in ipairs(panel.flightBands or {}) do
+        object(band)
+    end
+    for _, pool in ipairs({ panel.armMarkers, panel.resumeMarkers }) do
+        for _, key in ipairs(pool.markerKeys) do
+            result[#result + 1] = tostring(key)
+            object(pool.markers[key].object)
+        end
+    end
+    return table.concat(result, "\n")
+end
+for grant = 1, 2 do
+    local panel, legacy = create(true, true), create(true, true)
+    local legacyDone
+    for _ = 1, 10000 do
+        if not select(2, chart.refresh(legacy)) then
+            legacyDone = true
+            break
+        end
+    end
+    assert(legacyDone)
+    local full = fullTask(panel)
+    for _ = 1, 10000 do
+        local stage = full.stage
+        local delay = full:step(stage == "project" and grant or full.want, stage, getTime())
+        if delay ~= 1 and not panel.framePhase then
+            break
+        end
+    end
+    assert(not panel.framePhase)
+    assert(#panel.flightBands == 2 and #panel.armMarkers.markerKeys > 0 and #panel.resumeMarkers.markerKeys > 0)
+    assert(
+        frameSnapshot(panel) == frameSnapshot(legacy),
+        "axis, grid, session markers, flight bands and complete-frame publication preserve legacy output"
+    )
+end
+
+local cold, legacyCold = create(true), create(true)
+for _ = 1, 10000 do
+    if not select(2, chart.refresh(legacyCold)) then
+        break
+    end
+end
+local coldTask = fullTask(cold)
+finishFrame(coldTask, cold)
+assert(snapshot(cold) == snapshot(legacyCold), "cold frame capture preserves legacy geometry and traces")
+local published = cold.plotRoot
+assert(coldTask.stage == "frame")
+finishFrame(coldTask, cold)
+assert(cold.plotRoot == published and not published.hidden, "a cached frame does not exchange plots")
+
+for _, target in ipairs({ "measure", "axis", "plot", "project", "apply", "flights", "publish" }) do
+    local panel = create(true)
+    local full = fullTask(panel)
+    reach(full, panel, target)
+    chart.update(panel, { x = 0, y = 0, w = 480, h = 272 })
+    assert(
+        full:step(1, target, getTime()) == 1 and full.used == 0 and full.stage == "frame",
+        "reflow invalidates the previously planned " .. target .. " stage"
+    )
+    finishFrame(full, panel)
+    assert(panel.displayRoot.hidden and not panel.plotRoot.hidden)
+end
+
+local reset = create(true)
+local resetTask = fullTask(reset)
+reach(resetTask, reset, "publish")
+local previous = reset.displayRoot
+repeat
+until not select(2, chart.resetSession(reset))
+assert(resetTask:step(1, "publish", getTime()) == 1 and resetTask.used == 0)
+assert(not previous.hidden, "reset invalidates publication without hiding the previous root")
+finishFrame(resetTask, reset)
+
+local rollback = create(true)
+local rollbackTask = fullTask(rollback)
+reach(rollbackTask, rollback, "project")
+local visible = rollback.displayRoot
+points[1][1] = nil
+rollbackTask:step(1, "project", getTime())
+points[1][1] = first
+assert(rollbackTask.stage == "frame" and rollback.framePhase == nil)
+assert(rollback.plotRoot == visible and not visible.hidden, "expired history rolls back to the visible plot")
+finishFrame(rollbackTask, rollback)
+
+local frozen = create(true)
+local frozenTask = fullTask(frozen)
+frozenTask:step(1, "frame", getTime())
+feeds[1].value, feeds[1].revision = 99, 2
+frozen.session.elapsed = 900
+finishFrame(frozenTask, frozen)
+assert(
+    frozen.series[1].valueText == "40" and frozen.frameSession.elapsed == 700,
+    "readings and elapsed time remain bound to the captured frame"
+)
+assert(frozen.series[1].feed == feeds[1] and frozen.session == frozen.liveSession)
+feeds[1].value, feeds[1].revision = 40, 1
+
+for _, missing in ipairs({ "absent", "failed" }) do
+    local panel = create(true)
+    panel.history = { failed = true }
+    if missing == "absent" then
+        panel.history = nil
+    end
+    local full = fullTask(panel)
+    assert(finishFrame(full, panel) == 20 and panel.taskPhase == nil and not panel.framePhase)
+    assert(panel.status.properties.text == "HISTORY N/A", "unavailable History retains the legacy status")
+end
 
 print("Chart trace grants and bounded coordinate retirement passed")

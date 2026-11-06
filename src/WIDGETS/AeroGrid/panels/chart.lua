@@ -231,7 +231,7 @@ local function timeX(context, at, before)
     return context.area.x + math.floor((at - context.start) / context.window * context.area.w + 0.5)
 end
 
-local function prepareAxis(context)
+local function prepareAxis(context, limit)
     local session, area = context.session, context.area
     local window = timeWindow(context.settings, session.elapsed)
     local start = context.settings.timeRange == "rolling" and math.max(0, session.elapsed - window) or 0
@@ -252,7 +252,7 @@ local function prepareAxis(context)
     end
     -- Keep room for recorded data when fixed-width breaks crowd the axis.
     local capacity = math.max(1, area.w // (BREAK_WIDTH * 2))
-    for _ = 1, 32 do
+    for _ = 1, limit or 32 do
         if work.index < (session.resumeFirst or 1) or not context.history.recordingBreak then
             work.done = true
             break
@@ -312,7 +312,7 @@ function chart.gridInterval(window, pixels)
     end
 end
 
-local function updateGrid(context)
+local function updateGrid(context, limit)
     local area, start, window = context.area, context.start, context.window
     if context.gridLayoutVersion ~= context.version then
         context.gridStep = chart.gridInterval(window, area.w)
@@ -321,7 +321,7 @@ local function updateGrid(context)
         context.gridLayoutVersion = context.version
     end
     -- Fill a fixed pool gradually, behind the traces, and limit native changes.
-    for _ = 1, #context.grid < GRID_CAP and 1 or 3 do
+    for _ = 1, limit or (#context.grid < GRID_CAP and 1 or 3) do
         local index = context.gridCursor
         local line = context.grid[index]
         if not line then
@@ -495,7 +495,7 @@ local function markBoundary(context, item, pass, at, armed)
     end
 end
 
-local function updateSessionMarkers(context, item, first, last, revision, readBoundary)
+local function updateSessionMarkers(context, item, first, last, revision, readBoundary, limit)
     local session, service = context.session, context.history
     if not service or not readBoundary then
         return true
@@ -518,9 +518,9 @@ local function updateSessionMarkers(context, item, first, last, revision, readBo
         item.markerIndex, item.markerPhase = 1, "hide"
     end
     local pass = item.job
-    for _ = 1, 64 do
+    for _ = 1, limit or 64 do
         if pass.index > (last or 0) then
-            if applyMarkers(context, item) then
+            if applyMarkers(context, item, limit) then
                 item.drawnRevision, item.drawnVersion = revision, context.version
                 item.drawnResumeRevision = session.resumeRevision
                 item.marked = pass.marked
@@ -861,6 +861,7 @@ end
 
 function chart.geometry(context, rect)
     context.readingWork = nil
+    context.taskPhase = nil
     local layout = layoutGeometry(context, rect)
     for index, item in ipairs(context.series) do
         positionLegend(context, index, item, layout)
@@ -1475,18 +1476,18 @@ function chart.render(context)
     return true
 end
 
--- Subpipeline only: plot/frame stages must join this declaration before ownership changes.
+-- Shared bounds include the enclosing frame's frozen-feed binding.
 chart.readingDecl = {
     class = "normal",
     exclusive = true,
     first = "readings",
     kinds = { steady = true },
     stages = {
-        readings = { fixed = 0, perUnit = 730, maxUnits = 1 },
-        measure = { fixed = 0, perUnit = 690, maxUnits = 1 },
-        layout = { fixed = 0, perUnit = 1010, maxUnits = 1 },
-        font = { fixed = 0, perUnit = 1200, maxUnits = 1 },
-        position = { fixed = 0, perUnit = 2990, maxUnits = 1 },
+        readings = { fixed = 0, perUnit = 850, maxUnits = 1 },
+        measure = { fixed = 0, perUnit = 780, maxUnits = 1 },
+        layout = { fixed = 0, perUnit = 1100, maxUnits = 1 },
+        font = { fixed = 0, perUnit = 1300, maxUnits = 1 },
+        position = { fixed = 0, perUnit = 3070, maxUnits = 1 },
     },
 }
 
@@ -1581,9 +1582,9 @@ chart.traceDecl = {
     first = "trace",
     kinds = { steady = true },
     stages = {
-        trace = { fixed = 0, perUnit = 410, maxUnits = 1 },
-        project = { fixed = 280, perUnit = 1160, maxUnits = 2 },
-        apply = { fixed = 0, perUnit = 760, maxUnits = 1 },
+        trace = { fixed = 0, perUnit = 440, maxUnits = 1 },
+        project = { fixed = 280, perUnit = 1280, maxUnits = 2 },
+        apply = { fixed = 0, perUnit = 780, maxUnits = 1 },
     },
 }
 
@@ -1634,7 +1635,7 @@ function chart.traceStep(context, grant, stage)
     end
 end
 
-local function refreshPlot(context, creating)
+local function refreshPlot(context, creating, workOnly, gridQuota)
     local session = context.session
     local hasFlights = not creating and (session.flightLast or 0) > 0
     local elapsed = session and session.elapsed or 0
@@ -1649,7 +1650,12 @@ local function refreshPlot(context, creating)
     -- Stable readings also keep their ranges, leaving room for more projection.
     -- Reserve the next non-overlay callback for projection after updating live
     -- readings, so a continuous telemetry stream cannot starve the traces.
-    local readingsChanged = not context.projectionTurn and chart.render(context)
+    local readingsChanged
+    if workOnly then
+        readingsChanged = context.taskReadingsChanged
+    elseif not context.projectionTurn then
+        readingsChanged = chart.render(context)
+    end
     context.projectionTurn = false
     local projectionCap = readingsChanged and PROJECTION_CAP or 8
     if
@@ -1665,7 +1671,7 @@ local function refreshPlot(context, creating)
     end
     updateHeader(context)
     if not creating then
-        updateGrid(context)
+        updateGrid(context, gridQuota)
     end
     local status = ""
     local full = false
@@ -1695,14 +1701,23 @@ local function refreshPlot(context, creating)
     end
     text(context.status, status, context.theme.color.textFaint)
     if status ~= "" and status ~= "HISTORY FULL" and status ~= "PREVIEW" and status ~= "PREVIEW: NO DATA" then
+        if workOnly then
+            context.taskBlocked = true
+        end
         if readingsChanged then
             context.rangesReady = false
         end
         return 20
     end
+    if workOnly then
+        context.taskBlocked = false
+    end
     if readingsChanged or not context.rangesReady then
         chart.ranges(context)
         context.rangesReady = true
+    end
+    if workOnly then
+        return
     end
     if reflowed or readingsChanged and hasFlights then
         context.projectionTurn = true
@@ -1884,6 +1899,7 @@ end
 --- Retain both plot buffers and retire old traces in bounded batches.
 function chart.resetSession(context)
     context.readingWork = nil
+    context.taskPhase = nil
     local reset = context.resetWork
     if not reset then
         if context.framePhase then
@@ -1953,7 +1969,23 @@ function chart.resetSession(context)
     return nil, true
 end
 
-function chart.refresh(context, creating)
+local function rollbackFrame(context)
+    exchange(context, context.backPlot, PLOT_FIELDS)
+    for index, item in ipairs(context.series) do
+        exchange(item, context.backPlot.series[index], SERIES_FIELDS)
+    end
+    context.frameExpired, context.framePhase, context.frameSession, context.pending = nil, nil, nil, nil
+end
+
+local function publishFrame(context)
+    lvgl.hide(context.displayRoot)
+    lvgl.show(context.plotRoot)
+    context.framePhase = nil
+    context.frameGeometry = context.geometryVersion
+    return chart.intervalFor(context.window, context.area.w, #context.series)
+end
+
+function chart.refresh(context, creating, quota, deferPublish)
     if creating or not context.history or context.history.failed then
         return refreshPlot(context, true)
     end
@@ -2006,7 +2038,7 @@ function chart.refresh(context, creating)
     end
     local done = false
     if context.framePhase == "axis" then
-        if prepareAxis(context) then
+        if prepareAxis(context, quota) then
             context.framePhase = "traces"
         end
     elseif context.framePhase == "traces" then
@@ -2036,7 +2068,8 @@ function chart.refresh(context, creating)
             context.session.armFirst,
             context.session.armLast,
             context.session.armRevision,
-            context.history.armBoundary
+            context.history.armBoundary,
+            quota
         )
     else
         if
@@ -2046,7 +2079,8 @@ function chart.refresh(context, creating)
                 context.session.resumeFirst,
                 context.session.resumeLast,
                 context.session.resumeRevision,
-                context.history.recordingBreak
+                context.history.recordingBreak,
+                quota
             )
         then
             context.framePhase = "arms"
@@ -2057,21 +2091,144 @@ function chart.refresh(context, creating)
         item.feed = item.liveFeed
     end
     if context.frameExpired then
-        exchange(context, context.backPlot, PLOT_FIELDS)
-        for index, item in ipairs(context.series) do
-            exchange(item, context.backPlot.series[index], SERIES_FIELDS)
-        end
-        context.frameExpired, context.framePhase, context.frameSession, context.pending = nil, nil, nil, nil
+        rollbackFrame(context)
         return 1, true
     end
     if done then
-        lvgl.hide(context.displayRoot)
-        lvgl.show(context.plotRoot)
-        context.framePhase = nil
-        context.frameGeometry = context.geometryVersion
-        return chart.intervalFor(context.window, context.area.w, #context.series)
+        if deferPublish then
+            context.framePhase = "publish"
+        else
+            return publishFrame(context)
+        end
     end
     return 1, true
+end
+
+chart.decl = {
+    class = "normal",
+    exclusive = true,
+    first = "frame",
+    kinds = { steady = true },
+    stages = {
+        frame = { fixed = 0, perUnit = 1500, maxUnits = 1 },
+        axis = { fixed = 370, perUnit = 60, maxUnits = 8 },
+        plot = { fixed = 0, perUnit = 2010, maxUnits = 1 },
+        flights = { fixed = 0, perUnit = 640, maxUnits = 1 },
+        resumes = { fixed = 0, perUnit = 470, maxUnits = 1 },
+        arms = { fixed = 0, perUnit = 470, maxUnits = 1 },
+        publish = { fixed = 0, perUnit = 280, maxUnits = 1 },
+        readings = chart.readingDecl.stages.readings,
+        measure = chart.readingDecl.stages.measure,
+        layout = chart.readingDecl.stages.layout,
+        font = chart.readingDecl.stages.font,
+        position = chart.readingDecl.stages.position,
+        trace = chart.traceDecl.stages.trace,
+        project = chart.traceDecl.stages.project,
+        apply = chart.traceDecl.stages.apply,
+    },
+}
+
+function chart.stageOf(context)
+    if context.taskPhase == "readings" then
+        return chart.readingStageOf(context)
+    elseif context.taskPhase == "trace" then
+        return chart.traceStageOf(context)
+    end
+    return context.taskPhase or "frame", context.taskPhase == "axis" and 8 or 1
+end
+
+local function frozenTask(context, fn, ...)
+    if not context.taskFrame then
+        return fn(context, ...)
+    end
+    context.session = context.frameSession
+    for _, item in ipairs(context.series) do
+        item.feed = item.snapshot
+    end
+    local result, unfinished = fn(context, ...)
+    context.session = context.liveSession
+    for _, item in ipairs(context.series) do
+        item.feed = item.liveFeed
+    end
+    return result, unfinished
+end
+
+local function taskReadings(context, grant, stage)
+    if not context.readingWork then
+        context.taskReadingsChanged = readingsChanged(context)
+    end
+    return chart.readingStep(context, grant, stage)
+end
+
+function chart.step(context, grant, stage)
+    context.used = 0
+    if stage ~= chart.stageOf(context) then
+        return nil, true
+    end
+    context.used = 1
+    if stage == "frame" then
+        if context.history and not context.history.failed and not context.framePhase then
+            local interval = chart.refresh(context)
+            if not context.framePhase then
+                return interval
+            end
+        end
+        context.taskFrame = context.framePhase ~= nil
+        if context.taskFrame then
+            if context.pending then
+                context.pending.drawnVersion = nil
+            end
+            context.pending, context.axisWork, context.framePhase = nil, nil, "axis"
+            context.armMarkers.job, context.resumeMarkers.job = nil, nil
+        end
+        context.taskPhase = "readings"
+    elseif context.taskPhase == "readings" then
+        frozenTask(context, taskReadings, grant, stage)
+        if not context.readingWork then
+            context.taskPhase = context.taskFrame and "axis" or "plot"
+        end
+    elseif stage == "axis" then
+        chart.refresh(context, nil, grant, true)
+        context.used = grant
+        if context.framePhase == "traces" then
+            context.taskPhase = "plot"
+        end
+    elseif stage == "plot" then
+        frozenTask(context, refreshPlot, not context.taskFrame, true, 1)
+        context.taskReadingsChanged = nil
+        if not context.taskFrame then
+            context.taskPhase = nil
+            return 20
+        elseif context.framePhase == "axis" then
+            context.taskPhase = "axis"
+        elseif context.gridVersion == context.version then
+            if context.taskBlocked then
+                for _, item in ipairs(context.series) do
+                    if item.snapshot and item.snapshot.available then
+                        return 20
+                    end
+                end
+                context.taskPhase, context.framePhase = "flights", "flights"
+            else
+                context.taskPhase = "trace"
+            end
+        end
+    elseif context.taskPhase == "trace" then
+        local _, unfinished = frozenTask(context, chart.traceStep, grant, stage)
+        if context.frameExpired then
+            rollbackFrame(context)
+            context.taskPhase = nil
+        elseif not unfinished then
+            context.taskPhase, context.framePhase = "flights", "flights"
+        end
+    elseif stage == "publish" then
+        context.taskPhase = nil
+        return publishFrame(context)
+    else
+        chart.refresh(context, nil, grant, true)
+        context.taskPhase = context.framePhase
+    end
+    return nil, true
 end
 
 function chart.create(parent, rect, settings, services)

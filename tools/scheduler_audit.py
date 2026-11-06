@@ -26,10 +26,10 @@ LOADER_PATCHES = (
 # Call sites inside the chart's staged frame, wrapped so each stage is measured.
 CHART_PATCHES = (
     ("chart.render(context)", "AUDIT_SPAN(\"chart.render\", chart.render, context)",
-     "    local readingsChanged = not context.projectionTurn and chart.render(context)\n"),
-    ("    updateHeader(context)\n    if not creating then\n        updateGrid(context)\n",
+     "    elseif not context.projectionTurn then\n        readingsChanged = chart.render(context)\n"),
+    ("    updateHeader(context)\n    if not creating then\n        updateGrid(context, gridQuota)\n",
      "    AUDIT_SPAN(\"chart.header\", updateHeader, context)\n    if not creating then\n"
-     "        AUDIT_SPAN(\"chart.grid\", updateGrid, context)\n", None),
+     "        AUDIT_SPAN(\"chart.grid\", updateGrid, context, gridQuota)\n", None),
     ("        chart.ranges(context)\n        context.rangesReady = true\n",
      "        AUDIT_SPAN(\"chart.ranges\", chart.ranges, context)\n        context.rangesReady = true\n", None),
     ("            prepare(context, item)\n        end\n        if item.job.projecting then\n"
@@ -43,7 +43,8 @@ CHART_PATCHES = (
      "            AUDIT_SPAN(\"chart.prepare\", prepare, context, item)\n"
      "            AUDIT_SPAN(\"chart.project\", project, context, item, projectionCap)\n            context.pending = item\n",
      None),
-    ("        if prepareAxis(context) then\n", "        if AUDIT_SPAN(\"chart.axis\", prepareAxis, context) then\n", None),
+    ("        if prepareAxis(context, quota) then\n",
+     "        if AUDIT_SPAN(\"chart.axis\", prepareAxis, context, quota) then\n", None),
     ("        if not updateFlights(context) then\n",
      "        if not AUDIT_SPAN(\"chart.flights\", updateFlights, context) then\n", None),
     ("        done = updateSessionMarkers(\n", "        done = AUDIT_SPAN(\n            \"chart.arms\",\n            updateSessionMarkers,\n", None),
