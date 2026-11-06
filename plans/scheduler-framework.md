@@ -4436,6 +4436,21 @@ legacy observation, subscriber-free activation, pending enrollment, registry
 replacement, live-owner exclusion, and nil-owner reclaim. The full int32
 scheduler suite passes; strict reset remains 8400 with both original XFAILs.
 
+On the same integrated sources, all 15 remaining built-ins pass separate
+native reflow cost and tree-parity matrices with empty error lists and the
+previously reported fitted stage maxima, including Timer 3970 and Mode 3960.
+Matrix setup and tree recording are not production callback measurements.
+Current native menu, settings-drain, menu-close, root-restart and App-error
+captures have empty errors and whole-callback maxima of 10482, 7960, 8026,
+8348 and 8340 respectively. Actual menu creation is 1806 native / 2040 fitted.
+
+Staged widget review fixtures wait for settings publication, source readiness,
+and scheduler enrollment rather than assuming a fixed number of callbacks;
+Flight Counter uses a retained layout file so real reloads preserve its input.
+Their existing behavioral assertions pass on both Lua widths. The full mixed
+trace suite still stops at the independently documented chart-recording stress
+failure; the old trace golden has not been rewritten.
+
 Production owners remain unchanged, Telemetry/History retain their ten-tick
 policy, and preparation/constructor/reflow co-admission remains gated. The
 unchanged first-arm expectation still blocks production activation; this wiring
