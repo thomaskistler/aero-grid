@@ -23,6 +23,9 @@ for id, position in pairs({
     assertions.assertEqual(entry.placement.rowSpan, position[4])
 end
 local batteryContext = fixture.createLoaded(nil, { Layout = "review-tx-battery", Theme = "modern-dark" })
+assert(fixture.pumpUntil(batteryContext, function(value)
+    return value.serviceRuntime.byId.model.revision > 0
+end, 400), "local model data must receive an initial scheduled update")
 fixture.pump(batteryContext, 40)
 assertions.assertEqual(fixture.instanceOf(batteryContext, "full").stateName, "normal")
 
