@@ -662,7 +662,7 @@ local function legendWidth(context, font, showExtrema)
     return width
 end
 
-function chart.geometry(context, rect)
+local function startGeometry(context, rect)
     local builder = context.themeBuilder
     local fonts = { label = SMLSIZE, badge = TINSIZE }
     local frame = builder.frame(context.theme, rect, fonts)
@@ -695,28 +695,59 @@ function chart.geometry(context, rect)
     end
     local fontLimit =
         math.max(builder.fontHeight(SMLSIZE), math.floor(rect.h / (context.topLegend and 6 or math.max(6, count * 3))))
-    local font, required
-    -- Readout growth can step down the font; resizing restarts the ladder.
-    for index = count == 0 and #LEGEND_FONTS or context.legendIndex or 1, #LEGEND_FONTS do
-        local candidate = LEGEND_FONTS[index]
-        local rowHeight = builder.fontHeight(candidate)
-            + (showExtrema and builder.fontAscent(extremaFont(candidate)) or 0)
-        local groups = context.topLegend and 1 or count
-        if
-            builder.fontHeight(candidate) <= fontLimit
-                and groups * rowHeight + (context.topLegend and 12 or 0) <= available
-            or candidate == SMLSIZE
-        then
-            local width = legendWidth(context, candidate, showExtrema)
-            if candidate == context.legendFont then
-                width = math.max(width, context.legendWidth or 0)
-            end
-            if width <= (context.topLegend and cellWidth or math.floor(content / 2)) or candidate == SMLSIZE then
-                font, required, context.legendIndex = candidate, width, index
-                break
-            end
+    return {
+        frame = frame,
+        content = content,
+        count = count,
+        gap = gap,
+        first = first,
+        top = top,
+        legendX = legendX,
+        legendContent = legendContent,
+        cellWidth = cellWidth,
+        available = available,
+        showExtrema = showExtrema,
+        fontLimit = fontLimit,
+        index = count == 0 and #LEGEND_FONTS or context.legendIndex or 1,
+    }
+end
+
+local function selectLegendFont(context, work)
+    local builder = context.themeBuilder
+    local index = work.index
+    local candidate = LEGEND_FONTS[index]
+    local rowHeight = builder.fontHeight(candidate)
+        + (work.showExtrema and builder.fontAscent(extremaFont(candidate)) or 0)
+    local groups = context.topLegend and 1 or work.count
+    if
+        builder.fontHeight(candidate) <= work.fontLimit
+            and groups * rowHeight + (context.topLegend and 12 or 0) <= work.available
+        or candidate == SMLSIZE
+    then
+        local width = legendWidth(context, candidate, work.showExtrema)
+        if candidate == context.legendFont then
+            width = math.max(width, context.legendWidth or 0)
+        end
+        if width <= (context.topLegend and work.cellWidth or math.floor(work.content / 2)) or candidate == SMLSIZE then
+            work.font, work.required, context.legendIndex = candidate, width, index
+            return true
         end
     end
+    work.index = index + 1
+    return false
+end
+
+local function layoutGeometry(context, rect, work)
+    if not work then
+        work = startGeometry(context, rect)
+        while not selectLegendFont(context, work) do
+        end
+    end
+    local builder = context.themeBuilder
+    local frame, content, count, gap = work.frame, work.content, work.count, work.gap
+    local first, top, available = work.first, work.top, work.available
+    local legendX, legendContent, cellWidth = work.legendX, work.legendContent, work.cellWidth
+    local showExtrema, font, required = work.showExtrema, work.font, work.required
     context.legendFont, context.legendWidth = font, required
     context.extremaFont = extremaFont(font)
     local legend = math.min(required, context.topLegend and cellWidth or math.max(24, content - 28))
@@ -764,50 +795,76 @@ function chart.geometry(context, rect)
     if context.topLegend then
         context.legendBaseline = count > 0 and top - gap or 0
     end
-    for index, item in ipairs(context.series) do
-        item.legendX, item.legendW, item.legendAlignment = nil, nil, nil
-        local y = first + (index - 1) * step
-        local itemNameWidth = nameWidth
-        if context.topLegend then
-            local alignment = count == 1 and 1 or (index - 1) / (count - 1)
-            item.legendAlignment = alignment
-            item.legendW = legend
-            item.legendX = legendX + math.floor((legendContent - legend) * alignment)
-            y = first
-            local value = math.min(builder.measureText(font, item.valueText or "--"), legend)
-            local unit = math.min(builder.measureText(font, item.unitText or ""), math.max(0, legend - value))
-            itemNameWidth = math.max(0, legend - value - unit - 4)
-        end
-        local name = builder.fitHeading(item.caption, itemNameWidth, font, font)
-        context.primitives.setFont(item.name, font)
-        context.primitives.setFont(item.value, font)
-        context.primitives.setFont(item.unit, font)
-        context.primitives.setFont(item.extrema, context.extremaFont)
-        context.primitives.setFont(item.maximum, context.extremaFont)
-        item.nameText, item.nameBudget = name, itemNameWidth
-        item.name:set({ text = name })
-        positionReading(context, item, y)
-        positionExtrema(context, item, y + lineHeight)
-        if showExtrema then
-            lvgl.show(item.extrema)
-            lvgl.show(item.maximum)
-            lvgl.show(item.minSymbol)
-            lvgl.show(item.maxSymbol)
-        else
-            lvgl.hide(item.extrema)
-            lvgl.hide(item.maximum)
-            lvgl.hide(item.minSymbol)
-            lvgl.hide(item.maxSymbol)
-        end
-        if itemNameWidth < 8 then
-            lvgl.hide(item.name)
-        else
-            lvgl.show(item.name)
-        end
+    return {
+        first = first,
+        step = step,
+        nameWidth = nameWidth,
+        legend = legend,
+        legendX = legendX,
+        legendContent = legendContent,
+        lineHeight = lineHeight,
+    }
+end
+
+local function positionLegend(context, index, item, layout)
+    local builder, font = context.themeBuilder, context.legendFont
+    local count, showExtrema = #context.series, context.showExtrema
+    local legend, legendX = layout.legend, layout.legendX
+    item.legendX, item.legendW, item.legendAlignment = nil, nil, nil
+    local y = layout.first + (index - 1) * layout.step
+    local itemNameWidth = layout.nameWidth
+    if context.topLegend then
+        local alignment = count == 1 and 1 or (index - 1) / (count - 1)
+        item.legendAlignment = alignment
+        item.legendW = legend
+        item.legendX = legendX + math.floor((layout.legendContent - legend) * alignment)
+        y = layout.first
+        local value = math.min(builder.measureText(font, item.valueText or "--"), legend)
+        local unit = math.min(builder.measureText(font, item.unitText or ""), math.max(0, legend - value))
+        itemNameWidth = math.max(0, legend - value - unit - 4)
     end
+    local name = builder.fitHeading(item.caption, itemNameWidth, font, font)
+    context.primitives.setFont(item.name, font)
+    context.primitives.setFont(item.value, font)
+    context.primitives.setFont(item.unit, font)
+    context.primitives.setFont(item.extrema, context.extremaFont)
+    context.primitives.setFont(item.maximum, context.extremaFont)
+    item.nameText, item.nameBudget = name, itemNameWidth
+    item.name:set({ text = name })
+    positionReading(context, item, y)
+    positionExtrema(context, item, y + layout.lineHeight)
+    if showExtrema then
+        lvgl.show(item.extrema)
+        lvgl.show(item.maximum)
+        lvgl.show(item.minSymbol)
+        lvgl.show(item.maxSymbol)
+    else
+        lvgl.hide(item.extrema)
+        lvgl.hide(item.maximum)
+        lvgl.hide(item.minSymbol)
+        lvgl.hide(item.maxSymbol)
+    end
+
+    if itemNameWidth < 8 then
+        lvgl.hide(item.name)
+    else
+        lvgl.show(item.name)
+    end
+end
+
+local function finishGeometry(context)
     context.version = context.version + 1
     context.geometryVersion = (context.geometryVersion or 0) + 1
     updateHeader(context)
+end
+
+function chart.geometry(context, rect)
+    context.readingWork = nil
+    local layout = layoutGeometry(context, rect)
+    for index, item in ipairs(context.series) do
+        positionLegend(context, index, item, layout)
+    end
+    finishGeometry(context)
 end
 
 local function normalRange(low, high)
@@ -1323,7 +1380,7 @@ function chart.intervalFor(window, pixels, sources)
     return math.max(5, math.floor(perPixel / math.max(1, sources)))
 end
 
-function chart.render(context)
+local function readingsChanged(context)
     local changed = context.readingGeometry ~= context.geometryVersion
     for _, item in ipairs(context.series) do
         local feed = item.feed
@@ -1338,39 +1395,38 @@ function chart.render(context)
             break
         end
     end
-    if not changed then
-        return false
+    return changed
+end
+
+local function renderReading(context, item, feed)
+    item.readingRevision = feed and feed.revision
+    item.readingUnit, item.readingPrecision = item.settings.unit, item.settings.precision
+    local precision = item.settings.precision or feed and feed.precision or 0
+    local unit = item.settings.unit
+    if unit == nil then
+        unit = feed and feed.unitText or ""
     end
-    local builder = context.themeBuilder
+    local value = chart.format(feed and feed.value, precision)
+    item.valueText, item.unitText = value, value ~= "--" and unit or ""
+    item.readout = value .. item.unitText
+    local minimumText = chart.format(feed and feed.min, precision)
+    local maximumText = chart.format(feed and feed.max, precision)
+    if item.minimumText ~= minimumText or item.maximumText ~= maximumText then
+        item.extremaDirty = true
+    end
+    item.minimumText, item.maximumText = minimumText, maximumText
+    local color = feed and feed.stale and context.theme.color.textFaint or context.theme.color.text
+    text(item.value, value, color)
+    text(item.unit, item.unitText, color)
+    if context.showExtrema then
+        text(item.extrema, minimumText, context.theme.color.textFaint)
+        text(item.maximum, maximumText, context.theme.color.textFaint)
+    end
+    return context.showExtrema and extremaWidth(context, item, context.extremaFont) or 0
+end
+
+local function readingGeometryWidth(context, width)
     local font = context.legendFont
-    local width = 64
-    for _, item in ipairs(context.series) do
-        local feed = item.feed
-        item.readingRevision = feed and feed.revision
-        item.readingUnit, item.readingPrecision = item.settings.unit, item.settings.precision
-        local precision = item.settings.precision or feed and feed.precision or 0
-        local unit = item.settings.unit
-        if unit == nil then
-            unit = feed and feed.unitText or ""
-        end
-        local value = chart.format(feed and feed.value, precision)
-        item.valueText, item.unitText = value, value ~= "--" and unit or ""
-        item.readout = value .. item.unitText
-        local minimumText = chart.format(feed and feed.min, precision)
-        local maximumText = chart.format(feed and feed.max, precision)
-        if item.minimumText ~= minimumText or item.maximumText ~= maximumText then
-            item.extremaDirty = true
-        end
-        item.minimumText, item.maximumText = minimumText, maximumText
-        width = math.max(width, context.showExtrema and extremaWidth(context, item, context.extremaFont) or 0)
-        local color = feed and feed.stale and context.theme.color.textFaint or context.theme.color.text
-        text(item.value, value, color)
-        text(item.unit, item.unitText, color)
-        if context.showExtrema then
-            text(item.extrema, minimumText, context.theme.color.textFaint)
-            text(item.maximum, maximumText, context.theme.color.textFaint)
-        end
-    end
     local valueWidth, unitWidth, nameWidth, rowWidth = readingWidths(context, font)
     width = math.max(width, context.topLegend and rowWidth or valueWidth + unitWidth + nameWidth + 4)
     if
@@ -1378,7 +1434,21 @@ function chart.render(context)
         or valueWidth > context.requiredValueWidth
         or unitWidth > context.requiredUnitWidth
     then
-        context.legendWidth = math.max(width, context.legendWidth or 0)
+        return math.max(width, context.legendWidth or 0)
+    end
+end
+
+function chart.render(context)
+    if not readingsChanged(context) then
+        return false
+    end
+    local width = 64
+    for _, item in ipairs(context.series) do
+        width = math.max(width, renderReading(context, item, item.feed))
+    end
+    local required = readingGeometryWidth(context, width)
+    if required then
+        context.legendWidth = required
         chart.geometry(context, context.rect)
     end
     for _, item in ipairs(context.series) do
@@ -1389,6 +1459,106 @@ function chart.render(context)
     end
     context.readingGeometry = context.geometryVersion
     return true
+end
+
+-- Subpipeline only: plot/frame stages must join this declaration before ownership changes.
+chart.readingDecl = {
+    class = "normal",
+    exclusive = true,
+    first = "readings",
+    kinds = { steady = true },
+    stages = {
+        readings = { fixed = 0, perUnit = 730, maxUnits = 1 },
+        measure = { fixed = 0, perUnit = 690, maxUnits = 1 },
+        layout = { fixed = 0, perUnit = 1010, maxUnits = 1 },
+        font = { fixed = 0, perUnit = 1200, maxUnits = 1 },
+        position = { fixed = 0, perUnit = 2990, maxUnits = 1 },
+    },
+}
+
+function chart.readingStageOf(context)
+    return context.readingWork and context.readingWork.stage or "readings", 1
+end
+
+function chart.readingStep(context, _, stage)
+    context.used = 0
+    if stage ~= chart.readingStageOf(context) then
+        return nil, true
+    end
+    local work = context.readingWork
+    if not work then
+        context.used = 1
+        if not readingsChanged(context) then
+            return
+        end
+        work = { stage = "readings", index = 1, width = 64, feeds = {} }
+        for index, item in ipairs(context.series) do
+            local feed = item.feed
+            work.feeds[index] = feed
+                    and {
+                        revision = feed.revision,
+                        value = feed.value,
+                        min = feed.min,
+                        max = feed.max,
+                        stale = feed.stale,
+                        precision = feed.precision,
+                        unitText = feed.unitText,
+                    }
+                or false
+        end
+        context.readingWork = work
+    end
+    context.used = 1
+    if stage == "readings" then
+        local item = context.series[work.index]
+        if item then
+            work.width = math.max(work.width, renderReading(context, item, work.feeds[work.index] or nil))
+        end
+        work.index = work.index + 1
+        if work.index > #context.series then
+            work.stage = "measure"
+        end
+    elseif stage == "measure" then
+        local width = readingGeometryWidth(context, work.width)
+        work.stage, work.index = width and "layout" or "position", 1
+        if width then
+            context.legendWidth = width
+        end
+    elseif stage == "layout" then
+        if not work.geometry then
+            work.geometry = startGeometry(context, context.rect)
+            work.stage = "font"
+        else
+            work.layout = layoutGeometry(context, context.rect, work.geometry)
+            work.stage = "position"
+        end
+    elseif stage == "font" then
+        if selectLegendFont(context, work.geometry) then
+            work.stage = "layout"
+        end
+    else
+        local item = context.series[work.index]
+        if item then
+            if work.layout then
+                positionLegend(context, work.index, item, work.layout)
+            else
+                positionReading(context, item, item.valueY)
+                if context.showExtrema and item.extremaDirty then
+                    positionExtrema(context, item, item.extremaY)
+                end
+            end
+        end
+        work.index = work.index + 1
+        if work.index > #context.series then
+            if work.layout then
+                finishGeometry(context)
+            end
+            context.readingGeometry = context.geometryVersion
+            context.readingWork = nil
+            return
+        end
+    end
+    return nil, true
 end
 
 local function refreshPlot(context, creating)
@@ -1640,6 +1810,7 @@ end
 
 --- Retain both plot buffers and retire old traces in bounded batches.
 function chart.resetSession(context)
+    context.readingWork = nil
     local reset = context.resetWork
     if not reset then
         if context.framePhase then

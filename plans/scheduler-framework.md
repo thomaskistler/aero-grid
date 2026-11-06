@@ -1323,3 +1323,54 @@ Output refresh/update, so modal eligibility, callback accounting and retirement
 remain gates before enabling its task. R1 chart stages, other R2 panels,
 R4 Flight/Smart, and R5/R6 modal/lifecycle/loader work remain open. The ten-tick
 History/Telemetry policy and deferred chart-recording stress failures are unchanged.
+
+## 18. Chart reading/legend split (R1 subpipeline only)
+
+The chart's synchronous renderer and new reading subpipeline share the same
+formatting, width, font-selection, geometry and positioning helpers. The staged
+path captures all three feeds before changing the first series, then advances
+one series or font candidate per unit. Geometry setup/application and width
+measurement are separate stages. Final positioning publishes the geometry
+revision and refreshes the header only after all series are positioned.
+
+An intermediate layout stage measured 3980 native instructions, which would
+require a 4430 declaration after margin. Font selection was therefore split
+into one candidate per step, not granted an exception to the 4000 cap.
+
+| Reading/legend stage | Native worst instructions | Declared charge |
+|---|---:|---:|
+| Feed capture / one series' text | 615 | 730 |
+| Width measurement | 575 | 690 |
+| Geometry setup or application | 868 | 1010 |
+| One font candidate | 1045 | 1200 |
+| One series' position, including final header publication | 2668 | 2990 |
+| Framework release | 242 | 420 |
+
+`chart-readings.lua` measures zero/one/three series, missing feeds, stale
+readings, precisions zero through three, top/side and narrow legends, unchanged
+and growing geometry, every series/font cursor, both layout phases, and captions
+and headings up to 4100 characters. Smaller series/font/geometry pieces are
+natural-stage exceptions to the 2240 useful-work target. Declarations cover the
+measured cases; this is not a new claim about arbitrary configuration sizes or
+complete callback-kind eligibility.
+
+The staged reading suite compares completed text, coordinates, extrema,
+symbols, visibility and font selection with the synchronous renderer. It
+changes live feeds after capture, verifies one-series grants, stable-frame
+termination, reflow invalidation during every noninitial stage, and session
+reset invalidation. Existing chart unit/flight/preview/reset suites, scheduler
+bounds and `make test-lua32` pass. Native `chart-full` in mixed mode remains
+within the callback limit (11071 worst instructions). Matched mixed native
+`chart-min`, `chart-max` and `default-gallery` callbacks peak at 10515, 11571
+and 11845 instructions respectively.
+
+The deferred recording stress test still fails at its live-drawing assertion
+(`test_chart_recording.lua:192`, Q1 `drawn=nil`, baseline revision 8, current 98).
+The identical assertion and state reproduce on pre-extraction `7a994ed`.
+No stress assertion, recording policy, or production ownership was changed.
+
+**This is not a complete chart scheduler task.** `readingDecl` is deliberately
+not the module's production `decl`: frame capture, axis/grid work, grant-sized
+projection/application, markers and double-buffer publication still need their
+full stage adapter and measurements. Modal eligibility/accounting and the
+other R1/R2/R4/R5/R6 gates remain open before any owner flip.
