@@ -64,9 +64,13 @@ return function(load, builder, only)
                                 packEmpty = 6.4,
                                 packFull = 8.4,
                             }
-                            local settings = assert(host.resolveSettings(panel, config))
+                            local resolution = host.beginSettings(panel, config)
+                            while not host.advanceSettings(resolution) do
+                            end
+                            local settings, proof = resolution.settings, resolution.proof
                             cases[#cases + 1] = {
                                 panel = panel,
+                                settingsValidation = proof,
                                 kind = kind,
                                 variant = variant,
                                 rect = { x = 0, y = 0, w = shape[3], h = shape[4] },
@@ -130,6 +134,7 @@ return function(load, builder, only)
                                         return feeds[source]
                                     end
                                     return {
+                                        settingsValidation = proof,
                                         theme = theme,
                                         themeBuilder = builder,
                                         primitives = primitives,

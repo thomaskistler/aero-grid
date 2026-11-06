@@ -128,12 +128,14 @@ local function finish(label, raw, leak)
     end
     local loadingConstructor = string.match(label, "^load:panel%-build:([^:]+)$")
         or string.match(label, "^load:panel%-construct:([^:]+):")
+    local loadingPreparation = string.match(label, "^load:panel%-prepare:")
     if
         string.match(label, "^lifecycle:advanceAppRebuild:")
         or string.match(label, "^lifecycle:retirePage:")
         or label == "lifecycle:rebuildPage"
         or label == "lifecycle:restartLoading"
         or loadingConstructor and boundedConstructors[loadingConstructor]
+        or loadingPreparation
         or rxReflow
     then
         local fitted = math.ceil((cost * 1.10 + 50) / 10) * 10
@@ -342,6 +344,21 @@ local function panelLabel(token, entry, event, ...)
     return "chart:" .. token.phase
 end
 
+local function preparationPhase(work)
+    if not work then
+        return "module"
+    end
+    local phase = work.phase
+    if phase == "settings" then
+        local resolution = work.resolution
+        phase = phase .. ":" .. resolution.phase
+        if resolution.phase == "validation" then
+            phase = phase .. ":" .. tostring(resolution.validation.phase)
+        end
+    end
+    return phase
+end
+
 local function loadLabel(token, context)
     if token == nil then
         local stage = context.stage or "idle"
@@ -367,6 +384,9 @@ local function loadLabel(token, context)
                     .. tostring(context.pendingConstruction.instance.createStage)
             elseif (stage == "panel-build" or stage == "panel-prepare" or stage == "panel-validate") and placement then
                 stage = stage .. ":" .. tostring(placement.type)
+                if context.stage == "panel-prepare" then
+                    stage = stage .. ":" .. preparationPhase(context.panelPreparation)
+                end
             end
         end
         loaderDeclarations["load:" .. stage] = bound
@@ -508,6 +528,9 @@ local function install(context)
                                 .. tostring(entry and entry.instance.createStage)
                         elseif phase == "build" or phase == "prepare" then
                             phase = phase .. ":" .. tostring(job.entry.module.id)
+                            if job.phase == "prepare" then
+                                phase = phase .. ":" .. preparationPhase(job.preparation)
+                            end
                         elseif phase == "panel" then
                             local entry = current.panels[1]
                             phase = phase .. ":" .. tostring(entry and entry.module.id or "done")
@@ -826,6 +849,11 @@ local function report(context)
                 total = P.construction.total,
                 done = P.construction.done,
             },
+            preparation = P.preparation and {
+                checked = P.preparation.checked,
+                total = P.preparation.total,
+                done = P.preparation.done,
+            },
             stats = labels,
             worst = (function()
                 local rows = {}
@@ -869,6 +897,19 @@ end
 
 local actions
 actions = {
+    ["preparation"] = function(context)
+        P.preparation = assert(loadScript("/WIDGETS/AeroGrid/audit/native_preparation.lua"))()(context)
+    end,
+    ["preparation-step"] = function()
+        local ok, message = pcall(P.preparation.step, P.preparation)
+        if not ok then
+            gate(false, "native preparation matrix failed: " .. tostring(message))
+            P.preparation.done = true
+        end
+    end,
+    ["preparation-check"] = function()
+        assert(P.preparation.done and P.preparation.checked == P.preparation.total)
+    end,
     ["construction-parity"] = function(context, costOnly, reflow, reflowCost)
         local function load(relative)
             if relative == "lib/theme.lua" then
@@ -1585,6 +1626,19 @@ local function advance(context)
     phaseDone = phaseDone + 1
     if phase.untilConstruction and P.construction.done then
         phaseDone = phase.callbacks
+    end
+    if phase.untilPreparation and P.preparation.done then
+        phaseDone = phase.callbacks
+    end
+    if phase.untilPartialConstruction then
+        local reached = context.appRebuild and context.appRebuild.phase == "construct" and context.pendingConstruction
+        if not reached and phaseDone < phase.callbacks then
+            return
+        end
+        gate(reached ~= nil and reached ~= false, "App rebuild did not reach actual partial construction")
+        if reached then
+            phaseDone = phase.callbacks
+        end
     end
     if phase.untilSettings then
         local state = context.modelSettingsUi

@@ -3,6 +3,16 @@
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(root).new()
 local definition = fixture.module("main.lua")
+local function prepare(context)
+    for _ = 1, 200 do
+        assert(context.dashboardLoader.advanceLoad(context))
+        if context.stage ~= "panel-prepare" then
+            return
+        end
+        assert(not context.pendingPanel and not context.pendingConstruction)
+    end
+    error("preparation did not finish")
+end
 for _, layout in ipairs({
     "review-chart",
     "review-navigation",
@@ -27,7 +37,7 @@ for _, layout in ipairs({
     assert(context.stage == "panel-prepare", "loading must reach separate preparation")
     local count = #context.panels
     local placement = context.pendingPlacement
-    assert(context.dashboardLoader.advanceLoad(context))
+    prepare(context)
     local prepared = assert(context.pendingPanel)
     assert(context.stage == "panel-build" and #context.panels == count, "preparation must not construct a panel")
 
@@ -100,7 +110,7 @@ for _, layout in ipairs({
     )
 
     context.pendingPlacement, context.stage = placement, "panel-prepare"
-    assert(context.dashboardLoader.advanceLoad(context))
+    prepare(context)
     prepared = assert(context.pendingPanel)
     create = prepared.module.create
     prepared.module.create = function()
@@ -117,7 +127,7 @@ for _, layout in ipairs({
 
     for _, failure in ipairs({ "raise", "invalid-result" }) do
         context.pendingPlacement, context.stage = placement, "panel-prepare"
-        context.dashboardLoader.advanceLoad(context)
+        prepare(context)
         context.dashboardLoader.advanceLoad(context)
         local pending = assert(context.pendingConstruction)
         local construct = pending.module.construct
@@ -138,7 +148,7 @@ for _, layout in ipairs({
     end
 
     context.pendingPlacement, context.stage = placement, "panel-prepare"
-    context.dashboardLoader.advanceLoad(context)
+    prepare(context)
     assert(context.pendingPanel)
     context.dashboardLoader.advanceLoad(context)
     local cancelled = assert(context.pendingConstruction)
@@ -153,7 +163,7 @@ for _, layout in ipairs({
     )
 
     context.pendingPlacement, context.stage = placement, "panel-prepare"
-    context.dashboardLoader.advanceLoad(context)
+    prepare(context)
     context.dashboardLoader.advanceLoad(context)
     assert(context.pendingConstruction)
     context.dashboardLifecycle.retirePage(context)
@@ -195,7 +205,9 @@ for _, stage in ipairs({ "theme-tokenize", "theme-parse" }) do
     assert(not context.themeWork and #context.themeDefinitions == 0, "replacement loads discard partial themes")
     context.dashboardLoader.advanceLoad(context)
     assert(context.themeWork ~= cancelled, "replacement themes must not reuse cancelled parser state")
-    fixture.pump(context, 200, 10)
+    assert(fixture.pumpUntil(context, function()
+        return not context.stage
+    end, 400, 10))
     assert(not context.stage and context.theme.mode == "modern-light")
 end
 

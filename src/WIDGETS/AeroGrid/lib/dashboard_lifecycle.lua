@@ -231,8 +231,12 @@ function module.new(dependencies)
             return
         end
         if job.phase == "prepare" then
-            job.prepared = loader.preparePanel(context, entry.placement)
-            job.phase = job.prepared and "build" or "finish"
+            job.preparation = job.preparation or loader.beginPreparation(context, entry.placement)
+            local done, prepared = loader.advancePreparation(context, job.preparation)
+            if done then
+                job.prepared = prepared
+                job.phase = prepared and "build" or "finish"
+            end
             return
         end
         if job.phase == "build" then
@@ -275,6 +279,7 @@ function module.new(dependencies)
             job = { phase = "settings", pending = context.pendingConstruction }
             context.pageRetirement = job
             context.pendingConstruction, context.pendingPanel, context.pendingPlacement = nil, nil, nil
+            context.panelPreparation = nil
             return
         end
         if job.phase == "settings" then

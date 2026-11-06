@@ -39,8 +39,12 @@ return function(load)
                     telemetry:subscribe(entries[index].source, nil, 20)
                 end
             end
-            local config = assert(host.resolveSettings(metric, { metrics = entries, visual = visual }))
+            local resolution = host.beginSettings(metric, { metrics = entries, visual = visual })
+            while not host.advanceSettings(resolution) do
+            end
+            local config = resolution.settings
             local dependencies = {
+                settingsValidation = resolution.proof,
                 theme = api.theme,
                 themeBuilder = builder,
                 primitives = primitives,

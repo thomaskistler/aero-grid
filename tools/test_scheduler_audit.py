@@ -28,7 +28,7 @@ class InstrumentationTests(unittest.TestCase):
             self.assertTrue(cases[name]["fullscreen"])
             self.assertIn(phases[-1]["action"],
                           ("check-lifecycle", "check-lifecycle-settings", "check-lifecycle-errors",
-                           "construction-parity-check"))
+                           "construction-parity-check", "preparation-check"))
             for phase in phases:
                 if phase["name"] != "settle":
                     self.assertEqual(phase["perCall"], 1, (name, phase["name"]))
@@ -54,6 +54,14 @@ class InstrumentationTests(unittest.TestCase):
             self.assertEqual(phase["kind"], kind)
             self.assertEqual(phase["action"], "lifecycle-retire")
             self.assertTrue(phase["recreateRoot"])
+
+    def test_preparation_matrix_uses_complete_cold_and_app_operations(self):
+        case = load_cli().scenarios()["lifecycle-preparation"]
+        self.assertTrue(case["preparation"])
+        self.assertTrue(case["phases"][1]["untilPreparation"])
+        self.assertEqual(case["phases"][1]["advance"], "preparation-step")
+        cancel = load_cli().scenarios()["lifecycle-cancel"]
+        self.assertTrue(cancel["phases"][1]["untilPartialConstruction"])
 
     def test_constructor_matrices_keep_cost_actions_and_serialize_every_phase(self):
         cli = load_cli()

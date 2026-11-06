@@ -3,7 +3,7 @@
 return function(load)
     local chart = load("panels/chart.lua")
     local api = load("@support/scheduler_panel_api.lua")
-    local create = load("@support/scheduler_chart_fixture.lua")(load)
+    local create = load("@support/scheduler_chart_fixture.lua")(load, chart)
     local decl = {
         class = "normal",
         exclusive = true,

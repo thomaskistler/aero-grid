@@ -199,48 +199,108 @@ function module.new(dependencies)
         return nil, tostring(reason)
     end
 
-    local function preparePanel(context, placement, preview)
+    local function beginPreparation(context, placement, preview)
+        return {
+            placement = placement,
+            preview = preview,
+            page = context.page,
+            panels = context.panels,
+            phase = "module",
+        }
+    end
+
+    local function rejectPreparation(context, work, reason)
+        work.done = true
+        work.prepared, work.error = rejectPanel(context, work.placement, work.preview, reason)
+        return true, work.prepared, work.error
+    end
+
+    local function advancePreparation(context, work)
+        if
+            work.page ~= context.page
+            or work.panels ~= context.panels
+            or context.reloadState
+            or context.pageRetirement
+        then
+            work.done, work.cancelled, work.prepared, work.error = true, true, nil, nil
+            return true
+        end
+        if work.done then
+            return true, work.prepared, work.error
+        end
+        local placement, preview = work.placement, work.preview
         local host = context.panelHost
-        local panel, panelError = loadModule(context.path, "panels/" .. placement.type .. ".lua")
-        local contractValid, contractError
-
-        if panel then
-            contractValid, contractError = host.validateModule(panel, placement.type)
-        end
-
-        if not panel then
-            return rejectPanel(context, placement, preview, panelError)
-        end
-        if not contractValid then
-            return rejectPanel(context, placement, preview, contractError)
-        end
-        if not host.supportsSpan(panel, placement.colSpan, placement.rowSpan) then
-            return rejectPanel(
-                context,
-                placement,
-                preview,
-                "panel does not support span " .. host.spanName(placement.colSpan, placement.rowSpan)
+        if work.phase == "module" then
+            local panel, panelError = loadModule(context.path, "panels/" .. placement.type .. ".lua")
+            if not panel then
+                return rejectPreparation(context, work, panelError)
+            end
+            local valid, contractError = host.validateModule(panel, placement.type)
+            if not valid then
+                return rejectPreparation(context, work, contractError)
+            end
+            work.module = panel
+            work.span = host.beginSpanCheck(panel, placement.colSpan, placement.rowSpan)
+            work.phase = "span"
+        elseif work.phase == "span" then
+            for _ = 1, 8 do
+                if host.advanceSpanCheck(work.span) then
+                    if not work.span.supported then
+                        return rejectPreparation(
+                            context,
+                            work,
+                            "panel does not support span " .. host.spanName(placement.colSpan, placement.rowSpan)
+                        )
+                    end
+                    work.phase = "rect"
+                    break
+                end
+            end
+        elseif work.phase == "rect" then
+            local rect, rectError = panelRect(context, placement)
+            if not rect then
+                return rejectPreparation(context, work, rectError)
+            end
+            work.rect = rect
+            work.resolution = host.beginSettings(
+                work.module,
+                placement.config,
+                { colSpan = placement.colSpan, rowSpan = placement.rowSpan },
+                context.modelArmed
             )
+            work.phase = "settings"
+        elseif work.phase == "settings" then
+            if host.advanceSettings(work.resolution) then
+                work.phase, work.warning = "warnings", 1
+            end
+        elseif work.phase == "warnings" then
+            local warnings = work.resolution.warnings
+            if preview and #warnings > 0 then
+                return rejectPreparation(context, work, table.concat(warnings, "; "))
+            end
+            local warning = warnings[work.warning]
+            if warning ~= nil then
+                addError(context, placement.id .. ": " .. warning)
+                work.warning = work.warning + 1
+            else
+                work.prepared = {
+                    module = work.module,
+                    settings = work.resolution.settings,
+                    rect = work.rect,
+                    settingsValidation = work.resolution.proof,
+                }
+                work.done = true
+                return true, work.prepared
+            end
         end
+        return false
+    end
 
-        local rect, rectError = panelRect(context, placement)
-        if not rect then
-            return rejectPanel(context, placement, preview, rectError)
+    local function preparePanel(context, placement, preview)
+        local work = beginPreparation(context, placement, preview)
+        while not advancePreparation(context, work) do
         end
-
-        local settings, warnings = host.resolveSettings(
-            panel,
-            placement.config,
-            { colSpan = placement.colSpan, rowSpan = placement.rowSpan },
-            context.modelArmed
-        )
-        if preview and #warnings > 0 then
-            return rejectPanel(context, placement, preview, table.concat(warnings, "; "))
-        end
-        for _, warning in ipairs(warnings) do
-            addError(context, placement.id .. ": " .. warning)
-        end
-        return { module = panel, settings = settings, rect = rect }
+        return work.prepared, work.error
     end
 
     local function publishPanel(context, entry)
@@ -293,6 +353,7 @@ function module.new(dependencies)
         end
 
         local services = buildServices(context, placement)
+        services.settingsValidation = preparation.settingsValidation
         services.preview = preview == true
         services.staged = prepared ~= nil and type(rawget(panel, "construct")) == "function"
         if services.staged then
@@ -1119,8 +1180,17 @@ function module.new(dependencies)
         end
 
         if stage == "panel-prepare" then
-            context.pendingPanel = preparePanel(context, context.pendingPlacement)
-            if context.pendingPanel then
+            local work = context.panelPreparation
+            if not work or work.placement ~= context.pendingPlacement then
+                work = beginPreparation(context, context.pendingPlacement)
+                context.panelPreparation = work
+            end
+            local done, prepared = advancePreparation(context, work)
+            if not done then
+                return true
+            end
+            context.panelPreparation, context.pendingPanel = nil, prepared
+            if prepared then
                 context.stage = "panel-build"
             else
                 context.pendingPlacement, context.panelMigrationVersion = nil, nil
@@ -1187,6 +1257,7 @@ function module.new(dependencies)
         context.layoutMigrationVersion = nil
         context.pendingPlacement = nil
         context.pendingPanel = nil
+        context.panelPreparation = nil
         context.panelMigrationVersion = nil
         context.identifiers = nil
         context.itemIndex = nil
@@ -1216,6 +1287,8 @@ function module.new(dependencies)
         buildServices = buildServices,
         buildPanel = buildPanel,
         preparePanel = preparePanel,
+        beginPreparation = beginPreparation,
+        advancePreparation = advancePreparation,
         advanceConstruction = advanceConstruction,
         advanceLoad = advanceLoad,
         workBound = workBound,

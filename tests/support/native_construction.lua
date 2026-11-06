@@ -51,6 +51,7 @@ return function(real, cases, sameTree, parent, exercise)
         end
         if self.phase == "begin" then
             local services = case.dependencies()
+            services.settingsValidation = nil
             local owner = record("box", roots[1], {}, nil)
             self.reference = withApi(case.panel.create, owner, case.rect, case.settings, services)
             services = case.dependencies()

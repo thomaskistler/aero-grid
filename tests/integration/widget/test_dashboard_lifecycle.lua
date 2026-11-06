@@ -4,6 +4,16 @@ local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(root).new()
 local sameTree = assert(loadfile(root .. "/tests/support/panel_tree.lua"))()
 local definition = fixture.module("main.lua")
+local function prepare(context)
+    for _ = 1, 200 do
+        context.dashboardLifecycle.advanceAppRebuild(context)
+        if context.appRebuild.phase ~= "prepare" then
+            return
+        end
+        assert(not context.appRebuild.prepared and not context.pendingConstruction)
+    end
+    error("App preparation did not finish")
+end
 local function loaded(kind)
     fixture.reset()
     local context = definition.create(
@@ -78,7 +88,7 @@ for _, kind in ipairs({
         assert(job.phase == "prepare" and not context.refreshOwner)
         assert(not context.dashboardLifecycle.workBound(context, "advanceAppRebuild"))
         assert(#context.panels == #originals - 1 and original.container.hidden)
-        context.dashboardLifecycle.advanceAppRebuild(context)
+        prepare(context)
         assert(job.prepared and job.phase == "build")
         assert(
             not context.dashboardLifecycle.workBound(context, "advanceAppRebuild"),
@@ -167,15 +177,15 @@ for _, failure in ipairs({ "prepare", "create", "construct", "destroy" }) do
     if failure == "create" or failure == "construct" then
         context.dashboardLifecycle.advanceAppRebuild(context)
         fixture.lvglMock.settle()
-        context.dashboardLifecycle.advanceAppRebuild(context)
+        prepare(context)
     end
     local target = failure == "prepare" and context.dashboardLoader
         or (failure == "destroy" and entry.module or context.appRebuild.prepared.module)
-    local key = failure == "prepare" and "preparePanel" or failure
+    local key = failure == "prepare" and "advancePreparation" or failure
     local original = target[key]
     target[key] = function()
         if failure == "prepare" then
-            return nil
+            return true
         end
         error("expected lifecycle " .. failure .. " failure")
     end

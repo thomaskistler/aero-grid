@@ -41,7 +41,11 @@ return function(host, cases)
                 phase = "build",
                 index = 1,
                 entry = { module = case.panel, placement = placement },
-                prepared = { module = case.panel, settings = case.settings },
+                prepared = {
+                    module = case.panel,
+                    settings = case.settings,
+                    settingsValidation = case.settingsValidation,
+                },
             }
             if self.pass > 2 then
                 current.pendingPanel = current.appRebuild.prepared

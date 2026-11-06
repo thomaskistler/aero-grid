@@ -134,15 +134,31 @@ metric.decl = {
     },
 }
 
-function metric.validateSettings(settings)
-    local warnings = {}
+function metric.beginSettingsValidation(settings)
     local entries = settings.metrics
+    local work = { entries = entries, warnings = {}, count = 0, phase = "entry" }
     if type(entries) ~= "table" then
-        return { "metrics must contain a contiguous list of up to 3 readings" }
+        work.warnings[1] = "metrics must contain a contiguous list of up to 3 readings"
+        work.phase = "done"
+    else
+        work.iterator, work.state, work.key = pairs(entries)
     end
-    local count = 0
-    for key, entry in pairs(entries) do
-        count = count + 1
+    return work
+end
+
+function metric.advanceSettingsValidation(work)
+    local warnings = work.warnings
+    if work.phase == "entry" then
+        local key, entry = work.iterator(work.state, work.key)
+        work.key = key
+        if key == nil then
+            if work.count > 3 or #work.entries ~= work.count then
+                warnings[#warnings + 1] = "metrics must contain a contiguous list of up to 3 readings"
+            end
+            work.phase = "done"
+            return true
+        end
+        work.count = work.count + 1
         local prefix = "metrics[" .. tostring(key) .. "]"
         if type(key) ~= "number" or key % 1 ~= 0 or key < 1 or key > 3 then
             warnings[#warnings + 1] = prefix .. " must be an index from 1 to 3"
@@ -154,33 +170,43 @@ function metric.validateSettings(settings)
             if entry.source ~= nil and type(entry.source) ~= "string" then
                 warnings[#warnings + 1] = prefix .. ".source must be a string"
             end
-            for field, value in pairs(entry) do
-                if field == "label" or field == "unit" then
-                    if type(value) ~= "string" then
-                        warnings[#warnings + 1] = prefix .. "." .. field .. " must be a string"
-                    end
-                elseif field == "precision" then
-                    if type(value) ~= "number" or value ~= value or value < 0 or value > 3 or value % 1 ~= 0 then
-                        warnings[#warnings + 1] = prefix .. ".precision must be an integer from 0 to 3"
-                    end
-                elseif field == "rangeMin" or field == "rangeMax" or field == "warning" or field == "critical" then
-                    if type(value) ~= "number" or value ~= value or value == math.huge or value == -math.huge then
-                        warnings[#warnings + 1] = prefix .. "." .. field .. " must be a finite number"
-                    end
-                elseif field == "direction" then
-                    if value ~= "auto" and value ~= "rising" and value ~= "falling" then
-                        warnings[#warnings + 1] = prefix .. ".direction must be auto, rising, or falling"
-                    end
-                elseif field ~= "source" then
-                    warnings[#warnings + 1] = prefix .. "." .. tostring(field) .. " is not a reading setting"
-                end
+            work.fields, work.entry, work.field = pairs(entry)
+            work.prefix, work.phase = prefix, "field"
+        end
+    elseif work.phase == "field" then
+        local field, value = work.fields(work.entry, work.field)
+        work.field = field
+        local prefix = work.prefix
+        if field == nil then
+            work.phase = "entry"
+        elseif field == "label" or field == "unit" then
+            if type(value) ~= "string" then
+                warnings[#warnings + 1] = prefix .. "." .. field .. " must be a string"
             end
+        elseif field == "precision" then
+            if type(value) ~= "number" or value ~= value or value < 0 or value > 3 or value % 1 ~= 0 then
+                warnings[#warnings + 1] = prefix .. ".precision must be an integer from 0 to 3"
+            end
+        elseif field == "rangeMin" or field == "rangeMax" or field == "warning" or field == "critical" then
+            if type(value) ~= "number" or value ~= value or value == math.huge or value == -math.huge then
+                warnings[#warnings + 1] = prefix .. "." .. field .. " must be a finite number"
+            end
+        elseif field == "direction" then
+            if value ~= "auto" and value ~= "rising" and value ~= "falling" then
+                warnings[#warnings + 1] = prefix .. ".direction must be auto, rising, or falling"
+            end
+        elseif field ~= "source" then
+            warnings[#warnings + 1] = prefix .. "." .. tostring(field) .. " is not a reading setting"
         end
     end
-    if count > 3 or #entries ~= count then
-        warnings[#warnings + 1] = "metrics must contain a contiguous list of up to 3 readings"
+    return work.phase == "done"
+end
+
+function metric.validateSettings(settings)
+    local work = metric.beginSettingsValidation(settings)
+    while not metric.advanceSettingsValidation(work) do
     end
-    return warnings
+    return work.warnings
 end
 
 --- Whether an entry names a sensor to read.
@@ -826,7 +852,12 @@ local function beginMetric(parent, rect, config, services)
     local fonts = services.fonts
     local span = services.span
     local entries = config.metrics
-    local warnings = metric.validateSettings(config)
+    local proof = services.settingsValidation
+    local warnings = proof
+            and proof.settings == config
+            and proof.validator == metric.validateSettings
+            and proof.warnings
+        or metric.validateSettings(config)
     if #warnings > 0 then
         error(table.concat(warnings, "; "))
     end

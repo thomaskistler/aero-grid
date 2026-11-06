@@ -370,7 +370,7 @@ def scenarios():
     result["lifecycle-cancel"] = dict(result["modal-settings-reset"], fullscreen=True, phases=[
         {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 4},
         {"name": "partial", "kind": "refresh", "action": "lifecycle-app",
-         "callbacks": 3, "step": 5, "perCall": 1},
+         "callbacks": 400, "untilPartialConstruction": True, "step": 5, "perCall": 1},
         {"name": "cancel", "kind": "refresh", "action": "lifecycle-cancel",
          "callbacks": 400, "step": 5, "perCall": 1, "trace": True},
         {"name": "cancel-check", "kind": "refresh", "action": "check-lifecycle",
@@ -456,6 +456,14 @@ def scenarios():
         dict(phase, kind="background", action="lifecycle-app-background") if phase["name"] == "app-rebuild"
         else dict(phase, kind="background") if phase["name"] == "retire" else dict(phase)
         for phase in result["lifecycle-app-output"]["phases"]
+    ])
+    result["lifecycle-preparation"] = dict(result["metric-max"], fullscreen=True, preparation=True, phases=[
+        {"name": "begin", "kind": "refresh", "action": "preparation",
+         "callbacks": 1, "step": 5, "perCall": 1},
+        {"name": "prepare", "kind": "refresh", "advance": "preparation-step", "untilPreparation": True,
+         "callbacks": 6000, "step": 5, "perCall": 1},
+        {"name": "checked", "kind": "refresh", "action": "preparation-check",
+         "callbacks": 1, "step": 5, "perCall": 1},
     ])
     result["lifecycle-retire-admission-16"] = dict(result["metric-16"], fullscreen=True,
         owners=["panel:metric"], phases=[
@@ -804,6 +812,8 @@ def prepare(capture, name, spec, sd, mode="legacy"):
         for file in ("construction_cases.lua", "panel_tree.lua", "native_construction.lua",
                      "native_construction_cost.lua", "native_rx_reflow.lua"):
             shutil.copyfile(SUPPORT_DIR / file, audit / file)
+    if spec.get("preparation"):
+        shutil.copyfile(SUPPORT_DIR / "native_preparation.lua", audit / "native_preparation.lua")
 
 
 def run(capture, executable, library, name, spec, timeout, mode="legacy"):
@@ -826,6 +836,19 @@ def run(capture, executable, library, name, spec, timeout, mode="legacy"):
     data = json.loads(results.read_text())
     if data.get("errors"):
         raise RuntimeError(f"{name}: widget errors: {data['errors']}")
+    if spec.get("preparation"):
+        matrix = data.get("preparation", {})
+        if not matrix.get("done") or matrix.get("checked") != matrix.get("total") or not matrix.get("checked"):
+            raise RuntimeError(f"{name}: native preparation matrix was not completed")
+        for kind in ("metric", "chart", "state"):
+            for prefix in ("load:panel-prepare", "lifecycle:advanceAppRebuild:prepare"):
+                if not any(label.startswith(f"{prefix}:{kind}:settings:validation")
+                           for label in data.get("stats", {})):
+                    raise RuntimeError(f"{name}: missing complete preparation measurement for {kind}")
+        for panel in (WIDGET / "panels").glob("*.lua"):
+            for prefix in ("load:panel-prepare", "lifecycle:advanceAppRebuild:prepare"):
+                if not data.get("stats", {}).get(f"{prefix}:{panel.stem}:module", {}).get("n"):
+                    raise RuntimeError(f"{name}: missing complete module preparation for {panel.stem}")
     if spec.get("constructionParity"):
         matrix = data.get("construction", {})
         if not matrix.get("done") or matrix.get("checked", 0) != matrix.get("total") or not matrix.get("checked"):

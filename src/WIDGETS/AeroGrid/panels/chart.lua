@@ -105,7 +105,7 @@ local function finite(value)
     return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
 end
 
-function chart.validateSettings(settings, _, _, modelArmed)
+function chart.beginSettingsValidation(settings, _, _, modelArmed)
     local warnings = {}
     local arm = settings.armSwitch
     if
@@ -116,49 +116,83 @@ function chart.validateSettings(settings, _, _, modelArmed)
     then
         warnings[#warnings + 1] = "armSwitch must be blank, a physical switch position, or a logical switch"
     end
+    local work = { settings = settings, warnings = warnings, count = 0, phase = "entry" }
     if type(settings.metrics) ~= "table" then
-        return { "metrics must contain a contiguous list of up to 3 sources" }
+        work.warnings = { "metrics must contain a contiguous list of up to 3 sources" }
+        work.phase = "done"
+    else
+        work.iterator, work.state, work.key = pairs(settings.metrics)
     end
-    local count, sharedMin, sharedMax = 0, nil, nil
-    for key, entry in pairs(settings.metrics) do
-        count = count + 1
+    return work
+end
+
+function chart.advanceSettingsValidation(work)
+    local settings, warnings = work.settings, work.warnings
+    if work.phase == "entry" then
+        local key, entry = work.iterator(work.state, work.key)
+        work.key = key
+        if key == nil then
+            if work.count > 3 or #settings.metrics ~= work.count then
+                warnings[#warnings + 1] = "metrics must contain a contiguous list of up to 3 sources"
+            end
+            if
+                settings.scaling ~= "independent"
+                and work.sharedMin
+                and work.sharedMax
+                and work.sharedMin >= work.sharedMax
+            then
+                warnings[#warnings + 1] = "shared rangeMax must be greater than shared rangeMin"
+            end
+            work.phase = "done"
+            return true
+        end
+        work.count = work.count + 1
         local prefix = "metrics[" .. tostring(key) .. "]"
         if type(key) ~= "number" or key % 1 ~= 0 or key < 1 or key > 3 or type(entry) ~= "table" then
             warnings[#warnings + 1] = prefix .. " must be a source mapping at an index from 1 to 3"
         else
-            for field, value in pairs(entry) do
-                local valid
-                if field == "source" or field == "label" or field == "unit" then
-                    valid = type(value) == "string"
-                elseif field == "precision" then
-                    valid = finite(value) and value >= 0 and value <= 3 and value % 1 == 0
-                elseif field == "rangeMin" or field == "rangeMax" then
-                    valid = finite(value)
-                elseif field == "accent" then
-                    valid = value == "cyan" or value == "green" or value == "orange" or value == "amber"
-                end
-                if not valid then
-                    warnings[#warnings + 1] = prefix .. "." .. tostring(field) .. " is invalid"
-                end
+            work.fields, work.entry, work.field = pairs(entry)
+            work.value, work.prefix, work.phase = entry, prefix, "field"
+        end
+    elseif work.phase == "field" then
+        local field, value = work.fields(work.entry, work.field)
+        work.field = field
+        if field ~= nil then
+            local valid
+            if field == "source" or field == "label" or field == "unit" then
+                valid = type(value) == "string"
+            elseif field == "precision" then
+                valid = finite(value) and value >= 0 and value <= 3 and value % 1 == 0
+            elseif field == "rangeMin" or field == "rangeMax" then
+                valid = finite(value)
+            elseif field == "accent" then
+                valid = value == "cyan" or value == "green" or value == "orange" or value == "amber"
             end
+            if not valid then
+                warnings[#warnings + 1] = work.prefix .. "." .. tostring(field) .. " is invalid"
+            end
+        else
+            local entry, prefix = work.value, work.prefix
             if finite(entry.rangeMin) and finite(entry.rangeMax) and entry.rangeMin >= entry.rangeMax then
                 warnings[#warnings + 1] = prefix .. ".rangeMax must be greater than rangeMin"
             end
             if finite(entry.rangeMin) then
-                sharedMin = sharedMin and math.min(sharedMin, entry.rangeMin) or entry.rangeMin
+                work.sharedMin = work.sharedMin and math.min(work.sharedMin, entry.rangeMin) or entry.rangeMin
             end
             if finite(entry.rangeMax) then
-                sharedMax = sharedMax and math.max(sharedMax, entry.rangeMax) or entry.rangeMax
+                work.sharedMax = work.sharedMax and math.max(work.sharedMax, entry.rangeMax) or entry.rangeMax
             end
+            work.phase = "entry"
         end
     end
-    if count > 3 or #settings.metrics ~= count then
-        warnings[#warnings + 1] = "metrics must contain a contiguous list of up to 3 sources"
+    return work.phase == "done"
+end
+
+function chart.validateSettings(settings, span, config, modelArmed)
+    local work = chart.beginSettingsValidation(settings, span, config, modelArmed)
+    while not chart.advanceSettingsValidation(work) do
     end
-    if settings.scaling ~= "independent" and sharedMin and sharedMax and sharedMin >= sharedMax then
-        warnings[#warnings + 1] = "shared rangeMax must be greater than shared rangeMin"
-    end
-    return warnings
+    return work.warnings
 end
 
 local function caption(entry)
@@ -2350,7 +2384,12 @@ function chart.construct(context, rect)
 end
 
 function chart.create(parent, rect, settings, services)
-    local warnings = chart.validateSettings(settings, nil, nil, services.host and services.host.modelArmed)
+    local proof = services.settingsValidation
+    local warnings = proof
+            and proof.settings == settings
+            and proof.validator == chart.validateSettings
+            and proof.warnings
+        or chart.validateSettings(settings, nil, nil, services.host and services.host.modelArmed)
     assert(#warnings == 0, table.concat(warnings, "; "))
     local context = {
         theme = services.theme,

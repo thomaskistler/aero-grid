@@ -79,59 +79,92 @@ local function list(value)
     return count >= 1 and count <= 3 and #value == count
 end
 
-function statePanel.validateSettings(settings)
-    local warnings = {}
+function statePanel.beginSettingsValidation(settings)
     local entries = settings.entries
+    local work = { entries = entries, warnings = {}, phase = "entry", index = 1 }
     if not list(entries) then
-        return { "entries must contain a contiguous list of 1 to 3 entries" }
+        work.warnings[1] = "entries must contain a contiguous list of 1 to 3 entries"
+        work.phase = "done"
     end
-    for key, entry in ipairs(entries) do
-        local prefix = "entries[" .. key .. "]"
+    return work
+end
+
+function statePanel.advanceSettingsValidation(work)
+    local warnings = work.warnings
+    if work.phase == "entry" then
+        local entry = work.entries[work.index]
+        if entry == nil then
+            work.phase = "done"
+            return true
+        end
+        local prefix = "entries[" .. work.index .. "]"
+        work.index = work.index + 1
         if type(entry) ~= "table" then
             warnings[#warnings + 1] = prefix .. " must be a mapping"
         else
             if not singleLine(entry.label) then
                 warnings[#warnings + 1] = prefix .. ".label must be a nonempty single-line string"
             end
-            for field in pairs(entry) do
+            work.iterator, work.state, work.key = pairs(entry)
+            work.entry, work.prefix, work.phase = entry, prefix, "field"
+        end
+    elseif work.phase == "field" or work.phase == "condition-field" then
+        local field = work.iterator(work.state, work.key)
+        work.key = field
+        if work.phase == "field" then
+            if field ~= nil then
                 if field ~= "label" and field ~= "states" then
-                    warnings[#warnings + 1] = prefix .. "." .. tostring(field) .. " is not a state setting"
+                    warnings[#warnings + 1] = work.prefix .. "." .. tostring(field) .. " is not a state setting"
                 end
-            end
-            if not list(entry.states) then
-                warnings[#warnings + 1] = prefix .. ".states must contain a contiguous list of 1 to 3 conditions"
+            elseif not list(work.entry.states) then
+                warnings[#warnings + 1] = work.prefix .. ".states must contain a contiguous list of 1 to 3 conditions"
+                work.phase = "entry"
             else
-                for index, condition in ipairs(entry.states) do
-                    local path = prefix .. ".states[" .. index .. "]"
-                    if type(condition) ~= "table" then
-                        warnings[#warnings + 1] = path .. " must be a mapping"
-                    else
-                        if not singleLine(condition.text) then
-                            warnings[#warnings + 1] = path .. ".text must be a nonempty single-line string"
-                        end
-                        local switch = condition.switch
-                        if
-                            type(switch) ~= "string"
-                            or not (string.match(switch, "^S[A-Z][%^v%-]$") or string.match(switch, "^L%d%d$"))
-                        then
-                            warnings[#warnings + 1] = path
-                                .. ".switch must name a position such as SF^ or a logical switch such as L01"
-                        end
-                        local bg = condition.background
-                        if bg ~= nil and bg ~= "normal" and bg ~= "active" and bg ~= "warning" and bg ~= "critical" then
-                            warnings[#warnings + 1] = path .. ".background must be normal, active, warning, or critical"
-                        end
-                        for field in pairs(condition) do
-                            if field ~= "switch" and field ~= "text" and field ~= "background" then
-                                warnings[#warnings + 1] = path .. "." .. tostring(field) .. " is not a state setting"
-                            end
-                        end
-                    end
-                end
+                work.condition, work.phase = 1, "condition"
             end
+        elseif field == nil then
+            work.phase = "condition"
+        elseif field ~= "switch" and field ~= "text" and field ~= "background" then
+            warnings[#warnings + 1] = work.path .. "." .. tostring(field) .. " is not a state setting"
+        end
+    elseif work.phase == "condition" then
+        local condition = work.entry.states[work.condition]
+        if condition == nil then
+            work.phase = "entry"
+            return false
+        end
+        local path = work.prefix .. ".states[" .. work.condition .. "]"
+        work.condition = work.condition + 1
+        if type(condition) ~= "table" then
+            warnings[#warnings + 1] = path .. " must be a mapping"
+        else
+            if not singleLine(condition.text) then
+                warnings[#warnings + 1] = path .. ".text must be a nonempty single-line string"
+            end
+            local switch = condition.switch
+            if
+                type(switch) ~= "string"
+                or not (string.match(switch, "^S[A-Z][%^v%-]$") or string.match(switch, "^L%d%d$"))
+            then
+                warnings[#warnings + 1] = path
+                    .. ".switch must name a position such as SF^ or a logical switch such as L01"
+            end
+            local bg = condition.background
+            if bg ~= nil and bg ~= "normal" and bg ~= "active" and bg ~= "warning" and bg ~= "critical" then
+                warnings[#warnings + 1] = path .. ".background must be normal, active, warning, or critical"
+            end
+            work.iterator, work.state, work.key = pairs(condition)
+            work.path, work.phase = path, "condition-field"
         end
     end
-    return warnings
+    return work.phase == "done"
+end
+
+function statePanel.validateSettings(settings)
+    local work = statePanel.beginSettingsValidation(settings)
+    while not statePanel.advanceSettingsValidation(work) do
+    end
+    return work.warnings
 end
 
 function statePanel.reading(entry, feeds)
@@ -271,7 +304,12 @@ function statePanel.apply(context, drawn)
 end
 
 function statePanel.create(parent, rect, settings, services)
-    local warnings = statePanel.validateSettings(settings)
+    local proof = services.settingsValidation
+    local warnings = proof
+            and proof.settings == settings
+            and proof.validator == statePanel.validateSettings
+            and proof.warnings
+        or statePanel.validateSettings(settings)
     if #warnings > 0 then
         error(table.concat(warnings, "; "))
     end

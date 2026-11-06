@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-return function(load)
-    local chart = load("panels/chart.lua")
+return function(load, panel)
+    local chart = panel or load("panels/chart.lua")
     local panelHost = load("lib/panel_host.lua")
     local services = load("lib/services.lua")
     local historyService = load("lib/history_service.lua")
@@ -63,13 +63,16 @@ return function(load)
                     label = options.longText and string.rep("W", seed * 820) or nil,
                 }
             end
-            local settings = assert(panelHost.resolveSettings(chart, {
+            local resolution = panelHost.beginSettings(chart, {
                 armSwitch = "SAv",
                 duration = "30s",
                 timeRange = "rolling",
                 metrics = metrics,
                 label = options.longText and string.rep("W", seed * 820) or nil,
-            }))
+            })
+            while not panelHost.advanceSettings(resolution) do
+            end
+            local settings = resolution.settings
             if options.staged and options.warm then
                 for _, metric in ipairs(metrics) do
                     history:subscribe(metric.source, {
@@ -91,6 +94,7 @@ return function(load)
                     return builder.state(api.theme, state, accent)
                 end,
                 staged = options.staged,
+                settingsValidation = resolution.proof,
             }
             local panel =
                 chart.create(api.node(), options.rect or { x = 0, y = 0, w = 800, h = 480 }, settings, dependencies)

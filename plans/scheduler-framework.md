@@ -4197,3 +4197,107 @@ successful and error-presenting App completion. All 50 audit-tool tests pass.
 Production ownership, ten-tick Telemetry/History policy and deferred chart
 recording failures remain unchanged; activation still requires the separate
 first-arm policy decision.
+
+## 79. Bounded cold/App settings preparation (R6)
+
+Prerequisite: `b8898967d857e2f8470fa35a579069adf12e6b9e`, including administrative
+admission and the `66d3b8d` readiness fixes. Main, scheduler-host policy, production
+owners, and editor/controller/UI code are unchanged.
+
+Cold `advanceLoad` and App `advanceAppRebuild` share
+`beginPreparation`/`advancePreparation`: module/contract, at most eight supported
+spans, geometry/settings initialization, eight settings units, or one warning
+per callback. A settings unit copies one config key, checks one descriptor/choice,
+reports one unknown key, advances one validation step, or copies one warning.
+Metric/Chart/State validation advances by entry/field; State's shape check is
+bounded by the three permitted indices, but its arbitrary fields are staged.
+Synchronous validators, `resolveSettings`, and `preparePanel` drain the same
+implementation, preserving defaults, warnings, unknown keys, shallow nested
+identity, supported spans, preview rejection, and validator failures.
+
+Resolution carries settings identity, validator identity, and panel-validation
+warnings into construction. These three built-ins consume that proof instead of
+scanning arbitrary config again in `create`; direct constructors without a
+matching proof still validate and reject invalid settings synchronously.
+Constructor fixtures now carry the actual resolver proof; the direct parity
+reference still omits it. No declarations or instruction ceilings changed.
+
+Replacement loading/retirement discard preparation references. Continuations
+check page/registry identity before returning even completed results. Construction
+still uses current geometry after a resize. Preparation/build/construction
+eligibility remain `nil`: cost proof does not activate service co-admission.
+Custom module loading, iterators, and legacy/custom validators remain explicitly
+unmeasured.
+
+### Complete native preparation atoms
+
+`lifecycle-preparation` exercises enclosing cold/App operations for all sixteen
+shipped modules with 64 retained unknown keys, plus large malformed
+Metric/Chart/State entry/condition mappings and in-flight resize. All 38 cases
+complete with empty errors; whole callbacks peak at 4973. Assertions check warning
+counts, retained unknown values, no premature construction/publication, and the
+validation proof.
+
+Each cell is native/fitted, using `ceil((native * 1.10 + 50) / 10) * 10`.
+Labels are `load:panel-prepare:<kind>:<phase>` and
+`lifecycle:advanceAppRebuild:prepare:<kind>:<phase>`, wrapping
+`dashboard_loader.advanceLoad` and `dashboard_lifecycle.advanceAppRebuild`.
+All maxima below occur in `module`, not an isolated validator helper.
+
+| Built-in | Cold native/fitted | App native/fitted |
+|---|---:|---:|
+| chart | 1199/1370 | 1176/1350 |
+| flight-counter | 757/890 | 734/860 |
+| flight-mode | 734/860 | 711/840 |
+| flight-timer | 783/920 | 760/890 |
+| host-diagnostics | 824/960 | 801/940 |
+| link-status | 1054/1210 | 1031/1190 |
+| metric | 902/1050 | 879/1020 |
+| model-identity | 761/890 | 738/870 |
+| navigation | 875/1020 | 852/990 |
+| output | 793/930 | 770/900 |
+| rx-battery | 928/1080 | 905/1050 |
+| service-probe | 775/910 | 752/880 |
+| state | 798/930 | 775/910 |
+| theme-showcase | 1155/1330 | 1132/1300 |
+| trim-panel | 773/910 | 750/880 |
+| tx-battery | 813/950 | 790/920 |
+
+Other enclosing phase maxima (cold/App native): span 155/147, rect 350/342,
+settings 656/648, warnings 147/139. Settings peaks in State's
+`settings:validation:field`, fitted 780/770. All preparation atoms fit 4000.
+Foreground/background Output lifecycle captures pass with whole maxima 8133/7105,
+below 15000, and empty errors.
+Cancellation, confirmed-save drain, and multi-panel App captures also pass with
+whole maxima 8672/8392/9615 respectively and empty errors.
+
+### Parity and readiness
+
+Lua53/int32 tests use 128 unknown top-level keys and 128 malformed entry/condition
+fields, verify exact synchronous/staged warnings and values, prohibit duplicate
+constructor validation, resize, and cancel every phase through replacement loading
+and retirement. Complete offline preparation peaks at 1217. Host tests cover long
+custom schema/span sequences, defaults/choices, malformed descriptors, legacy
+validator failures, and preview rejection. A 120-case differential run against
+prerequisite validators preserves all Metric/Chart/State warnings.
+The full `make test-lua32` suite and all 46 audit-tool tests pass with unchanged
+declarations. Constructor parity covers 1632 trees; reflow parity covers 1040
+completed trees/preemptions.
+
+Tree parity, lifecycle admission, loading, settings/editor admission, and Flight
+loading regressions pass. Strict reset remains 10800 in both runtimes with both
+original first-arm XFAILs. Theme replacement now waits for readiness with the
+established 400-turn watchdog, retaining its original completed-theme assertion.
+Native cancellation waits for actual partial construction instead of assuming
+three callbacks; its cancellation assertion and instruction ceilings are unchanged.
+Chart unit line 335 fails identically with all six prerequisite modules substituted
+in memory; no chart stress assertion was changed.
+
+```sh
+python3 tools/audit-scheduler.py lifecycle-preparation lifecycle-app-output lifecycle-admission-background --timeout 300
+python3 tools/audit-scheduler.py lifecycle-cancel lifecycle-settings-drain lifecycle-app-multi --timeout 240
+build/lua32/lua tests/integration/widget/test_panel_preparation.lua "$PWD"
+build/lua32/lua tests/integration/widget/test_panel_loading.lua "$PWD"
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+make test-lua32
+```
