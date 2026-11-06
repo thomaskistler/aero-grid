@@ -31,6 +31,13 @@ Classes are proposed, not decided (see the plan's open questions).
 
 Reproduce: `python3 tools/audit-scheduler.py --all --traces`, then `--report`.
 
+For complete reflow regression captures, run `reflow-cost-<panel>` and
+`reflow-matrix-<panel>` with `--mode mixed`. The cost matrix enforces the
+fitted 4000-instruction limit around actual lifecycle advances; the separate
+matrix compares native trees with synchronous updates. Recorder-prefixed
+measurements are not admission costs. `panel-reflow-<panel>` checks real widget
+callbacks against 15000 instructions; matrix-driver callbacks are not that test.
+
 ## Headline findings
 
 1. **The current static caps can exceed 20000.** `REFRESH_CAP = 6` admits six

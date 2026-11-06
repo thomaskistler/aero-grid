@@ -709,7 +709,7 @@ end
 ---@param fonts table
 ---@param sample table Widest value text and unit this panel can render.
 ---@return table
-function linkStatus.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, out)
+function linkStatus.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, out, frame)
     -- The whole arrangement, from the shared builder. This panel's only
     -- visualization is a bar, which spans the panel by design and is exempt
     -- from the slot rule, so the reading never splits and centres across the
@@ -717,7 +717,7 @@ function linkStatus.regionsFor(theme, themeBuilder, rect, layout, fonts, sample,
     local area = themeBuilder.panel(theme, rect, fonts, {
         -- Built through this panel's own builder, which the host may have
         -- wrapped to lay the panel out around the menu button's corner.
-        frame = themeBuilder.frame(theme, rect, fonts),
+        frame = frame or themeBuilder.frame(theme, rect, fonts),
         forms = { sample.digits },
         unit = sample.unit,
         draws = {
@@ -1137,6 +1137,9 @@ function linkStatus.cancelRefresh(context)
     if context.createStage then
         context.createInvalidated = true
     end
+    if context.reflowWork then
+        context.reflowWork = { invalidated = true }
+    end
     if context.refreshWork then
         context.refreshWork, context.rendered = nil, nil
     end
@@ -1376,6 +1379,46 @@ function linkStatus.update(context, rect)
     local area =
         linkStatus.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts, context.sample)
     applyGeometry(context, rect, area)
+end
+
+function linkStatus.reflow(context, rect, _, _, _, begin)
+    local work = context.reflowWork
+    if
+        begin
+        or work
+            and (work.invalidated or work.rect.x ~= rect.x or work.rect.y ~= rect.y or work.rect.w ~= rect.w or work.rect.h ~= rect.h)
+    then
+        linkStatus.cancelRefresh(context)
+        local captured = { x = rect.x, y = rect.y, w = rect.w, h = rect.h }
+        context.reflowWork = {
+            stage = "geometry",
+            rect = captured,
+            frame = context.themeBuilder.frame(context.theme, captured, context.fonts),
+        }
+        return false
+    end
+    if not work then
+        return true
+    elseif work.stage == "geometry" then
+        work.area = linkStatus.regionsFor(
+            context.theme,
+            context.themeBuilder,
+            work.rect,
+            context.layout,
+            context.fonts,
+            context.sample,
+            nil,
+            work.frame
+        )
+        work.frame, work.stage = nil, "apply"
+    elseif work.stage == "apply" then
+        applyGeometry(context, work.rect, work.area)
+        context.reflowWork = nil
+        return true
+    else
+        error("unknown link-status reflow stage: " .. tostring(work.stage))
+    end
+    return false
 end
 
 function linkStatus.construct(context, rect)

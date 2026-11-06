@@ -122,8 +122,8 @@ local function finish(label, raw, leak)
     if loadBound then
         gate(cost <= loadBound, label .. " exceeds its bounded loading charge: " .. cost)
     end
-    local rxReflow = string.match(label, "^lifecycle:advanceReflow:rx%-battery:")
-    if label == "lifecycle:advanceReflow" or rxReflow then
+    local boundedReflow = string.match(label, "^lifecycle:advanceReflow:")
+    if label == "lifecycle:advanceReflow" or boundedReflow then
         gate(cost <= 4000, "complete geometry advance exceeds the atom cap: " .. cost)
     end
     local loadingConstructor = string.match(label, "^load:panel%-build:([^:]+)$")
@@ -136,7 +136,7 @@ local function finish(label, raw, leak)
         or label == "lifecycle:restartLoading"
         or loadingConstructor and boundedConstructors[loadingConstructor]
         or loadingPreparation
-        or rxReflow
+        or boundedReflow
     then
         local fitted = math.ceil((cost * 1.10 + 50) / 10) * 10
         gate(fitted <= 4000, label .. " exceeds the fitted lifecycle atom cap: " .. cost .. " -> " .. fitted)
@@ -182,7 +182,7 @@ local function finish(label, raw, leak)
                 gate(cost <= bound, label .. " exceeds the editor input charge: " .. cost)
             end
         end
-        if rxReflow then
+        if boundedReflow then
             record("lifecycle:advanceReflow", cost, own, units > 0 and units or 1, children)
         end
         local stage = tonumber(string.match(label, "^editor:advanceEditor:render:(%d+)$"))
@@ -525,10 +525,15 @@ local function install(context)
                             return token
                         end
                         local entry = current.panels[current.reflowIndex or 0]
-                        if entry and entry.module.id == "rx-battery" then
+                        if entry then
                             local work = entry.instance.reflowWork
                             local stage = current.reflowEntry ~= entry or not work or work.invalidated
-                            return "lifecycle:advanceReflow:rx-battery:" .. (stage and "begin" or work.stage)
+                            local prefix = current.recordingReflow and "recorded:lifecycle:advanceReflow:"
+                                or "lifecycle:advanceReflow:"
+                            return prefix
+                                .. entry.module.id
+                                .. ":"
+                                .. (not rawget(entry.module, "reflow") and "update" or stage and "begin" or work.stage)
                         end
                         return "lifecycle:advanceReflow"
                     end
@@ -898,6 +903,8 @@ local function report(context)
                 checked = P.construction.checked,
                 total = P.construction.total,
                 done = P.construction.done,
+                costOnly = P.construction.costOnly == true,
+                recordingTrees = P.construction.recordingTrees == true,
             },
             preparation = P.preparation and {
                 checked = P.preparation.checked,
@@ -945,6 +952,30 @@ local function settingsMembers(context, phase)
     end
 end
 
+local function beginPanelReflow(context, costOnly)
+    local function load(relative, ...)
+        if relative == "lib/primitives.lua" then
+            return context.primitives
+        elseif relative == "lib/theme.lua" then
+            return context.themeBuilder
+        end
+        local path = string.sub(relative, 1, 9) == "@support/"
+                and "/WIDGETS/AeroGrid/audit/" .. string.sub(relative, 10)
+            or "/WIDGETS/AeroGrid/" .. relative
+        return assert(loadScript(path))(...)
+    end
+    local cases = load("@support/reflow_cases.lua")(load, context, config.reflowKind)
+    P.construction = load("@support/native_panel_reflow.lua")(
+        context,
+        cases,
+        load("@support/native_construction.lua"),
+        load("@support/panel_tree.lua"),
+        costOnly
+    )
+    assert(not costOnly or P.construction.costOnly, "panel reflow cost matrix must not record trees")
+    assert(costOnly or P.construction.recordingTrees, "panel reflow parity must record native trees")
+end
+
 local actions
 actions = {
     ["preparation"] = function(context)
@@ -959,6 +990,12 @@ actions = {
     end,
     ["preparation-check"] = function()
         assert(P.preparation.done and P.preparation.checked == P.preparation.total)
+    end,
+    ["panel-reflow-matrix"] = function(context)
+        beginPanelReflow(context, false)
+    end,
+    ["panel-reflow-cost"] = function(context)
+        beginPanelReflow(context, true)
     end,
     ["construction-parity"] = function(context, costOnly, reflow, reflowCost)
         local function load(relative)
@@ -1605,7 +1642,7 @@ local function runCallback(kind, context, fn, e, t)
             )
         end
     end
-    if string.match(config.scenario, "^lifecycle%-") then
+    if string.match(config.scenario, "^lifecycle%-") or string.match(config.scenario, "^panel%-reflow%-") then
         gate(total <= 15000, kind .. " exceeds the complete lifecycle callback ceiling: " .. total)
     end
     if string.match(config.scenario, "^migration%-tasks%-") then

@@ -9,7 +9,7 @@ return function(load)
     local api = load("@support/scheduler_panel_api.lua")
     local chartFixture = load("@support/scheduler_chart_fixture.lua")(load)
     local bounds = {
-        metric = { begin = 3270, apply = 2080 },
+        metric = { begin = 330, geometry = 1820, apply = 2110 },
         navigation = { begin = 3170, render = 620, reading = 1630, ["tape-frame"] = 910, tape = 2650 },
         chart = { begin = 800, font = 1130, layout = 950, position = 1770, finish = 1300 },
         ["theme-showcase"] = { begin = 2170, place = 450 },

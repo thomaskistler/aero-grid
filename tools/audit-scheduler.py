@@ -27,6 +27,23 @@ OUTPUT = ROOT / "build/scheduler-audit"
 COMPANION = Path("/Applications/EdgeTX Companion 2.12.app")
 TRACE_DIR = ROOT / "tests/fixtures/scheduler-traces"
 MODEL_SETTINGS = "version: 1\nmodelFilename: model1.yml\nrevision: 1\narmed: SAv\n"
+REFLOW_STAGES = {
+    "metric": ("begin", "geometry", "apply"),
+    "link-status": ("begin", "geometry", "apply"),
+    "tx-battery": ("begin", "reading", "visual", "publish"),
+    "flight-timer": ("update",),
+    "navigation": ("begin", "render", "reading", "tape-frame", "tape"),
+    "chart": ("begin", "font", "layout", "position", "finish"),
+    "output": ("begin", "hide", "subscribe", "captions", "place", "render", "apply"),
+    "theme-showcase": ("begin", "place"),
+    "flight-counter": ("update",),
+    "flight-mode": ("update",),
+    "model-identity": ("update",),
+    "state": ("begin", "fit", "check", "fallback", "apply"),
+    "trim-panel": ("update",),
+    "host-diagnostics": ("update",),
+    "service-probe": ("update",),
+}
 
 
 def capture_module():
@@ -349,6 +366,14 @@ def scenarios():
         dict(phase, **({"action": "rx-reflow-cost"} if phase.get("action") == "rx-reflow-matrix" else {}))
         for phase in result["rx-reflow-matrix"]["phases"]
     ])
+    for kind in REFLOW_STAGES:
+        for operation in ("matrix", "cost"):
+            result[f"reflow-{operation}-{kind}"] = dict(
+                construction_parity, reflowKind=kind, phases=[
+                    dict(phase, **({"action": f"panel-reflow-{operation}"}
+                                  if phase.get("action") == "construction-parity" else {}))
+                    for phase in construction_parity["phases"]
+                ])
     for kind in ("metric", "link-status", "rx-battery", "tx-battery", "flight-timer"):
         for operation in ("parity", "cost"):
             result[f"construction-{operation}-{kind}"] = dict(
@@ -812,6 +837,8 @@ def prepare(capture, name, spec, sd, mode="legacy"):
               "failOnError": True, "traceLimit": 300}
     if spec.get("constructionKind"):
         config["constructionKind"] = spec["constructionKind"]
+    if spec.get("reflowKind"):
+        config["reflowKind"] = spec["reflowKind"]
     if spec.get("expectedError"):
         config["expectedError"] = spec["expectedError"]
     if name.startswith("lifecycle-"):
@@ -823,7 +850,8 @@ def prepare(capture, name, spec, sd, mode="legacy"):
         shutil.copyfile(PROBE_DIR / file, audit / file)
     if spec.get("constructionParity"):
         for file in ("construction_cases.lua", "panel_tree.lua", "native_construction.lua",
-                     "native_construction_cost.lua", "native_rx_reflow.lua"):
+                     "native_construction_cost.lua", "native_rx_reflow.lua",
+                     "reflow_cases.lua", "native_panel_reflow.lua"):
             shutil.copyfile(SUPPORT_DIR / file, audit / file)
     if spec.get("preparation"):
         shutil.copyfile(SUPPORT_DIR / "native_preparation.lua", audit / "native_preparation.lua")
@@ -884,6 +912,15 @@ def run(capture, executable, library, name, spec, timeout, mode="legacy"):
                 label = f"lifecycle:advanceReflow:rx-battery:{stage}"
                 if not data.get("stats", {}).get(label, {}).get("n"):
                     raise RuntimeError(f"{name}: missing complete reflow measurement for {label}")
+        if spec.get("reflowKind"):
+            recorded = name.startswith("reflow-matrix-")
+            if matrix.get("recordingTrees") != recorded or matrix.get("costOnly") != (not recorded):
+                raise RuntimeError(f"{name}: native tree recording and pure cost provenance disagree")
+            prefix = ("recorded:" if recorded else "") + \
+                f"lifecycle:advanceReflow:{spec['reflowKind']}:"
+            for stage in REFLOW_STAGES[spec["reflowKind"]]:
+                if not data.get("stats", {}).get(prefix + stage, {}).get("n"):
+                    raise RuntimeError(f"{name}: missing complete reflow measurement for {prefix + stage}")
     actions = [phase["action"] for phase in spec["phases"] if phase.get("action")]
     for action in set(actions):
         samples = data.get("stats", {}).get(f"callback:action:{action}", {}).get("n", 0)

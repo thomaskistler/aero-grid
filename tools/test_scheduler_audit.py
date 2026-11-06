@@ -113,6 +113,35 @@ class InstrumentationTests(unittest.TestCase):
             self.assertEqual({key: value for key, value in scheduled.items()
                               if key not in ("owners", "flightTasks")}, original)
 
+    def test_remaining_reflow_matrices_cover_each_kind_with_separate_cleanup(self):
+        cases = load_cli().scenarios()
+        kinds = ("metric", "link-status", "tx-battery", "flight-timer", "navigation", "chart", "output",
+                 "theme-showcase", "flight-counter", "flight-mode", "model-identity", "state", "trim-panel",
+                 "host-diagnostics", "service-probe")
+        for kind in kinds:
+            for operation in ("matrix", "cost"):
+                case = cases[f"reflow-{operation}-{kind}"]
+                self.assertEqual(case["reflowKind"], kind)
+                self.assertTrue(case["constructionParity"])
+                self.assertEqual(case["phases"][1]["action"], f"panel-reflow-{operation}")
+                self.assertTrue(case["phases"][2]["untilConstruction"])
+                for phase in case["phases"]:
+                    self.assertEqual(phase["perCall"], 1)
+
+    def test_reflow_image_preserves_kind_and_explicit_cost_parity_selection(self):
+        cli = load_cli()
+        with tempfile.TemporaryDirectory() as directory:
+            sd = Path(directory) / "sd"
+            cli.prepare(cli.capture_module(), "reflow-cost-state", cli.scenarios()["reflow-cost-state"], sd, "mixed")
+            audit_dir = sd / "WIDGETS/AeroGrid/audit"
+            self.assertIn('["reflowKind"] = "state"', (audit_dir / "config.lua").read_text())
+            for name in ("reflow_cases.lua", "native_panel_reflow.lua", "native_construction.lua", "panel_tree.lua"):
+                self.assertTrue((audit_dir / name).is_file())
+            source = (audit_dir / "probe.lua").read_text()
+            self.assertIn("beginPanelReflow(context, false)", source)
+            self.assertIn("beginPanelReflow(context, true)", source)
+            self.assertIn('"recorded:lifecycle:advanceReflow:"', source)
+
     def test_framework_measures_uninstrumented_chart_and_packages_shared_fixture(self):
         cli = load_cli()
         with tempfile.TemporaryDirectory() as directory:

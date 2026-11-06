@@ -194,7 +194,7 @@ local function widest(builder, font, entry, supporting)
     return sample
 end
 
-function statePanel.regionsFor(context, rect)
+local function regionSpec(context, rect)
     local builder, fonts = context.themeBuilder, context.fonts
     local entries = context.settings.entries
     local supporting = entries[2] and { widest(builder, fonts.label, entries[2], true) } or nil
@@ -202,13 +202,20 @@ function statePanel.regionsFor(context, rect)
         supporting[2] = widest(builder, fonts.label, entries[3], true)
     end
     local sample = widest(builder, fonts.primary, entries[1])
-    local spec = {
+    return {
         frame = builder.frame(context.theme, rect, fonts),
         forms = { sample },
         draws = { rows = supporting ~= nil, visual = false },
         rowItems = entries[3] and 2 or 1,
         supporting = supporting,
-    }
+    },
+        sample
+end
+
+function statePanel.regionsFor(context, rect)
+    local builder, fonts = context.themeBuilder, context.fonts
+    local entries = context.settings.entries
+    local spec, sample = regionSpec(context, rect)
     local area
     -- Proportional glyph widths can change order between fonts. Re-measure at
     -- the chosen font rather than treating character count as a width.
@@ -372,16 +379,22 @@ function statePanel.create(parent, rect, settings, services)
     return context
 end
 
+function statePanel.cancelRefresh(context)
+    if context.reflowWork then
+        context.reflowWork = { invalidated = true }
+    end
+end
+
 function statePanel.refresh(context)
+    statePanel.cancelRefresh(context)
     local changed, drawn = context.primitives.changed(context, statePanel.render)
     if changed then
         statePanel.apply(context, drawn)
     end
 end
 
-function statePanel.update(context, rect)
+local function applyGeometry(context, rect, area)
     local primitives = context.primitives
-    local area = statePanel.regionsFor(context, rect)
     local previous = context.area
     context.area = area
     primitives.resizeHeader(context, rect, area.frame, context.settings.entries[1].label)
@@ -397,6 +410,59 @@ function statePanel.update(context, rect)
     end
     context.rendered = nil
     statePanel.refresh(context)
+end
+
+function statePanel.update(context, rect)
+    statePanel.cancelRefresh(context)
+    applyGeometry(context, rect, statePanel.regionsFor(context, rect))
+end
+
+function statePanel.reflow(context, rect, _, _, _, begin)
+    local work = context.reflowWork
+    if
+        begin
+        or work
+            and (work.invalidated or work.rect.x ~= rect.x or work.rect.y ~= rect.y or work.rect.w ~= rect.w or work.rect.h ~= rect.h)
+    then
+        local captured = { x = rect.x, y = rect.y, w = rect.w, h = rect.h }
+        local spec = regionSpec(context, captured)
+        context.reflowWork = { rect = captured, spec = spec, iteration = 0, stage = "fit" }
+        return false
+    end
+    if not work then
+        return true
+    elseif work.stage == "fit" then
+        local builder = context.themeBuilder
+        work.area = builder.panel(context.theme, work.rect, context.fonts, work.spec, {})
+        work.sample = widest(builder, work.area.value, context.settings.entries[1])
+        work.iteration = work.iteration + 1
+        if
+            builder.measureText(work.area.value, work.sample)
+                <= builder.measureText(work.area.value, work.spec.forms[1])
+            or work.iteration >= #builder.READING_FONTS + 1
+        then
+            work.stage = "check"
+        else
+            work.spec.forms[1] = work.sample
+        end
+    elseif work.stage == "check" then
+        work.area.primaryFits = context.themeBuilder.measureText(work.area.value, work.sample) <= work.area.valueBudget
+        if work.area.primaryFits then
+            work.stage = "apply"
+        else
+            work.spec.forms[1], work.stage = "NO FIT", "fallback"
+        end
+    elseif work.stage == "fallback" then
+        work.area = context.themeBuilder.panel(context.theme, work.rect, context.fonts, work.spec, {})
+        work.area.primaryFits, work.stage = false, "apply"
+    elseif work.stage == "apply" then
+        applyGeometry(context, work.rect, work.area)
+        context.reflowWork = nil
+        return true
+    else
+        error("unknown state reflow stage: " .. tostring(work.stage))
+    end
+    return false
 end
 
 statePanel.step = statePanel.refresh

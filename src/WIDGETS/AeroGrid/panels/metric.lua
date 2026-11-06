@@ -1199,7 +1199,7 @@ end
 --- and objects whose region returned are shown again.
 ---@param context AeroGridMetricContext
 ---@param rect AeroGridRect
-geometry = function(context, rect)
+geometry = function(context, rect, frame)
     if not context.unit and (rect.w > context.rect.w or rect.h > context.rect.h) and not context.suppressSensorUnit then
         context.unitText = context.feed and context.feed.unitText or ""
     end
@@ -1211,7 +1211,9 @@ geometry = function(context, rect)
         context.layout,
         context.fonts,
         context.sample,
-        context.unitText
+        context.unitText,
+        nil,
+        frame
     )
 end
 
@@ -1328,21 +1330,34 @@ function metric.update(context, rect)
 end
 
 function metric.reflow(context, rect, _, _, _, begin)
-    if begin or context.reflowWork and context.reflowWork.invalidated then
+    local work = context.reflowWork
+    if
+        begin
+        or work
+            and (work.invalidated or work.rect.x ~= rect.x or work.rect.y ~= rect.y or work.rect.w ~= rect.w or work.rect.h ~= rect.h)
+    then
         metric.cancelRefresh(context)
-        context.reflowWork = { stage = "apply", area = geometry(context, rect) }
+        local captured = { x = rect.x, y = rect.y, w = rect.w, h = rect.h }
+        context.reflowWork = {
+            stage = "geometry",
+            rect = captured,
+            frame = context.themeBuilder.frame(context.theme, captured, context.fonts),
+        }
         return false
     end
-    local work = context.reflowWork
     if not work then
         return true
+    elseif work.stage == "geometry" then
+        work.area = geometry(context, work.rect, work.frame)
+        work.frame, work.stage = nil, "apply"
     elseif work.stage == "apply" then
-        applyGeometry(context, rect, work.area)
+        applyGeometry(context, work.rect, work.area)
         context.refreshGeometry, context.reflowWork = nil, nil
         return true
     else
         error("unknown metric reflow stage: " .. tostring(work.stage))
     end
+    return false
 end
 
 return metric
