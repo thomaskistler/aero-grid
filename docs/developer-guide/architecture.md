@@ -84,6 +84,8 @@ Runtime loading validates the header, applies at most one header transition per
 loader callback, then parses each panel and applies at most one panel transition
 per callback before validating and building that panel. Header and panel parsing
 and header copying use bounded grants, retaining unknown header metadata.
+Measured loader stages reserve their work before admitting service-only tasks;
+terminal errors publish separately from parsing.
 Staged Save follows the
 same bounded progression, keeping header migration, each panel migration,
 validation, and persistence in separate callbacks. The synchronous whole-layout

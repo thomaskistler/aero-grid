@@ -1110,6 +1110,15 @@ local function updateModalServices(context, used, kind)
     scheduling:finish(kind)
 end
 
+local function advanceLoading(context)
+    local loader = context.dashboardLoader
+    local bound = loader.workBound and loader.workBound(context)
+    if bound then
+        updateModalServices(context, bound, "loader")
+    end
+    loader.advanceLoad(context)
+end
+
 --- The scheduled work of a steady or background callback with the host attached:
 --- the legacy loop, then the new scheduler with
 --- what is left (`new` mode has no legacy loop; panel `background` hooks are part
@@ -1756,7 +1765,7 @@ local function refresh(context, widgetEvent, touchState)
     end
 
     if context.stage then
-        context.dashboardLoader.advanceLoad(context)
+        advanceLoading(context)
         return
     end
 
@@ -1962,7 +1971,7 @@ local function background(context)
         context.dashboardLoader.beginLoad(context)
         return
     elseif context.stage then
-        context.dashboardLoader.advanceLoad(context)
+        advanceLoading(context)
         return
     elseif context.reflowIndex then
         return

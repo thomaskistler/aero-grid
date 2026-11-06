@@ -18,7 +18,7 @@ for _, sourceName in ipairs({ "Alt", "Curr", "VFAS" }) do
         .. "\n          critical: 95\n          direction: rising"
 end
 local source = table.concat(lines, "\n")
-local function create()
+local function create(content)
     fixture.reset()
     local context = definition.create(
         { x = 0, y = 0, w = 480, h = 272 },
@@ -30,7 +30,7 @@ local function create()
     end, 150, 10))
     local read = context.layoutStore.readCandidates
     context.layoutStore.readCandidates = function()
-        return source, nil, "chunked.yaml", "user"
+        return content or source, nil, "chunked.yaml", "user"
     end
     context.dashboardLoader.advanceLoad(context)
     context.layoutStore.readCandidates = read
@@ -81,4 +81,21 @@ for _, stage in ipairs({
         stage .. ": replacement loads must discard all parser continuations"
     )
 end
+context = create("version: 5\ngrid:\n  columns: 4\n  rows: 4\ntheme: obsolete\nsession: 42\npanels:")
+assert(fixture.pumpUntil(context, function(value)
+    return value.stage == "load-error"
+end, 200, 10))
+assert(#context.errors == 0 and not context.headerWork)
+assert(context.dashboardLoader.advanceLoad(context) and #context.errors == 1)
+assert(context.dashboardLoader.advanceLoad(context) and #context.errors == 2)
+assert(not context.dashboardLoader.advanceLoad(context) and not context.stage and not context.loadFailure)
+assert(context.errors[1] == "layout-level theme settings are no longer supported; choose a theme in widget settings")
+assert(context.errors[2] == "session must be a mapping")
+assert(context.flightFactory.members[context].pending == false)
+context = create("version: 999\npanels:")
+assert(fixture.pumpUntil(context, function(value)
+    return value.stage == "load-error"
+end, 200, 10))
+context.dashboardLoader.beginLoad(context)
+assert(not context.loadFailure and context.stage == "theme-read")
 print("Layout loading: bounded header/item parsing, unknown metadata parity and replacement cancellation passed")

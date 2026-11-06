@@ -12,6 +12,30 @@ function module.new(dependencies)
     local loadModule = dependencies.loadModule
     local isFullScreen = dependencies.isFullScreen
     local readThemeSource = dependencies.readThemeSource
+    local loadBounds = {
+        ["theme-read"] = 240,
+        ["theme-tokenize"] = 3200,
+        ["theme-parse"] = 900,
+        ["theme-resolve-begin"] = 240,
+        ["theme-publish"] = 500,
+        read = 750,
+        tokenize = 3300,
+        header = 950,
+        ["header-parse"] = 1650,
+        ["header-validate"] = 350,
+        ["header-finalize"] = 350,
+        ["panel-tokens"] = 1120,
+        ["panel-parse"] = 1650,
+        ["load-error"] = 1500,
+    }
+    local resolutionBounds = { legibility = 2400, chart = 1800, alert = 2200, display = 650, finalize = 180 }
+
+    local function workBound(context)
+        if context.stage == "theme-resolve" then
+            return context.themeBuildWork and resolutionBounds[context.themeBuildWork.stage]
+        end
+        return loadBounds[context.stage]
+    end
 
     --- Advance to the next layout candidate after a read or parse failure.
     ---@param context AeroGridContext
@@ -319,14 +343,19 @@ function module.new(dependencies)
         context.stage = context.themeReadIndex > #context.themeNames and "theme-validate" or "theme-read"
     end
 
-    --- Advance the staged loader by exactly one step.
-    --- EdgeTX allows roughly 20000 VM instructions per widget callback, and a
-    --- whole dashboard costs far more than that, so loading is spread over
-    --- consecutive calls. Every stage is bounded by a fixed amount of work rather
-    --- than by the size of the layout: the file is tokenized a fixed number of
-    --- lines at a time, and each panel is parsed, validated, prepared and built
-    --- in separate callbacks. A layout that fills the grid therefore costs more callbacks,
-    --- never a larger callback.
+    local function queueFailure(context, errors)
+        context.loadFailure = { errors = errors, index = 1 }
+        context.stage = "load-error"
+        context.tokens, context.source = nil, nil
+        context.loadCandidates, context.loadCandidateIndex = nil, nil
+        context.pendingPanel, context.pendingPlacement, context.pendingItem = nil, nil, nil
+        context.themeNames, context.themeDefinitions, context.themeWork = nil, nil, nil
+        context.themeBuildWork, context.themePublication = nil, nil
+        context.headerWork, context.commentWork = nil, nil
+        return true
+    end
+
+    --- Advance one bounded load stage, including separate error publication.
     ---@param context AeroGridContext
     ---@return boolean busy True while more work remains.
     local function advanceLoad(context)
@@ -341,25 +370,24 @@ function module.new(dependencies)
             then
                 return true
             end
-            addError(context, context.recoveryReason or message)
+            return queueFailure(context, { context.recoveryReason or message })
+        end
+
+        if stage == "load-error" then
+            local failure = context.loadFailure
+            local message = failure.errors[failure.index]
+            if message then
+                addError(context, message)
+                failure.index = failure.index + 1
+                return true
+            end
             local member = context.flightFactory and context.flightFactory.members[context]
             if member then
                 member.pending, member.error =
                     false, "Flight configuration unavailable: repair layout " .. context.layoutName
                 context.flightFactory.revision = (context.flightFactory.revision or 0) + 1
             end
-            context.stage = nil
-            context.tokens = nil
-            context.source = nil
-            context.loadCandidates = nil
-            context.loadCandidateIndex = nil
-            context.pendingPanel = nil
-            context.themeNames, context.themeDefinitions = nil, nil
-            context.themeWork = nil
-            context.themeBuildWork, context.themePublication = nil, nil
-            context.headerWork = nil
-            context.commentWork = nil
-            context.pendingItem = nil
+            context.stage, context.loadFailure = nil, nil
             showErrors(context)
             return false
         end
@@ -582,20 +610,12 @@ function module.new(dependencies)
                 if recoverLayout(context, reason) then
                     return true
                 end
-                if context.recoveryReason then
-                    addError(context, context.recoveryReason)
-                else
-                    for _, headerError in ipairs(headerErrors or {}) do
-                        addError(context, headerError)
-                    end
-                end
-                context.stage = nil
-                context.tokens = nil
-                context.loadCandidates = nil
-                context.loadCandidateIndex = nil
-                context.headerWork = nil
-                showErrors(context)
-                return false
+                return queueFailure(
+                    context,
+                    context.recoveryReason and { context.recoveryReason }
+                        or headerErrors
+                        or { "unsupported layout header" }
+                )
             end
 
             context.document = validated
@@ -969,6 +989,7 @@ function module.new(dependencies)
         context.source = nil
         context.commentWork, context.headerWork = nil, nil
         context.pendingItem = nil
+        context.loadFailure = nil
         context.document = nil
         context.layoutSourceVersion = nil
         context.layoutMigrationVersion = nil
@@ -1005,6 +1026,7 @@ function module.new(dependencies)
         preparePanel = preparePanel,
         advanceConstruction = advanceConstruction,
         advanceLoad = advanceLoad,
+        workBound = workBound,
         beginLoad = beginLoad,
     }
 end

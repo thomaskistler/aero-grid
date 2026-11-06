@@ -216,6 +216,10 @@ def scenarios():
         layout=layout_panels.replace("panels:\n", layout_header +
             "\nretained:\n  - item: first\n    values:\n      - one\n      - two\npanels:\n"),
         phases=standard_phases())
+    invalid_layout = custom_layout([]).replace("version: 5", "version: 999")
+    result["layout-loading-error"] = dict(result["metric-max"], expected=0,
+        layout=invalid_layout, fallbackLayout=invalid_layout,
+        expectedError="unsupported layout version", phases=standard_phases())
     for panel in (*PANELS, "theme-showcase"):
         base = result["metric-max"] if panel == "theme-showcase" else result[f"{panel}-max"]
         result[f"panel-reflow-{panel}"] = dict(base, phases=standard_phases() + [
@@ -568,6 +572,8 @@ def prepare(capture, name, spec, sd, mode="legacy"):
     (widget / "panels/chart.lua").write_text(patch_chart((WIDGET / "panels/chart.lua").read_text()))
     if "layout" in spec:
         (widget / "layouts/capture-panels.yaml").write_text(spec["layout"])
+    if "fallbackLayout" in spec:
+        (widget / "layouts/Default.yaml").write_text(spec["fallbackLayout"])
     if spec.get("settings"):
         settings = sd / "AEROGRID/models"
         settings.mkdir(parents=True, exist_ok=True)

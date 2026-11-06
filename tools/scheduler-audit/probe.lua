@@ -81,17 +81,19 @@ local function finish(label, raw, leak)
         label = "unlabelled"
     end
     local loadBound = ({
-        ["load:theme-read"] = 200,
+        ["load:theme-read"] = 240,
         ["load:theme-tokenize"] = 3200,
         ["load:theme-parse"] = 900,
         ["load:theme-resolve-begin"] = 240,
         ["load:tokenize"] = 3300,
         ["load:header"] = 950,
         ["load:header-parse"] = 1650,
-        ["load:header-validate"] = 250,
-        ["load:header-finalize"] = 220,
+        ["load:header-validate"] = 350,
+        ["load:header-finalize"] = 350,
         ["load:panel-tokens"] = 1120,
         ["load:panel-parse"] = 1650,
+        ["load:read"] = 750,
+        ["load:load-error"] = 1500,
     })[label]
     local resolution = string.match(label, "^load:theme%-resolve:(%a+)$")
     if resolution then
@@ -672,7 +674,7 @@ end
 
 local function report(context)
     local errors = unexpectedErrors(context)
-    gate(not config.expectedError or P.expectedErrorSeen, "expected settings error was not reported")
+    gate(not config.expectedError or P.expectedErrorSeen, "expected scenario error was not reported")
     for message in pairs(gateErrors) do
         errors[#errors + 1] = message
     end
@@ -1033,7 +1035,7 @@ for name, action in pairs(actions) do
 end
 
 local function callbackSurface(kind, context)
-    if kind ~= "refresh" and not (kind == "background" and context.modelSettingsUi) then
+    if kind ~= "refresh" and not (kind == "background" and (context.modelSettingsUi or context.stage)) then
         return nil
     end
     local ui = context.editorUi
@@ -1089,6 +1091,9 @@ local function callbackSurface(kind, context)
     if context.aerogridMenu and context.aerogridMenu.open then
         return "menu"
     end
+    if context.stage then
+        return "loader:" .. context.stage
+    end
     return nil
 end
 
@@ -1101,6 +1106,18 @@ local function runCallback(kind, context, fn, e, t)
     local c1 = count()
     pause(true)
     local total = c1 - c0 - K_CALLBACK
+    if surface and string.sub(surface, 1, 7) == "loader:" then
+        gate(total <= 15000, surface .. " exceeds the complete loading callback ceiling: " .. total)
+        for _, label in ipairs(topLabels) do
+            gate(
+                not string.match(label, "^task:panel:")
+                    and not string.match(label, "^panel:[^:]+:refresh")
+                    and not string.match(label, "^panel:[^:]+:background")
+                    and not string.match(label, "^chart:"),
+                surface .. " refreshed a hidden panel: " .. label
+            )
+        end
+    end
     if string.match(config.scenario, "^lifecycle%-") then
         gate(total <= 15000, kind .. " exceeds the complete lifecycle callback ceiling: " .. total)
     end

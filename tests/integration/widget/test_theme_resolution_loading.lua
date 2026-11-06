@@ -81,8 +81,10 @@ reach(broken, function(value)
 end)
 local previous = broken.theme
 broken.themePublication.phase = "invalid"
-assert(not broken.dashboardLoader.advanceLoad(broken))
-assert(not broken.stage and not broken.themeBuildWork and not broken.themePublication)
+assert(broken.dashboardLoader.advanceLoad(broken))
+assert(broken.stage == "load-error" and not broken.themeBuildWork and not broken.themePublication)
+assert(broken.dashboardLoader.advanceLoad(broken))
+assert(not broken.dashboardLoader.advanceLoad(broken) and not broken.stage)
 assert(broken.theme == previous)
 assert(string.find(broken.errors[#broken.errors], "unknown theme publication phase", 1, true))
 

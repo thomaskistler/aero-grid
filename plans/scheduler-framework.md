@@ -3683,3 +3683,29 @@ python3 tools/audit-scheduler.py lifecycle-app-metric lifecycle-app-multi lifecy
 python3 -m unittest discover -s tools -p test_scheduler_audit.py
 make test-lua32
 ```
+
+## 65. Service-only loader admission and separate failure publication (R6)
+
+`dashboardLoader.workBound(context)` declares the measured theme/parser,
+header-copy and read stages. Main reserves this work under the service-only
+`loader` kind before advancing either foreground or background loading.
+Unmeasured setup, constructor and final Flight registration stages still return
+nil; this slice does not claim their eligibility or activate production owners.
+
+Failure detection releases private parser/resolver state, then publishes one
+error per callback and finishes member/error presentation separately. Header
+errors retain their original ordering; replacement loads discard unpublished
+errors. This prevents parser declarations from hiding synchronous notification
+work. Successful public loading output is unchanged.
+
+Actual-widget native cases `layout-loading-chunks` and `layout-loading-error`
+include complete callback and hidden-panel gates. The dense successful case
+still peaks at 6146 instructions; exhausted unsupported-version recovery peaks
+at 3016, with error advances at most 84 against a conservative 1500 reserve.
+Header validation/finalization declarations are 350 to include failure queuing.
+The actual-broker enrollment fixture remains 2040/2300 after adding the real
+loader kind, including eight additional audit-only kinds; framework release
+242/420 and minimum idle slack 15 are unchanged.
+
+Lua53/int32 parser/error ordering/cancellation and existing construction/theme/
+host integration tests pass. No hidden periodic panel work is admitted.
