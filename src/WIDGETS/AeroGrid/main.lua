@@ -1758,12 +1758,21 @@ local function refresh(context, widgetEvent, touchState)
             or context.editorUi.exitCommand
             or context.editorUi.previewPending
             or context.editorUi.previewRefresh
+            or context.editorUi.renderStage
         )
     then
         local building = context.editorUi.buildStage ~= nil
+        local rendering = context.editorUi.renderStage
+        local renderBound = rendering and context.editorUiModule.renderWorkBound(context.editorUi)
         local preview = context.editorUi.previewRefresh
+        if rendering and widgetEvent and widgetEvent ~= 0 and isFullScreen() then
+            event(context, widgetEvent, touchState)
+            return
+        end
         context.editorController.advanceEditor(context)
-        if context.editorUi and (building or preview and preview.workBound) then
+        if context.editorUi and renderBound then
+            updateModalServices(context, renderBound, "editor-render")
+        elseif context.editorUi and (building or preview and preview.workBound) then
             updateModalServices(context, building and 3000 or preview.workBound, "editor-build")
         end
         return

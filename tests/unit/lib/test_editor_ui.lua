@@ -188,5 +188,31 @@ for stage = 1, 14 do
     assert(not ui.advance(context), "closed partial editor must not resume construction")
 end
 
+for target = 1, 6 do
+    local context, state, calls = setup(16)
+    for _ = 1, 15 do
+        assert(ui.advance(context))
+    end
+    state.session.selected = 1
+    EVT_ROT_RIGHT = 9301
+    assert(ui.handle(context, EVT_ROT_RIGHT))
+    assert(state.renderStage == 1 and calls() == 1, "input queues rendering without synchronizing all slots")
+    assert(ui.handle(context, EVT_ROT_RIGHT) and state.session.selected == 3,
+        "unfinished painting must not swallow newer input")
+    for stage = 1, target do
+        assert(state.renderStage == stage)
+        assert((ui.renderWorkBound(state) ~= nil) == (stage ~= 1),
+            "geometry synchronization must not acquire paint-only eligibility")
+        state.exitCommand = { action = "save" }
+        assert(ui.renderWorkBound(state) == nil, "higher-priority commands must not use a paint bound")
+        state.exitCommand = nil
+        assert(ui.advance(context))
+        assert(state.renderStage == (stage < 6 and stage + 1 or nil))
+    end
+    assert(calls() == 2, "one geometry synchronization per requested rendering")
+    ui.close(context, false)
+    assert(context.editorUi == nil and not ui.advance(context), "closed partial render must not resume")
+end
+
 lvgl = previousLvgl
 print("editor UI construction: staged geometry/publication, errors, resumed drafts and cancellation passed")

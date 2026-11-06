@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 local uiModule = { RUNTIME_API = 1 }
+uiModule.RENDER_BOUNDS = { rows = 1700, finish = 1400 }
 
 local function label(parent, rect, text, color, font)
     return lvgl.label(parent, {
@@ -103,6 +104,14 @@ local function renderPreviews(context, state, first, last)
     return changed
 end
 
+local function renderStatus(state)
+    state.statusLabel:set({
+        text = state.previewError and state.status == state.previewError and "Panel preview failed; see error details."
+            or state.status,
+    })
+    visible(state.statusLabel, state.statusError == true)
+end
+
 local function finishRender(context, state, changed)
     if changed then
         local first = state.handlers.editor.availablePositions(state.session, 1, 1)[1]
@@ -116,17 +125,41 @@ local function finishRender(context, state, changed)
             y = math.floor((state.addRect.h - state.addSymbolHeight) / 2),
         })
     end
-    state.statusLabel:set({
-        text = state.previewError and state.status == state.previewError and "Panel preview failed; see error details."
-            or state.status,
-    })
-    visible(state.statusLabel, state.statusError == true)
+    renderStatus(state)
 end
 
-local function render(context, state)
-    local changed = prepareRender(context, state)
-    local moved = renderPreviews(context, state, 1, #state.previews)
-    finishRender(context, state, changed or moved)
+local function render(_, state)
+    state.renderStage, state.renderChanged = 1, nil
+    renderStatus(state)
+end
+
+function uiModule.renderWorkBound(state)
+    -- Geometry synchronization can invoke panel-specific lifecycle work.
+    if
+        state.renderStage
+        and state.renderStage ~= 1
+        and not state.session.initializing
+        and not state.previewPending
+        and not state.previewRefresh
+        and not state.exitCommand
+    then
+        return state.renderStage == 6 and uiModule.RENDER_BOUNDS.finish or uiModule.RENDER_BOUNDS.rows
+    end
+end
+
+local function advanceRender(context, state)
+    local stage = state.renderStage
+    if stage == 1 then
+        state.renderChanged = prepareRender(context, state)
+    elseif stage <= 5 then
+        local changed = renderPreviews(context, state, (stage - 2) * 4 + 1, (stage - 1) * 4)
+        state.renderChanged = state.renderChanged or changed
+    else
+        finishRender(context, state, state.renderChanged)
+        state.renderStage, state.renderChanged = nil, nil
+        return
+    end
+    state.renderStage = stage + 1
 end
 
 local function openDrawer(context, state, mode)
@@ -252,6 +285,10 @@ function uiModule.advance(context)
         elseif command.action == "write" then
             saveAndClose(context, state, command.name)
         end
+        return true
+    end
+    if state.renderStage then
+        advanceRender(context, state)
         return true
     end
     if state.drawerBuild ~= nil or state.drawerPending then

@@ -105,6 +105,12 @@ local function finish(label, raw, leak)
     end
     if recording then
         record(label, cost, own, units > 0 and units or 1, children)
+        local stage = tonumber(string.match(label, "^editor:advanceEditor:render:(%d+)$"))
+        if stage and stage >= 2 and P.editorRenderBounds then
+            gate(cost <= 4000, label .. " exceeds the editor paint atom cap: " .. cost)
+            gate(cost <= P.editorRenderBounds[stage == 6 and "finish" or "rows"],
+                label .. " exceeds the editor paint charge: " .. cost)
+        end
         local editorPrefix = "editor:advanceEditor:"
         if string.sub(label, 1, #editorPrefix) == editorPrefix then
             record("editor:advanceEditor", cost, own, units > 0 and units or 1, children)
@@ -254,6 +260,9 @@ local function editorLabel(token, context)
     if ui.buildStage then
         return "build:" .. tostring(ui.buildStage)
     end
+    if ui.renderStage and not ui.previewPending and not ui.previewRefresh and not ui.exitCommand then
+        return "render:" .. tostring(ui.renderStage)
+    end
     local job = ui.previewRefresh
     if job then
         local action = job.actions[job.index]
@@ -333,6 +342,7 @@ local function install(context)
         end
     end
     local runtime = context.serviceRuntime
+    P.editorRenderBounds = context.editorUiModule and context.editorUiModule.RENDER_BOUNDS
     if context.diagnosticsLog then
         wrapField(context.diagnosticsLog, "startSnapshot", "modal:log:freeze")
         wrapField(context.diagnosticsLog, "advanceSnapshot", "modal:log:snapshot")
@@ -618,6 +628,13 @@ local actions = {
             "native editor scenario must reach a completed editor preview"
         )
     end,
+    ["select-editor"] = function(context)
+        refreshFn(context, EVT_ROT_RIGHT)
+        assert(context.editorUi.renderStage, "ordinary editor input must queue bounded rendering")
+    end,
+    ["check-render"] = function(context)
+        assert(context.editorUi and not context.editorUi.renderStage, "editor rendering must complete")
+    end,
     ["close-editor"] = function(context)
         assert(context.editorUi and context.editorSession and not context.editorSession.dirty)
         context.editorUiModule.close(context, false)
@@ -673,6 +690,9 @@ local function callbackSurface(kind, context)
         end
         if ui.buildStage then
             return "editor-build:" .. tostring(ui.buildStage)
+        end
+        if ui.renderStage then
+            return "editor-render:" .. tostring(ui.renderStage)
         end
         if ui.previewRefresh then
             local action = ui.previewRefresh.actions[ui.previewRefresh.index]
@@ -733,7 +753,8 @@ local function runCallback(kind, context, fn, e, t)
             end
         end
     end
-    if string.sub(config.scenario, 1, 6) == "modal-" and surface and kind == "refresh" then
+    local paintSurface = surface and string.match(surface, "^editor%-render:[2-6]$")
+    if kind == "refresh" and (paintSurface or string.sub(config.scenario, 1, 6) == "modal-" and surface) then
         gate(total <= 15000, surface .. " exceeds the complete callback ceiling: " .. total)
         for _, label in ipairs(topLabels) do
             gate(

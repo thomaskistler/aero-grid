@@ -411,6 +411,10 @@ Menu and location overlays also use service-only callbacks: hidden panels do
 not refresh behind them. Menu action handlers consume their callback separately
 from popup construction and input; unmeasured action handlers do not inherit
 service eligibility.
+Ordinary editor painting uses four-slot advances and a separate final
+publication callback. New input preempts unfinished painting instead of being
+dropped. These stages admit services under `editor-render`; geometry
+synchronization and higher-priority save/preview commands keep their own gates.
 
 Put the module at `panels/<type>.lua` and reference that type in a layout.
 Regular panels declare `supportedSpans = { "any" }` and adapt their contents to

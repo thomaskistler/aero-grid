@@ -118,6 +118,14 @@ local function refresh(event, touch)
             .. tostring(context.stage)
     )
     widget.lvglMock.settle()
+    if event and context.editorUi and context.editorUi.renderStage then
+        for _ = 1, 6 do
+            refresh()
+            if not context.editorUi or not context.editorUi.renderStage then
+                break
+            end
+        end
+    end
 end
 local function settle()
     for _ = 1, 60 do
@@ -169,6 +177,7 @@ local function settleDrawer()
             and context.editorUi.drawerBuild == nil
             and not context.editorUi.previewPending
             and not context.editorUi.previewRefresh
+            and not context.editorUi.renderStage
         then
             return
         end

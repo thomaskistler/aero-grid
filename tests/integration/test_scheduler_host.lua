@@ -797,7 +797,7 @@ do
     equal(hiddenPanel.consumed, 0, "hidden panel tasks cannot run while editor construction owns the screen")
     equal(standin.decl.kinds, nil, "host eligibility must not mutate shared service declarations")
     equal(backgroundOnly.decl.kinds["editor-build"], nil)
-    for _, kind in ipairs({ "modal-log", "modal-settings", "modal-menu", "modal-location" }) do
+    for _, kind in ipairs({ "modal-log", "modal-settings", "modal-menu", "modal-location", "editor-render" }) do
         service.queue[#service.queue + 1] = 17
         context.scheduler:run(kind, getTime() + 50, 1500)
         equal(backgroundOnly.consumed, 0, "modal kinds do not admit background-only services")

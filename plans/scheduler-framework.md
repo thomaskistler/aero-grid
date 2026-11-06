@@ -2884,3 +2884,47 @@ menu 9223), logger/viewer/settings/menu/location/host regressions, and the
 combined log/Showcase/idle native fixtures. The existing viewer mock now peaks
 at 10300 in the combined tree. Production owners and recording cadence remain
 unchanged.
+
+## 46. Bounded ordinary editor painting (R5 slice)
+
+Ordinary rendering no longer repeats synchronization, sixteen preview slots
+and add-tile/status publication in one input/drawer callback. Requests queue
+one synchronization advance, four four-slot advances and final publication.
+Status/error visibility still changes immediately. Later input preempts the
+queued paint rather than being swallowed; save/preview commands retain their
+existing priority. Closing drops an unfinished paint, with no later mutation.
+
+Only the measured paint/publication stages use `editor-render` (2400 host
+overhead). Four-slot work charges 1700 and final publication 1400. Synchronizing
+preview geometry can call panel-specific lifecycle operations, so its first
+advance remains consumed and ineligible. A queued higher-priority save or preview
+command also suppresses paint eligibility instead of borrowing the paint bound.
+Stable preview accounting remains the parent's separate integration surface.
+
+The isolated native fixture covers 0/1/4/8/15/16 placements, three display widths,
+existing/new slots, cached/invalidated geometry and publication with/without
+change detection. Every four-slot atom peaks at 1459 and final publication at
+1203, below the declared bounds and the 4000 atom cap. Real editor selection
+paints reach 5794 as whole callbacks including services; chart-preview rebuild
+paints reach 5992. Native samples contain History work and no panel refresh.
+The audit now gates both complete paint callbacks and their body charges.
+
+```sh
+python3 tools/audit-scheduler.py --framework editor-render modal-log --timeout 180
+python3 tools/audit-scheduler.py editor-preview-metric editor-preview-chart editor-rebuild-metric editor-rebuild-chart --timeout 180
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+```
+
+The editor unit, complete editor integration, host and initialization suites
+pass; int32 editor unit tests pass. Unit coverage includes newer input during
+unfinished painting, cancellation after each advance, and rejection of geometry
+and higher-priority command admission. Integration helpers now wait for queued
+painting while continuing to check each individual callback's 15000 ceiling.
+The complete editor integration remains at its existing 15000 mock maximum.
+All 36 audit-tool tests pass.
+
+This does not waive the stable legacy sixteen-metric preview failure (25719
+whole-scenario maximum before parent admission integration), synchronize
+arbitrary panel geometry under a paint bound, or admit unmeasured drawer/input
+commands. Settings save/cancel and the remaining R6/Flight/Smart gates stay open.
+Production owners and the ten-tick recording policy remain unchanged.

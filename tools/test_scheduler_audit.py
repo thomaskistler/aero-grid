@@ -160,7 +160,17 @@ class ScenarioTests(unittest.TestCase):
             self.assertTrue(spec["fullscreen"])
             self.assertEqual(spec["expected"], count)
             self.assertEqual([phase["action"] for phase in spec["phases"] if "action" in phase],
-                             ["open-editor", "check-editor", "close-editor"])
+                             ["open-editor", "check-editor", "select-editor", "check-render", "close-editor"])
+
+    def test_modal_recording_case_keeps_real_chart_and_log_demand(self):
+        spec = self.cli.scenarios()["modal-log-recording"]
+        self.assertTrue(spec["fullscreen"])
+        self.assertTrue(spec["settings"])
+        self.assertEqual(spec["expected"], 2)
+        self.assertEqual(spec["sources"], 1)
+        self.assertIn("type: chart", spec["layout"])
+        self.assertIn("type: host-diagnostics", spec["layout"])
+        self.assertIn("section: log", spec["layout"])
 
     def test_editor_task_owners_do_not_change_legacy_preview_cases(self):
         scenarios = self.cli.scenarios()

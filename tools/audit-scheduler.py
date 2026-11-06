@@ -185,6 +185,10 @@ def scenarios():
              "callbacks": 80, "step": 5, "perCall": 4},
             {"name": "editor-preview", "kind": "refresh", "action": "check-editor",
              "callbacks": 120, "step": 5, "perCall": 4},
+            {"name": "editor-render", "kind": "refresh", "action": "select-editor",
+             "callbacks": 20, "step": 5, "perCall": 4},
+            {"name": "editor-render-check", "kind": "refresh", "action": "check-render",
+             "callbacks": 1, "step": 5, "perCall": 1},
             {"name": "editor-close", "kind": "refresh", "action": "close-editor",
              "callbacks": 40, "step": 5, "perCall": 4},
         ])
