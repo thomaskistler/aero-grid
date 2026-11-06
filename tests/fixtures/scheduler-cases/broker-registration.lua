@@ -1,14 +1,17 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 return function(load)
-    local host, panelHost = load("lib/scheduler_host.lua"), load("lib/panel_host.lua")
+    local panelHost = load("lib/panel_host.lua")
     local flight, support = load("lib/flight_service.lua"), load("lib/services.lua")
     local fixture = load("@support/scheduler_flight_fixture.lua")(load)
-    local declaration = { class = "normal", stages = { run = { fixed = 0, perUnit = 3960, maxUnits = 1 } } }
+    local declaration = { class = "normal", stages = { run = { fixed = 0, perUnit = 2300, maxUnits = 1 } } }
     local cases = {}
     for _, size in ipairs({ 0, 16 }) do
         for _, action in ipairs({
             "enroll",
+            "enroll-next",
+            "extra-kinds",
+            "extra-kinds-final",
             "registry-gap",
             "partial",
             "facade",
@@ -21,6 +24,14 @@ return function(load)
                 stage = "run",
                 grant = 1,
                 setup = function()
+                    local host = load("lib/scheduler_host.lua")
+                    local extra = action == "extra-kinds" or action == "extra-kinds-final"
+                    if extra then
+                        for index = 1, 8 do
+                            host.SERVICE_KINDS["audit-loader-" .. index] = true
+                            host.OVERHEAD["audit-loader-" .. index] = 2400
+                        end
+                    end
                     local owner, radio, _, context = fixture("run")
                     radio.now = 0
                     local factory = { broker = owner, members = owner.members, revision = 1 }
@@ -73,6 +84,15 @@ return function(load)
                         return assert(result)
                     end
                     local stable = owner:schedulerService(context)
+                    local function settle(target, scheduler)
+                        for _ = 1, 4 do
+                            ready(target, scheduler)
+                            if #scheduler.waiting == 0 then
+                                return
+                            end
+                        end
+                        error("actual broker enrollment did not finish")
+                    end
                     local state = {
                         owner = owner,
                         context = context,
@@ -82,9 +102,21 @@ return function(load)
                         action = action,
                         size = size,
                         ready = ready,
+                        settle = settle,
                     }
                     if action ~= "enroll" then
-                        ready(context, scheduling)
+                        if action == "enroll-next" or extra then
+                            ready(context, scheduling)
+                            if action == "extra-kinds-final" then
+                                while #scheduling.waiting > 1 do
+                                    ready(context, scheduling)
+                                end
+                            end
+                        else
+                            settle(context, scheduling)
+                        end
+                    end
+                    if action ~= "enroll" and action ~= "enroll-next" and not extra then
                         assert(scheduling.scheduler:reschedule("service:flight", 47))
                         assert(scheduling.scheduler:reschedule("service:smart", 83))
                         if action == "registry-gap" then

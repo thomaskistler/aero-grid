@@ -12,11 +12,28 @@ local equal = assert(loadfile(root .. "/tests/support/assertions.lua"))().assert
 
 for _, item in ipairs(case.cases) do
     local task, now, state = item.setup()
+    local additions = 0
+    local add = state.scheduling.scheduler.add
+    function state.scheduling.scheduler:add(spec)
+        additions = additions + 1
+        equal(state.scheduling.panelSetup, 2300, "registration is charged before scheduler allocation")
+        return add(self, spec)
+    end
     equal(task:step(1, "run", now), 1)
+    assert(additions <= 1, "a ready turn cannot enroll multiple service tasks")
+    if state.action == "enroll" and state.size == 16 then
+        equal(additions, 0, "panel enrollment and service enrollment cannot share an atom")
+    end
+    state.scheduling.scheduler.add = add
+    state.settle(state.context, state.scheduling)
     local owner, context, scheduling = state.owner, state.context, state.scheduling
     local scheduler = scheduling.scheduler
     local disabled = state.action == "disable"
-    local initial = state.action == "enroll" or state.action == "handoff"
+    local initial = state.action == "enroll"
+        or state.action == "enroll-next"
+        or state.action == "extra-kinds"
+        or state.action == "extra-kinds-final"
+        or state.action == "handoff"
     equal(owner:schedulerService(context), not disabled and state.stable or nil)
     if disabled then
         equal(scheduler:dueOf("service:flight"), nil)
@@ -93,5 +110,50 @@ for _, item in ipairs(case.cases) do
         equal(owner.smartRuntime.byId.smart.polledAt, 1300, "background also advances the actual Smart task")
         equal(scheduler:takeErrors(), nil)
     end
+end
+
+do
+    local _, _, state = case.cases[1].setup()
+    state.settle(state.context, state.scheduling)
+    local telemetry = load("lib/telemetry_service.lua").new(state.owner.env, support)
+    for index = 1, 24 do
+        telemetry:subscribe("Source" .. index, false)
+    end
+    state.context.serviceRuntime = { order = { telemetry }, byId = { telemetry = telemetry } }
+    local scheduling = state.scheduling
+    state.ready(state.context, scheduling)
+    assert(#scheduling.waiting > 1, "demanded services remain pending across callbacks")
+    assert(scheduling:verify(state.context) == nil, "legitimate pending services satisfy verification")
+    local pending = scheduling.waiting[1]
+    scheduling.pendingServices[pending.id] = nil
+    assert(scheduling:verify(state.context), "missing registrations cannot masquerade as pending work")
+    scheduling.pendingServices[pending.id] = pending.instance
+    for index in ipairs(telemetry.schedulerTasks) do
+        scheduling:resetServiceRelease(telemetry, 17, index)
+    end
+    local dormant = scheduling.waiting[#scheduling.waiting].task
+    dormant.want = 0
+    state.context.serviceRuntime = { order = { telemetry }, byId = { telemetry = telemetry } }
+    local add = scheduling.scheduler.add
+    local additions = 0
+    function scheduling.scheduler:add(spec)
+        additions = additions + 1
+        equal(scheduling.panelSetup, 2300, "bulk admission is charged before allocation")
+        return add(self, spec)
+    end
+    for _ = 1, 60 do
+        additions = 0
+        state.ready(state.context, scheduling)
+        assert(additions <= 1, "bulk service demand cannot create an unbounded enrollment atom")
+    end
+    equal(#scheduling.waiting, 1, "a dormant task cannot starve the other demanded tasks")
+    dormant.want = 1
+    state.ready(state.context, scheduling)
+    equal(#scheduling.waiting, 0)
+    for _, item in ipairs(telemetry.schedulerTasks) do
+        equal(scheduling.scheduler:dueOf(item.id), 17, "pending resets retain their exact release")
+    end
+    scheduling:begin("steady")
+    equal(scheduling.legacy.spent, 2300, "admission is reserved before scheduler allocation")
 end
 print("Actual broker registration preserves releases through registry gaps, resets and handoff")

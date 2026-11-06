@@ -413,6 +413,10 @@ no-op tasks; synchronization is charged, not steady idle callbacks.
 Theme Showcase also supports staged construction, retaining the synchronous API
 for direct callers. Loading keeps it hidden until its geometry is complete;
 resizing before publication restarts only positioning.
+Service admission examines at most one queued task per callback, reserves its
+cost before allocation, and never shares a callback with panel setup. Dormant
+tasks retain a fair queue position. Registry resync preserves surviving service
+releases and queued reset times, while retiring replaced instances.
 Stable editor previews share the steady callback's service/panel accounting;
 scheduler-owned previews never also use legacy refresh.
 An enabled owning Flight broker supplies a stable scheduler registration source

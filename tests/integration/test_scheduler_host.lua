@@ -201,6 +201,16 @@ local function logged(context, text)
     return false
 end
 
+local function awaitService(host, context, id)
+    for _ = 1, #host.waiting + 3 do
+        assert(host:ready(context))
+        if host.scheduler.byId[id] then
+            return host.scheduler.byId[id]
+        end
+    end
+    error(id .. " was not enrolled")
+end
+
 -- 0. The owner table and the declared bounds cover every service and panel type, so
 -- a new one cannot be added without an owner and a bound (theme-showcase has no
 -- bound: a layout with it cannot run in mixed).
@@ -262,6 +272,7 @@ do
     local history = context.serviceRuntime.byId.history
     local sourceTask = telemetry.entries[1].task
     equal(sourceTask.want, 1, "an unrecorded source requests one unit")
+    awaitService(host, context, sourceTask.id)
     assert(host.scheduler.byId[sourceTask.id], "unrecorded source is enrolled")
 
     history:subscribe("GAlt", {
@@ -269,7 +280,7 @@ do
         timeRange = "rolling",
         windowSeconds = 30,
     })
-    host:ready(context)
+    awaitService(host, context, telemetry.entries[1].task.id)
     sourceTask = telemetry.entries[1].task
     equal(sourceTask.want, 1, "one recording remains a one-unit task")
     equal(sourceTask.decl.stages.run.perUnit, 740, "one recording uses its measured declaration")
@@ -280,7 +291,7 @@ do
         timeRange = "rolling",
         windowSeconds = 60,
     })
-    host:ready(context)
+    awaitService(host, context, telemetry.entries[1].task.id)
     sourceTask = telemetry.entries[1].task
     equal(sourceTask.want, 2, "two recordings request both observer units")
     equal(sourceTask.decl.stages.run.perUnit, 320, "multiple recordings use their measured declaration")
@@ -674,6 +685,7 @@ do
     -- A new layout or registry registers the tasks again, one task per service.
     host.checked = nil
     callbacks(definition, context, 3)
+    awaitService(host, context, "service:model")
     assert(context.scheduler.byId["service:model"], "registered again")
     equal(context.scheduler.count, 1)
 
@@ -740,7 +752,7 @@ do
     assert(logged(context, "armed task failure"), "the failure is reported")
 end
 
--- 11. A service nothing subscribes to has no task; the task appears with the first
+-- 11. A service nothing subscribes to has no task; demand queues bounded admission,
 -- subscription, a panel the editor adds later included.
 do
     local definition, context = start("mixed", "host-light")
@@ -751,6 +763,7 @@ do
     equal(context.scheduler.byId["service:model"], nil, "nothing subscribes: no task")
     local voltage = model:txVoltage()
     callbacks(definition, context, 1)
+    awaitService(context.schedulerHost, context, "service:model")
     assert(context.scheduler.byId["service:model"], "registered with the first subscription")
     callbacks(definition, context, 60)
     equal(voltage.available, true, "and read")
@@ -782,6 +795,8 @@ do
     })
     scheduling.owners = { ["service:standin"] = "new", ["service:background-only"] = "new" }
     assert(scheduling:ready(context))
+    awaitService(scheduling, context, "service:standin")
+    awaitService(scheduling, context, "service:background-only")
     for _, record in pairs(context.scheduler.byId) do
         record.due = getTime()
     end
@@ -827,7 +842,8 @@ do
     host.owners["service:reset-a"], host.owners["service:reset-b"] = "new", "new"
     context.serviceRuntime.order[#context.serviceRuntime.order + 1] = service
     host:resync(context)
-    assert(host:enroll() == nil)
+    awaitService(host, context, "service:reset-a")
+    awaitService(host, context, "service:reset-b")
     local a, b = context.scheduler.byId["service:reset-a"], context.scheduler.byId["service:reset-b"]
     assert(context.scheduler:reschedule(a.id, getTime() + 1000))
     assert(context.scheduler:reschedule(b.id, getTime() + 2000))
@@ -854,7 +870,8 @@ do
     host:resetServiceRelease(service, resetTick, 2)
     fixture.tick(100)
     service.count = 1
-    assert(host:enroll() == nil)
+    awaitService(host, context, "service:reset-a")
+    awaitService(host, context, "service:reset-b")
     equal(context.scheduler:dueOf(a.id), resetTick, "pending enrollment preserves reset release")
     equal(context.scheduler:dueOf(b.id), resetTick)
 end

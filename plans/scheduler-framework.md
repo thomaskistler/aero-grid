@@ -2934,49 +2934,47 @@ Production owners and the ten-tick recording policy remain unchanged.
 An enabled owning broker's `schedulerService(context)` is the canonical
 registration source, including while `serviceRuntime` is nil or only partially
 rebuilt. Resynchronization retains its registered task identities/deadlines and
-skips duplicate Flight facade registrations. Other dashboard services still
-retire/rebuild normally. Disabling or changing task ownership removes the
+skips duplicate Flight facade registrations. Surviving dashboard instances also
+retain their releases; removed/replaced instances retire. Disabling or changing task ownership removes the
 canonical releases. Verification also covers the canonical source when there
 is no runtime facade.
 
 The complete native registration fixture now uses the actual enabled Flight
 broker, its private Control/Telemetry/Smart runtime, real dashboard Flight
 facades and `broker:schedulerService(context)`, not a service-like stand-in.
-Sixteen cases cover initial enrollment, a nil registry gap, partial registry,
+Twenty-two cases cover staged enrollment, a nil registry gap, partial registry,
 facade replacement, model reset, session reset, handoff and disable, with zero
 and sixteen idle placements. The initial implementation reached 3953 and did not
 have the required margin below the 4000 atom cap. A single `ready` call now
 reuses its own completed idle-contract synchronization rather than validating
 the same idle modules twice. Direct verification still validates contracts.
-With the six inherited service kinds in `75dd12f`, actual broker registration
-reaches 3549 native / 3545 Lua32 against a fitted 3960, below the 4000 atom cap.
-Including the exact seventh `editor-drawer` kind and overhead from `f44445b`
-raises native complete registration to 3625. Its required normal declaration is
-4040 (`ceil10(3625 * 1.10 + 50)`), so **the admission gate is not closed**.
-The fixture retains the six-kind 3960 declaration and correctly reports `high`;
-the scheduler case suite must reject that finding until enrollment is bounded.
-The native CLI's exit status alone is not evidence of this gate passing.
-No bound is raised above 4000 and no host logic is changed by this fixture.
-The measured host and panel contract match the parent implementations,
-including inherited service-kind cloning and validation. The measurement includes
+Admitting both broker tasks together reached 3625 with the exact seventh
+`editor-drawer` kind, requiring 4040 including margin and failing the atom cap.
+The host now examines at most one waiting service per callback, retaining a
+round-robin position for dormant subscriptions. It reserves 2300 instructions
+before declaration cloning/allocation and does not enroll services during panel
+setup. Pending demanded tasks satisfy verification only while actually queued.
+Registry resync retains surviving task identities and queued reset timestamps,
+so adding placements cannot interrupt an already-running ten-tick service.
+The measurement includes
 the complete `ready` call, actual canonical getter, declaration cloning,
 registration, verification and clock/error-isolation adapter, not only
-`resync` or the getter. Idle-only admission
-falls to 2187 without changing its existing conservative 3130 declaration.
+`resync` or the getter. The maximum is 2040 native/Lua32, fitted to 2300,
+with no admission findings. Idle-only admission is 2199 without changing its
+existing conservative 3130 declaration.
 No callback can reuse another callback's validation allowance.
 
-| Inherited kinds | Complete ready | Required normal declaration | Gate |
+| Inherited kinds | Measured complete ready | Required normal declaration | Gate |
 |---|---:|---:|---|
-| 6 (before drawer) | 3549 native | 3960 | Fits |
-| 7 (with drawer) | 3625 native / Lua32 | 4040 | Blocked |
-| 8 | 3705 Lua32 | 4130 | Blocked |
-| 9 | 3785 Lua32 | 4220 | Blocked |
-| 10 | 3865 Lua32 | 4310 | Blocked |
+| 7 (with drawer), full lifecycle cases | 2040 | 2300 | Fits |
+| 15, isolated service-enrollment turns | 1399 | 1590 | Fits |
 
-The last three rows add audit-only kinds in memory, not production declarations,
-to show sensitivity before R6 adds loader/lifecycle eligibility. Additional
-kinds cost about 80 instructions each while enrolling the two tasks. Parent
-integration must separately bound admission rather than increasing the atom cap.
+The second row adds eight audit-only kinds in the isolated host module, not
+production declarations, to conservatively cover prospective R6 eligibility.
+Each extra kind adds about 40 instructions to a single enrollment, rather than
+80 for two together; this is not an unlimited-kind guarantee. The final native
+measurement also includes the parent's extra optional `reflow` callback entry
+as a local prerequisite; it does not change this complete-ready maximum.
 
 The focused unit checks exact due times 47/83 and task identities across
 nil/partial/replaced registries, model/session reset and idempotent same-owner
@@ -2986,8 +2984,11 @@ failure clearing on model reset and removal on disable. Explicit cross-host
 handoff removes the old releases and enrolls afresh on the replacement host;
 absolute deadlines are not transferred. The original host cannot re-enroll the
 broker after handoff. Both int32 Lua and the normal ASCII/Lupa runner pass.
-These passing behavior checks do not waive the admission cost finding or
-combined loader/modal whole-callback eligibility; both remain integration gates.
+Additional tests exercise 24 actual Telemetry subscriptions, dormant-task
+fairness, exact queued reset releases across registry replacement, missing-task
+verification and reservation before allocation. The full int32 scheduler suite
+and focused host/panel suites pass. These admission checks do not waive combined
+loader/modal whole-callback eligibility, which remains a parent integration gate.
 
 ```sh
 python3 tools/audit-scheduler.py --framework broker-registration idle-panels --timeout 180

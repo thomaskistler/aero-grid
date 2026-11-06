@@ -214,11 +214,14 @@ do
     }
     host.owners["service:clock"] = "new"
     context.serviceRuntime = { order = { clock }, byId = { clock = clock } }
+    run()
+    local serviceTask = assert(host.scheduler.byId["service:clock"])
+    releases = {}
+    now = now + 10
     local entries = {}
     for index = 1, 16 do
         entries[index] = add("placement-" .. index)
     end
-    local serviceTask
     for index = 1, 16 do
         run()
         local count = 0
@@ -228,7 +231,6 @@ do
         assert(count == index and host.panelTasks[entries[index]], "each callback enrolls exactly one placement")
         assert(#releases == index and releases[index] == now, "enrollment preserves ten-tick service releases")
         local current = host.scheduler.byId["service:clock"]
-        serviceTask = serviceTask or current
         assert(current == serviceTask, "partial enrollment must not resync service tasks")
         now = now + 10
     end

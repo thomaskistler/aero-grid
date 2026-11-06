@@ -116,7 +116,9 @@ host.SERVICE_KINDS = {
 }
 
 --- Reserve registration/validation before admitting scheduled work.
+--- Panel and service enrollment never share the same callback.
 host.PANEL_ENROLL_COST = 4000
+host.SERVICE_ENROLL_COST = 2300
 
 --- Declared cost of the head work `pumpFlight` runs before the scheduler: the
 --- reset poll and the flight tick (which stay legacy at the head until R4).
@@ -141,6 +143,7 @@ function host.attach(context, options)
         panelSetup = 0,
         active = false,
         waiting = {},
+        pendingServices = {},
         registeredTasks = {},
         panelTasks = {},
         idlePanels = {},
@@ -224,7 +227,10 @@ function host:verify(context, panelsVerified)
         if owner ~= "legacy" and owner ~= "new" then
             return key .. " has no owner"
         elseif owner == "new" then
-            return not idle and not self.scheduler.byId[key] and key .. " is owned by the scheduler but has no task"
+            return not idle
+                    and not self.scheduler.byId[key]
+                    and not (self.pendingServices[key] and self.pendingServices[key] == self.registeredTasks[key])
+                    and key .. " is owned by the scheduler but has no task"
                 or nil
         elseif self.mode == "new" then
             return key .. " is not owned by the scheduler"
@@ -243,7 +249,12 @@ function host:verify(context, panelsVerified)
                     if not schedulerOwned(self, item.id) and owner ~= "legacy" then
                         return item.id .. " has no owner"
                     elseif schedulerOwned(self, item.id) then
-                        if instance.count > 0 and (task.want or 0) > 0 and not self.scheduler.byId[item.id] then
+                        if
+                            instance.count > 0
+                            and (task.want or 0) > 0
+                            and not self.scheduler.byId[item.id]
+                            and self.pendingServices[item.id] ~= instance
+                        then
                             return item.id .. " is owned by the scheduler but has no task"
                         end
                     elseif self.mode == "new" then
@@ -369,8 +380,17 @@ end
 function host:resync(context)
     local order, persistent = serviceRegistry(context)
     local waiting, registered = {}, {}
+    local surviving = {}
+    for _, instance in ipairs(order) do
+        if not persistent or instance.id ~= "flight" then
+            surviving[instance] = true
+        end
+    end
+    if persistent then
+        surviving[persistent] = true
+    end
     for id, instance in pairs(self.registeredTasks) do
-        if instance == persistent and schedulerOwned(self, id) and not instance.failed and self.scheduler.byId[id] then
+        if surviving[instance] and schedulerOwned(self, id) and not instance.failed and self.scheduler.byId[id] then
             registered[id] = instance
         else
             self.scheduler:remove(id)
@@ -395,15 +415,23 @@ function host:resync(context)
                         registered[item.id] = instance
                     end
                 end
-            elseif self.owners[key] == "new" then
+            elseif self.owners[key] == "new" and registered[key] ~= instance then
                 waiting[#waiting + 1] = { instance = instance, task = instance, id = key, index = index - 1 }
                 registered[key] = instance
             end
         end
     end
-    self.waiting = waiting
+    local resetReleases = {}
+    self.waiting, self.pendingServices = waiting, {}
+    for _, item in ipairs(waiting) do
+        self.pendingServices[item.id] = item.instance
+        if self.registeredTasks[item.id] == item.instance then
+            resetReleases[item.id] = self.resetReleases[item.id]
+        end
+    end
+    self.enrollCursor = #waiting
     self.registeredTasks = registered
-    self.resetReleases = {}
+    self.resetReleases = resetReleases
 end
 
 --- Release at most one service task after a session reset.
@@ -470,18 +498,25 @@ function host:resetPanelRelease(entry, now)
     end
 end
 
---- Register the task of every service the scheduler owns once it has subscribers: a
---- service nothing reads is not scheduled, and a panel the editor adds later
---- subscribes after the load. Returns a message when the scheduler refuses a task.
+--- Examine at most one waiting service and register at most one task per callback.
+--- Dormant subscriptions keep their round-robin place until they have demand.
 ---@return string?
 function host:enroll()
+    if self.panelSetup > 0 then
+        return nil
+    end
     local waiting, scheduler = self.waiting, self.scheduler
-    for position = #waiting, 1, -1 do
+    local position = self.enrollCursor or #waiting
+    if position < 1 or position > #waiting then
+        position = #waiting
+    end
+    if position > 0 then
         local item = waiting[position]
         local instance = item.instance
         local task = item.task
+        self.enrollCursor = position - 1
         if instance.count > 0 and not instance.failed and (task.want == nil or task.want > 0) then
-            table.remove(waiting, position)
+            self.panelSetup = host.SERVICE_ENROLL_COST
             -- The service step may need the same wrap-safe time comparison.
             task.tickElapsed = scheduler.elapsed
             local interval = task.interval or instance.interval
@@ -496,6 +531,8 @@ function host:enroll()
             if not ok then
                 return item.id .. ": " .. reason
             end
+            table.remove(waiting, position)
+            self.pendingServices[item.id] = nil
             self.resetReleases[item.id] = nil
         end
     end
@@ -620,6 +657,7 @@ function host:report(context)
             end
             for index = #self.waiting, 1, -1 do
                 if self.waiting[index].instance == instance then
+                    self.pendingServices[self.waiting[index].id] = nil
                     table.remove(self.waiting, index)
                 end
             end
