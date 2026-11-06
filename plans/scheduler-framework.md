@@ -3973,3 +3973,21 @@ maximum remains 26033 outside these gates; parent owns that integration.
 Strict reset remains 13900/two unchanged XFAILs. General adoption/mutation
 callbacks are not newly admitted by this interface change; complete runtime
 registration driving remains the parent's `debddc8` gate.
+
+## 73. Combined adapter verification and retained constructor parity gate
+
+The integrated actual-source Flight/Smart task prototypes pass foreground and
+background native scenarios at 11396/9895 whole instructions. Actual broker
+enrollment remains 2040 against 2300 after the loader/editor-input additions;
+framework release remains 242/420 with minimum idle slack 15. These audit-only
+ownership overrides do not activate production owners.
+
+An experiment admitting services alongside all five newly bounded cold
+constructors passed native fitted-atom and whole-callback gates, but changed
+one strict reset first-arm observation to `captured`, outside its unchanged
+`waiting`/`switch-unavailable` assertion. That experimental admission was removed.
+The original assertion and both recorded XFAILs pass again at 10800.
+Constructor cost proof alone therefore does not close their parity/activation
+gate. No Navigation behavior, reset assertion or instruction ceiling was changed.
+Native loader declaration tracking now follows exact typed/staged labels so
+future admission cannot evade its declared-charge check.
