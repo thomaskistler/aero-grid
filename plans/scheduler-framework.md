@@ -4636,6 +4636,11 @@ store load or ownership transfer occurs. Model identity, factory membership,
 the original continuation, and absence of reload/retirement must still match.
 Absent owners and stale/cancelled continuations retain the existing waiting
 behavior; loader registration and atomic publication use their original jobs.
+Admission and help share one gate. If the owner's current bound is missing,
+non-numeric, or exceeds 3700 (more than 4000 with the 300 wait reserve), the
+waiter reserves nothing, admits no services, and never calls the owner's
+`advanceLoad`; it only waits. A regression covers nil, 3701, 3800, and
+non-numeric owner bounds, plus the exact 3700-to-4000 boundary.
 
 The real native `shared-flight-loading` and `shared-flight-loading-edited`
 captures park the creator immediately after broker creation, then run only a

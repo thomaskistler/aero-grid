@@ -214,7 +214,35 @@ for _, parkedStage in ipairs({
     assert(owner:owningContext() == nil and creator.stage == stage,
         "waiting must not replace a collected owner")
     owner.context = owning
-    local advances, advance = 0, creator.dashboardLoader.advanceLoad
+    local ownerBound, unproven = creator.dashboardLoader.workBound, nil
+    local proof = creator.dashboardLoader.advanceLoad
+    creator.dashboardLoader.workBound = function(current)
+        if current == creator and unproven ~= nil then
+            return unproven ~= "nil" and unproven or nil
+        end
+        return ownerBound(current)
+    end
+    creator.dashboardLoader.advanceLoad = function(current)
+        assert(current ~= creator, "an unproven owner atom must not be helped without reservation")
+        return proof(current)
+    end
+    for _, value in ipairs({ "nil", 3701, 3800, "unmeasured" }) do
+        unproven = value
+        assert(hidden.dashboardLoader.workBound(hidden) == nil, tostring(value))
+        local plan = hidden.scheduler.lastPlan
+        local kind = plan.kind
+        plan.kind = "unadmitted"
+        fixture.tick(10)
+        definition.background(hidden)
+        assert(creator.stage == stage and creator.flightLoading.job == job and hidden.stage == "flight-load-wait",
+            "an unproven owner atom must leave both contexts waiting")
+        assert(plan.kind ~= "loader", "no services may be admitted under an unproven bound")
+        plan.kind = kind
+    end
+    unproven = 3700
+    assert(hidden.dashboardLoader.workBound(hidden) == 4000, "a fitting owner atom keeps its exact reservation")
+    unproven = nil
+    creator.dashboardLoader.workBound, creator.dashboardLoader.advanceLoad = ownerBound, proof    local advances, advance = 0, creator.dashboardLoader.advanceLoad
     local activeHelper, reservation
     creator.dashboardLoader.advanceLoad = function(current)
         assert(activeHelper.scheduler.lastPlan.kind == "loader")

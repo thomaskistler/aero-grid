@@ -74,12 +74,25 @@ function module.new(dependencies)
         end
     end
 
+    -- Returns the owner and the waiter's reservation only when the owner's atom is proven and fits.
+    local function sharedFlightHelp(context)
+        local current = sharedFlightContext(context)
+        if current then
+            local bound = current.dashboardLoader.workBound(current)
+            if type(bound) == "number" and bound >= 0 and bound + 300 <= 4000 then
+                return current, bound + 300
+            end
+            return nil, false
+        end
+    end
+
     local function workBound(context)
         if context.stage == "flight-load-wait" then
-            local current = sharedFlightContext(context)
+            local current, bound = sharedFlightHelp(context)
             if current then
-                local bound = current.dashboardLoader.workBound(current)
-                return bound and bound + 300 <= 4000 and bound + 300 or nil
+                return bound
+            elseif bound == false then
+                return nil
             end
         end
         if context.stage == "theme-resolve" then
@@ -550,9 +563,9 @@ function module.new(dependencies)
                 elseif owner:owningContext() == context then
                     context.stage = owner.store and "flight-load-begin" or "flight-store-module"
                 else
-                    local current = sharedFlightContext(context)
+                    local current = sharedFlightHelp(context)
                     if current then
-                        -- Help the existing owner's job; never transfer its scheduler ownership.
+                        -- Help the existing owner's reserved job; never transfer its scheduler ownership.
                         current.dashboardLoader.advanceLoad(current)
                     end
                 end
