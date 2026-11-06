@@ -11,7 +11,7 @@ return function(load)
     local decl = { class = "normal", first = "begin", kinds = { steady = true }, stages = {} }
     for stage, bound in pairs({
         begin = 1540,
-        frame = 520,
+        frame = 620,
         geometry = 1710,
         header = 1400,
         controls = 1420,
