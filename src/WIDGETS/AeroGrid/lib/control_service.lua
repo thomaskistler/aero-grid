@@ -118,37 +118,28 @@ function controlService.new(env, support, runtime)
         variableEntries = {},
     }, controlService)
 
-    local critical = { decl = controlService.TASK_DECLARATIONS.critical, want = 0 }
-    local normal = { decl = controlService.TASK_DECLARATIONS.normal, want = 0 }
-    local outputs = { decl = controlService.TASK_DECLARATIONS.outputs, want = 0 }
-    local function taskStep(run)
-        return function(_, grant, stage, now)
-            if service.failed then
-                return 1
-            end
-            local ok, delay = pcall(run, grant, stage, now)
-            if not ok then
-                service.failed = true
-                error(delay, 0)
-            end
-            return delay
-        end
-    end
-    critical.step = taskStep(function(grant, _, now)
-        return service:stepEntries(service.criticalEntries, "critical", grant, now)
-    end)
-    normal.step = taskStep(function(grant, _, now)
-        return service:stepEntries(service.normalEntries, "normal", grant, now)
-    end)
-    outputs.step = taskStep(function(grant, _, now)
-        return service:stepOutputs(grant, now)
-    end)
-    service.criticalTask, service.normalTask, service.outputTask = critical, normal, outputs
-    service.schedulerTasks = {
-        { id = "service:control", instance = critical, critical = true },
-        { id = "service:control-normal", instance = normal },
-        { id = "service:control-outputs", instance = outputs },
-    }
+    support.task(service, "critical", {
+        id = "service:control",
+        decl = controlService.TASK_DECLARATIONS.critical,
+        critical = true,
+        run = function(owner, grant, _, now)
+            return owner:stepEntries(owner.criticalEntries, "critical", grant, now)
+        end,
+    })
+    support.task(service, "normal", {
+        id = "service:control-normal",
+        decl = controlService.TASK_DECLARATIONS.normal,
+        run = function(owner, grant, _, now)
+            return owner:stepEntries(owner.normalEntries, "normal", grant, now)
+        end,
+    })
+    support.task(service, "outputs", {
+        id = "service:control-outputs",
+        decl = controlService.TASK_DECLARATIONS.outputs,
+        run = function(owner, grant, _, now)
+            return owner:stepOutputs(grant, now)
+        end,
+    })
 
     -- The flight broker has a private registry updated from the legacy flight
     -- tick. Keep that isolated runtime on its existing path; the dashboard-owned
@@ -444,7 +435,7 @@ function controlService:output(index)
         }, controlService.readOutput)
         self.outputs[index] = entry.view
         self.outputEntries[#self.outputEntries + 1] = entry
-        self.outputTask.want = #self.outputEntries
+        self.tasks.outputs.want = #self.outputEntries
         self.interval = OUTPUT_INTERVAL
     end
     return self.outputs[index]
@@ -548,8 +539,8 @@ function controlService:armSwitch(name, index)
                 end
             end
         end
-        self.criticalTask.want = math.min(POLL_CAP, #self.criticalEntries)
-        self.normalTask.want = math.min(POLL_CAP, #self.normalEntries)
+        self.tasks.critical.want = math.min(POLL_CAP, #self.criticalEntries)
+        self.tasks.normal.want = math.min(POLL_CAP, #self.normalEntries)
     end
     return view, entry
 end
@@ -566,10 +557,10 @@ function controlService:add(state, read, classification)
     })
     if read == controlService.readSwitch and classification ~= "normal" then
         self.criticalEntries[#self.criticalEntries + 1] = entry
-        self.criticalTask.want = math.min(POLL_CAP, #self.criticalEntries)
+        self.tasks.critical.want = math.min(POLL_CAP, #self.criticalEntries)
     else
         self.normalEntries[#self.normalEntries + 1] = entry
-        self.normalTask.want = math.min(POLL_CAP, #self.normalEntries)
+        self.tasks.normal.want = math.min(POLL_CAP, #self.normalEntries)
     end
     return entry
 end

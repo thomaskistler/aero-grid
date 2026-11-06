@@ -69,12 +69,11 @@ local TX_VOLTAGE_SOURCE = "tx-voltage"
 ---@param support table The loaded lib/services.lua module.
 ---@return table
 function modelService.new(env, support)
-    return setmetatable({
+    local service = setmetatable({
         id = "model",
         interval = INTERVAL,
         revision = 0,
         count = 0,
-        want = 0,
         due = 0,
         env = env,
         support = support,
@@ -82,6 +81,12 @@ function modelService.new(env, support)
         cursor = 1,
         timers = {},
     }, modelService)
+    support.task(service, "run", {
+        id = "service:model",
+        decl = modelService.decl,
+        run = modelService.step,
+    })
+    return service
 end
 
 --- Register a facet and publish its immutable view.
@@ -90,7 +95,7 @@ end
 ---@return table view
 function modelService:add(state, read)
     local facet = self.support.addSubscription(self, self.facets, { state = state, read = read })
-    self.want = self.count
+    self.tasks.run.want = self.count
     return facet.view
 end
 

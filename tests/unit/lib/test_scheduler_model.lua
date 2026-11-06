@@ -313,7 +313,8 @@ do
     assert(stage.fixed + stage.perUnit <= 4000, "the smallest step is under the maximum task size")
     equal(modelService.decl.class, "normal")
     local s = scheduler.new({ steady = 1250, background = 1130 })
-    local added, reason = s:add({ id = "service:model", decl = modelService.decl, instance = service(), due = 0 })
+    local added, reason =
+        s:add({ id = "service:model", decl = modelService.decl, instance = service().tasks.run, due = 0 })
     assert(added, reason)
 end
 
@@ -321,7 +322,7 @@ do
     -- A due release reads `grant` facets round robin, advances the due time and
     -- the revision as `services.update` does, and returns the interval.
     local instance, reads = service()
-    equal(instance.want, 7, "the units wanted follow the subscriptions")
+    equal(instance.tasks.run.want, 7, "the units wanted follow the subscriptions")
     equal(instance:step(2, "run", 100), INTERVAL)
     equal(reads(), 2)
     equal(instance.revision, 1)
@@ -336,7 +337,7 @@ do
 
     -- Fewer facets than the grant: only the ones subscribed to.
     local small, smallReads = service("three")
-    equal(small.want, 3)
+    equal(small.tasks.run.want, 3)
     small:step(4, "run", 100)
     equal(smallReads(), 3)
 
@@ -384,12 +385,13 @@ do
         error("radio failure")
     end
     local s = scheduler.new({ steady = 1250, background = 1130 })
-    assert(s:add({ id = "service:model", decl = modelService.decl, instance = instance, due = 100 }))
+    assert(s:add({ id = "service:model", decl = modelService.decl, instance = instance.tasks.run, due = 100 }))
     s:run("steady", 100, 0)
     equal(s.byId["service:model"], nil, "retired")
     local errors = s:takeErrors()
     assert(errors and string.find(errors[1].message, "radio failure", 1, true))
     equal(instance.revision, 0, "a failed update is not counted")
+    equal(instance.failed, true, "shared adapter retires the service immediately")
 end
 
 do

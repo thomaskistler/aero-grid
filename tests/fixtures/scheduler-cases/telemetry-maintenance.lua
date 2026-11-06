@@ -35,7 +35,7 @@ return function(load)
                     if scanning then
                         assert(telemetry:resolve(telemetry.entries[total], 100))
                     end
-                    return telemetry.maintenanceTask, 101
+                    return telemetry.tasks.maintenance, 101
                 end,
             }
         end

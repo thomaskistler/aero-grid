@@ -167,24 +167,22 @@ function telemetryService.new(env, support, runtime)
         linkLive = false,
         rssi = 0,
     }, telemetryService)
-    local maintenance = {
+    support.task(service, "maintenance", {
         id = "service:telemetry:maintenance",
         decl = telemetryService.maintenanceDecl,
         want = 1,
         interval = service.interval,
         critical = true,
-        step = function(task, grant, _, now)
+        run = function(owner, grant, _, now, task)
             if grant < task.want then
                 return 1
             end
-            beginUpdate(service, now)
-            finishUpdate(service, now)
-            service.revision = service.revision + 1
-            return service.interval
+            beginUpdate(owner, now)
+            finishUpdate(owner, now)
+            owner.revision = owner.revision + 1
+            return owner.interval
         end,
-    }
-    service.maintenanceTask = maintenance
-    service.schedulerTasks[1] = { id = maintenance.id, instance = maintenance, critical = true }
+    })
     if runtime and runtime.host then
         setmetatable(service, {
             __index = function(_, key)
@@ -219,23 +217,23 @@ local function recorderCount(service, entry)
     return tracks and #tracks or 0
 end
 
+local function runSource(service, grant, _, now, task)
+    return telemetryService.stepSource(service, task.entry, grant, now)
+end
+
 local function updateSourceTask(service, entry)
     local task = entry.task
     if not task then
-        task = {
+        local index = #service.schedulerTasks
+        task = service.support.task(service, "source:" .. tostring(index), {
             id = "",
-            sourceIndex = #service.schedulerTasks,
+            sourceIndex = index,
             interval = entry.interval,
             critical = true,
             entry = entry,
-            service = service,
-        }
-        task.item = { id = task.id, instance = task, critical = true }
-        task.step = function(_, grant, _, now)
-            return telemetryService.stepSource(service, entry, grant, now)
-        end
+            run = runSource,
+        })
         entry.task = task
-        service.schedulerTasks[#service.schedulerTasks + 1] = task.item
     end
 
     local recorders = recorderCount(service, entry)
@@ -258,9 +256,9 @@ local function updateSourceTask(service, entry)
 end
 
 local function updateMaintenanceInterval(service)
-    service.maintenanceTask.want = math.max(1, #service.entries)
-    if service.maintenanceTask.interval ~= service.interval then
-        service.maintenanceTask.interval = service.interval
+    service.tasks.maintenance.want = math.max(1, #service.entries)
+    if service.tasks.maintenance.interval ~= service.interval then
+        service.tasks.maintenance.interval = service.interval
         service.schedulerRevision = service.schedulerRevision + 1
     end
 end
@@ -668,7 +666,7 @@ end
 --- Poll one bounded round-robin slice. A poll and all of its history observers
 --- remain one atomic unit; a partial grant resumes at the next source.
 ---@param grant integer
----@param stage string
+---@param _ string
 ---@param now integer
 ---@return integer delay
 function telemetryService:step(grant, _, now)

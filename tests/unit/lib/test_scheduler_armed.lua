@@ -36,7 +36,7 @@ local function adapter()
                 armed:state("L01"),
                 armed:state("L02"),
             }
-            local task = armed.task
+            local task = armed.tasks.run
             task.id, task.count, task.due, task.revision = "armed", #armed.entries, 0, 0
             task.update = function(_, now)
                 control:update(now)
@@ -86,13 +86,13 @@ local extraction = parity.extraction(taskAdapter, trace)
 parity.assertSame(expected, parity.replay(taskAdapter, trace, extraction.schedule), "armed replay")
 local ample = parity.budgeted(taskAdapter, trace)
 parity.assertSame(expected, ample, "armed ample budget")
-equal(ample.task.service.task.want, 2, "both unique arm conditions remain subscribed")
+equal(ample.task.service.tasks.run.want, 2, "both unique arm conditions remain subscribed")
 
 do
     local task = taskAdapter.new()
-    equal(task.service.runtime.byId.control.criticalTask.want, 0, "claimed arm inputs leave Control's task")
+    equal(task.service.runtime.byId.control.tasks.critical.want, 0, "claimed arm inputs leave Control's task")
     equal(#task.service.runtime.byId.control.criticalEntries, 0, "an existing shared switch is transferred once")
-    equal(task.service.runtime.byId.control.normalTask.want, 0, "the display subscription is transferred too")
+    equal(task.service.runtime.byId.control.tasks.normal.want, 0, "the display subscription is transferred too")
     equal(#task.service.runtime.byId.control.normalEntries, 0, "the condition is never polled by both services")
     equal(task.want, 2, "the Armed task owns both boundary inputs")
     equal(task.decl.class, "critical")

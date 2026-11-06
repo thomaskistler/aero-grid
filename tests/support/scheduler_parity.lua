@@ -78,12 +78,13 @@ end
 --- The recorded schedule replayed into `step` at the same callbacks.
 function parity.replay(adapter, trace, schedule)
     local task, at = adapter.new(), 1
+    local instance = task.tasks and task.tasks.run or task
     local run = { snapshots = {}, schedule = schedule, task = task }
     for index, callback in ipairs(trace) do
         adapter.feed(task, callback)
         while schedule[at] and schedule[at].index == index do
             local call = schedule[at]
-            task:step(call.grant, call.stage, call.now)
+            instance:step(call.grant, call.stage, call.now)
             at = at + 1
         end
         run.snapshots[index] = adapter.snapshot(task)
@@ -98,13 +99,14 @@ function parity.budgeted(adapter, trace, options)
     options = options or {}
     local s = scheduler.new(options.overhead or { steady = 1250, background = 1130 })
     local task = adapter.new()
+    local instance = task.tasks and task.tasks.run or task
     local run, current = { snapshots = {}, schedule = {}, task = task }, 0
-    local step = task.step
-    task.step = function(self, grant, stage, now)
+    local step = instance.step
+    instance.step = function(self, grant, stage, now)
         run.schedule[#run.schedule + 1] = { index = current, now = now, grant = grant, stage = stage }
         return step(self, grant, stage, now)
     end
-    local ok, reason = s:add({ id = adapter.id, decl = adapter.decl, instance = task, due = trace[1].now })
+    local ok, reason = s:add({ id = adapter.id, decl = adapter.decl, instance = instance, due = trace[1].now })
     assert(ok, reason)
     if options.setup then
         options.setup(s)

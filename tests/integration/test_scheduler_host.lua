@@ -448,7 +448,7 @@ loadError("owned but no task", function(host)
 end, "panel:metric is owned by the scheduler but has no task")
 loadError("Telemetry task missing step", function(host)
     local telemetry = host.context.serviceRuntime.byId.telemetry
-    telemetry.maintenanceTask.step = nil
+    telemetry.tasks.maintenance.step = nil
     host.taskRevision = -1
 end, "service:telemetry:maintenance: instance needs a step function")
 do
@@ -617,8 +617,8 @@ do
     equal(host.owners["service:model"], "new")
     equal(model.count, 5, "identity, flight mode, timer, TX voltage and battery range")
     local calls = { step = 0, grants = {} }
-    local step = model.step
-    model.step = function(self, grant, stage, now)
+    local step = model.tasks.run.step
+    model.tasks.run.step = function(self, grant, stage, now)
         calls.step = calls.step + 1
         calls.grants[grant] = true
         return step(self, grant, stage, now)
@@ -699,8 +699,8 @@ do
     equal(context.scheduler.byId["service:control"], nil, "armed inputs are not polled twice")
     assert(context.scheduler.byId["service:control-normal"], "normal entry task is registered")
     equal(context.scheduler.byId["service:control-outputs"], nil, "no output task without output subscriptions")
-    equal(control.criticalTask.decl.class, "critical")
-    equal(control.normalTask.decl.class, "normal")
+    equal(control.tasks.critical.decl.class, "critical")
+    equal(control.tasks.normal.decl.class, "normal")
     assert(control.revision > 0, "scheduled control reads advance the shared revision")
 
     local feed

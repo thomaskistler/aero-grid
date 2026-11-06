@@ -96,23 +96,23 @@ local function adapter(kind)
                     feeds[index] = service:switch(string.format("L%02d", index))
                 end
                 service.criticalCursor = 1
-                service.criticalTask.interval = 20
+                service.tasks.critical.interval = 20
             elseif kind == "outputs" then
                 for index = 0, 31 do
                     feeds[index + 1] = service:output(index)
                 end
                 service.outputCursor = 1
-                service.outputTask.interval = 10
+                service.tasks.outputs.interval = 10
             else
                 for index = 1, 6 do
                     feeds[index] = service:trim("trim-" .. tostring(index))
                 end
                 service.normalCursor = 1
-                service.normalTask.interval = 20
+                service.tasks.normal.interval = 20
             end
-            local task = kind == "critical" and service.criticalTask
-                or kind == "outputs" and service.outputTask
-                or service.normalTask
+            local task = kind == "critical" and service.tasks.critical
+                or kind == "outputs" and service.tasks.outputs
+                or service.tasks.normal
             task.id = kind == "critical" and "control" or kind
             task.count = #feeds
             task.interval = task.interval or 20
@@ -222,12 +222,12 @@ do
     assert(scheduled.update == nil, "the dashboard-owned service has no legacy update path")
     local private = controlService.new(services.environment({}), services, services.runtime({}))
     assert(type(private.update) == "function", "the flight broker's private runtime retains its legacy path")
-    equal(scheduled.criticalTask.decl.class, "critical")
-    equal(scheduled.normalTask.decl.class, "normal")
-    equal(scheduled.outputTask.decl.class, "normal")
-    equal(scheduler.check(scheduled.criticalTask.decl), nil)
-    equal(scheduler.check(scheduled.normalTask.decl), nil)
-    equal(scheduler.check(scheduled.outputTask.decl), nil)
+    equal(scheduled.tasks.critical.decl.class, "critical")
+    equal(scheduled.tasks.normal.decl.class, "normal")
+    equal(scheduled.tasks.outputs.decl.class, "normal")
+    equal(scheduler.check(scheduled.tasks.critical.decl), nil)
+    equal(scheduler.check(scheduled.tasks.normal.decl), nil)
+    equal(scheduler.check(scheduled.tasks.outputs.decl), nil)
 end
 
 do
@@ -249,7 +249,7 @@ do
     for index = 1, 6 do
         service:trim("trim-" .. tostring(index))
     end
-    local task = service.normalTask
+    local task = service.tasks.normal
     equal(task.step(task, 2, "run", 100), 1)
     equal(reads, 2, "a partial normal grant reads only two entries")
     equal(task.step(task, 2, "run", 101), 1)
@@ -261,9 +261,9 @@ do
         service:output(index)
     end
     reads = 0
-    equal(service.outputTask.step(service.outputTask, 3, "run", 200), 1)
+    equal(service.tasks.outputs.step(service.tasks.outputs, 3, "run", 200), 1)
     equal(reads, 3, "a partial output grant reads only three channels")
-    equal(service.outputTask.step(service.outputTask, 29, "run", 201), 10)
+    equal(service.tasks.outputs.step(service.tasks.outputs, 29, "run", 201), 10)
     equal(reads, 32, "the remaining channels are read on the next release")
     for _, entry in ipairs(service.outputEntries) do
         assert(entry.state.available, "all channels publish after the partial output release")

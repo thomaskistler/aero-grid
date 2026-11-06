@@ -62,7 +62,7 @@ return function(load)
                 end
             end
             service.normalCursor = start
-            return service.normalTask, NOW
+            return service.tasks.normal, NOW
         end
     end
 

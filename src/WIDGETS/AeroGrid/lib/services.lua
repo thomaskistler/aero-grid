@@ -28,6 +28,8 @@
 ---@field failed? boolean Set after an update raises, which retires the service.
 ---@field update? fun(self: AeroGridServiceInstance, now: integer) Legacy-owned service entry point.
 ---@field step? fun(self: AeroGridServiceInstance, grant: integer, stage: string, now: integer): integer
+---@field tasks? table<string, table> Named scheduler tasks.
+---@field schedulerTasks? table[] Ordered task registrations.
 ---@field resetSession? fun(self: AeroGridServiceInstance, now: integer, index: integer): integer? Next reset item, or nil when finished.
 
 local services = { RUNTIME_API = 1 }
@@ -130,6 +132,42 @@ end
 ---@return table runtime
 function services.runtime(env)
     return { env = env, order = {}, byId = {}, cursor = 1, updates = 0 }
+end
+
+local function taskStep(task, grant, stage, now)
+    local owner = task.owner
+    if owner.failed then
+        return 1
+    end
+    owner.tickElapsed = task.tickElapsed or owner.tickElapsed
+    local ok, delay = pcall(task.run, owner, grant, stage, now, task)
+    if not ok then
+        owner.failed = true
+        if owner.taskFailed then
+            owner:taskFailed()
+        end
+        error(delay, 0)
+    end
+    return delay
+end
+
+--- Adapt bounded service work to the scheduler. Only the scheduler computes grants.
+--- `run(owner, grant, stage, now, task)` returns the delay to its next release.
+--- Names are stable within the service; registrations retain their public IDs.
+---@param owner table
+---@param name string
+---@param task table Task ID, declaration, run function, and optional scheduling fields.
+---@return table task
+function services.task(owner, name, task)
+    owner.tasks = owner.tasks or {}
+    owner.schedulerTasks = owner.schedulerTasks or {}
+    assert(not owner.tasks[name], "duplicate service task " .. name)
+    task.owner, task.step = owner, taskStep
+    task.want = task.want or 0
+    task.item = { id = task.id, instance = task, critical = task.critical }
+    owner.tasks[name] = task
+    owner.schedulerTasks[#owner.schedulerTasks + 1] = task.item
+    return task
 end
 
 --- Add one constructed service to the registry.

@@ -18,7 +18,7 @@ return function(load)
                 service:output(index)
             end
             service.outputCursor = start
-            return service.outputTask, NOW
+            return service.tasks.outputs, NOW
         end
     end
 

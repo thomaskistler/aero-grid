@@ -23,7 +23,7 @@ return function(load)
                 service:switch(string.format("L%02d", index))
             end
             service.criticalCursor = start
-            return service.criticalTask, NOW
+            return service.tasks.critical, NOW
         end
     end
 

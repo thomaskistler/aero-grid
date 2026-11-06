@@ -69,7 +69,7 @@ return function(load)
             service.cursor = start
             service.tickElapsed = scheduler.elapsed
             service.due = NOW
-            return service, NOW
+            return service.tasks.run, NOW
         end
     end
 

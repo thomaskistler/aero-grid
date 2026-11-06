@@ -4,7 +4,7 @@
 local history = { RUNTIME_API = 1, CAPACITY = 6144, FLIGHT_CAPACITY = 64, SOURCE_CAP = 24 }
 history.__index = history
 
-local INTERVAL = 5
+local INTERVAL = 10
 local SESSION_CAP = 16
 local TAU = { off = 0, light = 50, medium = 100, strong = 200 }
 local NUMBER_FORMAT, INTEGER_FORMAT, CHUNK = "<I4n", "<I4j", 64
@@ -120,7 +120,6 @@ function history.new(env, support, runtime)
         revision = 0,
         interval = INTERVAL,
         count = 0,
-        want = 0,
         preserveLegacySlot = true,
         legacySlotReservation = true,
         due = 0,
@@ -138,6 +137,11 @@ function history.new(env, support, runtime)
         sessionNames = {},
         sessionViews = {},
     }, history)
+    support.task(service, "run", {
+        id = "service:history",
+        decl = history.decl,
+        run = history.step,
+    })
     if runtime.host then
         setmetatable(service, {
             __index = function(_, key)
@@ -186,7 +190,7 @@ local function sessionFor(service, armSwitch)
         service.sessions[#service.sessions + 1] = session
         service.sessionNames[armed.key] = session
         service.sessionViews[session.view] = session
-        service.want = math.min(SESSION_CAP, #service.sessions)
+        service.tasks.run.want = math.min(SESSION_CAP, #service.sessions)
     end
     return session
 end
@@ -759,7 +763,7 @@ end
 
 --- Advance recording sessions in bounded units, then maintain one history entry.
 ---@param grant integer
----@param stage string
+---@param _ string
 ---@param now integer
 ---@return integer delay
 function history:step(grant, _, now)
@@ -773,7 +777,7 @@ function history:step(grant, _, now)
         end
         self.sessionTarget = #self.sessions
         self.sessionCursor = 1
-        self.want = math.min(SESSION_CAP, self.sessionTarget)
+        self.tasks.run.want = math.min(SESSION_CAP, self.sessionTarget)
     end
 
     local flight = self.runtime.byId.flight
@@ -785,13 +789,13 @@ function history:step(grant, _, now)
     end
     self.sessionCursor = last + 1
     if self.sessionCursor <= self.sessionTarget then
-        self.want = math.min(SESSION_CAP, self.sessionTarget - self.sessionCursor + 1)
+        self.tasks.run.want = math.min(SESSION_CAP, self.sessionTarget - self.sessionCursor + 1)
         return 1
     end
 
     self.sessionTarget = nil
     self.sessionCursor = 1
-    self.want = math.min(SESSION_CAP, #self.sessions)
+    self.tasks.run.want = math.min(SESSION_CAP, #self.sessions)
     drainBoundaries(self, now)
     self.cursor = self.support.roundRobin(self.entries, self.cursor, 1, updateEntry, self, now)
     self.due = now + self.interval

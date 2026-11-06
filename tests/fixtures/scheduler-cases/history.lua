@@ -102,10 +102,10 @@ return function(load)
             service.cursor = (grant - 1) % SERIES + 1
             service.sessionCursor = PANELS - grant + 1
             service.sessionTarget = PANELS
-            service.want = grant
+            service.tasks.run.want = grant
             service.tickElapsed = scheduler.elapsed
             service.due = NOW
-            return service, NOW
+            return service.tasks.run, NOW
         end
     end
 

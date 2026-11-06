@@ -129,6 +129,24 @@ step(instance, grant, stage, now) -> delay
   callback, which it treats as consumed (R6 measures it).
 - A migrated task never ends the callback itself.
 
+### Service task construction
+
+Migrated services expose named task objects in `service.tasks` and one ordered
+`service.schedulerTasks` registration list. Use `services.task(service, name,
+{ id, decl, run, want, interval, critical })` to construct both together. A single
+task is named `run`; independent work keeps separate names (Control's `critical`,
+`normal`, `outputs`; Telemetry's `maintenance` and `source:<index>`).
+
+`run(service, grant, stage, now, task)` does bounded work and returns its next
+delay. The shared adapter propagates the scheduler's wrap-safe clock helper,
+marks the service failed on an exception, and rethrows for the scheduler's normal
+error report. An optional `service:taskFailed()` invalidates domain state; sibling
+tasks cannot do work after failure. Services do not recalculate scheduler grants.
+`want` belongs to the task. An omitted task interval follows the service interval;
+explicit task intervals remain independent. Telemetry and History poll at 10 ticks.
+The service API refactor intentionally corrects History's previous 5-tick period
+to the requested 10 ticks; partial-release retries still use 1 tick.
+
 ### Example: a Telemetry source task (critical)
 
 Telemetry uses one task per source plus a separate maintenance task. A source
@@ -315,8 +333,9 @@ sources (4.2).
 | R5 | modal screens: settings UI, log viewer, editor, menu, fullscreen input, location details, app rebuild, theme showcase | 0 | per kind | per kind | | Each measured natively first and split to fit its kind's room (section 7). Order: smallest handler first. |
 | R6 | loader, reflow, page retire and rebuild, session-reset pump, the head work, `configureFlight` | 0 | per kind | per kind | | Already measured in the audit; split where it exceeds the cap (4.2). |
 
-**Telemetry mixes** (8 sources, per-source intervals from section 5.2, a callback
-about every 5 ticks, history 650 every 5, critical arm conditions `200 + 100 n`
+**Telemetry mixes** (historical admission calculation: 8 sources, per-source
+intervals from section 5.2, a callback about every 5 ticks, history 650 every 5
+rather than its current 10-tick period, critical arm conditions `200 + 100 n`
 at most 6 every 20 ticks, link 560 once per callback that polls a source, and
 `G` = 288 per release). The normal control entries and outputs are admitted after
 critical work and are not included in the critical peak. Recorded sources are
@@ -361,7 +380,7 @@ separate tasks.
 | Service | Tasks | Audited cost | Declared | Flag |
 |---|---|---|---|---|
 | telemetry | one task per source plus one maintenance task; each source poll synchronously invokes all History observers | 170 unrecorded; 511 with one recorder; 805-6393 with 2-24; maintenance 286-1175 at 1-128 sources | See the measured declarations in 5.2 | The 24-recorder cap is based on supported chart layouts and native measurements. A poll and all its observers remain atomic. |
-| history | one task: advance and boundaries, one entry per update | 0.44k (0.38k advance and boundaries plus 17 per entry) | 0.65k | Recording itself lives in the telemetry poll (observer), not here. Below the minimum size (4.2): the run charge is about a third of it. Kept as one task every 5 ticks; revisit with the measured contract. |
+| history | one task: advance and boundaries, one entry per update | 0.44k (0.38k advance and boundaries plus 17 per entry) | 0.65k | Recording itself lives in the telemetry poll (observer), not here. Below the minimum size (4.2): the run charge is about a third of it. Kept as one task every 10 ticks; revisit with the measured contract. |
 | control | critical switch-condition task (6 entries); normal trim/global-variable/State-switch task (6 entries); normal output task (up to 32 channels, interval 10 when an output panel exists) | critical: 153-553 at grants 1-6; entries: 177-1121 at grants 1-6; outputs: 113-1694 at grants 1-32 (M) | `200 + 100 n` critical, `130 + 240 n` entries, `120 + 60 n` outputs | Native cases cover every grant and partial batches; each task's bounded natural unit is kept together despite being below the minimum useful piece (4.2). |
 | model | one task, units = facets (4) | 0.03k fixed, 0.105k per facet (0.41k at 4) | 0.57k (90 + 120 per facet; migrated, section 12) | None. |
 | navigation | one normal task, units = GPS subscriptions (cap 2) | 752 at grant 1, 1447 at grant 2 (M; includes first-arm capture diagnostics across 16 navigation panels) | `120 + 770 n` (1.66k at 2) | Measured at every cursor and grant; a partial batch continues after 1 tick, then the next batch is due after 20 ticks. |

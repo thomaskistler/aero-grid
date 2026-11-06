@@ -90,7 +90,6 @@ function navigationService.new(env, support, runtime)
         interval = INTERVAL,
         revision = 0,
         count = 0,
-        want = 0,
         due = 0,
         preserveLegacySlot = true,
         env = env,
@@ -102,6 +101,11 @@ function navigationService.new(env, support, runtime)
         sources = {},
         homes = homes,
     }, navigationService)
+    support.task(service, "run", {
+        id = "service:navigation",
+        decl = navigationService.decl,
+        run = navigationService.step,
+    })
     if runtime.host then
         setmetatable(service, {
             __index = function(_, key)
@@ -417,7 +421,7 @@ function navigationService:subscribe(name, armSwitch, homeMode)
     end
 
     self.support.addSubscription(self, self.entries, entry)
-    self.want = self.count
+    self.tasks.run.want = self.count
     self.sources[key] = entry.view
     return entry.view
 end
@@ -461,7 +465,7 @@ end
 
 --- Scheduler release for the navigation subscriptions.
 ---@param grant integer
----@param stage string
+---@param _ string
 ---@param now integer
 ---@return integer delay
 function navigationService:step(grant, _, now)

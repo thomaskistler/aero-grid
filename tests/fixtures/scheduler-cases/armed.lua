@@ -30,7 +30,7 @@ return function(load)
                 armed:state(string.format("L%02d", index))
             end
             armed.cursor = start
-            return armed.task, NOW
+            return armed.tasks.run, NOW
         end
     end
 

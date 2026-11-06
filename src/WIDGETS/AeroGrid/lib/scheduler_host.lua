@@ -226,7 +226,9 @@ function host:resync(context)
                         task = item.instance,
                         id = item.id,
                         critical = item.critical,
-                        index = (index - 1) * 3 + taskIndex - 1,
+                        -- Preserve the pre-refactor single-task stagger.
+                        index = instance.tasks and instance.tasks.run == item.instance and index - 1
+                            or (index - 1) * 3 + taskIndex - 1,
                     }
                     registered[item.id] = instance
                 end

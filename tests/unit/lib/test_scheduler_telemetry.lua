@@ -201,7 +201,7 @@ do
     equal(case.decl.stages.run.maxUnits, sourceBound.maxUnits)
     for _, item in ipairs(case.cases) do
         local task = item.setup(1)
-        local recorders = task.service.runtime.byId.history.sources.S01 or {}
+        local recorders = task.owner.runtime.byId.history.sources.S01 or {}
         equal(
             #recorders,
             item.recorders,
@@ -236,7 +236,7 @@ do
     for index = 1, 24 do
         scanService:subscribe("S" .. index)
     end
-    local maintenanceTask = scanService.maintenanceTask
+    local maintenanceTask = scanService.tasks.maintenance
     local before = scanService.revision
     equal(maintenanceTask:step(23, "run", 100), 1, "an undersized maintenance grant retries")
     equal(scanService.revision, before, "an undersized maintenance grant does no work")
@@ -265,7 +265,7 @@ do
     equal(recordedOne.decl.stages.run.maxUnits, recordedOneBound.maxUnits)
 
     local largest = case.cases[#case.cases].setup(1)
-    local history = largest.service.runtime.byId.history
+    local history = largest.owner.runtime.byId.history
     local sampled = {}
     local sample = history.sample
     history.sample = function(self, reading, now)

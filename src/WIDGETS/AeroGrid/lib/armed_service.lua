@@ -63,33 +63,27 @@ function armed.new(env, support, runtime)
         cursor = 1,
         remaining = nil,
     }, armed)
-    local task = { decl = armed.decl, interval = INTERVAL, want = 0 }
-    task.step = function(_, grant, _, now)
-        if service.failed then
-            return 1
-        end
-        local ok, delay = pcall(service.step, service, grant, now)
-        if not ok then
-            service.failed = true
-            for _, entry in ipairs(service.entries) do
-                entry.state.available, entry.state.fresh = false, false
-            end
-            error(delay, 0)
-        end
-        return delay
-    end
-    service.task = task
-    service.schedulerTasks = {
-        { id = "service:armed", instance = task, critical = true },
-    }
+    support.task(service, "run", {
+        id = "service:armed",
+        decl = armed.decl,
+        interval = INTERVAL,
+        critical = true,
+        run = armed.step,
+    })
     return service
+end
+
+function armed:taskFailed()
+    for _, entry in ipairs(self.entries) do
+        entry.state.available, entry.state.fresh = false, false
+    end
 end
 
 --- Read the next bounded batch of arm conditions.
 ---@param grant integer
 ---@param now integer
 ---@return integer delay
-function armed:step(grant, now)
+function armed:step(grant, _, now)
     local entries = self.entries
     local total = #entries
     if total == 0 then
@@ -141,7 +135,7 @@ function armed:state(legacy)
         reading, entry = control:armSwitch(name)
         self.entries[#self.entries + 1] = entry
         self.count = self.count + 1
-        self.task.want = math.min(POLL_CAP, #self.entries)
+        self.tasks.run.want = math.min(POLL_CAP, #self.entries)
     end
     local metadata = {
         condition = name,

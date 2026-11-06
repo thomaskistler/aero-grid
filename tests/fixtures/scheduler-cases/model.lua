@@ -65,7 +65,7 @@ return function(load)
             service.cursor = (start + seed - 2) % FACETS + 1
             service.due = 0
             service.facets[1].state.nextRead = 0
-            return service, NOW
+            return service.tasks.run, NOW
         end
     end
 

@@ -258,13 +258,15 @@ do
         observe = function() end,
     }
     local hostOwned = historyService.new(runtime.env, services, runtime)
+    equal(hostOwned.interval, 10, "History polling stays at ten ticks")
     hostOwned:subscribe("V", { armSwitch = "L01" })
     equal(hostOwned.update, nil, "the host-owned history service has no legacy update entry point")
 
     local at = trace[1].now
     arm.updatedAt = at
     local s = scheduler.new({ steady = 1250, background = 1130 })
-    local added, reason = s:add({ id = "service:history", decl = hostOwned.decl, instance = hostOwned, due = at })
+    local added, reason =
+        s:add({ id = "service:history", decl = hostOwned.tasks.run.decl, instance = hostOwned.tasks.run, due = at })
     assert(added, reason)
     s:run("steady", at, scheduler.CEILING)
     equal(hostOwned.revision, 0, "a no-room callback does not run history work")
