@@ -164,15 +164,22 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(scenarios["navigation-tasks-4"]["expected"], 4)
         self.assertTrue(all(span[2:] == (2, 2) for span in scenarios["navigation-tasks-4"]["placements"].values()))
 
-    def test_flight_readouts_override_only_their_own_panel_owner(self):
+    def test_single_stage_panels_override_only_their_own_panel_owner(self):
         scenarios = self.cli.scenarios()
-        for panel in ("flight-counter", "flight-mode", "flight-timer"):
+        for panel in ("flight-counter", "flight-mode", "flight-timer", "state", "trim-panel"):
             for tag in ("min", "max", "16"):
                 spec = scenarios[f"{panel}-tasks-{tag}"]
                 self.assertEqual(spec["owners"], [f"panel:{panel}"])
                 self.assertEqual(spec["recipe"], panel)
                 self.assertEqual(spec["expected"], 16 if tag == "16" else 1)
                 self.assertEqual([phase["name"] for phase in spec["phases"]], ["refresh", "background"])
+                self.assertEqual(spec["toggleSwitches"], panel == "state")
+
+    def test_control_panel_pair_overrides_both_panel_owners(self):
+        spec = self.cli.scenarios()["control-panel-tasks"]
+        self.assertEqual(spec["owners"], ["panel:state", "panel:trim-panel"])
+        self.assertEqual(spec["expected"], 2)
+        self.assertTrue(spec["toggleSwitches"])
 
     def test_lua_literal_round_trips_through_lua(self):
         try:

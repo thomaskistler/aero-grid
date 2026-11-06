@@ -51,6 +51,11 @@ local trimPanel = {
     -- A trim moves under the pilot's thumb, so it is refreshed at the same rate
     -- as a telemetry readout rather than at a status-panel rate.
     refreshInterval = 20,
+    decl = {
+        class = "normal",
+        kinds = { steady = true },
+        stages = { run = { fixed = 0, perUnit = 1850, maxUnits = 1 } },
+    },
     settings = {
         -- Source names are configurable; their positions are fixed by axis.
         { key = "trim1", label = "Trim 1", type = "string", default = "trim-ail" },
@@ -564,5 +569,7 @@ function trimPanel.update(context, rect)
         aileron and elevator and aileron.available and elevator.available
     )
 end
+
+trimPanel.step = trimPanel.refresh
 
 return trimPanel

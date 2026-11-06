@@ -2208,3 +2208,54 @@ No production owner, ten-tick Telemetry/History policy or deferred recording
 stress assertion changes are included. Other panel adapters, captured-frame
 reset cancellation, multi-panel preview, full loader/modal/reflow/retirement
 accounting and Flight/Smart admission remain open.
+
+## 32. Bounded State and Trim refresh (R1, owners still legacy)
+
+Both panels reuse their unchanged synchronous refresh directly as a steady-only,
+single-unit task stage. State settings already enforce one to three entries,
+each with at most three conditions. Trim has exactly three indicators.
+Neither adapter captures cross-callback state or changes the twenty-tick
+refresh interval.
+
+| Refresh stage | Native fixture worst | Real native bridge worst | Declaration |
+|---|---:|---:|---:|
+| State / run | 1163 | 755 | 1330 |
+| Trim / run | 1636 | 1349 | 1850 |
+
+These are complete task-bridge counts; the table retains the highest observed
+counts across calibration and final runs. The first State fixture left the
+unmapped output unchanged after construction. Explicitly changing from an active
+condition to all-false raised its worst from 941 to 1163, so its final declaration
+uses the measured transition rather than the cheaper stable frame.
+
+State fixtures cover five geometries, one/two/three entries, all three positions,
+first-match priority, unknown/unavailable/stale conditions, no mapped condition,
+stable frames and overlong text that cannot fit. Trim fixtures cover the same
+geometries, all three readout modes, centered/standard/extended values,
+three-position states, unavailable/partly available/missing feeds and cold axis
+placement. The integration suite compares 700 changing completed frames across
+both actual themes, verifies stable no-repaint behavior and resized visible
+trees, and checks that background does not consume foreground releases.
+It also passes against actual pre-extraction `d5f867d` source and under Lua32.
+
+```sh
+python3 tools/audit-scheduler.py --framework state-panel trim-panel --timeout 180
+python3 tools/audit-scheduler.py state-tasks-min state-tasks-max state-tasks-16 trim-panel-tasks-min trim-panel-tasks-max trim-panel-tasks-16 control-panel-tasks default-gallery --timeout 180
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+make test-lua32
+build/lua32/lua tests/integration/widget/test_control_panel_tasks.lua "$PWD"
+```
+
+All commands exit 0. Small/large/sixteen-placement cases peak at 9658 for State
+and 10523 for Trim. The combined two-panel, changing-switch case peaks at 9189;
+production-owner default-gallery remains at 12625. Panel enrollment peaks at
+1013 and complete readiness at 2656, including service setup.
+The targeted State/Trim review and unit suites, scheduler panel lifecycle,
+schema/reflow/loading, shared-module and editor regressions pass.
+All 29 audit-tool tests and Lua32 scheduler bounds pass.
+
+Only isolated native images override panel owners. Production ownership, the
+ten-tick Telemetry/History policy and deferred recording stress assertions remain
+unchanged. Remaining panel families, lifecycle/reset cancellation, loader/modal/
+reflow/retirement accounting, multi-panel preview and Flight/Smart eligibility
+remain admission gates.

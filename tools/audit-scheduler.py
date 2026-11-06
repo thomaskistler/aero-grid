@@ -214,10 +214,11 @@ def scenarios():
                                                        "satelliteSource": "Sats"})
     result["navigation-tasks-4"] = dict(result["navigation-tasks-max"], expected=4, placements={
         f"n{i}": ((i - 1) % 2 * 2, (i - 1) // 2 * 2, 2, 2) for i in range(1, 5)})
-    for panel in ("flight-counter", "flight-mode", "flight-timer"):
+    for panel in ("flight-counter", "flight-mode", "flight-timer", "state", "trim-panel"):
         for tag in ("min", "max", "16"):
             base = result[f"{panel}-{tag}"] if tag != "16" else dict(result["metric-16"], recipe=panel)
-            result[f"{panel}-tasks-{tag}"] = dict(base, owners=[f"panel:{panel}"], phases=standard_phases())
+            result[f"{panel}-tasks-{tag}"] = dict(base, owners=[f"panel:{panel}"], phases=standard_phases(),
+                                                  toggleSwitches=panel == "state")
     result["light-control"] = {
         "recipe": "trim-panel", "expected": 2, "toggleSwitches": True,
         "layout": custom_layout([
@@ -230,6 +231,7 @@ def scenarios():
         ]),
         "phases": standard_phases(),
     }
+    result["control-panel-tasks"] = dict(result["light-control"], owners=["panel:state", "panel:trim-panel"])
     result["flight-smart"] = {
         "recipe": "metric", "expected": 2, "sources": 3, "settings": True, "smart": True,
         "layout": custom_layout([chart_cell("chart-a", 0, 2, (1, 2, 3)),

@@ -343,9 +343,10 @@ Navigation freezes its rendered output, then applies readings, tape frame/style
 and bearing marks in separate stages. Cold tape geometry and alert-surface
 colors must not share an atom with scrolling the full mark pool. Its synchronous
 refresh/update APIs still compose the same helpers.
-Flight Mode and Flight Timer reuse their synchronous refresh as a single task
-stage. Flight Counter shares its reading/painting helper but leaves cadence to
-the scheduler instead of applying a second local clock throttle.
+Flight Mode, Flight Timer, State and Trim reuse their synchronous refresh as a
+single task stage. State is bounded by three entries of three conditions; Trim
+has three axes. Flight Counter shares its reading/painting helper but leaves
+cadence to the scheduler instead of applying a second local clock throttle.
 
 Scheduler-owned placements enroll one per callback with an explicit setup
 reservation. Existing placements retain their releases, and pending enrollment

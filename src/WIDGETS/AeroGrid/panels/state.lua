@@ -5,6 +5,11 @@ local statePanel = {
     apiVersion = 1,
     supportedSpans = { "any" },
     refreshInterval = 20,
+    decl = {
+        class = "normal",
+        kinds = { steady = true },
+        stages = { run = { fixed = 0, perUnit = 1330, maxUnits = 1 } },
+    },
     settings = {
         {
             key = "entries",
@@ -355,5 +360,7 @@ function statePanel.update(context, rect)
     context.rendered = nil
     statePanel.refresh(context)
 end
+
+statePanel.step = statePanel.refresh
 
 return statePanel
