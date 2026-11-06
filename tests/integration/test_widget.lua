@@ -863,13 +863,18 @@ local function testShippedLayout()
     -- And the panels that read the radio rather than the link.
     local model = context.serviceRuntime.byId.model
     local control = context.serviceRuntime.byId.control
-    assertEqual(entryById(context, "flight-clock").instance.text, "--:--")
-    assertEqual(model.revision, 0, "legacy work leaves no scheduler room for the model task")
+    assertEqual(model.revision, 1, "a callback with room admits one model task release")
     assertEqual(control.revision, 0, "negative room defers the normal control task")
     assertEqual(context.scheduler.lastPlan.ran, 0, "negative room defers tasks without an error")
     assert(
         context.scheduler.lastPlan.U > context.scheduler.CEILING - context.scheduler.MARGIN,
         "the plan includes legacy bounds that exceed the scheduler budget"
+    )
+    local flightClock = entryById(context, "flight-clock").instance
+    assertEqual(
+        flightClock.text,
+        "1:30",
+        "the model task's admitted release supplies the timer"
     )
     assertEqual(entryById(context, "mode").instance.text, "--")
     -- Digits alone: the `V` is its own label riding beside them.
@@ -900,21 +905,11 @@ local function testShippedLayout()
     assertEqual(link.stateName, "normal")
 
     local nav = entryById(context, "nav").instance
-    assertEqual(nav.text, "778")
-    -- Both supporting wordings share one row, and on a 2 x 2 panel neither full
-    -- wording fits. The bearing needs 89 px of the 87 it is given, so it sheds
-    -- its compass point and keeps the number, which is the measurement; the
-    -- caption sheds its last two words. Before this the bearing simply overran
-    -- its box and the caption read "NORTH UP FROM" on a radio.
+    assertEqual(nav.text, "--", "no room defers the NORMAL navigation service without an error")
+    assertEqual(context.serviceRuntime.byId.navigation.revision, 0, "no room leaves navigation state unchanged")
+    assertEqual(nav.stateName, "unavailable")
     assertEqual(nav.detail, nil)
-    assertEqual(nav.origin, "")
-    for _, row in ipairs({ { nav.origin, nav.originWidth } }) do
-        local needed = themeModule.textWidth(nav.fonts.label, row[1])
-        assert(
-            needed <= row[2],
-            string.format("the shipped navigation panel draws %q, needing %d px of %d", row[1], needed, row[2])
-        )
-    end
+    assertEqual(nav.origin, "NO GPS SOURCE", "the panel shows its initial unavailable state until a read is admitted")
     assert(nav.tape, "the shipped dashboard must demonstrate the tape")
 end
 
@@ -5789,7 +5784,7 @@ local function testInstructionBudget()
             -- Four distinct GPS sources, so the navigation service really carries
             -- more than one subscription and pays for its trigonometry.
             type = "navigation",
-            services = { "navigation", "telemetry" },
+            services = { "telemetry" },
             config = function(index)
                 local sources = { "GPS", "GPS2", "GPS3", "GPS4" }
                 return {
@@ -5918,7 +5913,10 @@ local function testInstructionBudget()
         return context
     end
 
-    exercise("gallery", galleryPath, 10, { "telemetry", "model", "control", "navigation" })
+    local gallery = exercise("gallery", galleryPath, 10, { "telemetry", "model", "control" })
+    local navigation = gallery.serviceRuntime.byId.navigation
+    assert(navigation and navigation.count > 0, "gallery did not subscribe to navigation")
+    assert(not navigation.failed, "navigation failed while the gallery was under load")
     exercise("full grid", makeWidget("budget-16", fullGridLayout(16)), 16, { "telemetry" })
     local linkReview = assert(hostIo.open(developmentLayoutsPath .. "review-link-status.yaml", "r"))
     local linkReviewYaml = linkReview:read("a")
@@ -5951,21 +5949,29 @@ local function testInstructionBudget()
     -- panel measured only at the span the shipped dashboard uses would hide
     -- exactly the cost that matters: sixteen of it on one screen.
     for _, spec in ipairs(CORE_EXERCISES) do
-        exercise(
+        local context = exercise(
             spec.type .. " x16",
             makeWidget("budget-" .. spec.type, typedGridLayout(spec.type, spec.config)),
             16,
             spec.services
         )
+        if spec.type == "navigation" then
+            local navigation = context.serviceRuntime.byId.navigation
+            assert(navigation and navigation.count > 0, "navigation x16 did not subscribe to the service")
+            assert(not navigation.failed, "navigation failed while x16 was under load")
+        end
     end
 
     -- Four 2x2 diagnostic panels: the most service probes the schema permits.
-    exercise(
+    local probes = exercise(
         "service probes",
         makeWidget("budget-probes", probeGridLayout()),
         4,
-        { "telemetry", "model", "control", "navigation" }
+        { "telemetry", "model", "control" }
     )
+    local probedNavigation = probes.serviceRuntime.byId.navigation
+    assert(probedNavigation and probedNavigation.count > 0, "service probes did not subscribe to navigation")
+    assert(not probedNavigation.failed, "navigation failed while service probes were under load")
 
     -- Four 2x2 diagnostics panels, which is the worst case for the view that
     -- reports on the host. It must not cost the dashboard anything when it is
@@ -9435,6 +9441,12 @@ panels:
     local zone = { x = 0, y = 0, w = 480, h = 272 }
     local context = createLoaded(zone, DEFAULT_OPTIONS, widgetPath)
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+    local function updateNavigation()
+        local service = context.serviceRuntime.byId.navigation
+        local now = getTime()
+        service.due = now
+        service:step(2, "run", now)
+    end
 
     radio.values[130] = { 4.11, 4.09, 4.12 }
     radio.values[140] = -70
@@ -9448,6 +9460,7 @@ panels:
         ["pilot-lon"] = 8.5400,
     }
     settle(context, 60)
+    updateNavigation()
 
     local cells = entryById(context, "cells").instance
     local link = entryById(context, "link").instance
@@ -9503,6 +9516,7 @@ panels:
         ["pilot-lon"] = 8.5400,
     }
     settle(context, 60)
+    updateNavigation()
 
     reflow(480, 272)
 
@@ -10495,6 +10509,11 @@ local function testTelemetryPanels()
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
     assertEqual(#context.panels, 5)
     settle(context)
+    local navigationService = context.serviceRuntime.byId.navigation
+    local now = getTime()
+    navigationService.due = now
+    navigationService:step(2, "run", now)
+    settle(context, 1)
 
     -- The pack is judged by its worst cell, and the summed pack voltage is
     -- supporting detail rather than the headline.
@@ -10730,10 +10749,31 @@ local function testTelemetryDegrades()
     local widgetPath = makeWidget("telemetry-degrade", TELEMETRY_LAYOUT)
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
     settle(context)
+    local navigationService = context.serviceRuntime.byId.navigation
+    local now = getTime()
+    navigationService.due = now
+    navigationService:step(2, "run", now)
+    settle(context, 1)
 
     local pack = entryById(context, "pack").instance
     local link = entryById(context, "link").instance
     local nav = entryById(context, "nav").instance
+    local telemetryService = context.serviceRuntime.byId.telemetry
+
+    local function refreshTelemetry(now)
+        local updates = math.ceil(#telemetryService.entries / telemetryService.POLL_CAP)
+        for _ = 1, updates do
+            telemetryService:update(now)
+        end
+    end
+
+    local function refreshServices()
+        now = getTime()
+        refreshTelemetry(now)
+        navigationService.due = now
+        navigationService:step(2, "run", now)
+        settle(context, 10)
+    end
 
     assertEqual(pack.stateName, "normal")
     assertEqual(nav.stateName, "normal")
@@ -10742,6 +10782,8 @@ local function testTelemetryDegrades()
     -- panel says so in the one place a pilot will look.
     radio.rssi = 0
     pump(context, 40)
+    refreshServices()
+    assertEqual(navigationService.entries[1].reading.stale, true, "GPS reading did not become stale")
 
     assertEqual(pack.stateName, "stale", "a dropped link hid the last cells")
     assertEqual(pack.text, "4.09", "a stale poll overwrote the reading")
@@ -10760,6 +10802,7 @@ local function testTelemetryDegrades()
     -- Reconnect. Nothing may be left marked once readings arrive again.
     radio.rssi = 80
     pump(context, 40)
+    refreshServices()
     assertEqual(pack.stateName, "normal")
     assertEqual(link.stateName, "normal")
     assertEqual(link.badge.properties.text, "")
@@ -10771,6 +10814,7 @@ local function testTelemetryDegrades()
     radio.values[109].lat = 0
     radio.values[109].lon = 0
     pump(context, 40)
+    refreshServices()
     assertEqual(nav.stateName, "unavailable")
     assertEqual(nav.badge.properties.text, "N/A")
     assertEqual(nav.origin, "NO FIX")
@@ -10788,6 +10832,7 @@ local function testTelemetryDegrades()
     radio.values[109]["pilot-lat"] = 0
     radio.values[109]["pilot-lon"] = 0
     pump(context, 40)
+    refreshServices()
     assertEqual(nav.stateName, "normal", "a missing home is not a broken fix")
     -- A missing home position leaves the fix good, so the panel is not badged
     -- at all and only the caption changes.
@@ -10814,6 +10859,7 @@ local function testTelemetryDegrades()
     -- a word on.
     radio.values[130] = { 0, -1, 99 }
     pump(context, 40)
+    refreshServices()
     assertEqual(pack.summary.shape, "invalid")
     assertEqual(pack.text, "--")
     assertEqual(pack.badge.properties.text, "N/A")

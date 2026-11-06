@@ -80,10 +80,49 @@ local function testRoundRobin()
     assertions.assertEqual(services.roundRobin({}, 7, 3, recordVisit, state, 0), 7)
 end
 
+local function testSchedulerOwnedServiceKeepsItsLegacySlot()
+    local runtime = services.runtime({})
+    local nav = {
+        id = "navigation",
+        interval = 20,
+        due = 0,
+        count = 1,
+        preserveLegacySlot = true,
+    }
+    local telemetryUpdates = 0
+    local telemetry = {
+        id = "telemetry",
+        interval = 10,
+        due = 0,
+        count = 1,
+        revision = 0,
+        update = function()
+            telemetryUpdates = telemetryUpdates + 1
+        end,
+    }
+    services.register(runtime, nav, 0)
+    services.register(runtime, telemetry, 0)
+
+    local updated = services.update(runtime, 0, function(instance)
+        return instance.id ~= "navigation"
+    end)
+    assertions.assertEqual(updated, nil, "navigation's replaced slot stays empty")
+    assertions.assertEqual(nav.due, 20, "navigation's legacy release advances")
+    assertions.assertEqual(telemetryUpdates, 0, "another service does not take the slot")
+    assertions.assertEqual(runtime.cursor, 2, "rotation advances past navigation")
+
+    updated = services.update(runtime, 1, function()
+        return true
+    end)
+    assertions.assertEqual(updated, "telemetry", "telemetry keeps its next legacy release")
+    assertions.assertEqual(telemetryUpdates, 1)
+end
+
 local function run()
     testSnapshotIsReadOnly()
     testEnvironmentAndRuntime()
     testRoundRobin()
+    testSchedulerOwnedServiceKeepsItsLegacySlot()
     testSubscriptionOwnership()
 end
 

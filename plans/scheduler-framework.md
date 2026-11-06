@@ -374,7 +374,7 @@ separate tasks.
 | history | one task: advance and boundaries, one entry per update | 0.44k (0.38k advance and boundaries plus 17 per entry) | 0.65k | Recording itself lives in the telemetry poll (observer), not here. Below the minimum size (4.2): the run charge is about a third of it. Kept as one task every 5 ticks; revisit with the measured contract. |
 | control | critical switch-condition task (6 entries); normal trim/global-variable task (6 entries); normal output task (up to 32 channels, interval 10 when an output panel exists) | critical: 153-553 at grants 1-6; entries: 282-1121 at grants 1-6; outputs: 113-1694 at grants 1-32 (M) | `200 + 100 n` critical, `130 + 240 n` entries, `120 + 60 n` outputs | Native cases cover every grant and partial batches; each task's bounded natural unit is kept together despite being below the minimum useful piece (4.2). |
 | model | one task, units = facets (4) | 0.03k fixed, 0.105k per facet (0.41k at 4) | 0.57k (90 + 120 per facet; migrated, section 12) | None. |
-| navigation | one task, units = entries (2) | 0.04k fixed, 0.28k per entry | 0.71k at 2 | 2 entries is estimated (E). |
+| navigation | one normal task, units = GPS subscriptions (cap 2) | 752 at grant 1, 1447 at grant 2 (M; includes first-arm capture diagnostics across 16 navigation panels) | `120 + 770 n` (1.66k at 2) | Measured at every cursor and grant; a partial batch continues after 1 tick, then the next batch is due after 20 ticks. |
 | flight tick | tick, and Smart as its own task | tick about 1.0k (E); Smart 2.0k (discovery scans 8 sensors, then 4 reads) | Smart 2.6k | Smart splits per sensor read if needed; the tick's nested `services.update` makes its total measured, not summed. |
 | session reset steps | one task, units = items (8) | history 0.07k, navigation 0.01k | 0.2k | None. |
 | armed | none | no scheduled update | | None. |
@@ -448,12 +448,15 @@ the cap, with declared values:
 | metric relayout | 4.1k | no | yes | By region: 2 pieces |
 | model-identity build 4.7k, output build 4.5k | 4.5k to 4.7k | no | yes | 2 pieces each, one extra load callback |
 
-Under 4k and not split: navigation refresh and reflow 3.7k, panel item parse,
-header and navigation 3.6k, flight first tick 3.1k, Smart 2.6k; chart project
-(1030 per knot, scaled by room). So 5k needs 4 splits plus the 11 builds, and 4k
-adds only three (metric relayout and two builds). The extra cost of 4k is small
-and it fits A to C, so **4000** is the recommendation; each migration reviews its
-own task's size. Revisit 5000 only if hardware
+Under 4k and not split: navigation refresh varies from 0.8k at minimum span to
+3.35k at maximum span (3.7k declared), panel item parse, header and navigation
+3.6k, flight first tick 3.1k, Smart 2.6k; chart project (1030 per knot, scaled
+by room). Six navigation panels can defer the NORMAL navigation service when
+there is no room. Its compass-tape refresh remains atomic; deterministic panel
+slicing is a separate follow-up. So 5k needs 4 splits plus the 11 builds, and
+4k adds only three (metric relayout and two builds). The extra cost of 4k is
+small and it fits A to C, so **4000** is the recommendation; each migration
+reviews its own task's size. Revisit 5000 only if hardware
 shows zero near-misses and the heaviest real mix leaves 5000 of room.
 
 **Required in migration.** Each task's contract records the **charge `G` and its
@@ -609,10 +612,9 @@ least 5 clock phases or seeds, for every stage and every grant measured.
   contracts' margin factors then give the declared numbers.
 - Warn above 90% of a declared bound (re-declare) or below 60% (loose).
 - A declaration made from an estimate (E) or unmeasured (U) row cannot be
-  registered in `mixed` or `new`. This blocks critical tasks: telemetry at
-  its cap `n` and navigation at 2 are estimates until measured at their declared
-  `maxUnits`, which in turn needs the entries-per-source decision (open decision
-  3).
+  registered in `mixed` or `new`. Navigation is measured at its declared
+  two-entry cap; telemetry at its cap `n` remains unmeasured until its
+  entries-per-source decision is resolved.
 - The framework's own `run` is measured at 8, 32 and 128 tasks in the scenarios
   and mixes of 4.2 (`audit-scheduler.py --framework`); every measured callback
   must cost at most what it charged (`lastPlan.charged`), and a failing row names

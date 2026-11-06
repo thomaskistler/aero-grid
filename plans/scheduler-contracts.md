@@ -162,7 +162,7 @@ smallest and largest legal span (M).
 |---|---|---|---|
 | metric | 4.3k | 4.8k | **Flag.** Steady refresh (render 0.4k + apply 0.6k) is small; the rest is `update` relayout (3.7k, rare). Make relayout its own task, split by region to at most 4.0k declared |
 | output | 5.1k | 5.7k | **Flag.** `apply` is 3.8k at the largest span; split per row |
-| navigation | 3.3k | 3.7k | `apply` per row (3.0k); within the limit, split if the cost spread is wide |
+| navigation | 0.8k min-span / 3.35k max-span | 3.7k | The compass tape dominates at wide spans. Refresh remains atomic; six navigation panels can defer the NORMAL service for no room. Deterministic panel slicing is a separate follow-up. |
 | link-status | 2.2k | 2.5k | render/apply, optional |
 | rx-battery | 1.6k | 1.8k | render/apply, optional |
 | trim-panel | 1.4k | 1.6k | render/apply, optional |
@@ -192,7 +192,7 @@ Declared is by the rule from the audit's worst (M unless E).
 | reset steps | HIGH | 8 items | 0.2k | Already capped | Delay 1 while items remain |
 | extrema | HIGH | track (6) | 1.35k at 6 (E) | Already per track. Provisional until measured at 6 | Delay 1 while tracks remain |
 | model | NORMAL | facet (4) | 0.57k at 4 (90 + 120 per facet; M 0.41k) | Already per facet | 100 ticks after each release (at most once a second); a grant below the facets subscribed to reads the next facets at the next release (framework section 12) |
-| navigation service | NORMAL | entry (2) | 0.71k at 2 (E) | Already per entry. Provisional until measured at 2 | Delay 1 while entries remain |
+| navigation service | NORMAL | GPS subscription (2) | `120 + 770 n` (1.66k at 2; M 752 at 1, 1447 at 2) | Per-entry grants; cases cover every cursor and include first-arm diagnostics at the 16-panel limit | Delay 1 while the two-entry batch remains, then 20 ticks |
 | theme read | NORMAL | theme file | 10.0k | **Flag.** Chunk the parse like `tokenizeChunk` | Delay 1 while chunks remain |
 | header finalize | NORMAL | 1 | 5.1k | **Flag.** Split per field | Delay 1 |
 | header | NORMAL | panel | 3.6k at 16 panels | Grows with panels: grant per panel | Delay 1 |

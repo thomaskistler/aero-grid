@@ -26,6 +26,7 @@ local SCENARIOS = {
     "test_metric_review",
     "test_flight_counter",
     "test_smart_chart_budget",
+    "test_navigation_review",
 }
 
 local lines = {}

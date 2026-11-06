@@ -65,6 +65,8 @@ nav.due = 0
 for _ = 1, 20 do
     definition.background(flight)
 end
+nav.due = getTime()
+nav:step(2, "run", nav.due)
 assert(log.count == 1, "hidden-screen services must record the first-arm outcome")
 local capture = log:read()[1]
 assert(capture.panel == "nav" and capture.host == "review-diagnostics-log#1")
@@ -78,6 +80,27 @@ for index = 1, 300 do
     log:append(flight, "nav", "event " .. index .. " " .. capture.text, index * 100)
 end
 assert(log.count == 256)
+local viewerLayout = assert(io.open(root .. "/build/test-widget-fixture/layouts/review-diagnostics-viewer.yaml", "w"))
+viewerLayout:write([[
+version: 3
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: log
+    type: host-diagnostics
+    col: 0
+    row: 0
+    colSpan: 4
+    rowSpan: 4
+    config:
+      section: log
+      maxEntries: 256
+]])
+viewerLayout:close()
+definition.update(diagnostics, { Layout = "review-diagnostics-viewer", Theme = "modern-dark" })
+fixture.pump(diagnostics, 40)
+assert(#diagnostics.errors == 0, table.concat(diagnostics.errors, "\n"))
 local logEntry = fixture.entryById(diagnostics, "log")
 logEntry.module.refresh(logEntry.instance)
 assert(string.find(logEntry.instance.texts[logEntry.instance.visibleLines], "event 300", 1, true))

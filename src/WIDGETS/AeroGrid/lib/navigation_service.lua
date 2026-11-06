@@ -38,6 +38,11 @@ local POLL_CAP = 2
 --- Mean earth radius in metres, used for the great-circle distance.
 local EARTH_RADIUS = 6371000
 
+navigationService.decl = {
+    class = "normal",
+    stages = { run = { fixed = 120, perUnit = 770, maxUnits = POLL_CAP } },
+}
+
 --- Coordinates closer than this to the null island are treated as no fix.
 --- EdgeTX reports zero for both axes before a sensor has produced a position.
 local NULL_EPSILON = 0.0000005
@@ -80,20 +85,33 @@ end
 function navigationService.new(env, support, runtime)
     local homes = runtime.navigationHomes or {}
     runtime.navigationHomes = homes
-    return setmetatable({
+    local service = setmetatable({
         id = "navigation",
         interval = INTERVAL,
         revision = 0,
         count = 0,
+        want = 0,
         due = 0,
+        preserveLegacySlot = true,
         env = env,
         support = support,
         runtime = runtime,
         entries = {},
         cursor = 1,
+        remaining = nil,
         sources = {},
         homes = homes,
     }, navigationService)
+    if runtime.host then
+        setmetatable(service, {
+            __index = function(_, key)
+                if key ~= "update" then
+                    return navigationService[key]
+                end
+            end,
+        })
+    end
+    return service
 end
 
 function navigationService:logCapture(entry, outcome, now)
@@ -399,8 +417,62 @@ function navigationService:subscribe(name, armSwitch, homeMode)
     end
 
     self.support.addSubscription(self, self.entries, entry)
+    self.want = self.count
     self.sources[key] = entry.view
     return entry.view
+end
+
+--- Read the next bounded batch, continuing a partial release on the next tick.
+---@param grant integer
+---@param now integer
+---@return integer delay
+function navigationService:read(grant, now)
+    local entries = self.entries
+    local total = #entries
+    if total == 0 then
+        return INTERVAL
+    end
+
+    local cursor = self.cursor
+    if cursor > total then
+        cursor = 1
+    end
+
+    local remaining = self.remaining
+    if remaining == nil then
+        remaining = math.min(POLL_CAP, total)
+    end
+    local reads = math.min(grant, remaining)
+    for _ = 1, reads do
+        local entry = entries[cursor]
+        cursor = cursor % total + 1
+        self:poll(entry, now)
+    end
+    self.cursor = cursor
+    remaining = remaining - reads
+    if remaining > 0 then
+        self.remaining = remaining
+        return 1
+    end
+
+    self.remaining = nil
+    return INTERVAL
+end
+
+--- Scheduler release for the navigation subscriptions.
+---@param grant integer
+---@param stage string
+---@param now integer
+---@return integer delay
+function navigationService:step(grant, _, now)
+    local wait = self.tickElapsed(self.due, now)
+    if wait > 0 then
+        return wait
+    end
+    local delay = self:read(grant, now)
+    self.due = now + delay
+    self.revision = self.revision + 1
+    return delay
 end
 
 --- Refresh a bounded slice of the subscriptions.

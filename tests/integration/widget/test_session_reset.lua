@@ -149,7 +149,7 @@ equal(model.getGlobalVariable(8, 0), 18)
 assert(owner.view.active and sticky)
 for _, context in ipairs({ first, second }) do
     assert(context.serviceRuntime.byId.history:session().elapsed > 0)
-    equal(panel(context, "home").feed.homeStatus, "switch-unavailable")
+    equal(panel(context, "home").feed.homeStatus, "waiting", "no room leaves first-arm capture pending")
     equal(panel(context, "battery").estimatedCells, 4)
 end
 fixture.radio.rssi = 25

@@ -172,15 +172,23 @@ function services.update(runtime, now, admit)
         local instance = order[cursor]
         cursor = cursor % count + 1
 
+        local due = instance and not instance.failed and instance.count > 0 and now >= instance.due
+        local admitted = due and (not admit or admit(instance))
+
+        -- Keep a scheduler-owned service's legacy rotation slot from pulling
+        -- another service into this callback.
+        if due and not admitted and instance.preserveLegacySlot then
+            instance.due = now + instance.interval
+            runtime.cursor = cursor
+            return nil
+        end
+
         -- Scheduler-only services have no legacy update entry point. The host
         -- releases them from the task table instead.
         if
-            instance
-            and not instance.failed
-            and instance.count > 0
+            due
+            and admitted
             and type(instance.update) == "function"
-            and now >= instance.due
-            and (not admit or admit(instance))
         then
             instance.due = now + instance.interval
             runtime.cursor = cursor

@@ -209,8 +209,12 @@ do
     local services = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/services.lua"))()
     local expected, boundsExpected = {}, {}
     for _, definition in ipairs(services.DEFINITIONS) do
-        expected["service:" .. definition.id] = true
-        assert(host.SERVICE_BOUNDS[definition.id], "service " .. definition.id .. " needs a declared bound")
+        local key = "service:" .. definition.id
+        expected[key] = true
+        assert(host.OWNERS[key], key .. " needs an owner")
+        if host.OWNERS[key] == "legacy" then
+            assert(host.SERVICE_BOUNDS[definition.id], "legacy service " .. definition.id .. " needs a declared bound")
+        end
     end
     local listingPath = root .. "/build/scheduler-panel-types.txt"
     os.execute("ls '" .. root .. "/src/WIDGETS/AeroGrid/panels' > '" .. listingPath .. "'")
@@ -232,6 +236,7 @@ do
         ["service:control"] = true,
         ["service:control-normal"] = true,
         ["service:control-outputs"] = true,
+        ["service:navigation"] = true,
     }
     for key in pairs(expected) do
         equal(host.OWNERS[key], migrated[key] and "new" or "legacy", key .. " needs an owner")

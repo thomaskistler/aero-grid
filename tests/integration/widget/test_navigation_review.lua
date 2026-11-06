@@ -1,13 +1,39 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 local root = (... and ... ~= "" and ...) or "."
+local hostIo = io
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local WidgetFixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))()
 local fixture = WidgetFixture.new()
 fixture.reset()
+local serviceLayoutPath = root .. "/build/test-widget-fixture/layouts/review-navigation-service.yaml"
+local function writeServiceLayout()
+    local file = assert(hostIo.open(serviceLayoutPath, "w"))
+    file:write([[
+version: 2
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: detailed
+    type: navigation
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 3
+    config:
+      label: DETAILED
+      presentation: detailed
+      bearingFormat: quadrant
+]])
+    file:close()
+end
 local context = fixture.createLoaded(nil, { Layout = "review-navigation", Theme = "modern-dark" })
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+assertions.assertEqual(context.schedulerHost.owners["service:navigation"], "new")
+assert(context.schedulerHost.scheduler.byId["service:navigation"], "navigation service must be scheduler-owned")
+assertions.assertEqual(context.serviceRuntime.byId.navigation.update, nil)
 assertions.assertEqual(context.document.version, 5)
 assertions.assertEqual(#context.panels, 6)
 fixture.assertNoOverlap(context)
@@ -215,6 +241,12 @@ for _, case in ipairs({
     end
 end
 
+writeServiceLayout()
+context = fixture.createLoaded(nil, { Layout = "review-navigation-service", Theme = "modern-dark" })
+fixture.pump(context, 20)
+square = fixture.instanceOf(context, "detailed")
+detailed = square
+
 local bearingOnly = instance(2, 2, { w = 238, h = 134 }, { bearingFormat = "quadrant" })
 assert(bearingOnly.showDetail)
 assertions.assertEqual(bearingOnly.tape, nil)
@@ -266,11 +298,11 @@ assertions.assertEqual(custom.feed.pilotLatitude, 47)
 assert(custom.feed.distance > 100 and custom.feed.distance < 120)
 
 local homes = context.navigationHomes
-definition.update(context, { Layout = "review-navigation", Theme = "modern-light" })
+definition.update(context, { Layout = "review-navigation-service", Theme = "modern-light" })
 fixture.pump(context, 120)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assert(context.navigationHomes == homes, "layout/theme reload must preserve capture state")
-square = fixture.instanceOf(context, "compass")
+square = fixture.instanceOf(context, "detailed")
 custom = instance(2, 2, { w = 238, h = 134 }, { homeMode = "first-arm", armSwitch = "SFv" })
 fixture.pump(context, 20)
 navigation.refresh(custom)
@@ -278,11 +310,11 @@ assertions.assertEqual(custom.feed.pilotLatitude, 47, "panel recreation must not
 assert(custom.feed.distance > 100 and custom.feed.distance < 120)
 
 fixture.radio.modelFilename = "another-model.yml"
-definition.update(context, { Layout = "review-navigation", Theme = "modern-dark" })
+definition.update(context, { Layout = "review-navigation-service", Theme = "modern-dark" })
 fixture.pump(context, 120)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assert(context.navigationHomes ~= homes, "a different model must not inherit home")
-square = fixture.instanceOf(context, "compass")
+square = fixture.instanceOf(context, "detailed")
 custom = instance(2, 2, { w = 238, h = 134 }, { homeMode = "first-arm", armSwitch = "SFv" })
 fixture.pump(context, 20)
 assertions.assertEqual(custom.feed.home, false, "starting armed in a new model must not capture")
@@ -371,4 +403,5 @@ assertions.assertEqual(stale.satelliteLabel.properties.text, "12")
 navigation.refresh(hidden)
 assertions.assertEqual(hidden.stateName, "stale", "hidden satellite telemetry must still report staleness")
 fixture.radio.values[109] = {}
+os.remove(serviceLayoutPath)
 fixture.reset()
