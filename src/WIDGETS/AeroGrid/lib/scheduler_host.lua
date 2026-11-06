@@ -549,6 +549,7 @@ end
 ---@return table? legacy accounting
 function host:begin(kind)
     self.active = true
+    self.legacy.panelRoom = nil
     self.legacy.spent = self.panelSetup
     if self.probe then
         self.probe:before(kind, getTime(), self.head, self.mode == "legacy")

@@ -3045,3 +3045,25 @@ the legacy tick/Smart head calls and their tick charge only after activation,
 and retain identity/document/reset/diagnostic head work. Production OWNERS,
 the ten-tick recording policy and both deferred chart-recording stress
 assertions are unchanged; R5/R6 and combined ownership gates remain open.
+
+## 49. Legacy editor-preview admission
+
+Stable editor previews now reserve a complete 4000-instruction service atom,
+its examination/run charges and the existing callback/head/setup charges before
+admitting legacy panel refreshes. An over-budget placement remains due; scanning
+continues so cheaper placements can run. The allowance is callback-local and
+does not change ordinary dashboard dispatch, production ownership or the
+ten-tick Telemetry/History policy.
+
+Legacy and scheduler-owned Metric/Chart preview regressions cover progress,
+absence of duplicate scheduler/legacy work, unchanged deferred deadlines and
+resumption when work fits. Native stable legacy previews peak at 6564 (16
+Metrics) and 6840 (Chart); their stable-preview callbacks now have an explicit
+15000 audit gate. Scheduler-owned scenario maxima are 10637/11868.
+
+This fixes recording starvation and post-reset resume markers in the combined
+reset case without changing its assertions. The same case then exposes a later
+Model settings cold-description construction callback above its mock budget;
+that separate R5 bound remains under correction. The unmodified legacy
+16-Metric dashboard before opening the editor still reaches 25881, so these
+measurements do not close ordinary panel ownership or R5/R6 integration gates.

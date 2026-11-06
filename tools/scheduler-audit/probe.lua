@@ -748,9 +748,9 @@ local function runCallback(kind, context, fn, e, t)
     local c1 = count()
     pause(true)
     local total = c1 - c0 - K_CALLBACK
-    if previewTasks then
+    if previewTasks or surface == "editor-preview" and string.match(config.scenario, "^editor%-preview%-") then
         gate(total <= 15000, kind .. " exceeds the complete preview callback ceiling: " .. total)
-        if surface == "editor-preview" then
+        if previewTasks and surface == "editor-preview" then
             for _, label in ipairs(topLabels) do
                 gate(
                     not string.match(label, "^panel:") and not string.match(label, "^chart:"),

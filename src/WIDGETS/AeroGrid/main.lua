@@ -963,12 +963,13 @@ end
 --- guarantee for layouts that defeat staggering, such as many panels all
 --- asking to refresh every frame.
 local REFRESH_CAP = 6
+local PREVIEW_SERVICE_RESERVE = 4000
 
 --- Dispatch `refresh` to the panels that are due, newest cursor first.
 --- Returns the number dispatched so tests can observe the scheduling.
 --- In `mixed` mode `legacy` accounts legacy work against the new scheduler's
---- remaining budget without limiting the legacy loop; legacy panel slots and
---- service cadence stay unchanged.
+--- remaining budget. A legacy preview may also impose a panel-only allowance;
+--- deferred entries retain their deadlines.
 ---@param context AeroGridContext
 ---@param legacy? table
 ---@return integer dispatched
@@ -1000,6 +1001,7 @@ local function dispatchDue(context, legacy)
             and not waiting
             and not (legacy and legacy.skips(entry))
             and now >= (entry.nextRefresh or 0)
+            and (not legacy or not legacy.panelRoom or legacy.panelCost(entry) <= legacy.panelRoom - chargedWork)
         then
             local cost = rawget(entry.module, "refreshCost") or 1
             if work + cost > limit then
@@ -1142,6 +1144,22 @@ local function scheduled(context, kind)
     if kind == "background" then
         dispatchAll(context, "background")
     elseif hasLegacy then
+        if context.editorUi and legacyAccounting then
+            local scheduler = scheduling.scheduler
+            -- Leave a complete service atom and its release between legacy previews.
+            legacyAccounting.panelRoom = math.max(
+                0,
+                scheduler.CEILING
+                    - scheduler.MARGIN
+                    - scheduler.FIXED_COST
+                    - PREVIEW_SERVICE_RESERVE
+                    - scheduler.EXAMINE_COST
+                    - scheduler.RUN_COST
+                    - scheduling.overhead[kind]
+                    - scheduling.head
+                    - legacyAccounting.spent
+            )
+        end
         dispatchDue(context, legacyAccounting)
     end
     -- Reserve the callback for long-press hit testing; scheduled work resumes
