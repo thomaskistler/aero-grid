@@ -3580,3 +3580,35 @@ tests pass. Unchanged strict reset remains 13600 with its two original first-arm
 XFAILs. Prerequisites are parent a7d9293 and b116e2d forwarding; no owner or
 recording policy changes are included. Editor input/mutation and R6 retirement
 remain separate gates.
+
+## 51. Shared bounded model-settings reader (R5/R6 dependency)
+
+`store:startLoad(filename)` returns a job or `nil,error` without disk access.
+`store:advanceLoad(job)` returns `false` while pending, then
+`true,document,info` or `true,nil,error`; terminal calls return the same result.
+`store:loadWorkBound(job)` selects the current bound, with
+`LOAD_BOUNDS.start` covering creation. The reader reuses the save pipeline's
+read/parse/build/previous stages, but never prepares a new revision or writes.
+Synchronous `load` stays unchanged, including reads of an old model filename.
+
+| Complete API stage | Native maximum | Charge |
+|---|---:|---:|
+| Start / reject start | 59 | 120 |
+| Read / missing completion | 557 | 670 |
+| Source tokenize | 1160 | 1500 |
+| Generic YAML build | 661 | 850 |
+| Validate / recovered completion | 682 | 850 |
+
+Native coverage includes all advances of five ordinary/escaped filenames,
+missing/primary/recovered/backup-only/invalid files, comment-heavy and obsolete
+sequence documents, model changes and identity API errors at every stage, and
+repeated terminal calls and read failures. The shared file reader now closes
+its handle before propagating a read exception; no handle survives an advance,
+and abandoned tokenizer/builder state needs no explicit cancellation.
+The source parser keeps four-line/64-comment-byte
+tokenization and four-token/stack advances. Lua53/int32 tests compare all
+document/error/recovery metadata to synchronous reads, forbid disk mutation,
+and verify captured-source and identity semantics. The unchanged native save
+case also passes after sharing the internal advance function (maximum 1625).
+Flight registration owns enrollment and complete loader-callback accounting;
+this commit does not activate that path or change any production owner.

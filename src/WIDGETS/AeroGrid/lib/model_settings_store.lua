@@ -7,6 +7,7 @@ local storeModule = {
         read = 650, parse = 1500, build = 850, previous = 850, prepare = 900,
         serialize = 1900, roundtrip = 1300, roundtrip_build = 850, verify = 850, install = 1200,
     },
+    LOAD_BOUNDS = { start = 120, read = 670, parse = 1500, build = 850, previous = 850 },
 }
 
 local function copy(value)
@@ -193,7 +194,7 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
         end
         return false
     end
-    local function advanceSave(job)
+    local function advanceJob(job)
         local matches, identityError = identity(job.filename)
         if not matches then
             return true, false, identityError
@@ -220,6 +221,10 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
                 return true, false, "Cannot load model settings: " .. table.concat(job.errors, "; ")
             else
                 job.previous = { version = 1, modelFilename = job.filename, revision = 0 }
+                if job.loadOnly then
+                    job.missing = true
+                    return true, true, job.previous
+                end
                 job.stage = "prepare"
             end
         elseif job.stage == "parse" or job.stage == "roundtrip" then
@@ -250,6 +255,9 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
             local previous, validationError = validate(job.parsed, job.filename)
             if not previous then
                 return rejected(job, validationError)
+            end
+            if job.loadOnly then
+                return true, true, previous
             end
             job.previous, job.recovered, job.stage = previous, job.suffix ~= "", "prepare"
         elseif job.stage == "prepare" then
@@ -317,7 +325,7 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
         if job.done then
             return true, job.saved, job.result
         end
-        local ok, done, saved, result = pcall(advanceSave, job)
+        local ok, done, saved, result = pcall(advanceJob, job)
         if not ok then
             done, saved, result = true, false, "Cannot save model settings: " .. tostring(done)
         end
@@ -325,6 +333,50 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
             job.done, job.saved, job.result = true, saved, result
         end
         return done, saved, result
+    end
+    function instance:startLoad(filename)
+        local ok, matches, identityError = pcall(identity, filename)
+        if not ok then
+            return nil, "Cannot load model settings: " .. tostring(matches)
+        elseif not matches then
+            return nil, identityError
+        end
+        return {
+            stage = "read", filename = filename, suffix = "",
+            observed = {}, errors = {}, loadOnly = true,
+        }
+    end
+    function instance:advanceLoad(job)
+        if job.done then
+            return true, job.document, job.result
+        end
+        local ok, done, loaded, result = pcall(advanceJob, job)
+        if not ok then
+            done, loaded, result = true, false, "Cannot load model settings: " .. tostring(done)
+        end
+        if not done then
+            return false
+        end
+        job.done = true
+        if loaded then
+            job.document = result
+            if job.missing then
+                job.result = { filename = job.path, missing = true }
+            else
+                local recovered = job.suffix ~= ""
+                job.result = {
+                    filename = job.path .. job.suffix,
+                    recovered = recovered,
+                    notice = recovered and "Recovered previous model settings from backup; review and Save" or nil,
+                }
+            end
+        else
+            job.result = result
+        end
+        return true, job.document, job.result
+    end
+    function instance:loadWorkBound(job)
+        return storeModule.LOAD_BOUNDS[job.stage]
     end
     function instance:saveWorkBound(job)
         return storeModule.SAVE_BOUNDS[job.stage]

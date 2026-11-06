@@ -456,6 +456,15 @@ survive publication failure. Broker publication commits once, then notifies at
 most one member per advance. Measured publication, error reporting and confirmed
 closing admit services in foreground and background callbacks; hidden panels
 remain excluded.
+
+Model registration can use `store:startLoad(filename)` and
+`store:advanceLoad(job)` to share the bounded settings reader without writing.
+An advance returns `false` while pending, then `true, document, info` or
+`true, nil, error`. `store:loadWorkBound(job)` supplies its current stage charge.
+Recovery/missing metadata matches synchronous `load`; pending jobs reject model
+identity changes, while completed results remain idempotent.
+No handle remains open between advances, so an abandoned reader needs no cancel
+operation.
 Menu and location overlays also use service-only callbacks: hidden panels do
 not refresh behind them. Menu action handlers consume their callback separately
 from popup construction and input; unmeasured action handlers do not inherit
