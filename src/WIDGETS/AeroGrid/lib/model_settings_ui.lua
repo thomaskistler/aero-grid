@@ -2,6 +2,14 @@
 
 local ui = { RUNTIME_API = 1 }
 
+--- Save/cancel handlers have separate lifecycle contracts, not UI bounds.
+function ui.workBound(context)
+    local state = context.modelSettingsUi
+    if state and not state.pending and not state.closing then
+        return state.build and 1500 or 300
+    end
+end
+
 local fields = {
     {
         key = "armed",

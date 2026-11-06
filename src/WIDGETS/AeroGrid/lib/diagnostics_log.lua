@@ -81,6 +81,49 @@ function log:read(maxEntries)
     return entries
 end
 
+--- Freeze the bounded ring before yielding; later appends cannot change the viewer.
+function log:startSnapshot()
+    return {
+        ring = table.move(self.entries, 1, log.MAX_LIMIT, 1, {}),
+        first = self.first,
+        count = self.count,
+        stage = "demand",
+        limit = 0,
+        panel = 1,
+        entries = {},
+    }
+end
+
+local function demandStep(self, work)
+    local entry = work.host and (work.host.panels or {})[work.panel]
+    if entry then
+        work.limit = math.min(log.MAX_LIMIT, math.max(work.limit, requestedLimit(entry)))
+        work.panel = work.panel + 1
+    else
+        work.host = next(self.hosts, work.host)
+        work.panel = 1
+        return not work.host
+    end
+end
+
+function log:advanceSnapshot(work)
+    if work.stage == "demand" then
+        if demandStep(self, work) then
+            work.offset = work.limit > 0 and math.max(0, work.count - work.limit) or 0
+            work.stage = "copy"
+        end
+        return
+    end
+    for offset = work.offset, math.min(work.count - 1, work.offset + 15) do
+        work.entries[#work.entries + 1] = work.ring[(work.first + offset - 1) % log.MAX_LIMIT + 1]
+    end
+    work.offset = math.min(work.count, work.offset + 16)
+    if work.offset == work.count then
+        work.ring = nil
+        return work.entries
+    end
+end
+
 --- Read a visible panel snapshot, advancing one demand entry or eviction per call.
 function log:readVisibleStep(work, maxEntries)
     assert(maxEntries >= 0 and maxEntries <= 12 and maxEntries % 1 == 0, "visible log limit must be 0 to 12")
@@ -88,16 +131,8 @@ function log:readVisibleStep(work, maxEntries)
         work.stage, work.limit, work.panel = "demand", 0, 1
     end
     if work.stage == "demand" then
-        local entry = work.host and (work.host.panels or {})[work.panel]
-        if entry then
-            work.limit = math.min(log.MAX_LIMIT, math.max(work.limit, requestedLimit(entry)))
-            work.panel = work.panel + 1
-        else
-            work.host = next(self.hosts, work.host)
-            work.panel = 1
-            if not work.host then
-                work.stage = "trim"
-            end
+        if demandStep(self, work) then
+            work.stage = "trim"
         end
         return
     end

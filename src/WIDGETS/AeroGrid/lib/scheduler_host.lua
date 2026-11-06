@@ -93,7 +93,12 @@ host.PANEL_BOUNDS = {
 }
 
 --- Declared fixed cost of a callback at 16 panels (contracts, callback overhead).
-host.OVERHEAD = { steady = 1250, background = 1130, ["editor-build"] = 2400 }
+host.OVERHEAD = {
+    steady = 1250, background = 1130, ["editor-build"] = 2400,
+    ["modal-log"] = 2400, ["modal-settings"] = 2400,
+}
+
+host.SERVICE_KINDS = { ["editor-build"] = true, ["modal-log"] = true, ["modal-settings"] = true }
 
 --- Reserve registration/validation before admitting scheduled work.
 host.PANEL_ENROLL_COST = 4000
@@ -165,7 +170,9 @@ local function serviceDeclaration(self, declaration)
         for kind, allowed in pairs(declaration.kinds or { steady = true, background = true }) do
             result.kinds[kind] = allowed
         end
-        result.kinds["editor-build"] = result.kinds.steady == true
+        for kind, allowed in pairs(host.SERVICE_KINDS) do
+            result.kinds[kind] = allowed and result.kinds.steady == true
+        end
         self.serviceDeclarations[declaration] = result
     end
     return result

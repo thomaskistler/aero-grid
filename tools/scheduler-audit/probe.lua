@@ -317,6 +317,30 @@ local function install(context)
         end
     end
     local runtime = context.serviceRuntime
+    if context.diagnosticsLog then
+        wrapField(context.diagnosticsLog, "startSnapshot", "modal:log:freeze")
+        wrapField(context.diagnosticsLog, "advanceSnapshot", "modal:log:snapshot")
+    end
+    for _, surface in ipairs({
+        { "logViewerModule", "log", "logViewer" },
+        { "modelSettingsUiModule", "settings", "modelSettingsUi" },
+        { "locationDetailsModule", "location", "locationDetails" },
+        { "aeroMenuModule", "menu", "aerogridMenu" },
+    }) do
+        local module = context[surface[1]]
+        if module then
+            for _, name in ipairs({ "open", "advance", "handle", "close", "ensure" }) do
+                wrapField(module, name, function(token, current)
+                    if token then
+                        return "modal:" .. surface[2] .. ":" .. name .. ":" .. token
+                    end
+                    local state = current[surface[3]]
+                    return tostring(state and (state.build or state.buildStage or state.renderIndex and "render" or state.stage
+                        or state.prepareIndex and "wrap" or state.pending and "pending") or "idle")
+                end)
+            end
+        end
+    end
     if runtime then
         local support = context.servicesModule
         if support and not installed[support] then
@@ -494,6 +518,42 @@ local function ready(context)
 end
 
 local actions = {
+    ["open-log"] = function(context)
+        local point
+        for _, entry in ipairs(context.panels) do
+            if entry.module.id == "host-diagnostics" and entry.settings.section == "log" then
+                local rect = context.dashboardLoader.panelRect(context, entry.placement)
+                point = { x = rect.x + rect.w / 2, y = rect.y + rect.h / 2 }
+            end
+        end
+        assert(point)
+        refreshFn(context, EVT_TOUCH_FIRST, point)
+        refreshFn(context, EVT_TOUCH_TAP, point)
+        assert(context.logViewer, "native modal scenario must open log")
+    end,
+    ["check-log"] = function(context)
+        local state = assert(context.logViewer)
+        assert(not state.prepareIndex and not state.buildStage and not state.renderIndex, "log viewport must finish")
+        assert(#state.entries == 256 and #state.rows > 0)
+    end,
+    ["scroll-log"] = function(context)
+        refreshFn(context, EVT_ROT_LEFT)
+    end,
+    ["close-log"] = function(context)
+        refreshFn(context, EVT_VIRTUAL_EXIT)
+        assert(not context.logViewer)
+    end,
+    ["open-settings"] = function(context)
+        context.aeroMenuHandlers.modelSettings()
+        assert(context.modelSettingsUi)
+    end,
+    ["check-settings"] = function(context)
+        assert(context.modelSettingsUi and not context.modelSettingsUi.build)
+    end,
+    ["close-settings"] = function(context)
+        refreshFn(context, EVT_VIRTUAL_EXIT)
+        assert(not context.modelSettingsUi)
+    end,
     ["open-editor"] = function(context)
         assert(context.editorController.openEditor(context), "native editor scenario must open the editor")
     end,
@@ -583,7 +643,10 @@ local function callbackSurface(kind, context)
         return "editor-preview"
     end
     if context.logViewer then
-        return "log-viewer"
+        return "log-viewer:" .. context.logViewerModule.stageOf(context.logViewer)
+    end
+    if context.modelSettingsUi then
+        return "settings:" .. tostring(context.modelSettingsUi.build or context.modelSettingsUi.pending and "pending" or "idle")
     end
     return nil
 end
@@ -729,7 +792,10 @@ local function entry(kind, context, fn, e, t)
             telemetry:subscribe(string.format("S%02d", index))
         end
         for index = 1, config.logEntries or 0 do
-            context.diagnosticsLog:append(context, "audit", "message " .. index, index * 100)
+            context.diagnosticsLog:append(context, "audit",
+                "message " .. index .. (string.sub(config.scenario, 1, 9) == "modal-log"
+                    and string.rep("long message ", 32) or ""),
+                index * 100)
         end
     end
     local phase = config.phases[phaseIndex]

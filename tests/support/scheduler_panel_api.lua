@@ -6,6 +6,7 @@ local function node()
 end
 local native = {
     box = node,
+    button = node,
     rectangle = node,
     label = node,
     image = node,

@@ -188,6 +188,33 @@ def scenarios():
             {"name": "editor-close", "kind": "refresh", "action": "close-editor",
              "callbacks": 40, "step": 5, "perCall": 4},
         ])
+    result["modal-log"] = dict(result["host-diagnostics-max"], fullscreen=True, logEntries=256,
+        config={"section": "log", "maxEntries": 256}, phases=[
+            {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 4},
+            {"name": "log-build", "kind": "refresh", "action": "open-log",
+             "callbacks": 120, "step": 5, "perCall": 4},
+            {"name": "log-idle", "kind": "refresh", "action": "check-log",
+             "callbacks": 40, "step": 5, "perCall": 4},
+            {"name": "log-scroll", "kind": "refresh", "action": "scroll-log",
+             "callbacks": 40, "step": 5, "perCall": 4},
+            {"name": "log-close", "kind": "refresh", "action": "close-log",
+             "callbacks": 10, "step": 5, "perCall": 1},
+        ])
+    result["modal-settings"] = dict(result["chart-max"], fullscreen=True, phases=[
+        {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 4},
+        {"name": "settings-build", "kind": "refresh", "action": "open-settings",
+         "callbacks": 40, "step": 5, "perCall": 4},
+        {"name": "settings-idle", "kind": "refresh", "action": "check-settings",
+         "callbacks": 40, "step": 5, "perCall": 4},
+        {"name": "settings-close", "kind": "refresh", "action": "close-settings",
+         "callbacks": 10, "step": 5, "perCall": 1},
+    ])
+    result["modal-log-recording"] = dict(result["modal-log"], recipe="chart", sources=1, expected=2,
+        settings=True, layout=custom_layout([
+            chart_cell("chart", 0, 2, [1]),
+            "  - id: log\n    type: host-diagnostics\n    col: 0\n    row: 2\n"
+            "    colSpan: 4\n    rowSpan: 2\n    config:\n      section: log\n      maxEntries: 256\n",
+        ]))
     for panel in ("navigation", "metric", "chart"):
         result[f"editor-rebuild-{panel}"] = dict(result[f"{panel}-max"], fullscreen=True, phases=[
             {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 4},

@@ -1094,7 +1094,7 @@ local function updateModalServices(context, used, kind)
     kind = kind or "steady"
     local legacy = scheduling:begin(kind)
     if legacy then
-        legacy.spent = used or 0
+        legacy.spent = legacy.spent + (used or 0)
     end
     updateServices(context, legacy)
     if not ready and legacy then
@@ -1617,9 +1617,11 @@ local function refresh(context, widgetEvent, touchState)
         return
     end
     if context.modelSettingsUi then
+        local bound = context.modelSettingsUiModule.workBound(context)
         context.modelSettingsUiModule.handle(context, widgetEvent, touchState)
-        if not context.modelSettingsUiModule.advance(context) then
-            updateModalServices(context)
+        context.modelSettingsUiModule.advance(context)
+        if bound and context.modelSettingsUi then
+            updateModalServices(context, bound, "modal-settings")
         end
         return
     end
@@ -1773,17 +1775,21 @@ local function refresh(context, widgetEvent, touchState)
         -- Input rendering gets its own callback budget, separate from live panels.
         if context.editorUi or context.logViewer or wasLogViewer then
             if context.logViewer or wasLogViewer then
-                updateModalServices(context)
+                -- Opening includes module loading and snapshotting; only an
+                -- already-open viewer has the measured input-handler bound.
+                if wasLogViewer then
+                    updateModalServices(context, context.logViewerModule.WORK_BOUNDS.input, "modal-log")
+                end
             end
             return
         end
     end
 
     if context.logViewer then
-        updateModalServices(context)
-        if context.logViewer.prepareIndex then
-            context.logViewerModule.advance(context)
-        end
+        local module = context.logViewerModule
+        local bound = module.WORK_BOUNDS[module.stageOf(context.logViewer)]
+        module.advance(context)
+        updateModalServices(context, bound, "modal-log")
         return
     end
 

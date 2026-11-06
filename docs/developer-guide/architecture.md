@@ -398,6 +398,14 @@ Theme Showcase also supports staged construction, retaining the synchronous API
 for direct callers. Loading keeps it hidden until its geometry is complete;
 resizing before publication restarts only positioning.
 
+Modal service eligibility is explicit in `scheduler_host.SERVICE_KINDS`;
+only steady-eligible service declarations inherit these kinds, never panels.
+The host charges completed modal work before planning services. Log viewing
+freezes the bounded ring at entry, then stages demand checks, snapshot copying,
+row construction, wrapping and painting. Model settings construction and idle
+callbacks have measured UI bounds; save/cancel handlers retain separate
+lifecycle gates.
+
 Put the module at `panels/<type>.lua` and reference that type in a layout.
 Regular panels declare `supportedSpans = { "any" }` and adapt their contents to
 every in-bounds span of the 4 x 4 grid. Use an explicit span list when there is a

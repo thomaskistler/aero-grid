@@ -2772,3 +2772,47 @@ paths remain separate eligibility gates; no production owner changes.
 python3 tools/audit-scheduler.py --framework showcase-construction --timeout 180
 python3 tools/audit-scheduler.py theme-showcase-tasks --timeout 180
 ```
+
+## 43. Bounded log viewer and settings construction (R5 slice)
+
+Log entry no longer combines a 256-entry read with UI construction. It freezes
+the fixed-capacity ring once, preserving the click-time snapshot across ring
+wraps and concurrent appends. Demand checks visit one placement per advance;
+chronological copying handles sixteen entries per advance. Header, four-row
+construction, one-line wrapping and four-row painting are separate callbacks.
+Scrolling requests painting rather than synchronously repainting the viewport.
+Exit remains available during unfinished work, and closing drops that work.
+
+`modal-log` and `modal-settings` are service-only kinds with 2400 fixed host
+overhead. Completed log work is charged at its measured stage bound (snapshot
+400, header 250, rows 400, wrap 700, render 250, input 300). Settings construction
+charges 1500 and idle UI 300; pending save/cancel callbacks gain no eligibility.
+The shared `SERVICE_KINDS` map also retains `editor-build`; cached declaration
+clones inherit kinds only from steady service eligibility. Shared declarations
+and all panel/Flight/Smart production owners are unchanged. Modal accounting
+adds prior work to enrollment setup instead of replacing that setup charge.
+
+Native isolated log cases cover empty/one/256 entries, 320/480/800-pixel widths,
+4096-character messages, four hosts with sixteen placements each, every
+construction/wrap/render/input stage and ring snapshots. Atom maxima are:
+open 107, snapshot 288, header 105, rows 183, wrap 426, render 148, input 171.
+Real-widget stages reach snapshot 305, header 95, rows 278, wrap 502, render 104
+and input 125. Settings' largest field construction is 1252, plus handle 25.
+Whole native scenarios peak at 9221 for log and log-with-recording, and 9278 for
+settings; these include ordinary/load callbacks, not just modal body samples.
+
+```sh
+python3 tools/audit-scheduler.py --framework modal-log host-diagnostics-panel --timeout 180
+python3 tools/audit-scheduler.py modal-log modal-log-recording modal-settings --timeout 180
+make test-lua32
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+```
+
+Snapshot tests verify sixteen-entry copy limits, click-time content after
+concurrent ring overwrite, reduced demand and retained history without demand.
+The real viewer integration traverses all retained history and checks
+cancellation, native Close, reopen, resize and fullscreen exit; its mock callback
+maximum falls from 14100 to 10200. Host tests explicitly reject hidden panels
+and background-only services in both new modal kinds. Settings save/cancel,
+editor drawers/input/preview admission, location/menu callbacks and R6 lifecycle
+accounting remain gates, not implicitly admitted kinds.

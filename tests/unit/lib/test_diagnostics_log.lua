@@ -118,3 +118,36 @@ do
     end
 end
 print("Shared diagnostics log tests passed")
+do
+    local source = module.new()
+    local owner = { panels = { panel(256) } }
+    source:register(owner)
+    for index = 1, 300 do
+        source:append(owner, "log", "event " .. index, index)
+    end
+    local work = source:startSnapshot()
+    source:append(owner, "log", "after snapshot", 301)
+    local result
+    for _ = 1, 100 do
+        local before = #work.entries
+        result = source:advanceSnapshot(work)
+        assert(#work.entries - before <= 16, "snapshot copies at most sixteen entries")
+        if result then break end
+    end
+    assert(result and #result == 256 and result[1].text == "event 45"
+        and result[256].text == "event 300", "snapshot survives ring wrap and concurrent appends")
+    owner.panels[1].settings.maxEntries = 1
+    work = source:startSnapshot()
+    for _ = 1, 100 do
+        result = source:advanceSnapshot(work)
+        if result then break end
+    end
+    assert(result and #result == 1 and result[1].text == "after snapshot")
+    owner.panels = {}
+    work = source:startSnapshot()
+    for _ = 1, 100 do
+        result = source:advanceSnapshot(work)
+        if result then break end
+    end
+    assert(result and #result == 256, "disabled logging retains the frozen history")
+end

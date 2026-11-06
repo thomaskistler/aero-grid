@@ -122,13 +122,14 @@ local function input(event, touch)
 end
 local point = { x = 360, y = 80 }
 local function finishWrapping()
-    for _ = 1, 20 do
-        if not diagnostics.logViewer or not diagnostics.logViewer.prepareIndex then
+    for _ = 1, 100 do
+        if not diagnostics.logViewer or diagnostics.logViewerModule.stageOf(diagnostics.logViewer) == "idle" then
             break
         end
         input(nil)
     end
-    assert(not diagnostics.logViewer or not diagnostics.logViewer.prepareIndex, "viewport must finish promptly")
+    assert(not diagnostics.logViewer or diagnostics.logViewerModule.stageOf(diagnostics.logViewer) == "idle",
+        "viewport must finish promptly")
 end
 local function tap()
     input(EVT_TOUCH_FIRST, point)
@@ -176,6 +177,7 @@ for _ = 1, 1600 do
         break
     end
     input(EVT_ROT_RIGHT)
+    finishWrapping()
 end
 assert(state.index == #state.entries and state.offset == #state.cache[state.index], "wheel must reach the newest line")
 log:append(flight, "nav", "after opening", 40000)
