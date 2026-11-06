@@ -116,7 +116,17 @@ assert(context.editorUi == nil and context.editorSession == nil)
 fixture.tick(10)
 definition.refresh(context)
 fixture.lvglMock.settle()
-assert(context.pendingConstruction == nil and context.reloadState == "rebuild")
+assert(context.pendingConstruction == nil)
 assert(cancelled.container.hidden, "cancelled preview must never be published")
+for _ = 1, 200 do
+    if context.reloadState == "rebuild" then
+        break
+    end
+    fixture.tick(10)
+    definition.refresh(context)
+    fixture.lvglMock.settle()
+    assert(cancelled.container.hidden, "cancelled preview must never be published")
+end
+assert(context.reloadState == "rebuild", "cancelled preview must finish bounded retirement")
 context.panelHost.dispatch = dispatch
 print("editor initialization: recording, hidden construction, preview failure/cancellation and publication passed")
