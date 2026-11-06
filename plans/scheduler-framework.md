@@ -2571,3 +2571,61 @@ shared-module growth is 0.0 KiB. Task integration also passes standalone Lua32.
 Construction/reflow callback envelopes remain distinct admission gates.
 Production ownership, ten-tick recording policy and deferred stress failures
 are unchanged.
+
+## 39. Bounded Service Probe reports (production owner unchanged)
+
+The probe task captures the fixed-size Model, Telemetry or Navigation report in
+preparation, then paints at most two rows per grant. Control's synchronous
+`describe` previously scanned its entire subscription registry before the probe
+discarded rows beyond its visible cap. Its new `describeStep` shares the same
+one-entry formatter but advances exactly one subscription, including switches
+that produce no diagnostic row. The task stops at the captured registry extent
+or visible row limit; limiting produced rows alone would not bound a sparse scan.
+Synchronous refresh remains compatible. Cancellation, synchronous refresh and
+reflow discard pending captures without clearing the cache of actually drawn
+rows. A stale plan or zero grant consumes no work.
+
+| Refresh stage | Native fixture worst | Lua32 fixture worst | Real native bridge worst | Declaration |
+|---|---:|---:|---:|---:|
+| Prepare | 355 | 355 | 308 | 450 |
+| Describe one Control subscription | 216 | 216 | 235 | 310 |
+| Apply one / two rows | 223 / 263 | 223 / 263 | 250 | 280 + 50 per row |
+
+Declarations include the larger actual bridge counts, not just the fixture fit.
+All stages are normal and steady-only. Completed frames retain the fifty-tick
+refresh interval; unfinished scans/paint continue after one tick.
+
+The native fixture covers three supported geometries, every service, available
+and unavailable/stale states, missing services, failed subscriptions, first/tail
+row grants and a Control registry with 128 non-reporting subscriptions before
+its visible rows. Integration compares 1024 changing frames across both themes,
+four geometries (including no room for rows), every service and failure mode.
+It mutates sources after row capture, compares one/two-row grants, checks stable
+no-repaint and background ineligibility, cancels after partial sparse scans and
+partial painting, and verifies errors reach the existing host failure path.
+Completed frames and Control row formatting also match actual `d094b1d` source.
+
+Twelve isolated native images cover every service at its smallest/largest span
+and four simultaneous 2x2 placements. A sixteen-placement 1x1 image is invalid
+for this panel's declared spans and is not an admission result. Every valid image
+peaks at 9189 whole-callback instructions; default-gallery peaks at 12738.
+The required prepare/apply stages execute in every image, and all Control images
+also exercise description.
+
+```sh
+python3 tools/audit-scheduler.py --framework service-probe-panel --timeout 180
+# Repeat for telemetry, model, control and navigation:
+python3 tools/audit-scheduler.py service-probe-tasks-control-min service-probe-tasks-control-max service-probe-tasks-control-4 --timeout 180
+build/lua32/lua tests/integration/widget/test_service_probe_task.lua "$PWD"
+make test-lua32
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+```
+
+The scheduler Lua32 suite, standalone Lua32 probe integration, targeted
+Control/shared-service/task/host/reset/shared-module suites, actual-source
+parity and 34 audit-tool tests pass. Reset remains at 14300 mock instructions
+with its two known first-arm XFAILs; retained shared-module growth is 0.0 KiB.
+This validates refresh/report production, not synchronous construction/reflow
+or the remaining Host Diagnostics and modal/lifecycle/Flight/Smart gates.
+Production ownership, ten-tick recording policy and deferred stress failures
+are unchanged.

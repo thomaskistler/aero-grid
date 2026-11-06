@@ -26,6 +26,16 @@ local probe = {
     -- Diagnostics are read, not watched. Two hertz is plenty and leaves the
     -- instruction budget to the services themselves.
     refreshInterval = 50,
+    decl = {
+        class = "normal",
+        kinds = { steady = true },
+        first = "prepare",
+        stages = {
+            prepare = { fixed = 0, perUnit = 450, maxUnits = 1 },
+            describe = { fixed = 0, perUnit = 310, maxUnits = 1 },
+            apply = { fixed = 280, perUnit = 50, maxUnits = 2 },
+        },
+    },
     settings = {
         {
             key = "service",
@@ -233,7 +243,7 @@ end
 
 --- Ask the service to describe itself and repaint only what changed.
 ---@param context table
-function probe.refresh(context)
+local function describe(context)
     local service = context.service
     local rows = context.rows
     local count = 0
@@ -251,26 +261,90 @@ function probe.refresh(context)
         count = context.visibleRows
     end
 
-    for index = 1, context.visibleRows do
-        local row = index <= count and rows[index] or nil
-        local key = row and row.label or ""
-        local text = row and row.text or ""
-        local combined = key .. "\1" .. text
+    return count
+end
 
-        -- Touching LVGL costs more than comparing a string, and a diagnostic view
-        -- that repainted every row every refresh would dominate the frame.
-        if combined ~= context.texts[index] then
-            context.texts[index] = combined
-            context.keys[index]:set({ text = key })
-            context.values[index]:set({ text = text })
+local function applyRow(context, count, index)
+    local rows = context.rows
+    local row = index <= count and rows[index] or nil
+    local key = row and row.label or ""
+    local text = row and row.text or ""
+    local combined = key .. "\1" .. text
+
+    -- Touching LVGL costs more than comparing a string, and a diagnostic view
+    -- that repainted every row every refresh would dominate the frame.
+    if combined ~= context.texts[index] then
+        context.texts[index] = combined
+        context.keys[index]:set({ text = key })
+        context.values[index]:set({ text = text })
+    end
+end
+
+function probe.cancelRefresh(context)
+    context.refreshWork = nil
+end
+
+function probe.refresh(context)
+    probe.cancelRefresh(context)
+    local count = describe(context)
+    for index = 1, context.visibleRows do
+        applyRow(context, count, index)
+    end
+end
+
+function probe.stageOf(context)
+    local work = context.refreshWork
+    local want = work and work.stage == "apply" and math.min(2, context.visibleRows - work.applyRow + 1) or 1
+    return work and work.stage or "prepare", math.max(1, want)
+end
+
+function probe.step(context, grant, stage)
+    context.used = 0
+    if grant < 1 or stage ~= probe.stageOf(context) then
+        return nil, true
+    end
+    context.used = 1
+    if stage == "prepare" then
+        if context.serviceName == "control" and context.service and not context.subscribeError then
+            context.refreshWork = {
+                stage = "describe",
+                cursor = 1,
+                last = #context.service.entries,
+                count = 0,
+            }
+        else
+            context.refreshWork = { stage = "apply", count = describe(context), applyRow = 1 }
+        end
+    elseif stage == "describe" then
+        local work = context.refreshWork
+        local nextRow, cursor = context.service:describeStep(context.rows, work.count + 1, work.cursor)
+        work.count = nextRow - 1
+        if cursor and cursor <= work.last and work.count < context.visibleRows then
+            work.cursor = cursor
+        else
+            work.stage, work.applyRow = "apply", 1
+        end
+    else
+        local work = context.refreshWork
+        local last = math.min(context.visibleRows, work.applyRow + grant - 1)
+        for index = work.applyRow, last do
+            applyRow(context, work.count, index)
+        end
+        context.used = math.max(1, last - work.applyRow + 1)
+        work.applyRow = last + 1
+        if work.applyRow > context.visibleRows then
+            context.refreshWork = nil
+            return
         end
     end
+    return nil, true
 end
 
 --- Reposition after a zone change, revealing or shedding rows as room allows.
 ---@param context table
 ---@param rect AeroGridRect
 function probe.update(context, rect)
+    probe.cancelRefresh(context)
     local area = probe.regionsFor(context.theme, context.themeBuilder, rect, context.fonts)
 
     context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)

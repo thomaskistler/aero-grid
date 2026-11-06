@@ -114,6 +114,15 @@ class ScenarioTests(unittest.TestCase):
     def setUp(self):
         self.cli = load_cli()
 
+    def test_probe_tasks_cover_each_service_and_keep_owner_override_isolated(self):
+        scenarios = self.cli.scenarios()
+        for service in ("telemetry", "model", "control", "navigation"):
+            for tag in ("min", "max", "4"):
+                case = scenarios[f"service-probe-tasks-{service}-{tag}"]
+                self.assertEqual(case["owners"], ["panel:service-probe"])
+                self.assertEqual(case["config"]["service"], service)
+                self.assertEqual(case["expected"], 4 if tag == "4" else 1)
+
     def test_every_panel_is_audited_at_its_smallest_and_largest_span(self):
         scenarios = self.cli.scenarios()
         for panel in PANELS:
@@ -320,7 +329,8 @@ class FrameworkReportTests(unittest.TestCase):
             self.assertEqual((widget / "main.lua").read_text(), (audit.PROBE_DIR / "framework-main.lua").read_text())
             self.assertTrue((widget / "lib/scheduler.lua").is_file())
             for name in ("framework.lua", "scheduler_overhead.lua", "scheduler_measure.lua", "scheduler_mixes.lua",
-                         "scheduler_flight_readout.lua", "cases/stub.lua", "cases/telemetry.lua"):
+                         "scheduler_flight_readout.lua", "scheduler_probe_fixture.lua",
+                         "cases/stub.lua", "cases/telemetry.lua", "cases/service-probe-panel.lua"):
                 self.assertTrue((widget / "audit" / name).is_file(), name)
             self.assertIn('"stub"', (widget / "audit/config.lua").read_text())
 

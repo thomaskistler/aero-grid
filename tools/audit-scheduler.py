@@ -224,6 +224,15 @@ def scenarios():
         config={"protocol": "generic", "reading": "rssi", "rssiSource": "1RSS", "qualitySource": "RQly",
                 "modeSource": "RFMD", "snrSource": "RSNR", "powerSource": "TPWR",
                 "extrema": "source", "extremaSource": "1RSS-", "visual": "bar"})
+    for service in ("telemetry", "model", "control", "navigation"):
+        for tag in ("min", "max", "4"):
+            base = result[f"service-probe-{tag}"] if tag != "4" else {
+                "recipe": "service-probe", "expected": 4, "baseInputs": True,
+                "placements": {f"p{i}": ((i - 1) % 2 * 2, (i - 1) // 2 * 2, 2, 2) for i in range(1, 5)}}
+            result[f"service-probe-tasks-{service}-{tag}"] = dict(
+                base, owners=["panel:service-probe"], phases=standard_phases(),
+                config={"service": service, "source": "trim-ail" if service == "control" else "GPS" if service == "navigation" else "RSSI",
+                        "index": 0})
     for panel in ("flight-counter", "flight-mode", "flight-timer", "state", "trim-panel", "tx-battery", "model-identity"):
         for tag in ("min", "max", "16"):
             base = result[f"{panel}-{tag}"] if tag != "16" else dict(result["metric-16"], recipe=panel)
@@ -374,7 +383,8 @@ def prepare_framework(capture, sd, cases):
     shutil.copyfile(WIDGET / "panels/chart.lua", widget / "panels/chart.lua")
     shutil.copyfile(PROBE_DIR / "framework.lua", audit / "framework.lua")
     for name in ("scheduler_overhead.lua", "scheduler_measure.lua", "scheduler_mixes.lua",
-                 "scheduler_panel_api.lua", "scheduler_chart_fixture.lua", "scheduler_flight_readout.lua"):
+                 "scheduler_panel_api.lua", "scheduler_chart_fixture.lua", "scheduler_flight_readout.lua",
+                 "scheduler_probe_fixture.lua"):
         shutil.copyfile(SUPPORT_DIR / name, audit / name)
     (audit / "cases").mkdir()
     for case in cases:

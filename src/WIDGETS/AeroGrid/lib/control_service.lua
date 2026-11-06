@@ -837,38 +837,53 @@ local function percentOf(fraction)
     return math.floor(percent + 0.5)
 end
 
+local function describeEntry(self, rows, index, entry)
+    local row = self.support.row
+    local state = entry.state
+    if entry.read == controlService.readOutput then
+        index = row(
+            rows,
+            index,
+            "CH" .. tostring(state.index + 1),
+            state.available and (tostring(percentOf(state.fraction)) .. "%") or "N/A"
+        )
+    elseif state.name and state.fraction ~= nil then
+        local text = state.available and string.format("%d %d%%", state.value, percentOf(state.fraction)) or "N/A"
+        if state.threePosition then
+            text = text .. " 3P"
+        end
+        index = row(rows, index, string.upper(state.name), text)
+    elseif state.index ~= nil then
+        index = row(
+            rows,
+            index,
+            string.upper(state.name),
+            state.available and (tostring(state.value) .. state.unitText) or "N/A"
+        )
+    end
+    return index
+end
+
+--- Describe one subscription, including subscriptions with no diagnostic row.
+---@return integer nextRow
+---@return integer? nextCursor
+function controlService:describeStep(rows, index, cursor)
+    local entry = self.entries[cursor]
+    if not entry then
+        return index
+    end
+    index = describeEntry(self, rows, index, entry)
+    return index, self.entries[cursor + 1] and cursor + 1 or nil
+end
+
 --- Describe the subscribed trims and variables as diagnostic rows.
 ---@param rows table Reusable row array.
 ---@return integer count
 function controlService:describe(rows)
-    local row = self.support.row
     local index = 1
-
     for _, entry in ipairs(self.entries) do
-        local state = entry.state
-        if entry.read == controlService.readOutput then
-            index = row(
-                rows,
-                index,
-                "CH" .. tostring(state.index + 1),
-                state.available and (tostring(percentOf(state.fraction)) .. "%") or "N/A"
-            )
-        elseif state.name and state.fraction ~= nil then
-            local text = state.available and string.format("%d %d%%", state.value, percentOf(state.fraction)) or "N/A"
-            if state.threePosition then
-                text = text .. " 3P"
-            end
-            index = row(rows, index, string.upper(state.name), text)
-        elseif state.index ~= nil then
-            index = row(
-                rows,
-                index,
-                string.upper(state.name),
-                state.available and (tostring(state.value) .. state.unitText) or "N/A"
-            )
-        end
+        index = describeEntry(self, rows, index, entry)
     end
-
     return index - 1
 end
 

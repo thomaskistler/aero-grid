@@ -372,6 +372,10 @@ yielding. It separately resolves and applies link-loss geometry, renders frozen
 readings and paints; cancellation drops the frame without publishing unfinished
 sample metadata. Reflow keeps a lost/unavailable link's bar empty rather than
 reconstructing a healthy bar from its retained numeric reading.
+Service Probe captures fixed-size service reports before painting one or two rows
+per grant. Control reports instead scan one subscription per step, including
+switches that produce no row, and stop at the captured registry extent or visible
+row limit. Cancellation, synchronous refresh and reflow discard pending work.
 
 Scheduler-owned placements enroll one per callback with an explicit setup
 reservation. Existing placements retain their releases, and pending enrollment
