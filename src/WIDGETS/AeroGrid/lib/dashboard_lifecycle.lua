@@ -1,6 +1,19 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local module = { RUNTIME_API = 1 }
+local module = {
+    RUNTIME_API = 1,
+    WORK_BOUNDS = {
+        cancel = 100,
+        panel = 200,
+        pending = 200,
+        menu = 100,
+        page = 200,
+        finalize = 100,
+        rebuild = 150,
+        retire = 250,
+        finish = 150,
+    },
+}
 
 --- Bind host operations once; callbacks retain their original work limits.
 ---@param dependencies table
@@ -8,12 +21,10 @@ local module = { RUNTIME_API = 1 }
 function module.new(dependencies)
     local addError = dependencies.addError
     local showErrors = dependencies.showErrors
-    local dispatchAll = dependencies.dispatchAll
     local isFullScreen = dependencies.isFullScreen
     local reservedCorner = dependencies.reservedCorner
     local errorTop = dependencies.errorTop
     local panelRect = dependencies.panelRect
-    local buildPanel = dependencies.buildPanel
 
     --- Empty-state decoration belongs to the page, never the layout document.
     ---@param context AeroGridContext
@@ -89,6 +100,10 @@ function module.new(dependencies)
     --- the instruction budget allows in one call.
     ---@param context AeroGridContext
     local function beginReflow(context)
+        if context.reloadState or context.pageRetirement then
+            context.reflowIndex, context.reflowEntry = nil, nil
+            return
+        end
         context.root:set({ w = context.zone.w, h = context.zone.h })
         context.page:set({ w = context.zone.w, h = context.zone.h })
         context.canvas:set({ w = context.zone.w, h = context.zone.h })
@@ -117,6 +132,10 @@ function module.new(dependencies)
     ---@return boolean busy True while more panels remain.
     local function advanceReflow(context)
         local index = context.reflowIndex
+        if not index or context.reloadState or context.pageRetirement then
+            context.reflowIndex, context.reflowEntry = nil, nil
+            return false
+        end
         local entry = context.panels[index]
         if entry and not entry.failed then
             local rect = panelRect(context, entry.placement)
@@ -155,7 +174,16 @@ function module.new(dependencies)
         return true
     end
 
-    --- Rebuild one fullscreen-built panel for App mode, over two callbacks.
+    local function destroyEntry(context, entry)
+        local ok, destroyError = context.panelHost.dispatch(entry, "destroy")
+        if not ok and destroyError then
+            addError(context, entry.placement.id .. ": destroy: " .. destroyError)
+        end
+        entry.container:clear()
+        lvgl.hide(entry.container)
+    end
+
+    --- Rebuild one fullscreen-built panel using the loader's bounded stages.
     --- EdgeTX 2.12 only makes Lua boxes touch-transparent when constructing them
     --- outside fullscreen, so such a panel would swallow the widget's long press.
     --- The retire and build steps are split because a cleared container sweeps
@@ -163,15 +191,27 @@ function module.new(dependencies)
     ---@param context AeroGridContext
     local function advanceAppRebuild(context)
         local job = context.appRebuild
+        if not job then
+            return
+        end
+        if
+            context.reloadState
+            or context.pageRetirement
+            or context.stage
+            or job.page and (job.page ~= context.page or job.panels ~= context.panels)
+        then
+            context.appRebuild = nil
+            return
+        end
+        job.page, job.panels = context.page, context.panels
         local entry = job.entry
-        if not job.retired then
+        local loader = context.dashboardLoader
+        if not job.phase then
+            job.phase = "retire"
+        end
+        if job.phase == "retire" then
             job.retired = true
-            local ok, destroyError = context.panelHost.dispatch(entry, "destroy")
-            if not ok and destroyError then
-                addError(context, entry.placement.id .. ": destroy: " .. destroyError)
-            end
-            entry.container:clear()
-            lvgl.hide(entry.container)
+            destroyEntry(context, entry)
             local fullscreenContainers = context.fullscreenContainers
             if not (fullscreenContainers and fullscreenContainers[entry.container]) then
                 job.container = entry.container
@@ -187,25 +227,96 @@ function module.new(dependencies)
                     break
                 end
             end
+            job.phase = "prepare"
             return
         end
-        context.appRebuild = nil
-        local rebuilt = buildPanel(context, entry.placement, job.container)
-        if rebuilt then
-            table.remove(context.panels)
-            table.insert(context.panels, math.min(job.index, #context.panels + 1), rebuilt)
+        if job.phase == "prepare" then
+            job.prepared = loader.preparePanel(context, entry.placement)
+            job.phase = job.prepared and "build" or "finish"
+            return
         end
-        showErrors(context)
+        if job.phase == "build" then
+            job.rebuilt = loader.buildPanel(context, entry.placement, job.container, nil, job.prepared)
+            job.partial = context.pendingConstruction
+            job.phase = job.partial and "construct" or "finish"
+        elseif job.phase == "construct" then
+            if context.pendingConstruction ~= job.partial then
+                context.appRebuild = nil
+                return
+            end
+            local done, rebuilt = loader.advanceConstruction(context, false)
+            job.rebuilt = rebuilt
+            if not done then
+                return
+            end
+            job.phase = "finish"
+        else
+            context.appRebuild = nil
+            showErrors(context)
+            return
+        end
+        -- Publication appends to the live registry; restore the original slot
+        -- in the same turn so neither scheduler nor input observes a new order.
+        if job.rebuilt then
+            table.remove(context.panels)
+            table.insert(context.panels, math.min(job.index, #context.panels + 1), job.rebuilt)
+        end
     end
 
     local function retirePage(context)
-        context.reflowIndex, context.reflowEntry = nil, nil
-        context.locationDetails = nil
-        context.locationOverlay = nil
-        context.logViewer = nil
-        context.logOverlay = nil
-        dispatchAll(context, "destroy")
-        context.pendingConstruction, context.pendingPanel = nil, nil
+        local job = context.pageRetirement
+        if not job then
+            context.reloadState = "clear"
+            context.reflowIndex, context.reflowEntry = nil, nil
+            context.locationDetails, context.locationOverlay = nil, nil
+            context.logViewer, context.logOverlay = nil, nil
+            context.refreshOwner = nil
+            context.appRebuild = nil
+            job = { phase = "settings", pending = context.pendingConstruction }
+            context.pageRetirement = job
+            context.pendingConstruction, context.pendingPanel, context.pendingPlacement = nil, nil, nil
+            return
+        end
+        if job.phase == "settings" then
+            if context.modelSettingsUi and context.modelSettingsUiModule.close(context) == false then
+                context.modelSettingsUiModule.advance(context)
+                return
+            end
+            job.phase = "panel"
+            return
+        elseif job.phase == "panel" then
+            local entry = table.remove(context.panels, 1)
+            if entry then
+                context.panelTasksDirty = true
+                destroyEntry(context, entry)
+            else
+                job.phase = "pending"
+            end
+            return
+        elseif job.phase == "pending" then
+            if job.pending then
+                destroyEntry(context, job.pending)
+                job.pending = nil
+            end
+            job.phase = "menu"
+            return
+        elseif job.phase == "menu" then
+            if context.nativeDialogsCreated and not isFullScreen() and context.aeroMenuModule then
+                context.aeroMenuModule.close(context)
+                context.aerogridMenu = nil
+            end
+            job.phase = "page"
+            return
+        elseif job.phase == "finalize" then
+            context.fullscreenContainers = nil
+            context.page, context.canvas, context.emptyHint = nil, nil, nil
+            context.panels = {}
+            context.rejected, context.errors, context.notices = {}, {}, {}
+            context.errorLabel = nil
+            context.pageRetirement = nil
+            context.reloadState = "rebuild"
+            return
+        end
 
         -- Discard the whole page. EdgeTX collects the clear whenever it next runs
         -- callRefs, which is not guaranteed to be this callback: it is skipped
@@ -217,10 +328,6 @@ function module.new(dependencies)
         -- keeps those wrappers registered after deleting their windows, and
         -- only a host-wide clear unregisters them.
         if context.nativeDialogsCreated and not isFullScreen() then
-            if context.aeroMenuModule then
-                context.aeroMenuModule.close(context)
-                context.aerogridMenu = nil
-            end
             context.chromeRoot, context.aeroMenuParent = nil, nil
             lvgl.clear()
             context.root = nil
@@ -233,22 +340,13 @@ function module.new(dependencies)
             context.page:clear()
             lvgl.hide(context.page)
         end
-        context.fullscreenContainers = nil
-        context.appRebuild = nil
-
-        context.page = nil
-        context.canvas = nil
-        context.emptyHint = nil
-        context.panels = {}
-        context.refreshOwner = nil
-        context.rejected = {}
-        context.errors = {}
-        context.notices = {}
-        context.errorLabel = nil
-        context.reloadState = "rebuild"
+        job.phase = "finalize"
     end
 
     local function rebuildPage(context)
+        if context.pageRetirement then
+            return
+        end
         if not context.root then
             context.root = lvgl.box({ x = 0, y = 0, w = context.zone.w, h = context.zone.h })
             context.rootBuiltFullscreen = isFullScreen()
@@ -271,7 +369,40 @@ function module.new(dependencies)
         context.reloadState = nil
     end
 
+    --- Only measured host bookkeeping is eligible for service co-admission.
+    --- Constructors, publication and third-party callbacks need their own proof.
+    local function workBound(context, operation)
+        if operation == "rebuildPage" then
+            return module.WORK_BOUNDS.rebuild
+        elseif operation ~= "retirePage" and operation ~= "advanceAppRebuild" then
+            return nil
+        end
+        local job
+        if operation == "retirePage" then
+            job = context.pageRetirement
+        else
+            job = context.appRebuild
+        end
+        local phase = job and job.phase or (operation == "retirePage" and "cancel" or "retire")
+        if phase == "settings" then
+            return not context.modelSettingsUi and 100 or nil
+        elseif phase == "menu" and context.nativeDialogsCreated and not isFullScreen() and context.aeroMenuModule then
+            return nil
+        elseif phase == "finish" and #context.errors > 0 then
+            return nil
+        end
+        local entry = phase == "panel" and context.panels[1]
+            or phase == "pending" and job and job.pending
+            or phase == "retire" and job and job.entry
+        if entry and rawget(entry.module, "destroy") ~= nil then
+            return nil
+        end
+        return module.WORK_BOUNDS[phase]
+    end
+
     return {
+        WORK_BOUNDS = module.WORK_BOUNDS,
+        workBound = workBound,
         updateEmptyHint = updateEmptyHint,
         beginReflow = beginReflow,
         advanceReflow = advanceReflow,

@@ -105,6 +105,16 @@ local function finish(label, raw, leak)
     if label == "lifecycle:advanceReflow" then
         gate(cost <= 4000, "complete geometry advance exceeds the atom cap: " .. cost)
     end
+    if
+        string.match(label, "^lifecycle:advanceAppRebuild:")
+        or string.match(label, "^lifecycle:retirePage:")
+        or label == "lifecycle:rebuildPage"
+    then
+        local fitted = math.ceil((cost * 1.10 + 50) / 10) * 10
+        gate(fitted <= 4000, label .. " exceeds the fitted lifecycle atom cap: " .. cost .. " -> " .. fitted)
+        local bound = label == "lifecycle:rebuildPage" and 150 or P.lifecycleBounds and P.lifecycleBounds[label]
+        gate(not bound or fitted <= bound, label .. " exceeds its declared lifecycle charge: " .. fitted)
+    end
     if previewTasks and string.sub(label, 1, 11) == "task:panel:" then
         gate(cost <= 4000, label .. " exceeds the preview atom cap: " .. cost)
     end
@@ -387,8 +397,43 @@ local function install(context)
     if lifecycle and not installed[lifecycle] then
         installed[lifecycle] = true
         for key, value in pairs(lifecycle) do
-            if type(value) == "function" then
-                lifecycle[key] = wrap("lifecycle:" .. key, value)
+            if type(value) == "function" and key ~= "workBound" then
+                local name = key
+                local label = "lifecycle:" .. name
+                if name == "advanceAppRebuild" or name == "retirePage" then
+                    label = function(token, current)
+                        if token then
+                            return "lifecycle:" .. name .. ":" .. token
+                        end
+                        local job
+                        if name == "retirePage" then
+                            job = current.pageRetirement
+                        else
+                            job = current.appRebuild
+                        end
+                        local phase = job and job.phase or (name == "retirePage" and "cancel" or "retire")
+                        if phase == "construct" then
+                            local entry = current.pendingConstruction
+                            phase = phase
+                                .. ":"
+                                .. tostring(entry and entry.module.id)
+                                .. ":"
+                                .. tostring(entry and entry.instance.createStage)
+                        elseif phase == "build" or phase == "prepare" then
+                            phase = phase .. ":" .. tostring(job.entry.module.id)
+                        elseif phase == "panel" then
+                            local entry = current.panels[1]
+                            phase = phase .. ":" .. tostring(entry and entry.module.id or "done")
+                        elseif phase == "settings" and current.modelSettingsUi then
+                            phase = phase .. ":" .. current.modelSettingsUiModule.stageOf(current.modelSettingsUi)
+                        end
+                        P.lifecycleBounds = P.lifecycleBounds or {}
+                        P.lifecycleBounds["lifecycle:" .. name .. ":" .. phase] = lifecycle.workBound
+                            and lifecycle.workBound(current, name)
+                        return phase
+                    end
+                end
+                lifecycle[key] = wrap(label, value)
             end
         end
         local controller = context.editorController
@@ -673,6 +718,9 @@ local function report(context)
 end
 
 local function ready(context)
+    if P.lifecycleStarted then
+        return true
+    end
     if config.fullscreen and not lvgl.isFullScreen() and not P.settingsWindowLoss then
         return false
     end
@@ -682,7 +730,76 @@ local function ready(context)
         and not context.runtimeFailed
 end
 
-local actions = {
+local actions
+actions = {
+    ["lifecycle-app"] = function(context)
+        P.lifecycleStarted = true
+        P.lifecycleOriginals = {}
+        for index, entry in ipairs(context.panels) do
+            P.lifecycleOriginals[index] = entry
+            entry.builtFullscreen = true
+        end
+        -- Reproduce fullscreen-created preview placements on an App-built page.
+        -- The simulator stays visible so native callRefs continues to run.
+        _G.lvgl = setmetatable({
+            isFullScreen = function()
+                return false
+            end,
+        }, { __index = lvgl })
+        context.rootBuiltFullscreen, context.pageBuiltFullscreen = nil, nil
+        context.fullScreen = false
+    end,
+    ["lifecycle-retire"] = function(context)
+        P.lifecycleStarted = true
+        P.lifecycleOriginals = P.lifecycleOriginals or {}
+        if #P.lifecycleOriginals == 0 then
+            for index, entry in ipairs(context.panels) do
+                P.lifecycleOriginals[index] = entry
+            end
+        end
+        P.lifecyclePage = context.page
+        context.reloadState = "clear"
+    end,
+    ["lifecycle-cancel"] = function(context)
+        assert(context.appRebuild and context.pendingConstruction, "cancel must interrupt actual partial construction")
+        P.lifecyclePartial = context.pendingConstruction
+        P.lifecyclePage = context.page
+        context.reloadState = "clear"
+    end,
+    ["lifecycle-settings-drain"] = function(context)
+        assert(
+            context.modelSettingsUi and context.modelSettingsUi.saving,
+            "retirement must interrupt an already confirmed settings save"
+        )
+        P.lifecycleStarted, P.lifecycleOriginals, P.lifecyclePage = true, {}, context.page
+        for index, entry in ipairs(context.panels) do
+            P.lifecycleOriginals[index] = entry
+        end
+        _G.AUDIT_LIFECYCLE_DRAIN = true
+        context.reloadState = "clear"
+    end,
+    ["check-lifecycle-settings"] = function(context)
+        assert(not context.modelSettingsUi)
+        assert(context.flightBroker.document.revision == P.settingsRevision)
+        assert(context.flightBroker.document.flight.motorReversed == P.settingsReversed)
+        actions["check-lifecycle"](context)
+    end,
+    ["check-lifecycle"] = function(context)
+        assert(not context.appRebuild and not context.pendingConstruction and not context.pageRetirement)
+        assert(not context.reloadState and not context.stage, "lifecycle must reach the rebuilt dashboard")
+        assert(#context.panels == #P.lifecycleOriginals)
+        for index, entry in ipairs(context.panels) do
+            local original = P.lifecycleOriginals[index]
+            assert(entry ~= original and entry.placement.id == original.placement.id)
+            assert(not entry.failed and entry.container)
+            if not P.lifecyclePage then
+                assert(entry.placement == original.placement and not entry.builtFullscreen)
+            end
+        end
+        if P.lifecyclePage then
+            assert(context.page ~= P.lifecyclePage)
+        end
+    end,
     ["open-location"] = function(context)
         local entry = assert(context.panels[1])
         assert(entry.module.id == "navigation" and entry.instance.feed.fix)
@@ -984,6 +1101,9 @@ local function runCallback(kind, context, fn, e, t)
     local c1 = count()
     pause(true)
     local total = c1 - c0 - K_CALLBACK
+    if string.match(config.scenario, "^lifecycle%-") then
+        gate(total <= 15000, kind .. " exceeds the complete lifecycle callback ceiling: " .. total)
+    end
     if previewTasks or surface == "editor-preview" and string.match(config.scenario, "^editor%-preview%-") then
         gate(total <= 15000, kind .. " exceeds the complete preview callback ceiling: " .. total)
         if previewTasks and surface == "editor-preview" then
@@ -1125,13 +1245,15 @@ local function entry(kind, context, fn, e, t)
         write(
             "/audit-progress.txt",
             string.format(
-                "kind=%s callbacks=%d phase=%d done=%d stage=%s panels=%d errors=%s\n",
+                "kind=%s callbacks=%d phase=%d done=%d stage=%s panels=%d app=%s retire=%s errors=%s\n",
                 kind,
                 callbackIndex,
                 phaseIndex,
                 phaseDone,
                 tostring(context.stage),
                 #context.panels,
+                tostring(context.appRebuild and context.appRebuild.phase),
+                tostring(context.pageRetirement and context.pageRetirement.phase),
                 table.concat(context.errors, ";")
             )
         )

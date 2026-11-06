@@ -308,6 +308,39 @@ def scenarios():
          "callbacks": 1, "step": 5},
     ]
     result["modal-settings-close-return"] = dict(result["modal-settings-save"], phases=phases)
+    for suffix, base in (("metric", result["metric-16"]), ("multi", result["modal-settings-reset"]),
+                         ("model", result["model-panels"]), ("output", result["output-max"])):
+        result[f"lifecycle-app-{suffix}"] = dict(base, fullscreen=True, phases=[
+            {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 4},
+            {"name": "app-rebuild", "kind": "refresh", "action": "lifecycle-app",
+             "callbacks": 400, "step": 5, "perCall": 1, "trace": True},
+            {"name": "app-check", "kind": "refresh", "action": "check-lifecycle",
+             "callbacks": 1, "step": 5, "perCall": 1},
+            {"name": "retire", "kind": "refresh", "action": "lifecycle-retire",
+             "callbacks": 400, "step": 5, "perCall": 1, "trace": True},
+            {"name": "retire-check", "kind": "refresh", "action": "check-lifecycle",
+             "callbacks": 1, "step": 5, "perCall": 1},
+        ])
+    result["lifecycle-cancel"] = dict(result["modal-settings-reset"], fullscreen=True, phases=[
+        {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 4},
+        {"name": "partial", "kind": "refresh", "action": "lifecycle-app",
+         "callbacks": 3, "step": 5, "perCall": 1},
+        {"name": "cancel", "kind": "refresh", "action": "lifecycle-cancel",
+         "callbacks": 400, "step": 5, "perCall": 1, "trace": True},
+        {"name": "cancel-check", "kind": "refresh", "action": "check-lifecycle",
+         "callbacks": 1, "step": 5, "perCall": 1},
+    ])
+    result["lifecycle-settings-drain"] = dict(result["modal-settings-save"], lifecycleDrain=True, phases=[
+        {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 4},
+        {"name": "settings-build", "kind": "refresh", "action": "open-settings",
+         "callbacks": 200, "step": 5, "perCall": 1},
+        {"name": "settings-confirm", "kind": "refresh", "action": "edit-settings",
+         "callbacks": 1, "step": 5, "perCall": 1},
+        {"name": "settings-drain", "kind": "refresh", "action": "lifecycle-settings-drain",
+         "callbacks": 400, "step": 5, "perCall": 1, "trace": True},
+        {"name": "settings-drained", "kind": "refresh", "action": "check-lifecycle-settings",
+         "callbacks": 1, "step": 5, "perCall": 1},
+    ])
     result["modal-log-recording"] = dict(result["modal-log"], recipe="chart", sources=1, expected=2,
         settings=True, layout=custom_layout([
             chart_cell("chart", 0, 2, [1]),
@@ -516,6 +549,17 @@ def prepare(capture, name, spec, sd, mode="legacy"):
     shutil.copyfile(WIDGET / "main.lua", widget / "main.lua")
     shutil.copyfile(WIDGET / "lib/dashboard_loader.lua", widget / "lib/dashboard_loader.lua")
     (widget / "main.lua").write_text(patch_mode(patch_main((WIDGET / "main.lua").read_text()), mode))
+    if spec.get("lifecycleDrain"):
+        source = (widget / "main.lua").read_text()
+        anchor = '    if context.modelSettingsUi then\n        local bound = context.modelSettingsUiModule.workBound(context)\n'
+        if source.count(anchor) != 1:
+            raise RuntimeError("Lifecycle settings drain requires one foreground modal gate")
+        source = source.replace(anchor,
+            '    if _G.AUDIT_LIFECYCLE_DRAIN and context.reloadState == "clear" then\n'
+            '        context.dashboardLifecycle.retirePage(context)\n'
+            '        return\n'
+            '    end\n' + anchor)
+        (widget / "main.lua").write_text(source)
     if spec.get("flightTasks"):
         (widget / "main.lua").write_text(patch_flight_tasks((widget / "main.lua").read_text()))
     (widget / "lib/dashboard_loader.lua").write_text(patch_loader((WIDGET / "lib/dashboard_loader.lua").read_text()))
@@ -544,6 +588,8 @@ def prepare(capture, name, spec, sd, mode="legacy"):
               "failOnError": True, "traceLimit": 300}
     if spec.get("expectedError"):
         config["expectedError"] = spec["expectedError"]
+    if name.startswith("lifecycle-"):
+        config["progress"] = 1
     if "loops" in spec:
         config["loops"] = spec["loops"]
     (audit / "config.lua").write_text("return " + lua_literal(config) + "\n")

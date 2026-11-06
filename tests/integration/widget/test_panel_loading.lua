@@ -150,6 +150,13 @@ for _, layout in ipairs({ "review-chart", "review-navigation", "review-metric" }
     assert(context.pendingConstruction)
     context.dashboardLifecycle.retirePage(context)
     fixture.lvglMock.settle()
+    for _ = 1, #context.panels + 10 do
+        if context.reloadState ~= "clear" then
+            break
+        end
+        context.dashboardLifecycle.retirePage(context)
+        fixture.lvglMock.settle()
+    end
     assert(not context.pendingConstruction and not context.pendingPanel and context.reloadState == "rebuild")
     context.dashboardLifecycle.rebuildPage(context)
     context.dashboardLoader.beginLoad(context)

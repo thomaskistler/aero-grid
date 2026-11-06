@@ -3581,7 +3581,7 @@ XFAILs. Prerequisites are parent a7d9293 and b116e2d forwarding; no owner or
 recording policy changes are included. Editor input/mutation and R6 retirement
 remain separate gates.
 
-## 51. Shared bounded model-settings reader (R5/R6 dependency)
+## 63. Shared bounded model-settings reader (R5/R6 dependency)
 
 `store:startLoad(filename)` returns a job or `nil,error` without disk access.
 `store:advanceLoad(job)` returns `false` while pending, then
@@ -3612,3 +3612,74 @@ and verify captured-source and identity semantics. The unchanged native save
 case also passes after sharing the internal advance function (maximum 1625).
 Flight registration owns enrollment and complete loader-callback accounting;
 this commit does not activate that path or change any production owner.
+
+## 64. Bounded dashboard retirement and staged App reconstruction (R6 slice)
+
+`retirePage` retains `reloadState = "clear"` while it cancels continuations,
+drains confirmed Model settings saves, retires one placement per turn, retires
+partial construction, closes native menu state, releases the page, then finalizes.
+Only the last turn changes the state to `"rebuild"`. Page release and replacement
+construction remain separate native callbacks. App reconstruction now uses
+`preparePanel`, prepared `buildPanel`, and `advanceConstruction`, retaining the
+placement identity and restoring the original registry slot on publication.
+Replacement loads and page retirement invalidate stale App/reflow continuations.
+
+The lifecycle instance exports `workBound(context, operation)` for
+`retirePage`, `advanceAppRebuild`, and `rebuildPage`. It deliberately returns
+`nil` for prepare/build/construct, active settings drain, actual menu close,
+destroy hooks, and error presentation. Synchronous/custom constructors remain
+compatible but do not inherit service co-admission eligibility.
+
+| Complete lifecycle atom | Native maximum | Fitted | Declaration |
+|---|---:|---:|---:|
+| Cancel continuations | 24 | 80 | 100 |
+| Retire one placement | 97 | 160 | 200 |
+| Retire partial construction | 95 | 160 | 200 |
+| Empty settings gate | 7 | 60 | 100 |
+| Empty menu gate | 13 | 70 | 100 |
+| Page release | 26 | 80 | 200 |
+| Finalize retirement | 28 | 90 | 100 |
+| Rebuild page | 63 | 120 | 150 |
+| App placement retirement | 157 | 230 | 250 |
+| Successful App completion | 59 | 120 | 150 |
+| Settings save drain, including close gate | 1702 | 1930 | Ineligible |
+
+Fitted values use `ceil((native * 1.10 + 50) / 10) * 10`. Native hooks measure
+the entire lifecycle function, not just its child panel callback, and gate
+both the fitted 4000 ceiling and available declarations. New lifecycle scenarios
+also gate whole callbacks at 15000. Native cleanup turns use `perCall = 1`:
+multiple simulated callbacks inside one firmware call otherwise incorrectly
+reuse objects before `callRefs` has settled their clear requests.
+
+Passing native scenarios: Output App rebuild/retirement (8516 whole callback),
+seven-panel partial-construction cancellation (7864), and seven-panel confirmed
+settings save draining through persistence/publication and retirement (8378).
+App transition fixtures proxy the fullscreen query while keeping the native
+simulator visible; the settings-drain fixture routes its foreground retirement
+before the modal gate in the isolated audit copy only. Neither enables
+production ownership or service admission.
+
+Strict native gates intentionally still reject built-in constructor gaps:
+Metric frame construction costs 3736 (fitted 4160), synchronous Link Status
+build 3740 (4170), synchronous RX Battery build 4214 (4690), and synchronous
+TX Battery build 3788 (4220). These need separate constructor work before final
+ownership activation. No measured prepare stage exceeds the fitted ceiling;
+the largest is Link Status at 1776 (2010). The 16-Metric
+scenario additionally exposes existing legacy steady refresh callbacks up to
+24957; lifecycle cleanup itself is not that callback's cause.
+
+Lua53 and int32 lifecycle regressions cover all thirteen production panel kinds,
+completed native-tree parity, reused versus fullscreen-native containers,
+construction-time zone changes, cancellation at every App phase, replacement
+loads, failures, confirmed-save draining, and deferred old-page cleanup.
+The existing panel-loading test now pumps the multi-turn retirement contract.
+Strict session reset passes at 8200 with both first-arm XFAIL assertions retained.
+The pre-existing shared-Flight `minFlightDuration` save-settle failure reproduces
+with the unmodified baseline lifecycle substituted in memory.
+
+```sh
+python3 tools/audit-scheduler.py lifecycle-app-output lifecycle-cancel lifecycle-settings-drain --timeout 180
+python3 tools/audit-scheduler.py lifecycle-app-metric lifecycle-app-multi lifecycle-app-model --timeout 180
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+make test-lua32
+```

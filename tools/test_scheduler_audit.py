@@ -21,6 +21,17 @@ def load_cli():
 
 
 class InstrumentationTests(unittest.TestCase):
+    def test_lifecycle_captures_allow_native_cleanup_between_turns(self):
+        cases = load_cli().scenarios()
+        for name in ("lifecycle-app-metric", "lifecycle-app-multi", "lifecycle-app-model",
+                     "lifecycle-app-output", "lifecycle-cancel", "lifecycle-settings-drain"):
+            phases = cases[name]["phases"]
+            self.assertTrue(cases[name]["fullscreen"])
+            self.assertIn(phases[-1]["action"], ("check-lifecycle", "check-lifecycle-settings"))
+            for phase in phases:
+                if phase["name"] != "settle":
+                    self.assertEqual(phase["perCall"], 1, (name, phase["name"]))
+
     def test_framework_measures_uninstrumented_chart_and_packages_shared_fixture(self):
         cli = load_cli()
         with tempfile.TemporaryDirectory() as directory:
