@@ -3777,3 +3777,49 @@ parent gates; this slice changes no owner or recording/reset policy.
 python3 tools/audit-scheduler.py --framework flight-registration flight-registration-load --timeout 180
 make test-lua32
 ```
+
+## 67. Runtime pre-Armed loading and registration integration (R4/R6)
+
+The loader now pauses immediately after Flight construction. Broker identity,
+store module, verified-file module, Armed configuration module and store creation
+have explicit advances. The owning dashboard completes bounded model reading
+and publication before dashboard Armed captures the model condition; other
+dashboards wait for the canonical document. Same-model reloads reuse cached
+success or failure without reading again.
+
+Panel completion advances the bounded declaration job and finishes presentation
+separately. Main drives retained initial publication and independent registration
+jobs through service-only callbacks. Replacement loading discards unfinished
+registration but retains started publication. The runtime pump no longer enters
+the synchronous settings reader, and compatibility configuration no longer hides
+a nested Flight pump. Production Flight/Smart/panel owners remain legacy.
+
+Actual native model/settings/theme cases pass complete loader atom and callback
+gates. Configured settings loading measures identity 98, module prerequisites
+102--125, store creation 121, load-begin 74, reader start 290, read 499,
+tokenization 700, build 856, validation 840, publication start/advance 323/265,
+registration begin 84, retained/sources/arms/declaration/commit
+153/163/206/189/198, and final presentation 44. Dense layout loading also
+measures declaration 258. Reader/registration advances reserve the API charge
+plus 200 for their enclosing loader work. Existing conservative setup bounds
+and explicit nil gates for unmeasured loader surfaces remain.
+
+Whole callback maxima are 6208 for dense layout loading, 4148 for model panels,
+9534 for configured seven-panel settings save/output, and 6894 for corrected
+theme resolution. These do not claim constructor, editor or lifecycle activation.
+Lua53/int32 widget regressions check a comment-heavy document with obsolete
+sequence data, pre-Armed selection, two dashboards sharing one read, foreground/
+background callbacks, replacement during publication, missing/recovered/damaged
+files and cached success/failure reloads. Synchronous runtime store reads and
+cached reload I/O are forbidden by test guards; initial loading preserves bytes.
+
+The shared-flight save helper now waits for both broker revision publication and
+the UI's pending/saving drain before typing another value. Controls are correctly
+disabled during that interval; this strengthens completion detection without
+changing budget assertions. The complete shared-flight regression now passes.
+
+```sh
+python3 tools/audit-scheduler.py layout-loading-chunks model-panels modal-settings-save-output theme-resolution-corrections --mode mixed --timeout 240
+build/lua32/lua tests/integration/widget/test_flight_loading.lua "$PWD"
+build/lua32/lua tests/integration/widget/test_shared_flight.lua "$PWD"
+```

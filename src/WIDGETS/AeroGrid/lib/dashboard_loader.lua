@@ -27,12 +27,26 @@ function module.new(dependencies)
         ["panel-tokens"] = 1120,
         ["panel-parse"] = 1650,
         ["load-error"] = 1500,
+        ["flight-identity"] = 800,
+        ["flight-store-module"] = 2000,
+        ["flight-store-writer"] = 2000,
+        ["flight-store-armed"] = 2000,
+        ["flight-store-create"] = 1200,
+        ["flight-load-begin"] = 300,
+        ["flight-load-wait"] = 100,
+        ["flight-load-notice"] = 400,
+        ["flight-register-begin"] = 320,
+        ["flight-register-error"] = 1500,
+        ["load-finish"] = 1500,
     }
     local resolutionBounds = { legibility = 2400, chart = 1800, alert = 2200, display = 650, finalize = 180 }
 
     local function workBound(context)
         if context.stage == "theme-resolve" then
             return context.themeBuildWork and resolutionBounds[context.themeBuildWork.stage]
+        end
+        if context.stage == "flight-load" or context.stage == "flight-register" then
+            return context.flightRegistration.workBound(context.flightLoading.job) + 200
         end
         return loadBounds[context.stage]
     end
@@ -343,7 +357,16 @@ function module.new(dependencies)
         context.stage = context.themeReadIndex > #context.themeNames and "theme-validate" or "theme-read"
     end
 
+    local function releaseFlightWork(context)
+        local work = context.flightLoading
+        if work and work.job and work.job.stage == "publish" and not work.job.done then
+            context.flightPublicationJob = work.job
+        end
+        context.flightLoading = nil
+    end
+
     local function queueFailure(context, errors)
+        releaseFlightWork(context)
         context.loadFailure = { errors = errors, index = 1 }
         context.stage = "load-error"
         context.tokens, context.source = nil, nil
@@ -360,6 +383,9 @@ function module.new(dependencies)
     ---@return boolean busy True while more work remains.
     local function advanceLoad(context)
         local stage = context.stage
+        if not stage then
+            return false
+        end
 
         --- Abandon the load, reporting why.
         local function fail(message)
@@ -388,6 +414,165 @@ function module.new(dependencies)
                 context.flightFactory.revision = (context.flightFactory.revision or 0) + 1
             end
             context.stage, context.loadFailure = nil, nil
+            showErrors(context)
+            return false
+        end
+
+        if string.sub(stage, 1, 7) == "flight-" then
+            if stage == "flight-identity" then
+                local work = context.flightLoading
+                local owner = work.owner
+                local ok, filename = pcall(owner.identity, owner)
+                if not ok then
+                    return fail("flight: " .. tostring(filename))
+                elseif filename ~= context.modelFilename then
+                    context.reloadState = "clear"
+                    return true
+                end
+                if owner.filename ~= filename then
+                    owner:reset(filename)
+                end
+                if owner.documentLoaded then
+                    context.flightLoading, context.stage = nil, "services"
+                elseif owner:owningContext() ~= context then
+                    context.stage = "flight-load-wait"
+                else
+                    context.stage = owner.store and "flight-load-begin" or "flight-store-module"
+                end
+                return true
+            end
+
+            if stage == "flight-load-wait" then
+                local owner = context.flightLoading.owner
+                if owner.documentLoaded then
+                    context.flightLoading, context.stage = nil, "services"
+                elseif owner:owningContext() == context then
+                    context.stage = owner.store and "flight-load-begin" or "flight-store-module"
+                end
+                return true
+            end
+
+            if stage == "flight-store-module" or stage == "flight-store-writer" or stage == "flight-store-armed" then
+                local work = context.flightLoading
+                local key = stage == "flight-store-module" and "store"
+                    or stage == "flight-store-writer" and "verifiedFile"
+                    or "armedConfig"
+                local filename = key == "store" and "model_settings_store"
+                    or key == "verifiedFile" and "verified_file"
+                    or "armed_service"
+                local loaded, message
+                if key == "armedConfig" and work.owner.modules.armed then
+                    loaded = work.owner.modules.armed
+                else
+                    loaded, message =
+                        loadModule(context.path, "lib/" .. filename .. ".lua", context.packageInfo.runtimeApi)
+                end
+                if not loaded then
+                    work.owner.loadError, work.owner.documentLoaded = tostring(message), true
+                    context.flightLoading, context.stage = nil, "services"
+                    return true
+                end
+                work[key] = loaded
+                if key == "armedConfig" then
+                    context.serviceRuntime.modules.armed = loaded
+                end
+                context.stage = key == "store" and "flight-store-writer"
+                    or key == "verifiedFile" and "flight-store-armed"
+                    or "flight-store-create"
+                return true
+            end
+
+            if stage == "flight-store-create" then
+                local work = context.flightLoading
+                local owner = work.owner
+                local ok, store = pcall(work.store.new, context.path, context.yaml, {
+                    verifiedFile = work.verifiedFile,
+                    flightConfig = context.flightConfig,
+                    armedConfig = work.armedConfig,
+                    modelFilename = function()
+                        return owner:identity()
+                    end,
+                })
+                if not ok then
+                    owner.loadError, owner.documentLoaded = tostring(store), true
+                    context.flightLoading, context.stage = nil, "services"
+                else
+                    owner.store = store
+                    work.store, work.verifiedFile, work.armedConfig = nil, nil, nil
+                    context.stage = "flight-load-begin"
+                end
+                return true
+            end
+
+            if stage == "flight-load-begin" or stage == "flight-register-begin" then
+                local registration = context.flightRegistration
+                local work = context.flightLoading or {}
+                context.flightLoading = work
+                local job, message
+                if stage == "flight-load-begin" then
+                    job, message = registration.beginLoad(context, work.owner.store)
+                else
+                    job, message = registration.begin(context)
+                end
+                if not job then
+                    work.error, context.stage = message, "flight-register-error"
+                else
+                    work.job = job
+                    context.stage = stage == "flight-load-begin" and "flight-load" or "flight-register"
+                end
+                return true
+            end
+
+            if stage == "flight-load" or stage == "flight-register" then
+                local work = context.flightLoading
+                local done, ok, message = context.flightRegistration.advance(work.job)
+                if not done then
+                    return true
+                end
+                if stage == "flight-register" then
+                    work.error = not ok and message or nil
+                    context.stage = ok and "load-finish" or "flight-register-error"
+                else
+                    local owner = work.owner
+                    if not ok then
+                        if owner.filename ~= context.modelFilename then
+                            context.reloadState = "clear"
+                        elseif not owner.documentLoaded then
+                            owner.loadError, owner.documentLoaded = message, true
+                        end
+                    end
+                    context.flightLoadInfo = work.job.loadInfo
+                    context.stage = context.flightLoadInfo and context.flightLoadInfo.recovered and "flight-load-notice"
+                        or "services"
+                    context.flightLoading = nil
+                end
+                return true
+            end
+
+            if stage == "flight-load-notice" then
+                addNotice(context, "warning", "Recovered previous model settings; review and save Model settings.")
+                context.stage = "services"
+                return true
+            end
+
+            if stage == "flight-register-error" then
+                local message = context.flightLoading.error
+                local member = context.flightFactory.members[context]
+                member.pending, member.error = false, message
+                context.flightFactory.revision = (context.flightFactory.revision or 0) + 1
+                addError(context, "flight: " .. tostring(message))
+                context.stage = "load-finish"
+                return true
+            end
+            return fail("unknown Flight loading stage: " .. tostring(stage))
+        end
+
+        if stage == "load-finish" then
+            context.flightLoading, context.stage = nil, nil
+            if context.recoveryReason then
+                addNotice(context, "warning", "layout recovered after: " .. context.recoveryReason)
+                context.recoveryReason = nil
+            end
             showErrors(context)
             return false
         end
@@ -783,7 +968,11 @@ function module.new(dependencies)
 
             context.serviceIndex = index + 1
 
-            local module, moduleError = loadModule(context.path, definition.file, context.packageInfo.runtimeApi)
+            local module = context.serviceRuntime.modules[definition.id]
+            local moduleError
+            if not module then
+                module, moduleError = loadModule(context.path, definition.file, context.packageInfo.runtimeApi)
+            end
             local constructor = module and rawget(module, "new") or nil
             if type(constructor) == "function" then
                 local runtime = context.serviceRuntime
@@ -806,6 +995,10 @@ function module.new(dependencies)
                 local ok, instance = pcall(constructor, runtime.env, context.servicesModule, runtime)
                 if ok and type(instance) == "table" then
                     context.servicesModule.register(runtime, instance, getTime())
+                    if definition.id == "flight" and instance.broker and context.flightRegistration then
+                        context.flightLoading = { owner = instance.broker }
+                        context.stage = "flight-identity"
+                    end
                 else
                     addError(context, definition.id .. ": " .. tostring(instance))
                 end
@@ -826,18 +1019,10 @@ function module.new(dependencies)
             local token = index and tokens[index] or nil
             if not index or not token or token.indent < context.itemIndent then
                 context.tokens = nil
-                context.stage = nil
+                context.stage = context.flightRegistration and "flight-register-begin" or "load-finish"
                 context.loadCandidates = nil
                 context.loadCandidateIndex = nil
-                if context.configureFlight then
-                    context.configureFlight(context)
-                end
-                if context.recoveryReason then
-                    addNotice(context, "warning", "layout recovered after: " .. context.recoveryReason)
-                    context.recoveryReason = nil
-                end
-                showErrors(context)
-                return false
+                return true
             end
 
             if not string.match(token.content, "^%-") then
@@ -967,6 +1152,8 @@ function module.new(dependencies)
     --- Begin a staged load, discarding anything already on screen.
     ---@param context AeroGridContext
     local function beginLoad(context)
+        releaseFlightWork(context)
+        context.flightRegistrationJob, context.flightLoadInfo = nil, nil
         if context.pendingConstruction then
             context.pendingConstruction.container:clear()
             lvgl.hide(context.pendingConstruction.container)

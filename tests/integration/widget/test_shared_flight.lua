@@ -173,6 +173,8 @@ local function changeModel(context, key, value, other)
     context.modelSettingsUi.controls[key].properties.set(value)
     untilState(context, function()
         return owner.document.revision == revision + 1
+            and not context.modelSettingsUi.saving
+            and not context.modelSettingsUi.pending
     end, other)
 end
 changeModel(first, "minMotorPercent", 30, second)

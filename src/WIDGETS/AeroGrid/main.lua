@@ -638,6 +638,16 @@ local function create(zone, widgetOptions, path)
         context.aeroMenuModule = runtimeModule("lib/aerogrid_menu.lua")
         local flightRegistration = runtimeModule("lib/flight_registration.lua")
         if flightRegistration then
+            context.flightRegistration = flightRegistration
+            context.beginFlightRegistration = function(host)
+                local job, message = flightRegistration.begin(host)
+                if not job then
+                    host.pendingFlightError = message
+                    return false
+                end
+                host.flightRegistrationJob = job
+                return true
+            end
             context.configureFlight = function(host)
                 local ok, message = pcall(flightRegistration.configure, host)
                 if not ok then
@@ -645,8 +655,6 @@ local function create(zone, widgetOptions, path)
                     member.pending, member.error = false, tostring(message)
                     host.flightFactory.revision = (host.flightFactory.revision or 0) + 1
                     addError(host, "flight: " .. tostring(message))
-                else
-                    pumpFlight(host)
                 end
             end
         end
@@ -1119,6 +1127,36 @@ local function advanceLoading(context)
     loader.advanceLoad(context)
 end
 
+local function advanceFlightJob(context)
+    if context.pendingFlightError then
+        updateModalServices(context, 1500, "loader")
+        addError(context, "flight: " .. context.pendingFlightError)
+        context.pendingFlightError = nil
+        showErrors(context)
+        return true
+    end
+    local field = context.flightPublicationJob and "flightPublicationJob" or "flightRegistrationJob"
+    local job = context[field]
+    if not job then
+        return false
+    end
+    local registration = context.flightRegistration
+    updateModalServices(context, registration.workBound(job) + 200, "loader")
+    local done, ok, message = registration.advance(job)
+    if done then
+        context[field] = nil
+        if not ok then
+            local member = context.flightFactory.members[context]
+            if member and field == "flightRegistrationJob" then
+                member.pending, member.error = false, message
+                context.flightFactory.revision = (context.flightFactory.revision or 0) + 1
+            end
+            context.pendingFlightError = message
+        end
+    end
+    return true
+end
+
 --- The scheduled work of a steady or background callback with the host attached:
 --- the legacy loop, then the new scheduler with
 --- what is left (`new` mode has no legacy loop; panel `background` hooks are part
@@ -1209,6 +1247,12 @@ pumpFlight = function(context, inputPending)
         owner:reset(filename)
     end
     if not owner.documentLoaded then
+        if context.flightRegistration then
+            if not context.stage and not context.reloadState then
+                context.reloadState = "clear"
+            end
+            return false
+        end
         if not owner.store then
             local storeModule, storeError = loadModule(context.path, "lib/model_settings_store.lua", 1)
             if not storeModule then
@@ -1655,6 +1699,9 @@ local function refresh(context, widgetEvent, touchState)
     if pumpFlight(context, widgetEvent ~= nil and widgetEvent ~= 0) then
         return
     end
+    if advanceFlightJob(context) then
+        return
+    end
     if suspendArmingEditor(context) then
         return
     end
@@ -1943,6 +1990,9 @@ local function background(context)
         end
     end
     if pumpFlight(context) then
+        return
+    end
+    if advanceFlightJob(context) then
         return
     end
     if suspendArmingEditor(context) then

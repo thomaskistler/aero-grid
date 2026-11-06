@@ -9,6 +9,7 @@ local config = assert(loadScript("/WIDGETS/AeroGrid/audit/config.lua"))()
 local previewTasks = string.match(config.scenario, "^editor%-preview%-.+%-tasks$") ~= nil
 local count, pause
 local P = { offset = 0 }
+local loaderDeclarations = {}
 
 local realTime = getTime
 _G.getTime = function()
@@ -80,21 +81,22 @@ local function finish(label, raw, leak)
     if type(label) ~= "string" then
         label = "unlabelled"
     end
-    local loadBound = ({
-        ["load:theme-read"] = 240,
-        ["load:theme-tokenize"] = 3200,
-        ["load:theme-parse"] = 900,
-        ["load:theme-resolve-begin"] = 240,
-        ["load:tokenize"] = 3300,
-        ["load:header"] = 950,
-        ["load:header-parse"] = 1650,
-        ["load:header-validate"] = 350,
-        ["load:header-finalize"] = 350,
-        ["load:panel-tokens"] = 1120,
-        ["load:panel-parse"] = 1650,
-        ["load:read"] = 750,
-        ["load:load-error"] = 1500,
-    })[label]
+    local loadBound = loaderDeclarations[label]
+        or ({
+            ["load:theme-read"] = 240,
+            ["load:theme-tokenize"] = 3200,
+            ["load:theme-parse"] = 900,
+            ["load:theme-resolve-begin"] = 240,
+            ["load:tokenize"] = 3300,
+            ["load:header"] = 950,
+            ["load:header-parse"] = 1650,
+            ["load:header-validate"] = 350,
+            ["load:header-finalize"] = 350,
+            ["load:panel-tokens"] = 1120,
+            ["load:panel-parse"] = 1650,
+            ["load:read"] = 750,
+            ["load:load-error"] = 1500,
+        })[label]
     local resolution = string.match(label, "^load:theme%-resolve:(%a+)$")
     if resolution then
         loadBound = ({ legibility = 2400, chart = 1800, alert = 2200, display = 650, finalize = 180 })[resolution]
@@ -299,6 +301,15 @@ end
 local function loadLabel(token, context)
     if token == nil then
         local stage = context.stage or "idle"
+        local bound = context.dashboardLoader.workBound and context.dashboardLoader.workBound(context)
+        if stage == "flight-load" or stage == "flight-register" then
+            local job = context.flightLoading.job
+            stage = stage .. ":" .. tostring(job.stage or "done")
+            if job.stage == "load" then
+                stage = stage .. ":" .. tostring(job.load.stage)
+            end
+        end
+        loaderDeclarations["load:" .. stage] = bound
         if stage == "theme-resolve" then
             return stage .. ":" .. tostring(context.themeBuildWork.stage)
         elseif stage == "theme-publish" then
