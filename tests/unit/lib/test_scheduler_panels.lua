@@ -67,6 +67,7 @@ do
     run()
     assert(first.instance.runs == 1 and second.instance.runs == 0, "enrollment is bounded to one placement")
     assert(host.pendingPanels[second] and host.legacy.spent == scheduling.PANEL_ENROLL_COST)
+    assert(first.instance.schedulerOwned and second.instance.schedulerOwned, "pending placements are already owned")
     run()
     assert(not host.pendingPanels)
     assert(first.instance.runs == 1 and second.instance.runs == 1, "same-type placements have independent releases")
@@ -100,6 +101,7 @@ do
     run()
     assert(host.panelTasks[first] == nil and host.panelTasks[replacement], "same-count replacement retires old task")
     assert(host.panelTasks[second] == kept, "surviving placements keep their task")
+    assert(not first.instance.schedulerOwned and replacement.instance.schedulerOwned)
     now = now + 10
     run()
     assert(first.instance.runs == 1 and replacement.instance.runs == 2, "retired panel is never called again")
@@ -156,6 +158,7 @@ for _, failure in ipairs({ "raise", "interval" }) do
     assert(host:report(context) and #errors == 1)
     assert(not host:report(context) and #errors == 1, "a retired task is reported once")
     assert(host.panelTasks[bad] == nil and not host.scheduler.byId["panel:bad"])
+    assert(not bad.instance.schedulerOwned, "failure clears the ownership marker")
     run()
     assert(healthy.instance.runs == 1, "one failed panel cannot stop another")
     now = now + 10
@@ -172,8 +175,28 @@ do
     run()
     assert(not host.pendingPanels and host.panelTasks[last])
     assert(not host.panelTasks[first] and not host.panelTasks[pending])
+    assert(not first.instance.schedulerOwned and not pending.instance.schedulerOwned and last.instance.schedulerOwned)
     assert(not host.scheduler.byId["panel:first"] and not host.scheduler.byId["panel:pending"])
     assert(first.instance.runs == 1 and pending.instance.runs == 0 and last.instance.runs == 1)
+end
+
+do
+    local context, host, add, run = fixture()
+    local first, pending = add("first"), add("pending")
+    run()
+    host.owners["panel:sample"] = "legacy"
+    assert(host:syncPanels(context) == nil)
+    assert(not first.instance.schedulerOwned and not pending.instance.schedulerOwned)
+    assert(not host.pendingPanels and next(host.panelTasks) == nil)
+end
+
+do
+    local context, host, add, _, errors = fixture()
+    local entry = add("invalid")
+    entry.instance = nil
+    assert(not host:ready(context))
+    assert(#errors == 1 and string.find(errors[1], "has no task instance", 1, true))
+    assert(not host.scheduler.byId["panel:invalid"])
 end
 
 do

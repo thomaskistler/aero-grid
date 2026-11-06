@@ -34,6 +34,11 @@ local flightTimer = {
     -- A clock advances once a second, so anything faster is wasted work charged
     -- to the same instruction budget as every other panel on the dashboard.
     refreshInterval = 100,
+    decl = {
+        class = "normal",
+        kinds = { steady = true },
+        stages = { run = { fixed = 0, perUnit = 1300, maxUnits = 1 } },
+    },
     settings = {
         { key = "timer", label = "Model timer", type = "number", default = 0 },
         -- An empty label is not an absent one: it means derive the heading at
@@ -680,5 +685,7 @@ function flightTimer.update(context, rect)
     context.showDetail = area.showDetail
     context.showVisual = showVisual
 end
+
+flightTimer.step = flightTimer.refresh
 
 return flightTimer

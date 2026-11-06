@@ -214,6 +214,10 @@ def scenarios():
                                                        "satelliteSource": "Sats"})
     result["navigation-tasks-4"] = dict(result["navigation-tasks-max"], expected=4, placements={
         f"n{i}": ((i - 1) % 2 * 2, (i - 1) // 2 * 2, 2, 2) for i in range(1, 5)})
+    for panel in ("flight-counter", "flight-mode", "flight-timer"):
+        for tag in ("min", "max", "16"):
+            base = result[f"{panel}-{tag}"] if tag != "16" else dict(result["metric-16"], recipe=panel)
+            result[f"{panel}-tasks-{tag}"] = dict(base, owners=[f"panel:{panel}"], phases=standard_phases())
     result["light-control"] = {
         "recipe": "trim-panel", "expected": 2, "toggleSwitches": True,
         "layout": custom_layout([
@@ -351,7 +355,7 @@ def prepare_framework(capture, sd, cases):
     shutil.copyfile(WIDGET / "panels/chart.lua", widget / "panels/chart.lua")
     shutil.copyfile(PROBE_DIR / "framework.lua", audit / "framework.lua")
     for name in ("scheduler_overhead.lua", "scheduler_measure.lua", "scheduler_mixes.lua",
-                 "scheduler_panel_api.lua", "scheduler_chart_fixture.lua"):
+                 "scheduler_panel_api.lua", "scheduler_chart_fixture.lua", "scheduler_flight_readout.lua"):
         shutil.copyfile(SUPPORT_DIR / name, audit / name)
     (audit / "cases").mkdir()
     for case in cases:

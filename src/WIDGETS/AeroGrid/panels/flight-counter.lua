@@ -6,6 +6,11 @@ local flightCounter = {
     apiVersion = 1,
     supportedSpans = { "any" },
     refreshInterval = 20,
+    decl = {
+        class = "normal",
+        kinds = { steady = true },
+        stages = { run = { fixed = 0, perUnit = 1070, maxUnits = 1 } },
+    },
     settings = {
         { key = "label", label = "Label", type = "string", default = "FLT" },
         {
@@ -132,20 +137,30 @@ function flightCounter.create(parent, rect, settings, services)
     return context
 end
 
-local function tick(context)
-    local now = context.clock()
-    if context.lastTick and now - context.lastTick < flightCounter.refreshInterval then
-        return
-    end
-    context.lastTick = now
+local function refreshReading(context)
     local changed, drawn = context.primitives.changed(context, flightCounter.render)
     if changed then
         flightCounter.apply(context, drawn)
     end
 end
 
+local function tick(context)
+    local now = context.clock()
+    if context.lastTick and now - context.lastTick < flightCounter.refreshInterval then
+        return
+    end
+    context.lastTick = now
+    refreshReading(context)
+end
+
 flightCounter.refresh = tick
-flightCounter.background = tick
+flightCounter.step = refreshReading
+
+function flightCounter.background(context)
+    if not context.schedulerOwned then
+        tick(context)
+    end
+end
 
 function flightCounter.update(context, rect)
     local area = flightCounter.regionsFor(context.theme, context.themeBuilder, rect, context.fonts)

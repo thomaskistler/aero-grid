@@ -343,11 +343,19 @@ Navigation freezes its rendered output, then applies readings, tape frame/style
 and bearing marks in separate stages. Cold tape geometry and alert-surface
 colors must not share an atom with scrolling the full mark pool. Its synchronous
 refresh/update APIs still compose the same helpers.
+Flight Mode and Flight Timer reuse their synchronous refresh as a single task
+stage. Flight Counter shares its reading/painting helper but leaves cadence to
+the scheduler instead of applying a second local clock throttle.
 
 Scheduler-owned placements enroll one per callback with an explicit setup
 reservation. Existing placements retain their releases, and pending enrollment
 does not recreate service tasks or reset their recording cadence. Hidden panels
-remain ineligible for refresh.
+remain ineligible for refresh. The host sets the internal `schedulerOwned`
+instance flag for all new-owned placements, including those awaiting enrollment,
+and clears it on retirement, failure or return to legacy ownership. Flight
+Counter uses it to suppress its legacy background painting before admission as
+well as after; legacy-owned counters retain their existing background behavior.
+These adapters do not change production ownership or waive lifecycle gates.
 
 Put the module at `panels/<type>.lua` and reference that type in a layout.
 Regular panels declare `supportedSpans = { "any" }` and adapt their contents to

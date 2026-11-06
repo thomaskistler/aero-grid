@@ -2152,3 +2152,59 @@ no deferred chart-recording assertion changes are included. Other panel
 adapters, multi-panel preview, lifecycle/modal eligibility (including captured
 frame cancellation at session-reset boundaries) and Flight/Smart
 admission remain open.
+
+## 31. Bounded Flight readout refresh (R1, owners still legacy)
+
+Flight Counter, Flight Mode and Flight Timer now expose steady-only, single-unit
+task adapters. Mode and Timer directly reuse their unchanged refresh functions.
+Counter shares the existing reading/painting body, bypassing only the legacy
+local clock throttle: scheduler due times own its twenty-tick cadence and signed
+tick-wrap handling. The legacy throttle and refresh/background behavior remain
+unchanged for legacy-owned instances.
+
+| Refresh stage | Native fixture worst | Real native bridge worst | Declaration |
+|---|---:|---:|---:|
+| Flight Counter / run | 618 | 921 | 1070 |
+| Flight Mode / run | 709 | 217 | 830 |
+| Flight Timer / run | 1135 | 1040 | 1300 |
+
+Fixture measurements include the complete task bridge, five geometries, both
+mode-index settings and nine reading variants with five seeds. These cover
+stable, unavailable, missing-feed, active/expired, warning/critical, count-up,
+large signed values and long dynamic headings. The Counter declaration follows
+the larger real broker-backed native measurement, not the cheaper API stand-in;
+the fixture's loose-bound warning is consequently expected.
+
+The host marks ownership intent on every new-owned table instance before
+incremental enrollment. Counter background painting is therefore suppressed
+even while its placement is still pending. Markers clear on removal (including
+never-enrolled placements), failure and return to legacy ownership. Missing task
+instances fail explicitly rather than silently reverting to background work.
+
+```sh
+python3 tools/audit-scheduler.py --framework flight-counter-panel flight-mode-panel flight-timer-panel --timeout 180
+python3 tools/audit-scheduler.py flight-counter-tasks-min flight-counter-tasks-max flight-counter-tasks-16 flight-mode-tasks-min flight-mode-tasks-max flight-mode-tasks-16 flight-timer-tasks-min flight-timer-tasks-max flight-timer-tasks-16 metric-tasks-16 navigation-tasks-4 default-gallery --timeout 180
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+make test-lua32
+```
+
+All commands exit 0. Each readout's small, large and sixteen-placement native
+case peaks at 9189 whole-callback instructions. Coupled Metric sixteen-placement,
+Navigation four-placement and production-owner default-gallery cases peak at
+10382, 9189 and 12625 respectively. Readout panel enrollment peaks at 1013 and
+complete readiness at 3131; readiness includes service setup and is not itself
+a single task-atom declaration.
+
+The readout integration suite compares completed visible trees across both
+themes, five geometries and changing data; checks unchanged intervals, stable
+frames, resizing and hidden eligibility; and exercises Counter releases across
+signed tick wrap. It also checks pending-enrollment background suppression and
+legacy background compatibility. Baseline parity is checked against actual
+pre-extraction `9090553` source, not only the extracted helper. Targeted readout,
+panel-host, scheduler-host/lifecycle, loading, Counter standard/Smart and shared
+Flight suites pass. All 28 audit-tool tests and Lua32 scheduler bounds pass.
+
+No production owner, ten-tick Telemetry/History policy or deferred recording
+stress assertion changes are included. Other panel adapters, captured-frame
+reset cancellation, multi-panel preview, full loader/modal/reflow/retirement
+accounting and Flight/Smart admission remain open.

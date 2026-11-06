@@ -164,6 +164,16 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(scenarios["navigation-tasks-4"]["expected"], 4)
         self.assertTrue(all(span[2:] == (2, 2) for span in scenarios["navigation-tasks-4"]["placements"].values()))
 
+    def test_flight_readouts_override_only_their_own_panel_owner(self):
+        scenarios = self.cli.scenarios()
+        for panel in ("flight-counter", "flight-mode", "flight-timer"):
+            for tag in ("min", "max", "16"):
+                spec = scenarios[f"{panel}-tasks-{tag}"]
+                self.assertEqual(spec["owners"], [f"panel:{panel}"])
+                self.assertEqual(spec["recipe"], panel)
+                self.assertEqual(spec["expected"], 16 if tag == "16" else 1)
+                self.assertEqual([phase["name"] for phase in spec["phases"]], ["refresh", "background"])
+
     def test_lua_literal_round_trips_through_lua(self):
         try:
             import lupa
@@ -250,7 +260,7 @@ class FrameworkReportTests(unittest.TestCase):
             self.assertEqual((widget / "main.lua").read_text(), (audit.PROBE_DIR / "framework-main.lua").read_text())
             self.assertTrue((widget / "lib/scheduler.lua").is_file())
             for name in ("framework.lua", "scheduler_overhead.lua", "scheduler_measure.lua", "scheduler_mixes.lua",
-                         "cases/stub.lua", "cases/telemetry.lua"):
+                         "scheduler_flight_readout.lua", "cases/stub.lua", "cases/telemetry.lua"):
                 self.assertTrue((widget / "audit" / name).is_file(), name)
             self.assertIn('"stub"', (widget / "audit/config.lua").read_text())
 

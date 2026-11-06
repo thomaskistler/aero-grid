@@ -31,6 +31,11 @@ local flightMode = {
     -- is radio-local rather than telemetry. Two hertz is responsive enough and
     -- leaves the instruction budget to panels that actually need it.
     refreshInterval = 50,
+    decl = {
+        class = "normal",
+        kinds = { steady = true },
+        stages = { run = { fixed = 0, perUnit = 830, maxUnits = 1 } },
+    },
     settings = {
         -- Four characters, because a single-cell header has room for about five
         -- and "FLIGHT MODE" needs eleven. A layout wanting the long form can say
@@ -358,5 +363,7 @@ function flightMode.update(context, rect)
         context.detail
     )
 end
+
+flightMode.step = flightMode.refresh
 
 return flightMode

@@ -317,6 +317,7 @@ end
 function panelHost.task(entry)
     assert(type(entry.module.decl) == "table", "panel has no task declaration")
     assert(type(entry.module.step) == "function", "panel has no task step")
+    assert(type(entry.instance) == "table", "panel has no task instance")
     local task = {
         entry = entry,
         decl = entry.module.decl,

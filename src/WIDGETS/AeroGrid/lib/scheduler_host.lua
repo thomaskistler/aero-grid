@@ -254,12 +254,24 @@ function host:syncPanels(context)
     local present = {}
     for _, entry in ipairs(context.panels) do
         if self.owners["panel:" .. entry.module.id] == "new" and not entry.failed then
+            if type(entry.instance) ~= "table" then
+                return "panel:" .. entry.module.id .. " is owned by the scheduler but has no task instance"
+            end
             present[entry] = true
+            rawset(entry.instance, "schedulerOwned", true)
+        elseif type(entry.instance) == "table" then
+            rawset(entry.instance, "schedulerOwned", nil)
+        end
+    end
+    for entry in pairs(self.pendingPanels or {}) do
+        if not present[entry] then
+            rawset(entry.instance, "schedulerOwned", nil)
         end
     end
     for entry, task in pairs(self.panelTasks) do
         if not present[entry] then
             self.scheduler:remove(task.id)
+            rawset(entry.instance, "schedulerOwned", nil)
             self.panelTasks[entry] = nil
         end
     end
@@ -462,6 +474,7 @@ function host:report(context)
             if task.id == item.id then
                 entry.failed, entry.error = true, item.message
                 self.panelTasks[entry] = nil
+                rawset(entry.instance, "schedulerOwned", nil)
             end
         end
         if instance then
