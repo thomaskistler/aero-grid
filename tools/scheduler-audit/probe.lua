@@ -555,7 +555,28 @@ local function install(context)
         end)
         wrapField(scheduling, "finish", function(token, _, kind)
             if token then
+                local observation = P.flightAdmissionPending
+                if observation then
+                    local plan = scheduling.scheduler.lastPlan
+                    observation.planKind, observation.used, observation.ran = plan.kind, plan.U, plan.ran
+                    observation.dueAfter = scheduling.scheduler:dueOf("service:flight")
+                    if observation.due and observation.dueAfter and observation.due <= observation.at
+                        and observation.dueAfter > observation.due then
+                        P.firstFlightRelease = observation.at
+                    end
+                    P.flightAdmission[#P.flightAdmission + 1] = observation
+                    P.flightAdmissionPending = nil
+                end
                 return "scheduler:finish:" .. token
+            end
+            if config.deterministicClock and not P.firstFlightRelease and scheduling.scheduler then
+                P.flightAdmission = P.flightAdmission or {}
+                P.flightAdmissionPending = {
+                    at = getTime(),
+                    kind = kind or "steady",
+                    due = scheduling.scheduler:dueOf("service:flight"),
+                    phase = scheduling.reconciliation and scheduling.reconciliation.phase,
+                }
             end
             if kind == "editor-input" then
                 P.editorInputAdmission = true
@@ -841,10 +862,7 @@ local function install(context)
             for _, task in ipairs(instance.schedulerTasks or {}) do
                 if task.id == "service:flight" or task.id == "service:smart" then
                     local id = task.id
-                    wrapField(task.instance, "step", function(token, _, _, stage, now)
-                        if token == nil and config.deterministicClock and id == "service:flight" then
-                            P.firstFlightStep = P.firstFlightStep or now
-                        end
+                    wrapField(task.instance, "step", function(token, _, _, stage)
                         return token == nil and stage or "task:" .. id .. ":" .. tostring(token)
                     end)
                 else
@@ -1019,7 +1037,8 @@ local function report(context)
             expectedError = config.expectedError and { message = config.expectedError, observed = P.expectedErrorSeen },
             callbacks = kindCounts,
             feeds = feeds(context),
-            firstFlightStep = P.firstFlightStep,
+            firstFlightRelease = P.firstFlightRelease,
+            flightAdmission = P.flightAdmission,
             construction = P.construction and {
                 checked = P.construction.checked,
                 total = P.construction.total,

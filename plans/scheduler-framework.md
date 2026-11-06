@@ -4848,8 +4848,10 @@ untracked captures yields identical compressed indices.
 
 With Flight/Smart alone switched, sample totals are 422/423/423; with panel
 owners alone switched, totals are 428/429/429. The Flight/Smart capture's
-first scheduled Flight step is at tick 110, versus the legacy head tick at
-tick 5. This isolates an activation-delay parity concern; it does not justify
-changing the ten-tick policy or the deferred chart-recording stress tests.
+first Flight release is at tick 30, versus the legacy head tick at tick 5.
+Activation starts a full host reconciliation that keeps the broker's tasks
+running while excluding ordinary services. This isolates an activation-delay
+parity concern; it does not justify changing the ten-tick policy or the
+deferred chart-recording stress tests.
 The deterministic scenarios instrument History sampling and are comparison
 fixtures, not substitutes for uninstrumented native instruction proofs.
