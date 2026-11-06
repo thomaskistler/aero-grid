@@ -588,7 +588,9 @@ local initialFontHeight = single.themeBuilder.fontHeight(single.legendFont)
 local altitudeId = getFieldInfo("Alt").id
 local altitude = fixture.radio.values[altitudeId]
 fixture.radio.values[altitudeId] = 123456789012345678901234
-fixture.pump(context, 60)
+assert(fixture.pumpUntil(context, function()
+    return single.series[1].feed.value == fixture.radio.values[altitudeId]
+end, 1500), "the long readout must reach the chart feed")
 chart.refresh(single)
 assert(
     single.themeBuilder.fontHeight(single.legendFont) < initialFontHeight,
