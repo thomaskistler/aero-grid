@@ -10,6 +10,8 @@ radio.fields["VSpd+"] = { id = 151, name = "VSpd+", unit = fixture.firmware.UNIT
 fixture.radioMock.indexFields()
 radio.globalDetails[0].prec = 0
 local context = fixture.createLoaded(nil, { Layout = "Default", Theme = "modern-dark" })
+local originalPanelBounds = context.schedulerHost.panelBounds
+fixture.allowSchedulerWork(context)
 local control = context.serviceRuntime.byId.control
 
 local callbacks = 0
@@ -124,6 +126,7 @@ print(
 radio.rssi = 0
 pump(40)
 assert(link.text == "NO LINK")
+context.schedulerHost.panelBounds = originalPanelBounds
 local function disconnectedMinute(minute)
     local clockText = clock.text
     for second = 1, 60 do

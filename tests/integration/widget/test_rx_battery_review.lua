@@ -8,6 +8,7 @@ local fixture = WidgetFixture.new()
 fixture.reset()
 fixture.radio.values[100] = 16.4
 local context = fixture.createLoaded(nil, { Layout = "review-rx-battery", Theme = "modern-dark" })
+fixture.allowSchedulerWork(context)
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assertions.assertEqual(#context.panels, 7)
@@ -377,6 +378,7 @@ fixture.reset()
 local rxField = fixture.radio.fields.RxBt
 fixture.radio.fields.RxBt = nil
 local missing = fixture.createLoaded(nil, { Layout = "review-rx-battery", Theme = "modern-dark" })
+fixture.allowSchedulerWork(missing)
 fixture.pump(missing, 40)
 local missingPack = fixture.instanceOf(missing, "pack")
 assertions.assertEqual(missingPack.glyphShown, false, "missing voltage must not draw an empty battery")
@@ -385,6 +387,7 @@ fixture.radio.fields.RxBt = rxField
 fixture.reset()
 fixture.radio.values[100] = 16.4
 local live = fixture.createLoaded(nil, { Layout = "review-rx-battery", Theme = "modern-dark" })
+fixture.allowSchedulerWork(live)
 fixture.pump(live, 40)
 local monitor = fixture.instanceOf(live, "monitor")
 local panel = fixture.module("panels/rx-battery.lua")

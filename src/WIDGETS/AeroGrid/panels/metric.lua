@@ -749,13 +749,13 @@ function metric.create(parent, rect, config, services)
     local telemetry = services.telemetry
     if telemetry then
         if hasSource(primary) then
-            context.feed = telemetry:subscribe(primary.source)
+            context.feed = telemetry:subscribe(primary.source, nil, 20)
         end
         if hasSource(entries[2]) then
-            context.detailFeed = telemetry:subscribe(entries[2].source)
+            context.detailFeed = telemetry:subscribe(entries[2].source, nil, 20)
         end
         if hasSource(entries[3]) then
-            context.secondaryFeed = telemetry:subscribe(entries[3].source)
+            context.secondaryFeed = telemetry:subscribe(entries[3].source, nil, 20)
         end
     end
 

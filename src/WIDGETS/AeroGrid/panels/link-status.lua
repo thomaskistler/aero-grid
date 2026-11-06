@@ -787,16 +787,16 @@ function linkStatus.create(parent, rect, settings, services)
         -- other is supporting detail, and a panel that subscribed lazily would
         -- have nothing to show the moment the protocol turned out to differ.
         if type(settings.rssiSource) == "string" and settings.rssiSource ~= "" then
-            context.rssiFeed = telemetry:subscribe(settings.rssiSource)
+            context.rssiFeed = telemetry:subscribe(settings.rssiSource, nil, 20)
         end
         if type(settings.qualitySource) == "string" and settings.qualitySource ~= "" then
-            context.qualityFeed = telemetry:subscribe(settings.qualitySource)
+            context.qualityFeed = telemetry:subscribe(settings.qualitySource, nil, 20)
         end
         for _, name in ipairs({ "mode", "snr", "power" }) do
             local source = settings[name .. "Source"]
             if type(source) == "string" and source ~= "" then
                 local receiverEvidence = settings.protocol ~= "elrs4" or name == "snr"
-                context[name .. "Feed"] = telemetry:subscribe(source, receiverEvidence)
+                context[name .. "Feed"] = telemetry:subscribe(source, receiverEvidence, 20)
             end
         end
         context.link = telemetry:link()
@@ -810,9 +810,9 @@ function linkStatus.create(parent, rect, settings, services)
     if telemetry and settings.extrema == "source" then
         local named = settings.extremaSource
         if type(named) == "string" and named ~= "" then
-            context.minimumFeed = telemetry:subscribe(named)
+            context.minimumFeed = telemetry:subscribe(named, nil, 20)
         elseif type(leading) == "string" and leading ~= "" then
-            context.minimumFeed = telemetry:subscribe(leading .. "-")
+            context.minimumFeed = telemetry:subscribe(leading .. "-", nil, 20)
         end
     end
 

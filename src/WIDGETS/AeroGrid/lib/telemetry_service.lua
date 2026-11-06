@@ -52,13 +52,38 @@
 local telemetryService = { RUNTIME_API = 1 }
 telemetryService.__index = telemetryService
 
---- Ticks of 10ms between polls. Faster than any panel's refresh so a
---- panel never renders a reading older than its own interval.
+--- Ticks of 10ms between polls. Unspecified subscribers keep the legacy rate.
 telemetryService.INTERVAL = 10
 
 --- Subscriptions refreshed per update, served round robin. Sixteen sources
 --- split across two updates still give every source 5 Hz at the interval above.
 telemetryService.POLL_CAP = 8
+
+telemetryService.decl = {
+    class = "critical",
+    stages = { run = { fixed = 480, perUnit = 320, maxUnits = 24 } },
+}
+telemetryService.plainDecl = {
+    class = "critical",
+    stages = { run = { fixed = 0, perUnit = 320, maxUnits = 1 } },
+}
+telemetryService.recordedOneDecl = {
+    class = "critical",
+    stages = { run = { fixed = 0, perUnit = 740, maxUnits = 1 } },
+}
+telemetryService.legacyDecl = {
+    class = "critical",
+    stages = { run = { fixed = 260, perUnit = 1220, maxUnits = telemetryService.POLL_CAP } },
+}
+telemetryService.maintenanceDecl = {
+    class = "critical",
+    -- One entry inspection per source; the host admits at most 128 tasks.
+    stages = { run = { fixed = 450, perUnit = 10, maxUnits = 128 } },
+}
+local SOURCE_TASK_PREFIX = "service:telemetry:source:"
+local SOURCE_DECLARATIONS = {}
+local MAX_INTERVAL = 1 << 30
+local beginUpdate, finishUpdate
 
 --- Ticks between attempts to resolve a source the radio does not yet know.
 --- Sensors appear when telemetry first arrives, so an unresolved name must be
@@ -122,8 +147,8 @@ local UNIT_KIND = {
 ---@param env table Result of services.environment.
 ---@param support table The loaded lib/services.lua module.
 ---@return table
-function telemetryService.new(env, support)
-    return setmetatable({
+function telemetryService.new(env, support, runtime)
+    local service = setmetatable({
         id = "telemetry",
         interval = telemetryService.INTERVAL,
         revision = 0,
@@ -135,15 +160,115 @@ function telemetryService.new(env, support)
         entries = {},
         cursor = 1,
         scanCursor = 1,
+        want = 1,
+        schedulerTasks = {},
+        schedulerRevision = 0,
+        runtime = runtime,
         linkLive = false,
         rssi = 0,
     }, telemetryService)
+    local maintenance = {
+        id = "service:telemetry:maintenance",
+        decl = telemetryService.maintenanceDecl,
+        want = 1,
+        interval = service.interval,
+        critical = true,
+        step = function(task, grant, _, now)
+            if grant < task.want then
+                return 1
+            end
+            beginUpdate(service, now)
+            finishUpdate(service, now)
+            service.revision = service.revision + 1
+            return service.interval
+        end,
+    }
+    service.maintenanceTask = maintenance
+    service.schedulerTasks[1] = { id = maintenance.id, instance = maintenance, critical = true }
+    if runtime and runtime.host then
+        setmetatable(service, {
+            __index = function(_, key)
+                if key ~= "update" then
+                    return telemetryService[key]
+                end
+            end,
+        })
+    end
+    return service
+end
+
+local function sourceDeclaration(recorders)
+    local units = math.max(1, recorders)
+    local declaration = SOURCE_DECLARATIONS[recorders]
+    if not declaration then
+        local stage = recorders == 0 and telemetryService.plainDecl.stages.run
+            or units == 1 and telemetryService.recordedOneDecl.stages.run
+            or telemetryService.decl.stages.run
+        declaration = {
+            class = telemetryService.decl.class,
+            stages = { run = { fixed = stage.fixed, perUnit = stage.perUnit, maxUnits = units } },
+        }
+        SOURCE_DECLARATIONS[recorders] = declaration
+    end
+    return declaration, units
+end
+
+local function recorderCount(service, entry)
+    local history = service.runtime and service.runtime.byId and service.runtime.byId.history
+    local tracks = history and history.sources and history.sources[entry.state.name]
+    return tracks and #tracks or 0
+end
+
+local function updateSourceTask(service, entry)
+    local task = entry.task
+    if not task then
+        task = {
+            id = "",
+            sourceIndex = #service.schedulerTasks,
+            interval = entry.interval,
+            critical = true,
+            entry = entry,
+            service = service,
+        }
+        task.item = { id = task.id, instance = task, critical = true }
+        task.step = function(_, grant, _, now)
+            return telemetryService.stepSource(service, entry, grant, now)
+        end
+        entry.task = task
+        service.schedulerTasks[#service.schedulerTasks + 1] = task.item
+    end
+
+    local recorders = recorderCount(service, entry)
+    local declaration, units = sourceDeclaration(recorders)
+    local category = recorders == 0 and "plain:"
+        or recorders == 1 and "recorded-one:"
+        or "recorded:"
+    local taskId = SOURCE_TASK_PREFIX
+        .. category
+        .. tostring(task.sourceIndex)
+    local changed = task.id ~= taskId
+        or task.decl ~= declaration
+        or task.want ~= units
+        or task.interval ~= entry.interval
+    task.id, task.item.id = taskId, taskId
+    task.decl, task.want, task.interval = declaration, units, entry.interval
+    if changed then
+        service.schedulerRevision = service.schedulerRevision + 1
+    end
+end
+
+local function updateMaintenanceInterval(service)
+    service.maintenanceTask.want = math.max(1, #service.entries)
+    if service.maintenanceTask.interval ~= service.interval then
+        service.maintenanceTask.interval = service.interval
+        service.schedulerRevision = service.schedulerRevision + 1
+    end
 end
 
 --- Build the mutable state behind a subscription.
 ---@param name string
 ---@return table entry
-local function newEntry(name)
+local function newEntry(name, interval)
     -- EdgeTX exposes a sensor's minimum and maximum as "<name>-" and "<name>+".
     -- Precision is configured on the base sensor, so remember the stem.
     local base = string.gsub(name, "[%+%-]$", "")
@@ -169,7 +294,13 @@ local function newEntry(name)
         revision = 0,
     }
 
-    return { state = state, base = base, nextResolve = 0, scanIndex = nil }
+    return {
+        state = state,
+        base = base,
+        interval = interval,
+        nextResolve = 0,
+        scanIndex = nil,
+    }
 end
 
 --- Subscribe to an EdgeTX source by name.
@@ -178,24 +309,50 @@ end
 --- branching and without ever indexing nil.
 ---@param name any
 ---@param linkEvidence? boolean False identifies a transmitter-local source shared by all subscribers.
+---@param interval? integer Ticks of 10ms between polls; omitted means the legacy 10-tick interval.
 ---@return AeroGridReading
-function telemetryService:subscribe(name, linkEvidence)
+function telemetryService:subscribe(name, linkEvidence, interval)
     if type(name) ~= "string" or name == "" then
         if not self.noneView then
-            self.noneView = self.support.snapshot(newEntry("").state)
+            self.noneView = self.support.snapshot(newEntry("", telemetryService.INTERVAL).state)
         end
         return self.noneView
     end
 
+    if interval == nil then
+        interval = telemetryService.INTERVAL
+    elseif
+        type(interval) ~= "number"
+        or interval < 1
+        or interval > MAX_INTERVAL
+        or interval % 1 ~= 0
+    then
+        error("telemetry interval must be a positive whole number of ticks", 2)
+    end
+
     local entry = self.names[name]
     if not entry then
-        entry = self.support.addSubscription(self, self.entries, newEntry(name))
+        entry = self.support.addSubscription(self, self.entries, newEntry(name, interval))
         self.names[name] = entry
+        if not self.batchRemaining then
+            self.want = math.min(self.pollCap or telemetryService.POLL_CAP, telemetryService.POLL_CAP, #self.entries)
+        end
+        if #self.entries == 1 and not self.linkSubscribed then
+            self.interval = interval
+        elseif interval < self.interval then
+            self.interval = interval
+        end
+    elseif interval < entry.interval then
+        entry.interval = interval
+        entry.nextPoll = 0
+        self.interval = math.min(self.interval, interval)
     end
 
     if linkEvidence == false then
         entry.linkEvidence = false
     end
+    updateSourceTask(self, entry)
+    updateMaintenanceInterval(self)
     return entry.view
 end
 
@@ -220,6 +377,9 @@ function telemetryService:link()
         -- A panel referencing the link is a reason to run the service, even
         -- when it subscribed to no source the radio happens to recognize.
         self.count = self.count + 1
+        self.linkSubscribed = true
+        self.interval = math.min(self.interval, telemetryService.INTERVAL)
+        updateMaintenanceInterval(self)
     end
 
     return self.linkView
@@ -413,22 +573,31 @@ end
 --- Poll a bounded slice of the subscriptions.
 ---@param now integer
 local function pollEntry(service, entry, now)
-    service:poll(entry, now)
-    if not service.observers then
-        return
+    if service.tickElapsed then
+        if entry.nextPoll and service.tickElapsed(now, entry.nextPoll) < 0 then
+            return false
+        end
+    elseif entry.nextPoll and now < entry.nextPoll then
+        return false
     end
-    for _, observer in ipairs(service.observers) do
-        if not observer.failed and not observer.failure then
-            local ok, message = pcall(observer.sample, observer, entry.view, now)
-            if not ok then
-                observer.failure = tostring(message)
+
+    service:poll(entry, now)
+    entry.nextPoll = now + entry.interval
+    if service.observers then
+        for _, observer in ipairs(service.observers) do
+            if not observer.failed and not observer.failure then
+                local ok, message = pcall(observer.sample, observer, entry.view, now)
+                if not ok then
+                    observer.failure = tostring(message)
+                end
             end
         end
     end
+    return true
 end
 
-function telemetryService:update(now)
-    local read = self.env.getRSSI
+beginUpdate = function(service, now)
+    local read = service.env.getRSSI
     local rssi = read and read() or 0
     if type(rssi) ~= "number" then
         rssi = 0
@@ -436,43 +605,106 @@ function telemetryService:update(now)
 
     -- EdgeTX reports zero RSSI whenever telemetry is not streaming, which is the
     -- only link-liveness signal the Lua API offers.
-    self.rssi = rssi
-    self.linkLive = rssi > 0 or self.linkTrusted == false
-    self:publishLink(now)
+    service.rssi = rssi
+    service.linkLive = rssi > 0 or service.linkTrusted == false
+    service:publishLink(now)
+end
+
+finishUpdate = function(service, now, scan)
+    service:publishLink(now)
+    local entries = service.entries
+    local total = #entries
+    if scan ~= false and total > 0 then
+        -- Advance at most one precision search per completed release, in
+        -- rotation, so a dashboard never pays multiple scans in one update.
+        local scan = service.scanCursor
+        if scan > total then
+            scan = 1
+        end
+        for _ = 1, total do
+            local entry = entries[scan]
+            scan = scan % total + 1
+            if entry and entry.scanIndex then
+                service:scanPrecision(entry)
+                break
+            end
+        end
+        service.scanCursor = scan
+    end
+    service.revision = service.revision + 1
+end
+
+--- Run one source poll and its synchronous History observers as an indivisible grant.
+---@param service table
+---@param entry table
+---@param grant integer
+---@param now integer
+---@return integer delay
+function telemetryService.stepSource(service, entry, grant, now)
+    local task = entry.task
+    if grant < task.want then
+        return 1
+    end
+
+    beginUpdate(service, now)
+    if not pollEntry(service, entry, now) then
+        return entry.interval
+    end
+    service:publishLink(now)
+    service.revision = service.revision + 1
+    return entry.interval
+end
+
+function telemetryService:update(now)
+    beginUpdate(self, now)
+    local entries = self.entries
+    if #entries > 0 then
+        local cap = math.min(self.pollCap or telemetryService.POLL_CAP, telemetryService.POLL_CAP)
+        self.cursor = self.support.roundRobin(entries, self.cursor, cap, pollEntry, self, now)
+    end
+    finishUpdate(self, now)
+end
+
+--- Poll one bounded round-robin slice. A poll and all of its history observers
+--- remain one atomic unit; a partial grant resumes at the next source.
+---@param grant integer
+---@param stage string
+---@param now integer
+---@return integer delay
+function telemetryService:step(grant, _, now)
+    beginUpdate(self, now)
 
     local entries = self.entries
-    if #entries == 0 then
-        return
-    end
-    self.cursor = self.support.roundRobin(
-        entries,
-        self.cursor,
-        math.min(self.pollCap or telemetryService.POLL_CAP, telemetryService.POLL_CAP),
-        pollEntry,
-        self,
-        now
-    )
-
-    -- Republished after the polls, because a live reading can prove the
-    -- indicator wrong part way through this very update.
-    self:publishLink(now)
-
-    -- Advance at most one precision search per update, in rotation, so a
-    -- dashboard of sixteen sources never pays sixteen table scans at once.
     local total = #entries
-    local scan = self.scanCursor
-    if scan > total then
-        scan = 1
+    if total == 0 then
+        finishUpdate(self, now)
+        self.due = now + self.interval
+        return self.interval
     end
-    for _ = 1, total do
-        local entry = entries[scan]
-        scan = scan % total + 1
-        if entry and entry.scanIndex then
-            self:scanPrecision(entry)
-            break
-        end
+
+    if not self.batchRemaining then
+        self.batchRemaining = math.min(self.pollCap or telemetryService.POLL_CAP, telemetryService.POLL_CAP, total)
     end
-    self.scanCursor = scan
+    local visits = math.min(grant, self.batchRemaining)
+    for _ = 1, visits do
+        local entry = entries[self.cursor]
+        self.cursor = self.cursor % total + 1
+        pollEntry(self, entry, now)
+    end
+    self.batchRemaining = self.batchRemaining - visits
+    if self.batchRemaining > 0 then
+        self.want = self.batchRemaining
+        finishUpdate(self, now, false)
+        self.revision = self.revision + 1
+        return 1
+    end
+
+    self.batchRemaining = nil
+    self.want = math.min(self.pollCap or telemetryService.POLL_CAP, telemetryService.POLL_CAP, total)
+    finishUpdate(self, now)
+    self.revision = self.revision + 1
+    self.due = now + self.interval
+    return self.interval
 end
 
 --- Format a reading for display, honoring its precision.

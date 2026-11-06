@@ -14,6 +14,7 @@ radio.values[142] = 4.2
 radio.values[100] = 8.0
 
 local context = fixture.createLoaded(nil, { Layout = "Default", Theme = "modern-dark" })
+fixture.allowSchedulerWork(context)
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assertions.assertEqual(#context.panels, 9)
@@ -37,9 +38,8 @@ for id, dimensions in pairs(expected) do
     assertions.assertEqual(placement.colSpan, dimensions[3])
     assertions.assertEqual(placement.rowSpan, dimensions[4])
 end
--- This Default fixture leaves too little room for a normal control read.
-assertions.assertEqual(context.serviceRuntime.byId.control.revision, 0)
-assertions.assertEqual(fixture.instanceOf(context, "flight-count").text, "--")
+assert(context.serviceRuntime.byId.control.revision > 0, "the admitted control task did not read the dashboard")
+assertions.assertEqual(fixture.instanceOf(context, "flight-count").text, "39")
 assertions.assertEqual(fixture.entryById(context, "flight-count").placement.type, "flight-counter")
 local flights = fixture.instanceOf(context, "flight-count")
 assertions.assertEqual(flights.settings.armSwitch, "SFv")
@@ -74,7 +74,7 @@ assertions.assertEqual(link.linkLabel.properties.color, battery.packLabel.proper
 radio.globals[8] = 40
 radio.globals[0] = 65
 fixture.pump(context, 40)
-assertions.assertEqual(fixture.instanceOf(context, "flight-count").text, "--")
+assertions.assertEqual(fixture.instanceOf(context, "flight-count").text, "40")
 assertions.assertEqual(fixture.instanceOf(context, "expo").text, "65")
 
 local corner = fixture.createLoaded(fixture.lvglMock.appZone(), { Layout = "Default", Theme = "modern-dark" })

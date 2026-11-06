@@ -171,8 +171,8 @@ equal(
     history:subscribe("V", { armSwitch = "L01", precision = 1 })
 )
 assert(
-    history:subscribe("V", { armSwitch = "L01", precision = 2 })
-        ~= history:subscribe("V", { armSwitch = "L01", precision = 1 })
+    history:subscribe("W", { armSwitch = "L01", precision = 2 })
+        ~= history:subscribe("W", { armSwitch = "L01", precision = 1 })
 )
 assert(not pcall(function()
     feed.value = 42
@@ -227,7 +227,7 @@ independentPoll(600, 1, 40, 1)
 equal(unconfigured.configured, false, "a blank panel must not inherit another panel's arm switch")
 equal(unconfiguredFeed.available, false)
 local unknownSession = independent:session("L03")
-local unknownFeed = independent:subscribe("V", { armSwitch = "L03" })
+local unknownFeed = independent:subscribe("W", { armSwitch = "L03" })
 independentPoll(700, nil, 45, 1)
 equal(firstSession.available, false, "an unavailable switch must not be treated as a known disarm condition")
 equal(firstSession.recording, false)
@@ -249,6 +249,23 @@ equal(
     independent:recordingBreak(firstSession, firstSession.resumeLast),
     unavailableElapsed,
     "recovering an unavailable arm source also leaves a recording seam"
+)
+
+local capped = harness()
+local capOk, capError = pcall(function()
+    for index = 0, historyModule.SOURCE_CAP - 1 do
+        capped:subscribe("V", {
+            armSwitch = "L01",
+            timeRange = "rolling",
+            windowSeconds = 30 + index % 6 * 30,
+            precision = index // 6,
+        })
+    end
+    capped:subscribe("V", { armSwitch = "L01", timeRange = "rolling", windowSeconds = 210, precision = 3 })
+end)
+assert(
+    not capOk and string.match(capError, "at most 24 recordings"),
+    "the per-source recorder cap is enforced after all supported recordings"
 )
 
 local bounded, boundedSession, boundedFeed, boundedPoll = harness({ timeRange = "rolling", windowSeconds = 30 })

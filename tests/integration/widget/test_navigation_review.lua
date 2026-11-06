@@ -243,7 +243,7 @@ end
 
 writeServiceLayout()
 context = fixture.createLoaded(nil, { Layout = "review-navigation-service", Theme = "modern-dark" })
-fixture.pump(context, 20)
+fixture.pump(context, 22)
 square = fixture.instanceOf(context, "detailed")
 detailed = square
 

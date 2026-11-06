@@ -232,6 +232,7 @@ do
     expected["service:control-normal"] = true
     expected["service:control-outputs"] = true
     local migrated = {
+        ["service:telemetry"] = true,
         ["service:model"] = true,
         ["service:control"] = true,
         ["service:control-normal"] = true,
@@ -249,6 +250,42 @@ do
     for panel, wanted in pairs(boundsExpected) do
         equal(host.PANEL_BOUNDS[panel] ~= nil, wanted, "declared bound of panel " .. panel)
     end
+end
+
+-- Telemetry source tasks are rebuilt when History changes a source's observer
+-- multiplicity, so the scheduler sees the declaration for the actual work.
+do
+    local definition, context = start("mixed", "host-light")
+    local host = context.schedulerHost
+    callbacks(definition, context, 2)
+    local telemetry = context.serviceRuntime.byId.telemetry
+    local history = context.serviceRuntime.byId.history
+    local sourceTask = telemetry.entries[1].task
+    equal(sourceTask.want, 1, "an unrecorded source requests one unit")
+    assert(host.scheduler.byId[sourceTask.id], "unrecorded source is enrolled")
+
+    history:subscribe("GAlt", {
+        armSwitch = "SFv",
+        timeRange = "rolling",
+        windowSeconds = 30,
+    })
+    host:ready(context)
+    sourceTask = telemetry.entries[1].task
+    equal(sourceTask.want, 1, "one recording remains a one-unit task")
+    equal(sourceTask.decl.stages.run.perUnit, 740, "one recording uses its measured declaration")
+    assert(host.scheduler.byId[sourceTask.id], "one-recorder task is re-enrolled")
+
+    history:subscribe("GAlt", {
+        armSwitch = "SFv",
+        timeRange = "rolling",
+        windowSeconds = 60,
+    })
+    host:ready(context)
+    sourceTask = telemetry.entries[1].task
+    equal(sourceTask.want, 2, "two recordings request both observer units")
+    equal(sourceTask.decl.stages.run.perUnit, 320, "multiple recordings use their measured declaration")
+    equal(sourceTask.decl.stages.run.maxUnits, 2, "the declaration tracks observer multiplicity")
+    assert(host.scheduler.byId[sourceTask.id], "multi-recorder task is re-enrolled")
 end
 
 -- 1. Mixed, every task legacy: legacy work keeps its original cadence, its
@@ -274,7 +311,7 @@ do
         served = math.max(served, host.legacy.spent)
     end)
     assert(context.schedulerHost, "a layout the table covers stays on the host")
-    assert(context.serviceRuntime.updates > 20, "services are still served")
+    assert(context.serviceRuntime.byId.telemetry.revision > 20, "scheduler-owned telemetry is still served")
     assert(served > 0, "the legacy loop charges what it runs")
     equal(#context.errors, 0, "no errors")
     local seen = {}
@@ -409,9 +446,11 @@ end, "panel:metric has no declared bound")
 loadError("owned but no task", function(host)
     host.owners["panel:metric"] = "new"
 end, "panel:metric is owned by the scheduler but has no task")
-loadError("owned and in use but not migrated", function(host)
-    host.owners["service:telemetry"] = "new"
-end, "service:telemetry: instance needs a step function")
+loadError("Telemetry task missing step", function(host)
+    local telemetry = host.context.serviceRuntime.byId.telemetry
+    telemetry.maintenanceTask.step = nil
+    host.taskRevision = -1
+end, "service:telemetry:maintenance: instance needs a step function")
 do
     local definition, context = start("mixed", "host-light")
     context.schedulerHost.panelBounds.metric = context.schedulerHost.panelBounds.metric + 1000
@@ -443,7 +482,14 @@ do
     -- The host registers the tasks of the services it owns, from their own declarations.
     for _, instance in ipairs(context.serviceRuntime.order) do
         local key = "service:" .. instance.id
-        instance.decl, instance.step = standin.decl, counting(key)
+        if instance.schedulerTasks then
+            for _, item in ipairs(instance.schedulerTasks) do
+                item.instance.decl = standin.decl
+                item.instance.step = counting(item.id)
+            end
+        else
+            instance.decl, instance.step = standin.decl, counting(key)
+        end
         host.owners[key] = "new"
     end
     for key in pairs(host.owners) do
@@ -467,7 +513,13 @@ do
         hooks = hooks + (dispatch[3] == "background" and 1 or 0)
     end
     assert(hooks >= 60, "panel background hooks still run")
-    assert(runs["service:telemetry"] > 5 and runs["panel:metric"] > 5, "the framework runs the tasks")
+    local telemetryRuns = 0
+    for key, count in pairs(runs) do
+        if string.sub(key, 1, #"service:telemetry:") == "service:telemetry:" then
+            telemetryRuns = telemetryRuns + count
+        end
+    end
+    assert(telemetryRuns > 5 and runs["panel:metric"] > 5, "the framework runs the tasks")
 end
 
 -- 6. One scheduler per widget context.

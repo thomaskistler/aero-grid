@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 --- Connected, error-bounded recordings of cumulative recording time.
-local history = { RUNTIME_API = 1, CAPACITY = 6144, FLIGHT_CAPACITY = 64 }
+local history = { RUNTIME_API = 1, CAPACITY = 6144, FLIGHT_CAPACITY = 64, SOURCE_CAP = 24 }
 history.__index = history
 
 local INTERVAL = 5
@@ -536,6 +536,12 @@ function history:subscribe(source, options)
     if self.names[key] then
         return self.names[key].view
     end
+    self.sources = self.sources or {}
+    local tracks = self.sources[source]
+    assert(
+        source == "" or not tracks or #tracks < history.SOURCE_CAP,
+        "history supports at most " .. tostring(history.SOURCE_CAP) .. " recordings for source " .. source
+    )
     local state = {
         name = source,
         available = false,
@@ -570,8 +576,7 @@ function history:subscribe(source, options)
     }
     self.entries[#self.entries + 1] = entry
     self.names[key], self.views[entry.view] = entry, entry
-    self.sources = self.sources or {}
-    local tracks = self.sources[source] or {}
+    tracks = self.sources[source] or {}
     self.sources[source] = tracks
     tracks[#tracks + 1] = entry
     self.count = self.count + 1

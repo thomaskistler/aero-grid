@@ -151,20 +151,20 @@ local function testTelemetryTextSensor()
     -- comparing declarations would never repaint.
     local before = mode.revision
     harness.values[145] = "ACRO"
-    service:update(1)
+    service:update(10)
     assertEqual(mode.raw, "ACRO")
     assert(mode.revision > before, "a changed string did not count as a new reading")
 
     -- And the same string twice is not.
     local settled = mode.revision
-    service:update(2)
+    service:update(20)
     assertEqual(mode.revision, settled, "an unchanged string counted as a new reading")
 
     -- A dropped link keeps the last string and marks it stale, exactly as a
     -- numeric reading is kept rather than replaced with nothing.
     harness.rssi = 0
     harness.values[145] = nil
-    service:update(3)
+    service:update(30)
     assertEqual(mode.raw, "ACRO", "a dropped link discarded the last mode")
     assertEqual(mode.state, "stale")
 end
@@ -255,7 +255,7 @@ local function testTelemetryLinkHeuristics()
 
     -- Having learned that, a genuine zero from the same radio is a reading too.
     harness.values[100] = 0
-    service:update(1)
+    service:update(10)
     assertEqual(pack.value, 0)
     assertEqual(pack.state, "normal")
 
@@ -266,7 +266,7 @@ local function testTelemetryLinkHeuristics()
     assertEqual(reading.value, 24.4)
     other.rssi = 0
     other.values[100] = 0
-    other.service:update(1)
+    other.service:update(10)
     assertEqual(reading.state, "stale")
     assertEqual(reading.value, 24.4, "a stale poll overwrote the cached reading")
 

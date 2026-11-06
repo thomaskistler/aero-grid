@@ -147,10 +147,18 @@ fixture.radio.logicalSwitches[64] = true
 pump(first, second)
 equal(shared.value, true)
 equal(second.serviceRuntime.byId.armed:state().value, true, "every instance observes the same model condition")
-equal(fixture.instanceOf(first, "capture").feed.homeStatus, "waiting", "no room leaves first-arm capture pending")
-equal(fixture.instanceOf(second, "capture").feed.homeStatus, "waiting", "no room leaves first-arm capture pending")
-equal(#first.errors, 0, "navigation no-room deferral is not a service error")
-equal(#second.errors, 0, "navigation no-room deferral is not a service error")
+equal(
+    fixture.instanceOf(first, "capture").feed.homeStatus,
+    "switch-unavailable",
+    "a scheduled navigation read reports the stale Armed state"
+)
+equal(
+    fixture.instanceOf(second, "capture").feed.homeStatus,
+    "switch-unavailable",
+    "both navigation consumers observe the stale Armed state"
+)
+equal(#first.errors, 0, "a stale Armed state is not a navigation service error")
+equal(#second.errors, 0, "a stale Armed state is not a navigation service error")
 
 local session = assert(editor.new(first.document, first.grid, first.layoutValidator, first.panelHost, function(kind)
     return fixture.module("panels/" .. kind .. ".lua")

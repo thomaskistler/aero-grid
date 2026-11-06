@@ -129,35 +129,21 @@ step(instance, grant, stage, now) -> delay
   callback, which it treats as consumed (R6 measures it).
 - A migrated task never ends the callback itself.
 
-### Example: a service piece (telemetry sensors, critical)
+### Example: a Telemetry source task (critical)
 
-Services are split into independent tasks (section 4). A telemetry task polls the
-sources of one interval, about two per task so that a release is worth its run
-charge (4.2): the unit is a source, `maxUnits` the batch size, and the grant
-says how many of its due sources to poll now. The declaration is built at load
-for its `k` history recordings per source (known then; a poll records into all of
-them in the same call).
+Telemetry uses one task per source plus a separate maintenance task. A source
+poll reads once and synchronously invokes all History observers before returning.
+The declaration reflects the number of recordings attached to that source.
 
 ```lua
-declare = {                                        -- built per batch from k
-    class = "critical", shared = { link = 560 },   -- link state, charged once per plan
-    stages = { poll = { fixed = 0, perUnit = 420 + 760 * k, maxUnits = 2 } },  -- k = 1 measured
+declare = {
+   class = "critical",
+   stages = { run = { fixed = 480, perUnit = 320, maxUnits = 24 } },
 }
-local elapsed = scheduler.elapsed                   -- wrap-safe difference of ticks
-function telemetry.step(self, grant, stage, now)    -- up to `grant` due sensors
-    local polled, wake = 0, math.huge
-    for _, entry in ipairs(self.entries) do         -- oldest due first
-        if polled < grant and elapsed(now, entry.due) >= 0 then
-            self.service:ensureLink(now)            -- cached per callback
-            self.service:poll(entry, now)           -- poll and record in one call; sets entry.due
-            polled = polled + 1
-        end
-        wake = math.min(wake, elapsed(entry.due, now))
-    end
-    self.used = polled                              -- units consumed, at most the grant
-    return math.max(1, wake)                        -- ticks to the next due source, section 5.2
-end
 ```
+
+Unrecorded sources use `0 + 320 x 1`; a single recorder uses `0 + 740 x 1`.
+Native measurements and the supported-recorder cap are in section 5.2.
 
 ### Example: a staged chart (normal, exclusive)
 
@@ -324,7 +310,7 @@ sources (4.2).
 |---|---|---|---|---|---|---|
 | R1 | chart stages | 6650 (legacy telemetry, 5.2 in) | 0 | 4948 | 2348 | Section 5.2 merged. Split chart text (7800) under the cap (4.2). Other chart stages fit (900 to 1300; project grant 1 knot = 1030). |
 | R2 | + panel refreshes | 6650 | 0 | 4948 | 2348 | Split metric relayout and output apply under the cap. Until R4, TS callbacks come about every second callback, so a piece above 2348 less 288 runs only in the others. |
-| R3 | + services as tasks | 0 | 5754 | 5844 | 3244 | Services split as in 4.1; telemetry and history measured (open decision 1, deferred). |
+| R3 | + services as tasks | 0 | 5754 | 5844 | 3244 | Services split as in 4.1; Telemetry and synchronous History observer work are measured and bounded in 5.2. |
 | R4 | + tick and Smart as tasks | 0 | 5754 | 6844 | | Section 5.1 contract and loader-callback precondition. The 6844 is shared with the tick (1000) and Smart (2600, once per second), so net capacity equals R3. |
 | R5 | modal screens: settings UI, log viewer, editor, menu, fullscreen input, location details, app rebuild, theme showcase | 0 | per kind | per kind | | Each measured natively first and split to fit its kind's room (section 7). Order: smallest handler first. |
 | R6 | loader, reflow, page retire and rebuild, session-reset pump, the head work, `configureFlight` | 0 | per kind | per kind | | Already measured in the audit; split where it exceeds the cap (4.2). |
@@ -337,6 +323,10 @@ critical work and are not included in the critical peak. Recorded sources are
 polled two per task; one per task is in brackets. `P` is from the simulator with
 the stagger rule; the sustained load is the mean. Both are computed by
 `tests/support/scheduler_admission.lua` and asserted in the tests.
+
+These are historical feasibility estimates for the earlier batched-source
+proposal; the implemented per-source tasks, consumer intervals, and measured
+bounds are in section 5.2.
 
 | Mix | Sustained | Peak `P` | Room T / TS / R4 | Legacy `L` |
 |---|---|---|---|---|
@@ -370,7 +360,7 @@ separate tasks.
 
 | Service | Tasks | Audited cost | Declared | Flag |
 |---|---|---|---|---|
-| telemetry | one task per batch of about two recorded sources that share an interval (`k` recordings each; `maxUnits` = the batch), one batch task for unrecorded sources sharing an interval, a precision scan queued as work of the next release, not a new task | recorded 0.94k at `k` = 1 (poll 0.12 + record 0.73 + loop 0.09); unrecorded 0.33k; link state 0.17 to 0.37k, once per plan; scan 0.15k | `420 + 760 k` per source (1.18k at `k` = 1, so 2.36k for two), 0.42k unrecorded, link 0.56k shared | The bound is per instance and `k` > 1 is unmeasured (open decision 1, deferred). A poll records into all `k` recordings in the same call (`history` needs `updatedAt == now`), so a recording can never be deferred. |
+| telemetry | one task per source plus one maintenance task; each source poll synchronously invokes all History observers | 170 unrecorded; 511 with one recorder; 805-6393 with 2-24; maintenance 286-1175 at 1-128 sources | See the measured declarations in 5.2 | The 24-recorder cap is based on supported chart layouts and native measurements. A poll and all its observers remain atomic. |
 | history | one task: advance and boundaries, one entry per update | 0.44k (0.38k advance and boundaries plus 17 per entry) | 0.65k | Recording itself lives in the telemetry poll (observer), not here. Below the minimum size (4.2): the run charge is about a third of it. Kept as one task every 5 ticks; revisit with the measured contract. |
 | control | critical switch-condition task (6 entries); normal trim/global-variable/State-switch task (6 entries); normal output task (up to 32 channels, interval 10 when an output panel exists) | critical: 153-553 at grants 1-6; entries: 177-1121 at grants 1-6; outputs: 113-1694 at grants 1-32 (M) | `200 + 100 n` critical, `130 + 240 n` entries, `120 + 60 n` outputs | Native cases cover every grant and partial batches; each task's bounded natural unit is kept together despite being below the minimum useful piece (4.2). |
 | model | one task, units = facets (4) | 0.03k fixed, 0.105k per facet (0.41k at 4) | 0.57k (90 + 120 per facet; migrated, section 12) | None. |
@@ -516,67 +506,84 @@ way as its own task.
 
 ### 5.2 Telemetry update intervals
 
-A telemetry-service change, made and reviewed on its own **before R1** (the legacy
-service needs it for its bound, section 4). It changes sample rates, which the
-parity method cannot separate from a scheduling change. Today `INTERVAL = 10`
-ticks and `POLL_CAP = 8` apply to everything.
+Telemetry is scheduler-owned and is split into one task per source plus one
+maintenance task. `subscribe(name, linkEvidence, interval)` accepts a positive
+whole-number period in 10 ms ticks. An omitted interval remains 10 ticks for
+compatibility. A shared source uses the fastest requested interval; subscribing
+with a faster interval updates the source task, and a layout reload rebuilds all
+subscriptions. There is no global 50-tick ceiling or model/source update-rate
+hint.
 
-**API.** `subscribe(name, linkEvidence, interval)`: `interval` is the wanted period
-in ticks, 10 to 50; omitted means 10 (today), so a subscriber that says nothing
-pins the source at 10 Hz and opts in later. The request travels through
-`history:subscribe` as well (`chart.lua` 1877, `history_service.lua` 547). A chart
-asks, per recorded source, for the per-pixel part of `chart.intervalFor`
-(`window / pixels`, not its division by the series count, which is the redraw
-rate): 60 s over 240 px is 25 ticks (4 Hz). A metric panel asks for its refresh
-interval (20). A source's effective interval is the **minimum over its
-subscribers**, **never above 50**: `flight_service` and `armed_service` treat a
-reading older than 100 ticks as unreliable (`flight_service.lua` 19-21 and 155,
-`armed_service.lua` 97-100), so a source polled every 100 would flap under any
-jitter.
+**Consumer requests.** Metric, RX Battery, and Link Status request 20 ticks;
+Navigation's satellite-count display requests 25. These rates are used only when
+they are the fastest requests for a source. They can make a sole-consumer reading
+up to 200 ms old (250 ms for satellite counts), compared with the 100 ms
+default, and brief changes or dropouts can be observed later. Other consumers
+keep the default: History/chart recordings, Navigation GPS, and Flight motor
+inputs request 10 ticks; external callers that omit `interval` also retain 10.
+Thus a chart/history reader sharing a source pins that source at 10 ticks even
+when a panel requests 20 or 25. These panel rates avoid spending scheduler
+capacity on polling faster than their displayed refresh cadence while preserving
+the default for unspecified and recording callers.
 
-**Per-source release.** Each source keeps its own `entry.due` and is polled at its
-own interval, by the batch task that owns it (4.1); `entry.due` is the one source of truth, shared with the legacy service object. A poll sets
-`due = now + interval` (no catch-up); first releases follow the stagger rule
-(section 3). Subscribing can only lower an interval (there is no unsubscribe; a
-layout reload rebuilds the registry), by `due = min(due, lastPoll + interval)`;
-the task notices at its next release, late by at most the old interval once, and
-layouts subscribe before steady callbacks. While telemetry is legacy it updates
-every 10 ticks and polls the due entries up to `n_L` (section 4). If a layout's
-sustained load is too high, layout admission (section 3) lengthens intervals up
-to the 50-tick cap.
+**Per-source tasks and intervals.** A subscribed source has one scheduler task
+and uses the minimum requested interval across all its consumers. The
+maintenance task follows the fastest service interval. A layout reload rebuilds
+the subscription registry; changing a source interval or its History observer
+count updates its task declaration before the next release. Tasks can be deferred
+when the scheduler has no room, but an incomplete release never partially polls
+or records a source.
 
-**Preserved:** the sample time travels with the reading into history (a poll
-records into all of the source's recordings in the same call); history's
-recording rules (knot spacing, slope-corridor compression, gap marking on stale or
-unavailable) apply unchanged to the samples it receives; link inference and the
-precision scan are unchanged; minimum and maximum read from EdgeTX's own `<name>-`
-and `<name>+` sensors stay exact at any poll rate.
-**Changes:** chart traces hold fewer samples (about one per pixel); the chart
-legend's minimum and maximum come from the sampled history state
-(`history_service.lua` 670-672, `chart.lua` 1359), so a peak shorter than the
-effective interval can be missed there; a reading can be up to one interval older
-than today; a dropout is seen at the next poll, up to 50 ticks late.
+**Atomic recorded-source work.** A poll synchronously sends its reading to all
+active History recordings for that source at the poll timestamp. It is not split
+or queued across releases. Each source task requests one unit per History
+recording, or one unit for an unrecorded source; an insufficient grant does no
+polling and invokes no History observer, then retries on a later release. The
+task declaration is selected by recorder multiplicity: unrecorded, one recorder,
+or multiple recorders. The maximum is 24 distinct recordings per source, based
+on eight minimum-width charts fitting a 4x4 layout with three series each.
+Identical recording configurations share one History track. At the maximum
+supported multiplicity, native measurement is 6,393 instructions against an
+8,160-instruction declared bound (fixed 480 plus 320 per recorder); two to
+24 observers measure 805 to 6,393. One observer measures 511 against 740;
+unrecorded polling measures 170 against 320. A 25th distinct track for the same
+source is rejected rather than creating work without a supported declaration.
 
-**Link order.** `poll` judges a zero with `linkLive`, which `update` sets at its
-top. Each source piece therefore calls `ensureLink(now)` first (cached per
-callback, declared as the `shared` link cost), so a zero at link loss is never
-stored as a genuine 0.
+The maintenance task publishes link state and advances at most one bounded
+precision scan per release. It reserves one unit per subscribed source for its
+rotation search and does no work if the grant cannot cover that search. Its
+declaration is `450 + 10 n`, with up to 128 units matching the host's task limit;
+measured costs range from 286 to 1,175 instructions for 1-128 sources, including
+an eight-sensor scan after inspecting the preceding sources. A source poll checks link state before interpreting
+zero, preserving the rule that a zero at link loss is stale/unavailable rather
+than a genuine reading. History's existing knot spacing, compression, stale and
+unavailable gap behavior, and synchronous observer timing remain unchanged.
+Minimum and maximum values read from EdgeTX's own `<name>-` and `<name>+`
+sensors remain independent source subscriptions.
 
-**Not in version 1: a source update-rate hint** (a model-level setting so that a
-source is polled no faster than its sensor updates, for example from the ELRS
-packet rate). It is in none of the mixes and needs a settings schema; it is
-deferred with open decision 1. Its rules when it comes: it only lowers a rate, is
-never applied to a source pinned by a subscriber that stated nothing, and never
-exceeds the 50-tick cap. Estimating the rate from observed values is unsafe
-(`getValue` cannot tell an unchanged value from no new packet, and `fresh` and
-`updatedAt` record the last poll, not the last packet).
+**Native measurement and tests.** The checked-in task cases measure recorded
+sources from 1 through 24 observers, plus one-observer, unrecorded, and
+maintenance cases. Scheduler tests assert task declarations, source atomicity
+under an insufficient grant, and legacy/task parity. Mixed and legacy audits
+must still verify that unrelated legacy service and chart scheduling are
+unchanged; no-room callbacks defer scheduled work without partially recording a
+source.
 
-**Tests (own change).** A fixed-10 Hz golden against per-subscription intervals
-on recorded traces: samples per source match the interval, timestamps are poll
-times, a dropout is marked within one interval, minimum and maximum sensors are
-exact, a zero at link loss is not recorded, mixes A to D of section 4 pass the
-sustained and peak tests, a lowered interval takes effect within one old
-interval, and no interval is above 50 or below the request.
+Known limitation: both 8-chart/24-source stress variants fail to advance live
+chart draw revisions under full layout load, while History plot revisions
+advance. Polling remains at the agreed 10-tick rate; resolving this is deferred
+with chart scheduling out of scope. The full sequential Lua run passes 100
+suites and fails only `test_chart_recording.lua` and
+`test_chart_independent_arming.lua`, both at the live-drawing assertion in
+`test_chart_recording.lua:192`. These failures are deferred and unresolved;
+publication of the Telemetry changes does not imply a passing full suite.
+
+Native callback ceilings are not globally clean: the current mixed audit
+measures 24,081 instructions for `metric-16` and 20,862 for `stress`, above
+15,000. The legacy baseline also exceeds that ceiling (21,034 and 20,345,
+respectively). Audit command success does not enforce the callback ceiling;
+the hook counter agrees with firmware `getUsage`. These observations remain
+open rather than being treated as passing callback-ceiling checks.
 
 ## 6. Simulator, measurement and dev tooling
 
@@ -771,9 +778,10 @@ dev tripwire.
 ### Untested risks
 
 Background callback rate (only `refresh` is documented as 50 ms); `getUsage`
-attribution when `refresh` and `background` interleave; behavior with several widget contexts and the shared flight broker;
-the native cost of 8 recorded sources and of `k` > 1 recordings per source in one
-call; control's output read; the error and retire path.
+attribution when `refresh` and `background` interleave; behavior with several
+widget contexts and the shared flight broker; control's output read; the error
+and retire path. Telemetry's native source cost, including 1-24 synchronous
+History observers, is measured in section 5.2.
 
 Also untested: real radio instruction counts against the native simulator's, and
 the opcode counts of another luac point release (the charges keep 5% headroom,
@@ -809,14 +817,10 @@ service group, no one-per-callback rule); telemetry polls each source at the
 fastest rate any subscriber needs (section 5.2; the no-faster-than-the-sensor hint
 is deferred). The spec puts that change **before R1**, as its own reviewed change.
 
-No decision is open now except those deferred to the telemetry service migration
-(the user will answer then; section 5.2 stands as the proposal):
-
-1. **Telemetry defaults and recordings.** Whether subscribers that state no
-   interval keep 10 ticks and opt in later (recommended), the scope of the
-   source update-rate hint (one model-level value, or also per source), and the
-   maximum number of history recordings per source, since a poll must record into
-   all of them in one call (a deferred recording would be marked a gap).
+Telemetry migration policy is resolved in section 5.2: omitted subscriptions
+retain the 10-tick interval, each source uses its fastest requested interval, and
+all History observers run synchronously. Optional model/source update-rate hints
+remain out of scope.
 
 ## 10. Implementation notes (Phase 2)
 

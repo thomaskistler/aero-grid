@@ -176,9 +176,12 @@ function services.update(runtime, now, admit)
         local admitted = due and (not admit or admit(instance))
 
         -- Keep a scheduler-owned service's legacy rotation slot from pulling
-        -- another service into this callback.
+        -- another service into this callback. Do not postpone the scheduler's
+        -- release by overwriting the service task's own due time.
         if due and not admitted and instance.preserveLegacySlot then
-            instance.due = now + instance.interval
+            if type(instance.step) ~= "function" then
+                instance.due = now + instance.interval
+            end
             runtime.cursor = cursor
             return instance.legacySlotReservation and instance.id or nil
         end

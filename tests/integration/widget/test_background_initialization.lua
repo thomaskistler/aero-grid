@@ -88,6 +88,7 @@ for _, context in ipairs(widgets) do
     assert(not context.stage and not context.reloadState, "each layout must finish loading")
     equal(context.flightBroker, owner, "all three layouts must share the same flight broker")
     equal(context.serviceRuntime.byId.armed:state().condition, "SFv")
+    fixture.allowSchedulerWork(context)
 end
 
 fixture.radio.values[305] = 1024

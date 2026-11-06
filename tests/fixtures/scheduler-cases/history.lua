@@ -66,7 +66,7 @@ return function(load)
             local service = historyService.new(runtime.env, services, runtime)
             for panel = 1, PANELS do
                 for series = 1, SERIES do
-                    service:subscribe("V" .. tostring(series), {
+                    service:subscribe("V" .. tostring(panel) .. "-" .. tostring(series), {
                         armSwitch = string.format("L%02d", panel),
                         timeRange = "rolling",
                         windowSeconds = 30,
@@ -81,16 +81,18 @@ return function(load)
                     arm.updatedAt = at
                 end
                 service:advance(at)
-                for series = 1, SERIES do
-                    service:sample({
-                        name = "V" .. tostring(series),
-                        value = offset % 2 == 0 and 100 or -100,
-                        kind = "number",
-                        fresh = true,
-                        updatedAt = at,
-                        precision = 0,
-                        unitText = "V",
-                    }, at)
+                for panel = 1, PANELS do
+                    for series = 1, SERIES do
+                        service:sample({
+                            name = "V" .. tostring(panel) .. "-" .. tostring(series),
+                            value = offset % 2 == 0 and 100 or -100,
+                            kind = "number",
+                            fresh = true,
+                            updatedAt = at,
+                            precision = 0,
+                            unitText = "V",
+                        }, at)
+                    end
                 end
             end
             for _, arm in pairs(arms) do

@@ -8,7 +8,37 @@ local function once(bound)
 end
 
 return {
+    tasks = {
+        ["service:telemetry:source:recorded"] = {
+            class = "critical",
+            fixed = 480,
+            perUnit = 320,
+            maxUnits = 24,
+        },
+        ["service:telemetry:source:plain"] = {
+            class = "critical",
+            fixed = 0,
+            perUnit = 320,
+            maxUnits = 1,
+        },
+        ["service:telemetry:source:recorded-one"] = {
+            class = "critical",
+            fixed = 0,
+            perUnit = 740,
+            maxUnits = 1,
+        },
+        ["service:telemetry:maintenance"] = {
+            class = "critical",
+            fixed = 450,
+            perUnit = 10,
+            maxUnits = 128,
+        },
+    },
     bounds = {
+        ["telemetry:link"] = once(5),
+        ["telemetry:poll"] = once(500),
+        ["history:sample"] = once(800),
+        ["service:telemetry:maintenance"] = once(420),
         ["chart:frame-begin"] = once(1300),
         ["chart:frame-idle"] = once(1300),
         ["chart:axis"] = once(900),

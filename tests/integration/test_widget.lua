@@ -190,6 +190,23 @@ local function createLoaded(zone, options, path)
     return widgetHelpers.createLoaded(definition, zone, options or DEFAULT_OPTIONS, path)
 end
 
+local function allowTestPanelScheduler(context)
+    local owners, bounds = {}, {}
+    for id, owner in pairs(context.schedulerHost.owners) do
+        owners[id] = owner
+    end
+    for _, entry in ipairs(context.panels) do
+        local id = "panel:" .. entry.module.id
+        owners[id] = owners[id] or "legacy"
+        bounds[entry.module.id] = 0
+    end
+    context.schedulerHost.owners = owners
+    context.schedulerHost.panelBounds = setmetatable(bounds, {
+        __index = context.schedulerHost.panelBounds,
+    })
+    context.schedulerHost.checked = nil
+end
+
 --- Find a loaded panel entry by its layout id.
 local function entryById(context, id)
     return widgetHelpers.entryById(context, id)
@@ -585,6 +602,7 @@ local function testStatesCoverBothPalettes()
     local function render(mode)
         resetRadio()
         local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "main", Theme = mode }, widgetPath)
+        allowTestPanelScheduler(context)
         pump(context, 60)
         assertEqual(#context.errors, 0, mode .. ": " .. table.concat(context.errors, "\n"))
         return context
@@ -858,7 +876,7 @@ local function testShippedLayout()
     assertEqual(altitude.feed.name, "Alt")
     assertEqual(altitude.detailFeed.name, "Alt+", "the metric lost its maximum source")
     assertEqual(altitude.secondaryFeed.name, "VSpd")
-    assertEqual(altitude.value.properties.text, "100")
+    assertEqual(altitude.value.properties.text, "--", "negative scheduler room defers source polling")
 
     -- And the panels that read the radio rather than the link.
     local model = context.serviceRuntime.byId.model
@@ -881,14 +899,14 @@ local function testShippedLayout()
     local radioBattery = entryById(context, "radio-battery").instance
     assertEqual(radioBattery.text, "--")
     assertEqual(radioBattery.unit.properties.text, "V")
-    assertEqual(entryById(context, "rates").instance.text, "4.5")
+    assertEqual(entryById(context, "rates").instance.text, "--", "negative room defers source polling")
     assertEqual(entryById(context, "identity").instance.text, "--")
     assertEqual(entryById(context, "trims").instance.indicators[1].valueText, "-- A")
 
     -- The three telemetry panels, reading what the radio really reports.
     local pack = entryById(context, "pack").instance
     -- Digits alone, with the `V` riding beside them in its own label.
-    assertEqual(pack.text, "4.09", "the lowest cell is the safety reading")
+    assertEqual(pack.text, "--", "negative room leaves the cell source unavailable")
     assertEqual(pack.unit.properties.text, "V")
     -- The shipped pack is 2 x 1, which is 65 px tall, and sheds its supporting
     -- row to keep the reading large. This used to assert the row's text anyway:
@@ -901,8 +919,8 @@ local function testShippedLayout()
 
     local link = entryById(context, "link").instance
     assertEqual(link.primaryName, "quality", "auto must prefer link quality")
-    assertEqual(link.text, "96")
-    assertEqual(link.stateName, "normal")
+    assertEqual(link.text, "N/A")
+    assertEqual(link.stateName, "unavailable")
 
     local nav = entryById(context, "nav").instance
     assertEqual(nav.text, "--", "no room defers the NORMAL navigation service without an error")
@@ -2279,6 +2297,7 @@ end
 local function testTelemetryDrivesPanels()
     resetRadio()
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, referencePath)
+    allowTestPanelScheduler(context)
     local pack = entryById(context, "pack").instance
     local current = entryById(context, "current").instance
 
@@ -2349,6 +2368,7 @@ local function testOnlyReferencedSourcesArePolled()
     end
 
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, referencePath)
+    allowTestPanelScheduler(context)
     for _ = 1, 40 do
         tick(20)
         definition.refresh(context)
@@ -3947,6 +3967,7 @@ local function testBadgesEndFlushWithTheirPanel()
         -- reflow path deliberately broken.
         local zone = mode[2]()
         local context = createLoaded(zone, DEFAULT_OPTIONS, widget)
+        allowTestPanelScheduler(context)
         assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
         pump(context, 60)
         inspect(mode[1] .. " resting", context)
@@ -9818,9 +9839,10 @@ local function testCorePanels()
     assertEqual(#context.panels, 9)
     local modelService = context.serviceRuntime.byId.model
     local controlService = context.serviceRuntime.byId.control
+    local telemetryService = context.serviceRuntime.byId.telemetry
     local function settlePanels(count)
         -- This is a panel-rendering test; the nine-panel legacy load leaves no
-        -- scheduler room. Seed the shared service directly, as the scheduler
+        -- scheduler room. Seed shared services directly, as scheduler
         -- integration tests cover admission and release timing separately.
         for _ = 1, count or 60 do
             tick(20)
@@ -9828,6 +9850,10 @@ local function testCorePanels()
             controlService:stepEntries(controlService.criticalEntries, "critical", 6, getTime())
             controlService:stepEntries(controlService.normalEntries, "normal", 6, getTime())
             controlService:stepOutputs(32, getTime())
+            for _, item in ipairs(telemetryService.schedulerTasks) do
+                local task = item.instance
+                task:step(task.want, "run", getTime())
+            end
             definition.refresh(context)
         end
     end
@@ -10761,9 +10787,8 @@ local function testTelemetryDegrades()
     local telemetryService = context.serviceRuntime.byId.telemetry
 
     local function refreshTelemetry(now)
-        local updates = math.ceil(#telemetryService.entries / telemetryService.POLL_CAP)
-        for _ = 1, updates do
-            telemetryService:update(now)
+        for _, item in ipairs(telemetryService.schedulerTasks) do
+            item.instance:step(item.instance.want, "run", now)
         end
     end
 

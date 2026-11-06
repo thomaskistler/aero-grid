@@ -682,7 +682,7 @@ function rxBattery.create(parent, rect, settings, services)
     -- never read.
     local telemetry = services.telemetry
     if telemetry then
-        context.feed = telemetry:subscribe(settings.source)
+        context.feed = telemetry:subscribe(settings.source, nil, 20)
     end
 
     -- The widest number this panel can print, taken from what it reads

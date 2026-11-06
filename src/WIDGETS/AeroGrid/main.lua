@@ -1128,6 +1128,11 @@ local function scheduled(context, kind)
     elseif hasLegacy then
         dispatchDue(context, legacyAccounting)
     end
+    -- Reserve the callback for long-press hit testing; scheduled work resumes
+    -- on the next ordinary callback.
+    if kind == "steady" and context.editorPress and scheduling.scheduler then
+        scheduling.head = scheduling.scheduler.CEILING
+    end
     scheduling:finish(kind)
 end
 

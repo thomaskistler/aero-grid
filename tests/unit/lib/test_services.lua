@@ -88,6 +88,7 @@ local function testSchedulerOwnedServiceKeepsItsLegacySlot()
         due = 0,
         count = 1,
         preserveLegacySlot = true,
+        step = function() end,
     }
     local telemetryUpdates = 0
     local telemetry = {
@@ -107,7 +108,7 @@ local function testSchedulerOwnedServiceKeepsItsLegacySlot()
         return instance.id ~= "navigation"
     end)
     assertions.assertEqual(updated, nil, "navigation's replaced slot stays empty")
-    assertions.assertEqual(nav.due, 20, "navigation's legacy release advances")
+    assertions.assertEqual(nav.due, 0, "legacy rotation does not postpone the scheduler task")
     assertions.assertEqual(telemetryUpdates, 0, "another service does not take the slot")
     assertions.assertEqual(runtime.cursor, 2, "rotation advances past navigation")
 
@@ -126,6 +127,7 @@ local function testSchedulerOwnedServiceKeepsItsLegacySlot()
         count = 1,
         preserveLegacySlot = true,
         legacySlotReservation = true,
+        step = function() end,
         update = function()
             historyUpdates = historyUpdates + 1
         end,
@@ -135,7 +137,7 @@ local function testSchedulerOwnedServiceKeepsItsLegacySlot()
         return false
     end)
     assertions.assertEqual(updated, "history", "history reserves its mixed-mode service slot")
-    assertions.assertEqual(history.due, 5)
+    assertions.assertEqual(history.due, 0, "reserved slot does not postpone the scheduler task")
     assertions.assertEqual(historyUpdates, 0, "the scheduler-owned service is not updated by the legacy loop")
 end
 

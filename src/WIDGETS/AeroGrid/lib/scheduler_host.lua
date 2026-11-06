@@ -19,7 +19,7 @@ host.__index = host
 --- it has subscribers (`host:enroll`); the others use `host.scheduler:add`. Modal
 --- callbacks also run migrated service tasks through the scheduler.
 host.OWNERS = {
-    ["service:telemetry"] = "legacy",
+    ["service:telemetry"] = "new",
     ["service:model"] = "new",
     ["service:control"] = "new",
     ["service:control-normal"] = "new",
@@ -54,11 +54,14 @@ local function declared(instance)
     return stage.fixed + stage.maxUnits * stage.perUnit
 end
 
+local TELEMETRY_TASK_PREFIX = "service:telemetry:"
+
+local function schedulerOwned(host, id)
+    return host.owners[id] == "new" or string.sub(id, 1, #TELEMETRY_TASK_PREFIX) == TELEMETRY_TASK_PREFIX
+end
+
 --- Legacy service bounds; history's bound reserves its preserved mixed-mode slot.
 host.SERVICE_BOUNDS = {
-    telemetry = function(instance)
-        return 750 + 1180 * math.min(instance.count, instance.pollCap or 8)
-    end,
     model = declared,
     control = 2620,
     history = 650,
@@ -67,7 +70,7 @@ host.SERVICE_BOUNDS = {
     armed = 0,
 }
 
-host.SERVICE_CLASS = { telemetry = "critical" }
+host.SERVICE_CLASS = {}
 
 --- Declared bounds of one legacy panel refresh. theme-showcase has no refresh work.
 host.PANEL_BOUNDS = {
@@ -177,9 +180,9 @@ function host:verify(context)
             for _, item in ipairs(instance.schedulerTasks) do
                 local task = item.instance
                 local owner = self.owners[item.id]
-                if owner ~= "legacy" and owner ~= "new" then
+                if not schedulerOwned(self, item.id) and owner ~= "legacy" then
                     return item.id .. " has no owner"
-                elseif owner == "new" then
+                elseif schedulerOwned(self, item.id) then
                     if instance.count > 0 and (task.want or 0) > 0 and not self.scheduler.byId[item.id] then
                         return item.id .. " is owned by the scheduler but has no task"
                     end
@@ -217,7 +220,7 @@ function host:resync(context)
         local key = "service:" .. instance.id
         if instance.schedulerTasks then
             for taskIndex, item in ipairs(instance.schedulerTasks) do
-                if self.owners[item.id] == "new" then
+                if schedulerOwned(self, item.id) then
                     waiting[#waiting + 1] = {
                         instance = instance,
                         task = item.instance,
@@ -272,7 +275,10 @@ end
 ---@param context table
 ---@return boolean
 function host:ready(context)
+    local telemetry = context.serviceRuntime and context.serviceRuntime.byId.telemetry
+    local taskRevision = telemetry and telemetry.schedulerRevision or 0
     local changed = self.checked ~= context.panels or self.registry ~= context.serviceRuntime
+        or self.taskRevision ~= taskRevision
     if not changed and self.waiting[1] == nil then
         return true
     end
@@ -288,7 +294,7 @@ function host:ready(context)
         self.api.log(context, "scheduler: " .. message .. "; using legacy fallback for unowned work")
         return false
     end
-    self.checked, self.registry = context.panels, context.serviceRuntime
+    self.checked, self.registry, self.taskRevision = context.panels, context.serviceRuntime, taskRevision
     return true
 end
 

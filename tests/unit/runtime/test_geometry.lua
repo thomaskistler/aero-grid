@@ -1913,7 +1913,7 @@ local function testTelemetryLinkView()
 
     harness.rssi = 0
     harness.values[100] = 0
-    service:update(1)
+    service:update(10)
     assertEqual(link.live, false, "a dead link was reported as live")
     assertEqual(link.indicator, true)
     assertEqual(pack.state, "stale")

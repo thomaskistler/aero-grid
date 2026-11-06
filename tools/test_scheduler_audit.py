@@ -166,7 +166,7 @@ class FrameworkReportTests(unittest.TestCase):
             self.assertEqual((widget / "main.lua").read_text(), (audit.PROBE_DIR / "framework-main.lua").read_text())
             self.assertTrue((widget / "lib/scheduler.lua").is_file())
             for name in ("framework.lua", "scheduler_overhead.lua", "scheduler_measure.lua", "scheduler_mixes.lua",
-                         "cases/stub.lua"):
+                         "cases/stub.lua", "cases/telemetry.lua"):
                 self.assertTrue((widget / "audit" / name).is_file(), name)
             self.assertIn('"stub"', (widget / "audit/config.lua").read_text())
 

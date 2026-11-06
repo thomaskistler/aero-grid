@@ -56,6 +56,14 @@ local function testBoundsRespectTheMaximumTaskSize()
                 label .. " is above the maximum task size and not listed for a split"
             )
         end
+        for label, bound in pairs(declared.tasks) do
+            local stage = { fixed = bound.fixed, perUnit = bound.perUnit, maxUnits = bound.maxUnits }
+            equal(scheduler.check({ class = bound.class, stages = { run = stage } }), nil, label)
+            assert(
+                bound.fixed + bound.perUnit <= admission.MAX_SIZE,
+                label .. " has a smallest step above the maximum task size"
+            )
+        end
     end
 end
 

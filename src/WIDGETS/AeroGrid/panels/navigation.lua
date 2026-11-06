@@ -675,7 +675,7 @@ function navigation.create(parent, rect, settings, services)
     end
     if settings.satelliteSource and settings.satelliteSource ~= "" then
         assert(services.telemetry, "navigation satellite count requires telemetry service")
-        context.satellites = services.telemetry:subscribe(settings.satelliteSource)
+        context.satellites = services.telemetry:subscribe(settings.satelliteSource, nil, 25)
     end
 
     -- The widest distance this panel can print, so the font is chosen from
