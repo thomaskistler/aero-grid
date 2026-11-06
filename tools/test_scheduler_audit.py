@@ -21,6 +21,18 @@ def load_cli():
 
 
 class InstrumentationTests(unittest.TestCase):
+    def test_history_scenarios_match_except_ownership_and_instrumentation(self):
+        cli = load_cli()
+        cases = cli.scenarios()
+        baseline = cases["flight-smart-clock"]
+        for name in ("flight-smart-clock-flight-tasks", "flight-smart-clock-panel-tasks",
+                     "migration-tasks-flight-smart-clock"):
+            self.assertTrue(cli.matching_history_scenarios(baseline, cases[name]), name)
+        changed = dict(baseline, sources=99)
+        self.assertFalse(cli.matching_history_scenarios(baseline, changed))
+        self.assertFalse(cli.matching_history_scenarios(dict(baseline, owners=["panel:chart"]), baseline))
+        self.assertFalse(cli.matching_history_scenarios(dict(baseline, flightTasks=True), baseline))
+
     def test_history_parity_requires_matched_captures_and_checks_each_sample_series(self):
         baseline = {
             "deterministicClock": True, "errors": [], "callbacks": {"refresh": 10, "background": 2},

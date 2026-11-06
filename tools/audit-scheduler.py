@@ -53,6 +53,15 @@ def capture_module():
     return module
 
 
+def matching_history_scenarios(baseline, candidate):
+    """Only ownership, instrumentation and trace export may differ."""
+    if baseline.get("owners") or baseline.get("flightTasks"):
+        return False
+    ignored = {"owners", "flightTasks", "trace"}
+    return ({key: value for key, value in baseline.items() if key not in ignored}
+            == {key: value for key, value in candidate.items() if key not in ignored})
+
+
 def standard_phases(refreshes=400, backgrounds=100):
     return [
         {"name": "refresh", "kind": "refresh", "callbacks": refreshes, "step": 5, "perCall": 20, "trace": True},
@@ -1208,8 +1217,8 @@ def main():
         parser.error(f"Choose scenarios from --list; unknown: {unknown}")
     if args.history_parity and (len(names) != 2 or not all(available[name].get("deterministicClock") for name in names)):
         parser.error("--history-parity requires exactly two deterministic-clock scenarios, baseline first")
-    if args.history_parity and available[names[0]]["phases"] != available[names[1]]["phases"]:
-        parser.error("--history-parity requires identical callback phases")
+    if args.history_parity and not matching_history_scenarios(available[names[0]], available[names[1]]):
+        parser.error("--history-parity requires a legacy baseline and matching inputs and phases")
     if platform.system() != "Darwin":
         parser.error("This audit requires macOS and the EdgeTX Companion 2.12 simulator.")
     library = args.companion / "Contents/Resources/libedgetx-tx16s-simulator.dylib"
