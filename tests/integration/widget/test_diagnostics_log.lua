@@ -50,6 +50,14 @@ flightLog.settings.section = "identity"
 flightLog.instance.section = "identity"
 local log = diagnostics.diagnosticsLog
 local nav = flight.serviceRuntime.byId.navigation
+for _ = 1, 400 do
+    if nav.tasks.run.tickElapsed then
+        break
+    end
+    fixture.tick(20)
+    definition.background(flight)
+end
+assert(nav.tasks.run.tickElapsed, "navigation task must be enrolled before its direct release")
 local entry = nav.entries[1]
 entry.capture.attempted, entry.capture.latitude, entry.capture.longitude = nil, nil, nil
 entry.wasArmed = false
@@ -99,7 +107,9 @@ panels:
 ]])
 viewerLayout:close()
 definition.update(diagnostics, { Layout = "review-diagnostics-viewer", Theme = "modern-dark" })
-fixture.pump(diagnostics, 40)
+assert(fixture.pumpUntil(diagnostics, function(context)
+    return not context.stage and not context.reloadState and fixture.entryById(context, "log") ~= nil
+end, 400), "diagnostics viewer layout must finish loading")
 assert(#diagnostics.errors == 0, table.concat(diagnostics.errors, "\n"))
 local logEntry = fixture.entryById(diagnostics, "log")
 logEntry.module.refresh(logEntry.instance)
@@ -213,7 +223,10 @@ tap()
 fixture.lvglMock.setFullScreen(false)
 input(nil)
 assert(not diagnostics.logViewer, "leaving fullscreen must dismiss")
-fixture.pump(diagnostics, 50)
+assert(fixture.pumpUntil(diagnostics, function(context)
+    return not context.stage and not context.reloadState and not context.appRebuild
+        and not context.reflowIndex and not context.logOverlay and fixture.entryById(context, "log") ~= nil
+end, 400), "diagnostics page must finish rebuilding")
 assert(not diagnostics.logOverlay, "page retirement must drop the overlay")
 assert(#diagnostics.errors == 0, table.concat(diagnostics.errors, "\n"))
 local count = log.count
