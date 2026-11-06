@@ -225,6 +225,14 @@ local function finish(label, raw, leak)
             gate(cost <= 4000, label .. " exceeds the drag atom cap: " .. cost)
             gate(fit(cost) <= P.editorDragBounds[dragStage], label .. " exceeds the drag charge: " .. cost .. " -> " .. fit(cost))
         end
+        local layoutStep = string.match(label, "^editor:advanceEditor:layout:([%w_%-]+)$")
+        if layoutStep then
+            gate(cost <= 4000, label .. " exceeds the layout atom cap: " .. cost)
+            local bound = P.editorLayoutBounds and P.editorLayoutBounds[layoutStep]
+            if bound then
+                gate(fit(cost) <= bound, label .. " exceeds the layout charge: " .. cost .. " -> " .. fit(cost))
+            end
+        end
         if stage and stage >= 2 and P.editorRenderBounds then
             gate(cost <= 4000, label .. " exceeds the editor paint atom cap: " .. cost)
             gate(
@@ -472,6 +480,9 @@ local function editorLabel(token, context)
         return "drag:" .. dragStage
     end
     if ui.renderStage and not ui.previewPending and not ui.previewRefresh and not ui.exitCommand then
+        if ui.renderStage == 1 and ui.handlers.layoutStep then
+            return "layout:" .. (ui.layoutJob and ui.handlers.layoutStep(ui.layoutJob) or "visit")
+        end
         return "render:" .. tostring(ui.renderStage)
     end
     local job = ui.previewRefresh
@@ -569,7 +580,8 @@ local function install(context)
                 end
                 return "scheduler:finish:" .. token
             end
-            if config.deterministicClock and not P.firstFlightRelease and scheduling.scheduler then
+            if config.deterministicClock and not P.firstFlightRelease and scheduling.scheduler
+                and scheduling.owners["service:flight"] == "new" then
                 P.flightAdmission = P.flightAdmission or {}
                 P.flightAdmissionPending = {
                     at = getTime(),
@@ -744,6 +756,7 @@ local function install(context)
     P.editorRenderBounds = context.editorUiModule and context.editorUiModule.RENDER_BOUNDS
     P.editorOpenBounds = context.editorUiModule and context.editorUiModule.DRAWER_OPEN_BOUNDS
     P.editorDragBounds = context.editorUiModule and context.editorUiModule.DRAG_BOUNDS
+    P.editorLayoutBounds = context.editorUiModule and context.editorUiModule.LAYOUT_BOUNDS
     if context.editorUiModule then
         wrapField(context.editorUiModule, "handle", function(token, current, e)
             if token then
@@ -1547,6 +1560,9 @@ actions = {
         local state = assert(context.editorUi)
         local phase = config.phases[phaseIndex]
         local rect = assert(state.controls[#state.session.draft.panels].rect)
+        if phase.far then
+            rect = { x = 0, y = 0, w = context.zone.w, h = context.zone.h }
+        end
         phase.touch = {
             x = (context.left or 0) + rect.x + rect.w - 4,
             y = (context.top or 0) + rect.y + rect.h - 4,
@@ -1971,7 +1987,7 @@ local function runCallback(kind, context, fn, e, t)
     local paintSurface = surface
         and (
             surface == "editor-input"
-            or string.match(surface, "^editor%-render:[2-6]$")
+            or string.match(surface, "^editor%-render:[1-6]$")
             or string.match(surface, "^editor%-drawer:")
         )
     if

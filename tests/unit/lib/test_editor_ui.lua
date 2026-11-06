@@ -210,6 +210,28 @@ for target = 1, 6 do
         assert(state.renderStage == (stage < 6 and stage + 1 or nil))
     end
     assert(calls() == 2, "one geometry synchronization per requested rendering")
+
+    -- Staged geometry: each step declares the measured bound of its panel type.
+    local steps, advanced = { "metric", "custom", "visit" }, 0
+    state.handlers.startLayout = function() return { step = 1 } end
+    state.handlers.layoutStep = function(job) return steps[job.step] end
+    state.handlers.advanceLayout = function(job)
+        advanced = advanced + 1
+        job.step = job.step + 1
+        return steps[job.step] == nil
+    end
+    assert(ui.handle(context, EVT_ROT_RIGHT) and state.renderStage == 1)
+    assert(ui.renderWorkBound(state) == ui.LAYOUT_BOUNDS.visit, "the first step only indexes and visits")
+    state.layoutJob = { step = 1 }
+    assert(ui.renderWorkBound(state) == ui.LAYOUT_BOUNDS.metric, "a measured panel type declares its bound")
+    assert(ui.advance(context) and state.renderStage == 1 and advanced == 1)
+    assert(ui.renderWorkBound(state) == nil, "unmeasured panel geometry remains ineligible")
+    assert(ui.advance(context) and state.renderStage == 1)
+    assert(ui.renderWorkBound(state) == ui.LAYOUT_BOUNDS.visit)
+    assert(ui.advance(context) and state.renderStage == 2 and not state.layoutJob, "geometry completes before painting")
+    state.layoutJob = { step = 1 }
+    assert(ui.handle(context, EVT_ROT_RIGHT) and state.renderStage == 1 and not state.layoutJob,
+        "a newer render restarts staged geometry")
     ui.close(context, false)
     assert(context.editorUi == nil and not ui.advance(context), "closed partial render must not resume")
 end

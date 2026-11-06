@@ -525,8 +525,9 @@ bounded steps before committing and opening its drawer; a layout change during
 Add cancels it. Drag enumerates targets in bounded steps after touch-down;
 resize copies settings and runs staged panel validation per candidate. Slides
 record the latest point and the cached target is applied in a later step;
-release applies a pending slide before further input. Preview geometry retains
-a separate gate.
+release applies a pending slide before further input. Preview geometry
+synchronizes one changed panel's update or reflow stage per step; unchanged
+panels are visited together.
 
 Put the module at `panels/<type>.lua` and reference that type in a layout.
 Regular panels declare `supportedSpans = { "any" }` and adapt their contents to

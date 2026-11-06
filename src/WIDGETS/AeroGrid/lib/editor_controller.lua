@@ -69,6 +69,117 @@ function module.new(dependencies)
         return true
     end
 
+    local PENDING_PLACEMENT = { col = -1, row = -1, colSpan = 0, rowSpan = 0 }
+
+    local function layoutDispatch(entry, placement)
+        if entry.failed or not placement or placement.type ~= entry.placement.type then
+            return false
+        end
+        local previous = entry.editorPlacement or entry.placement
+        return previous.col ~= placement.col
+            or previous.row ~= placement.row
+            or previous.colSpan ~= placement.colSpan
+            or previous.rowSpan ~= placement.rowSpan
+    end
+
+    local function layoutVisit(entry, placement)
+        local visible = placement ~= nil and placement.type == entry.placement.type
+        if entry.editorVisible ~= visible then
+            local visibility = visible and lvgl.show or lvgl.hide
+            visibility(entry.container)
+            entry.editorVisible = visible
+        end
+    end
+
+    --- Start staged preview geometry: one step visits a run of unchanged panels
+    --- or advances one changed panel's update or staged reflow.
+    local function startLayout(_, document)
+        return { document = document, index = 1 }
+    end
+
+    --- Name the next layout step: "visit", a panel type, or nil when complete.
+    local function layoutStep(context, job)
+        if job.entry then
+            return job.entry.placement.type
+        end
+        if not job.placements then
+            return "visit"
+        end
+        local entry = context.panels[job.index]
+        if not entry then
+            return job.index == 1 and "visit" or nil
+        end
+        local placement = job.placements[entry.placement.id]
+        return layoutDispatch(entry, placement) and entry.placement.type or "visit"
+    end
+
+    ---@return boolean done
+    ---@return string? error
+    local function advanceLayout(context, job)
+        local indexed = job.placements == nil
+        if indexed then
+            job.placements = {}
+            for _, placement in ipairs(job.document.panels) do
+                job.placements[placement.id] = placement
+            end
+        end
+        local entry = job.entry or context.panels[job.index]
+        if not entry then
+            return true
+        end
+        local placement = job.placements[entry.placement.id]
+        local dispatch = job.entry or layoutDispatch(entry, placement)
+        if indexed and dispatch then
+            return false
+        end
+        if not dispatch then
+            repeat
+                layoutVisit(entry, placement)
+                job.index = job.index + 1
+                entry = context.panels[job.index]
+                placement = entry and job.placements[entry.placement.id]
+            until not entry or layoutDispatch(entry, placement)
+            return entry == nil
+        end
+        local rect, rectError = context.grid.rect(context.zone, placement, 4, 4, 4)
+        if not rect then
+            return true, rectError
+        end
+        local begin = job.entry ~= entry
+        if begin then
+            layoutVisit(entry, placement)
+            entry.container:set({ x = rect.x, y = rect.y, w = rect.w, h = rect.h })
+        end
+        local staged = type(rawget(entry.module, "reflow")) == "function"
+        local ok, updateError, done = context.panelHost.dispatch(
+            entry,
+            staged and "reflow" or "update",
+            { x = 0, y = 0, w = rect.w, h = rect.h },
+            entry.settings,
+            nil,
+            placement,
+            begin
+        )
+        if not ok then
+            job.entry = nil
+            return true, entry.placement.id .. ": preview: " .. tostring(updateError)
+        end
+        if staged and not done then
+            -- A partly reflowed panel never matches a placement until it completes.
+            entry.editorPlacement, job.entry = PENDING_PLACEMENT, entry
+            return false
+        end
+        job.entry = nil
+        entry.editorPlacement = {
+            col = placement.col,
+            row = placement.row,
+            colSpan = placement.colSpan,
+            rowSpan = placement.rowSpan,
+        }
+        job.index = job.index + 1
+        return context.panels[job.index] == nil
+    end
+
     local function restorePreview(context)
         if context.editorPreviewChanged then
             context.editorPreviewChanged = nil
@@ -417,6 +528,15 @@ function module.new(dependencies)
             resumed = resumed ~= nil,
             preview = function(document)
                 return previewLayout(context, document)
+            end,
+            startLayout = function(document)
+                return startLayout(context, document)
+            end,
+            layoutStep = function(job)
+                return layoutStep(context, job)
+            end,
+            advanceLayout = function(job)
+                return advanceLayout(context, job)
             end,
             startPreview = function(document)
                 return startPanelPreview(context, document)

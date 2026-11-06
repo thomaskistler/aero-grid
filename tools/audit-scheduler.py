@@ -649,10 +649,14 @@ def scenarios():
     for kind in [name[len("editor-input-"):] for name in list(result)
                  if name.startswith("editor-input-") and "phases" in result[name]
                  and name[len("editor-input-"):] not in ("metric", "keys", "tap", "add", "cancel")]:
-        source = result["editor-drag-resize-sparse"]
-        result["editor-drag-resize-" + kind] = dict(
-            result["editor-input-" + kind], fullscreen=True,
-            phases=list(result["editor-input-" + kind]["phases"][:2]) + source["phases"][2:])
+        for mode in ("resize", "move"):
+            # A lone 2x2 panel moves or grows to the far grid corner, so its live
+            # preview geometry changes rather than landing on itself.
+            source = [dict(phase, far=True) if phase.get("action") == "prepare-editor-slide" else phase
+                      for phase in result["editor-drag-%s-sparse" % mode]["phases"][2:]]
+            result["editor-drag-%s-%s" % (mode, kind)] = dict(
+                result["editor-input-" + kind], fullscreen=True, placements={"subject": (0, 0, 2, 2)},
+                phases=list(result["editor-input-" + kind]["phases"][:2]) + source)
     phases = list(result["editor-input-metric"]["phases"][:2]) + [
         {"name": "panel-picker", "kind": "refresh", "action": "select-editor-add",
          "event": "EVT_VIRTUAL_ENTER", "callbacks": 16, "step": 5},

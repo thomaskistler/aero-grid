@@ -4549,7 +4549,7 @@ original declared callback.
 |---|---|---:|
 | Metric | reflow | 3790 |
 | Link | reflow | 3240 |
-| TX Battery | reflow | 2130 |
+| TX Battery | reflow | 2300 |
 | Flight Timer | update | 3970 |
 | Navigation | reflow | 3470 |
 | Chart | reflow | 1770 |
@@ -4819,8 +4819,8 @@ The editor fixture's existing post-event render drain also drains pending
 drag; no assertion changed. Add's `spans` stage is now ineligible for
 unmeasured custom types, along with `module` and `commit`, because
 `candidateSpans` walks the whole custom `supportedSpans` list. A 4097-entry
-regression still adds the panel. Open: preview geometry. Owners, the recording
-policy and the deferred stress assertions are unchanged.
+regression still adds the panel. Preview geometry is staged in section 91.
+Owners, the recording policy and the deferred stress assertions are unchanged.
 
 ## 90. Composed ownership capture and loader reservation
 
@@ -4855,3 +4855,31 @@ parity concern; it does not justify changing the ten-tick policy or the
 deferred chart-recording stress tests.
 The deterministic scenarios instrument History sampling and are comparison
 fixtures, not substitutes for uninstrumented native instruction proofs.
+## 91. Staged editor preview geometry (R5)
+
+Render stage 1 previously synchronized every live panel's preview geometry
+in one consumed callback. It now advances a layout job:
+- The first step indexes the draft and visits unchanged panels; later visit
+  steps continue the run.
+- Each other step advances one changed panel by a complete `update` or a single
+  staged `reflow` stage, which preserves begin and restart semantics.
+- A panel caught mid-reflow carries a sentinel placement, so save adoption
+  falls back to reload and the exit restore re-dispatches it.
+- A newer render restarts the job.
+
+Bounds are per panel type: the worst panel body from the `reflow-cost-<type>`
+or `rx-reflow-cost` configuration matrices or the native preview cases, plus a
+600 allowance for the observed layout overhead (at most 528), fitted. Visit is
+charged 1500 (native 1094, including first-render visibility on 16 panels).
+Unlisted (custom) types remain ineligible. The probe labels steps
+`layout:<type>` and gates the 4000 atom and the fitted charge. Per-type
+`editor-drag-{move,resize}-<type>` cases use a 2x2 subject that moves or grows
+to the far corner, so every catalog type dispatches. Native layout raw maxima:
+trim-panel 3087, metric 3223, navigation 2715, flight-timer 2298, chart 1509.
+On integrated e175e04 the 28 per-type cases exposed a TX Battery lifecycle
+reflow charge below its fitted measurement: 1978 raw / 2230 fitted against
+2130. The declaration is now 2300.
+
+The preview layout probe currently checks the raw atom against 4000, not the
+required fitted ceiling, and several layout reservations exceed 4000. Those
+steps require further proof or splitting before their activation gate is closed.

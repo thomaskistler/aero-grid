@@ -6,6 +6,14 @@ uiModule.INPUT_BOUNDS = {
     open = 220, tap = 900, select = 350, modal = 120, release = 220, cancel = 140, first = 800, slide = 240,
 }
 uiModule.DRAWER_OPEN_BOUNDS = { configure = 1500, add = 350 }
+-- Staged preview geometry: a run of unchanged panels, or one changed panel's
+-- update or reflow stage. Unlisted panel types remain unmeasured.
+uiModule.LAYOUT_BOUNDS = {
+    visit = 1500, chart = 2050, ["flight-counter"] = 4000, ["flight-mode"] = 4250, ["flight-timer"] = 4250,
+    ["host-diagnostics"] = 2100, ["link-status"] = 3550, metric = 4100, ["model-identity"] = 3000,
+    navigation = 3750, output = 2550, ["rx-battery"] = 2550, ["service-probe"] = 2200, state = 3750,
+    ["theme-showcase"] = 2950, ["trim-panel"] = 4000, ["tx-battery"] = 2550,
+}
 uiModule.DRAG_BOUNDS = { module = 1500, settings = 2300, positions = 1700, rects = 1350, apply = 1250 }
 
 local function label(parent, rect, text, color, font)
@@ -87,14 +95,27 @@ function uiModule.inputWorkBound(context, event)
     end
 end
 
+---@return boolean? changed Nil while staged geometry remains.
 local function prepareRender(context, state)
+    local handlers = state.handlers
+    local previewed, previewError
+    if handlers.startLayout then
+        state.layoutJob = state.layoutJob or handlers.startLayout(state.session.draft)
+        local done
+        done, previewError = handlers.advanceLayout(state.layoutJob)
+        if not done then
+            return nil
+        end
+        state.layoutJob, previewed = nil, previewError == nil
+    else
+        previewed, previewError = handlers.preview(state.session.draft)
+    end
     local placements = state.session.draft.panels
     local changed = state.panelCount ~= #placements
     state.panelCount = #placements
-    local previewed, previewError = state.handlers.preview(state.session.draft)
     if not previewed then
         state.status, state.statusError = tostring(previewError), true
-        state.handlers.logError("preview geometry", previewError)
+        handlers.logError("preview geometry", previewError)
     end
     return changed
 end
@@ -174,16 +195,24 @@ local function finishRender(context, state, changed)
 end
 
 local function render(_, state)
-    state.renderStage, state.renderChanged = 1, nil
+    state.renderStage, state.renderChanged, state.layoutJob = 1, nil, nil
     renderStatus(state)
+end
+
+local function layoutBound(state)
+    local handlers = state.handlers
+    if not handlers or not handlers.layoutStep then
+        return nil
+    end
+    local step = state.layoutJob and handlers.layoutStep(state.layoutJob) or "visit"
+    return uiModule.LAYOUT_BOUNDS[step]
 end
 
 function uiModule.renderWorkBound(state)
     if blocked(state) then return nil end
-    -- Geometry synchronization can invoke panel-specific lifecycle work.
     if
         state.renderStage
-        and state.renderStage ~= 1
+        and (state.renderStage ~= 1 or layoutBound(state))
         and not state.session.initializing
         and not state.previewPending
         and not state.previewRefresh
@@ -191,6 +220,9 @@ function uiModule.renderWorkBound(state)
         and not state.drawerOpen
         and not uiModule.dragStage(state)
     then
+        if state.renderStage == 1 then
+            return layoutBound(state)
+        end
         return state.renderStage == 6 and uiModule.RENDER_BOUNDS.finish or uiModule.RENDER_BOUNDS.rows
     end
 end
@@ -223,7 +255,11 @@ end
 local function advanceRender(context, state)
     local stage = state.renderStage
     if stage == 1 then
-        state.renderChanged = prepareRender(context, state)
+        local changed = prepareRender(context, state)
+        if changed == nil then
+            return
+        end
+        state.renderChanged = changed
     elseif stage <= 5 then
         local changed = renderPreviews(context, state, (stage - 2) * 4 + 1, (stage - 1) * 4)
         state.renderChanged = state.renderChanged or changed
