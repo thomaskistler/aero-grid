@@ -134,6 +134,10 @@ local function checkHomeBoundary(context)
 end
 local beforeFirst, beforeSecond = first.serviceRuntime, second.serviceRuntime
 local beforeCharts = { panel(first, "chart"), panel(second, "chart") }
+local navigationRevision = {
+    first.serviceRuntime.byId.navigation.revision,
+    second.serviceRuntime.byId.navigation.revision,
+}
 local timer = model.getTimer(0).value
 fixture.radio.logicalSwitches[64] = true
 fixture.radio.values[306] = 1024
@@ -152,16 +156,20 @@ secondVisible = false
 equal(writes, 1)
 equal(model.getGlobalVariable(8, 0), 18)
 assert(owner.view.active and sticky)
-for _, context in ipairs({ first, second }) do
+for index, context in ipairs({ first, second }) do
     assert(context.serviceRuntime.byId.history:session().elapsed > 0)
-    local homeStatus = panel(context, "home").feed.homeStatus
-    -- Follow-up: plans/scheduler-framework.md; restore strict checks after all
-    -- services migrate and Navigation no longer waits behind mixed-mode work.
-    local waiting, message = pcall(equal, homeStatus, "waiting", "no room leaves first-arm capture pending")
-    if waiting then
-        print("XPASS: first-arm capture remains waiting with no scheduler room")
+    local home = panel(context, "home").feed
+    if home.homeStatus == "waiting" then
+        assert(not home.home, "waiting capture must not publish a home")
+    elseif home.homeStatus == "captured" then
+        assert(context.serviceRuntime.byId.navigation.revision > navigationRevision[index],
+            "capture requires an admitted Navigation release")
+        assert(home.home, "captured home must be present")
+        equal(home.pilotLatitude, fixture.radio.values[109].lat)
+        equal(home.pilotLongitude, fixture.radio.values[109].lon)
     else
-        assert(homeStatus == "switch-unavailable", message)
+        equal(home.homeStatus, "switch-unavailable")
+        assert(not home.home)
         print("XFAIL: first-arm capture reports switch-unavailable under mixed-mode scheduler load")
     end
     equal(panel(context, "battery").estimatedCells, 4)
