@@ -3067,6 +3067,7 @@ Model settings cold-description construction callback above its mock budget;
 that separate R5 bound remains under correction. The unmodified legacy
 16-Metric dashboard before opening the editor still reaches 25881, so these
 measurements do not close ordinary panel ownership or R5/R6 integration gates.
+
 ## 50. Bounded editor drawer construction (R5 slice)
 
 Drawer construction no longer relayouts every preceding control after adding
@@ -3147,3 +3148,34 @@ python3 tools/audit-scheduler.py modal-settings modal-settings-reset --timeout 1
 
 Save/cancel lifecycle work remains separately gated. No production owner,
 recording cadence, reset/stress assertion or shared scheduler API changed.
+
+## 52. Bounded runtime theme parsing (R6 slice)
+
+The former 9022-instruction theme-read callback now only resolves/reads the
+source. Runtime tokenization advances at most four lines and 64 Lua-scanned
+comment characters, preserving quoted hashes, escapes, CRLF and line numbers
+across callbacks. Mapping construction advances at most four tokens/stack pops;
+it reuses the YAML scalar/mapping rules and keeps the synchronous parser for
+other callers. Widget registration still reads picker metadata synchronously.
+
+| Runtime stage | Native enclosing maximum | Charge |
+|---|---:|---:|
+| Read | 133 | 200 |
+| Tokenize | 490 | 1700 |
+| Parse mapping | 346 | 500 |
+
+The pure-Lua fixture additionally exercises every continuation through 128
+inline-commented fields and a long quoted hash: worst tokenize1294/mapping330.
+Native audit gates check the complete enclosing theme stage against its charge.
+Replacement loads discard partially scanned lines and mapping stacks. Lua53
+and int32 tests cover shipped-theme parity, arbitrary token boundaries,
+duplicate/indentation errors, quote/escape boundaries and replacement loading.
+Combined native preview/settings-reset scenarios peak at11992/11241; strict
+reset recording still passes at14300 without assertion changes.
+
+The broad widget budget suite still reports gallery steady16800; untouched
+1520866 reproduces that exact failure. The cost-case suite also exposes the
+same pre-existing broker-registration high finding on1520866 after the seventh
+service kind; the R4 follow-up is bounding enrollment rather than inflating its
+cap. Theme/header building, reflow, error/lifecycle callbacks and owning-service
+admission remain R6 gates. This slice does not enable them or flip owners.

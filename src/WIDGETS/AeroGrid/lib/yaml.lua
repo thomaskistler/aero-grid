@@ -24,15 +24,17 @@ end
 --- which a per-character loop over a whole layout file would exhaust.
 ---@param line string
 ---@return string
-local function stripComment(line)
+local function stripComment(line, work, maxBytes)
     if not string.find(line, "#", 1, true) then
-        return line
+        return line, nil, 0
     end
 
-    local quote = nil
-    local escaped = false
+    local quote = work and work.quote
+    local escaped = work and work.escaped or false
+    local first = work and work.index or 1
+    local last = maxBytes and math.min(#line, first + maxBytes - 1) or #line
 
-    for index = 1, #line do
+    for index = first, last do
         local char = string.byte(line, index)
         if escaped then
             escaped = false
@@ -47,12 +49,15 @@ local function stripComment(line)
         elseif char == 35 then
             local previous = index > 1 and string.byte(line, index - 1) or nil
             if previous == nil or previous == 32 or previous == 9 then
-                return string.sub(line, 1, index - 1)
+                return string.sub(line, 1, index - 1), nil, index - first + 1
             end
         end
     end
 
-    return line
+    if last < #line then
+        return nil, { index = last + 1, quote = quote, escaped = escaped }, last - first + 1
+    end
+    return line, nil, last - first + 1
 end
 
 --- Decode the small escape subset accepted in double-quoted values.
@@ -113,18 +118,27 @@ end
 ---@param lineNumber integer Line number of that offset, 1 to start.
 ---@param maxLines integer Lines to process in this call.
 ---@param tokens AeroGridYamlToken[] Accumulator, appended in place.
+---@param maxCommentBytes? integer Bound the Lua character scan across all lines.
+---@param commentWork? table Resume a partially scanned line.
 ---@return integer? position Next offset, or nil when the text is exhausted.
 ---@return integer lineNumber Next line number.
 ---@return string? error
-function yaml.tokenizeChunk(text, position, lineNumber, maxLines, tokens)
+---@return table? commentWork
+function yaml.tokenizeChunk(text, position, lineNumber, maxLines, tokens, maxCommentBytes, commentWork)
     if type(text) ~= "string" then
         return nil, lineNumber, "YAML input must be a string"
+    end
+    if maxCommentBytes ~= nil
+        and (type(maxCommentBytes) ~= "number" or maxCommentBytes < 1 or maxCommentBytes % 1 ~= 0)
+    then
+        return nil, lineNumber, "YAML comment budget must be a positive integer"
     end
 
     local length = #text
     local processed = 0
 
     while position <= length and processed < maxLines do
+        local linePosition = position
         local stop = string.find(text, "\n", position, true)
         local rawLine
         if stop then
@@ -144,7 +158,14 @@ function yaml.tokenizeChunk(text, position, lineNumber, maxLines, tokens)
             return nil, lineNumber, "line " .. lineNumber .. ": tabs are not supported"
         end
 
-        local line = stripComment(rawLine)
+        local line, pending, scanned = stripComment(rawLine, commentWork, maxCommentBytes)
+        if maxCommentBytes then
+            maxCommentBytes = maxCommentBytes - scanned
+        end
+        if pending then
+            return linePosition, lineNumber, nil, pending
+        end
+        commentWork = nil
         if string.find(line, "%S") then
             local spaces = #(string.match(line, "^( *)") or "")
             if spaces % 2 ~= 0 then
@@ -443,6 +464,66 @@ function yaml.build(tokens)
     end
 
     return result
+end
+
+--- Build a mapping-only document in bounded token advances (theme definitions).
+--- Sequence documents still use build/itemAt.
+---@param tokens AeroGridYamlToken[]
+---@param work? table Continuation returned by the previous advance.
+---@param maxTokens integer
+---@return table? work Nil when complete or rejected.
+---@return table? document
+---@return string? error
+function yaml.buildMappingChunk(tokens, work, maxTokens)
+    if type(maxTokens) ~= "number" or maxTokens < 1 or maxTokens % 1 ~= 0 then
+        return nil, nil, "YAML mapping budget must be a positive integer"
+    end
+    if not work then
+        if type(tokens) ~= "table" then
+            return nil, nil, "YAML tokens must be a table"
+        end
+        if tokens[1] and tokens[1].indent ~= 0 then
+            return nil, nil, "line " .. tokens[1].line .. ": document must start at column one"
+        end
+        local result = {}
+        work = { result = result, index = 1, frames = { { value = result, indent = 0 } } }
+    end
+    for _ = 1, maxTokens do
+        local token = tokens[work.index]
+        if not token then
+            return nil, work.result
+        end
+        local frames = work.frames
+        local frame = frames[#frames]
+        if token.indent < frame.indent then
+            frames[#frames] = nil
+        elseif token.indent > frame.indent then
+            return nil, nil, "line " .. token.line .. ": unexpected indentation"
+        else
+            local key, remainder, splitError = splitMapping(token, token.content)
+            if splitError then
+                return nil, nil, splitError
+            end
+            if frame.value[key] ~= nil then
+                return nil, nil, "line " .. token.line .. ": duplicate key " .. key
+            end
+            work.index = work.index + 1
+            if remainder == "" then
+                local child = {}
+                frame.value[key] = child
+                local nextToken = tokens[work.index]
+                if nextToken and nextToken.indent > frame.indent then
+                    if nextToken.indent ~= frame.indent + 2 then
+                        return nil, nil, "line " .. nextToken.line .. ": indentation jumped more than one level"
+                    end
+                    frames[#frames + 1] = { value = child, indent = nextToken.indent }
+                end
+            else
+                frame.value[key] = parseScalar(remainder)
+            end
+        end
+    end
+    return work
 end
 
 --- Parse constrained YAML text into Lua mappings and sequences.

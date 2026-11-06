@@ -61,6 +61,8 @@ Host coordination has three boundaries:
 Their `new` functions bind host operations once per widget. They do not capture
 another widget's context or introduce per-refresh forwarding wrappers. `main.lua`
 decides which operation advances; loading and cleanup keep their explicit stages.
+Runtime theme YAML tokenization and mapping construction also advance separately;
+widget registration still reads only theme-picker metadata synchronously.
 Page retirement and replacement run in separate callbacks so deferred cleanup
 cannot invalidate objects belonging to the replacement page.
 

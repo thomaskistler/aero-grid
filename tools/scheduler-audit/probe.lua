@@ -80,6 +80,11 @@ local function finish(label, raw, leak)
     if type(label) ~= "string" then
         label = "unlabelled"
     end
+    local themeBound = ({ ["load:theme-read"] = 200, ["load:theme-tokenize"] = 1700,
+        ["load:theme-parse"] = 500 })[label]
+    if themeBound then
+        gate(cost <= themeBound, label .. " exceeds its bounded theme-loading charge: " .. cost)
+    end
     if previewTasks and string.sub(label, 1, 11) == "task:panel:" then
         gate(cost <= 4000, label .. " exceeds the preview atom cap: " .. cost)
     end

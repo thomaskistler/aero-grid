@@ -159,4 +159,29 @@ for _, layout in ipairs({ "review-chart", "review-navigation", "review-metric" }
     )
 end
 
-print("Panel preparation and construction lifecycle passed")
+for _, stage in ipairs({ "theme-tokenize", "theme-parse" }) do
+    local context = definition.create(
+        { x = 0, y = 0, w = 480, h = 272 },
+        { Layout = "review-metric", Theme = "modern-dark" },
+        root .. "/build/test-widget-fixture/"
+    )
+    for _ = 1, 100 do
+        if context.stage == stage then
+            break
+        end
+        fixture.tick(10)
+        definition.refresh(context)
+    end
+    assert(context.stage == stage, "loading must reach bounded theme stages")
+    context.dashboardLoader.advanceLoad(context)
+    local cancelled = assert(context.themeWork)
+    context.themeMode = "modern-light"
+    context.dashboardLoader.beginLoad(context)
+    assert(not context.themeWork and #context.themeDefinitions == 0, "replacement loads discard partial themes")
+    context.dashboardLoader.advanceLoad(context)
+    assert(context.themeWork ~= cancelled, "replacement themes must not reuse cancelled parser state")
+    fixture.pump(context, 200, 10)
+    assert(not context.stage and context.theme.mode == "modern-light")
+end
+
+print("Panel preparation, theme parsing and construction lifecycle passed")

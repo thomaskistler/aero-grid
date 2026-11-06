@@ -81,14 +81,12 @@ local function themePaths(base, name)
     return root .. "AEROGRID/themes/" .. filename, folder .. "themes/" .. filename
 end
 
---- Read one user theme, falling back to its shipped definition.
+--- Read one user theme's source, falling back to its shipped definition.
 ---@param base string Widget directory.
 ---@param name string Theme file stem.
----@param parser table YAML parser.
----@param pickerOnly? boolean Read only the name and label during widget registration.
----@return table? definition
----@return string? error
-local function readThemeDefinition(base, name, parser, pickerOnly)
+---@return string? source
+---@return string filenameOrError
+local function readThemeSource(base, name)
     if type(name) ~= "string" or not string.match(name, "^[%w_-]+$") then
         return nil, "invalid theme name"
     end
@@ -108,28 +106,35 @@ local function readThemeDefinition(base, name, parser, pickerOnly)
             if type(content) ~= "string" then
                 return nil, "cannot read " .. filename
             end
-            if pickerOnly then
-                -- Registration has one instruction budget for every installed theme.
-                -- Parse only picker metadata here; the staged loader validates palettes.
-                local fields = {}
-                for line in string.gmatch("\n" .. content, "\n([^%s#][^\r\n]*)") do
-                    if string.match(line, "^name%s*:") or string.match(line, "^label%s*:") then
-                        fields[#fields + 1] = line
-                    end
-                end
-                content = table.concat(fields, "\n")
-            end
-            local definition, parseError = parser.parse(content)
-            if not definition then
-                return nil, filename .. ": " .. tostring(parseError)
-            end
-            if type(definition) ~= "table" or definition.name ~= name then
-                return nil, filename .. ": theme name must match the filename"
-            end
-            return definition
+            return content, filename
         end
     end
     return nil, "theme file is missing: " .. name .. ".yml"
+end
+
+--- Registration needs only picker metadata; runtime parsing is staged by the loader.
+local function readThemeDefinition(base, name, parser, pickerOnly)
+    local content, filename = readThemeSource(base, name)
+    if not content then
+        return nil, filename
+    end
+    if pickerOnly then
+        local fields = {}
+        for line in string.gmatch("\n" .. content, "\n([^%s#][^\r\n]*)") do
+            if string.match(line, "^name%s*:") or string.match(line, "^label%s*:") then
+                fields[#fields + 1] = line
+            end
+        end
+        content = table.concat(fields, "\n")
+    end
+    local definition, parseError = parser.parse(content)
+    if not definition then
+        return nil, filename .. ": " .. tostring(parseError)
+    end
+    if type(definition) ~= "table" or definition.name ~= name then
+        return nil, filename .. ": theme name must match the filename"
+    end
+    return definition
 end
 
 --- Load an ordered set of per-theme YAML files as the theme builder catalog.
@@ -684,7 +689,7 @@ local function create(zone, widgetOptions, path)
                 showErrors = showErrors,
                 loadModule = loadModule,
                 isFullScreen = isFullScreen,
-                readThemeDefinition = readThemeDefinition,
+                readThemeSource = readThemeSource,
             }, {
                 "beginLoad",
                 "advanceLoad",

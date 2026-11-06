@@ -11,7 +11,7 @@ function module.new(dependencies)
     local showErrors = dependencies.showErrors
     local loadModule = dependencies.loadModule
     local isFullScreen = dependencies.isFullScreen
-    local readThemeDefinition = dependencies.readThemeDefinition
+    local readThemeSource = dependencies.readThemeSource
 
     --- Advance to the next layout candidate after a read or parse failure.
     ---@param context AeroGridContext
@@ -308,6 +308,16 @@ function module.new(dependencies)
 
     --- Lines tokenized per widget callback.
     local TOKENIZE_LINES = 24
+    local THEME_CHUNK = 4
+
+    local function nextTheme(context, definition)
+        if definition then
+            context.themeDefinitions[#context.themeDefinitions + 1] = definition
+        end
+        context.themeWork = nil
+        context.themeReadIndex = context.themeReadIndex + 1
+        context.stage = context.themeReadIndex > #context.themeNames and "theme-validate" or "theme-read"
+    end
 
     --- Advance the staged loader by exactly one step.
     --- EdgeTX allows roughly 20000 VM instructions per widget callback, and a
@@ -326,8 +336,7 @@ function module.new(dependencies)
         local function fail(message)
             if
                 stage ~= "services"
-                and stage ~= "theme-read"
-                and stage ~= "theme-validate"
+                and string.sub(stage, 1, 6) ~= "theme-"
                 and recoverLayout(context, tostring(message))
             then
                 return true
@@ -346,6 +355,7 @@ function module.new(dependencies)
             context.loadCandidateIndex = nil
             context.pendingPanel = nil
             context.themeNames, context.themeDefinitions = nil, nil
+            context.themeWork = nil
             showErrors(context)
             return false
         end
@@ -354,16 +364,49 @@ function module.new(dependencies)
             local names = context.themeNames
             local index = context.themeReadIndex
             local name = names[index]
-            local definition, readError = readThemeDefinition(context.path, name, context.yaml)
-            if not definition and readError ~= "theme file is missing: " .. name .. ".yml" then
-                return fail("themes: " .. tostring(readError))
+            local source, filename = readThemeSource(context.path, name)
+            if not source then
+                if filename ~= "theme file is missing: " .. name .. ".yml" then
+                    return fail("themes: " .. tostring(filename))
+                end
+                nextTheme(context)
+                return true
             end
-            if definition then
-                context.themeDefinitions[#context.themeDefinitions + 1] = definition
+            context.themeWork = { name = name, filename = filename, source = source,
+                tokens = {}, position = 1, line = 1 }
+            context.stage = "theme-tokenize"
+            return true
+        end
+
+        if stage == "theme-tokenize" then
+            local work = context.themeWork
+            local position, line, tokenError, commentWork =
+                context.yaml.tokenizeChunk(work.source, work.position, work.line, THEME_CHUNK, work.tokens,
+                    64, work.commentWork)
+            if tokenError then
+                return fail("themes: " .. work.filename .. ": " .. tokenError)
             end
-            context.themeReadIndex = index + 1
-            if index == #names then
-                context.stage = "theme-validate"
+            work.position, work.line, work.commentWork = position, line, commentWork
+            if not position then
+                work.source = nil
+                context.stage = "theme-parse"
+            end
+            return true
+        end
+
+        if stage == "theme-parse" then
+            local work = context.themeWork
+            local pending, definition, parseError =
+                context.yaml.buildMappingChunk(work.tokens, work.mapping, THEME_CHUNK)
+            if parseError then
+                return fail("themes: " .. work.filename .. ": " .. parseError)
+            end
+            work.mapping = pending
+            if not pending then
+                if definition.name ~= work.name then
+                    return fail("themes: " .. work.filename .. ": theme name must match the filename")
+                end
+                nextTheme(context, definition)
             end
             return true
         end
@@ -826,6 +869,7 @@ function module.new(dependencies)
         end
         context.themeDefinitions = {}
         context.themeReadIndex = 1
+        context.themeWork = nil
         context.stage = "theme-read"
     end
 
