@@ -10,6 +10,7 @@ end
 return {
     bounds = {
         ["chart:frame-begin"] = once(1300),
+        ["chart:frame-idle"] = once(1300),
         ["chart:axis"] = once(900),
         ["chart:traces-select"] = once(7800),
         ["chart:traces-project"] = { fixed = 200, perUnit = 830, maxUnits = 9 },
@@ -20,8 +21,10 @@ return {
         ["flight:tick"] = once(3600),
         ["flight:pollReset"] = once(620),
         ["service:telemetry"] = { fixed = 750, perUnit = 1180, maxUnits = 8 },
-        ["service:history"] = once(650),
+        ["service:armed"] = { fixed = 180, perUnit = 120, maxUnits = 6 },
         ["service:control"] = { fixed = 1300, perUnit = 220, maxUnits = 6 },
+        ["service:control-normal"] = { fixed = 130, perUnit = 240, maxUnits = 6 },
+        ["service:history"] = { fixed = 410, perUnit = 90, maxUnits = 16 },
         ["reset:extrema"] = once(200),
         ["reset:history"] = once(200),
         ["reset:navigation"] = once(200),

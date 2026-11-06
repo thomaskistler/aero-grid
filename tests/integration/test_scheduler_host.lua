@@ -228,7 +228,7 @@ do
     end
     listing:close()
     os.remove(listingPath)
-    -- The tasks migrated so far; every other one is `legacy` until its migration.
+    -- Migrated tasks; every other one is `legacy` until its migration.
     expected["service:control-normal"] = true
     expected["service:control-outputs"] = true
     local migrated = {
@@ -238,6 +238,7 @@ do
         ["service:control-outputs"] = true,
         ["service:armed"] = true,
         ["service:navigation"] = true,
+        ["service:history"] = true,
     }
     for key in pairs(expected) do
         equal(host.OWNERS[key], migrated[key] and "new" or "legacy", key .. " needs an owner")

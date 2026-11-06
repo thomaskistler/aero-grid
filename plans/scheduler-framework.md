@@ -221,7 +221,7 @@ a backlog of normal work is never scanned before critical work and cannot hide i
 
 | Rule | Why it is needed |
 |---|---|
-| Critical before normal, with a normal reserve | Telemetry, history and Armed's conditions needed for recording boundaries are never dropped when admitted. Trims, outputs and global variables are normal display work. The reserve stops critical work from starving the tick, Smart, session reset and every chart and panel. Safety never depends on either (`R` bounds every plan); only latency does. |
+| Critical before normal, with a normal reserve | Telemetry, recording writes and Armed's conditions needed for recording boundaries are never dropped when admitted. History session and expiration maintenance is normal because telemetry records at sample time and the observer path drains flight boundaries while maintenance is deferred. Trims, outputs and global variables are normal display work. The reserve stops critical work from starving the tick, Smart, session reset and every chart and panel. Safety never depends on either (`R` bounds every plan); only latency does. |
 | `exclusive` | One chart per callback, as today (a legacy chart has `refreshCost = 6`, the whole cap). Used by chart stages only. |
 | Oldest release first | One rule gives fairness and bounded waiting. It replaces aging, deadlines and tolerances. |
 | Skip and continue | Uses the leftover budget. Everything due runs together whenever it fits. |

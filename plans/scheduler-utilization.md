@@ -75,9 +75,10 @@ Each task declares static data and returns its next release after each run.
 - Deadline = release + tolerance. One pending release per task, so waiting
   never stacks up work and there are no catch-up bursts.
 - A task with leftover work returns a delay of 1 to run again next callback.
-- Classes: `CRITICAL` is telemetry acquisition, recording and shared history.
-  `HIGH` is live input and Smart. `NORMAL` is chart completion and panel
-  refresh. `BACKGROUND` is diagnostics and decoration.
+- Classes: `CRITICAL` is telemetry acquisition, recording writes and Armed
+  condition reads. `HIGH` is live input and Smart. `NORMAL` is history session,
+  boundary and expiration maintenance, chart completion and panel refresh.
+  `BACKGROUND` is diagnostics and decoration.
 
 ### Budget
 
@@ -135,7 +136,11 @@ compaction) must:
 
 ### Invariants kept
 
-- Telemetry acquisition, recording and shared history are never skipped.
+- Telemetry acquisition and observer-driven recording are never skipped.
+- History session and expiration maintenance may defer under load. Telemetry
+  samples retain their timestamps, and the observer path drains flight
+  boundaries while deferred maintenance catches up without rewriting extrema
+  or gaps.
 - Staged-chart ownership, at most one chart per callback, and the telemetry
   early-yield are constraints on the loop.
 - Exact extrema, gaps, Smart/reset and ordinary append/scroll are unchanged.

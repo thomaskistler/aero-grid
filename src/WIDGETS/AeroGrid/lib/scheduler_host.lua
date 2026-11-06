@@ -27,7 +27,7 @@ host.OWNERS = {
     ["service:armed"] = "new",
     ["service:flight"] = "legacy",
     ["service:navigation"] = "new",
-    ["service:history"] = "legacy",
+    ["service:history"] = "new",
     ["service:smart"] = "legacy",
     ["panel:chart"] = "legacy",
     ["panel:flight-counter"] = "legacy",
@@ -54,8 +54,7 @@ local function declared(instance)
     return stage.fixed + stage.maxUnits * stage.perUnit
 end
 
---- Declared bounds of one legacy service update (plans/scheduler-contracts.md);
---- telemetry's depends on how many sources it polls in one update.
+--- Legacy service bounds; history's bound reserves its preserved mixed-mode slot.
 host.SERVICE_BOUNDS = {
     telemetry = function(instance)
         return 750 + 1180 * math.min(instance.count, instance.pollCap or 8)
@@ -68,7 +67,7 @@ host.SERVICE_BOUNDS = {
     armed = 0,
 }
 
-host.SERVICE_CLASS = { telemetry = "critical", history = "critical" }
+host.SERVICE_CLASS = { telemetry = "critical" }
 
 --- Declared bounds of one legacy panel refresh. theme-showcase has no refresh work.
 host.PANEL_BOUNDS = {

@@ -180,7 +180,7 @@ function services.update(runtime, now, admit)
         if due and not admitted and instance.preserveLegacySlot then
             instance.due = now + instance.interval
             runtime.cursor = cursor
-            return nil
+            return instance.legacySlotReservation and instance.id or nil
         end
 
         -- Scheduler-only services have no legacy update entry point. The host

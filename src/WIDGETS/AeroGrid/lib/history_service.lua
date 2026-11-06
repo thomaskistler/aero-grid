@@ -4,6 +4,8 @@
 local history = { RUNTIME_API = 1, CAPACITY = 6144, FLIGHT_CAPACITY = 64 }
 history.__index = history
 
+local INTERVAL = 5
+local SESSION_CAP = 16
 local TAU = { off = 0, light = 50, medium = 100, strong = 200 }
 local NUMBER_FORMAT, INTEGER_FORMAT, CHUNK = "<I4n", "<I4j", 64
 local SIZES = { 256, 64, 16, 4 }
@@ -13,6 +15,11 @@ NUMBER_FORMAT = NUMBER_FORMAT .. string.rep("x", BYTES - string.packsize(NUMBER_
 INTEGER_FORMAT = INTEGER_FORMAT .. string.rep("x", BYTES - string.packsize(INTEGER_FORMAT))
 local ROUNDING = (string.packsize("n") == 4 and 2 ^ -23 or 2 ^ -52) * 32
 history.BYTES_PER_POINT = BYTES
+
+history.decl = {
+    class = "normal",
+    stages = { run = { fixed = 410, perUnit = 90, maxUnits = SESSION_CAP } },
+}
 
 local function finite(value)
     return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
@@ -108,11 +115,14 @@ local function expire(entry, cutoff, limit)
 end
 
 function history.new(env, support, runtime)
-    return setmetatable({
+    local service = setmetatable({
         id = "history",
         revision = 0,
-        interval = 5,
+        interval = INTERVAL,
         count = 0,
+        want = 0,
+        preserveLegacySlot = true,
+        legacySlotReservation = true,
         due = 0,
         env = env,
         support = support,
@@ -121,10 +131,23 @@ function history.new(env, support, runtime)
         names = {},
         views = {},
         cursor = 1,
+        sessionCursor = 1,
+        sessionTarget = nil,
+        boundaryAt = nil,
         sessions = {},
         sessionNames = {},
         sessionViews = {},
     }, history)
+    if runtime.host then
+        setmetatable(service, {
+            __index = function(_, key)
+                if key ~= "update" then
+                    return history[key]
+                end
+            end,
+        })
+    end
+    return service
 end
 
 local function sessionFor(service, armSwitch)
@@ -163,6 +186,7 @@ local function sessionFor(service, armSwitch)
         service.sessions[#service.sessions + 1] = session
         service.sessionNames[armed.key] = session
         service.sessionViews[session.view] = session
+        service.want = math.min(SESSION_CAP, #service.sessions)
     end
     return session
 end
@@ -343,7 +367,8 @@ function history:recordingBreak(view, index)
 end
 
 function history:boundaries()
-    local service, flight = self.runtime.byId.flight, self.flightState
+    local service = self.runtime.byId.flight
+    local flight = service and service.state and service:state() or self.flightState
     if not flight or not service.boundaries or not flight.epoch or #self.sessions == 0 then
         return
     end
@@ -394,6 +419,14 @@ function history:boundaries()
         end
         session.openFlight.observed = session.state.elapsed
     end
+end
+
+local function drainBoundaries(service, now)
+    if service.boundaryAt == now then
+        return
+    end
+    service.boundaryAt = now
+    service:boundaries()
 end
 
 function history:advance(now)
@@ -688,6 +721,7 @@ function history:sample(reading, now)
                 end
             end
         end
+        drainBoundaries(self, now)
     end
 end
 
@@ -705,13 +739,59 @@ local function updateEntry(_, entry)
     end
 end
 
+local function update(service, now)
+    if service.failure then
+        error(service.failure)
+    end
+    service:advance(now)
+    drainBoundaries(service, now)
+    service.cursor = service.support.roundRobin(service.entries, service.cursor, 1, updateEntry, service, now)
+end
+
 function history:update(now)
+    update(self, now)
+end
+
+--- Advance recording sessions in bounded units, then maintain one history entry.
+---@param grant integer
+---@param stage string
+---@param now integer
+---@return integer delay
+function history:step(grant, _, now)
     if self.failure then
         error(self.failure)
     end
-    self:advance(now)
-    self:boundaries()
+    if not self.sessionTarget then
+        local wait = self.tickElapsed and self.tickElapsed(self.due, now) or 0
+        if wait > 0 then
+            return wait
+        end
+        self.sessionTarget = #self.sessions
+        self.sessionCursor = 1
+        self.want = math.min(SESSION_CAP, self.sessionTarget)
+    end
+
+    local flight = self.runtime.byId.flight
+    self.now = now
+    self.flightState = flight and flight:state()
+    local last = math.min(self.sessionTarget, self.sessionCursor + grant - 1)
+    for index = self.sessionCursor, last do
+        advance(self.sessions[index], now, self.flightState)
+    end
+    self.sessionCursor = last + 1
+    if self.sessionCursor <= self.sessionTarget then
+        self.want = math.min(SESSION_CAP, self.sessionTarget - self.sessionCursor + 1)
+        return 1
+    end
+
+    self.sessionTarget = nil
+    self.sessionCursor = 1
+    self.want = math.min(SESSION_CAP, #self.sessions)
+    drainBoundaries(self, now)
     self.cursor = self.support.roundRobin(self.entries, self.cursor, 1, updateEntry, self, now)
+    self.due = now + self.interval
+    self.revision = self.revision + 1
+    return self.interval
 end
 
 return history

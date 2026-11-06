@@ -181,7 +181,7 @@ Declared is by the rule from the audit's worst (M unless E).
 
 | Task | Class | Unit (cap) | Declared | Split or cap | Next release |
 |---|---|---|---|---|---|
-| history | CRITICAL | entry (1) | 0.65k | None | Every callback |
+| history | NORMAL | recording session (16), then one entry | `410 + 90 n` (max 1850) | 0.40k at 1; 1.53k at 16 (M) | Delay 1 between session slices; sample-time or post-batch boundary drain, one entry cleanup after the batch, then 5 ticks |
 | armed conditions | CRITICAL | switch condition (6) | `180 + 120 n` (max 900) | 150-595 at grants 1-6 (M); arm/boundary readers only |
 | control entries | NORMAL | trim/global-variable/State-switch entry (6) | `130 + 240 n` (max 1570) | 177-1121 at grants 1-6 (M); natural-unit exception below 2.24k |
 | control outputs | NORMAL | channel output (32) | `120 + 60 n` (max 2040) | 113-1694 at grants 1-32 (M); output-panel cadence is 10 ticks; natural-unit exception below 2.24k | Delay 1 while entries remain |

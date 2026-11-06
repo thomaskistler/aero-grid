@@ -116,6 +116,27 @@ local function testSchedulerOwnedServiceKeepsItsLegacySlot()
     end)
     assertions.assertEqual(updated, "telemetry", "telemetry keeps its next legacy release")
     assertions.assertEqual(telemetryUpdates, 1)
+
+    local historyRuntime = services.runtime({})
+    local historyUpdates = 0
+    local history = {
+        id = "history",
+        interval = 5,
+        due = 0,
+        count = 1,
+        preserveLegacySlot = true,
+        legacySlotReservation = true,
+        update = function()
+            historyUpdates = historyUpdates + 1
+        end,
+    }
+    services.register(historyRuntime, history, 0)
+    updated = services.update(historyRuntime, 0, function()
+        return false
+    end)
+    assertions.assertEqual(updated, "history", "history reserves its mixed-mode service slot")
+    assertions.assertEqual(history.due, 5)
+    assertions.assertEqual(historyUpdates, 0, "the scheduler-owned service is not updated by the legacy loop")
 end
 
 local function run()
