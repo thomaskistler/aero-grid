@@ -21,6 +21,17 @@ def load_cli():
 
 
 class InstrumentationTests(unittest.TestCase):
+    def test_shared_flight_loading_uses_persisted_documents_and_real_hidden_callbacks(self):
+        cases = load_cli().scenarios()
+        for name, revision in (("shared-flight-loading", 7), ("shared-flight-loading-edited", 12)):
+            case = cases[name]
+            self.assertTrue(case["sharedFlightLoad"])
+            self.assertTrue(case["settings"])
+            self.assertEqual(case["sharedFlightRevision"], revision)
+            self.assertIn(f"revision: {revision}", case["settingsDocument"])
+            self.assertTrue(audit.lua_literal(case["phases"]))
+        self.assertIn("retained comment", cases["shared-flight-loading-edited"]["settingsDocument"])
+
     def test_ordinary_reflow_separates_begin_wait_and_production_advances(self):
         cases = load_cli().scenarios()
         for panel in (*PANELS, "theme-showcase"):

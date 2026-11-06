@@ -238,6 +238,11 @@ def scenarios():
     result["layout-loading-error"] = dict(result["metric-max"], expected=0,
         layout=invalid_layout, fallbackLayout=invalid_layout,
         expectedError="unsupported layout version", phases=standard_phases())
+    result["shared-flight-loading"] = dict(result["metric-max"], sharedFlightLoad=True,
+        sharedFlightRevision=7, settings=True,
+        settingsDocument="version: 1\nmodelFilename: model1.yml\nrevision: 7\narmed: L64\n"
+                         "sessionReset: L03\nflight:\n  flightSwitch: L64\n",
+        phases=standard_phases())
     for panel in (*PANELS, "theme-showcase"):
         base = result["metric-max"] if panel == "theme-showcase" else result[f"{panel}-max"]
         result[f"panel-reflow-{panel}"] = dict(base, phases=standard_phases() + [
@@ -454,6 +459,8 @@ def scenarios():
     edited_source = ("# retained comment\n" * 64 + opening_source
         + '  history:\n    - name: "' + "quoted # text " * 16 + '" # ' + "inline comment " * 64
         + "\n      points: [1, 2]\n  announcements:\n    - name: old\n      enabled: true\n")
+    result["shared-flight-loading-edited"] = dict(result["shared-flight-loading"],
+        settingsDocument=edited_source, sharedFlightRevision=12)
     for mode in ("primary", "edited", "recovered", "missing", "legacy-none", "legacy-one", "legacy-conflict",
                  "return", "fullscreen", "identity", "invalid", "background",
                  "publish-return", "publish-fullscreen", "publish-explicit", "retirement"):
@@ -921,6 +928,8 @@ def prepare(capture, name, spec, sd, mode="legacy"):
     if inputs:
         (audit / "base-inputs.lua").write_text(inputs)
     config = {"scenario": name, "expectedPanels": spec["expected"], "phases": spec["phases"],
+              "sharedFlightLoad": spec.get("sharedFlightLoad", False),
+              "sharedFlightRevision": spec.get("sharedFlightRevision", 0),
               "constructionParity": spec.get("constructionParity", False),
               "fullscreen": spec.get("fullscreen", False),
               "baseInputs": bool(inputs), "swing": 0.4,

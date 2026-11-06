@@ -35,6 +35,13 @@ local function create()
 end
 local first, second = create(), create()
 local seen, waiting, replaced, partialRuntime, maximum = {}, false, false, false, 0
+for _, context in ipairs({ first, second }) do
+    local advance = context.dashboardLoader.advanceLoad
+    context.dashboardLoader.advanceLoad = function(current)
+        seen[current.stage] = true
+        return advance(current)
+    end
+end
 local expectedArmed = "SFv"
 local function step(context, callback)
     if context.stage then
@@ -47,10 +54,11 @@ local function step(context, callback)
             error("runtime loading must never use synchronous store.load")
         end
     end
-    if context == first and work and work.job and work.job.stage == "publish" and not replaced then
-        local job = work.job
-        context.dashboardLoader.beginLoad(context)
-        assert(context.flightPublicationJob == job, "replacement must retain started model publication")
+    local owningWork = first.flightLoading
+    if owningWork and owningWork.job and owningWork.job.stage == "publish" and not replaced then
+        local job = owningWork.job
+        first.dashboardLoader.beginLoad(first)
+        assert(first.flightPublicationJob == job, "replacement must retain started model publication")
         replaced = true
     end
     local runtime = context.serviceRuntime
@@ -149,5 +157,102 @@ for _, mode in ipairs({ "missing", "recovered", "damaged" }) do
     context.dashboardLoader.beginLoad(context)
     settle()
     assert(owner.document == document and owner.loadError == loadError)
+end
+for _, parkedStage in ipairs({
+    "flight-identity", "flight-store-writer", "flight-store-create",
+    "flight-load-begin", "flight-load", "publish", "missing", "damaged", "recovered",
+}) do
+    os.remove(settingsPath)
+    os.remove(settingsPath .. ".bak")
+    if parkedStage ~= "missing" then
+        file = assert(io.open(settingsPath, "w"))
+        file:write((parkedStage == "damaged" or parkedStage == "recovered") and "version: 0\n" or content)
+        file:close()
+    end
+    if parkedStage == "recovered" then
+        file = assert(io.open(settingsPath .. ".bak", "w"))
+        file:write(content)
+        file:close()
+    end
+    local target = (parkedStage == "missing" or parkedStage == "damaged" or parkedStage == "recovered")
+        and "flight-identity" or parkedStage
+    definition = fixture.module("main.lua")
+    fixture.reset()
+    local creator = create()
+    for _ = 1, 2000 do
+        local work = creator.flightLoading
+        if creator.stage == target
+            or target == "publish" and work and work.job and work.job.stage == "publish" then
+            break
+        end
+        fixture.tick(10)
+        definition.refresh(creator)
+    end
+    local owner = assert(creator.flightBroker)
+    assert(not owner.documentLoaded, "creator must stop before atomic publication")
+    local hidden, observer = create(), create()
+    for _ = 1, 1000 do
+        if hidden.stage == "flight-load-wait" then break end
+        fixture.tick(10)
+        definition.background(hidden)
+    end
+    assert(hidden.stage == "flight-load-wait")
+    local stage, job = creator.stage, creator.flightLoading.job
+    creator.reloadState = "clear"
+    definition.background(hidden)
+    assert(creator.stage == stage and creator.flightLoading.job == job,
+        "a cancelled creator must not be helped")
+    assert(hidden.dashboardLoader.workBound(hidden) == 100)
+    creator.reloadState = nil
+    creator.pageRetirement = {}
+    definition.background(hidden)
+    assert(creator.stage == stage and creator.flightLoading.job == job)
+    creator.pageRetirement = nil
+    local owning = owner.context
+    owner.context = nil
+    definition.background(hidden)
+    assert(owner:owningContext() == nil and creator.stage == stage,
+        "waiting must not replace a collected owner")
+    owner.context = owning
+    local advances, advance = 0, creator.dashboardLoader.advanceLoad
+    local activeHelper, reservation
+    creator.dashboardLoader.advanceLoad = function(current)
+        assert(activeHelper.scheduler.lastPlan.kind == "loader")
+        assert(reservation and reservation <= 4000
+            and activeHelper.schedulerHost.legacy.spent >= reservation,
+            "helping must reserve the full enclosing atom before owner mutation")
+        advances = advances + 1
+        return advance(current)
+    end
+    for _ = 1, 2000 do
+        if not hidden.stage and not observer.stage then break end
+        for _, context in ipairs({ hidden, observer }) do
+            if owner.store then
+                owner.store.load = function() error("shared initialization must not load synchronously") end
+            end
+            local before, instructions = advances, 0
+            activeHelper, reservation = context, context.dashboardLoader.workBound(context)
+            fixture.tick(10)
+            debug.sethook(function() instructions = instructions + 200 end, "", 200)
+            local ok, message = pcall(definition.background, context)
+            debug.sethook()
+            assert(ok, message)
+            assert(advances - before <= 1, "one callback may help at most one owner atom")
+            assert(instructions <= 15000, "shared loading exceeded the callback ceiling")
+            assert(owner:owningContext() == creator)
+            assert(not owner.loadError or parkedStage == "damaged")
+            assert(not owner.documentLoaded or parkedStage == "damaged"
+                or owner.document.revision == (parkedStage == "missing" and 0 or 7))
+        end
+    end
+    assert(not hidden.stage and not observer.stage and owner.documentLoaded, parkedStage)
+    if parkedStage == "damaged" then
+        assert(string.find(owner.loadError, "Unsupported model settings schema", 1, true))
+    else
+        assert(owner.document.armed == (parkedStage ~= "missing" and "SFv" or nil))
+        assert(not owner.document.flight or owner.document.flight.history == nil)
+    end
+    assert(creator.flightLoading == nil and advances > 0)
+    assert(#creator.errors == 0 and #hidden.errors == 0 and #observer.errors == 0)
 end
 print("Flight loading: pre-Armed selection, shared ownership, publication replacement and budgets passed: " .. maximum)

@@ -45,8 +45,43 @@ function module.new(dependencies)
         ["load-finish"] = 1500,
     }
     local resolutionBounds = { legibility = 2400, chart = 1800, alert = 2200, display = 650, finalize = 180 }
+    local sharedFlightStages = {
+        ["flight-identity"] = true,
+        ["flight-store-module"] = true,
+        ["flight-store-writer"] = true,
+        ["flight-store-armed"] = true,
+        ["flight-store-create"] = true,
+        ["flight-load-begin"] = true,
+        ["flight-load"] = true,
+    }
+
+    local function sharedFlightContext(context)
+        local work = context.flightLoading
+        local owner = work and work.owner
+        local current = owner and owner:owningContext()
+        if
+            owner and not owner.documentLoaded
+            and current and current ~= context
+            and current.flightFactory == context.flightFactory
+            and context.flightFactory.broker == owner
+            and context.flightFactory.members[current] and context.flightFactory.members[context]
+            and current.modelFilename == context.modelFilename
+            and not current.reloadState and not current.pageRetirement
+            and current.flightLoading and current.flightLoading.owner == owner
+            and sharedFlightStages[current.stage]
+        then
+            return current
+        end
+    end
 
     local function workBound(context)
+        if context.stage == "flight-load-wait" then
+            local current = sharedFlightContext(context)
+            if current then
+                local bound = current.dashboardLoader.workBound(current)
+                return bound and bound + 300 <= 4000 and bound + 300 or nil
+            end
+        end
         if context.stage == "theme-resolve" then
             return context.themeBuildWork and resolutionBounds[context.themeBuildWork.stage]
         end
@@ -514,6 +549,12 @@ function module.new(dependencies)
                     context.flightLoading, context.stage = nil, "services"
                 elseif owner:owningContext() == context then
                     context.stage = owner.store and "flight-load-begin" or "flight-store-module"
+                else
+                    local current = sharedFlightContext(context)
+                    if current then
+                        -- Help the existing owner's job; never transfer its scheduler ownership.
+                        current.dashboardLoader.advanceLoad(current)
+                    end
                 end
                 return true
             end

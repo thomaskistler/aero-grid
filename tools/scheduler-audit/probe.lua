@@ -140,6 +140,7 @@ local function finish(label, raw, leak)
         or label == "lifecycle:restartLoading"
         or loadingConstructor and boundedConstructors[loadingConstructor]
         or loadingPreparation
+        or string.match(label, "^load:flight%-load%-wait:shared:")
         or boundedReflow
         or label == "lifecycle:advanceReflow"
         or label == "lifecycle:beginReflow"
@@ -148,6 +149,7 @@ local function finish(label, raw, leak)
         gate(fitted <= 4000, label .. " exceeds the fitted lifecycle atom cap: " .. cost .. " -> " .. fitted)
         local bound = label == "lifecycle:restartLoading" and 600
             or label == "lifecycle:rebuildPage" and 200
+            or string.match(label, "^load:flight%-load%-wait:shared:") and loaderDeclarations[label]
             or P.lifecycleBounds and P.lifecycleBounds[label]
         gate(not bound or fitted <= bound, label .. " exceeds its declared lifecycle charge: " .. fitted)
     end
@@ -382,6 +384,16 @@ local function loadLabel(token, context)
     if token == nil then
         local stage = context.stage or "idle"
         local bound = context.dashboardLoader.workBound and context.dashboardLoader.workBound(context)
+        if stage == "flight-load-wait" then
+            local owner = context.flightLoading.owner
+            local current = owner:owningContext()
+            if current and current.flightLoading and not owner.documentLoaded then
+                local job = current.flightLoading.job
+                stage = stage .. ":shared:" .. tostring(current.stage)
+                    .. (job and ":" .. tostring(job.stage) or "")
+                    .. (job and job.load and ":" .. tostring(job.load.stage) or "")
+            end
+        end
         if stage == "flight-load" or stage == "flight-register" then
             local job = context.flightLoading.job
             stage = stage .. ":" .. tostring(job.stage or "done")
@@ -945,6 +957,10 @@ local function report(context)
                 checked = P.preparation.checked,
                 total = P.preparation.total,
                 done = P.preparation.done,
+            },
+            sharedFlight = config.sharedFlightLoad and {
+                done = P.sharedFlightDone == true,
+                hiddenLoaded = P.sharedFlightHidden and not P.sharedFlightHidden.stage,
             },
             stats = labels,
             worst = (function()
@@ -1778,6 +1794,10 @@ local function runCallback(kind, context, fn, e, t)
     end
     if surface and string.sub(surface, 1, 7) == "loader:" then
         gate(total <= 15000, surface .. " exceeds the complete loading callback ceiling: " .. total)
+        if surface == "loader:flight-load-wait" then
+            local fitted = math.ceil(((total - topSum) * 1.10 + 50) / 10) * 10
+            gate(fitted <= 2400, "shared Flight loading exceeds fitted service-only overhead: " .. fitted)
+        end
         for _, label in ipairs(topLabels) do
             gate(
                 not string.match(label, "^task:panel:")
@@ -1911,8 +1931,9 @@ local function advance(context)
     end
 end
 
-function P.register(refresh, background)
-    refreshFn, backgroundFn = refresh, background
+local createFn
+function P.register(refresh, background, create)
+    refreshFn, backgroundFn, createFn = refresh, background, create
 end
 
 -- The counter globals appear when the firmware first starts a callback.
@@ -1985,6 +2006,33 @@ local function entry(kind, context, fn, e, t)
     if not ready(context) then
         P.loaded = false
         recording = config.recordLoad ~= false
+        local owner = config.sharedFlightLoad and context.flightFactory and context.flightFactory.broker
+        if owner and not P.sharedFlightDone then
+            if not P.sharedFlightHidden then
+                gate(context.stage == "flight-identity" and not owner.documentLoaded and not owner.store,
+                    "shared loading must park the creator before store initialization")
+                runCallback("action:shared-flight-create", context, function()
+                    P.sharedFlightHidden = createFn(
+                        context.zone, { Layout = context.layoutName, Theme = "modern-dark" }, context.path
+                    )
+                end)
+                return
+            end
+            local hidden = P.sharedFlightHidden
+            install(hidden)
+            runCallback("background", hidden, backgroundFn)
+            gate(owner:owningContext() == context, "shared loading displaced its live owner")
+            gate(not owner.documentLoaded or owner.document ~= nil or owner.loadError ~= nil,
+                "shared loading published an incomplete document")
+            if ready(hidden) then
+                gate(owner.documentLoaded and not owner.loadError, "hidden widget did not load the shared document")
+                gate(owner.document and owner.document.revision == config.sharedFlightRevision,
+                    "hidden widget did not publish the persisted shared document")
+                gate(#hidden.errors == 0, "hidden shared-loader widget failed")
+                P.sharedFlightDone = true
+            end
+            return
+        end
         runCallback(kind, context, fn, e, t)
         recording = true
         return

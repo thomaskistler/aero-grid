@@ -18,7 +18,7 @@ MAIN_PATCHES = (
      "        return AUDIT.entry(\"refresh\", context, refresh, event, touch)\n    end,"),
     ("    background = background,", "    background = function(context)\n"
      "        return AUDIT.entry(\"background\", context, background)\n    end,"),
-    ("return {\n    name = \"AeroGrid\",", "AUDIT.register(refresh, background)\n\nreturn {\n    name = \"AeroGrid\","),
+    ("return {\n    name = \"AeroGrid\",", "AUDIT.register(refresh, background, create)\n\nreturn {\n    name = \"AeroGrid\","),
 )
 LOADER_PATCHES = (
     ("support.environment()", 'support.environment(assert(loadScript("/WIDGETS/AeroGrid/audit/inputs.lua"))())'),

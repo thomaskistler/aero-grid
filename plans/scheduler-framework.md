@@ -4621,3 +4621,66 @@ handoff, oversized-list and unchanged strict-reset regressions pass on Lua53
 and int32, as do the int32 scheduler suite and 56 audit-tool tests. The
 separate integrated Chart drawer opening exceeds its declared 1500 charge
 (1578 native); editor admission requires further fitted-cost verification.
+
+## 86. Hidden-widget progress for a parked shared Flight loader (R6)
+
+Prerequisite: `ed97f32` on integrated `39e6d37`. The regression reproduces with
+the prerequisite loader: after 1000 callbacks on only the hidden widget, the
+creator is still at `flight-identity`, the hidden widget at `flight-load-wait`,
+and the shared document is not loaded.
+
+A waiting loader now helps exactly one eligible pre-Armed Flight-loading atom
+on the existing creator's context. It reserves that atom's current bound plus
+300 for the complete enclosing wait dispatch, at most 2300. No synchronous
+store load or ownership transfer occurs. Model identity, factory membership,
+the original continuation, and absence of reload/retirement must still match.
+Absent owners and stale/cancelled continuations retain the existing waiting
+behavior; loader registration and atomic publication use their original jobs.
+
+The real native `shared-flight-loading` and `shared-flight-loading-edited`
+captures park the creator immediately after broker creation, then run only a
+second widget's actual background callback until its layout has loaded.
+Both have empty errors and confirm the persisted revision was published while
+the live owner remained unchanged.
+
+| Complete enclosing shared-loader atom | Native max | Fitted | Reserved bound |
+|---|---:|---:|---:|
+| Creator identity | 217 | 290 | 1100 |
+| Store module/writer/Armed module | 244 | 320 | 2300 |
+| Store creation | 240 | 320 | 1500 |
+| Load begin | 193 | 270 | 600 |
+| Load start | 409 | 500 | 900 |
+| Read | 656 | 780 | 1470 |
+| Edited parse | 1470 | 1670 | 2300 |
+| Build / previous-document preparation | 1013 | 1170 | 1650 |
+| Publication start | 442 | 540 | 900 |
+| Publication advance | 384 | 480 | 900 |
+
+Fitted values use the unchanged 10-percent-plus-50 rule. Complete shared-wait
+callbacks peak at 2226 and fitted fixed overhead at 680; the entire fixture
+peaks at 7455. Native gates cover the actual enclosing declaration, fitted 4000,
+whole callback 15000, fixed overhead 2400, and hidden-panel exclusion.
+
+Lua53/int32 tests cover parked identity/store/load/publication stages, two
+interleaved hidden helpers, one owner atom per callback, pre-mutation
+reservation, large edited settings, missing/damaged/recovered stores,
+replacement during publication, cancellation/retirement guards, and nil-owner
+non-displacement. The original shared initialization assertions remain intact,
+including persisted Armed/reset conditions, shared broker identity, and no
+duplicate flight after hidden reload. Background startup peaks at 1700 in the
+Lua hook; the broader Flight-loading suite peaks at 8200. Loading, lifecycle,
+owner handoff, and strict reset pass on both widths. Strict reset remains 8400
+with both original XFAILs; all 56 audit-tool tests pass.
+
+```sh
+python3 tools/audit-scheduler.py shared-flight-loading shared-flight-loading-edited --timeout 180
+build/lua32/lua tests/integration/widget/test_background_initialization.lua "$PWD"
+build/lua32/lua tests/integration/widget/test_flight_loading.lua "$PWD"
+build/lua32/lua tests/integration/widget/test_flight_owner_handoff.lua "$PWD"
+build/lua32/lua tests/integration/widget/test_session_reset.lua "$PWD"
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+```
+
+Production changes are confined to `dashboard_loader.lua`. Live/nil scheduler
+ownership, first-arm/reset expectations, ten-tick policy, main and editor are
+unchanged.
