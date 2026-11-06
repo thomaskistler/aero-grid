@@ -129,7 +129,8 @@ local function finish(label, raw, leak)
         loadBound = 500
     end
     if loadBound then
-        gate(cost <= loadBound, label .. " exceeds its bounded loading charge: " .. cost)
+        local fitted = fit(cost)
+        gate(fitted <= loadBound, label .. " exceeds its bounded loading charge: " .. cost .. " -> " .. fitted)
     end
     local boundedReflow = string.match(label, "^lifecycle:advanceReflow:")
     if label == "lifecycle:advanceReflow" or boundedReflow then

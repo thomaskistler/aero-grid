@@ -53,4 +53,35 @@ for _, call in ipairs({
     assert(a == true and b == nil and c == "result" and d == false)
 end
 assert(workCalls == 2 and labelCalls == 4)
+
+local fitStart = assert(string.find(source, "local function fit(", 1, true))
+local fitEnd = assert(string.find(source, "local function gate(", fitStart, true))
+local finishStart = assert(string.find(source, "local function finish(", 1, true))
+local finishEnd = assert(string.find(source, "-- A labelled measurement window.", finishStart, true))
+local gateProbe = assert(load(
+    [[
+local P, loaderDeclarations, config = {}, {}, { scenario = "" }
+local depth, childSum, visits, childList = 1, { 0 }, { 0 }, { {} }
+local top, topLabels, topSum = {}, {}, 0
+local K, calibrating, recording, previewTasks = 0, false, false, false
+local failures = {}
+local function gate(ok, message) if not ok then failures[#failures + 1] = message end end
+]]
+        .. string.sub(source, fitStart, fitEnd - 1)
+        .. string.sub(source, finishStart, finishEnd - 1)
+        .. [[
+return function(cost)
+    depth, childSum, visits, childList, failures = 1, { 0 }, { 0 }, { {} }, {}
+    finish("load:read", cost, 0)
+    return failures
+end
+]],
+    "@probe-loading-gate",
+    "t",
+    { math = math, string = string, table = table, type = type }
+))()
+assert(#gateProbe(630) == 0, "a fitted loading cost at its charge must pass")
+local failures = gateProbe(700)
+assert(#failures == 1 and string.find(failures[1], "700 -> ", 1, true),
+    "a raw cost within its charge must still fail when its fitted cost exceeds it")
 print("Scheduler audit probe: lifecycle arguments and return values preserved")
