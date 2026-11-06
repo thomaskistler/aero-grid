@@ -1,6 +1,6 @@
 # Scheduler Audit (Phase 0)
 
-Phase 0 of [scheduler-utilization.md](scheduler-utilization.md). No runtime code
+Baseline audit for [scheduler-framework.md](scheduler-framework.md). No runtime code
 changed; this records what each task costs and whether it can be cut smaller.
 
 Costs are Lua VM **instructions per call**. **M** = measured natively, **E** =
