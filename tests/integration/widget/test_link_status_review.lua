@@ -26,6 +26,11 @@ assertions.assertEqual(disconnected.readingCache.margin, 36)
 fixture.reset()
 context = fixture.createLoaded(nil, { Layout = "review-link-status", Theme = "modern-dark" })
 fixture.allowSchedulerWork(context)
+assert(fixture.pumpUntil(context, function(value)
+    local link = fixture.instanceOf(value, "detailed")
+    return link and link.qualityFeed and link.qualityFeed.available
+        and link.rssiFeed and link.rssiFeed.available
+end, 400), "link quality and RSSI must receive initial readings")
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assertions.assertEqual(#context.panels, 6)
