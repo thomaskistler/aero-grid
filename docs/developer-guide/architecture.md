@@ -372,6 +372,13 @@ present them; `editor_controller.lua` coordinates them with the live dashboard.
 `layout_store.lua` handles saving, backups, and user-versus-shipped
 resolution; `layout_registry.lua` maintains name-to-choice positions.
 Keep these boundaries intact when changing save behavior.
+Production editor entry requests staged session copies: each advance visits at
+most 16 graph entries/retirements, preserving independent original/draft copies,
+shared references and cycles. The editor stays hidden and rejects input until
+copying and batched UI construction complete. These callbacks reserve their
+construction work before running services under the service-only `editor-build`
+kind; hidden panel tasks are not eligible. The ordinary `editor.new` API remains
+synchronous unless its optional staged argument is set.
 Panel settings drawers, including entry subdrawers, put **Label** first when
 declared, preserving the declaration order of all remaining controls.
 

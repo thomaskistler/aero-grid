@@ -38,6 +38,24 @@ local function copy(value, seen)
     return result
 end
 
+local function copyReference(job, value)
+    if type(value) ~= "table" then
+        return value
+    end
+    local result = job.seen[value]
+    if not result then
+        result = {}
+        job.seen[value] = result
+        job.stack[#job.stack + 1] = { source = value, target = result }
+    end
+    return result
+end
+
+local function startCopy(value)
+    local job = { seen = {}, stack = {} }
+    return copyReference(job, value), job
+end
+
 local function safeIdentifier(value)
     return type(value) == "string" and string.match(value, "^[%w_-]+$") ~= nil
 end
@@ -147,15 +165,14 @@ end
 ---@param layout table Layout validator.
 ---@param panelHost table Panel contract implementation.
 ---@param loadPanel fun(typeName: string): table?, string?
+---@param staged? boolean Copy the document incrementally before exposing the UI.
 ---@return table? session
 ---@return string? error
-function editor.new(document, grid, layout, panelHost, loadPanel)
+function editor.new(document, grid, layout, panelHost, loadPanel, staged)
     if type(document) ~= "table" or type(document.panels) ~= "table" then
         return nil, "cannot edit an invalid layout"
     end
     local session = {
-        original = copy(document),
-        draft = copy(document),
         grid = grid,
         layout = layout,
         panelHost = panelHost,
@@ -164,7 +181,43 @@ function editor.new(document, grid, layout, panelHost, loadPanel)
         dirty = false,
         errors = {},
     }
+    if staged then
+        local original, job = startCopy(document)
+        session.original = original
+        session.initializing = { job = job, phase = "original" }
+    else
+        session.original, session.draft = copy(document), copy(document)
+    end
     return session
+end
+
+--- Copy at most 16 graph entries/retirements, preserving shared references and cycles.
+function editor.advanceInitialization(session)
+    local pending = session.initializing
+    if not pending then
+        return true
+    end
+    local job = pending.job
+    for _ = 1, 16 do
+        local frame = job.stack[#job.stack]
+        local key, value = next(frame.source, frame.key)
+        if key == nil then
+            job.stack[#job.stack] = nil
+        else
+            frame.key = key
+            frame.target[copyReference(job, key)] = copyReference(job, value)
+        end
+        if #job.stack == 0 then
+            if pending.phase == "original" then
+                session.draft, pending.job = startCopy(session.original)
+                pending.phase = "draft"
+                return false
+            end
+            session.initializing = nil
+            return true
+        end
+    end
+    return false
 end
 
 function editor.clone(value)
@@ -1025,6 +1078,12 @@ function editor.restoreDefault(session, document)
 end
 
 function editor.cancel(session)
+    if session.initializing or session.cancelled then
+        session.initializing, session.original, session.draft = nil, nil, nil
+        session.cancelled = true
+        session.selected, session.dirty, session.errors = 0, false, {}
+        return true
+    end
     session.draft = copy(session.original)
     session.selected = #session.draft.panels > 0 and 1 or 0
     session.dirty = false

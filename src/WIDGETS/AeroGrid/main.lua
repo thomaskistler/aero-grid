@@ -1072,19 +1072,26 @@ end
 
 --- Update legacy-owned services and run scheduler-owned tasks during a modal
 --- callback. Panels remain on their existing modal paths until their migration.
-local function updateModalServices(context)
+---@param context AeroGridContext
+---@param used? integer Reserved bounded modal work.
+---@param kind? string Defaults to the existing steady modal path.
+local function updateModalServices(context, used, kind)
     local scheduling = context.schedulerHost
     if not scheduling then
         updateServices(context)
         return
     end
     local ready = scheduling:ready(context)
-    local legacy = scheduling:begin("steady")
+    kind = kind or "steady"
+    local legacy = scheduling:begin(kind)
+    if legacy then
+        legacy.spent = used or 0
+    end
     updateServices(context, legacy)
-    if not ready then
+    if not ready and legacy then
         legacy.spent = math.max(legacy.spent, scheduling.scheduler.CEILING)
     end
-    scheduling:finish("steady")
+    scheduling:finish(kind)
 end
 
 --- The scheduled work of a steady or background callback with the host attached:
@@ -1687,7 +1694,11 @@ local function refresh(context, widgetEvent, touchState)
             or context.editorUi.previewRefresh
         )
     then
+        local building = context.editorUi.buildStage ~= nil
         context.editorController.advanceEditor(context)
+        if building and context.editorUi then
+            updateModalServices(context, 3000, "editor-build")
+        end
         return
     end
 

@@ -1729,3 +1729,72 @@ the current source, not skipped or weakened. Both reach the identical existing
 15200-instruction drawer failure: assertion line 109, `settleDrawer` line 165,
 caller line 1816, `stage=nil`. That remains an open input/drawer gate rather than
 a passing suite. The 23 audit-tool tests pass.
+
+## 25. Bounded editor entry and service-only construction callbacks (R5/R6)
+
+Production entry now requests an incremental editor session instead of cloning
+both documents synchronously. Each advance visits at most 16 graph entries or
+finished-table frames; table keys, cycles and shared references are preserved.
+The original is copied first and the independent draft is copied from that
+completed snapshot. The synchronous `editor.new` API remains unchanged for
+other callers. Cancellation releases the unfinished job and is idempotent.
+Input and UI construction remain blocked until both copies complete.
+
+Longer construction must not suspend recording. These callbacks now reserve
+3000 instructions for their bounded controller work and run service tasks under
+the explicit `editor-build` kind, with 2400 declared fixed host overhead and the
+existing separately charged Flight/reset head. The host extends only enrolled
+service declarations, through a cached host-local copy: services eligible in
+steady callbacks can run here, background-only services cannot, and panel
+declarations acquire no eligibility. Shared declarations and standalone scheduler
+fixtures remain unchanged. Other modal/preview paths retain their existing
+behavior and remain migration gates.
+
+| Surface | Native worst instructions |
+|---|---:|
+| Copy body, every cursor in plain/deep/table-key/cyclic fixtures | 798 |
+| Copy fixture declaration | 1000 |
+| 16-metric entry controller (previously 18871) | 715 |
+| Maximum-span chart entry controller | 610 |
+| Largest controller construction/copy body in real cases | 1353 |
+| Complete 16-metric copying callback | 3320 |
+| Complete chart copying callback | 5708 |
+| Complete 16-metric UI-building callback, including services | 4023 |
+| Complete chart UI-building callback, including services | 5719 |
+
+The last four rows are whole callbacks containing independently bounded service
+work as well as editor work; they use the 15000 callback ceiling, not the 4000
+atom ceiling. Native surface rows preserve their child spans and were checked
+for absence of panel/chart work. Actual History samples are present during both
+copy phases and UI construction. The new real-widget integration test also
+requires History progress through a long copy and through UI construction,
+unchanged History/Telemetry intervals of 10, and zero hidden-panel refreshes.
+
+Commands:
+
+```sh
+python3 tools/audit-scheduler.py --framework editor-initialization chart-construction chart-frame chart-readings chart-traces --timeout 180
+python3 tools/audit-scheduler.py editor-preview-metric editor-preview-chart --timeout 180
+python3 tools/audit-scheduler.py chart-min chart-max default-gallery --timeout 180
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+make test-lua32
+build/lua32/lua tests/unit/lib/test_editor.lua "$PWD"
+build/lua32/lua tests/unit/lib/test_editor_ui.lua "$PWD"
+```
+
+All exit 0. Targeted Lua 5.3 suites additionally pass for editor initialization,
+host eligibility, panel loading, shared-module code, session reset and chart
+session reset. The host test explicitly admits a service but rejects a hidden
+panel and a background-only service in `editor-build`, then verifies their
+ordinary kinds and unchanged shared declarations. Shared-module retained growth
+remains 0.1 KiB; session reset remains 14300 mock instructions and retains its
+existing first-arm XFAILs. The full editor integration suite still reaches the
+identical baseline 15200-instruction drawer failure at caller line 1816.
+
+Latest ordinary native chart-min/chart-max/default-gallery maxima are
+9189/9601/12411. The new host-local service declaration setup is included in these
+actual callbacks. The 16-metric legacy scenario still exceeds the callback
+ceiling (24751 across its editor scenario); stable preview admission, ordinary
+input/drawers, other modal kinds, Flight/Smart, and the remaining panel tasks
+are still gates. No production panel or Flight/Smart owner changed, and no
+deferred chart-recording assertion was relaxed.

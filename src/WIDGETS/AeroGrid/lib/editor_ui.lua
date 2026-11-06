@@ -189,6 +189,10 @@ function uiModule.advance(context)
     if not state then
         return false
     end
+    if state.session.initializing then
+        state.handlers.editor.advanceInitialization(state.session)
+        return true
+    end
     if state.previewPending then
         state.previewPending = nil
         state.previewRefresh = state.handlers.startPreview(state.session.draft)

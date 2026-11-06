@@ -749,4 +749,50 @@ do
     equal(#context.errors, 0)
 end
 
+do
+    local hostModule = fixture.module("lib/scheduler_host.lua")
+    local service, backgroundOnly, hiddenPanel = standin.new(), standin.new(), standin.new()
+    backgroundOnly.id = "background-only"
+    backgroundOnly.decl = {
+        class = "normal",
+        kinds = { background = true },
+        stages = standin.decl.stages,
+    }
+    service.queue, backgroundOnly.queue, hiddenPanel.queue = { 7 }, { 11 }, { 13 }
+    local context = {
+        panels = {},
+        serviceRuntime = { order = { service, backgroundOnly }, byId = {} },
+    }
+    local scheduling = hostModule.attach(context, {
+        mode = "mixed",
+        load = fixture.module,
+        api = {
+            log = function(_, message)
+                error(message)
+            end,
+        },
+    })
+    scheduling.owners = { ["service:standin"] = "new", ["service:background-only"] = "new" }
+    assert(scheduling:ready(context))
+    for _, record in pairs(context.scheduler.byId) do
+        record.due = getTime()
+    end
+    assert(context.scheduler:add({
+        id = "panel:hidden",
+        decl = standin.decl,
+        instance = hiddenPanel,
+        due = getTime(),
+    }))
+    context.scheduler:run("editor-build", getTime(), 3000)
+    equal(service.consumed, 1, "services remain eligible during editor construction")
+    equal(backgroundOnly.consumed, 0, "background-only services do not acquire foreground eligibility")
+    equal(hiddenPanel.consumed, 0, "hidden panel tasks cannot run while editor construction owns the screen")
+    equal(standin.decl.kinds, nil, "host eligibility must not mutate shared service declarations")
+    equal(backgroundOnly.decl.kinds["editor-build"], nil)
+    context.scheduler:run("steady", getTime() + 100, 0)
+    equal(hiddenPanel.consumed, 1, "ordinary panel eligibility remains unchanged")
+    context.scheduler:run("background", getTime() + 200, 0)
+    equal(backgroundOnly.consumed, 1, "background-only services retain their original kind")
+end
+
 print("Scheduler host passed")

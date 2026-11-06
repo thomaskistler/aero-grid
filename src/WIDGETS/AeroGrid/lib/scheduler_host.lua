@@ -93,7 +93,7 @@ host.PANEL_BOUNDS = {
 }
 
 --- Declared fixed cost of a callback at 16 panels (contracts, callback overhead).
-host.OVERHEAD = { steady = 1250, background = 1130 }
+host.OVERHEAD = { steady = 1250, background = 1130, ["editor-build"] = 2400 }
 
 --- Declared cost of the head work `pumpFlight` runs before the scheduler: the
 --- reset poll and the flight tick (which stay legacy at the head until R4).
@@ -119,6 +119,7 @@ function host.attach(context, options)
         waiting = {},
         registeredTasks = {},
         panelTasks = {},
+        serviceDeclarations = {},
     }, host)
 
     local legacy = { spent = 0 }
@@ -142,6 +143,26 @@ function host.attach(context, options)
     end
     context.schedulerHost, context.scheduler = self, self.scheduler
     return self
+end
+
+local function serviceDeclaration(self, declaration)
+    if type(declaration) ~= "table" or declaration.kinds ~= nil and type(declaration.kinds) ~= "table" then
+        return declaration
+    end
+    local result = self.serviceDeclarations[declaration]
+    if not result then
+        result = {}
+        for key, value in pairs(declaration) do
+            result[key] = value
+        end
+        result.kinds = {}
+        for kind, allowed in pairs(declaration.kinds or { steady = true, background = true }) do
+            result.kinds[kind] = allowed
+        end
+        result.kinds["editor-build"] = result.kinds.steady == true
+        self.serviceDeclarations[declaration] = result
+    end
+    return result
 end
 
 ---@param instance table Registered service.
@@ -309,7 +330,7 @@ function host:enroll()
             local due = getTime() + (item.critical and 0 or scheduler.stagger(item.index, interval))
             local ok, reason = scheduler:add({
                 id = item.id,
-                decl = task.decl,
+                decl = serviceDeclaration(self, task.decl),
                 instance = task,
                 due = due,
             })

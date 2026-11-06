@@ -329,7 +329,8 @@ function module.new(dependencies)
                 context.grid,
                 context.layoutValidator,
                 context.panelHost,
-                loadPanel
+                loadPanel,
+                true
             )
         end
         if not created or not session then
@@ -343,7 +344,7 @@ function module.new(dependencies)
         local handlers = {
             editor = context.editorModule,
             logError = function(operation, message)
-                local placement = session.draft.panels[session.selected]
+                local placement = session.draft and session.draft.panels[session.selected]
                 logError(
                     context,
                     "editor "

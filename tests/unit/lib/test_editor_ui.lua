@@ -31,7 +31,7 @@ lvgl = {
     end,
 }
 
-local function setup(count, resumed, failure)
+local function setup(count, resumed, failure, staged)
     local panels, entries = {}, {}
     for index = 1, count do
         local placement = {
@@ -83,7 +83,8 @@ local function setup(count, resumed, failure)
         editorDrawerModule = { close = function() end },
     }
     local previews, errors = 0, {}
-    local session = { draft = { panels = panels } }
+    local session = staged and assert(editor.new({ panels = panels }, grid, {}, {}, nil, true))
+        or { draft = { panels = panels } }
     local state = ui.open(context, session, {
         resumed = resumed,
         editor = editor,
@@ -152,6 +153,29 @@ do
     assert(errors[1][1] == "preview geometry" and errors[1][2] == "bad preview")
     assert(state.statusError and not state.statusLabel.hidden)
     assert(state.statusLabel.properties.text == "bad preview")
+end
+
+do
+    local context, state, calls = setup(16, nil, nil, true)
+    local steps = 0
+    while state.session.initializing do
+        assert(ui.advance(context))
+        steps = steps + 1
+        assert(steps < 100 and state.buildStage == 1 and state.screen.hidden)
+        assert(calls() == 0, "partial session must not enter preview rendering")
+    end
+    assert(steps > 1 and state.session.draft.panels[16].id == "p16")
+    for _ = 1, 15 do
+        assert(ui.advance(context))
+    end
+    assert(state.buildStage == nil and not state.screen.hidden and calls() == 1)
+end
+
+do
+    local context, state = setup(16, nil, nil, true)
+    assert(ui.advance(context) and state.session.initializing)
+    ui.close(context, true)
+    assert(context.editorUi == nil and state.session.initializing == nil and state.session.cancelled)
 end
 
 for stage = 1, 14 do

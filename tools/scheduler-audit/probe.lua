@@ -467,6 +467,9 @@ local function callbackSurface(kind, context)
     end
     local ui = context.editorUi
     if ui then
+        if ui.session.initializing then
+            return "editor-copy:" .. ui.session.initializing.phase
+        end
         if ui.buildStage then
             return "editor-build:" .. tostring(ui.buildStage)
         end
@@ -504,7 +507,7 @@ local function runCallback(kind, context, fn, e, t)
     if recording then
         record("callback:" .. kind .. suffix, total, overhead, 1)
         if surface then
-            record("surface:" .. surface .. ":" .. kind .. suffix, total, overhead, 1)
+            record("surface:" .. surface .. ":" .. kind .. suffix, total, overhead, 1, table.concat(top, ","))
         end
         local phase = config.phases[phaseIndex]
         if P.loaded and phase and phase.name then

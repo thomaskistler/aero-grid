@@ -825,6 +825,54 @@ local function testOptionalNumbersCanBeCleared()
     end
 end
 
+local function testStagedInitialization()
+    local input = document()
+    input.alias = input.panels[1].config
+    input.alias.self, input.alias[input.alias] = input.alias, input.alias
+    input.future = {}
+    local node = input.future
+    for index = 1, 128 do
+        node.child = { index = index }
+        node = node.child
+    end
+    local session = assert(editor.new(input, grid, layout, panelHost, loadPanel, true))
+    assert(session.initializing and session.draft == nil and not session.dirty)
+    local steps = 0
+    while session.initializing do
+        steps = steps + 1
+        assert(steps < 1000)
+        local done = editor.advanceInitialization(session)
+        assert(done == (session.initializing == nil))
+    end
+    assert(steps > 16, "large documents must yield between bounded traversals")
+    for _, result in ipairs({ session.original, session.draft }) do
+        assert(result ~= input and result.panels ~= input.panels)
+        assert(result.alias == result.panels[1].config and result.alias ~= input.alias)
+        assert(result.alias.self == result.alias and result.alias[result.alias] == result.alias)
+        assert(result.panels[1].config.label == "First")
+        local child = result.future
+        for index = 1, 128 do
+            child = child.child
+            assert(child.index == index)
+        end
+    end
+    assert(session.original.alias ~= session.draft.alias)
+    session.draft.alias.label = "changed"
+    assert(session.original.alias.label == "First" and input.alias.label == "First")
+
+    for _, phase in ipairs({ "original", "draft" }) do
+        local partial = assert(editor.new(input, grid, layout, panelHost, loadPanel, true))
+        while partial.initializing.phase ~= phase do
+            assert(not editor.advanceInitialization(partial))
+        end
+        assert(editor.cancel(partial) and editor.cancel(partial))
+        assert(partial.cancelled and partial.initializing == nil)
+        assert(partial.original == nil and partial.draft == nil and not partial.dirty)
+        assert(editor.advanceInitialization(partial) and partial.draft == nil)
+    end
+end
+
+testStagedInitialization()
 testAllPanelDrawersStartWithLabel()
 testCatalogAlphabeticalOrder()
 testNestedStateLists()
