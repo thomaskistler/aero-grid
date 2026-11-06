@@ -9,6 +9,10 @@ fixture.reset()
 fixture.radio.values[100] = 16.4
 local context = fixture.createLoaded(nil, { Layout = "review-rx-battery", Theme = "modern-dark" })
 fixture.allowSchedulerWork(context)
+assert(fixture.pumpUntil(context, function(value)
+    local pack = fixture.instanceOf(value, "pack")
+    return pack and pack.feed and pack.feed.available
+end, 400), "receiver battery source must receive an initial reading")
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assertions.assertEqual(#context.panels, 7)
@@ -388,6 +392,10 @@ fixture.reset()
 fixture.radio.values[100] = 16.4
 local live = fixture.createLoaded(nil, { Layout = "review-rx-battery", Theme = "modern-dark" })
 fixture.allowSchedulerWork(live)
+assert(fixture.pumpUntil(live, function(value)
+    local monitor = fixture.instanceOf(value, "monitor")
+    return monitor and monitor.feed and monitor.feed.available
+end, 400), "cell monitor must receive an initial reading")
 fixture.pump(live, 40)
 local monitor = fixture.instanceOf(live, "monitor")
 local panel = fixture.module("panels/rx-battery.lua")
