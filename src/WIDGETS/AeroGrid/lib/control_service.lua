@@ -545,6 +545,46 @@ function controlService:armSwitch(name, index)
     return view, entry
 end
 
+--- Prepare a shared Armed reader without scanning its former polling groups.
+function controlService:startArmSwitch(name, index)
+    local view = self:switch(name, index)
+    return { owner = self, view = view, entry = self.switchEntries[name], group = "critical" }
+end
+
+--- Retain the synchronous armSwitch cursor/removal semantics, one examined
+--- subscription per turn. The Armed service subscribes only after completion.
+function controlService:advanceArmSwitch(job)
+    assert(job.owner == self, "Invalid Armed reader claim")
+    local entry = job.entry
+    if job.done or entry.armed then
+        job.done = true
+        return true
+    end
+    local group = job.group
+    local entries, cursor = self[group .. "Entries"], group .. "Cursor"
+    local position = math.min(job.position or #entries, #entries)
+    if position > 0 and entries[position] ~= entry then
+        job.position = position - 1
+        return false
+    elseif position > 0 then
+        table.remove(entries, position)
+        if self[cursor] > position then
+            self[cursor] = self[cursor] - 1
+        end
+        if self[cursor] > #entries then
+            self[cursor] = 1
+        end
+        self[group .. "Remaining"] = nil
+        self.tasks[group].want = math.min(POLL_CAP, #entries)
+    end
+    if group == "critical" then
+        job.group, job.position = "normal", nil
+        return false
+    end
+    entry.armed, job.done = true, true
+    return true
+end
+
 --- Register a subscription and publish its immutable view.
 ---@param state table
 ---@param read fun(self: table, entry: table, now: integer)

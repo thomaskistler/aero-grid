@@ -3709,3 +3709,71 @@ loader kind, including eight additional audit-only kinds; framework release
 
 Lua53/int32 parser/error ordering/cancellation and existing construction/theme/
 host integration tests pass. No hidden periodic panel work is admitted.
+
+## 66. Bounded Flight configuration and initial document load (R4/R6 API)
+
+`flight_registration.begin(context)` creates a registration job;
+`advance(job) -> done, ok, error` returns `false` while pending and an
+idempotent terminal result. Retained-arm copying, source resolution and
+declaration subscription advance one item at a time; member declarations and
+retained-arm metadata commit together after validation. The synchronous
+`configure(context)` behavior is retained. A shared Control helper stages the
+otherwise unbounded Armed-reader removal scan one subscription per turn,
+preserving polling order, demand, cursor and in-progress-cycle semantics.
+
+Initial model loading uses `beginLoad(context, store)` with the same advance
+contract **before constructing dashboard Armed**. Prerequisites are the actual
+factory/member and broker-owning context, an initialized current-model broker
+filename, a captured model identity, and an initialized bounded-reader store.
+The parent must split broker identity/reset, module loading and store construction
+into explicit atoms; supplying preloaded YAML, verified-file, Flight config and
+Armed config dependencies prevents hidden constructor loads. After Flight
+construction, finish model load/publication before copying `owner.document.armed`
+to `runtime.modelArmed` and constructing Armed. Other dashboards must reuse/wait
+for this canonical model document, not start duplicate reads. Same-model cached
+success or load failure returns immediately without disk access.
+
+`workBound(job)` selects the current registration charge or the store's reader
+charge plus 300 for the complete outer advance. Begin/load-begin creation uses
+`BOUNDS.begin`/`BOUNDS["load-begin"]`. Optional `{store=...}` on `begin` can
+append the load tail, but is not a substitute for the pre-Armed ordering.
+`job.loadInfo` preserves filename/recovered/notice/missing metadata exactly.
+Store failures preserve synchronous diagnostics and the legacy cached-load-error
+state. Context replacement, model change and owning-host retirement stop
+pre-publication work explicitly without poisoning a replacement host's load.
+An already-started same-model publication drains through a registry gap.
+Nothing enrolls, removes, retimes or ticks the canonical Flight/Smart tasks.
+
+| Complete native API stage | Maximum | Prior-work charge |
+|---|---:|---:|
+| begin | 59 | 120 |
+| retained / sources | 112 / 197 | 180 / 270 |
+| arms / claim / declaration | 270 / 266 / 266 | 350 each |
+| registration commit / rejected context | 136 / 49 | 200 / 110 |
+| beginLoad / load-start | 42 / 214 | 100 / 400 |
+| read / tokenize | 689 / 1319 | 970 / 1800 |
+| YAML build / validate | 798 / 778 | 1150 each |
+| publication start / advance | 209 / 171 | 400 each |
+
+The largest measured atom is 1319, requiring a fitted normal declaration of
+1510, below the unchanged 4000 cap. Framework release cost is 241 against 420.
+The native fixtures cover every actual reader turn, escaped model identities,
+missing/backup recovery, schema 0 rejection, malformed and arbitrarily edited
+obsolete sequence data, long comments/plain values and read failures. Core
+registration measures up to 128 retained/sourced declarations and dense polling
+groups; int32/Lupa behavior checks extend to 512 and compare synchronous output,
+reader order/cursors and exact canonical task identities/deadlines through
+successful/failed loading and host resync.
+
+The complete int32 scheduler suite passes. The old local synchronous main still
+fails the shared-flight model-change callback budget after importing the parent
+reader/YAML prerequisites; an untouched prerequisite tree reproduces that
+failure. Parent integration must replace that path, not weaken its assertion.
+Complete foreground/background loader callback eligibility, final accounting,
+production owner activation and removal of the duplicate legacy head path remain
+parent gates; this slice changes no owner or recording/reset policy.
+
+```sh
+python3 tools/audit-scheduler.py --framework flight-registration flight-registration-load --timeout 180
+make test-lua32
+```

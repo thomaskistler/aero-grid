@@ -467,6 +467,13 @@ Recovery/missing metadata matches synchronous `load`; pending jobs reject model
 identity changes, while completed results remain idempotent.
 No handle remains open between advances, so an abandoned reader needs no cancel
 operation.
+Flight loading uses `flight_registration.beginLoad(context, store)` before
+constructing dashboard Armed, then `begin(context)` for staged declaration
+registration. Both use `advance(job) -> done, ok, error` and `workBound(job)`.
+Retained arms, sources and shared-reader claims advance one item per turn;
+member declarations publish atomically. Same-model reloads reuse cached model
+documents and retain canonical broker releases, including on configuration
+errors. The synchronous `configure` API remains available for direct callers.
 Menu and location overlays also use service-only callbacks: hidden panels do
 not refresh behind them. Menu action handlers consume their callback separately
 from popup construction and input; unmeasured action handlers do not inherit
