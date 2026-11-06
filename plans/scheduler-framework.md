@@ -1681,3 +1681,51 @@ modal/preview eligibility without starving History. The chart editor's observed
 whole-callback pass does not establish those gates for all placements. No
 production dispatch, owner, callback kind, deferred stress assertion or ten-tick
 History/Telemetry policy changed in this measurement slice.
+
+## 24. Bounded initial editor rendering (R6, ownership unchanged)
+
+The former final UI-construction callback ran preview synchronization, geometry
+and visibility for all 16 slots, add-panel placement and status publication at
+once. These now use the same helpers as ordinary rendering but run in separate
+construction callbacks: synchronization, four groups of four preview slots, then
+add-panel/status finalization. The screen remains hidden until the last callback.
+Initial change detection survives all groups; resumed-preview scheduling and
+error reporting still occur at the same publication boundary. Ordinary input
+rendering retains its existing synchronous behavior and remains a separate gate.
+
+Matched native cases use all 16 metric placements and the maximum-span chart:
+
+| Construction surface | 16 metrics | One chart |
+|---|---:|---:|
+| Largest controller construction body, all stages | 1350 | 1079 |
+| Synchronize initial preview, whole callback | 1154 | 1065 |
+| Largest four-slot geometry/visibility callback | 1775 | 1200 |
+| Add-panel/status publication, whole callback | 1280 | 1199 |
+| Largest whole callback across all construction stages | 1932 | 2459 |
+
+This removes the observed 6680-instruction final construction body. Every
+UI-construction callback in these native cases is below 4000, including its
+actual Flight/head work. This is measured construction coverage, not a complete
+modal declaration or proof for unmeasured drawers/input callbacks. Entry still
+takes 18871 instructions for the 16-metric document; stable preview still reaches
+21751. Whole-scenario maxima are 24543/10329. These remaining gates prevent an
+ownership or eligibility change.
+
+```sh
+python3 tools/audit-scheduler.py editor-preview-metric editor-preview-chart --timeout 180
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+```
+
+Both exit 0; all native construction-stage rows were additionally checked against
+4000. The new targeted `tests/unit/lib/test_editor_ui.lua` and existing
+`tests/unit/lib/test_editor.lua` pass through `tests.run.run_test` with Lua 5.3.
+The new suite checks zero/one/16 placements, existing/new preview slots, exact
+geometry and visibility, hidden-until-complete publication, retained change
+detection, resumed drafts, preview errors and cancellation after every unfinished
+construction stage.
+
+The full editor integration suite was also run against archived `a8cfcce` and
+the current source, not skipped or weakened. Both reach the identical existing
+15200-instruction drawer failure: assertion line 109, `settleDrawer` line 165,
+caller line 1816, `stage=nil`. That remains an open input/drawer gate rather than
+a passing suite. The 23 audit-tool tests pass.

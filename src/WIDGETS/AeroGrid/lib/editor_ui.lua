@@ -41,7 +41,7 @@ local function keyMatches(event, name)
     return false
 end
 
-local function render(context, state)
+local function prepareRender(context, state)
     local placements = state.session.draft.panels
     local changed = state.panelCount ~= #placements
     state.panelCount = #placements
@@ -50,7 +50,13 @@ local function render(context, state)
         state.status, state.statusError = tostring(previewError), true
         state.handlers.logError("preview geometry", previewError)
     end
-    for index, preview in ipairs(state.previews) do
+    return changed
+end
+
+local function renderPreviews(context, state, first, last)
+    local placements, changed = state.session.draft.panels, false
+    for index = first, last do
+        local preview = state.previews[index]
         local placement = placements[index]
         local existing = placement and state.existing[placement.id] == placement.type
         visible(preview.background, placement ~= nil and not existing)
@@ -94,6 +100,10 @@ local function render(context, state)
             controls.placement, controls.rect = nil, nil
         end
     end
+    return changed
+end
+
+local function finishRender(context, state, changed)
     if changed then
         local first = state.handlers.editor.availablePositions(state.session, 1, 1)[1]
         state.addRect = first and assert(context.grid.rect(context.zone, first, 4, 4, 4)) or nil
@@ -111,6 +121,12 @@ local function render(context, state)
             or state.status,
     })
     visible(state.statusLabel, state.statusError == true)
+end
+
+local function render(context, state)
+    local changed = prepareRender(context, state)
+    local moved = renderPreviews(context, state, 1, #state.previews)
+    finishRender(context, state, changed or moved)
 end
 
 local function openDrawer(context, state, mode)
@@ -374,8 +390,14 @@ function uiModule.advance(context)
             context.theme.color.textMuted,
             MIDSIZE
         )
+    elseif stage == 10 then
+        state.initialRenderChanged = prepareRender(context, state)
+    elseif stage <= 14 then
+        local changed = renderPreviews(context, state, (stage - 11) * 4 + 1, (stage - 10) * 4)
+        state.initialRenderChanged = state.initialRenderChanged or changed
     else
-        render(context, state)
+        finishRender(context, state, state.initialRenderChanged)
+        state.initialRenderChanged = nil
         state.buildStage = nil
         lvgl.show(state.screen)
         -- A resumed draft differs from the committed dashboard just rebuilt.
