@@ -11,7 +11,8 @@ local function loaded()
     return context
 end
 
-for _, operation in ipairs({ "retirePage", "advanceAppRebuild" }) do
+for _, case in ipairs({ "retirePage", "advanceAppRebuild", "advanceAppRebuildErrors" }) do
+    local operation = case == "advanceAppRebuildErrors" and "advanceAppRebuild" or case
     for _, background in ipairs({ false, true }) do
         local context = loaded()
         local lifecycle, scheduling = context.dashboardLifecycle, context.schedulerHost
@@ -48,6 +49,9 @@ for _, operation in ipairs({ "retirePage", "advanceAppRebuild" }) do
             context.reloadState = "clear"
         else
             context.appRebuild = { entry = context.panels[1], index = 1 }
+            if case == "advanceAppRebuildErrors" then
+                context.errors[1] = "expected lifecycle error"
+            end
         end
         local seen, admittedPhases = {}, {}
         for _ = 1, 150 do
@@ -119,10 +123,11 @@ for _, operation in ipairs({ "retirePage", "advanceAppRebuild" }) do
             for _, phase in ipairs({ "cancel", "settings", "panel", "pending", "menu", "page", "finalize" }) do
                 assert(admittedPhases[phase], phase .. " lost service-only admission")
             end
-            local finish, called = scheduling.finish, false
-            scheduling.finish = function(...)
-                called = true
-                return finish(...)
+            local finish, called = scheduling.finish, nil
+            scheduling.finish = function(self, kind, ...)
+                called = kind
+                assert(self.legacy.spent >= scheduling.panelSetup + 600, "restart must reserve the complete operation")
+                return finish(self, kind, ...)
             end
             if background then
                 definition.background(context)
@@ -130,7 +135,9 @@ for _, operation in ipairs({ "retirePage", "advanceAppRebuild" }) do
                 definition.refresh(context)
             end
             scheduling.finish = finish
-            assert(not called and context.stage, "combined page rebuild and beginLoad must stay ineligible")
+            assert(called == "loader" and context.stage, "page restart must admit services before beginning the load")
+            assert(panelRuns == 0 and panel.due == panelDue, "page restart cannot release hidden panels")
+            assert(future.due == futureDue, "page restart cannot pull future service deadlines forward")
         else
             assert(not context.appRebuild)
             assert(admittedPhases.retire and admittedPhases.finish)
@@ -138,7 +145,12 @@ for _, operation in ipairs({ "retirePage", "advanceAppRebuild" }) do
                 assert(seen[phase] and not admittedPhases[phase], phase .. " must retain its unproven gate")
             end
         end
-        assert(#context.errors == 0, table.concat(context.errors, "; "))
+        if case == "advanceAppRebuildErrors" then
+            assert(#context.errors == 1 and context.errors[1] == "expected lifecycle error")
+            assert(context.errorLabel, "admitted App finish must present accumulated errors")
+        else
+            assert(#context.errors == 0, table.concat(context.errors, "; "))
+        end
     end
 end
 
@@ -161,18 +173,14 @@ for _, background in ipairs({ false, true }) do
     assert(not called and context.reflowIndex, "reflow remains a separate unproven admission gate")
 end
 
-for _, phase in ipairs({ "retire", "finish" }) do
+do
     local context = loaded()
     local entry = context.panels[1]
-    context.appRebuild = { entry = entry, phase = phase }
-    if phase == "retire" then
-        entry.module.destroy = function() end
-    else
-        context.errors[1] = "expected lifecycle error"
-    end
+    context.appRebuild = { entry = entry, phase = "retire" }
+    entry.module.destroy = function() end
     assert(
         not context.dashboardLifecycle.workBound(context, "advanceAppRebuild"),
-        "unmeasured destroy/error presentation remains ineligible"
+        "unmeasured custom destroy remains ineligible"
     )
 end
 print("Lifecycle foreground/background service-only admission preserves hidden-panel and service deadlines")

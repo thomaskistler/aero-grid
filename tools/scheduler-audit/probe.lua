@@ -132,12 +132,15 @@ local function finish(label, raw, leak)
         string.match(label, "^lifecycle:advanceAppRebuild:")
         or string.match(label, "^lifecycle:retirePage:")
         or label == "lifecycle:rebuildPage"
+        or label == "lifecycle:restartLoading"
         or loadingConstructor and boundedConstructors[loadingConstructor]
         or rxReflow
     then
         local fitted = math.ceil((cost * 1.10 + 50) / 10) * 10
         gate(fitted <= 4000, label .. " exceeds the fitted lifecycle atom cap: " .. cost .. " -> " .. fitted)
-        local bound = label == "lifecycle:rebuildPage" and 150 or P.lifecycleBounds and P.lifecycleBounds[label]
+        local bound = label == "lifecycle:restartLoading" and 600
+            or label == "lifecycle:rebuildPage" and 200
+            or P.lifecycleBounds and P.lifecycleBounds[label]
         gate(not bound or fitted <= bound, label .. " exceeds its declared lifecycle charge: " .. fitted)
     end
     if previewTasks and string.sub(label, 1, 11) == "task:panel:" then
@@ -427,7 +430,7 @@ local function install(context)
                 P.editorInputAdmission = true
             end
             P.lifecycleAdmissionKind = kind
-            if kind == "loader" and (context.reloadState == "clear" or context.appRebuild) then
+            if kind == "loader" and (context.reloadState or context.appRebuild) then
                 P.lifecycleServiceOnly = true
             end
             return kind or "steady"
@@ -948,6 +951,16 @@ actions = {
             end
         end
         P.lifecyclePage = context.page
+        local phase = config.phases[phaseIndex]
+        if phase and phase.recreateRoot then
+            P.lifecycleRoot = context.root
+            context.rootBuiltFullscreen, context.fullScreen = true, false
+            _G.lvgl = setmetatable({
+                isFullScreen = function()
+                    return false
+                end,
+            }, { __index = lvgl })
+        end
         context.reloadState = "clear"
     end,
     ["lifecycle-app-background"] = function(context)
@@ -978,6 +991,19 @@ actions = {
         assert(context.flightBroker.document.flight.motorReversed == P.settingsReversed)
         actions["check-lifecycle"](context)
     end,
+    ["lifecycle-error-finish"] = function(context)
+        assert(not context.appRebuild and not context.reloadState and not context.stage)
+        P.lifecycleStarted = true
+        context.errors = {}
+        for index = 1, 128 do
+            context.errors[index] = config.expectedError
+        end
+        context.appRebuild = { entry = context.panels[1], phase = "finish" }
+    end,
+    ["check-lifecycle-errors"] = function(context)
+        assert(not context.appRebuild and context.errorLabel, "App finish must present accumulated errors")
+        assert(#context.errors == 128 and context.errors[128] == config.expectedError)
+    end,
     ["check-lifecycle"] = function(context)
         assert(not context.appRebuild and not context.pendingConstruction and not context.pageRetirement)
         assert(not context.reloadState and not context.stage, "lifecycle must reach the rebuilt dashboard")
@@ -992,6 +1018,9 @@ actions = {
         end
         if P.lifecyclePage then
             assert(context.page ~= P.lifecyclePage)
+        end
+        if P.lifecycleRoot then
+            assert(context.root and context.root ~= P.lifecycleRoot, "restart must recreate a discarded root")
         end
     end,
     ["open-location"] = function(context)
@@ -1424,10 +1453,17 @@ local function runCallback(kind, context, fn, e, t)
     local surface = callbackSurface(kind, context)
     P.editorInputSeen, P.editorInputAdmission = nil, nil
     P.lifecycleOperation, P.lifecycleAdmissionKind, P.lifecycleServiceOnly = nil, nil, nil
+    local restarting = (kind == "refresh" or kind == "background") and context.reloadState == "rebuild"
+    if restarting then
+        P.lifecycleOperation = "restartLoading"
+    end
     local c0 = count()
     fn(context, e, t)
     local c1 = count()
     pause(true)
+    if restarting then
+        gate(P.lifecycleAdmissionKind == "loader", "page restart must reserve service-only loader work")
+    end
     if P.editorInputSeen or P.editorInputAdmission then
         surface = "editor-input"
     end

@@ -69,6 +69,7 @@ local WIDGET_PATH = "/WIDGETS/AeroGrid/"
 -- The probe is development-only; releases use the same mixed owner table without it.
 local SCHEDULER_MODE = "mixed"
 local SCHEDULER_PROBE = false
+local RESTART_LOAD_BOUND = 600
 
 local function directory(path)
     return string.sub(path, -1) == "/" and path or path .. "/"
@@ -1144,6 +1145,11 @@ local function advanceLifecycle(context, operation)
     lifecycle[operation](context)
 end
 
+local function restartLoading(context)
+    context.dashboardLifecycle.rebuildPage(context)
+    context.dashboardLoader.beginLoad(context)
+end
+
 local function advanceFlightJob(context)
     if context.pendingFlightError then
         updateModalServices(context, 1500, "loader")
@@ -1819,8 +1825,8 @@ local function refresh(context, widgetEvent, touchState)
     end
 
     if context.reloadState == "rebuild" then
-        context.dashboardLifecycle.rebuildPage(context)
-        context.dashboardLoader.beginLoad(context)
+        updateModalServices(context, RESTART_LOAD_BOUND, "loader")
+        restartLoading(context)
         return
     end
 
@@ -2046,8 +2052,8 @@ local function background(context)
         advanceLifecycle(context, "retirePage")
         return
     elseif context.reloadState == "rebuild" then
-        context.dashboardLifecycle.rebuildPage(context)
-        context.dashboardLoader.beginLoad(context)
+        updateModalServices(context, RESTART_LOAD_BOUND, "loader")
+        restartLoading(context)
         return
     elseif context.stage then
         advanceLoading(context)

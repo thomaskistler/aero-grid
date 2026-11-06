@@ -4160,3 +4160,40 @@ picker errors pass at whole maxima 9233/6332/6723/6714. The repeated sixteen-Met
 tap scenario admits input at 4025 and drawer opening at 3316, but retains a
 21337-instruction legacy steady frame. Its empty admission error list is not a
 whole-frame pass claim.
+
+## 78. Complete page restart and App-error presentation admission (R6)
+
+Foreground and background page restart now reserve 600 before running services,
+then execute `rebuildPage` and `beginLoad` as one measured operation. Native
+coverage includes retained roots and actual retirement/discard/recreation of a
+fullscreen-built root, with one cleanup callback per turn.
+
+| Complete atom | Native maximum | Fitted | Declaration |
+|---|---:|---:|---:|
+| Restart, retained root | 220 | 300 | 600 |
+| Restart, recreated root | 255 | 340 | 600 |
+| Rebuild with root creation | 98 | 160 | 200 |
+| App finish presenting accumulated errors | 81 | 140 | 150 |
+
+Root recreation exposed the old standalone rebuild declaration of 150 as too
+small; its measured declaration is now 200. Neither the fitted 4000 atom cap nor
+the 15000 callback ceiling changed. App finish's existing 150 charge also covers
+new and existing error labels, including 128 accumulated long error messages;
+error presentation no longer disables service-only admission.
+
+Eight restart captures have empty errors: Output, background, sixteen-Metric
+retirement, cancellation, settings drain, multi-panel App return, and recreated
+roots in both callback kinds. Their largest whole callback is 11129, largest
+restart callback 8138, and restart overhead 579 (fitted 690 against 2400).
+The two final error-presentation captures verify actual admission, with complete
+finish callbacks 3525 foreground / 2825 background and whole maxima 7955 / 7916.
+The probe checks pre-mutation eligibility, declared complete bounds and hidden
+panel exclusion, not merely inner module costs.
+
+Lua53/int32 lifecycle admission and strict reset pass; reset remains 10800 with
+both original first-arm XFAILs. The admission regression retains custom-destroy
+and reflow gates and verifies service/future/hidden-panel deadlines during both
+successful and error-presenting App completion. All 50 audit-tool tests pass.
+Production ownership, ten-tick Telemetry/History policy and deferred chart
+recording failures remain unchanged; activation still requires the separate
+first-arm policy decision.

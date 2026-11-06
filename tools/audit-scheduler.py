@@ -387,6 +387,24 @@ def scenarios():
         {"name": "settings-drained", "kind": "refresh", "action": "check-lifecycle-settings",
          "callbacks": 1, "step": 5, "perCall": 1},
     ])
+    for kind in ("refresh", "background"):
+        result[f"lifecycle-restart-root-{kind}"] = dict(result["output-max"], fullscreen=True, phases=[
+            {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 1},
+            {"name": "retire-root", "kind": kind, "action": "lifecycle-retire", "recreateRoot": True,
+             "callbacks": 400, "step": 5, "perCall": 1, "trace": True},
+            {"name": "root-checked", "kind": "refresh", "action": "check-lifecycle",
+             "callbacks": 1, "step": 5, "perCall": 1},
+        ])
+        result[f"lifecycle-error-finish-{kind}"] = dict(result["output-max"], fullscreen=True,
+            expectedError="injected lifecycle error " + "x" * 256, phases=[
+                {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 1},
+                {"name": "new-error-label", "kind": kind, "action": "lifecycle-error-finish",
+                 "callbacks": 1, "step": 5, "perCall": 1, "trace": True},
+                {"name": "existing-error-label", "kind": kind, "action": "lifecycle-error-finish",
+                 "callbacks": 1, "step": 5, "perCall": 1, "trace": True},
+                {"name": "errors-checked", "kind": "refresh", "action": "check-lifecycle-errors",
+                 "callbacks": 1, "step": 5, "perCall": 1},
+            ])
     opening_source = result["modal-settings-reset"]["settingsDocument"].replace(
         "revision: 1", "revision: 12").replace("  motorSource: ch32", "  motorReversed: true\n  motorSource: ch32")
     edited_source = ("# retained comment\n" * 64 + opening_source

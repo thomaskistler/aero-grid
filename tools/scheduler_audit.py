@@ -76,6 +76,10 @@ def replace_once(source, old, new, name):
 def patch_main(source):
     for old, new in MAIN_PATCHES:
         source = replace_once(source, old, new, "main.lua")
+    restart = "        restartLoading(context)\n"
+    if source.count(restart) != 2:
+        raise RuntimeError("main.lua: expected two foreground/background restart calls")
+    source = source.replace(restart, '        AUDIT_SPAN("lifecycle:restartLoading", restartLoading, context)\n')
     return MAIN_PREFIX + source
 
 

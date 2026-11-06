@@ -9,7 +9,7 @@ local module = {
         menu = 100,
         page = 200,
         finalize = 100,
-        rebuild = 150,
+        rebuild = 200,
         retire = 250,
         finish = 150,
     },
@@ -387,8 +387,6 @@ function module.new(dependencies)
         if phase == "settings" then
             return not context.modelSettingsUi and 100 or nil
         elseif phase == "menu" and context.nativeDialogsCreated and not isFullScreen() and context.aeroMenuModule then
-            return nil
-        elseif phase == "finish" and #context.errors > 0 then
             return nil
         end
         local entry = phase == "panel" and context.panels[1]

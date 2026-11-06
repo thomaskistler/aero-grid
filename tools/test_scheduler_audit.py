@@ -27,10 +27,33 @@ class InstrumentationTests(unittest.TestCase):
             phases = cases[name]["phases"]
             self.assertTrue(cases[name]["fullscreen"])
             self.assertIn(phases[-1]["action"],
-                          ("check-lifecycle", "check-lifecycle-settings", "construction-parity-check"))
+                          ("check-lifecycle", "check-lifecycle-settings", "check-lifecycle-errors",
+                           "construction-parity-check"))
             for phase in phases:
                 if phase["name"] != "settle":
                     self.assertEqual(phase["perCall"], 1, (name, phase["name"]))
+
+    def test_lifecycle_error_finish_measures_new_and_existing_labels_in_both_callbacks(self):
+        cases = load_cli().scenarios()
+        for kind in ("refresh", "background"):
+            case = cases[f"lifecycle-error-finish-{kind}"]
+            phases = case["phases"]
+            self.assertGreater(len(case["expectedError"]), 256)
+            self.assertEqual([phase["name"] for phase in phases[1:3]],
+                             ["new-error-label", "existing-error-label"])
+            for phase in phases[1:3]:
+                self.assertEqual(phase["kind"], kind)
+                self.assertEqual(phase["action"], "lifecycle-error-finish")
+                self.assertEqual(phase["callbacks"], 1)
+            self.assertEqual(phases[-1]["action"], "check-lifecycle-errors")
+
+    def test_lifecycle_restart_covers_root_recreation_in_both_callbacks(self):
+        cases = load_cli().scenarios()
+        for kind in ("refresh", "background"):
+            phase = cases[f"lifecycle-restart-root-{kind}"]["phases"][1]
+            self.assertEqual(phase["kind"], kind)
+            self.assertEqual(phase["action"], "lifecycle-retire")
+            self.assertTrue(phase["recreateRoot"])
 
     def test_constructor_matrices_keep_cost_actions_and_serialize_every_phase(self):
         cli = load_cli()
