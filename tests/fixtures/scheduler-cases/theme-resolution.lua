@@ -4,6 +4,17 @@ return function(load)
     local theme = load("lib/theme.lua", load("lib/typography.lua"), load("lib/panel_layout.lua"))
     local catalog, requests, copy = load("@support/theme_resolution_fixture.lua")()
     assert(theme.setCatalog(catalog))
+    local function advance(work)
+        local previous = lcd
+        lcd = lcd or {
+            RGB = function(value)
+                return value
+            end,
+        }
+        local resolved = theme.advanceBuild(work)
+        lcd = previous
+        return resolved
+    end
     local cases = {}
     local stages = {}
     for stage, bound in pairs({
@@ -41,21 +52,21 @@ return function(load)
                     local pending = copy(snapshot)
                     return {
                         step = function()
-                            theme.advanceBuild(pending)
+                            advance(pending)
                             return 1
                         end,
                     },
                         0
                 end,
             }
-        until theme.advanceBuild(work)
+        until advance(work)
         cases[#cases + 1] = {
             stage = "done",
             grant = 1,
             setup = function()
                 return {
                     step = function()
-                        assert(theme.advanceBuild(work) == work.result)
+                        assert(advance(work) == work.result)
                         return 1
                     end,
                 },

@@ -308,7 +308,7 @@ function module.new(dependencies)
 
     --- Lines tokenized per widget callback.
     local TOKENIZE_LINES = 24
-    local THEME_CHUNK = 4
+    local THEME_CHUNK = 8
 
     local function nextTheme(context, definition)
         if definition then
@@ -356,6 +356,7 @@ function module.new(dependencies)
             context.pendingPanel = nil
             context.themeNames, context.themeDefinitions = nil, nil
             context.themeWork = nil
+            context.themeBuildWork, context.themePublication = nil, nil
             showErrors(context)
             return false
         end
@@ -372,17 +373,29 @@ function module.new(dependencies)
                 nextTheme(context)
                 return true
             end
-            context.themeWork = { name = name, filename = filename, source = source,
-                tokens = {}, position = 1, line = 1 }
+            context.themeWork = {
+                name = name,
+                filename = filename,
+                source = source,
+                tokens = {},
+                position = 1,
+                line = 1,
+            }
             context.stage = "theme-tokenize"
             return true
         end
 
         if stage == "theme-tokenize" then
             local work = context.themeWork
-            local position, line, tokenError, commentWork =
-                context.yaml.tokenizeChunk(work.source, work.position, work.line, THEME_CHUNK, work.tokens,
-                    64, work.commentWork)
+            local position, line, tokenError, commentWork = context.yaml.tokenizeChunk(
+                work.source,
+                work.position,
+                work.line,
+                THEME_CHUNK,
+                work.tokens,
+                128,
+                work.commentWork
+            )
             if tokenError then
                 return fail("themes: " .. work.filename .. ": " .. tokenError)
             end
@@ -608,30 +621,76 @@ function module.new(dependencies)
                 return false
             end
 
-            context.themeSource = "option"
-            context.theme = context.themeBuilder.build(context.themeMode)
-            for _, warning in ipairs(context.theme.warnings) do
-                addError(context, "theme: " .. warning)
-            end
-            for _, notice in ipairs(context.theme.notices) do
-                addNotice(context, notice.severity, "theme: " .. notice.text)
-            end
-            context.canvas:set({ color = context.theme.color.canvas })
-
             context.session = validated.session or {}
             context.document = validated
-            if context.layoutSourceVersion < context.layoutValidator.VERSION then
-                addNotice(
-                    context,
-                    "warning",
-                    "Layout version "
-                        .. tostring(context.layoutSourceVersion)
-                        .. " was migrated in memory; use Save to write version "
-                        .. tostring(context.layoutValidator.VERSION)
-                        .. "."
-                )
+            context.stage = "theme-resolve-begin"
+            return true
+        end
+
+        if stage == "theme-resolve-begin" then
+            context.themeBuildWork = context.themeBuilder.beginBuild(context.themeMode)
+            context.stage = "theme-resolve"
+            return true
+        end
+
+        if stage == "theme-resolve" then
+            local work = context.themeBuildWork
+            local phase = work.stage
+            local limit = phase == "display" and 8
+                or phase == "alert" and 4
+                or phase == "chart" and not work.definition.correctForContrast and 6
+                or 1
+            for _ = 1, limit do
+                local resolved = context.themeBuilder.advanceBuild(work)
+                if resolved then
+                    context.themePublication = { theme = resolved, phase = "warnings", index = 1 }
+                    context.themeBuildWork = nil
+                    context.stage = "theme-publish"
+                    break
+                elseif work.stage ~= phase then
+                    break
+                end
             end
-            context.stage = "services"
+            return true
+        end
+
+        if stage == "theme-publish" then
+            local work = context.themePublication
+            if work.phase == "warnings" then
+                local warning = work.theme.warnings[work.index]
+                if warning then
+                    addError(context, "theme: " .. warning)
+                    work.index = work.index + 1
+                else
+                    work.phase, work.index = "notices", 1
+                end
+            elseif work.phase == "notices" then
+                local notice = work.theme.notices[work.index]
+                if notice then
+                    addNotice(context, notice.severity, "theme: " .. notice.text)
+                    work.index = work.index + 1
+                else
+                    work.phase = "commit"
+                end
+            elseif work.phase == "commit" then
+                if context.layoutSourceVersion < context.layoutValidator.VERSION then
+                    addNotice(
+                        context,
+                        "warning",
+                        "Layout version "
+                            .. tostring(context.layoutSourceVersion)
+                            .. " was migrated in memory; use Save to write version "
+                            .. tostring(context.layoutValidator.VERSION)
+                            .. "."
+                    )
+                end
+                context.theme, context.themeSource = work.theme, "option"
+                context.canvas:set({ color = context.theme.color.canvas })
+                context.themePublication = nil
+                context.stage = "services"
+            else
+                return fail("unknown theme publication phase: " .. tostring(work.phase))
+            end
             return true
         end
 
@@ -870,6 +929,7 @@ function module.new(dependencies)
         context.themeDefinitions = {}
         context.themeReadIndex = 1
         context.themeWork = nil
+        context.themeBuildWork, context.themePublication = nil, nil
         context.stage = "theme-read"
     end
 

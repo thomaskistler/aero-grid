@@ -18,23 +18,27 @@ return function(load)
         local tokens = assert(yaml.tokenize(source))
         local work, advances = nil, 0
         repeat
-            work = yaml.buildMappingChunk(tokens, work, 4)
+            work = yaml.buildMappingChunk(tokens, work, 8)
             advances = advances + 1
         until not work
         for index = 1, advances do
             cases[#cases + 1] = {
-                stage = "mapping", grant = 1,
+                stage = "mapping",
+                grant = 1,
                 setup = function()
                     local pending
                     for _ = 1, index - 1 do
-                        pending = yaml.buildMappingChunk(tokens, pending, 4)
+                        pending = yaml.buildMappingChunk(tokens, pending, 8)
                         assert(pending)
                     end
-                    return { step = function()
-                        local _, _, parseError = yaml.buildMappingChunk(tokens, pending, 4)
-                        assert(not parseError, parseError)
-                        return 1
-                    end }, 0
+                    return {
+                        step = function()
+                            local _, _, parseError = yaml.buildMappingChunk(tokens, pending, 8)
+                            assert(not parseError, parseError)
+                            return 1
+                        end,
+                    },
+                        0
                 end,
             }
         end
@@ -42,26 +46,36 @@ return function(load)
         repeat
             local start, startLine, startComment = position, line, commentWork
             cases[#cases + 1] = {
-                stage = "tokenize", grant = 1,
+                stage = "tokenize",
+                grant = 1,
                 setup = function()
-                    return { step = function()
-                        local _, _, tokenError = yaml.tokenizeChunk(source, start, startLine, 4, {}, 64, startComment)
-                        assert(not tokenError, tokenError)
-                        return 1
-                    end }, 0
+                    return {
+                        step = function()
+                            local _, _, tokenError =
+                                yaml.tokenizeChunk(source, start, startLine, 8, {}, 128, startComment)
+                            assert(not tokenError, tokenError)
+                            return 1
+                        end,
+                    },
+                        0
                 end,
             }
             local tokenError
-            position, line, tokenError, commentWork = yaml.tokenizeChunk(source, position, line, 4, {}, 64, commentWork)
+            position, line, tokenError, commentWork =
+                yaml.tokenizeChunk(source, position, line, 8, {}, 128, commentWork)
             assert(not tokenError, tokenError)
         until not position
     end
     return {
         id = "load:theme",
-        decl = { class = "normal", first = "tokenize", stages = {
-            tokenize = { fixed = 0, perUnit = 1700, maxUnits = 1 },
-            mapping = { fixed = 0, perUnit = 500, maxUnits = 1 },
-        } },
+        decl = {
+            class = "normal",
+            first = "tokenize",
+            stages = {
+                tokenize = { fixed = 0, perUnit = 3200, maxUnits = 1 },
+                mapping = { fixed = 0, perUnit = 900, maxUnits = 1 },
+            },
+        },
         cases = cases,
     }
 end

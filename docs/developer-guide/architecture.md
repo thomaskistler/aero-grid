@@ -63,6 +63,8 @@ another widget's context or introduce per-refresh forwarding wrappers. `main.lua
 decides which operation advances; loading and cleanup keep their explicit stages.
 Runtime theme YAML tokenization and mapping construction also advance separately;
 widget registration still reads only theme-picker metadata synchronously.
+Theme resolution retains private work until colors and notices are complete;
+replacement loads discard unfinished resolution and publication.
 Page retirement and replacement run in separate callbacks so deferred cleanup
 cannot invalidate objects belonging to the replacement page.
 

@@ -3350,3 +3350,46 @@ preserve private work. Existing theme/alert/Showcase regressions pass.
 Dashboard-loader/header publication and complete real-widget/native callback
 integration remain the parent R6 gate. No production owner, recording interval,
 chart assertion or golden changes in this slice.
+
+## 58. Integrate bounded broker APIs and runtime theme resolution (R4/R6)
+
+Actual-broker admission, bounded enrollment and bounded document publication
+are integrated without duplicate prerequisites. Complete native ready remains
+2040 against2300 charged with fifteen isolated service kinds. Existing broker
+identity/due preservation, surviving dashboard task releases and explicit
+publication failure semantics pass together. The full int32 scheduler suite
+passes after isolating the theme fixture's LCD conversion dependency; native
+fixture wrappers add9 instructions per resolver advance without high findings.
+
+The loader now separates header finalization, private resolver creation, a
+bounded resolver grant, one warning/notice publication and final color installation.
+It preserves complete synchronous theme output and notice ordering. Begin-load
+and failure discard both resolver and publication work; no partial theme is
+published. Native capture instrumentation supports both the original synchronous
+anchor and the new final publication anchor.
+
+Native complete loader maxima: header-finalize52, begin155,
+legibility1707, chart649, alert1294, display296, finalize99 and publication74.
+The adversarial real-widget theme forces foreground/background and chart-color
+correction, including all notice publication turns. Resolver native gates are
+240/2400/1800/2200/650/180 for begin/legibility/chart/alert/display/finalize;
+publication is charged500 in the audit. Pure resolver fixtures additionally
+exercise the larger1882 legibility and1433 chart advances. These are measured
+loader gates, not yet owning-service admission.
+Display conversion advances eight colors, alert search four candidates, and
+uncorrected chart colors six entries per grant, stopping before a phase change.
+Corrected chart colors and legibility still advance once. Theme parsing uses
+eight lines/128 comment bytes and eight mapping tokens/stack pops: native
+fixture2507/617, charged3200/900, keeping both atoms below4000.
+
+The corrected real-widget scenario peaks at6924; dense editor-preview and
+seven-panel modal/reset scenarios peak at11523/7456. Unchanged strict reset
+retains both first-arm XFAILs at14700. Full-output loader parity covers dark,
+light, unknown and empty requests; cancellation covers every resolution and
+publication phase. Runtime parsing/header scanning, construction/rebuild,
+retirement and final callback eligibility remain separate R6 work.
+The full editor suite's200-turn dense-load guard also fails on a clean38020c0
+snapshot before this wiring. In-memory diagnostics show215 baseline turns
+versus219 here, and the same later fullscreen N/A-versus-live-value assertion.
+Neither guard nor assertion was changed; runtime progress remains a migration
+integration gate rather than a passing-suite claim.

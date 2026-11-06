@@ -80,7 +80,18 @@ local function finish(label, raw, leak)
     if type(label) ~= "string" then
         label = "unlabelled"
     end
-    local themeBound = ({ ["load:theme-read"] = 200, ["load:theme-tokenize"] = 1700, ["load:theme-parse"] = 500 })[label]
+    local themeBound = ({
+        ["load:theme-read"] = 200,
+        ["load:theme-tokenize"] = 3200,
+        ["load:theme-parse"] = 900,
+        ["load:theme-resolve-begin"] = 240,
+    })[label]
+    local resolution = string.match(label, "^load:theme%-resolve:(%a+)$")
+    if resolution then
+        themeBound = ({ legibility = 2400, chart = 1800, alert = 2200, display = 650, finalize = 180 })[resolution]
+    elseif string.match(label, "^load:theme%-publish:") then
+        themeBound = 500
+    end
     if themeBound then
         gate(cost <= themeBound, label .. " exceeds its bounded theme-loading charge: " .. cost)
     end
@@ -264,6 +275,11 @@ end
 local function loadLabel(token, context)
     if token == nil then
         local stage = context.stage or "idle"
+        if stage == "theme-resolve" then
+            return stage .. ":" .. tostring(context.themeBuildWork.stage)
+        elseif stage == "theme-publish" then
+            return stage .. ":" .. tostring(context.themePublication.phase)
+        end
         local placement = context.pendingPlacement
         if stage == "panel-construct" and context.pendingConstruction then
             local label = stage .. ":" .. placement.type

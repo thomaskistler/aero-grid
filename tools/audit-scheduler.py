@@ -11,6 +11,7 @@ import importlib.util
 import json
 from pathlib import Path
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -194,6 +195,13 @@ def scenarios():
         ])
     result["editor-preview-metric-tasks"] = dict(result["editor-preview-metric"], owners=["panel:metric"])
     result["editor-preview-chart-tasks"] = dict(result["editor-preview-chart"], owners=["panel:chart"])
+    theme_source = (WIDGET / "themes/modern-dark.yml").read_text()
+    result["theme-resolution-corrections"] = dict(result["metric-max"], themeSource=re.sub(
+        r"(?m)^(  \w+: )0x[0-9A-Fa-f]+", r"\g<1>0x777777",
+        theme_source.replace("correctForContrast: false", "correctForContrast: true").replace(
+            "colors:\n", "colors:\n  chartCyan: 0x777777\n  chartGreen: 0x777777\n"
+            "  chartAmber: 0x777777\n  chartOrange: 0x777777\n")),
+        phases=standard_phases())
     for panel in (*PANELS, "theme-showcase"):
         base = result["metric-max"] if panel == "theme-showcase" else result[f"{panel}-max"]
         result[f"panel-reflow-{panel}"] = dict(base, phases=standard_phases() + [
@@ -443,6 +451,8 @@ def prepare(capture, name, spec, sd, mode="legacy"):
     recipe["config"].update(spec.get("config", {}))
     capture.prepare(sd, recipe, recipe_path)
     widget = sd / "WIDGETS/AeroGrid"
+    if "themeSource" in spec:
+        (widget / "themes/modern-dark.yml").write_text(spec["themeSource"])
     audit = widget / "audit"
     audit.mkdir()
     # Capture's own readiness hooks are replaced; start again from the shipped sources.
