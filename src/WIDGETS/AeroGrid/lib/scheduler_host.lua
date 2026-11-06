@@ -127,6 +127,8 @@ host.SERVICE_KINDS = {
 host.PANEL_ENROLL_COST = 4000
 host.SERVICE_ENROLL_COST = 2300
 host.RECONCILE_COST = 900
+--- Broker task ids a broker-only reconciliation may retire before services run.
+host.BROKER_TASK_LIMIT = 4
 
 --- Declared cost of the head work `pumpFlight` runs before the scheduler: the
 --- reset poll and the flight tick (which stay legacy at the head until R4).
@@ -548,7 +550,11 @@ function host:enroll()
         local instance = item.instance
         local task = item.task
         self.enrollCursor = position - 1
-        if instance.count > 0 and not instance.failed and (task.want == nil or task.want > 0) then
+        if self.pendingServices[item.id] ~= instance then
+            -- A broker splice withdrew this claim; it can never be enrolled.
+            waiting[position] = waiting[#waiting]
+            waiting[#waiting] = nil
+        elseif instance.count > 0 and not instance.failed and (task.want == nil or task.want > 0) then
             self.panelSetup = host.SERVICE_ENROLL_COST
             -- The service step may need the same wrap-safe time comparison.
             task.tickElapsed = scheduler.elapsed
@@ -590,9 +596,24 @@ local function serviceProblem(self, instance, item)
     end
 end
 
+--- Remove releases under `broker`'s task ids that `keep` does not own, so an
+--- ordinary callback cannot run a replaced facade or broker task.
+local function retireBrokerRecords(self, broker, keep)
+    local items = broker and broker.schedulerTasks or {}
+    for index = 1, #items do
+        local id = items[index].id
+        local record = self.scheduler.byId[id]
+        if record and (self.registeredTasks[id] ~= keep or record.instance ~= items[index].instance) then
+            self.scheduler:remove(id)
+        end
+    end
+end
+
 --- A panel-only job keeps every reconciled service task, its waiting enrollment
---- and reset releases; only the placement set is reconciled.
-local function beginReconciliation(self, context, order, persistent, revision, panelOnly)
+--- and reset releases; only the placement set is reconciled. A broker-only job
+--- reconciles every service, but only broker task ids can be stale; their
+--- releases are removed first, so reconciled services keep running.
+local function beginReconciliation(self, context, order, persistent, revision, panelOnly, brokerOnly)
     if not panelOnly then
         self.waiting, self.pendingServices = {}, {}
         self.enrollCursor = 0
@@ -611,6 +632,7 @@ local function beginReconciliation(self, context, order, persistent, revision, p
         ids = {},
         panelsPresent = {},
         panelOnly = panelOnly,
+        brokerOnly = brokerOnly,
         -- Dormant facades whose later demand needs a service scan.
         dormant = panelOnly and self.dormant or {},
     }
@@ -624,15 +646,81 @@ local function beginReconciliation(self, context, order, persistent, revision, p
             owned = owner == "new" and string.sub(key, 1, 6) == "panel:"
         end
         self.reconciliation.servicesLive = not owned
+    elseif brokerOnly then
+        retireBrokerRecords(self, persistent, persistent)
+        retireBrokerRecords(self, self.persistent, persistent)
+        self.reconciliation.servicesLive = true
     end
     context.panelTasksDirty = nil
+end
+
+--- Retarget an unfinished full job to a newly activated or replaced broker without
+--- rescanning services. Only the broker's bounded task ids can be affected: their
+--- claims are withdrawn, the broker is scanned and enrolled, then the scan resumes.
+--- Returns false when the change needs a full restart.
+local function spliceBroker(self, context, order, persistent, revision)
+    local job = self.reconciliation
+    local previous = job.persistent
+    if
+        job.panelOnly
+        or job.brokerOnly
+        or job.phase ~= "services"
+        or job.index < 1
+        or not persistent
+        or context.panelTasksDirty
+        or job.panels ~= context.panels
+        or job.registry ~= context.serviceRuntime
+        or job.services ~= #order
+        or job.revision ~= revision
+        or #persistent.schedulerTasks + #(previous and previous.schedulerTasks or {}) > host.BROKER_TASK_LIMIT
+    then
+        return false
+    end
+    local claims = {}
+    for _, broker in ipairs({ persistent, previous or persistent }) do
+        for _, item in ipairs(broker.schedulerTasks) do
+            local claimer = job.ids[item.id]
+            if claimer and claimer ~= previous then
+                if claimer.id ~= "flight" and (claimer.schedulerTasks or claimer.count ~= 0) then
+                    return false
+                end
+                -- A facade claim becomes a skip or a dormant shadow under the broker.
+                claims[#claims + 1] = claimer
+            end
+        end
+    end
+    for index = 1, #job.dormant do
+        if job.dormant[index].count ~= 0 then
+            return false
+        end
+    end
+    for _, broker in ipairs({ persistent, previous or persistent }) do
+        for _, item in ipairs(broker.schedulerTasks) do
+            local id = item.id
+            if job.ids[id] then
+                job.ids[id] = nil
+                self.pendingServices[id], self.registeredTasks[id] = nil, nil
+            end
+        end
+    end
+    retireBrokerRecords(self, persistent, persistent)
+    retireBrokerRecords(self, previous, persistent)
+    for index = 1, #claims do
+        if claims[index].id ~= "flight" then
+            job.dormant[#job.dormant + 1] = claims[index]
+        end
+    end
+    job.persistent, job.resume = persistent, { index = job.index, taskIndex = job.taskIndex }
+    job.index, job.taskIndex, job.mark = 0, 1, #self.waiting
+    return true
 end
 
 local function reconcileService(self, job)
     local instance = job.index == 0 and job.persistent or job.order[job.index]
     if not instance then
         if job.index == 0 then
-            job.phase, job.remaining = "broker-enroll", #self.waiting
+            job.phase, job.remaining = "broker-enroll", #self.waiting - (job.mark or 0)
+            self.enrollCursor = job.mark and #self.waiting or self.enrollCursor
         else
             job.phase, job.cursor = "retire-services", nil
         end
@@ -645,7 +733,8 @@ local function reconcileService(self, job)
     local item = instance.schedulerTasks and instance.schedulerTasks[job.taskIndex]
     if instance.schedulerTasks and not item or not instance.schedulerTasks and job.taskIndex > 1 then
         if job.index == 0 then
-            job.phase, job.remaining = "broker-enroll", #self.waiting
+            job.phase, job.remaining = "broker-enroll", #self.waiting - (job.mark or 0)
+            self.enrollCursor = job.mark and #self.waiting or self.enrollCursor
         else
             job.index, job.taskIndex = job.index + 1, 1
         end
@@ -761,7 +850,9 @@ local function advanceReconciliation(self, context)
             end
         end
         self.reconciledBroker = job.persistent
-        job.index, job.taskIndex, job.phase = 1, 1, "services"
+        local resume = job.resume or { index = 1, taskIndex = 1 }
+        job.index, job.taskIndex, job.phase = resume.index, resume.taskIndex, "services"
+        job.resume, job.mark = nil, nil
     elseif job.phase == "retire-services" then
         local id, instance = next(self.registeredTasks, job.cursor)
         job.cursor = id
@@ -857,8 +948,8 @@ function host:ready(context)
         or context.panelTasksDirty
         or snapshot.revision ~= taskRevision
         or snapshot.persistent ~= persistent
-    if job and job.panelOnly and not changed then
-        -- Service growth or dormant demand after panel-only work began needs a full scan.
+    if job and (job.panelOnly or job.brokerOnly) and not changed then
+        -- Service growth or dormant demand after partial work began needs a full scan.
         changed = job.services ~= #order
         for index = 1, #job.dormant do
             changed = changed or job.dormant[index].count ~= 0
@@ -881,7 +972,28 @@ function host:ready(context)
             for index = 1, panelOnly and #self.dormant or 0 do
                 panelOnly = panelOnly and self.dormant[index].count == 0
             end
-            beginReconciliation(self, context, order, persistent, taskRevision, panelOnly)
+            local spliced = job and snapshot.persistent ~= persistent
+                and spliceBroker(self, context, order, persistent, taskRevision)
+            -- Only the broker changed: its bounded task ids are the only possibly stale releases.
+            local previous = self.persistent
+            local brokerOnly = not panelOnly
+                and not job
+                and not context.panelTasksDirty
+                and snapshot.panels == context.panels
+                and snapshot.registry == context.serviceRuntime
+                and snapshot.services == #order
+                and snapshot.revision == taskRevision
+                and snapshot.persistent ~= persistent
+                and self.reconciledBroker == previous
+                and #(persistent and persistent.schedulerTasks or {})
+                        + #(previous and previous.schedulerTasks or {})
+                    <= host.BROKER_TASK_LIMIT
+            for index = 1, brokerOnly and #self.dormant or 0 do
+                brokerOnly = brokerOnly and self.dormant[index].count == 0
+            end
+            if not spliced then
+                beginReconciliation(self, context, order, persistent, taskRevision, panelOnly, brokerOnly)
+            end
         end
         if self.reconciliation then
             self.panelSetup = host.RECONCILE_COST

@@ -4855,6 +4855,7 @@ parity concern; it does not justify changing the ten-tick policy or the
 deferred chart-recording stress tests.
 The deterministic scenarios instrument History sampling and are comparison
 fixtures, not substitutes for uninstrumented native instruction proofs.
+
 ## 91. Staged editor preview geometry (R5)
 
 Render stage 1 previously synchronized every live panel's preview geometry
@@ -4883,3 +4884,46 @@ reflow charge below its fitted measurement: 1978 raw / 2230 fitted against
 The preview layout probe currently checks the raw atom against 4000, not the
 required fitted ceiling, and several layout reservations exceed 4000. Those
 steps require further proof or splitting before their activation gate is closed.
+## 92. Broker activation continuity
+
+The Flight/Smart History deficit came from restarting reconciliation, not from
+the ten-tick policy. Activation at tick 5 arrived during the full job that
+loading had started. Because the broker had changed, that job restarted and
+discarded about eleven callbacks of service scanning; reconciliation finished
+at tick 235 rather than 170.
+
+When only the broker changes, the host no longer restarts:
+
+- During an unfinished full job in its `services` phase, an activation or
+  replacement retargets the job. Claims on the broker's task ids are
+  withdrawn, stale releases are removed, and the broker is scanned and
+  enrolled. The scan then resumes where it stopped.
+- With no job running, a broker-only job removes stale broker releases at
+  begin. Reconciled services keep their ordinary kind during it.
+
+Both paths are limited to `BROKER_TASK_LIMIT` (4) broker task ids. Any other
+change, including service growth, late dormant demand, a disable during a scan
+or a non-dormant claimer, takes the full path. `enroll` drops waiting entries
+whose pending claim was withdrawn, so a facade claim is never enrolled.
+
+Deterministic native captures, all with empty error lists:
+
+| Scenario         | Valid samples | Max gaps  | Worst callback |
+|------------------|---------------|-----------|----------------|
+| Legacy           | 248/425/425   | 20/20/20  | 9770           |
+| Flight/Smart     | 425/426/426   | 15/10/10  | 11158          |
+| Panel-only       | 428/429/429   | 10/10/10  | 7526           |
+| All-new          | 425/425/425   | 10/10/10  | 8113           |
+
+Flight/Smart was 422/423/423 and all-new 422/422/423 before this change. Both
+now meet the at-least-legacy gate. Reconciliation completes at tick 195.
+
+Readiness maxima in `flight-smart-tasks` and `migration-tasks-flight-smart`
+(raw/fitted, against the charge):
+
+- `services`, including the splice callback: 453/550, against 900.
+- `broker-enroll`: 1216/1390, against 2300.
+- `service-enroll`: 964/1120.
+- `panel-enroll`: 1908/2150.
+
+Worst callbacks were 9676 and 9936.

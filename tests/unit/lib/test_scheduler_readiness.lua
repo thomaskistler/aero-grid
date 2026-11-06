@@ -354,3 +354,139 @@ do
 end
 
 print("Bounded shared-host readiness preserves 30/128-task identity, resets, safe admission and fairness")
+
+-- A broker-only change keeps reconciled services dispatchable and retires only
+-- possibly stale broker releases before any ordinary callback can run them.
+do
+    local state = case.prepare(30)
+    local context, host, owner = state.context, state.scheduling, state.owner
+    local runtime = context.serviceRuntime
+    runtime.order[#runtime.order + 1], runtime.byId.flight = state.facade, state.facade
+    context.panelTasksDirty = true
+    state.reconciled()
+    state.settle(context, host)
+    local source = state.telemetry.schedulerTasks[1].id
+    local function steady()
+        local previousTime = getTime
+        getTime = function()
+            return 0
+        end
+        host:begin("steady")
+        host:finish("steady")
+        getTime = previousTime
+        equal(host.scheduler.lastPlan.kind, "steady", "reconciled services keep their ordinary kind")
+    end
+    owner:disableScheduler(context)
+    assert(host:ready(context))
+    local job = host.reconciliation
+    assert(job and job.brokerOnly and job.servicesLive, "broker release is a broker-only job")
+    assert(host.scheduler.byId[source], "Telemetry stays registered during broker-only work")
+    steady()
+    state.reconciled()
+    equal(#host.waiting, 1, "the released dormant Flight task waits as on the full path")
+    equal(host.scheduler.byId["service:flight"], nil)
+    owner:enableScheduler(context)
+    assert(host:ready(context))
+    job = host.reconciliation
+    assert(job and job.brokerOnly and job.servicesLive, "broker activation is a broker-only job")
+    steady()
+    state.settle(context, host)
+    assert(host.scheduler.byId["service:flight"] and host.scheduler.byId["service:smart"])
+    equal(host.reconciledBroker, state.stable)
+    assert(host:verify(context) == nil)
+
+    -- A release owned by another broker is removed before services dispatch.
+    local stale = { schedulerTasks = {} }
+    host.persistent, host.reconciledBroker, host.registeredTasks["service:smart"] = stale, stale, stale
+    local kept = host.scheduler.byId["service:flight"]
+    assert(host:ready(context))
+    assert(host.reconciliation.brokerOnly)
+    equal(host.scheduler.byId["service:smart"], nil, "stale broker release cannot dispatch")
+    equal(host.scheduler.byId["service:flight"], kept, "the current broker release is kept")
+    steady()
+    state.settle(context, host)
+    assert(host.scheduler.byId["service:smart"])
+    equal(host.registeredTasks["service:smart"], state.stable)
+
+    -- Any other change during broker-only work escalates to a full job.
+    for _, change in ipairs({ "panels", "growth" }) do
+        owner:disableScheduler(context)
+        assert(host:ready(context))
+        assert(host.reconciliation.brokerOnly)
+        local extra
+        if change == "panels" then
+            context.panelTasksDirty = true
+        else
+            extra = { id = "extra", count = 0 }
+            context.serviceRuntime.order[#context.serviceRuntime.order + 1] = extra
+        end
+        assert(host:ready(context))
+        job = host.reconciliation
+        assert(job and not job.brokerOnly and not job.servicesLive, change .. " replaces broker-only work")
+        if extra then
+            table.remove(context.serviceRuntime.order)
+        end
+        state.reconciled()
+        owner:enableScheduler(context)
+        state.settle(context, host)
+    end
+    assert(host:verify(context) == nil)
+end
+
+-- Activation during an unfinished full scan retargets it to the broker instead of
+-- restarting; the facade's withdrawn claim is never enrolled or dispatched.
+do
+    local state = case.prepare(30)
+    local context, host, owner = state.context, state.scheduling, state.owner
+    local runtime = context.serviceRuntime
+    runtime.order[#runtime.order + 1], runtime.byId.flight = state.facade, state.facade
+    context.panelTasksDirty = true
+    state.reconciled()
+    state.settle(context, host)
+    owner:disableScheduler(context)
+    state.reconciled()
+    for _, action in ipairs({ "enable", "disable" }) do
+        if action == "disable" then
+            state.settle(context, host)
+        end
+        local order = {}
+        for index, service in ipairs(context.serviceRuntime.order) do
+            order[index] = service
+        end
+        context.serviceRuntime = { order = order, byId = context.serviceRuntime.byId }
+        assert(host:ready(context))
+        local job = host.reconciliation
+        assert(job and not job.panelOnly)
+        state.untilReady(function(current)
+            return current == job and current.index > 1 and current.ids["service:flight"] ~= nil
+        end)
+        if action == "enable" then
+            equal(job.ids["service:flight"], state.facade, "the dormant facade claimed Flight first")
+            owner:enableScheduler(context)
+            assert(host:ready(context))
+            equal(host.reconciliation, job, "broker activation does not restart the service scan")
+            equal(job.persistent, state.stable)
+            assert(host.pendingServices["service:flight"] ~= state.facade, "the facade claim is withdrawn")
+            local resumed = false
+            state.untilReady(function(current)
+                resumed = resumed or current == job and current.phase == "services" and current.index > 1
+                local record = host.scheduler.byId["service:flight"]
+                assert(not record or host.registeredTasks["service:flight"] == state.stable,
+                    "no facade release can exist after the splice")
+                return not current
+            end)
+            assert(resumed, "the scan resumes after broker enrollment")
+            state.settle(context, host)
+            equal(host.registeredTasks["service:flight"], state.stable)
+            equal(host.registeredTasks["service:smart"], state.stable)
+            assert(host.scheduler.byId["service:flight"].instance ~= state.facade)
+            assert(host:verify(context) == nil)
+        else
+            owner:disableScheduler(context)
+            assert(host:ready(context))
+            assert(host.reconciliation ~= job, "broker release restarts the scan")
+            state.reconciled()
+            equal(#host.waiting, 1)
+        end
+    end
+end
