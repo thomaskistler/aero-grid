@@ -2728,3 +2728,47 @@ is unchanged.
 python3 tools/audit-scheduler.py --framework idle-panels --timeout 180
 python3 tools/audit-scheduler.py theme-showcase-tasks --timeout 180
 ```
+
+## 42. Bounded Theme Showcase construction (R6, owner unchanged)
+
+The real synchronous loader build measured 10228 instructions. Showcase now
+implements the existing `services.staged`/`construct` protocol, constructing a
+frame, one swatch, typography controls, one bar, dial and one state card in
+independently measured steps. Positioning is split into shared layout and one
+card per callback before publication. Synchronous callers use the same helpers.
+The loader's existing hidden-container/publication contract is unchanged.
+
+A first layout-only split left the complete enclosing loader call at 4005,
+despite its standalone body fitting under 4000. Splitting card positioning as
+well brings the largest actual enclosing construction call to 2381. Each real
+constructor stage is sampled separately, not inferred from a refresh result.
+
+| Stage | Native fixture maximum | Declaration | Enclosing loader maximum |
+|---|---:|---:|---:|
+| begin | 75 | 140 | 494 |
+| frame | 407 | 500 | 653 |
+| swatches | 131 | 200 | 405 |
+| type | 633 | 750 | 869 |
+| bars | 276 | 360 | 543 |
+| dial | 122 | 190 | 398 |
+| cards | 635 | 750 | 869 |
+| reflow | 1877 | 2120 | 2381 |
+| place | 362 | 450 | 631 |
+| publish | 72 | 130 | 418 |
+
+The fixture also measures the resize/restart branches (55/56, declarations130).
+The isolated whole callback now peaks at 9189. It still registers no periodic
+Showcase task. A pending resize during positioning/publication restarts layout;
+completed construction releases temporary references and is idempotent.
+
+The new integration covers 288 completed frames across both themes, four sizes
+and every pending resize boundary, including an actual pre-change-source parity
+run against `125bc6b`. The existing custom-theme/Showcase regression, full
+scheduler int32 suite, standalone int32 construction integration and 36 audit
+tool tests pass. Public synchronous reflow and other loader/header/lifecycle
+paths remain separate eligibility gates; no production owner changes.
+
+```sh
+python3 tools/audit-scheduler.py --framework showcase-construction --timeout 180
+python3 tools/audit-scheduler.py theme-showcase-tasks --timeout 180
+```

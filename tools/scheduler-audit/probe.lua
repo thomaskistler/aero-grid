@@ -215,7 +215,7 @@ local function loadLabel(token, context)
         local placement = context.pendingPlacement
         if stage == "panel-construct" and context.pendingConstruction then
             local label = stage .. ":" .. placement.type
-            return placement.type == "chart"
+            return (placement.type == "chart" or placement.type == "theme-showcase")
                     and label .. ":" .. tostring(context.pendingConstruction.instance.createStage)
                 or label
         end

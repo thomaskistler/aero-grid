@@ -394,6 +394,9 @@ Panels with no periodic work may declare `idle = true` instead of a task.
 The contract rejects combining it with refresh/background callbacks or scheduler
 stages. Idle placements retain ownership/retirement tracking but register no
 no-op tasks; synchronization is charged, not steady idle callbacks.
+Theme Showcase also supports staged construction, retaining the synchronous API
+for direct callers. Loading keeps it hidden until its geometry is complete;
+resizing before publication restarts only positioning.
 
 Put the module at `panels/<type>.lua` and reference that type in a layout.
 Regular panels declare `supportedSpans = { "any" }` and adapt their contents to
