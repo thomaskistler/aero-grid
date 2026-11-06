@@ -140,10 +140,15 @@ local function finish(label, raw, leak)
             gate(cost <= 4000, label .. " exceeds the drawer atom cap: " .. cost)
             gate(cost <= drawerBound, label .. " exceeds the drawer work charge: " .. cost)
         end
-        local settingsStage = string.match(label, "^modal:settings:advance:(%a+)")
+        local settingsStage = string.match(label, "^modal:settings:advance:([%w_%-]+)")
         local settingsBound = settingsStage and P.settingsBounds and P.settingsBounds[settingsStage]
         if settingsBound then
             gate(cost <= settingsBound, label .. " exceeds the settings work charge: " .. cost)
+        end
+        local saveStage = string.match(label, "^modal:settings:store:([%w_]+)")
+        local saveBound = saveStage and P.settingsStoreBounds and P.settingsStoreBounds[saveStage]
+        if saveBound then
+            gate(cost <= saveBound, label .. " exceeds the settings store charge: " .. cost)
         end
         local editorPrefix = "editor:advanceEditor:"
         if string.sub(label, 1, #editorPrefix) == editorPrefix then
@@ -388,6 +393,15 @@ local function install(context)
         end
     end
     local runtime = context.serviceRuntime
+    local store = context.flightBroker and context.flightBroker.store
+    if store and store.advanceSave then
+        P.settingsStoreBounds = P.settingsStoreBounds or {}
+        wrapField(store, "advanceSave", function(token, _, job)
+            if token then return "modal:settings:store:" .. token end
+            P.settingsStoreBounds[job.stage] = store:saveWorkBound(job)
+            return job.stage
+        end)
+    end
     P.editorRenderBounds = context.editorUiModule and context.editorUiModule.RENDER_BOUNDS
     local drawer = context.editorDrawerModule
     if drawer then
@@ -422,7 +436,8 @@ local function install(context)
             if surface[2] == "log" then
                 P.logBounds = module.WORK_BOUNDS
             elseif surface[2] == "settings" then
-                P.settingsBounds = module.WORK_BOUNDS
+                P.settingsBounds = {}
+                for stage, bound in pairs(module.WORK_BOUNDS) do P.settingsBounds[stage] = bound end
             end
             for _, name in ipairs({ "open", "advance", "handle", "close", "ensure" }) do
                 wrapField(module, name, function(token, current)
@@ -431,7 +446,11 @@ local function install(context)
                     end
                     local state = current[surface[3]]
                     if surface[2] == "settings" and state then
-                        return module.stageOf(state) .. ":" .. tostring(state.build or "idle")
+                        local stage = module.stageOf(state)
+                        if name == "advance" then
+                            P.settingsBounds[stage] = module.workBound(current)
+                        end
+                        return stage .. ":" .. tostring(state.build or "idle")
                     end
                     return tostring(
                         state
@@ -695,6 +714,23 @@ local actions = {
             assert(state.values.motorSource == "ch32" and state.values.flightSwitch == "L64")
         end
     end,
+    ["edit-settings"] = function(context)
+        local state = assert(context.modelSettingsUi)
+        assert(not state.build and not state.saving)
+        if config.scenario == "modal-settings-save-output" then
+            model.setLogicalSwitch(62, { func = 17, v1 = 0, v2 = 0, v3 = 0, ["and"] = 0, delay = 0, duration = 0 })
+            assert(model.getLogicalSwitch(62).func == 17, "fixture needs a dedicated Sticky output")
+        end
+        P.settingsRevision, P.settingsReversed = state.revision + 1, not state.values.motorReversed
+        state.pending = { key = "motorReversed", value = P.settingsReversed }
+    end,
+    ["check-settings-save"] = function(context)
+        local state = assert(context.modelSettingsUi)
+        assert(not state.pending and not state.saving)
+        assert(state.revision == P.settingsRevision and state.values.motorReversed == P.settingsReversed)
+        assert(context.flightBroker.document.revision == state.revision)
+        assert(context.flightBroker.document.flight.motorReversed == P.settingsReversed)
+    end,
     ["close-settings"] = function(context)
         refreshFn(context, EVT_VIRTUAL_EXIT)
         assert(not context.modelSettingsUi)
@@ -837,8 +873,8 @@ local function callbackSurface(kind, context)
         return "log-viewer:" .. context.logViewerModule.stageOf(context.logViewer)
     end
     if context.modelSettingsUi then
-        return "settings:"
-            .. tostring(context.modelSettingsUi.build or context.modelSettingsUi.pending and "pending" or "idle")
+        return "settings:" .. context.modelSettingsUiModule.stageOf(context.modelSettingsUi)
+            .. ":" .. tostring(context.modelSettingsUi.build or "idle")
     end
     if context.locationDetails then
         return "location"

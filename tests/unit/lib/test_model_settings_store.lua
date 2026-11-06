@@ -28,6 +28,72 @@ local function path(filename)
     return assert(module.path("/WIDGETS/AeroGrid/", filename or "plane.yml"))
 end
 
+local function finish(store, job)
+    for _ = 1, 1000 do
+        local done, saved, result = store:advanceSave(job)
+        if done then return saved, result end
+    end
+    error("model settings save did not finish")
+end
+
+for stage in pairs(module.SAVE_BOUNDS) do
+    local store, files = fixture()
+    assert(store:save("plane.yml", 0, config.defaults()))
+    local original = files[path()]
+    local values = config.defaults()
+    values.motorSource = "ch32"
+    local job = store:startSave("plane.yml", 1, values, "L64", "L03")
+    for _ = 1, 1000 do
+        if job.stage == stage then break end
+        assert(not store:advanceSave(job))
+        assert(files[path()] == original and not files[path() .. ".tmp"], "preparation never changes disk")
+    end
+    assert(job.stage == stage)
+    assert(store:cancelSave(job))
+    local done, saved, message = store:advanceSave(job)
+    assert(done and not saved and string.find(message, "cancelled", 1, true))
+    assert(files[path()] == original and not files[path() .. ".tmp"], "cancelled stages never resume")
+end
+
+do
+    local store, files = fixture()
+    local values = config.defaults()
+    values.motorSource = "ch32"
+    local job = store:startSave("plane.yml", 0, values, "L64", "L03")
+    values.motorSource = "ch1"
+    local saved, document = finish(store, job)
+    assert(saved and document.flight.motorSource == "ch32", "save input is frozen at admission")
+    local installed = files[path()]
+    assert(store:advanceSave(job) and files[path()] == installed, "completed jobs do not write again")
+    assert(not store:cancelSave(job), "installed files cannot be cancelled")
+end
+
+do
+    local store, files = fixture()
+    assert(store:save("plane.yml", 0, config.defaults()))
+    local a = store:startSave("plane.yml", 1, config.defaults(), "L63", "L03")
+    local b = store:startSave("plane.yml", 1, config.defaults(), "L64", "L03")
+    while a.stage ~= "install" do assert(not store:advanceSave(a)) end
+    while b.stage ~= "install" do assert(not store:advanceSave(b)) end
+    assert(finish(store, a))
+    local saved, message = finish(store, b)
+    assert(not saved and string.find(message, "changed", 1, true))
+    assert(yaml.parse(files[path()]).armed == "L63", "interleaved jobs cannot overwrite another commit")
+end
+
+do
+    local store, files = fixture()
+    assert(store:save("plane.yml", 0, config.defaults()))
+    local job = store:startSave("plane.yml", 1, config.defaults())
+    while job.stage ~= "install" do assert(not store:advanceSave(job)) end
+    local changed = assert(yaml.parse(files[path()]))
+    changed.flight.motorSource = "ch32"
+    files[path()] = assert(yaml.serialize(changed))
+    local saved, message = finish(store, job)
+    assert(not saved and string.find(message, "changed", 1, true), "guard catches edits without a revision bump")
+    assert(store:load("plane.yml").flight.motorSource == "ch32")
+end
+
 do
     local store, files = fixture()
     local document, info = store:load("plane.yml")

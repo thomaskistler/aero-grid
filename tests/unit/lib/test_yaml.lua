@@ -159,3 +159,54 @@ local function run()
 end
 
 run()
+
+local function chunked(text, budget)
+    local tokens, position, line, commentWork = {}, 1, 1
+    repeat
+        local parseError
+        position, line, parseError, commentWork = yaml.tokenizeChunk(text, position, line, 4, tokens, 64, commentWork)
+        if parseError then return nil, parseError end
+    until not position
+    local pending, document, parseError
+    repeat
+        pending, document, parseError = yaml.buildChunk(tokens, pending, budget)
+    until not pending
+    return document, parseError
+end
+
+local function parity(text)
+    local expected, expectedError = yaml.parse(text)
+    for _, budget in ipairs({ 1, 4 }) do
+        local actual, actualError = chunked(text, budget)
+        assert(actualError == expectedError, tostring(actualError) .. " ~= " .. tostring(expectedError) .. ": " .. text)
+        if expected then
+            assert(actual and yaml.serialize(actual) == yaml.serialize(expected), text)
+        else
+            assert(actual == nil, text)
+        end
+    end
+end
+
+for _, text in ipairs({
+    "", "# blank\n", "a: null\na: 2", "a: 1\na: 2",
+    "list:\n  - one\n  - null\n  - two\nlast: true\n",
+    "list:\n  - key: 1\n    other:\n      - nested\n      -\n        value: 3\nlast: false\n",
+    "-\n  -\n    child:\n      value: true\n-\n  nested: {}\n",
+    "a:\n  - key:\n    other: true\n", "a:\n  - key:\n    - nested\n",
+    "a:\n    skipped: true\n", "-\n", "- first\nother: true\n",
+    "a: true\n- extra\n", "a:\n  -\n      skipped: 1\n",
+    'name: "' .. string.rep('quoted \\" # ', 100) .. '" # trailing\nlast: true\n',
+}) do
+    parity(text)
+end
+
+local seed = 41
+local entries = { "a:", "a: null", "a: 1", "b: []", "- ", "- value", "- key: true", "- key:" }
+for _ = 1, 600 do
+    local lines = {}
+    for index = 1, 12 do
+        seed = (seed * 17 + 13) % 10007
+        lines[index] = string.rep(" ", seed % 4 * 2) .. entries[seed % #entries + 1]
+    end
+    parity(table.concat(lines, "\n"))
+end

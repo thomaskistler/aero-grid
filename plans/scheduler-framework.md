@@ -3446,3 +3446,63 @@ is not changed here.
 
 Production ownership, host/service policies, theme/lifecycle integration,
 ten-tick recording and deferred chart stress/reset assertions are untouched.
+## 60. Bounded Model settings persistence and save progression (R5)
+
+Confirmed fields now start store jobs instead of synchronously reading,
+parsing, serializing, round-tripping, writing and publishing in one callback.
+`startSave`, `advanceSave`, `saveWorkBound` and `cancelSave` retain the old
+synchronous `save` API by draining the same pipeline. Preparation never writes
+temporary files; the final verified replacement remains atomic. Its guard
+compares captured primary/backup bytes and model identity, catching concurrent
+jobs and same-revision external edits without reparsing inside installation.
+
+Source and round-trip YAML use four-line / 64 comment-scan-byte advances and
+four token/stack advances. `yaml.buildChunk` reuses the bounded mapping helper
+from parent 0c83fb7, adding original sequence/inline-map semantics so obsolete
+`flight.history` and `flight.announcements` data remain accepted and discarded
+only by existing validation. The mapping-only helper is unchanged.
+
+| Store stage | Native maximum | Store charge |
+|---|---:|---:|
+| Read | 523 | 650 |
+| Source tokenization | 1143 | 1500 |
+| Source building | 644 | 850 |
+| Previous-document validation | 618 | 850 |
+| Prepare | 636 | 900 |
+| Serialize | 1645 | 1900 |
+| Round-trip tokenization | 1043 | 1300 |
+| Round-trip building | 646 | 850 |
+| Verify | 620 | 850 |
+| Atomic installation | 881 | 1200 |
+
+The native fixture measures all 870 advances across missing, primary,
+backup-recovered and edited documents, including 31-character hash/escaped
+filenames, long quoted/unquoted hash scans, comments and nested legacy sequences.
+The UI charges the current store bound plus 200; command validation/start costs
+at most 552 against 800, including a real configured Sticky L63 output.
+Seven-panel complete settings callbacks peak at 8574; whole native scenarios
+peak at 12417. Hidden panels remain excluded.
+
+Return, fullscreen loss and explicit close cannot orphan a confirmed save:
+`ui.close` returns false while it drains, then retires the dialog. Controls reject
+further edits. Persistence/publication failures are reported explicitly;
+publication failure retains the already-installed document/revision.
+`startPublication` / `advancePublication` hooks forward to the broker when
+available; the old synchronous publication is a separate fallback callback.
+Neither publication path gains service eligibility in this slice.
+
+Lua53/int32 regressions cover per-stage cancellation, frozen inputs, concurrent
+guards, parser parity, pending publication, exceptions, model changes and
+deferred closing. Full scheduler int32 tests pass; unchanged strict reset peaks
+at 13600 with both first-arm XFAILs retained. All 38 audit-tool tests pass.
+
+```sh
+python3 tools/audit-scheduler.py --framework settings-save --timeout 180
+python3 tools/audit-scheduler.py modal-settings modal-settings-reset modal-settings-save modal-settings-save-output --timeout 180
+make test-lua32
+```
+
+Broker publication enclosing-callback accounting, error/retirement branches,
+editor domain/input work and final integration remain gates. No production
+owner, recording cadence, reset/stress assertion or parent-owned main branch
+changed.

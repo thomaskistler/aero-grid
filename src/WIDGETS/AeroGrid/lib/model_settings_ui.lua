@@ -2,7 +2,7 @@
 
 local ui = {
     RUNTIME_API = 1,
-    WORK_BOUNDS = { heading = 400, wrap = 400, field = 1500, finish = 300, idle = 300 },
+    WORK_BOUNDS = { heading = 400, wrap = 400, field = 1500, finish = 300, idle = 300, command = 800 },
 }
 
 local fields = {
@@ -48,7 +48,11 @@ local fields = {
 }
 
 function ui.stageOf(state)
-    if state.closing then
+    if state.saving then
+        return state.saving.phase == "store" and "save_" .. state.saving.job.stage or state.saving.phase
+    elseif state.pending and state.handlers.startSave and not state.build then
+        return "command"
+    elseif state.closing then
         return "closing"
     elseif state.pending then
         return "pending"
@@ -76,13 +80,26 @@ local function active(context, state)
     return context.modelSettingsUi == state
         and state.dialog ~= nil
         and not state.pending
+        and not state.saving
         and (not state.handlers.modelFilename or state.handlers.modelFilename() == state.modelFilename)
         and (not state.handlers.fullscreen or state.handlers.fullscreen())
 end
 
---- Save/cancel handlers have separate lifecycle contracts, not UI bounds.
+--- Publication, error reporting and retirement retain separate lifecycle gates.
 function ui.workBound(context)
     local state = context.modelSettingsUi
+    if state and state.saving then
+        if state.saving.phase == "store" and state.handlers.saveWorkBound then
+            local bound = state.handlers.saveWorkBound(state.saving.job)
+            return bound and bound + 200
+        end
+        return nil
+    end
+    if state and state.pending and state.handlers.startSave and not state.build
+        and (not state.handlers.modelFilename or state.handlers.modelFilename() == state.modelFilename)
+        and (not state.handlers.fullscreen or state.handlers.fullscreen()) then
+        return ui.WORK_BOUNDS.command
+    end
     if state and active(context, state) and not state.closing then
         return ui.WORK_BOUNDS[ui.stageOf(state)]
     end
@@ -100,6 +117,10 @@ function ui.close(context)
     local state = context.modelSettingsUi
     if not state then
         return
+    end
+    if state.saving then
+        state.closing = true
+        return false
     end
     context.modelSettingsUi = nil
     state.generation = state.generation + 1
@@ -157,7 +178,7 @@ local function dialog(context, state)
 end
 
 function ui.open(context, document, handlers)
-    ui.close(context)
+    assert(ui.close(context) ~= false, "Model settings save is still in progress")
     local config = assert(handlers.flightConfig or context.flightConfig, "flight configuration helper unavailable")
     local state = {
         modelFilename = document.modelFilename,
@@ -361,6 +382,79 @@ local function buildField(context, state, field)
     state.nextY = state.nextY + state.height + 6
 end
 
+local function reportError(state, message)
+    if state.dialog then
+        state.status:set({ text = tostring(message) })
+    end
+    if state.handlers.error then
+        state.handlers.error(tostring(message))
+    end
+end
+
+local function committed(state, document)
+    state.values = state.config.resolve(document.flight)
+    state.armed, state.sessionReset, state.revision = document.armed, document.sessionReset, document.revision
+end
+
+local function advanceSave(state)
+    local saving, handlers = state.saving, state.handlers
+    local function failed(message)
+        saving.phase, saving.error = "save-error", tostring(message)
+    end
+    if saving.phase == "store" then
+        local ok, done, saved, result = pcall(handlers.advanceSave, saving.job)
+        if not ok then
+            failed(done)
+        elseif done then
+            if saved then
+                committed(state, result)
+                saving.document, saving.job, saving.phase = result, nil, "publish-start"
+            else
+                failed(result)
+            end
+        end
+    elseif saving.phase == "publish-start" then
+        if handlers.modelFilename and handlers.modelFilename() ~= state.modelFilename then
+            failed("Model changed; saved settings cannot be applied to another model")
+        elseif handlers.startPublication then
+            local ok, job, message = pcall(handlers.startPublication, saving.document)
+            if ok and job then
+                saving.publication, saving.phase = job, "publish"
+            else
+                failed(ok and message or job)
+            end
+        else
+            local ok, message = true
+            if handlers.saved then
+                ok, message = pcall(handlers.saved, saving.document)
+            end
+            if not ok then
+                failed(message)
+            else
+                state.saving = nil
+                if state.dialog then state.status:set({ text = "" }) end
+            end
+        end
+    elseif saving.phase == "publish" then
+        local ok, done, saved, message = pcall(handlers.advancePublication, saving.publication)
+        if not ok then
+            failed(done)
+        elseif done then
+            if saved then
+                state.saving = nil
+                if state.dialog then state.status:set({ text = "" }) end
+            else
+                failed(message)
+            end
+        end
+    elseif saving.phase == "save-error" then
+        reportError(state, saving.error)
+        state.saving = nil
+    else
+        error("invalid Model settings save phase: " .. tostring(saving.phase))
+    end
+end
+
 function ui.advance(context)
     local state = context.modelSettingsUi
     if not state then
@@ -370,17 +464,25 @@ function ui.advance(context)
         (state.handlers.modelFilename and state.handlers.modelFilename() ~= state.modelFilename)
         or (state.handlers.fullscreen and not state.handlers.fullscreen())
     then
+        if state.saving then
+            state.closing = true
+        else
+            ui.close(context)
+            if state.handlers.cancel then
+                state.handlers.cancel()
+            end
+            return true
+        end
+    end
+    if state.closing and not state.pending and not state.saving then
         ui.close(context)
         if state.handlers.cancel then
             state.handlers.cancel()
         end
         return true
     end
-    if state.closing and not state.pending then
-        ui.close(context)
-        if state.handlers.cancel then
-            state.handlers.cancel()
-        end
+    if state.saving then
+        advanceSave(state)
         return true
     end
     if state.build then
@@ -419,12 +521,18 @@ function ui.advance(context)
     local errors = state.config.validate(values)
     if #errors > 0 then
         local message = table.concat(errors, "; ")
-        if state.dialog then
-            state.status:set({ text = message })
+        if state.handlers.startSave then
+            state.saving = { phase = "save-error", error = message }
+        else
+            reportError(state, message)
         end
-        if state.handlers.error then
-            state.handlers.error(message)
-        end
+        return true
+    end
+    if state.handlers.startSave then
+        local ok, job, message = pcall(state.handlers.startSave,
+            values, state.revision, state.modelFilename, armed, sessionReset)
+        state.saving = ok and job and { phase = "store", job = job }
+            or { phase = "save-error", error = tostring(ok and message or job) }
         return true
     end
     local ok, saved, result =

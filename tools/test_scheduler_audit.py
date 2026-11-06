@@ -35,6 +35,8 @@ class InstrumentationTests(unittest.TestCase):
                              (audit.WIDGET / "panels/chart.lua").read_text())
             self.assertEqual((widget / "audit/scheduler_chart_fixture.lua").read_text(),
                              (audit.SUPPORT_DIR / "scheduler_chart_fixture.lua").read_text())
+            self.assertEqual((widget / "audit/memory_files.lua").read_text(),
+                             (audit.SUPPORT_DIR / "memory_files.lua").read_text())
 
     def test_patches_still_match_the_shipped_sources(self):
         # A refactor that moves an instrumented call site must update the audit.
@@ -228,6 +230,11 @@ class ScenarioTests(unittest.TestCase):
         for value in ("armed: L64", "sessionReset: L03", "motorSource: ch32", "flightSwitch: L64"):
             self.assertIn(value, spec["settingsDocument"])
         self.assertEqual(spec["layout"].count("  - id:"), 7)
+        saved = self.cli.scenarios()["modal-settings-save"]
+        self.assertIn('flightSwitch: ""', saved["settingsDocument"])
+        actions = [phase["action"] for phase in saved["phases"] if "action" in phase]
+        self.assertEqual(actions[-3:], ["edit-settings", "check-settings-save", "close-settings"])
+        self.assertIn("flightSwitch: L63", self.cli.scenarios()["modal-settings-save-output"]["settingsDocument"])
 
     def test_run_requires_measured_actions_and_requests_native_fullscreen(self):
         spec = {"phases": [{"action": "open-editor"}], "fullscreen": True}

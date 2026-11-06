@@ -254,6 +254,17 @@ def scenarios():
             + ("    config:\n" + config if config else "    config: {}\n")
             for name, kind, col, row, height, config in settings_cells
         ]))
+    phases = list(result["modal-settings-reset"]["phases"])
+    phases[-1:-1] = [
+        {"name": "settings-save", "kind": "refresh", "action": "edit-settings",
+         "callbacks": 80, "step": 5, "perCall": 4},
+        {"name": "settings-saved", "kind": "refresh", "action": "check-settings-save",
+         "callbacks": 1, "step": 5, "perCall": 1},
+    ]
+    result["modal-settings-save"] = dict(result["modal-settings-reset"], phases=phases,
+        settingsDocument=result["modal-settings-reset"]["settingsDocument"].replace("flightSwitch: L64", 'flightSwitch: ""'))
+    result["modal-settings-save-output"] = dict(result["modal-settings-save"],
+        settingsDocument=result["modal-settings-save"]["settingsDocument"].replace('flightSwitch: ""', "flightSwitch: L63"))
     result["modal-log-recording"] = dict(result["modal-log"], recipe="chart", sources=1, expected=2,
         settings=True, layout=custom_layout([
             chart_cell("chart", 0, 2, [1]),
@@ -536,7 +547,7 @@ def prepare_framework(capture, sd, cases):
     for name in ("scheduler_overhead.lua", "scheduler_measure.lua", "scheduler_mixes.lua",
                  "scheduler_panel_api.lua", "scheduler_chart_fixture.lua", "scheduler_flight_readout.lua",
                  "scheduler_probe_fixture.lua", "scheduler_diagnostics_fixture.lua", "scheduler_flight_fixture.lua",
-                 "theme_resolution_fixture.lua"):
+                 "theme_resolution_fixture.lua", "memory_files.lua"):
         shutil.copyfile(SUPPORT_DIR / name, audit / name)
     (audit / "cases").mkdir()
     for case in cases:

@@ -288,7 +288,7 @@ holds without inventing disarm. Metadata changes invalidate the reference;
 the legacy path also invalidates it on scheduling gaps. Fixed shortcuts are
 strictly above +3 m or 10 mph for at least 200 ticks, allowing only precision-scaled conversion
 roundoff (including float32 firmware). `smartStatus` explains fallback in the native Model settings dialog;
-confirmed field changes persist and update live detection immediately.
+confirmed field changes publish to live detection after verified persistence.
 
 Model settings use their own schema/revision and losslessly encoded model
 filename under `/AEROGRID/models/`. Saves verify model identity and revision
@@ -446,9 +446,12 @@ only steady-eligible service declarations inherit these kinds, never panels.
 The host charges completed modal work before planning services. Log viewing
 freezes the bounded ring at entry, then stages demand checks, snapshot copying,
 row construction, wrapping and painting. Model settings descriptions wrap one
-word per advance, separately from headings and controls. Construction and idle
-callbacks have measured UI bounds; save/cancel handlers retain separate
-lifecycle gates.
+word per advance, separately from headings and controls. Confirmed edits disable
+further input while store reads, bounded YAML tokenization/building, validation,
+serialization and atomic installation advance separately. Return/fullscreen
+loss waits for confirmed work; errors remain visible, and committed revisions
+survive publication failure. Broker publication has a separate lifecycle gate;
+only measured UI/store work admits services.
 Menu and location overlays also use service-only callbacks: hidden panels do
 not refresh behind them. Menu action handlers consume their callback separately
 from popup construction and input; unmeasured action handlers do not inherit

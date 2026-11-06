@@ -526,6 +526,76 @@ function yaml.buildMappingChunk(tokens, work, maxTokens)
     return work
 end
 
+--- Build mappings and sequences in bounded token/stack advances.
+function yaml.buildChunk(tokens, work, maxTokens)
+    if type(maxTokens) ~= "number" or maxTokens < 1 or maxTokens % 1 ~= 0 then
+        return nil, nil, "YAML document budget must be a positive integer"
+    end
+    if not work then
+        if type(tokens) ~= "table" then
+            return nil, nil, "YAML tokens must be a table"
+        end
+        if tokens[1] and tokens[1].indent ~= 0 then
+            return nil, nil, "line " .. tokens[1].line .. ": document must start at column one"
+        end
+        local result = {}
+        work = { result = result, index = 1, frames = {
+            { value = result, indent = 0, sequence = tokens[1] and string.match(tokens[1].content, "^-") ~= nil },
+        } }
+    end
+    for _ = 1, maxTokens do
+        local token = tokens[work.index]
+        if not token then return nil, work.result end
+        local frames, nextToken = work.frames, tokens[work.index + 1]
+        local frame = frames[#frames]
+        if token.indent < frame.indent then
+            frames[#frames] = nil
+        elseif token.indent > frame.indent then
+            return nil, nil, "line " .. token.line .. ": unexpected indentation"
+        elseif (frame.sequence == true) ~= (string.match(token.content, "^-") ~= nil) then
+            if #frames == 1 then
+                return nil, nil, "line " .. token.line .. ": unexpected content"
+            end
+            frames[#frames] = nil
+        elseif not frame.sequence then
+            local count = #frames
+            local pending, document, parseError = yaml.buildMappingChunk(tokens, work, 1)
+            if not pending then return nil, document, parseError end
+            if #frames > count then
+                frames[#frames].sequence = string.match(tokens[work.index].content, "^-") ~= nil
+            end
+        else
+            local remainder = string.match(token.content, "^-%s*(.*)$")
+            work.index = work.index + 1
+            if remainder == "" then
+                if not nextToken or nextToken.indent ~= frame.indent + 2 then
+                    return nil, nil, "line " .. token.line .. ": list item requires an indented value"
+                end
+                local child = {}
+                frame.value[#frame.value + 1] = child
+                frames[#frames + 1] = {
+                    value = child, indent = nextToken.indent,
+                    sequence = string.match(nextToken.content, "^-") ~= nil,
+                }
+            elseif string.match(remainder, "^[%a_][%w_-]*:") then
+                local key, value, splitError = splitMapping(token, remainder)
+                if splitError then return nil, nil, splitError end
+                local child = { [key] = value == "" and {} or parseScalar(value) }
+                frame.value[#frame.value + 1] = child
+                if nextToken and nextToken.indent > frame.indent then
+                    if nextToken.indent ~= frame.indent + 2 then
+                        return nil, nil, "line " .. nextToken.line .. ": indentation jumped more than one level"
+                    end
+                    frames[#frames + 1] = { value = child, indent = nextToken.indent, sequence = false }
+                end
+            else
+                frame.value[#frame.value + 1] = parseScalar(remainder)
+            end
+        end
+    end
+    return work
+end
+
 --- Parse constrained YAML text into Lua mappings and sequences.
 --- Convenience wrapper; the host stages `tokenize` and `build` separately.
 ---@param text string

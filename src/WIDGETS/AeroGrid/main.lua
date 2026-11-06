@@ -1386,17 +1386,29 @@ local function openModelSettings(context)
         smartStatus = function()
             return owner.view.smartStatus
         end,
-        save = function(values, revision, modelFilename, armedCondition, sessionReset)
+        startSave = function(values, revision, modelFilename, armedCondition, sessionReset)
             local ok, message = pcall(function()
                 owner:validateOutput(values.flightSwitch, armedCondition, sessionReset)
             end)
             if not ok then
-                return false, tostring(message)
+                return nil, tostring(message)
             end
-            return owner.store:save(modelFilename, revision, values, armedCondition, sessionReset)
+            return owner.store:startSave(modelFilename, revision, values, armedCondition, sessionReset)
+        end,
+        advanceSave = function(job)
+            return owner.store:advanceSave(job)
+        end,
+        saveWorkBound = function(job)
+            return owner.store:saveWorkBound(job)
         end,
         saved = function(saved)
             owner:setDocument(saved)
+        end,
+        startPublication = owner.startPublication and function(saved)
+            return owner:startPublication(saved)
+        end,
+        advancePublication = owner.advancePublication and function(job)
+            return owner:advancePublication(job)
         end,
         error = function(message)
             addError(context, "Model settings: " .. message)
