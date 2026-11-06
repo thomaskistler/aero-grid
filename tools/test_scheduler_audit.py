@@ -181,6 +181,14 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(spec["expected"], 2)
         self.assertTrue(spec["toggleSwitches"])
 
+    def test_rx_battery_tasks_measure_adaptive_supporting_rows(self):
+        for tag in ("min", "max", "16"):
+            spec = self.cli.scenarios()[f"rx-battery-tasks-{tag}"]
+            self.assertEqual(spec["owners"], ["panel:rx-battery"])
+            self.assertEqual(spec["expected"], 16 if tag == "16" else 1)
+            self.assertEqual(spec["config"], {"visual": "bar", "showPack": True,
+                                               "showCount": True, "showDelta": True})
+
     def test_lua_literal_round_trips_through_lua(self):
         try:
             import lupa

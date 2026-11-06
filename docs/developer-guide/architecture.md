@@ -343,6 +343,12 @@ Navigation freezes its rendered output, then applies readings, tape frame/style
 and bearing marks in separate stages. Cold tape geometry and alert-surface
 colors must not share an atom with scrolling the full mark pool. Its synchronous
 refresh/update APIs still compose the same helpers.
+RX Battery gathers a bounded cells summary before yielding, then searches one
+supporting-row presence mask per geometry step. Geometry placement, rendering
+and painting have separate stages; synchronous callers compose the same search
+and placement helpers. Resizing, synchronous refresh and session reset cancel
+pending work, and stale plans consume no work. Gathered scalars, rather than a
+live cells table, remain authoritative until that frame finishes.
 Flight Mode, Flight Timer, State, Trim and TX Battery reuse their synchronous
 refresh as a single task stage. State is bounded by three entries of three
 conditions; Trim has three axes. TX Battery includes live range changes and

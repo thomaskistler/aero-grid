@@ -2303,3 +2303,68 @@ it must not inherit this single-stage declaration. Model Identity, Link Status,
 diagnostics/probe and idle-panel admission, full lifecycle/reset/loader/modal/
 reflow accounting and Flight/Smart eligibility remain open. No production owner,
 ten-tick recording policy or deferred stress assertion changes are included.
+
+## 34. Bounded RX Battery adaptive refresh (R1, owner still legacy)
+
+RX Battery cannot use TX Battery's single-stage adapter: a changed supporting
+wording can search seven presence masks plus a no-row fallback and then move
+the controls. Its shared geometry resolver now tries one mask at a time,
+preserving count/delta/pack priority. The synchronous APIs compose the same
+helpers; the task yields between geometry candidates and between preparation,
+placement, rendering and painting.
+
+| Refresh stage | Native fixture worst | Lua32 fixture worst | Real native bridge worst | Declaration |
+|---|---:|---:|---:|---:|
+| Gather summary / supporting forms / frame plan | 1169 | 1168 | 1051 | 1340 |
+| One geometry candidate / final slots | 2973 | 3030 | 2784 | 3390 |
+| Apply geometry | 739 | 741 | 701 | 870 |
+| Render frozen summary | 755 | 762 | 682 | 890 |
+| Paint | 1146 | 1169 | 1253 | 1430 |
+
+Declarations use the larger measured path, including the real bridge and the
+Lua32 margin rather than only the native fixture's cheaper count. Native
+fixtures use actual firmware text widths with LVGL object stand-ins, cover
+seven geometries (including 90x50 and 480x272), with and without the menu corner,
+all eight geometry masks, cell/pack readings, all three visual modes, supporting
+preferences and twelve input shapes with five seeds. The corner matters:
+omitting it measured only 1559 for a geometry step versus 2973 with it.
+The standalone fixture supplies and restores the missing `CHAR_DELTA` constant;
+it does not alter production globals or all other fixture costs.
+
+Preparation walks at most sixteen cells and keeps only the resulting scalar
+summary; later source/table mutation cannot change that pending frame.
+Supporting forms are not published until placement, so cancelling before
+placement does not poison legacy reflow detection. Resize, synchronous refresh
+and the existing session-reset hook invalidate pending work and any unpainted
+render cache. A stale planned stage uses zero units and republishes preparation.
+The original twenty-tick interval starts after completion.
+
+The integration suite checks 2160 changing completed frames, both actual themes,
+five geometries, cell/pack primary readings, all visuals and supporting
+preferences. It mutates the raw table and availability after preparation,
+asserts exactly one geometry candidate per step, checks stable no-repaint and
+hidden eligibility, and cancels/resumes every pending stage through resize,
+synchronous refresh and reset. Completed frames also match actual pre-extraction
+`9657925` source. The same suite passes under native Lua32.
+
+```sh
+python3 tools/audit-scheduler.py --framework rx-battery-panel --timeout 180
+python3 tools/audit-scheduler.py rx-battery-tasks-min rx-battery-tasks-max rx-battery-tasks-16 default-gallery --timeout 180
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+make test-lua32
+build/lua32/lua tests/integration/widget/test_rx_battery_task.lua "$PWD"
+```
+
+All commands exit 0. Final small/large task cases peak at 9189 whole-callback
+instructions, sixteen placements at 10985 and default-gallery at 12635.
+Panel enrollment peaks at 1394 and complete readiness at 3580, including service
+setup. Targeted review/unit, reflow/loading, host, shared-module, editor and
+session-reset suites pass; editor remains at 15000 mock instructions and reset
+at 14300, retaining its two existing first-arm XFAILs. Shared retained growth
+is 0.0 KiB. All 30 audit-tool tests and Lua32 scheduler bounds pass.
+
+Only isolated native images override ownership. This validates refresh atoms,
+not the synchronous legacy reflow or construction envelope. Remaining panel
+families, reset release scheduling, full lifecycle/loader/modal/reflow accounting
+and Flight/Smart admission remain gates. Production owners, ten-tick
+Telemetry/History and deferred chart-recording stress assertions are unchanged.

@@ -232,6 +232,11 @@ def scenarios():
         "phases": standard_phases(),
     }
     result["control-panel-tasks"] = dict(result["light-control"], owners=["panel:state", "panel:trim-panel"])
+    for tag in ("min", "max", "16"):
+        base = result[f"rx-battery-{tag}"] if tag != "16" else dict(result["metric-16"], recipe="rx-battery")
+        result[f"rx-battery-tasks-{tag}"] = dict(base, owners=["panel:rx-battery"], phases=standard_phases(),
+                                                  config={"visual": "bar", "showPack": True,
+                                                          "showCount": True, "showDelta": True})
     result["flight-smart"] = {
         "recipe": "metric", "expected": 2, "sources": 3, "settings": True, "smart": True,
         "layout": custom_layout([chart_cell("chart-a", 0, 2, (1, 2, 3)),
