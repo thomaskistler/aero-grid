@@ -1076,6 +1076,21 @@ actions = {
         _G.AUDIT_LIFECYCLE_DRAIN = true
         context.reloadState = "clear"
     end,
+    ["lifecycle-menu-retire"] = function(context)
+        assert(context.aerogridMenu and context.aerogridMenu.open, "menu-close capture requires the actual open menu")
+        actions["lifecycle-retire"](context)
+        context.nativeDialogsCreated = true
+        _G.lvgl = setmetatable({
+            isFullScreen = function()
+                return false
+            end,
+        }, { __index = lvgl })
+        context.fullScreen = false
+    end,
+    ["check-lifecycle-menu"] = function(context)
+        assert(not context.aerogridMenu, "retirement must close the actual AeroGrid menu")
+        actions["check-lifecycle"](context)
+    end,
     ["check-lifecycle-settings"] = function(context)
         assert(not context.modelSettingsUi)
         assert(context.flightBroker.document.revision == P.settingsRevision)

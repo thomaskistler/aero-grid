@@ -12,6 +12,9 @@ local module = {
         rebuild = 200,
         retire = 250,
         finish = 150,
+        settingsDrainOverhead = 300,
+        settingsDrain = 2400,
+        menuClose = 200,
     },
 }
 
@@ -306,7 +309,8 @@ function module.new(dependencies)
             job.phase = "menu"
             return
         elseif job.phase == "menu" then
-            if context.nativeDialogsCreated and not isFullScreen() and context.aeroMenuModule then
+            if context.nativeDialogsCreated and not isFullScreen() and context.aeroMenuModule
+                and context.aerogridMenu then
                 context.aeroMenuModule.close(context)
                 context.aerogridMenu = nil
             end
@@ -390,9 +394,30 @@ function module.new(dependencies)
         end
         local phase = job and job.phase or (operation == "retirePage" and "cancel" or "retire")
         if phase == "settings" then
-            return not context.modelSettingsUi and 100 or nil
-        elseif phase == "menu" and context.nativeDialogsCreated and not isFullScreen() and context.aeroMenuModule then
+            if not context.modelSettingsUi then
+                return 100
+            end
+            local settingsUi = context.modelSettingsUiModule
+            if settingsUi and settingsUi.RUNTIME_API == 1 and type(settingsUi.retirementWorkBound) == "function" then
+                local bound = settingsUi.retirementWorkBound(context)
+                local completeBound = bound and bound + module.WORK_BOUNDS.settingsDrainOverhead
+                if completeBound and completeBound <= module.WORK_BOUNDS.settingsDrain then
+                    return completeBound
+                end
+            end
             return nil
+        elseif phase == "menu" and context.nativeDialogsCreated and not isFullScreen() and context.aeroMenuModule then
+            local menuModule, state = context.aeroMenuModule, context.aerogridMenu
+            if state then
+                if menuModule.RUNTIME_API == 1 and type(menuModule.closeWorkBound) == "function" then
+                    local bound = menuModule.closeWorkBound(state)
+                    if bound == module.WORK_BOUNDS.menuClose then
+                        return bound
+                    end
+                end
+                return nil
+            end
+            return module.WORK_BOUNDS.menu
         end
         local entry = phase == "panel" and context.panels[1]
             or phase == "pending" and job and job.pending

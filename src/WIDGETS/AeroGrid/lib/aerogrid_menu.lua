@@ -1,10 +1,16 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local menu = { RUNTIME_API = 1 }
+local menu = { RUNTIME_API = 1, CLOSE_WORK_BOUND = 200 }
 
 function menu.workBound(state)
     if state and not state.action then
         return state.pending and 1000 or 300
+    end
+end
+
+function menu.closeWorkBound(state)
+    if state and state.root then
+        return menu.CLOSE_WORK_BOUND
     end
 end
 

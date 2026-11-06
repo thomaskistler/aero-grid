@@ -183,4 +183,35 @@ do
         "unmeasured custom destroy remains ineligible"
     )
 end
+
+do
+    local context = loaded()
+    local ui = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/model_settings_ui.lua"))()
+    context.modelSettingsUiModule = ui
+    context.pageRetirement = { phase = "settings" }
+    context.modelSettingsUi = {
+        saving = { phase = "store", job = { stage = "serialize" } },
+        handlers = {
+            advanceSave = function() end,
+            saveWorkBound = function()
+                return 1900
+            end,
+        },
+    }
+    assert(ui.retirementWorkBound(context) == 2100)
+    assert(context.dashboardLifecycle.workBound(context, "retirePage") == 2400,
+        "the reservation must include close plus the complete save-advance bound")
+    context.modelSettingsUi.handlers.saveWorkBound = function()
+        return 5000
+    end
+    assert(not context.dashboardLifecycle.workBound(context, "retirePage"),
+        "an out-of-contract custom save bound remains ineligible")
+    context.modelSettingsUi.saving.phase = "save-error"
+    assert(not context.dashboardLifecycle.workBound(context, "retirePage"),
+        "deferred error presentation remains ineligible")
+    context.modelSettingsUi.saving = nil
+    context.modelSettingsUi.loading = { phase = "publish" }
+    assert(not context.dashboardLifecycle.workBound(context, "retirePage"),
+        "load publication remains outside the confirmed-save drain gate")
+end
 print("Lifecycle foreground/background service-only admission preserves hidden-panel and service deadlines")

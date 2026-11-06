@@ -145,6 +145,34 @@ function ui.workBound(context, event)
     end
 end
 
+function ui.retirementWorkBound(context)
+    local state = context.modelSettingsUi
+    local saving = state and state.saving
+    local handlers = state and state.handlers
+    if not saving or type(handlers.advanceSave) ~= "function" then
+        return nil
+    end
+    if saving.phase == "store" then
+        if type(handlers.saveWorkBound) ~= "function" or type(saving.job) ~= "table" then
+            return nil
+        end
+        local bound = ui.workBound(context)
+        if type(bound) == "number" and bound >= 850 and bound <= 2100 and bound == math.floor(bound) then
+            return bound
+        end
+    elseif saving.phase == "publish-start" then
+        if
+            type(handlers.startPublication) == "function"
+            and type(handlers.modelFilename) == "function"
+            and type(handlers.advancePublication) == "function"
+        then
+            return ui.workBound(context)
+        end
+    elseif saving.phase == "publish" and type(handlers.advancePublication) == "function" then
+        return ui.workBound(context)
+    end
+end
+
 local function retireHost(state)
     if state.host then
         state.host:clear()

@@ -28,6 +28,7 @@ class InstrumentationTests(unittest.TestCase):
             self.assertTrue(cases[name]["fullscreen"])
             self.assertIn(phases[-1]["action"],
                           ("check-lifecycle", "check-lifecycle-settings", "check-lifecycle-errors",
+                           "check-lifecycle-menu",
                            "construction-parity-check", "preparation-check"))
             for phase in phases:
                 if phase["name"] != "settle":
@@ -54,6 +55,12 @@ class InstrumentationTests(unittest.TestCase):
             self.assertEqual(phase["kind"], kind)
             self.assertEqual(phase["action"], "lifecycle-retire")
             self.assertTrue(phase["recreateRoot"])
+
+    def test_menu_close_capture_retires_an_open_menu(self):
+        case = load_cli().scenarios()["lifecycle-menu-close"]
+        self.assertTrue(case["lifecycleMenuClose"])
+        self.assertIn("lifecycle-menu-retire", [phase.get("action") for phase in case["phases"]])
+        self.assertTrue(next(phase for phase in case["phases"] if phase["name"] == "menu-close")["trace"])
 
     def test_preparation_matrix_uses_complete_cold_and_app_operations(self):
         case = load_cli().scenarios()["lifecycle-preparation"]

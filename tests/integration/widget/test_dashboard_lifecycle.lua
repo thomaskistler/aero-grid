@@ -229,6 +229,10 @@ assert(state.saving, "test requires an already confirmed store job")
 local page, count = context.page, #context.panels
 fixture.lvglMock.setFullScreen(false)
 context.dashboardLifecycle.retirePage(context)
+assert(context.pageRetirement.phase == "settings")
+local settingsBound = context.dashboardLifecycle.workBound(context, "retirePage")
+assert(settingsBound and settingsBound > context.modelSettingsUiModule.workBound(context))
+assert(settingsBound <= context.dashboardLifecycle.WORK_BOUNDS.settingsDrain)
 for _ = 1, 1000 do
     if not context.modelSettingsUi then
         break
@@ -240,6 +244,56 @@ end
 assert(not context.modelSettingsUi and context.flightBroker.document.revision == revision + 1)
 assert(context.flightBroker.document.flight.motorReversed == state.values.motorReversed)
 retire(context)
+
+context = loaded("metric")
+local menuRoot = lvgl.box(context.root, { x = 0, y = 0, w = 24, h = 24 })
+local menuScreen = lvgl.box(context.root, { x = 0, y = 0, w = context.zone.w, h = context.zone.h })
+context.aerogridMenu = {
+    root = menuRoot, screen = menuScreen, generation = 1, open = true, pending = true,
+}
+context.nativeDialogsCreated = true
+context.dashboardLifecycle.retirePage(context)
+for _ = 1, 100 do
+    if context.pageRetirement.phase == "menu" then
+        break
+    end
+    context.dashboardLifecycle.retirePage(context)
+    fixture.lvglMock.settle()
+end
+assert(context.pageRetirement.phase == "menu")
+assert(context.dashboardLifecycle.workBound(context, "retirePage") ==
+    context.dashboardLifecycle.WORK_BOUNDS.menuClose)
+context.dashboardLifecycle.retirePage(context)
+assert(not context.aerogridMenu and menuRoot.hidden and menuScreen.hidden)
+
+context = loaded("metric")
+local customClosed = false
+context.aeroMenuModule = {
+    RUNTIME_API = 1,
+    close = function()
+        customClosed = true
+    end,
+}
+context.aerogridMenu = { root = lvgl.box(context.root, { x = 0, y = 0, w = 24, h = 24 }) }
+context.nativeDialogsCreated = true
+context.dashboardLifecycle.retirePage(context)
+for _ = 1, 100 do
+    if context.pageRetirement.phase == "menu" then
+        break
+    end
+    context.dashboardLifecycle.retirePage(context)
+end
+assert(not context.dashboardLifecycle.workBound(context, "retirePage"),
+    "custom menu close callbacks remain ineligible")
+context.dashboardLifecycle.retirePage(context)
+assert(customClosed and not context.aerogridMenu)
+
+context = loaded("metric")
+context.pageRetirement = { phase = "settings" }
+context.modelSettingsUi = { saving = { phase = "store" } }
+context.modelSettingsUiModule = { RUNTIME_API = 1 }
+assert(not context.dashboardLifecycle.workBound(context, "retirePage"),
+    "settings without the measured drain continuation remain ineligible")
 
 context = loaded("metric")
 local oldPage = context.page

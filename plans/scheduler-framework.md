@@ -4376,3 +4376,36 @@ the explicit first-arm policy decision remain activation gates.
 An additional chart-recording run still fails its unchanged line 134 startup
 assertion, also reproduced with the untouched prerequisite host. No deferred
 stress assertions or fixture clocks were adjusted.
+
+## 81. Settings-drain and AeroGrid-menu retirement admission (R6)
+
+Prerequisite: integrated `dcd1088` (`bd9033c` restart and App-error gates plus the
+bounded preparation import). The parent-owned restart bound remains 600 and
+`WORK_BOUNDS.rebuild` remains 200.
+
+Retirement admits only a confirmed Model-settings save in the bounded store,
+publication-start, and publication stages. The UI supplies its current stage
+bound; lifecycle reserves an additional 300 for close and enclosing dispatch,
+and rejects totals above 2400. Loading, deferred error presentation, and
+unbounded/custom continuations stay `nil`. A real menu state closes under its
+own 200 declaration; an absent menu keeps the distinct empty-menu bound of 100,
+while unknown/custom close modules remain `nil`.
+
+| Complete native atom | Native max | Fitted | Declaration | Whole callback max |
+|---|---:|---:|---:|---:|
+| Confirmed settings drain (`save_serialize`) | 1664 | 1890 | 2400 | 6870 in drain; 8519 across retirement |
+| Actual menu close with open menu state | 104 | 170 | 200 | 6546 in close; 7790 across retirement |
+
+Both captures have empty native error lists. The fitted charge is
+`ceil((native * 1.10 + 50) / 10) * 10`; complete lifecycle callbacks stay below
+15000 and service-only fixed overhead stays below its fitted 2400 cap. Native
+gates verify pre-mutation admission, service-only execution, hidden-panel
+exclusion, and the actual menu state. Lua53/int32 tests also retain deadline
+checks and assert unsupported settings/menu continuations remain ineligible.
+
+```sh
+python3 tools/audit-scheduler.py lifecycle-settings-drain lifecycle-menu-close --timeout 240
+build/lua32/lua tests/integration/widget/test_dashboard_lifecycle.lua "$PWD"
+build/lua32/lua tests/integration/widget/test_dashboard_lifecycle_admission.lua "$PWD"
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+```

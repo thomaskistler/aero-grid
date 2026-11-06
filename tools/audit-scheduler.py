@@ -499,6 +499,19 @@ def scenarios():
         {"name": "menu-close", "kind": "refresh", "action": "close-menu",
          "callbacks": 10, "step": 5, "perCall": 1},
     ])
+    result["lifecycle-menu-close"] = dict(result["modal-menu"], fullscreen=True, lifecycleMenuClose=True, phases=[
+        {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 4},
+        {"name": "menu-open", "kind": "refresh", "action": "open-menu",
+         "callbacks": 40, "step": 5, "perCall": 1},
+        {"name": "menu-checked", "kind": "refresh", "action": "check-menu",
+         "callbacks": 1, "step": 5, "perCall": 1},
+        {"name": "menu-retire", "kind": "background", "action": "lifecycle-menu-retire",
+         "callbacks": 1, "step": 5, "perCall": 1},
+        {"name": "menu-close", "kind": "background", "callbacks": 400, "step": 5, "perCall": 1,
+         "trace": True},
+        {"name": "menu-retired", "kind": "background", "action": "check-lifecycle-menu",
+         "callbacks": 1, "step": 5, "perCall": 1},
+    ])
     for panel in ("navigation", "metric", "chart"):
         result[f"editor-rebuild-{panel}"] = dict(result[f"{panel}-max"], fullscreen=True, phases=[
             {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 4},
@@ -836,6 +849,12 @@ def run(capture, executable, library, name, spec, timeout, mode="legacy"):
     data = json.loads(results.read_text())
     if data.get("errors"):
         raise RuntimeError(f"{name}: widget errors: {data['errors']}")
+    if spec.get("lifecycleDrain"):
+        if not any(label.startswith("lifecycle:retirePage:settings:save_") for label in data.get("stats", {})):
+            raise RuntimeError(f"{name}: missing complete active settings-drain atom")
+    if spec.get("lifecycleMenuClose"):
+        if not data.get("stats", {}).get("lifecycle:retirePage:menu", {}).get("n"):
+            raise RuntimeError(f"{name}: missing complete actual menu-close atom")
     if spec.get("preparation"):
         matrix = data.get("preparation", {})
         if not matrix.get("done") or matrix.get("checked") != matrix.get("total") or not matrix.get("checked"):
