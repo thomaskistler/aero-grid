@@ -73,8 +73,8 @@ return function(load)
         end
     end
     local editor = load("lib/editor.lua")
-    for _, stage in ipairs({ "write", "error", "snapshot", "summaries", "forms", "navigate", "append", "remove-item", "remove", "back" }) do
-        for _, part in ipairs({ "start", "advance", "finish" }) do
+    for _, stage in ipairs({ "write", "error", "snapshot", "summaries", "forms", "items", "navigate", "append", "remove-item", "remove", "back" }) do
+        for _, part in ipairs({ "start", "advance", "finish", "states", "join" }) do
             cases[#cases + 1] = {
                 stage = stage, grant = 1,
                 setup = function()
@@ -104,7 +104,16 @@ return function(load)
                             field = { drawerGroup = part == "finish" and "group128" or nil },
                         }
                     end
-                    if stage == "forms" then
+                    if stage == "items" then
+                        local items = config.rows
+                        if part == "states" then items[1].states = { { switch = "SAv", text = "Safe" } }
+                        elseif part == "join" then items[1].states = {} end
+                        state.drawerOpening = { phase = "items", list = {
+                            items = items, field = { key = "rows", value = #items },
+                            index = part == "finish" and 129 or part == "advance" and 128 or 1,
+                            parts = part == "join" and { "Safe", "Armed" } or nil,
+                        } }
+                    elseif stage == "forms" then
                         local job = assert(editor.startSettings(state.session))
                         while not editor.advanceSettings(job) do end
                         state.drawerOpening = { phase = "forms", job = job, index = part == "finish" and 2 or 1 }
@@ -141,7 +150,11 @@ return function(load)
                     end
                     local task = { stage = stage, want = 1 }
                     function task:step()
-                        api.withApi(drawer.advance, {}, state)
+                        local oldIndex, oldName = getSwitchIndex, getSwitchName
+                        getSwitchIndex, getSwitchName = function() return 1 end, function() return "SAv" end
+                        local ok, message = pcall(api.withApi, drawer.advance, {}, state)
+                        getSwitchIndex, getSwitchName = oldIndex, oldName
+                        assert(ok, message)
                         return 1
                     end
                     return task, 1000000

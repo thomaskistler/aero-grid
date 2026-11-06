@@ -4501,3 +4501,33 @@ ticks, not relaxed assertions: its intact full editor passes under an in-memory
 all-panel ownership override. Production owners are unchanged here.
 Panel Add, drag enumeration, general preview geometry/adoption and compatibility
 group-navigation admission remain separate gates.
+
+## 84. Oversized repairable drawer lists (R5 correction)
+
+Section 56's 128-row configuration case retained unknown data but did not
+exercise a rendered list. Field generation still expanded every list item in
+one forms advance. List descriptors now enter a separate `items` continuation:
+one row or one State condition-summary component per turn, charged 400.
+Native getters remain callable but return already-staged text; they no longer
+walk the condition list during native rendering. Incremental label ordering
+also removes the final Lua scan across all generated rows.
+
+The widget and native cases now populate actual 128-item Metric/Chart metrics,
+State entries and nested State conditions. They verify every retained row,
+path index and ordered condition token, not just the final label. Native
+fixture preparation itself copies only eight items per synthetic action.
+The existing 1800 forms charge is retained for production metadata expansion,
+not used to hide a row-count-dependent loop. Custom module schemas, generic
+recursive table fields and compatibility groups remain explicitly ineligible;
+unmeasured inputs still open for editing without borrowing production bounds.
+
+Return during queued reopening now transfers that drawer's parent/back
+command instead of leaving Configure mode without a native window. Existing
+initial-opening cancellation and committed-append semantics are unchanged.
+
+Native maxima (all large-list, list, State-detail and 18 input cases, mixed):
+forms 1613/1800, items 227/400, snapshot 482, layout 191, build 1362; largest
+admitted editor-drawer surface callback 7191 (oversized Chart). Whole callback
+maxima 10013-13868, except the existing unadmitted 16-panel tap steady 26033.
+Fixture items stage 178/400. Full int32 suite and 39 tooling tests pass.
+Production owners, recording policy and deferred stress assertions are unchanged.

@@ -681,6 +681,42 @@ def scenarios():
         {"name": "return-check", "kind": "refresh", "action": "check-drawer-return",
          "callbacks": 1, "step": 5},
     ])
+    base = result["editor-drawer-metric"]
+    result["editor-list-cancel"] = dict(base, phases=list(base["phases"][:-1]) + [
+        {"name": "item-queued", "kind": "refresh", "action": "command-drawer", "command": "item",
+         "callbacks": 1, "step": 5},
+        {"name": "item-cancel", "kind": "refresh", "event": "EVT_VIRTUAL_EXIT",
+         "callbacks": 1, "step": 5},
+        {"name": "parent-reopen", "kind": "refresh", "callbacks": 240, "step": 5, "perCall": 4},
+        {"name": "parent-check", "kind": "refresh", "action": "check-drawer", "root": True,
+         "callbacks": 1, "step": 5},
+    ])
+    for panel, key in (("metric", "metrics"), ("chart", "metrics"), ("state", "entries")):
+        base = result[f"editor-drawer-{panel}"]
+        phases = list(base["phases"])
+        preparations = [{"name": f"large-list-{first}", "kind": "refresh", "action": "pad-drawer-list",
+                         "key": key, "first": first, "callbacks": 1, "step": 5}
+                        for first in range(1, 129, 8)]
+        phases[2:2] = preparations
+        build_index = 2 + len(preparations)
+        phases[build_index] = dict(phases[build_index], callbacks=2000, perCall=8)
+        phases[build_index + 1] = dict(phases[build_index + 1], items=128)
+        result[f"editor-list-large-{panel}"] = dict(base, phases=phases)
+    base = result["editor-drawer-state"]
+    preparations = [{"name": f"large-states-{first}", "kind": "refresh", "action": "pad-drawer-list",
+                     "nested": True, "first": first, "callbacks": 1, "step": 5}
+                    for first in range(1, 129, 8)]
+    phases = list(base["phases"][:2]) + preparations + [
+        {"name": "states-summary", "kind": "refresh", "action": "open-drawer",
+         "callbacks": 2000, "step": 5, "perCall": 8},
+        {"name": "summary-check", "kind": "refresh", "action": "check-drawer", "items": 3, "summary": True,
+         "callbacks": 1, "step": 5},
+        {"name": "states-rows", "kind": "refresh", "action": "open-entry-drawer",
+         "callbacks": 2000, "step": 5, "perCall": 8},
+        {"name": "states-check", "kind": "refresh", "action": "check-drawer", "items": 128,
+         "callbacks": 1, "step": 5},
+    ]
+    result["editor-list-large-states"] = dict(base, phases=phases)
     phases = list(result["editor-entry-state"]["phases"])
     phases[-1:-1] = [
         {"name": "state-build", "kind": "refresh", "action": "open-entry-drawer",

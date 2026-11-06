@@ -1409,11 +1409,31 @@ actions = {
     end,
     ["check-drawer"] = function(context)
         local state = assert(context.editorUi)
+        local phase = config.phases[phaseIndex]
         assert(
             state.nativeDrawer and not state.drawerBuild and not state.drawerLayout and not state.renderStage,
             "native drawer construction must finish"
         )
         assert(#state.drawerControls == #state.drawerFields)
+        if phase.root then assert(not state.drawerListKey) end
+        if phase.items then
+            local count = 0
+            for _, field in ipairs(state.drawerFields) do
+                if field.action == "item" then
+                    count = count + 1
+                    assert(type(field.text) == "function", "item summaries retain their native getter contract")
+                    if phase.summary and count == 1 then
+                        local index = 0
+                        for token in string.gmatch(field.text(), "State %d+") do
+                            index = index + 1
+                            assert(token == "State " .. index)
+                        end
+                        assert(index == 128, "all condition summaries must survive")
+                    end
+                end
+            end
+            assert(count == phase.items, "all oversized list rows must remain repairable")
+        end
     end,
     ["open-entry-drawer"] = function(context)
         local state = assert(context.editorUi)
@@ -1452,6 +1472,18 @@ actions = {
         local config = assert(context.editorSession).draft.panels[context.editorSession.selected].config
         config.audit = {}
         for index = 1, 128 do config.audit[index] = { label = "row", nested = { index } } end
+    end,
+    ["pad-drawer-list"] = function(context)
+        local phase, editor = config.phases[phaseIndex], context.editorModule
+        local config = context.editorSession.draft.panels[context.editorSession.selected].config
+        local items = phase.nested and config.entries[1].states or config[phase.key]
+        if phase.first == 1 then P.drawerListTemplate = assert(items[1]) end
+        local template = assert(P.drawerListTemplate)
+        for index = phase.first, phase.first + 7 do
+            items[index] = editor.clone(template)
+            if phase.nested then items[index].text = "State " .. index
+            else items[index].label = "Entry " .. index end
+        end
     end,
     ["check-drawer-removed"] = function(context)
         local state = assert(context.editorUi)

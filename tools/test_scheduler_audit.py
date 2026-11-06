@@ -303,6 +303,21 @@ class ScenarioTests(unittest.TestCase):
             self.assertEqual([phase["action"] for phase in spec["phases"] if "action" in phase],
                              ["open-editor", "check-editor", "select-editor", "check-render", "close-editor"])
 
+    def test_oversized_drawers_pad_rendered_lists_and_verify_root_and_nested_rows(self):
+        scenarios = self.cli.scenarios()
+        for panel, key in (("metric", "metrics"), ("chart", "metrics"), ("state", "entries"), ("states", None)):
+            phases = scenarios[f"editor-list-large-{panel}"]["phases"]
+            prepared = [phase for phase in phases if phase.get("action") == "pad-drawer-list"]
+            self.assertEqual([phase["first"] for phase in prepared], list(range(1, 129, 8)))
+            for phase in prepared:
+                self.assertEqual(phase.get("key"), key)
+                self.assertEqual(phase.get("nested", False), panel == "states")
+            checked = [phase for phase in phases if phase.get("action") == "check-drawer"]
+            self.assertEqual(checked[-1]["items"], 128)
+            if panel == "states":
+                self.assertTrue(checked[0]["summary"])
+                self.assertEqual(checked[0]["items"], 3)
+
     def test_modal_recording_case_keeps_real_chart_and_log_demand(self):
         spec = self.cli.scenarios()["modal-log-recording"]
         self.assertTrue(spec["fullscreen"])

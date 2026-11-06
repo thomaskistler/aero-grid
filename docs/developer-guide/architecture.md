@@ -501,6 +501,10 @@ advance. Ordinary selection and modal input admit services under `editor-input`.
 Enter/tap queues a separately bounded `editor-drawer` opening; Return can cancel
 before construction. Opening snapshots settings in bounded grants and expands
 one metadata declaration per advance before constructing controls.
+List rows and condition summaries expand one item per turn, including oversized
+lists opened for repair. Native text getters return the staged summary.
+Only measured catalog schemas receive these bounds; custom schemas, generic
+recursive fields and compatibility groups retain separate admission gates.
 Compatible saved-layout adoption starts bounded Flight registration when the
 host exposes `beginFlightRegistration`. Editor entry, preview work and native
 drawer edits pause while registration/publication or its pending error drains;
@@ -513,6 +517,7 @@ undoing an applied edit.
 List append copies at most eight graph entries per turn before committing once.
 List removal, panel removal and item/parent/Return navigation admit services;
 reopening runs separately, keeping controls disabled until construction finishes.
+Return during queued reopening follows that drawer's parent/back route.
 Native Return during append retains the edit and queues navigation after its
 commit. Panel Add, drag enumeration and preview geometry retain separate gates.
 

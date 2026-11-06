@@ -166,7 +166,7 @@ do
     }
     local state = {
         screen = node(), session = {
-            selected = 1, draft = { panels = { { type = "test", config = {} } } },
+            selected = 1, draft = { panels = { { type = "metric", config = {} } } },
             loadPanel = function() return module end, panelHost = { validateModule = function() return true end },
         },
         handlers = { editor = editor },
@@ -174,10 +174,29 @@ do
     lvgl.box, lvgl.dialog, lvgl.button, lvgl.choice = node, node, node, node
     lvgl.numberEdit, lvgl.textEdit = node, node
     drawer.open({ zone = { w = 480 } }, state, "configure", nil, nil, nil, "group")
+    assert(drawer.workBound(state) == nil, "compatibility groups are not production admission declarations")
     while state.drawerOpening do drawer.advance({}, state) end
     assert(#state.drawerFields == 4 and state.drawerFields[1].key == "b" and state.drawerFields[2].key == "a"
         and state.drawerFields[3].key == "label" and state.drawerFields[4].key == "b",
         "staged groups preserve metadata order, duplicates and skipped unknown keys")
+    drawer.close(state)
+    module.settings = { { key = "raw", type = "table", default = { value = 1 } } }
+    drawer.open({ zone = { w = 480 } }, state, "configure")
+    while state.drawerOpening.phase == "snapshot" do drawer.advance({}, state) end
+    assert(drawer.workBound(state) == nil, "custom recursive schemas must not borrow a production forms bound")
+    drawer.advance({}, state)
+    assert(state.drawerUnmeasured and drawer.workBound(state) == nil)
+    drawer.close(state)
+    assert(not state.drawerUnmeasured)
+    state.session.draft.panels[1].type = "custom"
+    module.settings = { { key = "a", type = "boolean", default = true } }
+    drawer.open({ zone = { w = 480 } }, state, "configure")
+    assert(drawer.workBound(state) == nil, "custom schemas do not inherit measured catalog eligibility")
+    while state.drawerOpening do
+        assert(drawer.workBound(state) == nil)
+        drawer.advance({}, state)
+    end
+    assert(#state.drawerFields == 2, "unmeasured custom schemas must remain editable")
     drawer.close(state)
 end
 

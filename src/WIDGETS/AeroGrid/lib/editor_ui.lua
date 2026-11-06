@@ -186,6 +186,11 @@ function uiModule.drawerWorkBound(context)
     if blocked(state) then return nil end
     if state.drawerOpen and not state.session.initializing and not state.previewPending
         and not state.previewRefresh and not state.exitCommand then
+        if state.drawerOpen.groupKey then return nil end
+        if state.drawerOpen.mode == "configure" then
+            local placement = state.session.draft.panels[state.drawerOpen.selected]
+            if not placement or not context.editorDrawerModule.MEASURED_FORMS[placement.type] then return nil end
+        end
         return uiModule.DRAWER_OPEN_BOUNDS[state.drawerOpen.mode]
     end
     if
@@ -644,6 +649,7 @@ function uiModule.handle(context, event, touch)
     local state = context.editorUi
     if blocked(state) then return false end
     if state and state.drawerOpen and matches(event, "EVT_VIRTUAL_EXIT") then
+        state.drawerPending = state.drawerOpen.cancel
         state.drawerOpen = nil
         return true
     end

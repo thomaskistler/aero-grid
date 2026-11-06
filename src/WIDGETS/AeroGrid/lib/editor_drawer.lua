@@ -3,17 +3,33 @@
 local drawer = { RUNTIME_API = 1 }
 drawer.WORK_BOUNDS = {
     build = 1700, layout = 500, finish = 200,
-    write = 1000, error = 500, snapshot = 700, summaries = 300, forms = 1800,
+    write = 1000, error = 500, snapshot = 700, summaries = 300, forms = 1800, items = 400,
     append = 1000, ["remove-item"] = 1000, remove = 500, navigate = 400, back = 400,
+}
+drawer.MEASURED_FORMS = {
+    output = true, chart = true, ["flight-counter"] = true, ["flight-mode"] = true,
+    ["flight-timer"] = true, ["host-diagnostics"] = true, ["link-status"] = true,
+    metric = true, ["model-identity"] = true, navigation = true, ["rx-battery"] = true,
+    ["service-probe"] = true, state = true, ["trim-panel"] = true, ["tx-battery"] = true,
 }
 
 local function blocked(state)
     return state.handlers.blocked and state.handlers.blocked()
 end
 
+local function legacyFields(setting, module)
+    return setting and (
+        setting.type == "table" and type(setting.fields) ~= "table"
+        or setting.key == "sourceType" and #(module.drawerGroups or {}) > 0
+    )
+end
+
 function drawer.workBound(state)
-    if blocked(state) then return nil end
+    if blocked(state) or state.drawerGroupKey or state.drawerUnmeasured then return nil end
     if state.drawerOpening then
+        local opening = state.drawerOpening
+        if opening.phase == "forms" and not opening.fields
+            and legacyFields(opening.job.settings[opening.index], opening.job.module) then return nil end
         return drawer.WORK_BOUNDS[state.drawerOpening.phase]
     elseif state.drawerRefresh then
         return state.drawerLayout and drawer.WORK_BOUNDS.layout
@@ -100,6 +116,7 @@ local function closeDialog(state)
     state.drawerLayout, state.drawerLayoutY, state.drawerBuildConfig = nil, nil, nil
     state.drawerRefresh = nil
     state.drawerOpening = nil
+    state.drawerUnmeasured = nil
     if dialog then
         state.drawerClosing = true
         lvgl.close(dialog)
@@ -176,20 +193,8 @@ local function switchSummary(name)
     return name
 end
 
-local function entrySummary(state, key, index, defaults, path)
-    local config = state.session.draft.panels[state.session.selected].config or {}
-    local items = config[key] or defaults[key]
-    for _, part in ipairs(path or {}) do
-        items = items[part]
-    end
-    local item = items[index]
-    if item.states then
-        local summaries = {}
-        for _, condition in ipairs(item.states) do
-            summaries[#summaries + 1] = switchSummary(condition.switch) .. ": " .. condition.text
-        end
-        return table.concat(summaries, " / ")
-    elseif item.switch then
+local function entrySummary(item)
+    if item.switch then
         return switchSummary(item.switch) .. ": " .. item.text .. " (" .. (item.background or "normal") .. ")"
     end
     local source = item.source
@@ -249,39 +254,7 @@ local function fieldsFor(state, listKey, itemIndex, itemPath, groupKey, snapshot
             for _, part in ipairs(field.path or {}) do
                 items = items[part]
             end
-            for index, item in ipairs(items) do
-                local title
-                if type(item) == "table" then
-                    title = item.label
-                    if title == nil or title == "" then
-                        title = item.source
-                    end
-                else
-                    title = item
-                end
-                if title == nil or title == "" then
-                    title = (field.itemLabel or "Entry") .. " " .. index
-                end
-                local path = editor.clone(field.path or {})
-                path[#path + 1] = index
-                result[#result + 1] = {
-                    label = tostring(title),
-                    text = function()
-                        return entrySummary(state, field.key, index, config, field.path)
-                    end,
-                    action = "item",
-                    key = field.key,
-                    index = index,
-                    itemPath = path,
-                }
-            end
-            result[#result + 1] = {
-                label = "+",
-                action = "append",
-                key = field.key,
-                path = field.path,
-                active = field.value < (field.maxItems or 3),
-            }
+            result[#result + 1] = { expandList = field, items = items }
         elseif matches and (listKey or not field.path) then
             field.label = field.entryLabel or field.label
             result[#result + 1] = field
@@ -303,6 +276,19 @@ local function fieldsFor(state, listKey, itemIndex, itemPath, groupKey, snapshot
         result[#result + 1] = { label = "Remove panel", action = "remove" }
     end
     return editor.orderFields(result, listKey ~= nil), config
+end
+
+local function returnCommand(editor, listKey, groupKey, itemPath)
+    local command = {
+        action = (listKey or groupKey) and "parent" or "back",
+        key = listKey, groupKey = listKey and groupKey or nil,
+    }
+    if itemPath and #itemPath > 1 then
+        command.itemPath = editor.clone(itemPath)
+        table.remove(command.itemPath)
+        table.remove(command.itemPath)
+    end
+    return command
 end
 
 function drawer.open(context, state, mode, listKey, itemIndex, itemPath, groupKey)
@@ -341,6 +327,7 @@ function drawer.open(context, state, mode, listKey, itemIndex, itemPath, groupKe
     local snapshot, snapshotError = state.handlers.editor.startSettings(state.session)
     assert(snapshot, snapshotError)
     local placement = state.session.draft.panels[state.session.selected]
+    state.drawerUnmeasured = not drawer.MEASURED_FORMS[placement.type]
     local title = placement.type
     for _, item in ipairs(state.handlers.editor.CATALOG) do
         if item.type == placement.type then
@@ -386,16 +373,7 @@ function drawer.open(context, state, mode, listKey, itemIndex, itemPath, groupKe
                     state.drawerLayout, state.drawerLayoutY, state.drawerBuildConfig = nil, nil, nil
                     state.drawerRefresh = nil
                     state.drawerOpening = nil
-                    local command = {
-                        action = (listKey or groupKey) and "parent" or "back",
-                        key = listKey,
-                        groupKey = listKey and groupKey or nil,
-                    }
-                    if itemPath and #itemPath > 1 then
-                        command.itemPath = state.handlers.editor.clone(itemPath)
-                        table.remove(command.itemPath)
-                        table.remove(command.itemPath)
-                    end
+                    local command = returnCommand(state.handlers.editor, listKey, groupKey, itemPath)
                     if state.drawerPending then
                         state.drawerDismiss = command
                     else
@@ -874,7 +852,58 @@ local function reopen(state, listKey, itemIndex, itemPath, groupKey)
     state.drawerOpen = {
         mode = "configure", selected = state.session.selected, listKey = listKey,
         itemIndex = itemIndex, itemPath = itemPath, groupKey = groupKey,
+        cancel = returnCommand(state.handlers.editor, listKey, groupKey, itemPath),
     }
+end
+
+local function appendField(state, opening, field)
+    local key = state.drawerListKey and field.path and field.path[#field.path] or field.key
+    if key == "label" and not state.drawerGroupKey and not opening.labelFirst then
+        table.insert(state.drawerFields, 1, field)
+        opening.labelFirst = true
+    else
+        state.drawerFields[#state.drawerFields + 1] = field
+    end
+end
+
+local function advanceList(state, opening)
+    local list = opening.list
+    local field, item = list.field, list.items[list.index]
+    if item == nil then
+        appendField(state, opening, {
+            label = "+", action = "append", key = field.key, path = field.path,
+            active = field.value < (field.maxItems or 3),
+        })
+        opening.list, opening.phase = nil, "forms"
+        return
+    end
+    local summary
+    if item.states then
+        list.parts, list.stateIndex = list.parts or {}, list.stateIndex or 1
+        local condition = item.states[list.stateIndex]
+        if condition then
+            list.parts[#list.parts + 1] = switchSummary(condition.switch) .. ": " .. condition.text
+            list.stateIndex = list.stateIndex + 1
+            return
+        end
+        summary = table.concat(list.parts, " / ")
+    else
+        summary = entrySummary(item)
+    end
+    local title = item
+    if type(item) == "table" then
+        title = item.label
+        if title == nil or title == "" then title = item.source end
+    end
+    if title == nil or title == "" then title = (field.itemLabel or "Entry") .. " " .. list.index end
+    local path = state.handlers.editor.clone(field.path or {})
+    path[#path + 1] = list.index
+    appendField(state, opening, {
+        label = tostring(title), text = function() return summary end, action = "item", key = field.key,
+        index = list.index, itemPath = path,
+    })
+    list.index = list.index + 1
+    list.parts, list.stateIndex = nil, nil
 end
 
 function drawer.advance(context, state)
@@ -887,6 +916,22 @@ function drawer.advance(context, state)
                 state.drawerBuildConfig = opening.job.config
             end
         elseif opening.phase == "forms" then
+            if opening.fields then
+                local field = opening.fields[opening.fieldIndex]
+                if field then
+                    opening.fieldIndex = opening.fieldIndex + 1
+                    if field.expandList then
+                        opening.list = { field = field.expandList, items = field.items, index = 1 }
+                        opening.phase = "items"
+                    else
+                        appendField(state, opening, field)
+                    end
+                else
+                    opening.fields = nil
+                    if opening.finishing then state.drawerOpening = nil end
+                end
+                return true
+            end
             local job = opening.job
             local setting
             if state.drawerGroupKey then
@@ -905,19 +950,19 @@ function drawer.advance(context, state)
                 settings = setting and { setting } or {},
                 groupIndex = state.drawerGroupKey and opening.index,
             }
+            state.drawerUnmeasured = state.drawerUnmeasured or legacyFields(setting, job.module)
             local fields = fieldsFor(
                 state, state.drawerListKey, state.drawerItemIndex, state.drawerItemPath, state.drawerGroupKey,
                 snapshot, setting ~= nil
             )
-            for _, field in ipairs(fields) do state.drawerFields[#state.drawerFields + 1] = field end
+            opening.fields, opening.fieldIndex = fields, 1
             if setting then
                 opening.index = opening.index + 1
             else
-                if not state.drawerGroupKey then
-                    state.drawerFields = editor.orderFields(state.drawerFields, state.drawerListKey ~= nil)
-                end
-                state.drawerOpening = nil
+                opening.finishing = true
             end
+        elseif opening.phase == "items" then
+            advanceList(state, opening)
         else
             error("invalid drawer opening phase: " .. tostring(opening.phase))
         end
