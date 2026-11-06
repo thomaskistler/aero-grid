@@ -497,7 +497,7 @@ do
 end
 
 -- 5. `new`: every loaded task must be owned by the framework, and there is no
--- legacy loop. Panel `background` hooks still run.
+-- legacy loop or scheduler-owned panel background dispatch.
 do
     local definition, context = start("new", "host-light")
     callbacks(definition, context, 5)
@@ -547,7 +547,7 @@ do
     for _, dispatch in ipairs(context.dispatches) do
         hooks = hooks + (dispatch[3] == "background" and 1 or 0)
     end
-    assert(hooks >= 60, "panel background hooks still run")
+    equal(hooks, 0, "scheduler-owned panels cannot also run legacy background hooks")
     local telemetryRuns = 0
     for key, count in pairs(runs) do
         if string.sub(key, 1, #"service:telemetry:") == "service:telemetry:" then
