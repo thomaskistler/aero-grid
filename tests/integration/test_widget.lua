@@ -603,7 +603,21 @@ local function testStatesCoverBothPalettes()
         resetRadio()
         local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "main", Theme = mode }, widgetPath)
         allowTestPanelScheduler(context)
-        pump(context, 60)
+        local ready = false
+        for _ = 1, 500 do
+            pump(context, 1)
+            local critical, warning = entryById(context, "s-critical"), entryById(context, "s-warning")
+            if
+                critical.instance.stateName
+                and critical.instance.stateName ~= "unavailable"
+                and warning.instance.stateName
+                and warning.instance.stateName ~= "unavailable"
+            then
+                ready = true
+                break
+            end
+        end
+        assert(ready, mode .. ": state readings did not become ready")
         assertEqual(#context.errors, 0, mode .. ": " .. table.concat(context.errors, "\n"))
         return context
     end
