@@ -80,20 +80,27 @@ local function finish(label, raw, leak)
     if type(label) ~= "string" then
         label = "unlabelled"
     end
-    local themeBound = ({
+    local loadBound = ({
         ["load:theme-read"] = 200,
         ["load:theme-tokenize"] = 3200,
         ["load:theme-parse"] = 900,
         ["load:theme-resolve-begin"] = 240,
+        ["load:tokenize"] = 3300,
+        ["load:header"] = 950,
+        ["load:header-parse"] = 1650,
+        ["load:header-validate"] = 250,
+        ["load:header-finalize"] = 220,
+        ["load:panel-tokens"] = 1120,
+        ["load:panel-parse"] = 1650,
     })[label]
     local resolution = string.match(label, "^load:theme%-resolve:(%a+)$")
     if resolution then
-        themeBound = ({ legibility = 2400, chart = 1800, alert = 2200, display = 650, finalize = 180 })[resolution]
+        loadBound = ({ legibility = 2400, chart = 1800, alert = 2200, display = 650, finalize = 180 })[resolution]
     elseif string.match(label, "^load:theme%-publish:") then
-        themeBound = 500
+        loadBound = 500
     end
-    if themeBound then
-        gate(cost <= themeBound, label .. " exceeds its bounded theme-loading charge: " .. cost)
+    if loadBound then
+        gate(cost <= loadBound, label .. " exceeds its bounded loading charge: " .. cost)
     end
     if label == "lifecycle:advanceReflow" then
         gate(cost <= 4000, "complete geometry advance exceeds the atom cap: " .. cost)
@@ -397,7 +404,9 @@ local function install(context)
     if store and store.advanceSave then
         P.settingsStoreBounds = P.settingsStoreBounds or {}
         wrapField(store, "advanceSave", function(token, _, job)
-            if token then return "modal:settings:store:" .. token end
+            if token then
+                return "modal:settings:store:" .. token
+            end
             P.settingsStoreBounds[job.stage] = store:saveWorkBound(job)
             return job.stage
         end)
@@ -437,7 +446,9 @@ local function install(context)
                 P.logBounds = module.WORK_BOUNDS
             elseif surface[2] == "settings" then
                 P.settingsBounds = {}
-                for stage, bound in pairs(module.WORK_BOUNDS) do P.settingsBounds[stage] = bound end
+                for stage, bound in pairs(module.WORK_BOUNDS) do
+                    P.settingsBounds[stage] = bound
+                end
             end
             for _, name in ipairs({ "open", "advance", "handle", "close", "ensure" }) do
                 wrapField(module, name, function(token, current)
@@ -873,8 +884,10 @@ local function callbackSurface(kind, context)
         return "log-viewer:" .. context.logViewerModule.stageOf(context.logViewer)
     end
     if context.modelSettingsUi then
-        return "settings:" .. context.modelSettingsUiModule.stageOf(context.modelSettingsUi)
-            .. ":" .. tostring(context.modelSettingsUi.build or "idle")
+        return "settings:"
+            .. context.modelSettingsUiModule.stageOf(context.modelSettingsUi)
+            .. ":"
+            .. tostring(context.modelSettingsUi.build or "idle")
     end
     if context.locationDetails then
         return "location"

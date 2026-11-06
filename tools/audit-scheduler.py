@@ -202,6 +202,20 @@ def scenarios():
             "colors:\n", "colors:\n  chartCyan: 0x777777\n  chartGreen: 0x777777\n"
             "  chartAmber: 0x777777\n  chartOrange: 0x777777\n")),
         phases=standard_phases())
+    layout_header = "\n".join(f'metadata_{index}: "retained # text" # ' + "comment " * 24
+                              for index in range(128))
+    layout_panels = custom_layout([
+        "  - id: readings\n    type: metric\n    col: 0\n    row: 0\n    colSpan: 4\n    rowSpan: 4\n"
+        "    config:\n      metrics:\n" + "".join(
+            f"        - source: {source}\n          label: Reading\n          unit: x\n"
+            "          precision: 1\n          rangeMin: 0\n          rangeMax: 100\n"
+            "          warning: 80\n          critical: 95\n          direction: rising\n"
+            for source in ("Alt", "Curr", "VFAS")),
+    ])
+    result["layout-loading-chunks"] = dict(result["metric-max"], expected=1,
+        layout=layout_panels.replace("panels:\n", layout_header +
+            "\nretained:\n  - item: first\n    values:\n      - one\n      - two\npanels:\n"),
+        phases=standard_phases())
     for panel in (*PANELS, "theme-showcase"):
         base = result["metric-max"] if panel == "theme-showcase" else result[f"{panel}-max"]
         result[f"panel-reflow-{panel}"] = dict(base, phases=standard_phases() + [

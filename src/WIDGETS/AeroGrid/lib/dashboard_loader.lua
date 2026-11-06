@@ -307,7 +307,7 @@ function module.new(dependencies)
     end
 
     --- Lines tokenized per widget callback.
-    local TOKENIZE_LINES = 24
+    local TOKENIZE_LINES = 8
     local THEME_CHUNK = 8
 
     local function nextTheme(context, definition)
@@ -357,6 +357,9 @@ function module.new(dependencies)
             context.themeNames, context.themeDefinitions = nil, nil
             context.themeWork = nil
             context.themeBuildWork, context.themePublication = nil, nil
+            context.headerWork = nil
+            context.commentWork = nil
+            context.pendingItem = nil
             showErrors(context)
             return false
         end
@@ -497,12 +500,14 @@ function module.new(dependencies)
         end
 
         if stage == "tokenize" then
-            local position, line, tokenError = context.yaml.tokenizeChunk(
+            local position, line, tokenError, commentWork = context.yaml.tokenizeChunk(
                 context.source,
                 context.readPosition,
                 context.readLine,
                 TOKENIZE_LINES,
-                context.tokens
+                context.tokens,
+                128,
+                context.commentWork
             )
 
             if tokenError then
@@ -510,6 +515,7 @@ function module.new(dependencies)
             end
 
             context.readLine = line
+            context.commentWork = commentWork
             if position then
                 context.readPosition = position
                 return true
@@ -525,36 +531,52 @@ function module.new(dependencies)
             if not tokens then
                 return fail("layout tokens are missing")
             end
-            -- Split the panel sequence out so the document itself stays small.
-            local header, panelsIndex, panelsIndent = {}, nil, nil
-            local index = 1
-
-            while index <= #tokens do
-                local token = tokens[index]
-                if token.indent == 0 and string.match(token.content, "^panels:") then
-                    panelsIndex = index + 1
-                    index = index + 1
-                    -- Skip the sequence body; it is parsed one entry at a time later.
-                    while index <= #tokens and tokens[index].indent > 0 do
-                        panelsIndent = panelsIndent or tokens[index].indent
-                        index = index + 1
+            local work = context.headerWork or { tokens = {}, index = 1 }
+            context.headerWork = work
+            for _ = 1, 32 do
+                local token = tokens[work.index]
+                if not token then
+                    if not work.panelsIndex then
+                        return fail("panels must be a sequence")
                     end
-                else
-                    header[#header + 1] = token
-                    index = index + 1
+                    context.stage = "header-parse"
+                    return true
                 end
+                if token.indent == 0 and string.match(token.content, "^panels:") then
+                    work.panelsIndex, work.skipping = work.index + 1, true
+                elseif work.skipping and token.indent > 0 then
+                    work.panelsIndent = work.panelsIndent or token.indent
+                else
+                    work.skipping = false
+                    work.tokens[#work.tokens + 1] = token
+                end
+                work.index = work.index + 1
             end
+            return true
+        end
 
-            if not panelsIndex then
-                return fail("panels must be a sequence")
-            end
-
-            local document, buildError = context.yaml.build(header)
-            if not document then
+        if stage == "header-parse" then
+            local work = context.headerWork
+            local pending, document, buildError = context.yaml.buildChunk(work.tokens, work.parsing, 8)
+            if buildError then
                 return fail(buildError)
             end
+            work.parsing = pending
+            if not pending then
+                work.document, work.tokens = document, nil
+                context.stage = "header-validate"
+            end
+            return true
+        end
 
-            local validated, headerErrors, sourceVersion = context.layoutValidator.validateHeader(document)
+        if stage == "header-validate" then
+            local work = context.headerWork
+            local pending, validated, headerErrors, sourceVersion =
+                context.layoutValidator.validateHeaderChunk(work.document, work.validation, 8)
+            work.validation = pending
+            if pending then
+                return true
+            end
             if not validated or #(headerErrors or {}) > 0 then
                 local reason = table.concat(headerErrors or { "unsupported layout header" }, "; ")
                 if recoverLayout(context, reason) then
@@ -571,6 +593,7 @@ function module.new(dependencies)
                 context.tokens = nil
                 context.loadCandidates = nil
                 context.loadCandidateIndex = nil
+                context.headerWork = nil
                 showErrors(context)
                 return false
             end
@@ -578,11 +601,12 @@ function module.new(dependencies)
             context.document = validated
             context.layoutSourceVersion = sourceVersion
             context.layoutMigrationVersion = sourceVersion
-            context.itemIndex = panelsIndex
-            context.itemIndent = panelsIndent or 2
+            context.itemIndex = work.panelsIndex
+            context.itemIndent = work.panelsIndent or 2
             context.itemNumber = 0
             context.identifiers = {}
             context.serviceIndex = 0
+            context.headerWork = nil
             context.stage = sourceVersion < context.layoutValidator.VERSION and "header-migrate" or "header-finalize"
             return true
         end
@@ -600,7 +624,12 @@ function module.new(dependencies)
         end
 
         if stage == "header-finalize" then
-            local validated, headerErrors = context.layoutValidator.finalizeHeader(context.document)
+            local pending, validated, headerErrors =
+                context.layoutValidator.finalizeHeaderChunk(context.document, context.headerWork, 8)
+            context.headerWork = pending
+            if pending then
+                return true
+            end
             if not validated or #(headerErrors or {}) > 0 then
                 local reason = table.concat(headerErrors or { "unsupported layout header" }, "; ")
                 if recoverLayout(context, reason) then
@@ -791,14 +820,46 @@ function module.new(dependencies)
                 return false
             end
 
-            local placement, nextIndex, itemError = context.yaml.itemAt(tokens, index, context.itemIndent)
+            if not string.match(token.content, "^%-") then
+                return fail("line " .. token.line .. ": expected a sequence entry")
+            end
+            context.pendingItem = { first = index, index = index, tokens = {} }
+            context.stage = "panel-tokens"
+            return true
+        end
+
+        if stage == "panel-tokens" then
+            local work = context.pendingItem
+            for _ = 1, 32 do
+                local token = context.tokens[work.index]
+                if not token or work.index > work.first and token.indent <= context.itemIndent then
+                    context.stage = "panel-parse"
+                    return true
+                end
+                work.tokens[#work.tokens + 1] = {
+                    content = token.content,
+                    line = token.line,
+                    indent = token.indent - context.itemIndent,
+                }
+                work.index = work.index + 1
+            end
+            return true
+        end
+
+        if stage == "panel-parse" then
+            local work = context.pendingItem
+            local pending, entries, itemError = context.yaml.buildChunk(work.tokens, work.parsing, 8)
             if itemError then
                 return fail(itemError)
             end
-
-            context.itemIndex = nextIndex
+            work.parsing = pending
+            if pending then
+                return true
+            end
+            context.itemIndex = work.index
             context.itemNumber = context.itemNumber + 1
-            context.pendingPlacement = placement
+            context.pendingPlacement = entries[1]
+            context.pendingItem = nil
             context.panelMigrationVersion = context.layoutSourceVersion
             context.stage = context.panelMigrationVersion < context.layoutValidator.VERSION and "panel-migrate"
                 or "panel-validate"
@@ -906,6 +967,8 @@ function module.new(dependencies)
         context.errorLabel = nil
         context.tokens = nil
         context.source = nil
+        context.commentWork, context.headerWork = nil, nil
+        context.pendingItem = nil
         context.document = nil
         context.layoutSourceVersion = nil
         context.layoutMigrationVersion = nil

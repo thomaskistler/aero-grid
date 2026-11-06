@@ -231,26 +231,8 @@ local function validateSession(value, errors)
     return result
 end
 
---- Validate the document's own fields, excluding its panels.
---- A document this loader cannot interpret fails closed, because rendering its
---- panels under phase-one assumptions would silently misplace them.
----@param document table
----@return table? header
----@return string[] errors
----@return integer? sourceVersion
-function layout.validateHeader(document)
-    if type(document) ~= "table" then
-        return nil, { "layout document must be a table" }
-    end
-
+local function validateHeaderFields(document, normalized)
     local errors = {}
-    local normalized = {}
-
-    -- Unknown top-level keys are carried through so a newer authoring tool's
-    -- additions survive a round trip in memory.
-    for key, value in pairs(document) do
-        normalized[key] = value
-    end
     local sourceVersion = document.version
     normalized.version = sourceVersion
     normalized.grid = document.grid
@@ -270,6 +252,53 @@ function layout.validateHeader(document)
     return normalized, errors, sourceVersion
 end
 
+--- Validate the document's own fields, excluding its panels.
+---@param document table
+---@return table? header
+---@return string[] errors
+---@return integer? sourceVersion
+function layout.validateHeader(document)
+    if type(document) ~= "table" then
+        return nil, { "layout document must be a table" }
+    end
+    local normalized = {}
+    for key, value in pairs(document) do
+        normalized[key] = value
+    end
+    return validateHeaderFields(document, normalized)
+end
+
+local function copyHeaderChunk(document, work, maxFields)
+    if type(document) ~= "table" then
+        return nil, nil, { "layout document must be a table" }
+    end
+    if type(maxFields) ~= "number" or maxFields < 1 or maxFields % 1 ~= 0 then
+        return nil, nil, { "header budget must be a positive integer" }
+    end
+    if work and work.source ~= document then
+        return nil, nil, { "header document changed during copying" }
+    end
+    work = work or { source = document, result = {} }
+    for _ = 1, maxFields do
+        local key, value = next(document, work.key)
+        if key == nil then
+            return nil, work.result
+        end
+        work.result[key], work.key = value, key
+    end
+    return work
+end
+
+--- Retain unknown header fields without copying an unbounded mapping in one turn.
+function layout.validateHeaderChunk(document, work, maxFields)
+    local pending, normalized, copyErrors = copyHeaderChunk(document, work, maxFields)
+    if pending or copyErrors then
+        return pending, nil, copyErrors
+    end
+    local validated, errors, sourceVersion = validateHeaderFields(document, normalized)
+    return nil, validated, errors, sourceVersion
+end
+
 --- Finalize a header after its version steps have been applied.
 ---@param document table
 ---@return table? header
@@ -285,6 +314,18 @@ function layout.finalizeHeader(document)
     normalized.version = layout.VERSION
     normalized.panels = {}
     return normalized, {}
+end
+
+function layout.finalizeHeaderChunk(document, work, maxFields)
+    if type(document) ~= "table" or document.version ~= layout.VERSION then
+        return nil, nil, { "layout header migrations are incomplete" }
+    end
+    local pending, normalized, copyErrors = copyHeaderChunk(document, work, maxFields)
+    if pending or copyErrors then
+        return pending, nil, copyErrors
+    end
+    normalized.version, normalized.panels = layout.VERSION, {}
+    return nil, normalized, {}
 end
 
 --- Validate a current-version header without applying upgrades in a runtime callback.

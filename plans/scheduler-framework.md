@@ -3506,3 +3506,42 @@ Broker publication enclosing-callback accounting, error/retirement branches,
 editor domain/input work and final integration remain gates. No production
 owner, recording cadence, reset/stress assertion or parent-owned main branch
 changed.
+
+## 61. Bounded runtime layout header and panel parsing (R6)
+
+Runtime layout tokenization now grants eight lines / 128 comment-scan bytes.
+Header scanning visits at most 32 tokens, generic YAML building advances eight
+tokens/stack frames, and header validation/finalization copies eight fields per
+turn. Unknown metadata, including nested sequences, retains its original values.
+Panel entries use a private 32-token capture followed by eight-step generic
+building rather than synchronous `itemAt`; cancellation discards all parser work.
+The synchronous layout APIs retain their behavior.
+
+The actual-widget `layout-loading-chunks` native scenario covers 128 edited
+header fields with long comments, nested retained sequences, and a fully
+configured three-reading Metric whose entry crosses the capture boundary.
+
+| Complete loader stage | Native maximum | Charge |
+|---|---:|---:|
+| Tokenize | 2324 | 3300 |
+| Header scan | 756 | 950 |
+| Header build | 1115 | 1650 |
+| Header validation | 172 | 250 |
+| Header finalization | 143 | 220 |
+| Panel token capture | 919 | 1120 |
+| Panel build | 1067 | 1650 |
+
+Every declaration fits the normal margin below 4000; whole callbacks peak at
+6146. Lua53/int32 tests cover output parity, retained metadata identity, budgets,
+rejected continuations and replacement at every parser phase. Existing panel
+construction tests pass unchanged. The shared test loading watchdog increases
+from 200 to 400 turns because legitimate bounded phases add callbacks; it is a
+deadlock guard, not a runtime latency or instruction-budget assertion.
+
+```sh
+python3 tools/audit-scheduler.py layout-loading-chunks --mode mixed --timeout 240
+```
+
+Final Flight configuration, module/setup callbacks, modal/lifecycle admission
+and production owner activation remain separate gates. Recording policy and
+deferred stress/reset assertions are untouched.
