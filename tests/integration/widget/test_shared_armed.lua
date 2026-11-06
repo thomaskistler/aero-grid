@@ -127,7 +127,7 @@ armed = first.serviceRuntime.byId.armed
 local shared = armed:state()
 equal(shared.condition, "L64")
 equal(shared.origin, "model")
-equal(shared.fresh, false, "shared control reads may become stale when mixed work leaves no scheduler room")
+equal(shared.fresh, false, "shared armed reads may become stale when mixed work leaves no scheduler room")
 assert(not first.serviceRuntime.byId.control.failed, "a deferred control read is not a service error")
 assert(armed:state("L01") == shared and armed:state("ch5") == shared)
 assert(fixture.instanceOf(first, "one").session == fixture.instanceOf(first, "two").session)

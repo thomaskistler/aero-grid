@@ -114,6 +114,7 @@ function controlService.new(env, support, runtime)
         outputRemaining = nil,
         variables = {},
         switches = {},
+        switchEntries = {},
         variableEntries = {},
     }, controlService)
 
@@ -333,6 +334,7 @@ local function markScheduledUpdate(service, now)
         service.revision = service.revision + 1
     end
 end
+controlService.markScheduledUpdate = markScheduledUpdate
 
 --- Read the next bounded batch of switch conditions or normal control entries.
 ---@param entries table[]
@@ -489,7 +491,7 @@ end
 
 --- Shared physical-position and logical-switch conditions; unknown is not false.
 ---@param index? integer Validated native SWITCH option ID.
-function controlService:switch(name, index)
+function controlService:switch(name, index, classification)
     assert(self.env.getSwitchIndex and self.env.getSwitchValue, "state panel requires switch APIs")
     if self.switches[name] then
         return self.switches[name]
@@ -501,25 +503,68 @@ function controlService:switch(name, index)
         fresh = false,
         value = false,
         updatedAt = 0,
-    }, controlService.readSwitch)
+    }, controlService.readSwitch, classification)
     if index then
         entry.id, entry.state.known = index, true
     end
     self.switches[name] = entry.view
+    self.switchEntries[name] = entry
     return entry.view
+end
+
+--- Subscribe to a display-only condition; Armed can later claim it as critical.
+---@param name string
+---@param index? integer
+---@return table
+function controlService:displaySwitch(name, index)
+    return self:switch(name, index, "normal")
+end
+
+--- Transfer a shared switch condition to the armed service's critical task.
+---@param name string
+---@param index? integer
+---@return table view
+---@return table entry
+function controlService:armSwitch(name, index)
+    local view = self:switch(name, index)
+    local entry = self.switchEntries[name]
+    if not entry.armed then
+        entry.armed = true
+        for _, group in ipairs({
+            { entries = self.criticalEntries, cursor = "criticalCursor", remaining = "criticalRemaining" },
+            { entries = self.normalEntries, cursor = "normalCursor", remaining = "normalRemaining" },
+        }) do
+            for position = #group.entries, 1, -1 do
+                if group.entries[position] == entry then
+                    table.remove(group.entries, position)
+                    if self[group.cursor] > position then
+                        self[group.cursor] = self[group.cursor] - 1
+                    end
+                    if self[group.cursor] > #group.entries then
+                        self[group.cursor] = 1
+                    end
+                    self[group.remaining] = nil
+                    break
+                end
+            end
+        end
+        self.criticalTask.want = math.min(POLL_CAP, #self.criticalEntries)
+        self.normalTask.want = math.min(POLL_CAP, #self.normalEntries)
+    end
+    return view, entry
 end
 
 --- Register a subscription and publish its immutable view.
 ---@param state table
 ---@param read fun(self: table, entry: table, now: integer)
 ---@return table entry
-function controlService:add(state, read)
+function controlService:add(state, read, classification)
     local entry = self.support.addSubscription(self, self.entries, {
         state = state,
         read = read,
         nextResolve = 0,
     })
-    if read == controlService.readSwitch then
+    if read == controlService.readSwitch and classification ~= "normal" then
         self.criticalEntries[#self.criticalEntries + 1] = entry
         self.criticalTask.want = math.min(POLL_CAP, #self.criticalEntries)
     else

@@ -50,6 +50,11 @@ local function captureFixture(homes)
                     assertions.assertEqual(name, "SFv")
                     return arm
                 end,
+                armSwitch = function(_, name)
+                    assertions.assertEqual(name, "SFv")
+                    return arm, { read = function() end }
+                end,
+                markScheduledUpdate = function() end,
             },
         },
     }

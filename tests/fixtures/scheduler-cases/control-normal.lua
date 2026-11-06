@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 -- Normal control entry costs at the largest subscribed output-panel layout,
--- plus trim and global-variable reads.
+-- plus trim, global-variable, and display-only switch reads.
 return function(load)
     local services = load("lib/services.lua")
     local controlService = load("lib/control_service.lua")
@@ -28,6 +28,12 @@ return function(load)
                 getGlobalVariableDetails = function(index)
                     return { name = "GV" .. tostring(index + 1), prec = 1, min = -100, max = 100, unit = 1 }
                 end,
+                getSwitchIndex = function(name)
+                    return #name
+                end,
+                getSwitchValue = function()
+                    return seed % 2 == 0
+                end,
                 getOutput = function(index)
                     return { name = "CH" .. tostring(index + 1) }
                 end,
@@ -46,9 +52,13 @@ return function(load)
                 for index = 1, 6 do
                     service:trim("trim-" .. tostring(index))
                 end
-            else
+            elseif kind == "variables" then
                 for index = 0, 5 do
                     service:globalVariable(index)
+                end
+            else
+                for index = 1, 6 do
+                    service:displaySwitch(string.format("L%02d", index))
                 end
             end
             service.normalCursor = start
@@ -57,7 +67,7 @@ return function(load)
     end
 
     local cases = {}
-    for _, kind in ipairs({ "outputs", "trims", "variables" }) do
+    for _, kind in ipairs({ "outputs", "trims", "variables", "switches" }) do
         local starts = kind == "outputs" and { 1, 16, 32 } or { 1, 3, 6 }
         for _, start in ipairs(starts) do
             for grant = 1, controlService.TASK_DECLARATIONS.normal.stages.run.maxUnits do

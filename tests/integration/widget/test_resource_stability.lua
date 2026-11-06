@@ -52,7 +52,7 @@ local function finish()
         end
         if not ready then
             local host = context.schedulerHost
-            local task = context.scheduler.byId["service:control"]
+            local task = context.scheduler.byId["service:armed"]
             local stage = task and task.meta.stages.run
             local room = host.scheduler.CEILING - host.scheduler.MARGIN - context.scheduler.lastPlan.U
             local criticalNeed = host.scheduler.NORMAL_RESERVE

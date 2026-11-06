@@ -284,7 +284,7 @@ function statePanel.create(parent, rect, settings, services)
         context.feeds[index] = {}
         if services.control then
             for conditionIndex, condition in ipairs(entry.states) do
-                context.feeds[index][conditionIndex] = services.control:switch(condition.switch)
+                context.feeds[index][conditionIndex] = services.control:displaySwitch(condition.switch)
             end
         end
     end

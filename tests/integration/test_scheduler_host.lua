@@ -236,6 +236,7 @@ do
         ["service:control"] = true,
         ["service:control-normal"] = true,
         ["service:control-outputs"] = true,
+        ["service:armed"] = true,
         ["service:navigation"] = true,
     }
     for key in pairs(expected) do
@@ -633,15 +634,16 @@ do
     equal(model.update, nil, "the retired task still has no legacy update path")
 end
 
--- Control is split into one critical switch task and two normal tasks. The
--- dashboard service has no legacy update path, while the flight broker's private
--- runtime retains its existing update path.
+-- Armed conditions have a distinct critical task; other switch readers stay on
+-- Control's critical task. The flight broker's private runtime remains legacy.
 do
     local definition, context = start("mixed", "host-light")
     local control = context.serviceRuntime.byId.control
+    local armed = context.serviceRuntime.byId.armed
     assert(control.update == nil, "the dashboard control service is scheduler-only")
     callbacks(definition, context, 120)
-    assert(context.scheduler.byId["service:control"], "critical switch task is registered")
+    assert(context.scheduler.byId["service:armed"], "critical arm task is registered")
+    equal(context.scheduler.byId["service:control"], nil, "armed inputs are not polled twice")
     assert(context.scheduler.byId["service:control-normal"], "normal entry task is registered")
     equal(context.scheduler.byId["service:control-outputs"], nil, "no output task without output subscriptions")
     equal(control.criticalTask.decl.class, "critical")
@@ -653,30 +655,30 @@ do
         feed = candidate
         break
     end
-    assert(feed and feed.available, "the critical task publishes switch conditions")
+    assert(feed and feed.available, "the Armed task publishes switch conditions")
 
-    control.criticalEntries[1].read = function()
-        error("control task failure")
+    control.switchEntries.SFv.read = function()
+        error("armed task failure")
     end
     for _ = 1, 20 do
-        local task = context.scheduler.byId["service:control"]
+        local task = context.scheduler.byId["service:armed"]
         if not task then
             break
         end
         task.due = getTime()
         fixture.tick(5)
         definition.refresh(context)
-        if control.failed then
+        if armed.failed then
             break
         end
     end
-    assert(control.failed, "the failed critical read retires the service")
+    assert(armed.failed, "the failed critical read retires the Armed service")
     fixture.tick(5)
     definition.refresh(context)
-    equal(context.scheduler.byId["service:control"], nil, "a failed control task is retired")
-    equal(context.scheduler.byId["service:control-normal"], nil, "sibling control tasks are retired")
-    equal(control.failed, true, "the service remains failed for legacy consumers")
-    assert(logged(context, "control task failure"), "the failure is reported")
+    equal(context.scheduler.byId["service:armed"], nil, "a failed Armed task is retired")
+    assert(not control.failed, "an Armed failure does not retire unrelated control readers")
+    equal(feed.available, false, "a failed Armed poll cannot leave a switch view available")
+    assert(logged(context, "armed task failure"), "the failure is reported")
 end
 
 -- 11. A service nothing subscribes to has no task; the task appears with the first
