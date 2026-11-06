@@ -3283,3 +3283,49 @@ Existing immediate post-reflow checks and new restart/reset/cancellation parity
 checks pass. Unchanged combined session-reset assertions retain both first-arm
 XFAILs and a14700 mock maximum. The deferred chart stress assertions and
 ten-tick Telemetry/History policy are unchanged.
+## 56. Bounded persisted-document publication (R4/R5 integration API)
+
+The broker retains synchronous `setDocument` and adds
+`startPublication(validatedDocument) -> job | nil, error` and
+`advancePublication(job) -> done, ok, error`. Pending returns `done=false`;
+terminal success/failure returns `true,true` / `true,false,error`. The caller
+has already atomically persisted the normalized document and must not mutate
+it. Starting a job has no publication effects. The first advance commits the
+document, revision, diagnostic clearing/disarm guard and factory invalidation
+in one atom; later turns notify at most one member of changed arming settings.
+No additional member pass occurs when Armed is unchanged or this is the first
+document. Existing synchronous callers retain their immediate fanout behavior.
+
+Confirmed saves cannot be cancelled. Each turn checks current model identity;
+model changes, broker model reset, replacement by synchronous publication and
+identity API failures terminate explicitly without publishing into a different
+model or rolling back valid persisted data. Ordinary session reset does not
+cancel publication. Terminal advancement is idempotent and stale jobs cannot
+retire newer jobs. Registry revision changes restart member traversal without
+repeating already-notified hosts, supporting joins/retirement between turns.
+
+The real-broker fixture covers zero/one/sixteen/128 members, unchanged/initial
+documents, registry changes, identity failure, model reset/change, synchronous
+replacement and terminal repeats. Synchronous replacement also finishes any
+outstanding arming invalidation, even when re-publishing the same document.
+Native per-stage maxima and fitted normal
+declarations are:
+
+| Stage | Native instructions | Declaration |
+|---|---:|---:|
+| begin | 83 | 150 |
+| commit | 133 | 200 |
+| member | 100 | 160 |
+| finish | 94 | 160 |
+| reject | 80 | 140 |
+
+Framework release cost is 241 against 420 charged. The fixed margin makes some
+tiny stages report `loose`; none report `high` or `exceeds`, and every atom is
+well below 4000. UI/store callbacks remain unadmitted until the modal child and
+parent measure their complete callbacks with these hooks. This API does not
+activate production owners or remove legacy Flight head work.
+
+```sh
+python3 tools/audit-scheduler.py --framework flight-publication --timeout 180
+build/lua32/lua tests/unit/lib/test_scheduler_publication.lua "$PWD"
+```

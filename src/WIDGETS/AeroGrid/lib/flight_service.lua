@@ -244,6 +244,7 @@ function broker:reset(filename)
     self.events, self.errors = {}, {}
     self.lastTick, self.readyAfterDisarm = nil, nil
     self.pendingAttach, self.proposalScan = nil, nil
+    self.publication = nil
     if self.tasks then
         for _, task in pairs(self.tasks) do
             task.stage, task.want = "run", 1
@@ -271,21 +272,16 @@ function broker:reset(filename)
     self.cachedRevision, self.cachedProposal, self.cachedSignature, self.cachedStatus = nil, nil, nil, nil
 end
 
-function broker:setDocument(document)
-    assert(
-        document.modelFilename == nil or document.modelFilename == self.filename,
-        "Model changed; reopen model settings"
-    )
-    if self.document and self.document.armed ~= document.armed then
-        for host, member in pairs(self.members) do
-            host.navigationHomes = {}
-            if host.modelFilename == nil or host.modelFilename == self.filename then
-                member.pending = true
-                host.modelArmingReload = true
-                host.reloadState = "clear"
-            end
-        end
+local function notifyDocumentMember(self, host, member)
+    host.navigationHomes = {}
+    if host.modelFilename == nil or host.modelFilename == self.filename then
+        member.pending = true
+        host.modelArmingReload = true
+        host.reloadState = "clear"
     end
+end
+
+local function publishDocument(self, document)
     if self.document and (self.document.revision or 0) ~= (document.revision or 0) then
         self.readyAfterDisarm = true
         self.errors.count, self.errors.detection = nil, nil
@@ -299,6 +295,110 @@ function broker:setDocument(document)
     if self.factory then
         self.factory.revision = (self.factory.revision or 0) + 1
     end
+end
+
+function broker:setDocument(document)
+    assert(
+        document.modelFilename == nil or document.modelFilename == self.filename,
+        "Model changed; reopen model settings"
+    )
+    local publication = self.publication
+    if
+        self.document and self.document.armed ~= document.armed
+        or publication and publication.stage == "members" and publication.armedChanged
+    then
+        for host, member in pairs(self.members) do
+            notifyDocumentMember(self, host, member)
+        end
+    end
+    publishDocument(self, document)
+    self.publication = nil
+end
+
+local function publicationError(self, filename)
+    if self.filename ~= filename then
+        return "Model changed; reopen model settings"
+    end
+    local ok, current = pcall(self.identity, self)
+    if not ok then
+        return tostring(current)
+    elseif current ~= filename then
+        return "Model changed; reopen model settings"
+    end
+end
+
+--- The validated document is already persisted and must remain immutable.
+function broker:startPublication(document)
+    if
+        type(document) ~= "table"
+        or type(document.modelFilename) ~= "string"
+        or document.modelFilename == ""
+        or document.modelFilename ~= self.filename
+    then
+        return nil, "Model changed; reopen model settings"
+    elseif self.publication then
+        return nil, "Model settings publication already pending"
+    end
+    local message = publicationError(self, document.modelFilename)
+    if message then
+        return nil, message
+    end
+    local job = {
+        owner = self,
+        document = document,
+        filename = self.filename,
+        stage = "commit",
+        armedChanged = self.document ~= nil and self.document.armed ~= document.armed,
+        seen = {},
+    }
+    self.publication = job
+    return job
+end
+
+local function finishPublication(self, job, ok, message)
+    if self.publication == job then
+        self.publication = nil
+    end
+    job.done, job.ok, job.error = true, ok, message
+    job.cursor, job.seen = nil, nil
+    return true, ok, message
+end
+
+--- Commit once, then notify at most one member per turn. Confirmed saves cannot
+--- be cancelled; a model change stops further publication without rolling back.
+function broker:advancePublication(job)
+    if type(job) ~= "table" or job.owner ~= self then
+        return true, false, "Invalid model settings publication"
+    elseif job.done then
+        return true, job.ok, job.error
+    end
+    local message = publicationError(self, job.filename)
+    if message then
+        return finishPublication(self, job, false, message)
+    elseif self.publication ~= job then
+        return finishPublication(self, job, false, "Model settings publication was replaced")
+    elseif job.stage == "commit" then
+        publishDocument(self, job.document)
+        if not job.armedChanged then
+            return finishPublication(self, job, true)
+        end
+        job.stage = "members"
+        job.revision = self.factory and self.factory.revision
+        return false
+    end
+    local revision = self.factory and self.factory.revision
+    if revision ~= job.revision then
+        job.cursor, job.revision = nil, revision
+    end
+    local host, member = next(self.members, job.cursor)
+    job.cursor = host
+    if not host then
+        return finishPublication(self, job, true)
+    elseif not job.seen[host] then
+        job.seen[host] = true
+        notifyDocumentMember(self, host, member)
+    end
+    return false
 end
 
 function broker:boundary(kind, at, observedAt)

@@ -425,6 +425,13 @@ deadlines while retiring replaced dashboard services; Flight facades do not
 register duplicate tasks. Same-owner model/session resets retain release times;
 explicit cross-host handoff removes old releases and enrolls afresh instead.
 
+Model settings can publish an already-persisted, immutable document through
+`broker:startPublication(document)` and `advancePublication(job)`. The first
+advance commits settings atomically; later turns notify at most one member.
+Confirmed saves are not cancellable. Model changes and identity failures stop
+further publication explicitly; ordinary session resets do not cancel it.
+Existing synchronous `setDocument` callers retain their behavior.
+
 Modal service eligibility is explicit in `scheduler_host.SERVICE_KINDS`;
 only steady-eligible service declarations inherit these kinds, never panels.
 The host charges completed modal work before planning services. Log viewing
