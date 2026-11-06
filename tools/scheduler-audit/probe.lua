@@ -336,20 +336,23 @@ local function loadLabel(token, context)
                 stage = stage .. ":" .. tostring(job.load.stage)
             end
         end
-        loaderDeclarations["load:" .. stage] = bound
         if stage == "theme-resolve" then
-            return stage .. ":" .. tostring(context.themeBuildWork.stage)
+            stage = stage .. ":" .. tostring(context.themeBuildWork.stage)
         elseif stage == "theme-publish" then
-            return stage .. ":" .. tostring(context.themePublication.phase)
+            stage = stage .. ":" .. tostring(context.themePublication.phase)
+        else
+            local placement = context.pendingPlacement
+            if stage == "panel-construct" and context.pendingConstruction then
+                stage = stage
+                    .. ":"
+                    .. placement.type
+                    .. ":"
+                    .. tostring(context.pendingConstruction.instance.createStage)
+            elseif (stage == "panel-build" or stage == "panel-prepare" or stage == "panel-validate") and placement then
+                stage = stage .. ":" .. tostring(placement.type)
+            end
         end
-        local placement = context.pendingPlacement
-        if stage == "panel-construct" and context.pendingConstruction then
-            local label = stage .. ":" .. placement.type
-            return label .. ":" .. tostring(context.pendingConstruction.instance.createStage)
-        end
-        if (stage == "panel-build" or stage == "panel-prepare" or stage == "panel-validate") and placement then
-            return stage .. ":" .. tostring(placement.type)
-        end
+        loaderDeclarations["load:" .. stage] = bound
         return stage
     end
     return "load:" .. token
