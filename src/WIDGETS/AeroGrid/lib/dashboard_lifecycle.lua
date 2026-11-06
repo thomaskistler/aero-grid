@@ -198,6 +198,7 @@ function module.new(dependencies)
                         context.refreshOwner = nil
                     end
                     table.remove(context.panels, index)
+                    context.panelTasksDirty = true
                     job.index = index
                     break
                 end

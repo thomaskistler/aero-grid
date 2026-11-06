@@ -492,17 +492,15 @@ do
         end
         host.owners[key] = "new"
     end
-    for key in pairs(host.owners) do
-        if string.sub(key, 1, 6) == "panel:" then
-            local ok, reason = context.scheduler:add({
-                id = key,
-                decl = standin.decl,
-                instance = { step = counting(key) },
-                due = getTime(),
-            })
-            assert(ok, reason)
-            host.owners[key] = "new"
-        end
+    for _, entry in ipairs(context.panels) do
+        local key = "panel:" .. entry.module.id
+        entry.module.decl = {
+            class = "normal",
+            kinds = { steady = true },
+            stages = standin.decl.stages,
+        }
+        entry.module.step = counting(key)
+        host.owners[key] = "new"
     end
     callbacks(definition, context, 120)
     assert(context.schedulerHost, "every task owned by the framework passes")

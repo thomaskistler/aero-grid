@@ -118,6 +118,7 @@ function host.attach(context, options)
         active = false,
         waiting = {},
         registeredTasks = {},
+        panelTasks = {},
     }, host)
 
     local legacy = { spent = 0 }
@@ -200,12 +201,60 @@ function host:verify(context)
         end
     end
     for _, entry in ipairs(context.panels) do
-        local message = problem("panel:" .. entry.module.id, self.panelBounds[entry.module.id])
+        local key = "panel:" .. entry.module.id
+        local owner = self.owners[key]
+        local task = self.panelTasks[entry]
+        local message
+        if owner == "new" then
+            if not entry.failed and (not task or not self.scheduler.byId[task.id]) then
+                message = key .. " is owned by the scheduler but has no task"
+            end
+        else
+            message = problem(key, self.panelBounds[entry.module.id])
+        end
         if message then
             return message
         end
     end
     return nil
+end
+
+--- Preserve releases of surviving placements through editor changes and service
+--- subscription changes. Retire removed placements before their boxes are reused.
+---@param context table
+---@return string?
+function host:syncPanels(context)
+    local present = {}
+    for _, entry in ipairs(context.panels) do
+        if self.owners["panel:" .. entry.module.id] == "new" and not entry.failed then
+            present[entry] = true
+        end
+    end
+    for entry, task in pairs(self.panelTasks) do
+        if not present[entry] then
+            self.scheduler:remove(task.id)
+            self.panelTasks[entry] = nil
+        end
+    end
+    for _, entry in ipairs(context.panels) do
+        if present[entry] and not self.panelTasks[entry] then
+            local ok, task = pcall(context.panelHost.task, entry)
+            if not ok then
+                return "panel:" .. entry.module.id .. " is owned by the scheduler but has no task: " .. tostring(task)
+            end
+            task.id = "panel:" .. entry.placement.id
+            local accepted, reason = self.scheduler:add({
+                id = task.id,
+                decl = task.decl,
+                instance = task,
+                due = entry.nextRefresh,
+            })
+            if not accepted then
+                return task.id .. ": " .. reason
+            end
+            self.panelTasks[entry] = task
+        end
+    end
 end
 
 --- A new layout or service registry replaces the service instances: drop the tasks
@@ -279,17 +328,23 @@ end
 function host:ready(context)
     local telemetry = context.serviceRuntime and context.serviceRuntime.byId.telemetry
     local taskRevision = telemetry and telemetry.schedulerRevision or 0
-    local changed = self.checked ~= context.panels or self.registry ~= context.serviceRuntime
+    local changed = self.checked ~= context.panels
+        or self.registry ~= context.serviceRuntime
+        or context.panelTasksDirty
         or self.taskRevision ~= taskRevision
     if not changed and self.waiting[1] == nil then
         return true
     end
     local message
     if self.scheduler then
+        local panelsChanged = self.checked ~= context.panels or context.panelTasksDirty
+        if panelsChanged then
+            message = self:syncPanels(context)
+        end
         if changed then
             self:resync(context)
         end
-        message = self:enroll()
+        message = message or self:enroll()
     end
     message = message or (changed and self:verify(context))
     if message then
@@ -297,6 +352,7 @@ function host:ready(context)
         return false
     end
     self.checked, self.registry, self.taskRevision = context.panels, context.serviceRuntime, taskRevision
+    context.panelTasksDirty = nil
     return true
 end
 
@@ -363,6 +419,12 @@ function host:report(context)
         local id = type(item.id) == "string" and string.match(item.id, "^service:(.+)$")
         local instance = self.registeredTasks[item.id]
             or id and context.serviceRuntime and context.serviceRuntime.byId[id]
+        for entry, task in pairs(self.panelTasks) do
+            if task.id == item.id then
+                entry.failed, entry.error = true, item.message
+                self.panelTasks[entry] = nil
+            end
+        end
         if instance then
             instance.failed = true
             for taskId, owner in pairs(self.registeredTasks) do

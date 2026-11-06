@@ -1228,3 +1228,42 @@ case creates all 32 output subscriptions, matching the output panel's maximum
 read set, and measures every
 grant; the separate `output-max` audit exercises actual panel rendering. The
 remaining native mixed/legacy findings are recorded above.
+
+## 16. Panel registration bridge (migration prerequisite only)
+
+The host can register one task per panel placement through
+`panel_host.task(entry)`. A migrated module supplies `decl` and `step`; the
+bridge retains the existing numeric refresh-interval contract and isolates
+panel errors through the scheduler's deferred report path. An unfinished step
+requests another release after one tick. Task ids use placement ids, while
+ownership remains keyed by panel type.
+
+Surviving placements retain their pending releases when services are
+re-registered. Layout replacement, editor insertion/removal, and App-mode
+rebuilds invalidate panel registration; removed entries are retired before
+replacement tasks with the same placement ids are added. Declarations remain
+responsible for callback-kind eligibility and the exclusive chart constraint.
+
+**This is infrastructure, not an ownership flip.** All production panel owners
+remain legacy. Staged chart publication, bounded refresh extraction, measured
+declarations, and explicit modal eligibility/accounting are still required
+before enabling panel tasks. Flight/Smart and loader/modal migration are also
+outstanding. In particular, changing the editor to the ordinary steady
+dispatcher before its accounting is measured changes service capacity and
+can starve post-reset recording; this bridge leaves those callback paths
+unchanged.
+
+`test_scheduler_panels.lua` covers independent same-type placements, pending
+release preservation, replacement and retirement, exclusive and background
+eligibility, unfinished refresh intervals, and isolated/deferred failures.
+The host integration suite covers automatic placement enrollment in `new`
+mode with stand-in tasks.
+
+Validation on this layer: the panel lifecycle, scheduler-host and scheduler
+library suites pass; isolated Output review remains at 20000 mock instructions
+and session reset at 14300. Broader runs are not clean: mixed trace integration
+fails Output review at 20200 and editor UI fails its 15000 regression check at
+15200. Both failures also reproduce on the unchanged `bf2ae93` refactor
+baseline. The deferred chart-recording stress failures and 10-tick
+History/Telemetry policy are unchanged; no full-migration or native-release
+gate is claimed.

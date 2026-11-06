@@ -246,6 +246,7 @@ function module.new(dependencies)
                 -- due on the same frame.
                 nextRefresh = getTime() + host.phaseOffset(interval, #context.panels + 1),
             }
+            context.panelTasksDirty = true
             return context.panels[#context.panels]
         else
             -- Discard whatever the failed panel managed to build.
