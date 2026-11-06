@@ -7,6 +7,14 @@ local WidgetFixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua
 local fixture = WidgetFixture.new()
 fixture.reset()
 local context = fixture.createLoaded(nil, { Layout = "review-trim-panel", Theme = "modern-dark" })
+assert(fixture.pumpUntil(context, function(value)
+    local axes = fixture.instanceOf(value, "axes")
+    if not axes or #axes.indicators ~= 3 then return false end
+    for _, indicator in ipairs(axes.indicators) do
+        if not indicator.feed.available then return false end
+    end
+    return true
+end, 400), "trim controls must receive their initial readings")
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assertions.assertEqual(#context.panels, 7)
