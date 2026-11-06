@@ -106,7 +106,7 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
         assertions.assertEqual(tape.rims[7].properties.color, lcd.RGB(theme.shade(surface, isLight and -0.18 or 0.48)))
     end
 end
-local function instance(cols, rows, rect, settings)
+local function instance(cols, rows, rect, settings, staged)
     local host = fixture.module("lib/panel_host.lua")
     local resolved, errors = host.resolveSettings(navigation, settings or { showTape = true })
     assertions.assertEqual(#errors, 0)
@@ -120,7 +120,79 @@ local function instance(cols, rows, rect, settings)
         navigation = square.service,
         telemetry = context.serviceRuntime.byId.telemetry,
         host = context,
+        staged = staged,
     })
+end
+
+local function sameValue(first, second, path)
+    if type(first) == "function" and string.sub(path, -5) == ".font" then
+        assertions.assertEqual(first(), second(), path)
+        return
+    end
+    if type(first) ~= "table" then
+        assertions.assertEqual(first, second, path)
+        return
+    end
+    assert(type(second) == "table")
+    for key, value in pairs(first) do
+        sameValue(value, second[key], path .. "." .. tostring(key))
+    end
+    for key in pairs(second) do
+        assert(first[key] ~= nil, "unexpected property " .. tostring(key))
+    end
+end
+
+local function sameTree(first, second, path)
+    path = path or "root"
+    assertions.assertEqual(first.kind, second.kind)
+    assertions.assertEqual(first.hidden, second.hidden)
+    if first.hidden then
+        return -- Hidden pools are positioned lazily when revealed.
+    end
+    sameValue(first.properties, second.properties, path)
+    assertions.assertEqual(#first.children, #second.children)
+    for index, child in ipairs(first.children) do
+        sameTree(child, second.children[index], path .. ".children[" .. index .. "]")
+    end
+end
+
+for _, shape in ipairs({ { 1, 1, 90, 50 }, { 4, 1, 480, 65 }, { 4, 4, 480, 272 } }) do
+    for flags = 0, 3 do
+        local rect = { x = 0, y = 0, w = shape[3], h = shape[4] }
+        local settings = { showTape = flags % 2 == 1, showCoordinates = flags >= 2 }
+        local synchronous = instance(shape[1], shape[2], rect, settings)
+        for _, resizeAt in ipairs({ "controls", "tape", "reflow", "publish" }) do
+            local partial = instance(shape[1], shape[2], rect, settings, true)
+            assert(partial.createStage == "controls")
+            local resized, done = false, false
+            local currentRect = rect
+            for _ = 1, 8 do
+                if partial.createStage == resizeAt then
+                    currentRect = { x = 2, y = 1, w = rect.w + 20, h = rect.h + 30 }
+                    resized = true
+                end
+                done = navigation.construct(partial, currentRect)
+                assert(type(done) == "boolean")
+                if done then
+                    break
+                end
+            end
+            assert(resized and done and not partial.createStage and not partial.createRect)
+            assert(not partial.createServices and not partial.createPresentation)
+            assert(navigation.construct(partial, currentRect), "completed construction is idempotent")
+            local expected = instance(shape[1], shape[2], currentRect, settings)
+            sameTree(expected.panel.root, partial.panel.root)
+        end
+        local partial = instance(shape[1], shape[2], rect, settings, true)
+        for _ = 1, 4 do
+            navigation.construct(partial, rect)
+        end
+        assert(not partial.createStage)
+        sameTree(synchronous.panel.root, partial.panel.root)
+        navigation.refresh(synchronous)
+        navigation.refresh(partial)
+        sameTree(synchronous.panel.root, partial.panel.root)
+    end
 end
 
 for _, case in ipairs({

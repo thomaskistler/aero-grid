@@ -8,6 +8,7 @@ local native = {
     box = node,
     rectangle = node,
     label = node,
+    image = node,
     triangle = node,
     arc = node,
     hline = node,
@@ -38,6 +39,8 @@ return {
     theme = {
         accent = "cyan",
         rgb = { surface = 0x212830 },
+        alertRgb = {},
+        alertColor = {},
         color = {
             surface = 0x212830,
             text = 0xF4F6F7,
@@ -45,6 +48,9 @@ return {
             textFaint = 0xC4CDD3,
             border = 0x3A434B,
             cyan = 0x70D6F3,
+            green = 0x55D990,
+            amber = 0xE9BC55,
+            critical = 0xED7979,
         },
         chartColor = { cyan = 0x70D6F3, orange = 0xEDAD79, green = 0x55D990, grid = 0x3A434B },
         spacing = {

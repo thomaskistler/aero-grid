@@ -631,13 +631,9 @@ function navigation.setTape(context, bearing, color, status)
     end
 end
 
---- Build the panel's LVGL objects.
----@param parent any
----@param rect AeroGridRect
----@param settings AeroGridNavigationSettings
----@param services table
----@return AeroGridNavigationContext
-function navigation.create(parent, rect, settings, services)
+local reflow
+
+local function beginNavigation(parent, rect, settings, services)
     local theme = services.theme
     local primitives = services.primitives
     local fonts = services.fonts
@@ -683,8 +679,8 @@ function navigation.create(parent, rect, settings, services)
     context.sample = { digits = navigation.DIGITS, unit = navigation.UNIT }
 
     local area = navigation.regionsFor(theme, services.themeBuilder, rect, layout, fonts, context.sample)
+    context.area = area
 
-    local panel
     context.panel, context.label, context.badge = primitives.panelWithHeader(
         parent,
         rect,
@@ -695,7 +691,17 @@ function navigation.create(parent, rect, settings, services)
         settings.label,
         services.themeBuilder
     )
-    panel = context.panel
+    context.createServices = services
+    context.createPresentation = presentation
+    context.createStage = "controls"
+    return context
+end
+
+local function createControls(context)
+    local services, settings = context.createServices, context.settings
+    local theme, primitives, fonts = context.theme, context.primitives, context.fonts
+    local area, panel, layout = context.area, context.panel, context.layout
+    local presentation = context.createPresentation
     if context.satellites and settings.showSatellites ~= false then
         context.satelliteHeader = lvgl.box(panel.root, { x = 0, y = 0, w = 1, h = 1 })
         local filename = services.host.path .. "assets/" .. (theme.light and "satellite-light.png" or "satellite.png")
@@ -776,25 +782,55 @@ function navigation.create(parent, rect, settings, services)
             font = fonts.label,
         })
     end
+end
 
-    if layout.showTape then
-        context.tape = navigation.createTape(panel.root, context, area)
+function navigation.construct(context, rect)
+    local stage = context.createStage
+    if stage == "controls" then
+        createControls(context)
+        context.createServices = nil
+        context.createPresentation = nil
+        context.createStage = "tape"
+    elseif stage == "tape" then
+        if context.layout.showTape then
+            context.tape = navigation.createTape(context.panel.root, context, context.area)
+        end
+        context.createStage = "reflow"
+    elseif stage == "reflow" then
+        reflow(context, rect)
+        context.primitives.setFont(context.unit, context.area.unitFont)
+        context.createRect = { x = rect.x, y = rect.y, w = rect.w, h = rect.h }
+        context.createStage = "publish"
+    elseif stage == "publish" then
+        local previous = context.createRect
+        if previous.x ~= rect.x or previous.y ~= rect.y or previous.w ~= rect.w or previous.h ~= rect.h then
+            context.createStage = "reflow"
+            return false
+        end
+        local _, drawn = context.primitives.changed(context, navigation.render)
+        navigation.apply(context, drawn)
+        context.createStage, context.createRect = nil, nil
+        return true
+    elseif not stage then
+        return true
+    else
+        error("unknown navigation construction stage: " .. tostring(stage))
     end
+    return false
+end
 
-    if not area.showDetail then
-        lvgl.hide(context.detailLabel)
-        lvgl.hide(context.originLabel)
+--- Build synchronously unless the loader requests hidden staged construction.
+---@param parent any
+---@param rect AeroGridRect
+---@param settings AeroGridNavigationSettings
+---@param services table
+---@return AeroGridNavigationContext
+function navigation.create(parent, rect, settings, services)
+    local context = beginNavigation(parent, rect, settings, services)
+    if services.staged ~= true then
+        while not navigation.construct(context, rect) do
+        end
     end
-    if context.coordinatesLabel and not area.showCoordinates then
-        lvgl.hide(context.coordinatesLabel)
-    end
-    -- Recorded after the rows are built, because whether there is a row at all
-    -- is decided by the span and whether it is showing by the box.
-    context.showCoordinates = context.coordinatesLabel ~= nil and area.showCoordinates == true
-    context.showTape = context.tape ~= nil and area.showTape == true
-
-    local _, drawn = primitives.changed(context, navigation.render)
-    navigation.apply(context, drawn)
     return context
 end
 
@@ -988,7 +1024,7 @@ end
 ---@param rect AeroGridRect
 ---@param settings? AeroGridNavigationSettings
 ---@param span? table Current grid placement, including preview resizes.
-function navigation.update(context, rect, settings, _, span)
+reflow = function(context, rect, span)
     if span then
         context.layout.wide = span.colSpan > span.rowSpan
         context.layout.square = span.colSpan == span.rowSpan
@@ -1064,7 +1100,10 @@ function navigation.update(context, rect, settings, _, span)
             context.coordinates
         )
     end
+end
 
+function navigation.update(context, rect, settings, _, span)
+    reflow(context, rect, span)
     local _, drawn = context.primitives.changed(context, navigation.render)
     navigation.apply(context, drawn)
 end

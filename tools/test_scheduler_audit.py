@@ -128,6 +128,9 @@ class ScenarioTests(unittest.TestCase):
             self.assertEqual(spec["expected"], 1)
             self.assertEqual([phase["action"] for phase in spec["phases"] if "action" in phase],
                              ["open-editor", "edit-preview", "check-preview", "discard-editor"])
+        tape = scenarios["editor-rebuild-navigation-tape"]
+        self.assertFalse(tape["config"]["showTape"])
+        self.assertEqual(tape["phases"], scenarios["editor-rebuild-navigation"]["phases"])
 
     def test_every_scenario_names_its_expected_panels(self):
         for name, spec in self.cli.scenarios().items():

@@ -200,6 +200,8 @@ def scenarios():
             {"name": "editor-close", "kind": "refresh", "action": "discard-editor",
              "callbacks": 40, "step": 5, "perCall": 4},
         ])
+    result["editor-rebuild-navigation-tape"] = dict(result["editor-rebuild-navigation"],
+                                                     config={"showTape": False})
     result["light-control"] = {
         "recipe": "trim-panel", "expected": 2, "toggleSwitches": True,
         "layout": custom_layout([

@@ -1866,3 +1866,72 @@ safe declaration margin and needs its own split. Multi-placement stable legacy
 preview accounting and the other modal/lifecycle/loader gates also remain open.
 No owner or ten-tick recording policy changed, and the deferred chart-recording
 stress assertions were not repaired or weakened.
+
+## 27. Bounded navigation construction and preview rebuilding (R5/R6)
+
+Navigation now implements the shared optional construction contract. The initial
+shell and subscriptions, controls (including satellite icons), tape allocation,
+geometry reflow and final rendering/publication are separate callbacks. Direct
+callers without `services.staged` drive the same stages synchronously. Ordinary
+loading and editor previews keep partial instances hidden and unregistered.
+
+Geometry is checked again before publication; a changed rectangle returns to
+reflow rather than publishing an obsolete frame. Construction also initializes
+the unit's new font after a resize even when its reading has not arrived yet.
+The new per-stage resize parity cases caught that mismatch before publication.
+Temporary service/style references and geometry snapshots are released on
+completion, and repeated completion calls are idempotent.
+
+| Construction body | Native fixture worst | Declared charge |
+|---|---:|---:|
+| Shell / cold subscriptions / fitted header | 3048 | 3410 |
+| Controls / optional satellite icon | 483 | 590 |
+| Complete tape object pool | 3481 | 3880 |
+| Reflow / unit font initialization | 2513 | 2820 |
+| Render / publication | 3172 | 3540 |
+| Framework release | 242 | 420 |
+
+`navigation-construction.lua` measures every stage with real Navigation and
+Telemetry subscription implementations. Cases cover cold/warm subscriptions,
+all tape/coordinate/satellite combinations, square/wide/tall/tiny geometry,
+degrees/quadrant bearings, valid/stale/no-fix/critical readings, long headings
+and geometry changes before publication. Native API and successful file checks
+use constant-cost stand-ins; real loading tests cover constructor failures and
+retirement. These are construction-fixture declarations, not a production panel
+refresh declaration or an ownership change.
+
+The existing native navigation preview scenario turns the tape off. A second
+`editor-rebuild-navigation-tape` scenario starts without a tape and turns it on,
+so allocation is measured rather than skipped. Actual preview controller bodies
+peak at shell 2459, controls 703, tape 3559, reflow 2118 and publication 1888.
+Preparation remains 1273, placement copying 712, retirement 140 and final editor
+render 930. Every measured body is below the unchanged 4000 atom cap.
+
+```sh
+python3 tools/audit-scheduler.py --framework navigation-construction chart-construction --timeout 180
+python3 tools/audit-scheduler.py navigation-min navigation-max editor-rebuild-navigation editor-rebuild-navigation-tape default-gallery --timeout 180
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+make test-lua32
+```
+
+All exit 0. Complete native callbacks peak at 9189/9189 for ordinary
+navigation-min/max, 9522/9347 for tape-off/on preview reconstruction, and 12411
+for default-gallery. The 24 audit-tool tests and Lua32 scheduler bounds pass.
+Supported Lua 5.3 targeted suites also pass for navigation unit/review,
+panel loading, editor UI/initialization, builder matrix, all panel spans and
+panel reflow. The loading lifecycle suite now exercises both chart and
+navigation, including hidden enrollment, resize, malformed/failed constructors,
+reload cancellation and page retirement. Editor UI remains at 15000 mock
+instructions without changing its ceiling.
+
+Completed staged/synchronous visible-tree parity is checked at every pending
+resize stage and after the first refresh. An additional comparison against the
+actual pre-extraction `c86af63` source passed 80 initial/first-refresh cases
+across both themes, five geometries and all feature combinations. Hidden pools
+are intentionally excluded from pixel comparisons because the shared primitives
+position them lazily when revealed.
+
+Metric construction still lacks safe declaration margin, stable multi-panel
+editor preview accounting remains open, and ordinary loading/reflow/modal
+eligibility still gates Flight/Smart and panel-owner changes. All owners,
+ten-tick recording policy and deferred chart-recording failures remain unchanged.

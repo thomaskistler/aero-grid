@@ -326,6 +326,9 @@ outside its container and shared service subscriptions. Without `services.staged
 `create` must still return a complete instance. Editor preview rebuilding now
 uses the same prepared/staged construction path as loading when `construct` is
 available; direct synchronous callers still omit `services.staged`.
+Navigation splits shell/subscriptions, controls, tape allocation, reflow and
+publication. A resize before publication returns it to reflow, including the
+unit font even when no reading has arrived yet.
 
 Put the module at `panels/<type>.lua` and reference that type in a layout.
 Regular panels declare `supportedSpans = { "any" }` and adapt their contents to
