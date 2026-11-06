@@ -399,6 +399,10 @@ for direct callers. Loading keeps it hidden until its geometry is complete;
 resizing before publication restarts only positioning.
 Stable editor previews share the steady callback's service/panel accounting;
 scheduler-owned previews never also use legacy refresh.
+An enabled owning Flight broker supplies a stable scheduler registration source
+across dashboard reloads. Host resynchronization preserves its releases and
+deadlines while retiring replaced dashboard services; Flight facades do not
+register duplicate tasks.
 
 Modal service eligibility is explicit in `scheduler_host.SERVICE_KINDS`;
 only steady-eligible service declarations inherit these kinds, never panels.

@@ -94,15 +94,22 @@ host.PANEL_BOUNDS = {
 
 --- Declared fixed cost of a callback at 16 panels (contracts, callback overhead).
 host.OVERHEAD = {
-    steady = 1250, background = 1130, ["editor-build"] = 2400,
-    ["modal-log"] = 2400, ["modal-settings"] = 2400,
-    ["modal-menu"] = 2400, ["modal-location"] = 2400,
+    steady = 1250,
+    background = 1130,
+    ["editor-build"] = 2400,
+    ["modal-log"] = 2400,
+    ["modal-settings"] = 2400,
+    ["modal-menu"] = 2400,
+    ["modal-location"] = 2400,
     ["editor-render"] = 2400,
 }
 
 host.SERVICE_KINDS = {
-    ["editor-build"] = true, ["modal-log"] = true, ["modal-settings"] = true,
-    ["modal-menu"] = true, ["modal-location"] = true,
+    ["editor-build"] = true,
+    ["modal-log"] = true,
+    ["modal-settings"] = true,
+    ["modal-menu"] = true,
+    ["modal-location"] = true,
     ["editor-render"] = true,
 }
 
@@ -194,12 +201,19 @@ function host:serviceBound(instance)
     return bound
 end
 
+local function serviceRegistry(context)
+    local broker = context.flightFactory and context.flightFactory.broker
+    local persistent = broker and broker.schedulerService and broker:schedulerService(context)
+    return context.serviceRuntime and context.serviceRuntime.order or {}, persistent
+end
+
 --- Check the owner table against what is loaded; returns a message, or nil.
 --- Every legacy item needs a declared bound for scheduler accounting; every new
 --- item needs a registered task. `new` mode needs all items owned by the scheduler.
 ---@param context table
+---@param panelsVerified? boolean The same ready call already synchronized their contracts.
 ---@return string?
-function host:verify(context)
+function host:verify(context, panelsVerified)
     if self.mode == "legacy" then
         return nil
     end
@@ -216,27 +230,31 @@ function host:verify(context)
             return key .. " has no declared bound"
         end
     end
-    for _, instance in ipairs(context.serviceRuntime and context.serviceRuntime.order or {}) do
-        if instance.schedulerTasks then
-            for _, item in ipairs(instance.schedulerTasks) do
-                local task = item.instance
-                local owner = self.owners[item.id]
-                if not schedulerOwned(self, item.id) and owner ~= "legacy" then
-                    return item.id .. " has no owner"
-                elseif schedulerOwned(self, item.id) then
-                    if instance.count > 0 and (task.want or 0) > 0 and not self.scheduler.byId[item.id] then
-                        return item.id .. " is owned by the scheduler but has no task"
+    local order, persistent = serviceRegistry(context)
+    for index = 1, #order + (persistent and 1 or 0) do
+        local instance = order[index] or persistent
+        if not persistent or instance.id ~= "flight" or instance == persistent then
+            if instance.schedulerTasks then
+                for _, item in ipairs(instance.schedulerTasks) do
+                    local task = item.instance
+                    local owner = self.owners[item.id]
+                    if not schedulerOwned(self, item.id) and owner ~= "legacy" then
+                        return item.id .. " has no owner"
+                    elseif schedulerOwned(self, item.id) then
+                        if instance.count > 0 and (task.want or 0) > 0 and not self.scheduler.byId[item.id] then
+                            return item.id .. " is owned by the scheduler but has no task"
+                        end
+                    elseif self.mode == "new" then
+                        return item.id .. " is not owned by the scheduler"
+                    elseif not self.serviceBounds[instance.id] then
+                        return item.id .. " has no declared bound"
                     end
-                elseif self.mode == "new" then
-                    return item.id .. " is not owned by the scheduler"
-                elseif not self.serviceBounds[instance.id] then
-                    return item.id .. " has no declared bound"
                 end
-            end
-        else
-            local message = problem("service:" .. instance.id, self:serviceBound(instance), instance.count == 0)
-            if message then
-                return message
+            else
+                local message = problem("service:" .. instance.id, self:serviceBound(instance), instance.count == 0)
+                if message then
+                    return message
+                end
             end
         end
     end
@@ -247,7 +265,10 @@ function host:verify(context)
         local pending = self.pendingPanels and self.pendingPanels[entry]
         local message
         if owner == "new" then
-            local idle = rawget(entry.module, "idle") == true and context.panelHost.isIdle(entry.module)
+            local idle = panelsVerified and self.idlePanels[entry]
+                or not panelsVerified
+                    and rawget(entry.module, "idle") == true
+                    and context.panelHost.isIdle(entry.module)
             if not idle and not entry.failed and not pending and (not task or not self.scheduler.byId[task.id]) then
                 message = key .. " is owned by the scheduler but has no task"
             end
@@ -344,30 +365,38 @@ end
 --- of the old ones and wait for subscribers to the new ones.
 ---@param context table
 function host:resync(context)
-    for id in pairs(self.registeredTasks) do
-        self.scheduler:remove(id)
-    end
+    local order, persistent = serviceRegistry(context)
     local waiting, registered = {}, {}
-    for index, instance in ipairs(context.serviceRuntime and context.serviceRuntime.order or {}) do
-        local key = "service:" .. instance.id
-        if instance.schedulerTasks then
-            for taskIndex, item in ipairs(instance.schedulerTasks) do
-                if schedulerOwned(self, item.id) then
-                    waiting[#waiting + 1] = {
-                        instance = instance,
-                        task = item.instance,
-                        id = item.id,
-                        critical = item.critical,
-                        -- Preserve the pre-refactor single-task stagger.
-                        index = instance.tasks and instance.tasks.run == item.instance and index - 1
-                            or (index - 1) * 3 + taskIndex - 1,
-                    }
-                    registered[item.id] = instance
+    for id, instance in pairs(self.registeredTasks) do
+        if instance == persistent and schedulerOwned(self, id) and not instance.failed and self.scheduler.byId[id] then
+            registered[id] = instance
+        else
+            self.scheduler:remove(id)
+        end
+    end
+    for index = 1, #order + (persistent and 1 or 0) do
+        local instance = order[index] or persistent
+        if not persistent or instance.id ~= "flight" or instance == persistent then
+            local key = "service:" .. instance.id
+            if instance.schedulerTasks then
+                for taskIndex, item in ipairs(instance.schedulerTasks) do
+                    if schedulerOwned(self, item.id) and registered[item.id] ~= instance then
+                        waiting[#waiting + 1] = {
+                            instance = instance,
+                            task = item.instance,
+                            id = item.id,
+                            critical = item.critical,
+                            -- Preserve the pre-refactor single-task stagger.
+                            index = instance.tasks and instance.tasks.run == item.instance and index - 1
+                                or (index - 1) * 3 + taskIndex - 1,
+                        }
+                        registered[item.id] = instance
+                    end
                 end
+            elseif self.owners[key] == "new" then
+                waiting[#waiting + 1] = { instance = instance, task = instance, id = key, index = index - 1 }
+                registered[key] = instance
             end
-        elseif self.owners[key] == "new" then
-            waiting[#waiting + 1] = { instance = instance, task = instance, id = key, index = index - 1 }
-            registered[key] = instance
         end
     end
     self.waiting = waiting
@@ -486,18 +515,19 @@ function host:ready(context)
     if not changed and not self.pendingPanels and self.waiting[1] == nil then
         return true
     end
-    local message
+    local message, panelsVerified
     if self.scheduler then
         local panelsChanged = self.checked ~= context.panels or context.panelTasksDirty or self.pendingPanels ~= nil
         if panelsChanged then
             message = self:syncPanels(context)
+            panelsVerified = not message
         end
         if changed then
             self:resync(context)
         end
         message = message or self:enroll()
     end
-    message = message or (changed and self:verify(context))
+    message = message or (changed and self:verify(context, panelsVerified))
     if message then
         self.api.log(context, "scheduler: " .. message .. "; using legacy fallback for unowned work")
         return false

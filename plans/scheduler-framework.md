@@ -2928,3 +2928,39 @@ whole-scenario maximum before parent admission integration), synchronize
 arbitrary panel geometry under a paint bound, or admit unmeasured drawer/input
 commands. Settings save/cancel and the remaining R6/Flight/Smart gates stay open.
 Production owners and the ten-tick recording policy remain unchanged.
+
+## 47. Preserve canonical broker registrations across reload (R4 prerequisite)
+
+An enabled owning broker's `schedulerService(context)` is the canonical
+registration source, including while `serviceRuntime` is nil or only partially
+rebuilt. Resynchronization retains its registered task identities/deadlines and
+skips duplicate Flight facade registrations. Other dashboard services still
+retire/rebuild normally. Disabling or changing task ownership removes the
+canonical releases. Verification also covers the canonical source when there
+is no runtime facade.
+
+The complete native registration fixture covers initial enrollment, a nil
+registry gap, partial registry, facade replacement and disable, with zero and
+sixteen idle placements. The initial implementation reached 3953 and did not
+have the required margin below the 4000 atom cap. A single `ready` call now
+reuses its own completed idle-contract synchronization rather than validating
+the same idle modules twice. Direct verification still validates contracts.
+Worst complete registration is 3307 against a fitted 3690; idle-only admission
+falls to 2187 without changing its existing conservative 3130 declaration.
+No callback can reuse another callback's validation allowance.
+
+The focused int32 unit checks exact due times 47/83 across nil/partial/replaced
+registries, no facade duplication, retirement of an ordinary Model service and
+removal on disable. The fixture isolates host registration with a service-like
+broker source; actual broker activation and combined loader/modal eligibility
+remain separate integration gates.
+
+```sh
+python3 tools/audit-scheduler.py --framework broker-registration idle-panels --timeout 180
+build/lua32/lua tests/unit/lib/test_scheduler_broker.lua "$PWD"
+```
+
+Combined native owner-isolated preview/render maxima are 10563/11782 for sixteen
+Metrics/full Chart, and log-with-recording remains 9223. The integrated renderer,
+full editor, initialization/History, host and duplicate-dispatch regressions
+pass. Production broker/panel owners and head work remain legacy.
