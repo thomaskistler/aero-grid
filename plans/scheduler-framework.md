@@ -1267,3 +1267,59 @@ fails Output review at 20200 and editor UI fails its 15000 regression check at
 baseline. The deferred chart-recording stress failures and 10-tick
 History/Telemetry policy are unchanged; no full-migration or native-release
 gate is claimed.
+
+## 17. Bounded Output extraction (R2, ownership still legacy)
+
+Output exposes separate task stages for preparation, render capture/comparison,
+and row application. Preparation creates or mounts at most one row, and caption
+measurement advances at most eight rows per step. Capture does not run in that
+step: the earlier combined preparation/capture measured 4610 native instructions,
+and even preparation alone measured 4256 before caption scanning was split.
+Neither failure was addressed by raising the 4000 atom cap.
+
+| Output stage | Native worst instructions | Declared charge |
+|---|---:|---:|
+| Prepare, including final caption slice and row mounting | 1622 | 1840 |
+| Capture, including unchanged-snapshot comparison | 2946 | 3300 |
+| Apply, one row | 756 | 890 |
+| Apply, two rows | 1142 | 1320 |
+| Framework release | 247 | 420 |
+
+`output-panel.lua` measures real Output, Control subscriptions, theme and
+primitive Lua work with constant-cost native API stand-ins. It exercises five
+seeds, availability changes, initial/final caption slices, row construction,
+fresh/stable capture, every row cursor and both grants, plus an empty panel.
+The stand-ins conservatively add Lua instructions rather than using the heavy
+widget mock's instruction charges. The matched native `output-min` and
+`output-max` mixed scenarios both remain at 9189 instructions for their worst
+callback; those callbacks still use the legacy Output owner.
+
+Preparation and row application are explicit exceptions to the 2240 useful-work
+target: the bounded one-row mount/eight-caption slice and at most two painted
+rows trade additional releases for shorter pieces. A final one-row or empty
+presentation piece still consumes one unit. No grant exceeds the declared atom
+cap. Unfinished work requests a one-tick release without overwriting Output's
+base ten-tick interval.
+
+The bridge publishes the panel's stage, requested units and actual units used.
+The retained application snapshot cannot change between partial grants; caption
+names come from the scan that established their column geometry. Reflow discards
+partial preparation and capture/application work, and a stale plan does no work.
+The step-level suite covers these invariants, availability, missing/empty names,
+finite mounting, zero-row presentation, and completed legacy parity.
+
+Targeted suites pass through the repository's Lua 5.3 `tests/run.py` runner:
+Output task/review/memory, scheduler cases, and panel lifecycle/host. The Output
+memory run completes 100 measured cycles (87330 callbacks), retains 333 live
+objects, and peaks at 0.305 KiB growth. Standalone system Lua 5.5 instead fails
+the memory threshold at 1.188 KiB after two cycles on both this tree and unchanged
+`bf2ae93`; the supported runner is the relevant result.
+The scheduler suite also passes `make test-lua32`, including the Output bounds
+case. Its missing runtime was built from checksum-verified official Lua 5.3.6
+source; the initial `www.lua.org` download failed, but `lua.org` succeeded.
+
+**No panel owner changes in this extraction.** Production still uses synchronous
+Output refresh/update, so modal eligibility, callback accounting and retirement
+remain gates before enabling its task. R1 chart stages, other R2 panels,
+R4 Flight/Smart, and R5/R6 modal/lifecycle/loader work remain open. The ten-tick
+History/Telemetry policy and deferred chart-recording stress failures are unchanged.

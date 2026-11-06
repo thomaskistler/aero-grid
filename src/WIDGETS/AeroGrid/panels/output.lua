@@ -23,6 +23,17 @@ local output = {
 
 local GUTTER = 8
 
+output.decl = {
+    class = "normal",
+    first = "prepare",
+    kinds = { steady = true },
+    stages = {
+        prepare = { fixed = 0, perUnit = 1840, maxUnits = 1 },
+        render = { fixed = 0, perUnit = 3300, maxUnits = 1 },
+        apply = { fixed = 460, perUnit = 430, maxUnits = 2 },
+    },
+}
+
 function output.validateSettings(settings)
     local errors = {}
     for _, key in ipairs({ "firstChannel", "channelCount" }) do
@@ -96,6 +107,56 @@ function output.regionsFor(context, rect)
     }
 end
 
+local function applyCaptionLayout(context, names, prefixWidth, namedWidth)
+    local area = context.area
+    context.layoutNames = names
+    if not area.stacked then
+        local showNames = context.settings.showNames ~= false
+            and area.frame.content - namedWidth - area.valueWidth - area.gutters >= 64
+        local captionWidth = showNames and namedWidth or prefixWidth
+        if captionWidth ~= area.captionWidth or showNames ~= area.showNames then
+            area.showNames, area.captionWidth = showNames, captionWidth
+            area.barX = area.frame.pad + captionWidth + GUTTER
+            area.barWidth = area.frame.content - captionWidth - area.valueWidth - area.gutters
+            context.nextRow = 1
+            context.rendered = nil
+        end
+    end
+end
+
+local function captionSlice(context, limit)
+    local area, builder = context.area, context.themeBuilder
+    local work = context.captionWork
+    if not work then
+        work = { next = 1, names = {}, changed = context.layoutNames == nil, prefixWidth = 0, namedWidth = 0 }
+        context.captionWork = work
+    end
+    local last = math.min(area.count, work.next + limit - 1)
+    for index = work.next, last do
+        local feed = context.rows[index].feed
+        if context.settings.showNames ~= false and feed and not feed.nameReady then
+            context.captionWork = nil
+            return false
+        end
+        local name = context.settings.showNames ~= false and feed and feed.name or ""
+        work.names[index] = name
+        work.changed = work.changed or context.layoutNames[index] ~= name
+        local prefix = "CH" .. (area.firstChannel + index - 1)
+        local caption = name ~= "" and prefix .. ": " .. string.sub(name, 1, 3) or prefix
+        work.prefixWidth = math.max(work.prefixWidth, builder.measureText(area.font, prefix))
+        work.namedWidth = math.max(work.namedWidth, builder.measureText(area.font, caption))
+    end
+    work.next = last + 1
+    if last < area.count then
+        return false
+    end
+    context.captionWork = nil
+    if work.changed then
+        applyCaptionLayout(context, work.names, work.prefixWidth, work.namedWidth)
+    end
+    return true
+end
+
 local function layoutCaptions(context)
     local area, builder = context.area, context.themeBuilder
     local names = context.layoutNames
@@ -121,19 +182,7 @@ local function layoutCaptions(context)
             prefixWidth = math.max(prefixWidth, builder.measureText(area.font, prefix))
             namedWidth = math.max(namedWidth, builder.measureText(area.font, caption))
         end
-        context.layoutNames = names
-        if not area.stacked then
-            local showNames = context.settings.showNames ~= false
-                and area.frame.content - namedWidth - area.valueWidth - area.gutters >= 64
-            local captionWidth = showNames and namedWidth or prefixWidth
-            if captionWidth ~= area.captionWidth or showNames ~= area.showNames then
-                area.showNames, area.captionWidth = showNames, captionWidth
-                area.barX = area.frame.pad + captionWidth + GUTTER
-                area.barWidth = area.frame.content - captionWidth - area.valueWidth - area.gutters
-                context.nextRow = 1
-                context.rendered = nil
-            end
-        end
+        applyCaptionLayout(context, names, prefixWidth, namedWidth)
     end
     return true
 end
@@ -299,6 +348,7 @@ function output.create(parent, rect, settings, services)
 end
 
 function output.render(context, out)
+    local names = context.captureNames
     out.state = "unavailable"
     out.captionsReady = context.showRows == context.area.count
     for index = 1, context.showRows do
@@ -308,7 +358,8 @@ function output.render(context, out)
             out.captionsReady = false
         end
         out["available" .. index] = available
-        out["name" .. index] = context.settings.showNames ~= false and feed and feed.name or ""
+        out["name" .. index] = names and names[index]
+            or (context.settings.showNames ~= false and feed and feed.name or "")
         out["fraction" .. index] = available and feed.fraction or 0
         local trim = context.settings.showTrim ~= false and available and feed.trim
         out["trim" .. index] = trim and trim.available and trim.fraction or nil
@@ -318,9 +369,14 @@ function output.render(context, out)
     end
 end
 
-function output.apply(context, drawn)
-    for index = 1, context.showRows do
+function output.apply(context, drawn, first, count)
+    first = first or 1
+    local last = math.min(context.showRows, first + (count or context.showRows) - 1)
+    for index = first, last do
         paintRow(context, context.rows[index], index, drawn)
+    end
+    if last < context.showRows then
+        return last + 1
     end
     local state = drawn.state
     if context.stateName ~= state then
@@ -340,7 +396,7 @@ function output.apply(context, drawn)
     end
 end
 
-function output.refresh(context)
+local function prepare(context, captionLimit)
     local area = context.area
     context.showRows = context.showRows or 0
     -- Subscribe before measuring captions, so no provisional column reaches the screen.
@@ -356,7 +412,13 @@ function output.refresh(context)
             row.feed = context.control and context.control:output(channel - 1)
         end
     end
-    if not layoutCaptions(context) then
+    local captionsReady
+    if captionLimit then
+        captionsReady = captionSlice(context, captionLimit)
+    else
+        captionsReady = layoutCaptions(context)
+    end
+    if not captionsReady then
         return
     end
     -- Mount at most one new row per callback, keeping tall panels within the
@@ -369,13 +431,67 @@ function output.refresh(context)
         context.rendered = nil
     end
     context.showRows = math.min((context.nextRow or 1) - 1, area.count)
+    return true
+end
+
+local function render(context, names)
+    context.captureNames = names
     local changed, drawn = context.primitives.changed(context, output.render)
+    context.captureNames = nil
     if changed then
+        return drawn
+    end
+end
+
+function output.refresh(context)
+    local drawn = prepare(context) and render(context)
+    if drawn then
         output.apply(context, drawn)
     end
 end
 
+function output.stageOf(context)
+    if context.pendingDrawn then
+        return "apply", math.max(1, math.min(2, context.showRows - context.applyRow + 1))
+    end
+    if context.renderReady then
+        return "render", 1
+    end
+    return "prepare", 1
+end
+
+--- Keep the render snapshot stable until every granted row has been painted.
+--- Reflow invalidates it; a stale plan does no work and publishes the new stage.
+function output.step(context, grant, stage)
+    context.used = 0
+    if stage ~= output.stageOf(context) then
+        return nil, true
+    end
+    if stage == "prepare" then
+        context.renderReady = prepare(context, 8)
+        context.used = 1
+    elseif stage == "render" then
+        context.pendingDrawn = render(context, context.layoutNames)
+        context.renderReady = nil
+        if context.pendingDrawn then
+            context.applyRow = 1
+        end
+        context.used = 1
+    else
+        local nextRow = output.apply(context, context.pendingDrawn, context.applyRow, grant)
+        context.used = math.min(grant, math.max(1, context.showRows - context.applyRow + 1))
+        context.applyRow = nextRow
+        if not nextRow then
+            context.pendingDrawn = nil
+        end
+    end
+    if context.pendingDrawn or context.renderReady or context.captionWork or context.showRows < context.area.count then
+        return nil, true
+    end
+end
+
 function output.update(context, rect, settings)
+    context.pendingDrawn, context.applyRow, context.renderReady, context.captionWork = nil, nil, nil, nil
     context.settings = settings
     context.area = output.regionsFor(context, rect)
     context.primitives.resizeHeader(context, rect, context.area.frame, settings.label)

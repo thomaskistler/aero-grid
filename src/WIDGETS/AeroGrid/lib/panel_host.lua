@@ -24,6 +24,7 @@
 ---@field refresh? fun(instance: any)
 ---@field decl? table Scheduler declaration for a migrated panel.
 ---@field step? fun(instance: any, grant: integer, stage: string, now: integer): integer?, boolean?
+---@field stageOf? fun(instance: any): string, integer?
 --- A numeric refresh result selects the next interval in 10ms ticks.
 --- A second result of true requests consecutive turns until this update finishes.
 ---@field background? fun(instance: any)
@@ -47,7 +48,7 @@ local panelHost = { RUNTIME_API = 1 }
 panelHost.API_VERSION = 1
 
 --- Optional lifecycle callbacks, in a fixed order so errors stay deterministic.
-local OPTIONAL_CALLBACKS = { "update", "refresh", "step", "background", "resetSession", "event", "destroy" }
+local OPTIONAL_CALLBACKS = { "update", "refresh", "step", "stageOf", "background", "resetSession", "event", "destroy" }
 
 --- Restrict module identifiers to the same path-safe characters as layout types.
 ---@param value any
@@ -314,7 +315,7 @@ end
 function panelHost.task(entry)
     assert(type(entry.module.decl) == "table", "panel has no task declaration")
     assert(type(entry.module.step) == "function", "panel has no task step")
-    return {
+    local task = {
         entry = entry,
         decl = entry.module.decl,
         stage = entry.module.decl.first or "run",
@@ -326,11 +327,18 @@ function panelHost.task(entry)
             if not ok then
                 error(message)
             end
-            self.used = grant
+            self.used = entry.instance.used or grant
+            if entry.module.stageOf then
+                self.stage, self.want = entry.module.stageOf(entry.instance)
+            end
             entry.nextRefresh = now + (unfinished and 1 or math.max(1, entry.interval))
             return unfinished and 1 or math.max(1, entry.interval)
         end,
     }
+    if entry.module.stageOf then
+        task.stage, task.want = entry.module.stageOf(entry.instance)
+    end
+    return task
 end
 
 return panelHost

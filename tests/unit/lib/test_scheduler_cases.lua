@@ -15,8 +15,10 @@ local measure = assert(loadfile(root .. "/tests/support/scheduler_measure.lua"))
 local overhead = assert(loadfile(root .. "/tests/support/scheduler_overhead.lua"))()
 local admission = assert(loadfile(root .. "/tests/support/scheduler_admission.lua"))()
 
-local function load(relative)
-    return assert(loadfile(root .. "/src/WIDGETS/AeroGrid/" .. relative))()
+assert(loadfile(root .. "/tests/support/edgetx.lua"))().constants()
+
+local function load(relative, ...)
+    return assert(loadfile(root .. "/src/WIDGETS/AeroGrid/" .. relative))(...)
 end
 
 -- The stub case only exercises the measurement itself (test_scheduler_measure.lua).
