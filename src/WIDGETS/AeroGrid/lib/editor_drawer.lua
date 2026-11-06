@@ -49,9 +49,10 @@ function drawer.workBound(state)
             return drawer.WORK_BOUNDS.navigate
         elseif action == "add" then
             local phase = state.drawerPending.phase or "module"
-            -- Module validation and default copying scale with an unmeasured custom schema.
+            -- Module validation, supportedSpans parsing and default copying scale
+            -- with an unmeasured custom module.
             if not drawer.MEASURED_FORMS[state.drawerPending.panelType]
-                and (phase == "module" or phase == "commit") then return nil end
+                and (phase == "module" or phase == "spans" or phase == "commit") then return nil end
             return drawer.WORK_BOUNDS["add-" .. phase]
         end
         return drawer.WORK_BOUNDS[action]

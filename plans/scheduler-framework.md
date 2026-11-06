@@ -4817,5 +4817,8 @@ rects 1120, apply 1037. Worst whole callback is 8251. Charged bounds: first
 fitted stage and the 4000 atom.
 
 The editor fixture's existing post-event render drain also drains pending
-drag; no assertion changed. Open: preview geometry. Owners, the recording
+drag; no assertion changed. Add's `spans` stage is now ineligible for
+unmeasured custom types, along with `module` and `commit`, because
+`candidateSpans` walks the whole custom `supportedSpans` list. A 4097-entry
+regression still adds the panel. Open: preview geometry. Owners, the recording
 policy and the deferred stress assertions are unchanged.

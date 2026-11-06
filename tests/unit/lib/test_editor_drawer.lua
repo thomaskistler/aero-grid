@@ -234,10 +234,31 @@ do
     state.drawerPending = { action = "add", panelType = "custom" }
     assert(drawer.workBound(state) == nil, "uncatalogued module validation is unmeasured")
     drawer.advance({}, state)
-    assert(drawer.workBound(state) == drawer.WORK_BOUNDS["add-spans"])
+    assert(drawer.workBound(state) == nil, "uncatalogued supportedSpans lists are unmeasured")
     table.remove(panels)
     drawer.advance({}, state)
     assert(not state.drawerPending and state.statusError and #panels == 15, "a layout change cancels a staged Add")
+
+    -- An arbitrarily long custom span list stays ineligible but still adds.
+    local spans = {}
+    for index = 1, 4096 do
+        spans[index] = "9x" .. index
+    end
+    spans[#spans + 1] = "1x1"
+    module.supportedSpans = spans
+    state.statusError, state.status = nil, nil
+    state.drawerPending = { action = "add", panelType = "custom" }
+    local spanBound = false
+    while state.drawerPending do
+        local phase = state.drawerPending.phase or "module"
+        if phase == "spans" then
+            spanBound = drawer.workBound(state)
+        end
+        drawer.advance({ zone = { w = 480 } }, state)
+    end
+    assert(spanBound == nil, "custom span parsing is not co-admitted")
+    assert(#panels == 16 and panels[16].type == "custom" and panels[16].colSpan == 1,
+        "unmeasured custom Add preserves placement")
 end
 
 lvgl = previous
