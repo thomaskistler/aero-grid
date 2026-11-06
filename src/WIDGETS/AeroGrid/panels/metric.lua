@@ -126,10 +126,10 @@ metric.decl = {
     first = "prepare",
     kinds = { steady = true },
     stages = {
-        prepare = { fixed = 0, perUnit = 600, maxUnits = 1 },
+        prepare = { fixed = 0, perUnit = 610, maxUnits = 1 },
         geometry = { fixed = 0, perUnit = 3720, maxUnits = 1 },
-        layout = { fixed = 0, perUnit = 1290, maxUnits = 1 },
-        render = { fixed = 0, perUnit = 830, maxUnits = 1 },
+        layout = { fixed = 0, perUnit = 1310, maxUnits = 1 },
+        render = { fixed = 0, perUnit = 840, maxUnits = 1 },
         apply = { fixed = 0, perUnit = 1030, maxUnits = 1 },
     },
 }
