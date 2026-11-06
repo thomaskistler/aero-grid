@@ -277,7 +277,7 @@ do
     local c, state, control = fixture()
     state.controls.motorReversed.properties.set(1)
     control.filename = "other.yml"
-    assert(ui.workBound(c) == nil, "model changes must not borrow a construction or idle bound")
+    assert(ui.workBound(c) == ui.WORK_BOUNDS.closing, "model changes use their measured retirement bound")
     ui.advance(c)
     assert(not c.modelSettingsUi and control.attempts == 0 and control.closed == 1)
 end
@@ -369,7 +369,7 @@ for _, phase in ipairs({ "command", "store", "publish-start", "publish" }) do
         assert(not state.pending, "pending saves reject another queued edit")
     end
     if phase == "publish-start" or phase == "publish" then
-        assert(ui.workBound(c) == nil, "publication retains its separate eligibility gate")
+        assert(ui.workBound(c) == ui.WORK_BOUNDS[phase], "publication has its own measured enclosing bound")
         assert(state.revision == 8 and persisted().revision == 8, "disk commit precedes publication")
     end
     state.dialog.properties.close()

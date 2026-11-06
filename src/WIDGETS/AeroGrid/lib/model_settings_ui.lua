@@ -2,7 +2,10 @@
 
 local ui = {
     RUNTIME_API = 1,
-    WORK_BOUNDS = { heading = 400, wrap = 400, field = 1500, finish = 300, idle = 300, command = 800 },
+    WORK_BOUNDS = {
+        heading = 400, wrap = 400, field = 1500, finish = 300, idle = 300, command = 800,
+        ["publish-start"] = 450, publish = 400, ["save-error"] = 350, closing = 300,
+    },
 }
 
 local fields = {
@@ -49,6 +52,9 @@ local fields = {
 
 function ui.stageOf(state)
     if state.saving then
+        if state.saving.phase == "publish" and state.saving.publication.stage then
+            return "publish_" .. state.saving.publication.stage
+        end
         return state.saving.phase == "store" and "save_" .. state.saving.job.stage or state.saving.phase
     elseif state.pending and state.handlers.startSave and not state.build then
         return "command"
@@ -85,20 +91,36 @@ local function active(context, state)
         and (not state.handlers.fullscreen or state.handlers.fullscreen())
 end
 
---- Publication, error reporting and retirement retain separate lifecycle gates.
-function ui.workBound(context)
+local function exitEvent(event)
+    for _, name in ipairs({ "EVT_VIRTUAL_EXIT", "EVT_EXIT_BREAK" }) do
+        if _G[name] ~= nil and event == _G[name] then return true end
+    end
+    return false
+end
+
+function ui.workBound(context, event)
     local state = context.modelSettingsUi
     if state and state.saving then
         if state.saving.phase == "store" and state.handlers.saveWorkBound then
             local bound = state.handlers.saveWorkBound(state.saving.job)
             return bound and bound + 200
         end
-        return nil
+        if state.saving.phase == "publish-start" and not state.handlers.startPublication then
+            return nil
+        end
+        return ui.WORK_BOUNDS[state.saving.phase]
     end
     if state and state.pending and state.handlers.startSave and not state.build
         and (not state.handlers.modelFilename or state.handlers.modelFilename() == state.modelFilename)
         and (not state.handlers.fullscreen or state.handlers.fullscreen()) then
         return ui.WORK_BOUNDS.command
+    end
+    if state and (
+        state.handlers.modelFilename and state.handlers.modelFilename() ~= state.modelFilename
+        or state.handlers.fullscreen and not state.handlers.fullscreen()
+        or not state.pending and (state.closing or exitEvent(event))
+    ) then
+        return ui.WORK_BOUNDS.closing
     end
     if state and active(context, state) and not state.closing then
         return ui.WORK_BOUNDS[ui.stageOf(state)]
@@ -566,11 +588,7 @@ function ui.handle(context, event)
     if not state then
         return false
     end
-    for _, name in ipairs({ "EVT_VIRTUAL_EXIT", "EVT_EXIT_BREAK" }) do
-        if _G[name] ~= nil and event == _G[name] then
-            state.closing = true
-        end
-    end
+    if exitEvent(event) then state.closing = true end
     return true
 end
 

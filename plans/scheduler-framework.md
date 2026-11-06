@@ -3545,3 +3545,38 @@ python3 tools/audit-scheduler.py layout-loading-chunks --mode mixed --timeout 24
 Final Flight configuration, module/setup callbacks, modal/lifecycle admission
 and production owner activation remain separate gates. Recording policy and
 deferred stress/reset assertions are untouched.
+
+## 62. Actual settings publication and confirmed-close admission (R5)
+
+The UI now admits the real broker publication API, error reporting and confirmed
+closing under `modal-settings`, including background callbacks. The final close
+may retire the UI before service planning; it still uses the service-only kind,
+never a steady panel refresh. The older synchronous publication fallback remains
+ineligible. Confirmed work still drains before Return, fullscreen loss or
+explicit close retires the dialog.
+
+| Complete UI advance | Native maximum | Prior-work charge |
+|---|---:|---:|
+| Start publication | 343 | 450 |
+| Commit publication | 307 | 400 |
+| Member / terminal publication | 295 | 400 |
+| Error reporting | 227 | 350 |
+| Confirmed closing | 198 | 300 |
+
+Nine native cases cover 128-member publication, Return, native dismissal,
+fullscreen loss, explicit close, rejected persistence, replaced publication,
+background progression and actual idle Return input. Expected injected errors
+must be observed exactly and are preserved separately in the audit result;
+unexpected errors and all atom/whole-callback/hidden-panel gates remain fatal.
+Complete foreground settings callbacks peak at 10172 and background at 9379;
+the largest whole scenario callback is 14585 (after modal retirement/reload).
+The audit imports parent b116e2d's exact eight-argument forwarding core so no
+lifecycle argument is lost during these measurements.
+
+The actual widget regression asserts service admission on every UI advance in
+both callback kinds, including failure and final retirement, with hidden panel
+refresh forbidden. Lua53/int32 settings/publication tests and all 38 audit-tool
+tests pass. Unchanged strict reset remains 13600 with its two original first-arm
+XFAILs. Prerequisites are parent a7d9293 and b116e2d forwarding; no owner or
+recording policy changes are included. Editor input/mutation and R6 retirement
+remain separate gates.

@@ -1660,10 +1660,10 @@ local function refresh(context, widgetEvent, touchState)
         return
     end
     if context.modelSettingsUi then
-        local bound = context.modelSettingsUiModule.workBound(context)
+        local bound = context.modelSettingsUiModule.workBound(context, widgetEvent)
         context.modelSettingsUiModule.handle(context, widgetEvent, touchState)
         context.modelSettingsUiModule.advance(context)
-        if bound and context.modelSettingsUi then
+        if bound then
             updateModalServices(context, bound, "modal-settings")
         end
         return
@@ -1943,7 +1943,11 @@ local function background(context)
         return
     end
     if context.modelSettingsUi then
+        local bound = context.modelSettingsUiModule.workBound(context)
         context.modelSettingsUiModule.advance(context)
+        if bound then
+            updateModalServices(context, bound, "modal-settings")
+        end
         return
     end
     if context.editorUi and context.editorUi.saving then

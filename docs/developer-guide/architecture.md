@@ -452,8 +452,10 @@ word per advance, separately from headings and controls. Confirmed edits disable
 further input while store reads, bounded YAML tokenization/building, validation,
 serialization and atomic installation advance separately. Return/fullscreen
 loss waits for confirmed work; errors remain visible, and committed revisions
-survive publication failure. Broker publication has a separate lifecycle gate;
-only measured UI/store work admits services.
+survive publication failure. Broker publication commits once, then notifies at
+most one member per advance. Measured publication, error reporting and confirmed
+closing admit services in foreground and background callbacks; hidden panels
+remain excluded.
 Menu and location overlays also use service-only callbacks: hidden panels do
 not refresh behind them. Menu action handlers consume their callback separately
 from popup construction and input; unmeasured action handlers do not inherit

@@ -411,6 +411,16 @@ local function install(context)
             return job.stage
         end)
     end
+    local broker = context.flightBroker
+    if broker then
+        wrapField(broker, "startPublication", "modal:settings:publication:begin")
+        wrapField(broker, "advancePublication", function(token, _, job)
+            if token then
+                return "modal:settings:publication:" .. token
+            end
+            return job.stage
+        end)
+    end
     P.editorRenderBounds = context.editorUiModule and context.editorUiModule.RENDER_BOUNDS
     local drawer = context.editorDrawerModule
     if drawer then
@@ -603,11 +613,21 @@ local function feeds(context)
     return rows
 end
 
-local function report(context)
+local function unexpectedErrors(context)
     local errors = {}
     for _, message in ipairs(context and context.errors or errorsSeen) do
-        errors[#errors + 1] = message
+        if message == config.expectedError then
+            P.expectedErrorSeen = true
+        else
+            errors[#errors + 1] = message
+        end
     end
+    return errors
+end
+
+local function report(context)
+    local errors = unexpectedErrors(context)
+    gate(not config.expectedError or P.expectedErrorSeen, "expected settings error was not reported")
     for message in pairs(gateErrors) do
         errors[#errors + 1] = message
     end
@@ -634,6 +654,7 @@ local function report(context)
             calibration = { K = K, leakWrap = LEAK_WRAP, leakSpan = LEAK_SPAN, callbackK = K_CALLBACK },
             panels = context and #context.panels or 0,
             errors = errors,
+            expectedError = config.expectedError and { message = config.expectedError, observed = P.expectedErrorSeen },
             callbacks = kindCounts,
             feeds = feeds(context),
             stats = labels,
@@ -652,11 +673,11 @@ local function report(context)
 end
 
 local function ready(context)
-    if config.fullscreen and not lvgl.isFullScreen() then
+    if config.fullscreen and not lvgl.isFullScreen() and not P.settingsWindowLoss then
         return false
     end
     return not context.stage
-        and not context.reloadState
+        and (not context.reloadState or context.modelSettingsUi ~= nil)
         and #context.panels >= (config.expectedPanels or 1)
         and not context.runtimeFailed
 end
@@ -732,15 +753,71 @@ local actions = {
             model.setLogicalSwitch(62, { func = 17, v1 = 0, v2 = 0, v3 = 0, ["and"] = 0, delay = 0, duration = 0 })
             assert(model.getLogicalSwitch(62).func == 17, "fixture needs a dedicated Sticky output")
         end
+        local phase = config.phases[phaseIndex]
+        P.settingsState, P.settingsMembers = state, {}
+        for index = 1, phase.members or 0 do
+            local host = { modelFilename = state.modelFilename, navigationHomes = { retained = true } }
+            P.settingsMembers[index] = host
+            context.flightBroker.members[host] = { modelFilename = state.modelFilename, declarations = {} }
+        end
         P.settingsRevision, P.settingsReversed = state.revision + 1, not state.values.motorReversed
-        state.pending = { key = "motorReversed", value = P.settingsReversed }
+        if phase.armed then
+            P.settingsReversed = state.values.motorReversed
+            P.settingsArmed = "L62"
+            state.pending = { key = "armed", value = P.settingsArmed }
+        else
+            state.pending = { key = "motorReversed", value = P.settingsReversed }
+        end
+        if phase.reject then
+            state.handlers.startSave = function()
+                return nil, "injected save failure"
+            end
+        end
     end,
     ["check-settings-save"] = function(context)
-        local state = assert(context.modelSettingsUi)
+        local state = assert(context.modelSettingsUi or P.settingsState)
         assert(not state.pending and not state.saving)
         assert(state.revision == P.settingsRevision and state.values.motorReversed == P.settingsReversed)
         assert(context.flightBroker.document.revision == state.revision)
         assert(context.flightBroker.document.flight.motorReversed == P.settingsReversed)
+        if P.settingsArmed then
+            assert(context.flightBroker.document.armed == P.settingsArmed)
+            for _, host in ipairs(P.settingsMembers) do
+                assert(host.modelArmingReload and host.reloadState == "clear" and next(host.navigationHomes) == nil)
+            end
+        end
+    end,
+    ["dismiss-settings"] = function(context)
+        local phase, state = config.phases[phaseIndex], assert(context.modelSettingsUi)
+        if phase.dismiss == "native" then
+            state.dialog:clear()
+            state.dialog = nil
+            state.closing = true
+        elseif phase.dismiss == "fullscreen" then
+            P.settingsWindowLoss, P.settingsFullscreen = true, state.handlers.fullscreen
+            state.handlers.fullscreen = function()
+                return false
+            end
+        elseif phase.dismiss == "explicit" then
+            assert(context.modelSettingsUiModule.close(context) == false)
+        else
+            context.modelSettingsUiModule.handle(context, EVT_VIRTUAL_EXIT)
+        end
+    end,
+    ["replace-publication"] = function(context)
+        local state = assert(context.modelSettingsUi)
+        assert(state.saving and state.saving.phase == "publish")
+        context.flightBroker:setDocument(context.flightBroker.document)
+    end,
+    ["check-settings-error"] = function(context)
+        local state = assert(context.modelSettingsUi or P.settingsState)
+        assert(not state.pending and not state.saving)
+        assert(context.errors[#context.errors] == config.expectedError)
+        assert(state.revision == context.flightBroker.document.revision)
+        assert(
+            state.revision
+                == P.settingsRevision - (config.expectedError == "Model settings: injected save failure" and 1 or 0)
+        )
     end,
     ["close-settings"] = function(context)
         refreshFn(context, EVT_VIRTUAL_EXIT)
@@ -839,7 +916,7 @@ for name, action in pairs(actions) do
 end
 
 local function callbackSurface(kind, context)
-    if kind ~= "refresh" then
+    if kind ~= "refresh" and not (kind == "background" and context.modelSettingsUi) then
         return nil
     end
     local ui = context.editorUi
@@ -920,7 +997,10 @@ local function runCallback(kind, context, fn, e, t)
     end
     local paintSurface = surface
         and (string.match(surface, "^editor%-render:[2-6]$") or string.match(surface, "^editor%-drawer:"))
-    if kind == "refresh" and (paintSurface or string.sub(config.scenario, 1, 6) == "modal-" and surface) then
+    if
+        (kind == "refresh" or kind == "background")
+        and (paintSurface or string.sub(config.scenario, 1, 6) == "modal-" and surface)
+    then
         gate(total <= 15000, surface .. " exceeds the complete callback ceiling: " .. total)
         for _, label in ipairs(topLabels) do
             gate(
@@ -978,6 +1058,15 @@ local function advance(context)
         return
     end
     phaseDone = phaseDone + 1
+    if phase.untilSettings then
+        local state = context.modelSettingsUi
+        local reached = phase.untilSettings == "closed" and not state
+            or state and context.modelSettingsUiModule.stageOf(state) == phase.untilSettings
+        if not reached and phaseDone < phase.callbacks then
+            return
+        end
+        gate(reached, "settings phase not reached: " .. phase.untilSettings)
+    end
     if phaseDone >= phase.callbacks then
         phaseIndex, phaseDone = phaseIndex + 1, 0
         if not config.phases[phaseIndex] then
@@ -1047,8 +1136,9 @@ local function entry(kind, context, fn, e, t)
             )
         )
     end
-    if #context.errors > 0 and not errorsSeen[1] then
-        errorsSeen[1] = table.concat(context.errors, "; ")
+    local currentErrors = unexpectedErrors(context)
+    if #currentErrors > 0 and not errorsSeen[1] then
+        errorsSeen[1] = table.concat(currentErrors, "; ")
         if config.failOnError then
             report(context)
             return
@@ -1090,20 +1180,21 @@ local function entry(kind, context, fn, e, t)
     end
     recording = phase.record ~= false
     local target = phase.kind == "background" and backgroundFn or fn
+    local callbackEvent = phase.event and assert(_G[phase.event], "unknown native event") or e
     local step = phase.step or 0
     if kind == "background" and phase.kind ~= "background" then
         runCallback(kind, context, fn, e, t)
     elseif step > 0 and kind == "refresh" then
         for _ = 1, phase.perCall or 1 do
             P.offset = P.offset + step
-            runCallback(phase.kind or kind, context, target, e, t)
+            runCallback(phase.kind or kind, context, target, callbackEvent, t)
             advance(context)
             if finished or config.phases[phaseIndex] ~= phase then
                 break
             end
         end
     else
-        runCallback(phase.kind or kind, context, target, e, t)
+        runCallback(phase.kind or kind, context, target, callbackEvent, t)
         advance(context)
     end
     recording = true

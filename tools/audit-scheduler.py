@@ -279,6 +279,35 @@ def scenarios():
         settingsDocument=result["modal-settings-reset"]["settingsDocument"].replace("flightSwitch: L64", 'flightSwitch: ""'))
     result["modal-settings-save-output"] = dict(result["modal-settings-save"],
         settingsDocument=result["modal-settings-save"]["settingsDocument"].replace('flightSwitch: ""', "flightSwitch: L63"))
+    for ending in ("open", "return", "native", "fullscreen", "explicit", "error", "replaced"):
+        phases = list(result["modal-settings-save"]["phases"][:3])
+        phases += [{"name": "publication-start", "kind": "refresh", "action": "edit-settings",
+                   "armed": ending != "error", "reject": ending == "error", "members": 128,
+                   "callbacks": 128, **({} if ending == "error" else {"untilSettings": "publish_members"}),
+                   "step": 5, "perCall": 1}]
+        if ending == "replaced":
+           phases += [{"name": "publication-replaced", "kind": "refresh", "action": "replace-publication",
+                       "callbacks": 8, "step": 5}]
+        elif ending not in ("open", "error"):
+           phases += [{"name": "confirmed-close", "kind": "refresh", "action": "dismiss-settings",
+                       "dismiss": ending, "callbacks": 256, "untilSettings": "closed", "step": 5}]
+        else:
+           phases += [{"name": "publication-finish", "kind": "refresh", "callbacks": 160, "step": 5}]
+        phases += [{"name": "publication-checked", "kind": "refresh",
+                   "action": "check-settings-error" if ending in ("error", "replaced") else "check-settings-save",
+                   "callbacks": 1, "step": 5}]
+        result[f"modal-settings-publication-{ending}"] = dict(result["modal-settings-save"], phases=phases,
+           expectedError=("Model settings: injected save failure" if ending == "error" else
+                          "Model settings: Model settings publication was replaced" if ending == "replaced" else None))
+    phases = list(result["modal-settings-publication-open"]["phases"])
+    phases[3] = dict(phases[3], kind="background")
+    phases[4] = dict(phases[4], kind="background")
+    result["modal-settings-publication-background"] = dict(result["modal-settings-publication-open"], phases=phases)
+    phases = list(result["modal-settings-save"]["phases"][:3]) + [
+        {"name": "settings-return", "kind": "refresh", "event": "EVT_VIRTUAL_EXIT",
+         "callbacks": 1, "step": 5},
+    ]
+    result["modal-settings-close-return"] = dict(result["modal-settings-save"], phases=phases)
     result["modal-log-recording"] = dict(result["modal-log"], recipe="chart", sources=1, expected=2,
         settings=True, layout=custom_layout([
             chart_cell("chart", 0, 2, [1]),
@@ -513,6 +542,8 @@ def prepare(capture, name, spec, sd, mode="legacy"):
               "toggleLink": spec.get("toggleLink", False),
               "logEntries": spec.get("logEntries", 0), "diagnosticsSources": spec.get("diagnosticsSources", 0),
               "failOnError": True, "traceLimit": 300}
+    if spec.get("expectedError"):
+        config["expectedError"] = spec["expectedError"]
     if "loops" in spec:
         config["loops"] = spec["loops"]
     (audit / "config.lua").write_text("return " + lua_literal(config) + "\n")

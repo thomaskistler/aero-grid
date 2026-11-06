@@ -235,6 +235,13 @@ class ScenarioTests(unittest.TestCase):
         actions = [phase["action"] for phase in saved["phases"] if "action" in phase]
         self.assertEqual(actions[-3:], ["edit-settings", "check-settings-save", "close-settings"])
         self.assertIn("flightSwitch: L63", self.cli.scenarios()["modal-settings-save-output"]["settingsDocument"])
+        variants = self.cli.scenarios()
+        self.assertEqual(variants["modal-settings-publication-background"]["phases"][3]["kind"], "background")
+        self.assertEqual(variants["modal-settings-publication-error"]["expectedError"],
+                         "Model settings: injected save failure")
+        self.assertEqual(variants["modal-settings-publication-replaced"]["expectedError"],
+                         "Model settings: Model settings publication was replaced")
+        self.assertEqual(variants["modal-settings-close-return"]["phases"][-1]["event"], "EVT_VIRTUAL_EXIT")
 
     def test_run_requires_measured_actions_and_requests_native_fullscreen(self):
         spec = {"phases": [{"action": "open-editor"}], "fullscreen": True}
