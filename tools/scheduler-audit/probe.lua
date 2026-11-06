@@ -193,6 +193,11 @@ local function finish(label, raw, leak)
         if saveBound then
             gate(cost <= saveBound, label .. " exceeds the settings store charge: " .. cost)
         end
+        local loadStage = string.match(label, "^modal:settings:load:([%w_]+)")
+        local loadBound = loadStage and P.settingsLoadBounds and P.settingsLoadBounds[loadStage]
+        if loadBound then
+            gate(cost <= 4000 and cost <= loadBound, label .. " exceeds the settings reader charge: " .. cost)
+        end
         local editorPrefix = "editor:advanceEditor:"
         if string.sub(label, 1, #editorPrefix) == editorPrefix then
             record("editor:advanceEditor", cost, own, units > 0 and units or 1, children)
@@ -500,6 +505,14 @@ local function install(context)
             P.settingsStoreBounds[job.stage] = store:saveWorkBound(job)
             return job.stage
         end)
+        P.settingsLoadBounds = P.settingsLoadBounds or {}
+        wrapField(store, "advanceLoad", function(token, _, job)
+            if token then
+                return "modal:settings:load:" .. token
+            end
+            P.settingsLoadBounds[job.stage] = store:loadWorkBound(job)
+            return job.stage
+        end)
     end
     local broker = context.flightBroker
     if broker then
@@ -573,6 +586,9 @@ local function install(context)
                         local stage = module.stageOf(state)
                         if name == "advance" then
                             P.settingsBounds[stage] = module.workBound(current)
+                            if state.loading and state.loading.phase == "setup" then
+                                P.settingsLegacyStatus = state.loading.status
+                            end
                         end
                         return stage .. ":" .. tostring(state.build or "idle")
                     end
@@ -793,6 +809,19 @@ local function ready(context)
         and not context.runtimeFailed
 end
 
+local function settingsMembers(context, phase)
+    P.settingsMembers = {}
+    for index = 1, phase.members or 0 do
+        local host = {
+            modelFilename = context.flightBroker.filename,
+            navigationHomes = { retained = true },
+            legacyWidgetArmed = phase.legacy == "conflict" and index % 2 + 1 or phase.legacy == "one" and 1 or 0,
+        }
+        P.settingsMembers[index] = host
+        context.flightBroker.members[host] = { modelFilename = host.modelFilename, declarations = {} }
+    end
+end
+
 local actions
 actions = {
     ["construction-parity"] = function(context, costOnly)
@@ -957,6 +986,65 @@ actions = {
         context.aeroMenuHandlers.modelSettings()
         assert(context.modelSettingsUi)
     end,
+    ["prepare-settings-source"] = function(context)
+        local phase = config.phases[phaseIndex]
+        local module = assert(loadScript(context.path .. "lib/model_settings_store.lua"))()
+        local operations = assert(loadScript(context.path .. "lib/verified_file.lua"))().operations()
+        local path = assert(module.path(context.path, context.flightBroker.filename))
+        P.settingsSource, P.settingsSourcePath, P.settingsOriginal = phase.source, path, context.flightBroker.document
+        if phase.source then
+            write(path, phase.source)
+        elseif operations.stat(path) then
+            assert(operations.remove(path))
+        end
+        if phase.backup then
+            write(path .. ".bak", phase.backup)
+        elseif operations.stat(path .. ".bak") then
+            assert(operations.remove(path .. ".bak"))
+        end
+        settingsMembers(context, phase)
+    end,
+    ["check-settings-open"] = function(context)
+        local phase, state = config.phases[phaseIndex], context.modelSettingsUi
+        if phase.closed then
+            assert(not state)
+            if phase.published then
+                assert(
+                    context.flightBroker.document.revision == phase.revision and not context.flightBroker.publication
+                )
+            else
+                assert(context.flightBroker.document == P.settingsOriginal, "cancelled opening must not publish")
+            end
+            if config.expectedError then
+                assert(context.errors[#context.errors] == config.expectedError)
+            end
+        else
+            assert(state and not state.loading and not state.build)
+            assert(state.revision == phase.revision and context.flightBroker.document.revision == phase.revision)
+            assert(state.values.motorReversed == not not phase.reversed)
+            assert(state.loadInfo.recovered == not not phase.recovered or phase.missing and state.loadInfo.missing)
+            if phase.legacy then
+                assert(string.find(P.settingsLegacyStatus, phase.legacy, 1, true))
+            end
+        end
+        if P.settingsSource then
+            local operations = assert(loadScript(context.path .. "lib/verified_file.lua"))().operations()
+            local file = assert(operations.open(P.settingsSourcePath, "r"))
+            local text = operations.read(file, operations.stat(P.settingsSourcePath).size)
+            operations.close(file)
+            assert(text == P.settingsSource, "opening must not rewrite edited settings")
+        end
+    end,
+    ["fail-settings-identity"] = function(context)
+        assert(context.modelSettingsUi.loading)
+        context.modelSettingsUi.handlers.modelFilename = function()
+            error("injected opening identity failure", 0)
+        end
+    end,
+    ["retire-settings-member"] = function(context)
+        local cursor = assert(context.modelSettingsUi.loading.cursor)
+        context.flightBroker.members[cursor] = nil
+    end,
     ["check-settings"] = function(context)
         assert(context.modelSettingsUi and not context.modelSettingsUi.build)
         if config.scenario == "modal-settings-reset" then
@@ -973,12 +1061,8 @@ actions = {
             assert(model.getLogicalSwitch(62).func == 17, "fixture needs a dedicated Sticky output")
         end
         local phase = config.phases[phaseIndex]
-        P.settingsState, P.settingsMembers = state, {}
-        for index = 1, phase.members or 0 do
-            local host = { modelFilename = state.modelFilename, navigationHomes = { retained = true } }
-            P.settingsMembers[index] = host
-            context.flightBroker.members[host] = { modelFilename = state.modelFilename, declarations = {} }
-        end
+        P.settingsState = state
+        settingsMembers(context, phase)
         P.settingsRevision, P.settingsReversed = state.revision + 1, not state.values.motorReversed
         if phase.armed then
             P.settingsReversed = state.values.motorReversed
@@ -1328,10 +1412,16 @@ local function advance(context)
         local state = context.modelSettingsUi
         local reached = phase.untilSettings == "closed" and not state
             or state and context.modelSettingsUiModule.stageOf(state) == phase.untilSettings
+        if reached and phase.untilSettingsCursor then
+            reached = state.loading and state.loading.cursor ~= nil
+        end
         if not reached and phaseDone < phase.callbacks then
             return
         end
         gate(reached, "settings phase not reached: " .. phase.untilSettings)
+        if reached then
+            phaseDone = phase.callbacks
+        end
     end
     if phaseDone >= phase.callbacks then
         phaseIndex, phaseDone = phaseIndex + 1, 0

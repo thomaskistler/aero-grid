@@ -6,6 +6,7 @@ local ui = {
         heading = 400, wrap = 400, field = 1500, finish = 300, idle = 300, command = 800,
         ["publish-start"] = 450, publish = 400, ["save-error"] = 350, closing = 300,
     },
+    LOAD_BOUNDS = { start = 350, legacy = 300, ["publish-start"] = 450, publish = 450, setup = 400, error = 400 },
 }
 
 local fields = {
@@ -51,7 +52,13 @@ local fields = {
 }
 
 function ui.stageOf(state)
-    if state.saving then
+    if state.loading then
+        local loading = state.loading
+        if loading.phase == "publish" and loading.publication.stage then
+            return "load_publish_" .. loading.publication.stage
+        end
+        return "load_" .. (loading.phase == "read" and loading.job.stage or loading.phase)
+    elseif state.saving then
         if state.saving.phase == "publish" and state.saving.publication.stage then
             return "publish_" .. state.saving.publication.stage
         end
@@ -87,6 +94,7 @@ local function active(context, state)
         and state.dialog ~= nil
         and not state.pending
         and not state.saving
+        and not state.loading
         and (not state.handlers.modelFilename or state.handlers.modelFilename() == state.modelFilename)
         and (not state.handlers.fullscreen or state.handlers.fullscreen())
 end
@@ -100,6 +108,16 @@ end
 
 function ui.workBound(context, event)
     local state = context.modelSettingsUi
+    if state and state.loading then
+        local loading = state.loading
+        if loading.phase == "read" then
+            local bound = state.handlers.loadWorkBound(loading.job)
+            return bound and bound + 200
+        elseif loading.phase == "publish-start" and not state.handlers.startPublication then
+            return nil
+        end
+        return ui.LOAD_BOUNDS[loading.phase]
+    end
     if state and state.saving then
         if state.saving.phase == "store" and state.handlers.saveWorkBound then
             local bound = state.handlers.saveWorkBound(state.saving.job)
@@ -116,9 +134,9 @@ function ui.workBound(context, event)
         return ui.WORK_BOUNDS.command
     end
     if state and (
-        state.handlers.modelFilename and state.handlers.modelFilename() ~= state.modelFilename
+        not state.pending and (state.closing or exitEvent(event))
+        or state.handlers.modelFilename and state.handlers.modelFilename() ~= state.modelFilename
         or state.handlers.fullscreen and not state.handlers.fullscreen()
-        or not state.pending and (state.closing or exitEvent(event))
     ) then
         return ui.WORK_BOUNDS.closing
     end
@@ -140,13 +158,14 @@ function ui.close(context)
     if not state then
         return
     end
-    if state.saving then
+    if state.saving or state.loading and (state.loading.phase == "publish" or state.loading.phase == "error") then
         state.closing = true
         return false
     end
     context.modelSettingsUi = nil
     state.generation = state.generation + 1
     state.description, state.fieldReady = nil, nil
+    state.loading = nil
     local dialog = state.dialog
     state.dialog = nil
     if dialog then
@@ -158,7 +177,7 @@ function ui.close(context)
 end
 
 local function queue(context, state, action)
-    if active(context, state) then
+    if active(context, state) and not state.build then
         state.pending = action
     end
 end
@@ -220,18 +239,21 @@ function ui.open(context, document, handlers)
         screen = lvgl.box(handlers.parent or context.root, { x = 0, y = 0, w = context.zone.w, h = context.zone.h }),
     }
     context.modelSettingsUi = state
+    if handlers.startLoad then
+        state.loading = { phase = "start" }
+    end
     state.dialog = dialog(context, state)
     state.status = lvgl.label(state.dialog, {
         x = 4,
         y = 4,
         w = state.width,
         h = state.height * 2,
-        text = document.status or "",
+        text = state.loading and "Loading model settings..." or document.status or "",
         font = function()
             return SMLSIZE
         end,
     })
-    lvgl.hide(state.status)
+    if not state.loading then lvgl.hide(state.status) end
     state.smartStatus = lvgl.label(state.dialog, {
         x = 4,
         y = 4,
@@ -342,7 +364,7 @@ local function buildField(context, state, field)
             return value
         end,
         set = function(value)
-            if not active(context, state) then
+            if not active(context, state) or state.build then
                 return
             end
             if field.kind == "switch" then
@@ -418,6 +440,132 @@ local function committed(state, document)
     state.armed, state.sessionReset, state.revision = document.armed, document.sessionReset, document.revision
 end
 
+local function retire(context, state)
+    if ui.close(context) ~= false and state.handlers.cancel then
+        state.handlers.cancel(state.cancelIdentityError)
+    end
+end
+
+local function advanceLoad(context, state)
+    local loading, handlers = state.loading, state.handlers
+    local function failed(message, identityError)
+        loading.phase, loading.error = "error", tostring(message)
+        state.cancelIdentityError = state.cancelIdentityError or identityError
+    end
+    if loading.phase == "error" then
+        reportError(state, loading.error)
+        state.loading, state.closing = nil, true
+        return
+    end
+    if handlers.fullscreen then
+        local ok, fullscreen = pcall(handlers.fullscreen)
+        if not ok then
+            if loading.phase ~= "publish" then
+                failed(fullscreen)
+                return
+            end
+            loading.afterPublicationError, state.closing = tostring(fullscreen), true
+        elseif not fullscreen then
+            state.closing = true
+        end
+    end
+    if state.closing and loading.phase ~= "publish" then
+        state.loading = nil
+        retire(context, state)
+        return
+    end
+    if loading.phase ~= "publish" and handlers.modelFilename then
+        local ok, filename = pcall(handlers.modelFilename)
+        if not ok then
+            failed(filename, true)
+            return
+        elseif filename ~= state.modelFilename then
+            failed("Model changed or filename unavailable; reload Model settings", true)
+            return
+        end
+    end
+    if loading.phase == "start" then
+        local ok, job, message = pcall(handlers.startLoad, state.modelFilename)
+        if ok and job then
+            loading.job, loading.phase = job, "read"
+        else
+            failed(ok and message or job)
+        end
+    elseif loading.phase == "read" then
+        local ok, done, document, info = pcall(handlers.advanceLoad, loading.job)
+        if not ok then
+            failed(done)
+        elseif done then
+            if not document then
+                failed(info)
+            elseif type(info) ~= "table" then
+                failed("Model settings load metadata unavailable")
+            else
+                loading.document, loading.info, loading.job = document, info, nil
+                loading.phase = document.armed == nil and handlers.nextLegacyCondition and "legacy" or "publish-start"
+                loading.seen, loading.selections, loading.count = {}, {}, 0
+            end
+        end
+    elseif loading.phase == "legacy" then
+        local ok, host, value = pcall(handlers.nextLegacyCondition, loading.cursor)
+        if not ok then
+            failed(host)
+            return
+        end
+        loading.cursor = host
+        if host and not loading.seen[host] then
+            loading.seen[host] = true
+            if value and value ~= 0 and not loading.selections[value] then
+                loading.selections[value], loading.count = true, loading.count + 1
+            end
+        end
+        if not host or loading.count > 1 then
+            loading.status = loading.count > 1
+                    and "Conflicting old widget Armed selections were not imported. Choose one model switch."
+                or loading.count == 1 and "Old widget Armed was not imported. Choose the model switch."
+                or "No model Armed set. Legacy panel switches remain until changed; None disables arming model-wide."
+            loading.phase = "publish-start"
+        end
+    elseif loading.phase == "publish-start" then
+        if not handlers.startPublication then
+            failed("Bounded model settings publication unavailable")
+            return
+        end
+        local ok, job, message = pcall(handlers.startPublication, loading.document)
+        if ok and job then
+            loading.publication, loading.phase = job, "publish"
+        else
+            failed(ok and message or job)
+        end
+    elseif loading.phase == "publish" then
+        local ok, done, published, message = pcall(handlers.advancePublication, loading.publication)
+        if not ok then
+            failed(done)
+        elseif done then
+            if not published then
+                local matches = true
+                if handlers.modelFilename then
+                    local identityOk, filename = pcall(handlers.modelFilename)
+                    matches = identityOk and filename == state.modelFilename
+                end
+                failed(message, not matches)
+            elseif loading.afterPublicationError then
+                failed(loading.afterPublicationError)
+            else
+                loading.phase = "setup"
+            end
+        end
+    elseif loading.phase == "setup" then
+        committed(state, loading.document)
+        state.loadInfo = loading.info
+        state.status:set({ text = loading.status or loading.info.notice or "" })
+        lvgl.hide(state.status)
+        state.loading = nil
+    else
+        error("invalid Model settings load phase: " .. tostring(loading.phase))
+    end
+end
+
 local function advanceSave(state)
     local saving, handlers = state.saving, state.handlers
     local function failed(message)
@@ -482,6 +630,14 @@ function ui.advance(context)
     if not state then
         return false
     end
+    if state.loading then
+        advanceLoad(context, state)
+        return true
+    end
+    if state.closing and not state.pending and not state.saving then
+        retire(context, state)
+        return true
+    end
     if
         (state.handlers.modelFilename and state.handlers.modelFilename() ~= state.modelFilename)
         or (state.handlers.fullscreen and not state.handlers.fullscreen())
@@ -489,19 +645,9 @@ function ui.advance(context)
         if state.saving then
             state.closing = true
         else
-            ui.close(context)
-            if state.handlers.cancel then
-                state.handlers.cancel()
-            end
+            retire(context, state)
             return true
         end
-    end
-    if state.closing and not state.pending and not state.saving then
-        ui.close(context)
-        if state.handlers.cancel then
-            state.handlers.cancel()
-        end
-        return true
     end
     if state.saving then
         advanceSave(state)

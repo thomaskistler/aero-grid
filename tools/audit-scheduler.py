@@ -372,6 +372,53 @@ def scenarios():
         {"name": "settings-drained", "kind": "refresh", "action": "check-lifecycle-settings",
          "callbacks": 1, "step": 5, "perCall": 1},
     ])
+    opening_source = result["modal-settings-reset"]["settingsDocument"].replace(
+        "revision: 1", "revision: 12").replace("  motorSource: ch32", "  motorReversed: true\n  motorSource: ch32")
+    edited_source = ("# retained comment\n" * 64 + opening_source
+        + '  history:\n    - name: "' + "quoted # text " * 16 + '" # ' + "inline comment " * 64
+        + "\n      points: [1, 2]\n  announcements:\n    - name: old\n      enabled: true\n")
+    for mode in ("primary", "edited", "recovered", "missing", "legacy-none", "legacy-one", "legacy-conflict",
+                 "return", "fullscreen", "identity", "invalid", "background",
+                 "publish-return", "publish-fullscreen", "publish-explicit", "retirement"):
+        source = edited_source if mode in ("edited", "background", "return", "fullscreen", "identity") else opening_source
+        if mode.startswith("legacy-") or mode == "retirement":
+            source = source.replace("armed: L64\n", "")
+        elif mode.startswith("publish-"):
+            source = source.replace("armed: L64", "armed: L62")
+        elif mode == "missing":
+            source = False
+        elif mode in ("recovered", "invalid"):
+            source = "version: 0\n"
+        preparation = {"name": "opening-source", "kind": "refresh", "action": "prepare-settings-source",
+            "source": source, "members": 128, "legacy": "one" if mode == "retirement" else mode.removeprefix("legacy-"),
+            "backup": opening_source if mode == "recovered" else "version: 99\n" if mode == "invalid" else False,
+            "callbacks": 1, "step": 5}
+        interrupted = mode in ("return", "fullscreen", "identity", "invalid") or mode.startswith("publish-")
+        phases = [result["modal-settings-reset"]["phases"][0], preparation,
+            {"name": "opening-read", "kind": "background" if mode == "background" else "refresh",
+             "action": "open-settings", "callbacks": 800, "step": 5, "perCall": 1,
+             "untilSettings": ("closed" if mode == "invalid" else "load_publish_members" if mode.startswith("publish-")
+                 else "load_legacy" if mode == "retirement" else "load_parse" if interrupted else "idle"),
+             "untilSettingsCursor": mode == "retirement"}]
+        if mode == "retirement":
+            phases += [{"name": "opening-retirement", "kind": "refresh", "action": "retire-settings-member",
+                "callbacks": 800, "untilSettings": "idle", "step": 5}]
+        elif interrupted and mode != "invalid":
+            phases += [{"name": "opening-cancel", "kind": "refresh",
+                "action": "fail-settings-identity" if mode == "identity" else "dismiss-settings",
+                "dismiss": mode.removeprefix("publish-"),
+                "callbacks": 200, "untilSettings": "closed", "step": 5}]
+        phases += [{"name": "opening-checked", "kind": "refresh", "action": "check-settings-open",
+            "closed": interrupted, "revision": 0 if mode == "missing" else 12, "reversed": mode != "missing",
+            "published": mode.startswith("publish-"),
+            "missing": mode == "missing", "recovered": mode == "recovered",
+            "legacy": ("No model Armed" if mode == "legacy-none" else "Old widget Armed was not imported"
+                       if mode in ("legacy-one", "retirement") else "Conflicting old widget" if mode == "legacy-conflict" else False),
+            "callbacks": 1, "step": 5}]
+        result[f"modal-settings-open-{mode}"] = dict(result["modal-settings-reset"], phases=phases,
+            expectedError=("Model settings: injected opening identity failure" if mode == "identity" else
+                "Model settings: Cannot load model settings: Unsupported model settings schema; expected version 1; "
+                "Unsupported model settings schema; expected version 1" if mode == "invalid" else None))
     result["modal-log-recording"] = dict(result["modal-log"], recipe="chart", sources=1, expected=2,
         settings=True, layout=custom_layout([
             chart_cell("chart", 0, 2, [1]),

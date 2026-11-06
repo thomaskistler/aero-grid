@@ -479,6 +479,11 @@ broker; other dashboards wait for that document before constructing Armed.
 Started model publication survives replacement loading, while unfinished
 declaration work is discarded. Runtime loading never falls back to a
 synchronous settings read or registration tail.
+Opening Model settings uses this reader, scans at most one legacy Armed
+selection per turn, then publishes the fresh disk document before building
+controls. `build` stays truthy throughout loading, so readiness checks and
+programmatic edits cannot bypass disabled controls. Return/fullscreen loss can
+cancel before publication; an active publication drains before closing.
 Menu and location overlays also use service-only callbacks: hidden panels do
 not refresh behind them. Menu action handlers consume their callback separately
 from popup construction and input; unmeasured action handlers do not inherit

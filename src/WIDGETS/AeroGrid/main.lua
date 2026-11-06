@@ -1389,36 +1389,7 @@ local function openModelSettings(context)
         end
         context.modelSettingsUiModule = module
     end
-    local latest, loadError = owner.store:load(owner.filename)
-    if not latest then
-        addError(context, "Model settings: " .. tostring(loadError))
-        showErrors(context)
-        return
-    end
-    owner:setDocument(latest)
-    local document = {
-        modelFilename = owner.filename,
-        revision = owner.document and owner.document.revision or 0,
-        flight = owner.document and owner.document.flight,
-        armed = owner.document and owner.document.armed,
-        sessionReset = owner.document and owner.document.sessionReset,
-    }
-    if document.armed == nil then
-        local selections = {}
-        for host in pairs(owner.members) do
-            if host.legacyWidgetArmed and host.legacyWidgetArmed ~= 0 then
-                selections[host.legacyWidgetArmed] = true
-            end
-        end
-        local count = 0
-        for _ in pairs(selections) do
-            count = count + 1
-        end
-        document.status = count > 1
-                and "Conflicting old widget Armed selections were not imported. Choose one model switch."
-            or count == 1 and "Old widget Armed was not imported. Choose the model switch."
-            or "No model Armed set. Legacy panel switches remain until changed; None disables arming model-wide."
-    end
+    local document = { modelFilename = owner.filename, revision = 0 }
     local suspended = context.editorUi ~= nil
     if suspended then
         context.editorStash = context.editorSession
@@ -1426,9 +1397,20 @@ local function openModelSettings(context)
         context.editorController.restorePreview(context)
         context.editorSession = nil
     end
-    local function resume()
-        if suspended and owner:identity() ~= document.modelFilename then
-            context.editorStash = nil
+    local function resume(identityError)
+        if suspended then
+            if identityError then
+                context.editorStash = nil
+                return
+            end
+            local ok, filename = pcall(owner.identity, owner)
+            if not ok or filename ~= document.modelFilename then
+                context.editorStash = nil
+            end
+            if not ok then
+                addError(context, "Model settings: " .. tostring(filename))
+                showErrors(context)
+            end
         end
     end
     local opened, message = pcall(context.modelSettingsUiModule.open, context, document, {
@@ -1441,6 +1423,20 @@ local function openModelSettings(context)
         armControl = context.serviceRuntime.byId.control,
         smartStatus = function()
             return owner.view.smartStatus
+        end,
+        startLoad = function(filename)
+            return owner.store:startLoad(filename)
+        end,
+        advanceLoad = function(job)
+            return owner.store:advanceLoad(job)
+        end,
+        loadWorkBound = function(job)
+            return owner.store:loadWorkBound(job)
+        end,
+        nextLegacyCondition = function(previous)
+            if previous and owner.members[previous] == nil then previous = nil end
+            local host = next(owner.members, previous)
+            return host, host and host.legacyWidgetArmed
         end,
         startSave = function(values, revision, modelFilename, armedCondition, sessionReset)
             local ok, message = pcall(function()

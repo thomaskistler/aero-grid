@@ -3882,3 +3882,46 @@ fullscreen-return long-press readiness failure; its assertions remain intact.
 Host invalid-metadata tests explicitly request panel revalidation and retire the
 injected missing-step task before checking fresh admission, since loader callbacks
 now legitimately enroll services before those tests mutate metadata.
+## 70. Bounded Model settings opening (R5)
+
+`openModelSettings` no longer synchronously reads arbitrary edited YAML,
+publishes a document, or scans all dashboard members. The modal drives the
+shared reader, inspects at most one legacy Armed selection per turn, publishes
+the fresh validated document, then resolves values and builds controls.
+Missing/recovered metadata and current disk revisions survive unchanged; opening
+does not write. The existing `build` readiness sentinel remains truthy while
+loading, including publication. Input stays disabled through construction.
+Pre-publication reads/scanning can cancel; once publication starts, close waits
+for completion. Identity errors are explicit and cannot resume an old editor.
+
+| Complete UI advance | Native maximum | Charge |
+|---|---:|---:|
+| Reader creation | 241 | 350 |
+| Read | 490 | reader bound + 200 |
+| Tokenize edited/comment-heavy YAML | 1304 | reader bound + 200 |
+| Generic YAML build | 847 | reader bound + 200 |
+| Validate / recovered completion | 851 | reader bound + 200 |
+| Legacy Armed member scan | 165 | 300 |
+| Publication begin / commit / member or finish | 283 / 262 / 226 | 450 each |
+| Resolve values / report opening error | 251 / 126 | 400 each |
+
+Sixteen native `modal-settings-open-*` cases cover the seven-panel reset
+environment (Armed L64, session-reset L03, channel32), fresh edited files,
+quoted hashes/inline comments and obsolete sequences, recovery/missing/error
+metadata, 128 members, zero/one/conflicting legacy selections, retired scan
+cursors, identity failures, foreground/background reads, pre-publication
+Return/fullscreen cancellation, and publication-draining Return/fullscreen/
+explicit close. Every actual reader turn and UI stage is measured against its
+charge. The complete nonsuspended main opener is 511 instructions; menu action
+triggering and suspended-editor restoration retain their separate gates.
+The richest control-construction advance is 910, below its unchanged 1500
+charge. Native modal callbacks peak at 8627 foreground / 7386 background; the
+largest whole scenario callback is 14545 after retirement. No hidden panels
+refresh and every newly admitted atom is below 4000.
+
+Lua53/int32 opening units, existing actual widget publication admission, the
+complete int32 scheduler suite and audit-tool regressions pass. Strict reset is
+unchanged at 13900 with its two original first-arm XFAILs. Audit phase waits
+now stop when their requested stage is reached, rather than accidentally
+relying on a fixed callback count. Production ownership, editor mutation/drag
+eligibility and the parent's lifecycle/registration gates remain unchanged.
