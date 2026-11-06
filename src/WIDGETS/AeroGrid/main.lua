@@ -1815,8 +1815,12 @@ local function refresh(context, widgetEvent, touchState)
     end
 
     if context.editorUi then
-        updateModalServices(context)
-        dispatchDue(context)
+        if context.schedulerHost then
+            scheduled(context, "steady")
+        else
+            updateServices(context)
+            dispatchDue(context)
+        end
         return
     end
 

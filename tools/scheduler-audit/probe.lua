@@ -6,6 +6,7 @@
 -- paused, so recording a sample does not change what is recorded.
 
 local config = assert(loadScript("/WIDGETS/AeroGrid/audit/config.lua"))()
+local previewTasks = string.match(config.scenario, "^editor%-preview%-.+%-tasks$") ~= nil
 local count, pause
 local P = { offset = 0 }
 
@@ -78,6 +79,9 @@ local function finish(label, raw, leak)
     depth = d - 1
     if type(label) ~= "string" then
         label = "unlabelled"
+    end
+    if previewTasks and string.sub(label, 1, 11) == "task:panel:" then
+        gate(cost <= 4000, label .. " exceeds the preview atom cap: " .. cost)
     end
     if string.sub(config.scenario, 1, 6) == "modal-" and string.sub(label, 1, 6) == "modal:" then
         gate(cost <= 4000, label .. " exceeds the modal atom cap: " .. cost)
@@ -350,8 +354,11 @@ local function install(context)
                         return "modal:" .. surface[2] .. ":" .. name .. ":" .. token
                     end
                     local state = current[surface[3]]
-                    return tostring(state and (state.build or state.buildStage or state.renderIndex and "render" or state.stage
-                        or state.prepareIndex and "wrap" or state.pending and "pending") or "idle")
+                    return tostring(
+                        state
+                                and (state.build or state.buildStage or state.renderIndex and "render" or state.stage or state.prepareIndex and "wrap" or state.pending and "pending")
+                            or "idle"
+                    )
                 end)
             end
         end
@@ -694,7 +701,8 @@ local function callbackSurface(kind, context)
         return "log-viewer:" .. context.logViewerModule.stageOf(context.logViewer)
     end
     if context.modelSettingsUi then
-        return "settings:" .. tostring(context.modelSettingsUi.build or context.modelSettingsUi.pending and "pending" or "idle")
+        return "settings:"
+            .. tostring(context.modelSettingsUi.build or context.modelSettingsUi.pending and "pending" or "idle")
     end
     if context.locationDetails then
         return "location"
@@ -714,11 +722,26 @@ local function runCallback(kind, context, fn, e, t)
     local c1 = count()
     pause(true)
     local total = c1 - c0 - K_CALLBACK
+    if previewTasks then
+        gate(total <= 15000, kind .. " exceeds the complete preview callback ceiling: " .. total)
+        if surface == "editor-preview" then
+            for _, label in ipairs(topLabels) do
+                gate(
+                    not string.match(label, "^panel:") and not string.match(label, "^chart:"),
+                    "scheduler-owned preview dispatched legacy work: " .. label
+                )
+            end
+        end
+    end
     if string.sub(config.scenario, 1, 6) == "modal-" and surface and kind == "refresh" then
         gate(total <= 15000, surface .. " exceeds the complete callback ceiling: " .. total)
         for _, label in ipairs(topLabels) do
-            gate(not string.match(label, "^panel:") and not string.match(label, "^chart:")
-                and not string.match(label, "^task:panel:"), surface .. " refreshed a hidden panel: " .. label)
+            gate(
+                not string.match(label, "^panel:")
+                    and not string.match(label, "^chart:")
+                    and not string.match(label, "^task:panel:"),
+                surface .. " refreshed a hidden panel: " .. label
+            )
         end
     end
     local overhead = total - topSum
@@ -853,10 +876,14 @@ local function entry(kind, context, fn, e, t)
             telemetry:subscribe(string.format("S%02d", index))
         end
         for index = 1, config.logEntries or 0 do
-            context.diagnosticsLog:append(context, "audit",
-                "message " .. index .. (string.sub(config.scenario, 1, 9) == "modal-log"
-                    and string.rep("long message ", 32) or ""),
-                index * 100)
+            context.diagnosticsLog:append(
+                context,
+                "audit",
+                "message "
+                    .. index
+                    .. (string.sub(config.scenario, 1, 9) == "modal-log" and string.rep("long message ", 32) or ""),
+                index * 100
+            )
         end
     end
     local phase = config.phases[phaseIndex]

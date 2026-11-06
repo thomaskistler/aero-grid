@@ -2817,7 +2817,7 @@ and background-only services in both new modal kinds. Settings save/cancel,
 editor drawers/input/preview admission, location/menu callbacks and R6 lifecycle
 accounting remain gates, not implicitly admitted kinds.
 
-## 42. Explicit menu/location eligibility and native modal gates (R5 slice)
+## 44. Explicit menu/location eligibility and native modal gates (R5 slice)
 
 Location and menu overlays no longer fall through to ordinary panel refresh.
 Their idle/input callbacks run services only, under `modal-location` and
@@ -2848,3 +2848,39 @@ rejects hidden panel refresh. The complete Lua32 scheduler suite and first
 slice's targeted logger/viewer/settings suites pass. No production owner or
 recording cadence changes. Settings save/cancel, editor input/drawers and R6
 lifecycle accounting remain distinct gates.
+
+## 45. Shared stable editor-preview accounting (R5 integration)
+
+Stable previews previously allocated scheduler service/panel work, then invoked
+the legacy panel loop with no ownership skip or accounting. A regression with
+scheduler-owned Metric/Chart previews reproduces that duplicate refresh against
+the preceding source. Stable preview now uses the same accounted steady path
+as the dashboard: legacy services/panels run before scheduler allocation, and
+scheduler owners are skipped by the legacy loop. The no-host fallback retains
+its existing service and panel behavior. No owner table changes.
+
+New isolated-owner native scenarios exercise sixteen Metric placements and one
+maximum-span Chart through editor construction, stable preview and closing.
+Strict checks enforce every callback below 15000, every actual panel-task atom
+below 4000, and no top-level legacy panel/chart dispatch in stable preview.
+Whole scenario maxima are 10924/11539; actual Metric task geometry peaks at
+3329. Partial Chart stages, including projection and publication, execute.
+
+```sh
+python3 tools/audit-scheduler.py editor-preview-metric-tasks editor-preview-chart-tasks --timeout 180
+build/lua32/lua tests/integration/widget/test_editor_preview_scheduler.lua "$PWD"
+```
+
+The new duplicate-dispatch/progress regression, existing editor initialization/
+History/hidden-construction tests, host suite, int32 regression and 37 audit
+tool tests pass. Original legacy-owner native scenarios remain available without
+the owner override; their expensive legacy refreshes are not silently repaired
+or claimed newly bounded. Ordinary editor input/drawers, geometry updates,
+settings save/cancel and R6 lifecycle admission remain separate gates.
+
+The integrated modal slices additionally pass all four strict real-widget
+scenarios (log/log-recording/settings/location maxima 9223/9223/9282/9345;
+menu 9223), logger/viewer/settings/menu/location/host regressions, and the
+combined log/Showcase/idle native fixtures. The existing viewer mock now peaks
+at 10300 in the combined tree. Production owners and recording cadence remain
+unchanged.

@@ -188,6 +188,8 @@ def scenarios():
             {"name": "editor-close", "kind": "refresh", "action": "close-editor",
              "callbacks": 40, "step": 5, "perCall": 4},
         ])
+    result["editor-preview-metric-tasks"] = dict(result["editor-preview-metric"], owners=["panel:metric"])
+    result["editor-preview-chart-tasks"] = dict(result["editor-preview-chart"], owners=["panel:chart"])
     result["modal-log"] = dict(result["host-diagnostics-max"], fullscreen=True, logEntries=256,
         config={"section": "log", "maxEntries": 256}, phases=[
             {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 4},

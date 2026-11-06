@@ -162,6 +162,14 @@ class ScenarioTests(unittest.TestCase):
             self.assertEqual([phase["action"] for phase in spec["phases"] if "action" in phase],
                              ["open-editor", "check-editor", "close-editor"])
 
+    def test_editor_task_owners_do_not_change_legacy_preview_cases(self):
+        scenarios = self.cli.scenarios()
+        for panel in ("metric", "chart"):
+            name = f"editor-preview-{panel}"
+            self.assertNotIn("owners", scenarios[name])
+            self.assertEqual(scenarios[name + "-tasks"]["owners"], [f"panel:{panel}"])
+            self.assertEqual(scenarios[name + "-tasks"]["phases"], scenarios[name]["phases"])
+
     def test_run_requires_measured_actions_and_requests_native_fullscreen(self):
         spec = {"phases": [{"action": "open-editor"}], "fullscreen": True}
         for measured in (False, True):
