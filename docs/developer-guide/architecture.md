@@ -323,8 +323,9 @@ geometry and must handle resizing while unfinished. Exceptions or non-boolean
 results reject the placement and clear its container. Reload or page retirement
 discards partial state, so partial construction must not leave external resources
 outside its container and shared service subscriptions. Without `services.staged`,
-`create` must still return a complete instance; editor and preview callers retain
-their synchronous behavior.
+`create` must still return a complete instance. Editor preview rebuilding now
+uses the same prepared/staged construction path as loading when `construct` is
+available; direct synchronous callers still omit `services.staged`.
 
 Put the module at `panels/<type>.lua` and reference that type in a layout.
 Regular panels declare `supportedSpans = { "any" }` and adapt their contents to
@@ -379,6 +380,11 @@ copying and batched UI construction complete. These callbacks reserve their
 construction work before running services under the service-only `editor-build`
 kind; hidden panel tasks are not eligible. The ordinary `editor.new` API remains
 synchronous unless its optional staged argument is set.
+Preview replacement separates retirement, bounded placement cloning, settings
+preparation and construction. Bounded cloning/construction reserve their work
+before admitting services. Partial previews share the loader's hidden enrollment,
+strict boolean result checking and page-retirement cancellation; preview failures
+stay in the editor rather than rejecting the committed layout.
 Panel settings drawers, including entry subdrawers, put **Label** first when
 declared, preserving the declaration order of all remaining controls.
 

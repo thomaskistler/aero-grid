@@ -685,7 +685,14 @@ local function create(zone, widgetOptions, path)
                 loadModule = loadModule,
                 isFullScreen = isFullScreen,
                 readThemeDefinition = readThemeDefinition,
-            }, { "beginLoad", "advanceLoad", "panelRect", "buildPanel" })
+            }, {
+                "beginLoad",
+                "advanceLoad",
+                "panelRect",
+                "buildPanel",
+                "preparePanel",
+                "advanceConstruction",
+            })
         end
         if context.dashboardLoader then
             context.dashboardLifecycle = bindHost(lifecycle, "lib/dashboard_lifecycle.lua", {
@@ -714,6 +721,8 @@ local function create(zone, widgetOptions, path)
                 loadModule = loadModule,
                 isFullScreen = isFullScreen,
                 buildPanel = context.dashboardLoader.buildPanel,
+                preparePanel = context.dashboardLoader.preparePanel,
+                advanceConstruction = context.dashboardLoader.advanceConstruction,
                 updateEmptyHint = context.dashboardLifecycle.updateEmptyHint,
             }, { "restorePreview", "openEditor", "advanceEditor", "editorEntryHit" })
         end
@@ -1695,9 +1704,10 @@ local function refresh(context, widgetEvent, touchState)
         )
     then
         local building = context.editorUi.buildStage ~= nil
+        local preview = context.editorUi.previewRefresh
         context.editorController.advanceEditor(context)
-        if building and context.editorUi then
-            updateModalServices(context, 3000, "editor-build")
+        if context.editorUi and (building or preview and preview.workBound) then
+            updateModalServices(context, building and 3000 or preview.workBound, "editor-build")
         end
         return
     end

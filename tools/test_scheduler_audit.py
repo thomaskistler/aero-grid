@@ -120,6 +120,15 @@ class ScenarioTests(unittest.TestCase):
                             self.cli.run(None, Path("native"), Path("library"), "editor", spec, 30)
                     self.assertIn("fullscreen", run.call_args.args[0])
 
+    def test_preview_rebuild_scenarios_verify_changed_settings_and_discard(self):
+        scenarios = self.cli.scenarios()
+        for panel in ("navigation", "metric", "chart"):
+            spec = scenarios[f"editor-rebuild-{panel}"]
+            self.assertTrue(spec["fullscreen"])
+            self.assertEqual(spec["expected"], 1)
+            self.assertEqual([phase["action"] for phase in spec["phases"] if "action" in phase],
+                             ["open-editor", "edit-preview", "check-preview", "discard-editor"])
+
     def test_every_scenario_names_its_expected_panels(self):
         for name, spec in self.cli.scenarios().items():
             self.assertIn("expected", spec, name)

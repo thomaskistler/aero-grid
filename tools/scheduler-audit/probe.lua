@@ -89,6 +89,10 @@ local function finish(label, raw, leak)
     end
     if recording then
         record(label, cost, own, units > 0 and units or 1, children)
+        local editorPrefix = "editor:advanceEditor:"
+        if string.sub(label, 1, #editorPrefix) == editorPrefix then
+            record("editor:advanceEditor", cost, own, units > 0 and units or 1, children)
+        end
     end
 end
 
@@ -220,6 +224,41 @@ local function loadLabel(token, context)
     return "load:" .. token
 end
 
+local function editorLabel(token, context)
+    if token then
+        return "editor:advanceEditor:" .. token
+    end
+    local ui = context.editorUi
+    if ui.session.initializing then
+        return "copy:" .. ui.session.initializing.phase
+    end
+    if ui.buildStage then
+        return "build:" .. tostring(ui.buildStage)
+    end
+    local job = ui.previewRefresh
+    if job then
+        local action = job.actions[job.index]
+        if not action then
+            return "preview-finish"
+        end
+        if not action.retired then
+            return "preview-retire"
+        end
+        if not action.preparedPlacement then
+            return "preview-copy"
+        end
+        if not action.prepared then
+            return "preview-prepare"
+        end
+        local partial = action.constructing and context.pendingConstruction
+        if partial then
+            return "preview-construct:" .. tostring(partial.instance.createStage)
+        end
+        return "preview-create"
+    end
+    return "other"
+end
+
 local function install(context)
     pause(true)
     for _, entry in ipairs(context.panels) do
@@ -254,7 +293,7 @@ local function install(context)
         if controller and not installed[controller] then
             installed[controller] = true
             for _, name in ipairs({ "openEditor", "advanceEditor", "restorePreview" }) do
-                controller[name] = wrap("editor:" .. name, controller[name])
+                controller[name] = wrap(name == "advanceEditor" and editorLabel or "editor:" .. name, controller[name])
             end
         end
     end
@@ -452,6 +491,34 @@ local actions = {
         context.editorSession = nil
         assert(not context.editorUi, "native editor scenario must close the editor")
     end,
+    ["edit-preview"] = function(context)
+        local state = assert(context.editorUi)
+        assert(not state.buildStage and not state.session.initializing)
+        local entry = assert(context.panels[1])
+        local key, value
+        if entry.module.id == "navigation" then
+            key, value = "showTape", not entry.settings.showTape
+        elseif entry.module.id == "metric" then
+            key, value = "visual", entry.settings.visual == "none" and "bar" or "none"
+        else
+            assert(entry.module.id == "chart")
+            key, value = "smoothing", entry.settings.smoothing == "off" and "light" or "off"
+        end
+        assert(state.handlers.editor.setValue(state.session, key, value))
+        state.auditSetting = { key = key, value = value }
+        state.previewPending = true
+    end,
+    ["check-preview"] = function(context)
+        local state = assert(context.editorUi)
+        assert(not state.previewPending and not state.previewRefresh and not state.previewError)
+        local entry = assert(context.panels[1])
+        assert(entry.settings[state.auditSetting.key] == state.auditSetting.value)
+        assert(context.editorPreviewChanged and not entry.failed)
+    end,
+    ["discard-editor"] = function(context)
+        assert(context.editorUi).handlers.close(false)
+        assert(not context.editorUi and not context.editorSession)
+    end,
     reflow = function(context)
         local zone = context.zone
         context.zone = { w = zone.w - 8, h = zone.h, xabs = zone.xabs, yabs = zone.yabs }
@@ -472,6 +539,15 @@ local function callbackSurface(kind, context)
         end
         if ui.buildStage then
             return "editor-build:" .. tostring(ui.buildStage)
+        end
+        if ui.previewRefresh then
+            local action = ui.previewRefresh.actions[ui.previewRefresh.index]
+            local stage = not action and "finish"
+                or not action.retired and "retire"
+                or not action.preparedPlacement and "copy"
+                or not action.prepared and "prepare"
+                or "construct"
+            return "editor-preview:" .. stage
         end
         for _, stage in ipairs({
             "saving",

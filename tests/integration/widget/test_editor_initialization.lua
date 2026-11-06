@@ -53,7 +53,70 @@ assert(duringCopy > before + 4, "History must continue recording through a long 
 assert(feed.revision > duringCopy, "History must continue during UI construction")
 assert(not context.editorUi.screen.hidden)
 assert(context.editorSession.draft.future[256] == 256)
-context.editorUi.handlers.close(false)
+local state = context.editorUi
+local placement = state.session.draft.panels[1]
+placement.config.smoothing = placement.config.smoothing == "off" and "light" or "off"
+placement.future = {}
+for index = 1, 128 do
+    placement.future[index] = index
+end
+state.session.dirty, state.previewPending = true, true
+local partials, copySteps, previewRevision = 0, 0, feed.revision
+for _ = 1, 256 do
+    fixture.tick(10)
+    definition.refresh(context)
+    fixture.lvglMock.settle()
+    assert(refreshed == 0, "hidden panels must not refresh while previews are rebuilt")
+    local job = state.previewRefresh
+    local action = job and job.actions[job.index]
+    if action and action.copy then
+        copySteps = copySteps + 1
+    end
+    local partial = context.pendingConstruction
+    if partial then
+        partials = partials + 1
+        assert(partial.container.hidden)
+        for _, entry in ipairs(context.panels) do
+            assert(entry ~= partial, "partial previews must stay outside the live registry")
+        end
+    end
+    if not state.previewPending and not state.previewRefresh then
+        break
+    end
+end
+assert(copySteps > 10 and partials > 3 and not state.previewError)
+assert(feed.revision > previewRevision + 4, "preview cloning/construction must not suspend History")
+assert(context.pendingConstruction == nil)
+assert(context.panels[#context.panels].settings.smoothing == placement.config.smoothing)
+
+placement.config.smoothing = placement.config.smoothing == "off" and "light" or "off"
+state.previewPending = true
+assert(fixture.pumpUntil(context, function(value)
+    return value.pendingConstruction ~= nil
+end, 256, 10))
+local partial = context.pendingConstruction
+local construct = partial.module.construct
+partial.module.construct = function()
+    return "invalid preview construction"
+end
+fixture.tick(10)
+definition.refresh(context)
+partial.module.construct = construct
+assert(context.pendingConstruction == nil and state.previewError)
+assert(string.find(state.previewError, "construct must return a boolean", 1, true))
+assert(#context.errors == 0, "preview construction failures belong to the editor")
+
+state.previewPending = true
+assert(fixture.pumpUntil(context, function(value)
+    return value.pendingConstruction ~= nil
+end, 256, 10))
+local cancelled = context.pendingConstruction
+state.handlers.close(false)
 assert(context.editorUi == nil and context.editorSession == nil)
+fixture.tick(10)
+definition.refresh(context)
+fixture.lvglMock.settle()
+assert(context.pendingConstruction == nil and context.reloadState == "rebuild")
+assert(cancelled.container.hidden, "cancelled preview must never be published")
 context.panelHost.dispatch = dispatch
-print("editor initialization: service cadence, hidden-panel exclusion and completed publication passed")
+print("editor initialization: recording, hidden construction, preview failure/cancellation and publication passed")

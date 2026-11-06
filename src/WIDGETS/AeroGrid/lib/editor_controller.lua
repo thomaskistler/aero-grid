@@ -12,6 +12,8 @@ function module.new(dependencies)
     local loadModule = dependencies.loadModule
     local isFullScreen = dependencies.isFullScreen
     local buildPanel = dependencies.buildPanel
+    local preparePanel = dependencies.preparePanel
+    local advanceConstruction = dependencies.advanceConstruction
     local updateEmptyHint = dependencies.updateEmptyHint
 
     local function previewLayout(context, document)
@@ -221,6 +223,8 @@ function module.new(dependencies)
     end
 
     local function advancePanelPreview(context, job)
+        -- Only measured copy/construct phases admit services alongside preview work.
+        job.workBound = nil
         local action = job.actions[job.index]
         if not action then
             return true
@@ -252,10 +256,58 @@ function module.new(dependencies)
             end
             return false
         end
+        if not action.preparedPlacement then
+            action.copy = action.copy
+                or assert(
+                    context.editorModule.new(
+                        { panels = { action.placement } },
+                        context.grid,
+                        context.layoutValidator,
+                        context.panelHost,
+                        nil,
+                        true
+                    )
+                )
+            if context.editorModule.advanceInitialization(action.copy) then
+                action.preparedPlacement = action.copy.draft.panels[1]
+                action.copy = nil
+            end
+            job.workBound = 4000
+            return false
+        end
+        if not action.prepared then
+            local prepared, preparationError = preparePanel(context, action.preparedPlacement, true)
+            if not prepared then
+                return true, action.placement.id .. ": preview: " .. tostring(preparationError)
+            end
+            action.prepared = prepared
+            return false
+        end
         local pool = context.editorPreviewContainers or {}
+        if action.constructing then
+            assert(context.pendingConstruction and context.pendingConstruction.placement == action.preparedPlacement)
+            local done, _, constructionError, failedContainer = advanceConstruction(context, true)
+            job.workBound = 4000
+            if not done then
+                return false
+            end
+            action.constructing = nil
+            job.index = job.index + 1
+            if constructionError then
+                context.editorPreviewContainers = pool
+                pool[#pool + 1] = failedContainer
+                return true, action.placement.id .. ": preview: " .. tostring(constructionError)
+            end
+            return false
+        end
         local container = table.remove(pool)
-        local placement = context.editorModule.clone(action.placement)
-        local entry, buildError, failedContainer = buildPanel(context, placement, container, true)
+        local placement = action.preparedPlacement
+        local entry, buildError, failedContainer = buildPanel(context, placement, container, true, action.prepared)
+        if context.pendingConstruction then
+            action.constructing = true
+            job.workBound = 4000
+            return false
+        end
         job.index = job.index + 1
         if not entry then
             if failedContainer or container then

@@ -188,6 +188,18 @@ def scenarios():
             {"name": "editor-close", "kind": "refresh", "action": "close-editor",
              "callbacks": 40, "step": 5, "perCall": 4},
         ])
+    for panel in ("navigation", "metric", "chart"):
+        result[f"editor-rebuild-{panel}"] = dict(result[f"{panel}-max"], fullscreen=True, phases=[
+            {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 4},
+            {"name": "editor-build", "kind": "refresh", "action": "open-editor",
+             "callbacks": 80, "step": 5, "perCall": 4},
+            {"name": "preview-rebuild", "kind": "refresh", "action": "edit-preview",
+             "callbacks": 80, "step": 5, "perCall": 4},
+            {"name": "preview-check", "kind": "refresh", "action": "check-preview",
+             "callbacks": 1, "step": 5, "perCall": 1},
+            {"name": "editor-close", "kind": "refresh", "action": "discard-editor",
+             "callbacks": 40, "step": 5, "perCall": 4},
+        ])
     result["light-control"] = {
         "recipe": "trim-panel", "expected": 2, "toggleSwitches": True,
         "layout": custom_layout([

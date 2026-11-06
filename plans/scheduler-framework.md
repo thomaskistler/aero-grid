@@ -1798,3 +1798,71 @@ ceiling (24751 across its editor scenario); stable preview admission, ordinary
 input/drawers, other modal kinds, Flight/Smart, and the remaining panel tasks
 are still gates. No production panel or Flight/Smart owner changed, and no
 deferred chart-recording assertion was relaxed.
+
+## 26. Prepared preview rebuilding and bounded chart preview construction (R5/R6)
+
+Preview replacement now separates retirement, incremental placement cloning,
+settings preparation and construction. Cloning reuses the bounded session graph
+traversal rather than copying an arbitrarily large placement in one callback.
+The loader's existing preparation and construction helpers are shared with the
+editor. Panels without `construct` still build synchronously in their own
+separate callback; chart previews now opt into the same hidden, staged creation
+used by ordinary loading.
+
+Partial previews stay outside the panel registry until completion. Construction
+uses current geometry, checks boolean results, and publishes only on success.
+Preview failures clear/pool their container and report through the editor, not
+the committed layout's rejected/error lists. Cancellation follows the same
+page-retirement path that discards partial loading state.
+
+Bounded placement-copy and staged-construction callbacks reserve 4000 for their
+work before admitting services under `editor-build`. Legacy preparation and
+synchronous constructors are deliberately not given an unmeasured concurrent
+service allowance. Their atoms remain gates even when the complete callback
+passes. Native controller spans now include per-copy/preview/construction-stage
+rows as well as the existing aggregate, so a cheap whole-callback sample cannot
+hide a more expensive body in another sample.
+
+```sh
+python3 tools/audit-scheduler.py editor-rebuild-navigation editor-rebuild-metric editor-rebuild-chart --timeout 180
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+```
+
+Both exit 0; there are 24 passing audit-tool tests. The native cases change an
+actual setting through the editor, rebuild its preview, verify the resulting
+resolved setting, then discard the draft and reload. Actions themselves remain
+timed; rows marked `@load` are retained while a retired placement is absent from
+the live registry.
+
+| Preview controller body | Navigation | Metric | Chart |
+|---|---:|---:|---:|
+| Retire | 140 | 140 | 140 |
+| Largest bounded placement-copy step | 712 | 742 | 756 |
+| Prepare | 1262 | 1259 | 1887 |
+| Create shell / synchronous constructor | 4295 | 3995 | 1283 |
+| One series subscription | N/A | N/A | 897 |
+| Controls | N/A | N/A | 580 |
+| Geometry setup/application | N/A | N/A | 1138 |
+| One font candidate | N/A | N/A | 1212 |
+| One position / final publication | N/A | N/A | 1553 |
+| Final editor render | 930 | 930 | 930 |
+
+Every measured chart-preview body is below 4000. The independent heavier chart
+construction fixture and its existing declarations remain unchanged; these
+cheaper preview samples do not shrink those bounds. Complete native scenario
+maxima are 9513/9347/10109 for navigation/metric/chart. The chart's former
+8472-instruction synchronous preview-construction body is no longer one callback.
+
+**The full editor integration suite now passes**, with a worst mock callback of
+15000, rather than its unchanged archived 15200 navigation-preview failure.
+No assertion or callback ceiling was relaxed. The real-widget editor test also
+checks long preview-copy/construct recording progress, zero hidden refreshes,
+hidden/unregistered partials, malformed constructor results isolated to the
+editor, and cancellation before page retirement. Panel loading still passes
+against the extracted shared helper.
+
+Navigation construction remains above 4000; metric construction at 3995 has no
+safe declaration margin and needs its own split. Multi-placement stable legacy
+preview accounting and the other modal/lifecycle/loader gates also remain open.
+No owner or ten-tick recording policy changed, and the deferred chart-recording
+stress assertions were not repaired or weakened.

@@ -282,6 +282,30 @@ function module.new(dependencies)
         end
     end
 
+    local function advanceConstruction(context, preview)
+        local entry = assert(context.pendingConstruction, "pending panel construction is missing")
+        local rect, message = panelRect(context, entry.placement)
+        local ok, done = false, message
+        if rect then
+            entry.container:set({ x = rect.x, y = rect.y, w = rect.w, h = rect.h })
+            ok, done = pcall(entry.module.construct, entry.instance, { x = 0, y = 0, w = rect.w, h = rect.h })
+            if ok and type(done) ~= "boolean" then
+                ok, done = false, "construct must return a boolean"
+            end
+        end
+        if not ok then
+            entry.container:clear()
+            lvgl.hide(entry.container)
+            context.pendingConstruction = nil
+            local _, reason = rejectPanel(context, entry.placement, preview, done)
+            return true, nil, reason, entry.container
+        elseif done then
+            context.pendingConstruction = nil
+            return true, publishPanel(context, entry)
+        end
+        return false
+    end
+
     --- Lines tokenized per widget callback.
     local TOKENIZE_LINES = 24
 
@@ -746,23 +770,7 @@ function module.new(dependencies)
         end
 
         if stage == "panel-construct" then
-            local entry = assert(context.pendingConstruction, "pending panel construction is missing")
-            local rect, message = panelRect(context, entry.placement)
-            local ok, done = false, message
-            if rect then
-                entry.container:set({ x = rect.x, y = rect.y, w = rect.w, h = rect.h })
-                ok, done = pcall(entry.module.construct, entry.instance, { x = 0, y = 0, w = rect.w, h = rect.h })
-                if ok and type(done) ~= "boolean" then
-                    ok, done = false, "construct must return a boolean"
-                end
-            end
-            if not ok then
-                entry.container:clear()
-                lvgl.hide(entry.container)
-                rejectPanel(context, entry.placement, false, done)
-            elseif done then
-                publishPanel(context, entry)
-            else
+            if not advanceConstruction(context, false) then
                 return true
             end
             context.pendingConstruction, context.pendingPlacement, context.panelMigrationVersion = nil, nil, nil
@@ -827,6 +835,8 @@ function module.new(dependencies)
         reservedFor = reservedFor,
         buildServices = buildServices,
         buildPanel = buildPanel,
+        preparePanel = preparePanel,
+        advanceConstruction = advanceConstruction,
         advanceLoad = advanceLoad,
         beginLoad = beginLoad,
     }
