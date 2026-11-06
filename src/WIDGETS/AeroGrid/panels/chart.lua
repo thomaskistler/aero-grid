@@ -90,6 +90,7 @@ local DURATIONS = { ["30s"] = 30, ["1m"] = 60, ["2m"] = 120, ["5m"] = 300, ["10m
 local COLORS = { "cyan", "orange", "green" }
 local LEGEND_FONTS = { MIDSIZE, 0, SMLSIZE }
 local PROJECTION_CAP = 7
+local POINT_RETIRE_CAP = 128
 local BREAK_WIDTH = 24
 local textCache = setmetatable({}, { __mode = "k" })
 
@@ -992,7 +993,7 @@ local function addPoint(job, run, at, value, x, y)
     end
 end
 
-local function finishRun(run)
+local function finishRun(run, bounded)
     flushColumn(run)
     if run.size == 1 then
         local first = run.pts[1]
@@ -1000,17 +1001,21 @@ local function finishRun(run)
         second[1], second[2] = first[1], first[2]
         run.pool[2], run.pts[2], run.size = second, second, 2
     end
-    for index = #run.pts, run.size + 1, -1 do
-        run.pts[index] = nil
+    -- Bounded projection leaves old coordinate-tail retirement to the apply stage.
+    if not bounded then
+        for index = #run.pts, run.size + 1, -1 do
+            run.pts[index] = nil
+        end
     end
 end
 
-local function prepare(context, item)
+local function prepare(context, item, bounded)
     local run = runFor(item, 1)
     run.boundary = nil
     local feed = item.feed
     local job = item.job or {}
     item.job = job
+    job.bounded = bounded == true
     job.index, job.last = feed.first, feed.last
     if item.snapshot then
         job.tailAt, job.tailValue, job.tailBroken, job.tailResumed =
@@ -1056,14 +1061,14 @@ local function projectPoint(job, item, at, value, broken, resumed, x, y)
         -- Coincident endpoints add no connector pixels. Sharing their native
         -- line avoids an object per arm cycle, while retaining every gap marker.
         if not coincident and (run.size > 0 or run.column) then
-            finishRun(run)
+            finishRun(run, job.bounded)
             job.runIndex = job.runIndex + 1
             run = runFor(item, job.runIndex)
             if resumed and job.previousAt >= job.start and at <= job.finish then
                 run.dotted = true
                 appendPixel(run, job.previousX, job.previousY)
                 appendPixel(run, x, y)
-                finishRun(run)
+                finishRun(run, job.bounded)
                 job.runIndex = job.runIndex + 1
                 run = runFor(item, job.runIndex)
             end
@@ -1088,7 +1093,7 @@ end
 local function project(context, item, limit)
     local job, feed = item.job, item.feed
     if job.geometryVersion ~= context.geometryVersion or job.index < feed.first then
-        prepare(context, item)
+        prepare(context, item, job.bounded)
     end
     if job.seekLow then
         for _ = 1, limit do
@@ -1112,7 +1117,7 @@ local function project(context, item, limit)
     end
     for _ = 1, limit do
         if job.index > job.last then
-            finishRun(item.runs[job.runIndex])
+            finishRun(item.runs[job.runIndex], job.bounded)
             item.runCount, item.applyIndex = job.runIndex, 1
             item.markerIndex, item.markerPhase = 1, "hide"
             item.drawnRevision, item.drawnVersion = job.revision, job.version
@@ -1189,10 +1194,10 @@ local function showMarker(marker)
     marker.active = true
 end
 
-applyMarkers = function(context, item)
+applyMarkers = function(context, item, limit)
     local job = item.job
     local changes = 0
-    for _ = 1, 16 do
+    for _ = 1, limit or 16 do
         local keys = item.markerPhase == "hide" and item.markerKeys or job.markerColumns
         local key = keys[item.markerIndex]
         if not key then
@@ -1325,15 +1330,24 @@ local function applyConnector(context, item, run)
     return false
 end
 
-local function applyRuns(context, item)
+local function applyRuns(context, item, units, bounded)
     local limit = math.max(item.runCount, #item.runs)
     local changes = 0
-    for _ = 1, 16 do
+    for _ = 1, units or 16 do
         local index = item.applyIndex
         if index > limit then
-            return applyMarkers(context, item)
+            return applyMarkers(context, item, bounded and 1 or nil)
         end
         local run = item.runs[index]
+        if bounded and index <= item.runCount then
+            local last = #run.pts
+            for point = last, math.max(run.size + 1, last - POINT_RETIRE_CAP + 1), -1 do
+                run.pts[point] = nil
+            end
+            if #run.pts > run.size then
+                return false
+            end
+        end
         if index <= item.runCount and run.size >= 2 and run.dotted then
             if not applyConnector(context, item, run) then
                 return false
@@ -1370,7 +1384,7 @@ local function applyRuns(context, item)
         end
     end
     if item.applyIndex > limit then
-        return applyMarkers(context, item)
+        return applyMarkers(context, item, bounded and 1 or nil)
     end
     return false
 end
@@ -1559,6 +1573,65 @@ function chart.readingStep(context, _, stage)
         end
     end
     return nil, true
+end
+
+chart.traceDecl = {
+    class = "normal",
+    exclusive = true,
+    first = "trace",
+    kinds = { steady = true },
+    stages = {
+        trace = { fixed = 0, perUnit = 410, maxUnits = 1 },
+        project = { fixed = 280, perUnit = 1160, maxUnits = 2 },
+        apply = { fixed = 0, perUnit = 760, maxUnits = 1 },
+    },
+}
+
+function chart.traceStageOf(context)
+    if context.pending then
+        return context.pending.job.projecting and "project" or "apply", context.pending.job.projecting and 2 or 1
+    end
+    return "trace", 1
+end
+
+function chart.traceStep(context, grant, stage)
+    context.used = 0
+    if stage ~= chart.traceStageOf(context) then
+        return nil, true
+    end
+    context.used = 1
+    if stage == "trace" then
+        for offset = 0, #context.series - 1 do
+            local index = (context.cursor + offset - 1) % #context.series + 1
+            local item = context.series[index]
+            if
+                item.feed
+                and (
+                    item.drawnVersion ~= context.version
+                    or item.drawnRevision ~= item.feed.plotRevision
+                    or item.drawnLow ~= item.low
+                    or item.drawnHigh ~= item.high
+                )
+            then
+                prepare(context, item, true)
+                context.pending = item
+                context.cursor = index % #context.series + 1
+                return nil, true
+            end
+        end
+    elseif stage == "project" then
+        context.pending.job.bounded = true
+        project(context, context.pending, grant)
+        context.used = grant
+        if not context.frameExpired then
+            return nil, true
+        end
+    else
+        if applyRuns(context, context.pending, 1, true) then
+            context.pending = nil
+        end
+        return nil, true
+    end
 end
 
 local function refreshPlot(context, creating)

@@ -18,7 +18,9 @@ local admission = assert(loadfile(root .. "/tests/support/scheduler_admission.lu
 assert(loadfile(root .. "/tests/support/edgetx.lua"))().constants()
 
 local function load(relative, ...)
-    return assert(loadfile(root .. "/src/WIDGETS/AeroGrid/" .. relative))(...)
+    local path = string.sub(relative, 1, 9) == "@support/" and root .. "/tests/support/" .. string.sub(relative, 10)
+        or root .. "/src/WIDGETS/AeroGrid/" .. relative
+    return assert(loadfile(path))(...)
 end
 
 -- The stub case only exercises the measurement itself (test_scheduler_measure.lua).

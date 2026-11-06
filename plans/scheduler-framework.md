@@ -1374,3 +1374,50 @@ not the module's production `decl`: frame capture, axis/grid work, grant-sized
 projection/application, markers and double-buffer publication still need their
 full stage adapter and measurements. Modal eligibility/accounting and the
 other R1/R2/R4/R5/R6 gates remain open before any owner flip.
+
+## 19. Chart trace grants and coordinate retirement (R1 subpipeline)
+
+The trace subpipeline separately selects/prepares a series, projects one or
+two source knots, and applies one run/marker unit. It shares the legacy
+projection, coalescing, point pools, resumed connectors and marker code.
+
+Projection's old `finishRun` also cleared every unused coordinate in a reused
+point array. A one-knot limit did not bound that cleanup. Bounded projection
+now leaves that tail for application, which retires at most 128 coordinates
+per step before sending the line to LVGL. Pooled point objects are retained,
+and no stale tail reaches a native line. The synchronous renderer retains its
+original complete-tail retirement.
+
+| Trace stage | Native worst instructions | Declared charge |
+|---|---:|---:|
+| Select/prepare (third series) | 325 | 410 |
+| Project one source knot | 1252 | 1440 |
+| Project two source knots | 2299 | 2600 |
+| Apply / bounded tail retirement | 638 | 760 |
+| Framework release | 242 | 420 |
+
+`chart-traces.lua` uses the real History service's packed point/block decoders,
+not mock decoder costs. Cases include rolling seek, axis breaks, expiry,
+coalesced/extrema projection at 32 consecutive cursors, end-of-run arrays of
+4096 coordinates, final/partial cleanup, connectors and markers. The shared
+API stand-ins are loaded from test support by both native and offline runners.
+Smaller selection/application steps remain natural-stage exceptions to the
+2240 useful-work target; the normal two-knot grant is above it.
+
+The trace integration test compares completed runs, coordinate lists, dotted
+connectors and active markers with the legacy frame for both one- and two-knot
+grants. It asserts the 128-coordinate cap, prohibits line publication during
+partial cleanup, and covers expired history and stale plans after reset.
+
+`traceDecl` is another subpipeline, not the production `decl`. The enclosing
+frame owner must bind frozen feeds/session, handle expiry/rollback and drive
+axis/grid/session markers and final double-buffer publication. These parts
+and measured modal/lifecycle accounting still gate the full adapter and owner
+changes. No production owner, recording cadence or deferred stress assertion
+has changed.
+
+Verification: trace/reading parity, existing chart unit/flight/preview/reset
+suites, all measured scheduler cases, Lua32 and the 20 audit-tool tests pass.
+Matched native mixed `chart-max` / `default-gallery` callbacks peak at
+11600 / 11845 instructions. The deferred recording stress failure still
+reproduces at the same line 192 and state recorded in section 18.

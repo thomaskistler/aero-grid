@@ -69,7 +69,9 @@ local function measureAll()
         local case = measure.open(
             assert(loadScript("/WIDGETS/AeroGrid/audit/cases/" .. name .. ".lua"))(),
             function(relative, ...)
-                return assert(loadScript("/WIDGETS/AeroGrid/" .. relative))(...)
+                local path = string.sub(relative, 1, 9) == "@support/" and "audit/" .. string.sub(relative, 10)
+                    or relative
+                return assert(loadScript("/WIDGETS/AeroGrid/" .. path))(...)
             end
         )
         results.cases[case.id] = measure.report(case, __count, __pause, scheduler)
