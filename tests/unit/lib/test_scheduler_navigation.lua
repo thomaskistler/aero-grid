@@ -285,4 +285,42 @@ do
     assert(not s:takeErrors(), "no room is not a navigation task failure")
 end
 
+do
+    local env = services.environment({})
+    local runtime = services.runtime(env)
+    runtime.host = {}
+    local arm = { key = "SF", available = true, fresh = true, value = false, updatedAt = 0 }
+    local reading = {
+        known = true, available = true, fresh = true, stale = false, updatedAt = 0,
+        raw = { lat = 47, lon = 8, delay = 0 },
+    }
+    runtime.byId.telemetry = { subscribe = function() return reading end }
+    runtime.byId.armed = { state = function() return arm end }
+    local navigation = navigationService.new(env, services, runtime)
+    navigation.tickElapsed = scheduler.elapsed
+    local view = navigation:subscribe("GPS", "SF", "first-arm")
+    local s = scheduler.new({ steady = 1250, background = 1130 })
+    local added, reason = s:add({
+        id = "service:navigation", decl = navigationService.decl, instance = navigation, due = 0,
+    })
+    assert(added, reason)
+    s:run("steady", 0, 0)
+    equal(view.homeStatus, "waiting")
+    equal(view.home, false)
+
+    arm.value, arm.updatedAt, reading.updatedAt = true, 20, 20
+    local revision = navigation.revision
+    s:run("steady", 20, scheduler.CEILING)
+    equal(navigation.revision, revision, "no room must not run Navigation")
+    equal(view.homeStatus, "waiting", "no room must leave first-arm capture pending")
+    equal(view.home, false)
+
+    s:run("steady", 21, 0)
+    equal(view.homeStatus, "captured", "an admitted release may capture the first arm")
+    equal(view.home, true)
+    equal(view.pilotLatitude, 47)
+    equal(view.pilotLongitude, 8)
+    assert(not s:takeErrors())
+end
+
 print("Scheduler navigation task parity passed")
