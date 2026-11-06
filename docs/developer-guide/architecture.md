@@ -480,6 +480,9 @@ documents and retain canonical broker releases, including on configuration
 errors. The synchronous `configure` API remains available for direct callers.
 The loader pauses after Flight construction to initialize and load the owning
 broker; other dashboards wait for that document before constructing Armed.
+After a model switch, a current-model member may become the document initializer
+without moving canonical scheduler ownership or releases. Pending loads bind to
+the broker epoch, so replaced loads cannot publish even after switching back.
 Started model publication survives replacement loading, while unfinished
 declaration work is discarded. Runtime loading never falls back to a
 synchronous settings read or registration tail.

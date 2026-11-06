@@ -420,7 +420,7 @@ local function loadLabel(token, context)
         local bound = context.dashboardLoader.workBound and context.dashboardLoader.workBound(context)
         if stage == "flight-load-wait" then
             local owner = context.flightLoading.owner
-            local current = owner:owningContext()
+            local current = owner:loadingContext()
             if current and current.flightLoading and not owner.documentLoaded then
                 local job = current.flightLoading.job
                 stage = stage .. ":shared:" .. tostring(current.stage)
@@ -997,6 +997,9 @@ end
 
 local function report(context)
     local errors = unexpectedErrors(context)
+    if config.flightModelSwitch then
+        gate(P.flightSwitchDone, "parked-owner model-switch loading did not complete")
+    end
     gate(not config.expectedError or P.expectedErrorSeen, "expected scenario error was not reported")
     if string.match(config.scenario, "^migration%-tasks%-") then
         local scheduling = context.schedulerHost
@@ -1071,6 +1074,7 @@ local function report(context)
                 done = P.sharedFlightDone == true,
                 hiddenLoaded = P.sharedFlightHidden and not P.sharedFlightHidden.stage,
             },
+            flightModelSwitch = config.flightModelSwitch and { done = P.flightSwitchDone == true },
             stats = labels,
             worst = (function()
                 local rows = {}
@@ -2164,6 +2168,73 @@ local function entry(kind, context, fn, e, t)
             report(context)
             return
         end
+    end
+    if config.flightModelSwitch and ready(context) and not P.flightSwitchDone then
+        local owner = context.flightBroker
+        if not P.flightSwitchContext then
+            local tasks = context.scheduler.byId
+            if not owner.schedulerEnabled or not tasks["service:flight"] or not tasks["service:smart"] then
+                P.flightSwitchEnrollment = (P.flightSwitchEnrollment or 0) + 1
+                gate(P.flightSwitchEnrollment <= 256, "canonical Flight tasks were not enrolled before model switch")
+                runCallback("background", context, backgroundFn)
+                return
+            end
+            P.flightSwitchTasks = { tasks["service:flight"], tasks["service:smart"] }
+            P.flightSwitchDue = {
+                context.scheduler:dueOf("service:flight"),
+                context.scheduler:dueOf("service:smart"),
+            }
+            local info = model.getInfo()
+            local changed = {}
+            for key, value in pairs(info) do
+                changed[key] = value
+            end
+            changed.filename = "audit-switched.yml"
+            model = setmetatable({
+                getInfo = function()
+                    return changed
+                end,
+            }, { __index = model })
+            owner.env.getInfo = model.getInfo
+            P.flightSwitchOwner = owner:owningContext()
+            runCallback("action:model-switch-create", context, function()
+                P.flightSwitchContext =
+                    createFn(context.zone, { Layout = context.layoutName, Theme = "modern-dark" }, context.path)
+            end)
+            return
+        end
+        local initializer = P.flightSwitchContext
+        if not P.flightSwitchObserver and initializer.stage ~= "flight-load" then
+            install(initializer)
+            runCallback("background", initializer, backgroundFn)
+            return
+        elseif not P.flightSwitchObserver then
+            gate(owner:loadingContext() == initializer, "new-model member did not claim document initialization")
+            runCallback("action:model-switch-observer", context, function()
+                P.flightSwitchObserver =
+                    createFn(context.zone, { Layout = context.layoutName, Theme = "modern-dark" }, context.path)
+            end)
+            return
+        end
+        local observer = P.flightSwitchObserver
+        local target = not ready(observer) and observer or initializer
+        install(target)
+        runCallback("background", target, backgroundFn)
+        gate(owner:owningContext() == P.flightSwitchOwner, "document initialization moved canonical ownership")
+        for index, id in ipairs({ "service:flight", "service:smart" }) do
+            gate(context.scheduler.byId[id] == P.flightSwitchTasks[index], "model initialization replaced canonical task")
+            gate(context.scheduler:dueOf(id) == P.flightSwitchDue[index], "model initialization moved canonical release")
+            gate(target.scheduler.byId[id] == nil, "model initializer enrolled duplicate canonical task")
+        end
+        if ready(initializer) and ready(observer) then
+            gate(
+                owner.documentLoaded and owner.document and owner.document.modelFilename == "audit-switched.yml",
+                "new-model settings were not published"
+            )
+            gate(#initializer.errors == 0 and #observer.errors == 0, "new-model loader reported an error")
+            P.flightSwitchDone = true
+        end
+        return
     end
     if not ready(context) then
         P.loaded = false

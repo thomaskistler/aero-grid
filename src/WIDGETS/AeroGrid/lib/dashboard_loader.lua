@@ -48,16 +48,22 @@ local sharedFlightStages = {
 local function sharedFlightContext(context)
     local work = context.flightLoading
     local owner = work and work.owner
-    local current = owner and owner:owningContext()
+    local current = owner and owner:loadingContext()
     if
-        owner and not owner.documentLoaded
-        and current and current ~= context
+        owner
+        and not owner.documentLoaded
+        and current
+        and current ~= context
         and current.flightFactory == context.flightFactory
         and context.flightFactory.broker == owner
-        and context.flightFactory.members[current] and context.flightFactory.members[context]
+        and context.flightFactory.members[current]
+        and context.flightFactory.members[context]
         and current.modelFilename == context.modelFilename
-        and not current.reloadState and not current.pageRetirement
-        and current.flightLoading and current.flightLoading.owner == owner
+        and not current.reloadState
+        and not current.pageRetirement
+        and current.flightLoading
+        and current.flightLoading.owner == owner
+        and (current.stage == "flight-identity" or current.flightLoading.epoch == owner.epoch)
         and sharedFlightStages[current.stage]
     then
         return current
@@ -524,6 +530,19 @@ function module.new(dependencies)
         end
 
         if string.sub(stage, 1, 7) == "flight-" then
+            local broker = context.flightBroker
+            local loading = context.flightLoading
+            if
+                stage ~= "flight-identity"
+                and broker
+                and (
+                    broker.filename and broker.filename ~= context.modelFilename
+                    or loading and loading.epoch and loading.epoch ~= broker.epoch
+                )
+            then
+                context.reloadState = "clear"
+                return true
+            end
             if stage == "flight-identity" then
                 local work = context.flightLoading
                 local owner = work.owner
@@ -537,9 +556,11 @@ function module.new(dependencies)
                 if owner.filename ~= filename then
                     owner:reset(filename)
                 end
+                owner:claimLoadingContext(context)
+                work.epoch = owner.epoch
                 if owner.documentLoaded then
                     context.flightLoading, context.stage = nil, "services"
-                elseif owner:owningContext() ~= context then
+                elseif owner:loadingContext() ~= context then
                     context.stage = "flight-load-wait"
                 else
                     context.stage = owner.store and "flight-load-begin" or "flight-store-module"
@@ -551,7 +572,7 @@ function module.new(dependencies)
                 local owner = context.flightLoading.owner
                 if owner.documentLoaded then
                     context.flightLoading, context.stage = nil, "services"
-                elseif owner:owningContext() == context then
+                elseif owner:loadingContext() == context then
                     context.stage = owner.store and "flight-load-begin" or "flight-store-module"
                 else
                     local current = sharedFlightHelp(context)

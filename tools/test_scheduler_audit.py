@@ -70,6 +70,14 @@ class InstrumentationTests(unittest.TestCase):
             self.assertTrue(audit.lua_literal(case["phases"]))
         self.assertIn("retained comment", cases["shared-flight-loading-edited"]["settingsDocument"])
 
+    def test_model_switch_loading_exercises_real_canonical_task_owners(self):
+        case = load_cli().scenarios()["shared-flight-model-switch"]
+        self.assertTrue(case["flightModelSwitch"])
+        self.assertTrue(case["flightTasks"])
+        self.assertTrue(case["settings"])
+        self.assertEqual(case["owners"], ["service:flight", "service:smart"])
+        self.assertTrue(case["phases"])
+
     def test_ordinary_reflow_separates_begin_wait_and_production_advances(self):
         cases = load_cli().scenarios()
         for panel in (*PANELS, "theme-showcase"):

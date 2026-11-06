@@ -241,6 +241,7 @@ function broker:reset(filename)
     self.filename, self.epoch = filename, self.epoch + 1
     self.session, self.runtime, self.smartRuntime, self.signature, self.output = nil, nil, nil, nil, nil
     self.document, self.loadError = nil, nil
+    self.loadingOwner = nil
     self.events, self.errors = {}, {}
     self.lastTick, self.readyAfterDisarm = nil, nil
     self.pendingAttach, self.proposalScan = nil, nil
@@ -1041,6 +1042,28 @@ flight.SMART_DECL = { class = "normal", stages = { run = { fixed = 0, perUnit = 
 
 function broker:owningContext()
     return self.context and self.context[1]
+end
+
+function broker:loadingContext()
+    return self.loadingOwner and self.loadingOwner[1] or self:owningContext()
+end
+
+--- A new-model member may initialize settings without moving scheduler releases.
+function broker:claimLoadingContext(host)
+    local current = self:loadingContext()
+    assert(
+        host.flightFactory and host.flightFactory.broker == self and self.members[host],
+        "Flight settings initialization requires a registered member"
+    )
+    if
+        not self.documentLoaded
+        and host.modelFilename == self.filename
+        and current
+        and current ~= host
+        and current.modelFilename ~= self.filename
+    then
+        self.loadingOwner = setmetatable({ host }, { __mode = "v" })
+    end
 end
 
 --- Loader enrollment must not depend on the dashboard's replaceable registry.

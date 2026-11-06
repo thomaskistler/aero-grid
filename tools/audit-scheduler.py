@@ -252,6 +252,8 @@ def scenarios():
         settingsDocument="version: 1\nmodelFilename: model1.yml\nrevision: 7\narmed: L64\n"
                          "sessionReset: L03\nflight:\n  flightSwitch: L64\n",
         phases=standard_phases())
+    result["shared-flight-model-switch"] = dict(result["metric-max"], flightModelSwitch=True,
+        settings=True, flightTasks=True, owners=["service:flight", "service:smart"], phases=standard_phases())
     for panel in (*PANELS, "theme-showcase"):
         base = result["metric-max"] if panel == "theme-showcase" else result[f"{panel}-max"]
         result[f"panel-reflow-{panel}"] = dict(base, phases=standard_phases() + [
@@ -1019,6 +1021,7 @@ def prepare(capture, name, spec, sd, mode="legacy"):
     config = {"scenario": name, "expectedPanels": spec["expected"], "phases": spec["phases"],
               "deterministicClock": spec.get("deterministicClock", False),
               "sharedFlightLoad": spec.get("sharedFlightLoad", False),
+              "flightModelSwitch": spec.get("flightModelSwitch", False),
               "sharedFlightRevision": spec.get("sharedFlightRevision", 0),
               "constructionParity": spec.get("constructionParity", False),
               "fullscreen": spec.get("fullscreen", False),
@@ -1065,7 +1068,7 @@ def run(capture, executable, library, name, spec, timeout, mode="legacy"):
         result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=timeout + 30)
     results = sd / "audit-results.json"
     if result.returncode != 0 or not results.exists():
-        raise RuntimeError(f"{name}: native run failed; inspect {directory / 'simulator.log'}")
+        raise RuntimeError(f"{name}: native run failed ({result.returncode}); inspect {directory / 'simulator.log'}")
     data = json.loads(results.read_text())
     if data.get("errors"):
         raise RuntimeError(f"{name}: widget errors: {data['errors']}")

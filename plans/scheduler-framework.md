@@ -4938,3 +4938,44 @@ valid samples or a larger maximum gap:
 ```
 python3 tools/audit-scheduler.py flight-smart-clock flight-smart-clock-flight-tasks --mode mixed --history-parity
 ```
+
+## 93. Model-switch Flight initialization
+
+Reproduced the parked old-model owner leaving new widgets in
+`flight-load-wait`. The broker now elects a weak document initializer through
+`claimLoadingContext(context)` / `loadingContext()` when its previous initializer
+belongs to the old model. This does not transfer canonical scheduler ownership.
+Same-model helper and cancellation behavior is unchanged.
+
+The identity atom captures the broker epoch. Stale later loader stages request
+reload before mutation; pending `beginLoad` jobs explicitly reject replacement,
+including an ABA model switch. Current-model observers help the elected job and
+never start a duplicate reader. Returning old widgets reuse its cached document.
+
+Validated on integrated `547f7a1` (including broker activation continuity), then
+combined with audit-only `56a9c42`. Lua53/int32 regressions cover nine parked-owner
+stages, the original `testMultipleScreens`, one-reader helping, stale publication
+and exact canonical task/deadline retention. Shared-module model-switch peak is
+5107 KiB on both widths against the unchanged 5120 KiB limit; resource stability
+and the full int32 scheduler suite pass.
+The full widget suite still stops earlier at
+`testSupportingRowsExplainTheBadge`; the identical assertion fails on unchanged
+`56a9c42`. Its original `testMultipleScreens` passes when selected independently.
+
+Actual-source native captures have empty error lists and completion assertions:
+
+| Case | Whole callback maximum | Load background maximum |
+|------|------------------------|-------------------------|
+| `shared-flight-model-switch` (Flight/Smart task owners) | 7985 | 2630 |
+| `shared-flight-loading` | 7453 | 2252 |
+| `shared-flight-loading-edited` | 7453 | 2361 |
+
+The model-switch capture enrolls canonical tasks before parking their host and
+checks unchanged task records/releases and no duplicate observer enrollment.
+Worst shared helper atoms are identity 317, read 786, parse 1578, build 1121,
+previous 1110 and publication 478, within their fitted reservations and 4000.
+Registration load-begin is 49 raw / 110 fitted (declaration raised 100 to 110);
+read/parse/build/previous are 706/1336/815/795, with fitted bounds
+830/1520/950/930. Framework cost is 241 against 420. The native whole-callback
+gate remains 15000; production owners, reset assertions and chart stress tests
+are unchanged.

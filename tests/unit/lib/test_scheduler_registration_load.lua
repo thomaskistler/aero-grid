@@ -104,6 +104,19 @@ end
 
 do
     local state = fixture("empty", 1, "valid")
+    local original = state.job
+    state.owner:reset("other.yml")
+    state.owner:reset(state.context.modelFilename)
+    local done, ok, message = state.registration.advance(original)
+    assert(done and not ok and string.find(message, "load was replaced", 1, true))
+    assert(
+        not state.owner.documentLoaded and not state.owner.document and not state.owner.loadError,
+        "an ABA model switch must not let an old load publish or poison its successor"
+    )
+end
+
+do
+    local state = fixture("empty", 1, "valid")
     state.runtime.byId.armed = nil
     assert(finish(state), "document loading precedes Armed construction")
     state.runtime.modelArmed = state.owner.document.armed

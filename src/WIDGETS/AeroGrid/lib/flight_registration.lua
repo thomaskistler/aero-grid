@@ -11,7 +11,7 @@ registration.BOUNDS = {
     declaration = 350,
     commit = 200,
     reject = 110,
-    ["load-begin"] = 100,
+    ["load-begin"] = 110,
     ["load-start"] = 400,
     ["publish-start"] = 400,
     publish = 400,
@@ -31,7 +31,7 @@ end
 function registration.beginLoad(context, store)
     local factory = context.flightFactory
     local owner = factory and factory.broker
-    if not owner or owner:owningContext() ~= context or not factory.members[context] then
+    if not owner or owner:loadingContext() ~= context or not factory.members[context] then
         return nil, "Only the owning Flight context can load model settings"
     elseif owner.documentLoaded then
         return { done = true, ok = not owner.loadError, error = owner.loadError }
@@ -43,6 +43,7 @@ function registration.beginLoad(context, store)
         context = context,
         factory = factory,
         owner = owner,
+        loadEpoch = owner.epoch,
         member = factory.members[context],
         document = context.document,
         runtime = context.serviceRuntime,
@@ -100,6 +101,9 @@ end
 
 local function advance(job)
     local context, owner = job.context, job.owner
+    if job.loadEpoch then
+        assert(owner.epoch == job.loadEpoch, "Flight model settings load was replaced")
+    end
     if job.stage ~= "publish" then
         assert(
             context.flightFactory == job.factory
@@ -113,7 +117,10 @@ local function advance(job)
     if owner and job.stage ~= "publish" then
         assert(owner.filename == job.filename and owner:identity() == job.filename, "Model changed; reload dashboard")
         if job.store then
-            assert(owner:owningContext() == context, "Flight registration owner was replaced")
+            assert(
+                (job.loadEpoch and owner:loadingContext() or owner:owningContext()) == context,
+                "Flight registration owner was replaced"
+            )
         end
     end
     if job.stage == "retained" then
