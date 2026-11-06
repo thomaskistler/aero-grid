@@ -4,6 +4,7 @@
 local showcase = {
     id = "theme-showcase",
     apiVersion = 1,
+    idle = true,
     supportedSpans = { "4x4" },
     settings = {},
 }

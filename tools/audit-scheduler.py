@@ -281,6 +281,10 @@ def scenarios():
         "phases": standard_phases(refreshes=800),
     }
     result["session-reset-tasks"] = dict(result["session-reset"], owners=["panel:chart", "panel:metric"])
+    result["theme-showcase-tasks"] = dict(
+        result["host-diagnostics-max"], owners=["panel:theme-showcase"], phases=standard_phases(),
+        layout=custom_layout(["  - id: showcase\n    type: theme-showcase\n    col: 0\n    row: 0\n"
+                              "    colSpan: 4\n    rowSpan: 4\n"]))
     result["chart-full"] = {
         "recipe": "metric", "layout": custom_layout([chart_cell("chart-a", 0, 4, (1, 2, 3))]), "expected": 1,
         "sources": 3, "settings": True,

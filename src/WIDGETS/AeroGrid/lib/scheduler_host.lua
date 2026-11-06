@@ -123,6 +123,7 @@ function host.attach(context, options)
         waiting = {},
         registeredTasks = {},
         panelTasks = {},
+        idlePanels = {},
         serviceDeclarations = {},
         resetReleases = {},
     }, host)
@@ -233,7 +234,8 @@ function host:verify(context)
         local pending = self.pendingPanels and self.pendingPanels[entry]
         local message
         if owner == "new" then
-            if not entry.failed and not pending and (not task or not self.scheduler.byId[task.id]) then
+            local idle = rawget(entry.module, "idle") == true and context.panelHost.isIdle(entry.module)
+            if not idle and not entry.failed and not pending and (not task or not self.scheduler.byId[task.id]) then
                 message = key .. " is owned by the scheduler but has no task"
             end
         else
@@ -252,13 +254,24 @@ end
 ---@param context table
 ---@return string?
 function host:syncPanels(context)
-    local present = {}
+    local present, idlePanels = {}, {}
+    if next(self.idlePanels) then
+        self.panelSetup = host.PANEL_ENROLL_COST
+    end
     for _, entry in ipairs(context.panels) do
         if self.owners["panel:" .. entry.module.id] == "new" and not entry.failed then
             if type(entry.instance) ~= "table" then
                 return "panel:" .. entry.module.id .. " is owned by the scheduler but has no task instance"
             end
-            present[entry] = true
+            local idle = rawget(entry.module, "idle") == true
+            if idle and not context.panelHost.isIdle(entry.module) then
+                return "panel:" .. entry.module.id .. " declares idle but has periodic work"
+            end
+            present[entry] = idle and "idle" or true
+            if idle then
+                self.panelSetup = host.PANEL_ENROLL_COST
+                idlePanels[entry] = true
+            end
             rawset(entry.instance, "schedulerOwned", true)
         elseif type(entry.instance) == "table" then
             rawset(entry.instance, "schedulerOwned", nil)
@@ -269,16 +282,21 @@ function host:syncPanels(context)
             rawset(entry.instance, "schedulerOwned", nil)
         end
     end
-    for entry, task in pairs(self.panelTasks) do
+    for entry in pairs(self.idlePanels) do
         if not present[entry] then
-            self.scheduler:remove(task.id)
             rawset(entry.instance, "schedulerOwned", nil)
+        end
+    end
+    for entry, task in pairs(self.panelTasks) do
+        if not present[entry] or present[entry] == "idle" then
+            self.scheduler:remove(task.id)
+            rawset(entry.instance, "schedulerOwned", present[entry] and true or nil)
             self.panelTasks[entry] = nil
         end
     end
     local enrolled, pending = false, {}
     for _, entry in ipairs(context.panels) do
-        if present[entry] and not self.panelTasks[entry] then
+        if present[entry] == true and not self.panelTasks[entry] then
             if enrolled then
                 pending[entry] = true
             else
@@ -306,6 +324,7 @@ function host:syncPanels(context)
         end
     end
     self.pendingPanels = next(pending) and pending or nil
+    self.idlePanels = idlePanels
 end
 
 --- A new layout or service registry replaces the service instances: drop the tasks

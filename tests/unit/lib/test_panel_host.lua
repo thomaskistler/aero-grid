@@ -4,6 +4,7 @@ local root = (... and ... ~= "" and ...) or "."
 
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local panelHost = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/panel_host.lua"))()
+assert(type(panelHost.isIdle) == "function" and not panelHost.isIdle(nil))
 
 local function testPanelContract()
     local valid = { id = "demo", apiVersion = 1, create = function() end }
@@ -30,6 +31,19 @@ local function testPanelContract()
     for _, cost in ipairs({ 0, 7, 1.5, "6", 0 / 0 }) do
         rejects({ id = "demo", apiVersion = 1, create = function() end, refreshCost = cost }, "demo", "refreshCost")
     end
+    local idle = { id = "demo", apiVersion = 1, create = function() end, idle = true }
+    assert(panelHost.validateModule(idle, "demo") and panelHost.isIdle(idle))
+    assert(not pcall(panelHost.task, { module = idle, instance = {} }))
+    for _, key in ipairs({ "decl", "refresh", "step", "stageOf", "background" }) do
+        idle[key] = key == "decl" and {} or function() end
+        rejects(idle, "demo", "idle panel cannot declare periodic work")
+        assert(not panelHost.isIdle(idle))
+        idle[key] = nil
+    end
+    idle.idle = "true"
+    rejects(idle, "demo", "idle must be a boolean")
+    idle.idle = false
+    assert(panelHost.validateModule(idle, "demo") and not panelHost.isIdle(idle))
 end
 
 local function testSupportedSpans()

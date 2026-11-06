@@ -2700,3 +2700,31 @@ reflows, log-viewer lifecycle callbacks or shared logging append/demand work
 outside this snapshot path. Production ownership, ten-tick recording policy,
 deferred stress assertions and remaining modal/lifecycle/Flight/Smart gates
 are unchanged.
+
+## 41. Explicit idle-panel admission (production owner unchanged)
+
+Panels may declare `idle = true` only when they have no refresh, background,
+step, stage query or task declaration. The contract rejects contradictory or
+non-boolean declarations. Theme Showcase uses this marker; lifecycle/event
+callbacks remain separate work and are not exempted from their own gates.
+
+The host retains ownership intent for idle placements without registering a
+no-op task or consuming the one-active-placement enrollment slot. It tracks
+idle placements separately so retirement, failure, return to legacy ownership
+and transitions to/from an actual task clear or retain the marker correctly.
+Synchronization reserves the existing 4000 setup charge; ordinary idle callbacks
+do not retain that charge. Missing task declarations are not implicitly idle.
+
+The native fixture measures complete `ready` calls at one/four/sixteen placements,
+including admission, retirement, legacy return and active/idle transitions.
+Raw field inspection avoids module metamethods and keeps the worst complete
+body at 2791 instructions, with a fitted normal bound of 3130, below the unchanged
+4000 atom cap. The real isolated Theme Showcase owner image peaks at 10472
+whole-callback instructions and contains no panel task. Its synchronous
+constructor/reflow admission remains a separate R6 concern; production ownership
+is unchanged.
+
+```sh
+python3 tools/audit-scheduler.py --framework idle-panels --timeout 180
+python3 tools/audit-scheduler.py theme-showcase-tasks --timeout 180
+```

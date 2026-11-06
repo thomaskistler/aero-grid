@@ -24,6 +24,7 @@
 ---@field update? fun(instance: any, rect: table, settings: table)
 ---@field refresh? fun(instance: any)
 ---@field decl? table Scheduler declaration for a migrated panel.
+---@field idle? boolean Explicitly declares no periodic refresh or background work.
 ---@field step? fun(instance: any, grant: integer, stage: string, now: integer): integer?, boolean?
 ---@field stageOf? fun(instance: any): string, integer?
 --- A numeric refresh result selects the next interval in 10ms ticks.
@@ -76,6 +77,16 @@ local function field(module, key)
     return value
 end
 
+function panelHost.isIdle(module)
+    return type(module) == "table"
+        and rawget(module, "idle") == true
+        and rawget(module, "decl") == nil
+        and rawget(module, "refresh") == nil
+        and rawget(module, "step") == nil
+        and rawget(module, "stageOf") == nil
+        and rawget(module, "background") == nil
+end
+
 --- Verify a loaded module satisfies the panel contract.
 ---@param module any Value returned by the panel's Lua chunk.
 ---@param typeName string Panel type requested by the layout.
@@ -104,6 +115,12 @@ function panelHost.validateModule(module, typeName)
         local callback = field(module, name)
         if callback ~= nil and type(callback) ~= "function" then
             return false, name .. " must be a function"
+        end
+        local idle = field(module, "idle")
+        if idle ~= nil and type(idle) ~= "boolean" then
+            return false, "idle must be a boolean"
+        elseif idle and not panelHost.isIdle(module) then
+            return false, "an idle panel cannot declare periodic work"
         end
     end
 
@@ -315,6 +332,7 @@ end
 ---@param entry AeroGridPanelEntry
 ---@return table
 function panelHost.task(entry)
+    assert(not field(entry.module, "idle"), "an idle panel has no task")
     assert(type(entry.module.decl) == "table", "panel has no task declaration")
     assert(type(entry.module.step) == "function", "panel has no task step")
     assert(type(entry.instance) == "table", "panel has no task instance")

@@ -390,6 +390,10 @@ and clears it on retirement, failure or return to legacy ownership. Flight
 Counter uses it to suppress its legacy background painting before admission as
 well as after; legacy-owned counters retain their existing background behavior.
 These adapters do not change production ownership or waive lifecycle gates.
+Panels with no periodic work may declare `idle = true` instead of a task.
+The contract rejects combining it with refresh/background callbacks or scheduler
+stages. Idle placements retain ownership/retirement tracking but register no
+no-op tasks; synchronization is charged, not steady idle callbacks.
 
 Put the module at `panels/<type>.lua` and reference that type in a layout.
 Regular panels declare `supportedSpans = { "any" }` and adapt their contents to

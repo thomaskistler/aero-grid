@@ -134,6 +134,11 @@ class ScenarioTests(unittest.TestCase):
                 self.assertEqual(case["logEntries"], 256 if section == "log" else 0)
                 self.assertEqual(case["diagnosticsSources"], 8 if section == "sources" else 0)
 
+    def test_idle_showcase_ownership_is_isolated(self):
+        case = self.cli.scenarios()["theme-showcase-tasks"]
+        self.assertEqual(case["owners"], ["panel:theme-showcase"])
+        self.assertEqual(case["expected"], 1)
+
     def test_every_panel_is_audited_at_its_smallest_and_largest_span(self):
         scenarios = self.cli.scenarios()
         for panel in PANELS:

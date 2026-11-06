@@ -237,4 +237,71 @@ do
     assert(host.legacy.spent == 0, "steady callbacks do not retain the setup reservation")
 end
 
+do
+    local context, host, add, run = fixture()
+    local idleModule = { id = "sample", idle = true }
+    local first, active, last = add("idle-first"), add("active"), add("idle-last")
+    first.module, last.module = idleModule, idleModule
+    run()
+    assert(active.instance.runs == 1, "idle placements do not consume the enrollment slot")
+    assert(first.instance.schedulerOwned and last.instance.schedulerOwned)
+    assert(not host.panelTasks[first] and not host.panelTasks[last] and not host.pendingPanels)
+    assert(host.scheduler.count == 1 and host:verify(context) == nil)
+    now = now + 10
+    run("background")
+    assert(active.instance.runs == 1 and not host.panelTasks[first])
+    local activeModule = active.module
+    active.module, context.panelTasksDirty = idleModule, true
+    run()
+    assert(host.scheduler.count == 0 and not host.panelTasks[active])
+    assert(active.instance.schedulerOwned and host.panelSetup == scheduling.PANEL_ENROLL_COST)
+    active.module, context.panelTasksDirty = activeModule, true
+    run()
+    assert(host.panelTasks[active] and active.instance.runs == 2, "leaving idle enrolls a genuine task")
+    context.panels = { active }
+    run()
+    assert(not first.instance.schedulerOwned and not last.instance.schedulerOwned)
+    host.owners["panel:sample"] = "legacy"
+    assert(host:syncPanels(context) == nil)
+    assert(not active.instance.schedulerOwned and host.scheduler.count == 0)
+end
+
+do
+    local context, host, add, run = fixture()
+    local entries = {}
+    for index = 1, 16 do
+        entries[index] = add("idle-" .. index)
+        entries[index].module = { id = "sample", idle = true }
+    end
+    run()
+    assert(host.scheduler.count == 0 and not host.pendingPanels and host.panelSetup == scheduling.PANEL_ENROLL_COST)
+    run()
+    assert(host.panelSetup == 0, "idle checks are charged only when synchronization is needed")
+    assert(host:verify(context) == nil)
+    for _, entry in ipairs(entries) do
+        assert(entry.instance.schedulerOwned)
+    end
+    context.panels = {}
+    run()
+    for _, entry in ipairs(entries) do
+        assert(not entry.instance.schedulerOwned)
+    end
+end
+
+do
+    local context, host, add, _, errors = fixture()
+    local entry = add("not-idle")
+    entry.module = { id = "sample", idle = true, refresh = function() end }
+    assert(not host:ready(context))
+    assert(string.find(errors[1], "declares idle but has periodic work", 1, true))
+    assert(host.scheduler.count == 0)
+end
+
+do
+    local context, host, add = fixture()
+    local entry = add("missing-task")
+    entry.module = { id = "sample" }
+    assert(not host:ready(context), "a missing task is not an implicit idle declaration")
+end
+
 print("Scheduler panel lifecycle passed")
