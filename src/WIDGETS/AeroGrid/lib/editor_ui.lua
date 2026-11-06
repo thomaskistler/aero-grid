@@ -147,6 +147,20 @@ function uiModule.renderWorkBound(state)
     end
 end
 
+function uiModule.drawerWorkBound(context)
+    local state = context.editorUi
+    if
+        state.drawerBuild
+        and not state.session.initializing
+        and not state.previewPending
+        and not state.previewRefresh
+        and not state.exitCommand
+        and not state.renderStage
+    then
+        return context.editorDrawerModule.workBound(state)
+    end
+end
+
 local function advanceRender(context, state)
     local stage = state.renderStage
     if stage == 1 then

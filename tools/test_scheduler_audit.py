@@ -201,6 +201,22 @@ class ScenarioTests(unittest.TestCase):
             self.assertEqual(scenarios[name + "-tasks"]["owners"], [f"panel:{panel}"])
             self.assertEqual(scenarios[name + "-tasks"]["phases"], scenarios[name]["phases"])
 
+    def test_drawer_scenarios_require_completed_root_and_nested_construction(self):
+        scenarios = self.cli.scenarios()
+        for panel in ("navigation", "metric", "chart", "state", "rx-battery", "output",
+                      "service-probe", "host-diagnostics"):
+            spec = scenarios[f"editor-drawer-{panel}"]
+            self.assertTrue(spec["fullscreen"])
+            self.assertEqual(spec["expected"], 1)
+            self.assertNotIn("owners", spec)
+            self.assertEqual([phase["action"] for phase in spec["phases"] if "action" in phase],
+                             ["open-editor", "open-drawer", "check-drawer", "close-editor"])
+        for panel in ("metric", "chart", "state"):
+            spec = scenarios[f"editor-entry-{panel}"]
+            self.assertEqual([phase["action"] for phase in spec["phases"] if "action" in phase],
+                             ["open-editor", "open-drawer", "check-drawer",
+                              "open-entry-drawer", "check-drawer", "close-editor"])
+
     def test_run_requires_measured_actions_and_requests_native_fullscreen(self):
         spec = {"phases": [{"action": "open-editor"}], "fullscreen": True}
         for measured in (False, True):

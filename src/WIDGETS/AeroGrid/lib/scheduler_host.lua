@@ -102,6 +102,7 @@ host.OVERHEAD = {
     ["modal-menu"] = 2400,
     ["modal-location"] = 2400,
     ["editor-render"] = 2400,
+    ["editor-drawer"] = 2400,
 }
 
 host.SERVICE_KINDS = {
@@ -111,6 +112,7 @@ host.SERVICE_KINDS = {
     ["modal-menu"] = true,
     ["modal-location"] = true,
     ["editor-render"] = true,
+    ["editor-drawer"] = true,
 }
 
 --- Reserve registration/validation before admitting scheduled work.

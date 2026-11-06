@@ -3067,3 +3067,46 @@ Model settings cold-description construction callback above its mock budget;
 that separate R5 bound remains under correction. The unmodified legacy
 16-Metric dashboard before opening the editor still reaches 25881, so these
 measurements do not close ordinary panel ownership or R5/R6 integration gates.
+## 50. Bounded editor drawer construction (R5 slice)
+
+Drawer construction no longer relayouts every preceding control after adding
+each field. It constructs one field per advance, then lays out at most four
+rows, including conditional visibility and error labels. Controls remain
+inactive until layout finishes. Construction reuses its resolved configuration;
+live commands still resolve current settings. Closing invalidates every cursor
+and releases the construction snapshot.
+
+Only these advances inherit service eligibility under `editor-drawer` with
+2400 host overhead: field construction reserves 1700, four-row layout 500,
+and transition to layout 200. Higher-priority initialization, preview, painting
+and exit commands cannot borrow those bounds. Form generation and drawer
+commands are not admitted.
+
+The native fixture covers every control family, 0/16/128 preceding controls,
+three widths, hidden rows and error placement. Its construction/layout/transition
+maxima are 360/356/120 instructions. Real root and nested drawers reach
+1330/197/10 respectively; every measured atom fits its declaration and 4000.
+The largest complete admitted drawer callback is 6897, including continuing
+History work and no hidden panel refresh. Eight root scenarios peak at
+9223/10414/9532/9223/9223/9223/9223/9223 for Metric/Chart/Navigation/State/
+RX Battery/Output/Service Probe/Host Diagnostics; nested Metric/Chart/State
+scenarios peak at 9223/12974/9223 across all callback kinds.
+
+```sh
+python3 tools/audit-scheduler.py --framework editor-drawer --timeout 180
+python3 tools/audit-scheduler.py editor-drawer-metric editor-drawer-chart editor-drawer-navigation editor-drawer-state editor-drawer-rx-battery editor-drawer-output editor-drawer-service-probe editor-drawer-host-diagnostics editor-entry-metric editor-entry-chart editor-entry-state --timeout 180
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+make test-lua32
+```
+
+Drawer unit tests check final row/error geometry, cancellation, frozen
+visibility and the four-row limit. Editor UI tests reject higher-priority
+admission; host tests exclude panels and background-only services. Native
+actions now retain assertion failures in audit errors rather than aborting
+without a report.
+
+Opening remains an explicit atom gate: native form/dialog generation reaches
+7466, although these scenarios stay below the whole-callback ceiling. Settings
+save/cancel, editor domain/input commands and arbitrary geometry synchronization
+also remain gates. No production owner, recording policy or deferred stress
+assertion changed.

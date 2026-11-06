@@ -1006,15 +1006,27 @@ appPage = context.page
 widget.lvglMock.setFullScreen(true)
 open()
 state = context.editorUi
-context.editorDrawerModule.open(context, state, "configure")
-settleDrawer()
-local dismissedDialog = state.nativeDrawer
-assert(dismissedDialog.registeredParent, "configuration dialog is registered under its host")
-lvgl.close(dismissedDialog)
-settleDrawer()
-equal(dismissedDialog.invalid, true, "closed native dialog wrapper is unregistered")
-equal(state.nativeDrawerHost, nil, "dialog host is released")
-equal(context.nativeDialogsCreated, nil, "hosted dialogs need no host-wide reload")
+for _, stage in ipairs({ "fields", "layout", "complete" }) do
+    context.editorDrawerModule.open(context, state, "configure")
+    if stage == "complete" then
+        settleDrawer()
+    elseif stage == "layout" then
+        for _ = 1, 150 do
+            refresh()
+            if state.drawerLayout then break end
+        end
+        assert(state.drawerLayout, "native cancellation reaches partial layout")
+    end
+    local dismissedDialog = state.nativeDrawer
+    assert(dismissedDialog.registeredParent, "configuration dialog is registered under its host")
+    lvgl.close(dismissedDialog)
+    assert(not state.drawerBuild and not state.drawerLayout and not state.drawerBuildConfig,
+        "native Return cancels every construction stage before its objects retire")
+    settleDrawer()
+    equal(dismissedDialog.invalid, true, "closed native dialog wrapper is unregistered")
+    equal(state.nativeDrawerHost, nil, "dialog host is released")
+    equal(context.nativeDialogsCreated, nil, "hosted dialogs need no host-wide reload")
+end
 exitWith("Save")
 settleSave()
 widget.lvglMock.setFullScreen(false)

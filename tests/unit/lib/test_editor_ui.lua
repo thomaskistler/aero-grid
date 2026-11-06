@@ -214,5 +214,27 @@ for target = 1, 6 do
     assert(context.editorUi == nil and not ui.advance(context), "closed partial render must not resume")
 end
 
+do
+    local state = { session = {}, drawerBuild = 1 }
+    local context = {
+        editorUi = state,
+        editorDrawerModule = { workBound = function(candidate)
+            assert(candidate == state)
+            return 1700
+        end },
+    }
+    assert(ui.drawerWorkBound(context) == 1700)
+    for _, key in ipairs({ "previewPending", "previewRefresh", "exitCommand", "renderStage" }) do
+        state[key] = true
+        assert(ui.drawerWorkBound(context) == nil, "higher-priority work must not borrow a drawer bound")
+        state[key] = nil
+    end
+    state.session.initializing = true
+    assert(ui.drawerWorkBound(context) == nil)
+    state.session.initializing = nil
+    state.drawerBuild = nil
+    assert(ui.drawerWorkBound(context) == nil, "ordinary drawer commands have no construction eligibility")
+end
+
 lvgl = previousLvgl
 print("editor UI construction: staged geometry/publication, errors, resumed drafts and cancellation passed")

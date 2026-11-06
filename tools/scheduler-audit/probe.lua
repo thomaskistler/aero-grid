@@ -111,6 +111,12 @@ local function finish(label, raw, leak)
             gate(cost <= P.editorRenderBounds[stage == 6 and "finish" or "rows"],
                 label .. " exceeds the editor paint charge: " .. cost)
         end
+        local drawerStage = string.match(label, "^editor:drawer:advance:(%a+)")
+        local drawerBound = drawerStage and P.editorDrawerBounds and P.editorDrawerBounds[drawerStage]
+        if drawerBound then
+            gate(cost <= 4000, label .. " exceeds the drawer atom cap: " .. cost)
+            gate(cost <= drawerBound, label .. " exceeds the drawer work charge: " .. cost)
+        end
         local editorPrefix = "editor:advanceEditor:"
         if string.sub(label, 1, #editorPrefix) == editorPrefix then
             record("editor:advanceEditor", cost, own, units > 0 and units or 1, children)
@@ -343,6 +349,23 @@ local function install(context)
     end
     local runtime = context.serviceRuntime
     P.editorRenderBounds = context.editorUiModule and context.editorUiModule.RENDER_BOUNDS
+    local drawer = context.editorDrawerModule
+    if drawer then
+        P.editorDrawerBounds = drawer.WORK_BOUNDS
+        wrapField(drawer, "open", "editor:drawer:open")
+        wrapField(drawer, "advance", function(token, _, state)
+            if token then
+                return "editor:drawer:advance:" .. token
+            end
+            if state.drawerLayout then
+                return "layout"
+            elseif state.drawerBuild then
+                return state.drawerBuild <= #state.drawerFields and "build:" .. tostring(state.drawerFields[state.drawerBuild].type)
+                    or "finish"
+            end
+            return "command"
+        end)
+    end
     if context.diagnosticsLog then
         wrapField(context.diagnosticsLog, "startSnapshot", "modal:log:freeze")
         wrapField(context.diagnosticsLog, "advanceSnapshot", "modal:log:snapshot")
@@ -641,6 +664,29 @@ local actions = {
     ["check-render"] = function(context)
         assert(context.editorUi and not context.editorUi.renderStage, "editor rendering must complete")
     end,
+    ["open-drawer"] = function(context)
+        refreshFn(context, EVT_VIRTUAL_ENTER)
+        assert(context.editorUi and context.editorUi.drawerBuild)
+    end,
+    ["check-drawer"] = function(context)
+        local state = assert(context.editorUi)
+        assert(state.nativeDrawer and not state.drawerBuild and not state.drawerLayout
+            and not state.renderStage, "native drawer construction must finish")
+        assert(#state.drawerControls == #state.drawerFields)
+    end,
+    ["open-entry-drawer"] = function(context)
+        local state = assert(context.editorUi)
+        for _, field in ipairs(state.drawerFields) do
+            if field.action == "item" then
+                context.editorDrawerModule.open(context, state, "configure", field.key, field.index, field.itemPath)
+                return
+            elseif field.action == "group" then
+                context.editorDrawerModule.open(context, state, "configure", nil, nil, nil, field.drawerGroup)
+                return
+            end
+        end
+        error("native drawer scenario has no nested entry")
+    end,
     ["close-editor"] = function(context)
         assert(context.editorUi and context.editorSession and not context.editorSession.dirty)
         context.editorUiModule.close(context, false)
@@ -685,6 +731,13 @@ local actions = {
     end,
 }
 
+for name, action in pairs(actions) do
+    actions[name] = function(context)
+        local ok, message = pcall(action, context)
+        gate(ok, "action " .. name .. ": " .. tostring(message))
+    end
+end
+
 local function callbackSurface(kind, context)
     if kind ~= "refresh" then
         return nil
@@ -699,6 +752,10 @@ local function callbackSurface(kind, context)
         end
         if ui.renderStage then
             return "editor-render:" .. tostring(ui.renderStage)
+        end
+        if ui.drawerBuild then
+            return "editor-drawer:" .. (ui.drawerLayout and "layout"
+                or ui.drawerBuild <= #ui.drawerFields and "build" or "finish")
         end
         if ui.previewRefresh then
             local action = ui.previewRefresh.actions[ui.previewRefresh.index]
@@ -759,7 +816,8 @@ local function runCallback(kind, context, fn, e, t)
             end
         end
     end
-    local paintSurface = surface and string.match(surface, "^editor%-render:[2-6]$")
+    local paintSurface = surface and (string.match(surface, "^editor%-render:[2-6]$")
+        or string.match(surface, "^editor%-drawer:"))
     if kind == "refresh" and (paintSurface or string.sub(config.scenario, 1, 6) == "modal-" and surface) then
         gate(total <= 15000, surface .. " exceeds the complete callback ceiling: " .. total)
         for _, label in ipairs(topLabels) do

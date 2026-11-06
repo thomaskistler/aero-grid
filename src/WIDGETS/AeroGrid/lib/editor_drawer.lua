@@ -1,6 +1,15 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 local drawer = { RUNTIME_API = 1 }
+drawer.WORK_BOUNDS = { build = 1700, layout = 500, finish = 200 }
+
+function drawer.workBound(state)
+    if state.drawerLayout then
+        return drawer.WORK_BOUNDS.layout
+    elseif state.drawerBuild then
+        return state.drawerBuild <= #state.drawerFields and drawer.WORK_BOUNDS.build or drawer.WORK_BOUNDS.finish
+    end
+end
 
 local function current(state, field)
     local placement = state.session.draft.panels[state.session.selected]
@@ -67,6 +76,7 @@ local function closeDialog(state)
     state.nativeDrawer = nil
     state.drawerGeneration = (state.drawerGeneration or 0) + 1
     state.drawerBuild = nil
+    state.drawerLayout, state.drawerLayoutY, state.drawerBuildConfig = nil, nil, nil
     if dialog then
         state.drawerClosing = true
         lvgl.close(dialog)
@@ -177,17 +187,17 @@ end
 
 local function fieldsFor(state, listKey, itemIndex, itemPath, groupKey)
     local editor = state.handlers.editor
-    local fields, fieldError
+    local fields, config
     if groupKey then
-        fields, fieldError = editor.drawerFields(state.session, groupKey)
+        fields, config = editor.drawerFields(state.session, groupKey)
     else
-        fields, fieldError = editor.formFields(state.session)
+        fields, config = editor.formFields(state.session)
     end
     if not fields then
-        error(fieldError)
+        error(config)
     end
     if groupKey then
-        return fields
+        return fields, config
     end
     local result = {}
     local selected = itemPath or (listKey and { itemIndex } or {})
@@ -202,7 +212,6 @@ local function fieldsFor(state, listKey, itemIndex, itemPath, groupKey)
             end
         end
         if matches and field.type == "table-list" then
-            local _, config = editor.settings(state.session)
             result[#result + 1] = {
                 label = field.entryLabel or string.gsub(field.label, " entries$", ""),
                 type = "section",
@@ -262,7 +271,7 @@ local function fieldsFor(state, listKey, itemIndex, itemPath, groupKey)
     else
         result[#result + 1] = { label = "Remove panel", action = "remove" }
     end
-    return editor.orderFields(result, listKey ~= nil)
+    return editor.orderFields(result, listKey ~= nil), config
 end
 
 function drawer.open(context, state, mode, listKey, itemIndex, itemPath, groupKey)
@@ -320,11 +329,12 @@ function drawer.open(context, state, mode, listKey, itemIndex, itemPath, groupKe
     if itemPath and #itemPath > 1 then
         title = title .. " / State " .. itemPath[#itemPath]
     end
-    local fields = fieldsFor(state, listKey, itemIndex, itemPath, groupKey)
+    local fields, config = fieldsFor(state, listKey, itemIndex, itemPath, groupKey)
     state.drawerListKey, state.drawerItemIndex, state.drawerGroupKey = listKey, itemIndex, groupKey
     state.drawerItemPath = itemPath
     state.drawerFields, state.drawerControls = fields, {}
     state.drawerBuild = 1
+    state.drawerBuildConfig = config
     state.drawerControlHeight = lvgl.UI_ELEMENT_HEIGHT or 32
     state.drawerPadding = math.floor(state.drawerControlHeight / 16 + 0.5)
     state.drawerRowHeight = state.drawerControlHeight + state.drawerPadding * 2
@@ -341,6 +351,7 @@ function drawer.open(context, state, mode, listKey, itemIndex, itemPath, groupKe
                     state.nativeDrawer = nil
                     retireDialogHost(state)
                     state.drawerBuild = nil
+                    state.drawerLayout, state.drawerLayoutY, state.drawerBuildConfig = nil, nil, nil
                     local command = {
                         action = (listKey or groupKey) and "parent" or "back",
                         key = listKey,
@@ -488,7 +499,11 @@ local function visible(state, field)
     if not condition then
         return true
     end
-    local _, config = state.handlers.editor.settings(state.session)
+    local config = state.drawerBuild and state.drawerBuildConfig
+    if not config then
+        local _, resolved = state.handlers.editor.settings(state.session)
+        config = resolved
+    end
     if type(condition) == "function" then
         return condition(config)
     end
@@ -502,9 +517,11 @@ local function visible(state, field)
     return matches
 end
 
-local function relayout(state)
-    local y = state.drawerPadding * 2
-    for _, entry in ipairs(state.drawerControls or {}) do
+local function relayout(state, first, last, y)
+    y = y or state.drawerPadding * 2
+    local controls = state.drawerControls or {}
+    for index = first or 1, last or #controls do
+        local entry = controls[index]
         local show = visible(state, entry.field)
         local visibility = show and lvgl.show or lvgl.hide
         visibility(entry.row)
@@ -520,6 +537,7 @@ local function relayout(state)
             lvgl.hide(entry.errorLabel)
         end
     end
+    return y
 end
 
 local function refreshVisibility(state)
@@ -796,7 +814,9 @@ local function addControl(context, state, field, index)
         kind = kind,
     }
     field.control = state.drawerControls[index]
-    relayout(state)
+    if not visible(state, field) then
+        lvgl.hide(row)
+    end
 end
 
 local function fieldError(state, control, message)
@@ -816,11 +836,20 @@ local function fieldError(state, control, message)
 end
 
 function drawer.advance(context, state)
+    if state.drawerLayout then
+        local last = math.min(#state.drawerControls, state.drawerLayout + 3)
+        state.drawerLayoutY = relayout(state, state.drawerLayout, last, state.drawerLayoutY)
+        state.drawerLayout = last + 1
+        if state.drawerLayout > #state.drawerControls then
+            state.drawerLayout, state.drawerLayoutY, state.drawerBuild, state.drawerBuildConfig = nil, nil, nil, nil
+        end
+        return true
+    end
     if state.drawerBuild ~= nil then
         if state.drawerBuild <= #state.drawerFields then
             addControl(context, state, state.drawerFields[state.drawerBuild], state.drawerBuild)
         else
-            state.drawerBuild = nil
+            state.drawerLayout = 1
             return true
         end
         state.drawerBuild = state.drawerBuild + 1
