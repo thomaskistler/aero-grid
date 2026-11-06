@@ -4821,3 +4821,18 @@ unmeasured custom types, along with `module` and `commit`, because
 `candidateSpans` walks the whole custom `supportedSpans` list. A 4097-entry
 regression still adds the panel. Open: preview geometry. Owners, the recording
 policy and the deferred stress assertions are unchanged.
+
+## 90. Composed ownership capture and loader reservation
+
+The composed gallery, stress, model and Flight/Smart native captures enable all
+remaining service and panel owners for the audit only. Their worst callbacks
+were 10940, 13562, 3941 and 10011, respectively, with no probe errors. The
+stress service-loading atom measured 1185 raw / 1360 fitted, exceeding its
+previous 1200 reservation; its reservation is now 1500. These measurements do
+not by themselves establish the parity gates or activate production owners.
+
+First-arm capture is acceptable when Navigation actually runs after arming.
+The reset fixture now checks the callback containing capture for a Navigation
+revision advance and verifies the captured coordinates. The separate explicit
+no-room regression still requires capture to remain waiting. The mixed-mode
+reset fixture retains its two switch-unavailable XFAILs.

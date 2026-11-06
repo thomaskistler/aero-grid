@@ -59,7 +59,12 @@ fixture.radio.values[fixture.radio.fields.RxBt.id] = 16.8
 local first = definition.create({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "session-reset" }, path)
 local second = definition.create({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "session-reset" }, path)
 local worst = 0
+local observeFirstArm = false
+local admittedCapture = {}
 local function measured(callback, context)
+    local navigation = observeFirstArm and context.serviceRuntime.byId.navigation
+    local home = navigation and fixture.instanceOf(context, "home").feed
+    local status, revision = home and home.homeStatus, navigation and navigation.revision
     fixture.lvglMock.setPropertyValidation(false)
     fixture.lvglMock.setCallCounting(false)
     fixture.lcdMock.setTextMeasurement(false)
@@ -73,6 +78,10 @@ local function measured(callback, context)
     fixture.lvglMock.setCallCounting(true)
     fixture.lvglMock.setPropertyValidation(true)
     assert(ok, message)
+    if home and status ~= "captured" and home.homeStatus == "captured" then
+        assert(navigation.revision > revision, "capture must occur in a callback that releases Navigation")
+        admittedCapture[context] = true
+    end
     worst = math.max(worst, instructions)
     assert(instructions < 15000, "session reset callback exceeded budget: " .. instructions)
 end
@@ -134,10 +143,9 @@ local function checkHomeBoundary(context)
 end
 local beforeFirst, beforeSecond = first.serviceRuntime, second.serviceRuntime
 local beforeCharts = { panel(first, "chart"), panel(second, "chart") }
-local navigationRevision = {
-    first.serviceRuntime.byId.navigation.revision,
-    second.serviceRuntime.byId.navigation.revision,
-}
+assert(panel(first, "home").feed.homeStatus ~= "captured")
+assert(panel(second, "home").feed.homeStatus ~= "captured")
+observeFirstArm = true
 local timer = model.getTimer(0).value
 fixture.radio.logicalSwitches[64] = true
 fixture.radio.values[306] = 1024
@@ -156,14 +164,13 @@ secondVisible = false
 equal(writes, 1)
 equal(model.getGlobalVariable(8, 0), 18)
 assert(owner.view.active and sticky)
-for index, context in ipairs({ first, second }) do
+for _, context in ipairs({ first, second }) do
     assert(context.serviceRuntime.byId.history:session().elapsed > 0)
     local home = panel(context, "home").feed
     if home.homeStatus == "waiting" then
         assert(not home.home, "waiting capture must not publish a home")
     elseif home.homeStatus == "captured" then
-        assert(context.serviceRuntime.byId.navigation.revision > navigationRevision[index],
-            "capture requires an admitted Navigation release")
+        assert(admittedCapture[context], "capture requires an admitted Navigation release after arming")
         assert(home.home, "captured home must be present")
         equal(home.pilotLatitude, fixture.radio.values[109].lat)
         equal(home.pilotLongitude, fixture.radio.values[109].lon)
@@ -174,6 +181,7 @@ for index, context in ipairs({ first, second }) do
     end
     equal(panel(context, "battery").estimatedCells, 4)
 end
+observeFirstArm = false
 fixture.radio.rssi = 25
 fixture.radio.values[fixture.radio.fields.RQly.id] = 25
 pump(200)
