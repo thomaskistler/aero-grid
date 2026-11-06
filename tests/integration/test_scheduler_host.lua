@@ -680,6 +680,7 @@ do
     callbacks(definition, context, 3)
     model.due = getTime()
     context.scheduler.byId["service:model"].due = getTime()
+    context.editorUiModule = fixture.module("lib/editor_ui.lua")
     context.editorUi = {}
     local before = model.revision
     local previousSteps = calls.step
