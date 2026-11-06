@@ -45,6 +45,55 @@ local sharedFlightStages = {
     ["flight-load"] = true,
 }
 
+local function sharedFlightContext(context)
+    local work = context.flightLoading
+    local owner = work and work.owner
+    local current = owner and owner:owningContext()
+    if
+        owner and not owner.documentLoaded
+        and current and current ~= context
+        and current.flightFactory == context.flightFactory
+        and context.flightFactory.broker == owner
+        and context.flightFactory.members[current] and context.flightFactory.members[context]
+        and current.modelFilename == context.modelFilename
+        and not current.reloadState and not current.pageRetirement
+        and current.flightLoading and current.flightLoading.owner == owner
+        and sharedFlightStages[current.stage]
+    then
+        return current
+    end
+end
+
+-- Returns the owner and the waiter's reservation only when the owner's atom is proven and fits.
+local function sharedFlightHelp(context)
+    local current = sharedFlightContext(context)
+    if current then
+        local bound = current.dashboardLoader.workBound(current)
+        if type(bound) == "number" and bound >= 0 and bound + 300 <= 4000 then
+            return current, bound + 300
+        end
+        return nil, false
+    end
+end
+
+local function workBound(context)
+    if context.stage == "flight-load-wait" then
+        local current, bound = sharedFlightHelp(context)
+        if current then
+            return bound
+        elseif bound == false then
+            return nil
+        end
+    end
+    if context.stage == "theme-resolve" then
+        return context.themeBuildWork and resolutionBounds[context.themeBuildWork.stage]
+    end
+    if context.stage == "flight-load" or context.stage == "flight-register" then
+        return context.flightRegistration.workBound(context.flightLoading.job) + 200
+    end
+    return loadBounds[context.stage]
+end
+
 --- Bind host operations once; callbacks retain their original work limits.
 ---@param dependencies table
 ---@return table
@@ -55,55 +104,6 @@ function module.new(dependencies)
     local loadModule = dependencies.loadModule
     local isFullScreen = dependencies.isFullScreen
     local readThemeSource = dependencies.readThemeSource
-
-    local function sharedFlightContext(context)
-        local work = context.flightLoading
-        local owner = work and work.owner
-        local current = owner and owner:owningContext()
-        if
-            owner and not owner.documentLoaded
-            and current and current ~= context
-            and current.flightFactory == context.flightFactory
-            and context.flightFactory.broker == owner
-            and context.flightFactory.members[current] and context.flightFactory.members[context]
-            and current.modelFilename == context.modelFilename
-            and not current.reloadState and not current.pageRetirement
-            and current.flightLoading and current.flightLoading.owner == owner
-            and sharedFlightStages[current.stage]
-        then
-            return current
-        end
-    end
-
-    -- Returns the owner and the waiter's reservation only when the owner's atom is proven and fits.
-    local function sharedFlightHelp(context)
-        local current = sharedFlightContext(context)
-        if current then
-            local bound = current.dashboardLoader.workBound(current)
-            if type(bound) == "number" and bound >= 0 and bound + 300 <= 4000 then
-                return current, bound + 300
-            end
-            return nil, false
-        end
-    end
-
-    local function workBound(context)
-        if context.stage == "flight-load-wait" then
-            local current, bound = sharedFlightHelp(context)
-            if current then
-                return bound
-            elseif bound == false then
-                return nil
-            end
-        end
-        if context.stage == "theme-resolve" then
-            return context.themeBuildWork and resolutionBounds[context.themeBuildWork.stage]
-        end
-        if context.stage == "flight-load" or context.stage == "flight-register" then
-            return context.flightRegistration.workBound(context.flightLoading.job) + 200
-        end
-        return loadBounds[context.stage]
-    end
 
     --- Advance to the next layout candidate after a read or parse failure.
     ---@param context AeroGridContext
