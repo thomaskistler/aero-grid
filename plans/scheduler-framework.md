@@ -2085,3 +2085,70 @@ The remaining panel adapters, multi-panel editor preview accounting,
 loader/modal/reflow eligibility and Flight/Smart admission remain open.
 Telemetry/History keep their ten-tick policy. Deferred chart-recording stress
 assertions and production owners are untouched.
+
+## 30. Bounded navigation refresh (R1, refresh owner still legacy)
+
+The first one-stage task trial measured 4696 instructions. Separating readings
+from the tape still left a 5141-instruction cold tape body: surface shading,
+rim placement and scrolling marks could not share a safe atom. The final adapter
+freezes the rendered scalar output, applies the main/supporting/header readings,
+prepares tape geometry and surface colors, then paints bearing marks. Hidden
+tapes finish after the frame stage; unchanged frames finish after render.
+
+| Refresh stage | Native fixture worst | Real native bridge worst | Declaration |
+|---|---:|---:|---:|
+| Render / frozen output | 664 | 581 | 790 |
+| Readings / header / supporting rows | 2438 | 1090 | 2740 |
+| Tape geometry / alert surface | 2891 | 189 | 3240 |
+| Pointer / status / ticks / labels / dots | 2428 | 2314 | 2730 |
+
+These are complete fixture task-bridge counts, not bare helper counts. Fixtures
+cover all eight tape/coordinate/satellite combinations, both bearing formats,
+five geometries, light/dark surface contrast, long headings, stable/missing/
+degraded readings, satellite warnings/critical states, and a cold tape with
+uncached dimensions/surface. The cold tape fixture is necessary even when the
+real native startup path happens to warm that geometry during reflow.
+Shared construction publication now measures 3182 with a 3560 fixture charge;
+other construction bodies retain their previous measurements.
+
+Legacy refresh and update still compose the shared synchronous helpers.
+Either invalidates a captured task frame and its unpainted render cache.
+A stale task plan consumes zero units; unfinished stages continue after one
+tick, with the original 25-tick interval after completion. Output is frozen
+before live GPS/satellite views can change between stages.
+
+```sh
+python3 tools/audit-scheduler.py --framework navigation-panel navigation-construction --timeout 180
+python3 tools/audit-scheduler.py navigation-tasks-min navigation-tasks-max navigation-tasks-16 navigation-tasks-4 navigation-tasks-bearing editor-rebuild-navigation-tape default-gallery --timeout 180
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+make test-lua32
+```
+
+All commands exit 0. Scheduler-owned navigation is enabled only in isolated
+native images. Small, large, sixteen-small-placement, four-visible-tape and
+bearing-only cases all peak at 9189 whole-callback instructions. Tape preview
+reconstruction remains at 9347 and production-owner default-gallery at 12533.
+Enrollment peaks at 1105 in the sixteen-placement case. Complete readiness
+including cold service enrollment peaks at 4066 there; this is not a single
+panel-atom count or a blanket readiness declaration.
+
+The integration suite checks 1280 completed frames across both themes, four
+geometries, eight feature combinations and both bearing formats. It mutates
+GPS/satellite inputs after render, verifies visible-tree parity at completion,
+checks stable-frame no-repaint behavior, and invalidates each pending stage
+through resize or synchronous refresh. It also checks cold pending tapes and
+missing feeds, including publication without a current GPS view.
+The same suite passes against actual
+pre-extraction `444ef8d` navigation source. Navigation review/unit, panel reflow/
+loading, full editor UI and scheduler host regressions pass under Lua 5.3;
+editor UI remains at 15000 mock instructions. Lua32 bounds and all 27 audit-tool
+tests pass.
+
+This validates the new task atoms, not the legacy synchronous refresh/reflow
+stress envelope: the one-stage trial already exceeded the old 3700 legacy
+refresh declaration. Legacy preview/reflow accounting remains an explicit
+gate. No production owner changes, no ten-tick recording-policy changes and
+no deferred chart-recording assertion changes are included. Other panel
+adapters, multi-panel preview, lifecycle/modal eligibility (including captured
+frame cancellation at session-reset boundaries) and Flight/Smart
+admission remain open.

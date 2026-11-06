@@ -205,6 +205,15 @@ def scenarios():
     for tag in ("min", "max", "16"):
         result[f"metric-tasks-{tag}"] = dict(result[f"metric-{tag}"], owners=["panel:metric"],
                                             phases=standard_phases())
+        base = result[f"navigation-{tag}"] if tag != "16" else dict(result["metric-16"], recipe="navigation")
+        result[f"navigation-tasks-{tag}"] = dict(base, owners=["panel:navigation"], phases=standard_phases(),
+                                                config={"showTape": True, "showCoordinates": True,
+                                                        "satelliteSource": "Sats"})
+    result["navigation-tasks-bearing"] = dict(result["navigation-tasks-max"],
+                                               config={"showTape": False, "showCoordinates": True,
+                                                       "satelliteSource": "Sats"})
+    result["navigation-tasks-4"] = dict(result["navigation-tasks-max"], expected=4, placements={
+        f"n{i}": ((i - 1) % 2 * 2, (i - 1) // 2 * 2, 2, 2) for i in range(1, 5)})
     result["light-control"] = {
         "recipe": "trim-panel", "expected": 2, "toggleSwitches": True,
         "layout": custom_layout([

@@ -154,6 +154,16 @@ class ScenarioTests(unittest.TestCase):
             self.assertEqual(spec["owners"], ["panel:metric"])
             self.assertEqual([phase["name"] for phase in spec["phases"]], ["refresh", "background"])
 
+    def test_navigation_task_scenarios_cover_visible_tapes_and_bearing(self):
+        scenarios = self.cli.scenarios()
+        for tag in ("min", "max", "16", "4", "bearing"):
+            spec = scenarios[f"navigation-tasks-{tag}"]
+            self.assertEqual(spec["owners"], ["panel:navigation"])
+            self.assertEqual(spec["recipe"], "navigation")
+            self.assertEqual(spec["config"]["showTape"], tag != "bearing")
+        self.assertEqual(scenarios["navigation-tasks-4"]["expected"], 4)
+        self.assertTrue(all(span[2:] == (2, 2) for span in scenarios["navigation-tasks-4"]["placements"].values()))
+
     def test_lua_literal_round_trips_through_lua(self):
         try:
             import lupa

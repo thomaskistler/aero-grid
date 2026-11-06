@@ -34,6 +34,8 @@
 ---@field feed? AeroGridNavigation Navigation subscription.
 ---@field satellites? AeroGridReading Optional satellite-count subscription.
 ---@field stateName string
+---@field refreshWork? table Frozen output and pending refresh stage.
+---@field used? integer Granted units consumed by the last task step.
 
 local navigation = {
     id = "navigation",
@@ -42,6 +44,17 @@ local navigation = {
     -- Telemetry GPS arrives at a few hertz at best, and the navigation service
     -- is itself rate limited because every update costs trigonometry.
     refreshInterval = 25,
+    decl = {
+        class = "normal",
+        first = "render",
+        kinds = { steady = true },
+        stages = {
+            render = { fixed = 0, perUnit = 790, maxUnits = 1 },
+            reading = { fixed = 0, perUnit = 2740, maxUnits = 1 },
+            ["tape-frame"] = { fixed = 0, perUnit = 3240, maxUnits = 1 },
+            tape = { fixed = 0, perUnit = 2730, maxUnits = 1 },
+        },
+    },
     settings = {
         { key = "label", label = "Label", type = "string", default = "NAV" },
         { key = "source", label = "GPS source", type = "string", default = "GPS" },
@@ -536,7 +549,7 @@ function navigation.createTape(parent, context, area)
     return tape
 end
 
-function navigation.setTape(context, bearing, color, status)
+local function prepareTape(context)
     local tape, area = context.tape, context.area
     if not tape then
         return
@@ -578,6 +591,11 @@ function navigation.setTape(context, bearing, color, status)
             rim:set({ x = left, y = index % 2 == 1 and 6 or area.tapeHeight - 2, w = right - left })
         end
     end
+    return true
+end
+
+local function paintTape(context, bearing, color, status)
+    local tape, area = context.tape, context.area
     local valid = type(bearing) == "number" and bearing == bearing and math.abs(bearing) < math.huge
     local centre = math.floor(area.tapeWidth / 2)
     context.primitives.reconcile(tape.pointer, valid, {
@@ -628,6 +646,12 @@ function navigation.setTape(context, bearing, color, status)
             x = x,
             y = dotY,
         })
+    end
+end
+
+function navigation.setTape(context, bearing, color, status)
+    if prepareTape(context) then
+        paintTape(context, bearing, color, status)
     end
 end
 
@@ -910,10 +934,7 @@ function navigation.render(context, out)
     end
 end
 
---- Paint the panel from what `render` collected, and from nothing else.
----@param context AeroGridNavigationContext
----@param drawn table
-function navigation.apply(context, drawn)
+local function applyReading(context, drawn)
     local presentation = context.state(drawn.state, context.settings.accent)
 
     context.stateName = drawn.state
@@ -996,16 +1017,34 @@ function navigation.apply(context, drawn)
             drawn.coordinates
         )
     end
+end
 
+local function applyTape(context, drawn, prepared)
     if context.tape and not context.tape.pending then
+        local presentation = context.state(drawn.state, context.settings.accent)
         local pointerColor = drawn.state == "normal" and context.state("normal", "green").accent or presentation.accent
-        navigation.setTape(context, drawn.bearing, pointerColor, drawn.origin)
+        if prepared then
+            paintTape(context, drawn.bearing, pointerColor, drawn.origin)
+        else
+            navigation.setTape(context, drawn.bearing, pointerColor, drawn.origin)
+        end
     end
+end
+
+--- Paint the panel from what `render` collected, and from nothing else.
+---@param context AeroGridNavigationContext
+---@param drawn table
+function navigation.apply(context, drawn)
+    applyReading(context, drawn)
+    applyTape(context, drawn)
 end
 
 --- Advance the panel, repainting only when something drawn changed.
 ---@param context AeroGridNavigationContext
 function navigation.refresh(context)
+    if context.refreshWork then
+        context.refreshWork, context.rendered = nil, nil
+    end
     if not context.feed and not (context.tape and context.tape.pending) then
         return
     end
@@ -1017,6 +1056,49 @@ function navigation.refresh(context)
     if changed or pending then
         navigation.apply(context, drawn)
     end
+end
+
+function navigation.stageOf(context)
+    return context.refreshWork and context.refreshWork.stage or "render", 1
+end
+
+function navigation.step(context, _, stage)
+    context.used = 0
+    if stage ~= navigation.stageOf(context) then
+        return nil, true
+    end
+    context.used = 1
+    if stage == "render" then
+        if not context.feed and not (context.tape and context.tape.pending) then
+            return
+        end
+        local changed, drawn = context.primitives.changed(context, navigation.render)
+        if not changed and not (context.tape and context.tape.pending) then
+            return
+        end
+        context.refreshWork = { stage = "reading", drawn = drawn }
+    elseif stage == "reading" then
+        applyReading(context, context.refreshWork.drawn)
+        if context.tape then
+            context.tape.pending = nil
+            context.refreshWork.stage = "tape-frame"
+        else
+            context.refreshWork = nil
+            return
+        end
+    elseif stage == "tape-frame" then
+        if prepareTape(context) then
+            context.refreshWork.stage = "tape"
+        else
+            context.refreshWork = nil
+            return
+        end
+    else
+        applyTape(context, context.refreshWork.drawn, true)
+        context.refreshWork = nil
+        return
+    end
+    return nil, true
 end
 
 --- Reposition after a zone change.
@@ -1103,6 +1185,9 @@ reflow = function(context, rect, span)
 end
 
 function navigation.update(context, rect, settings, _, span)
+    if context.refreshWork then
+        context.refreshWork, context.rendered = nil, nil
+    end
     reflow(context, rect, span)
     local _, drawn = context.primitives.changed(context, navigation.render)
     navigation.apply(context, drawn)

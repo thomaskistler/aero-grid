@@ -339,6 +339,10 @@ paint. Geometry resolution and placement are separate bounded stages. Resizes,
 forced values and synchronous refreshes invalidate a pending frame; a stale
 planned stage consumes no work. Its production owner remains legacy until the
 remaining callback/lifecycle gates pass.
+Navigation freezes its rendered output, then applies readings, tape frame/style
+and bearing marks in separate stages. Cold tape geometry and alert-surface
+colors must not share an atom with scrolling the full mark pool. Its synchronous
+refresh/update APIs still compose the same helpers.
 
 Scheduler-owned placements enroll one per callback with an explicit setup
 reservation. Existing placements retain their releases, and pending enrollment

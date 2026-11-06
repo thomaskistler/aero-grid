@@ -25,7 +25,7 @@ return function(load)
         return result
     end
     local decl = { class = "normal", first = "begin", kinds = { steady = true }, stages = {} }
-    for stage, bound in pairs({ begin = 3410, controls = 590, tape = 3880, reflow = 2820, publish = 3540 }) do
+    for stage, bound in pairs({ begin = 3410, controls = 590, tape = 3880, reflow = 2820, publish = 3560 }) do
         decl.stages[stage] = { fixed = 0, perUnit = bound, maxUnits = 1 }
     end
     local function setup(target, rect, span, flags, variant, resize)
