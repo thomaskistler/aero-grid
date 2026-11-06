@@ -242,7 +242,8 @@ for _, parkedStage in ipairs({
     unproven = 3700
     assert(hidden.dashboardLoader.workBound(hidden) == 4000, "a fitting owner atom keeps its exact reservation")
     unproven = nil
-    creator.dashboardLoader.workBound, creator.dashboardLoader.advanceLoad = ownerBound, proof    local advances, advance = 0, creator.dashboardLoader.advanceLoad
+    creator.dashboardLoader.workBound, creator.dashboardLoader.advanceLoad = ownerBound, proof
+    local advances, advance = 0, creator.dashboardLoader.advanceLoad
     local activeHelper, reservation
     creator.dashboardLoader.advanceLoad = function(current)
         assert(activeHelper.scheduler.lastPlan.kind == "loader")
