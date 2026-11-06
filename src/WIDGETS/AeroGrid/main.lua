@@ -539,9 +539,14 @@ end
 ---@param ... any
 local function dispatchAll(context, event, ...)
     local failures = false
+    local scheduling = context.schedulerHost
+    local scheduledBackground = event == "background" and scheduling and scheduling.mode ~= "legacy"
 
     for _, entry in ipairs(context.panels) do
-        if not entry.failed then
+        if
+            not entry.failed
+            and not (scheduledBackground and scheduling.owners["panel:" .. entry.module.id] == "new")
+        then
             local ok, dispatchError = context.panelHost.dispatch(entry, event, ...)
             if not ok and dispatchError then
                 addError(context, entry.placement.id .. ": " .. event .. ": " .. dispatchError)
@@ -1172,7 +1177,7 @@ end
 --- The scheduled work of a steady or background callback with the host attached:
 --- the legacy loop, then the new scheduler with
 --- what is left (`new` mode has no legacy loop; panel `background` hooks are part
---- of the callback's overhead and always run). A layout the owner table cannot
+--- of the callback's overhead for legacy-owned panels). A layout the owner table cannot
 --- cover keeps its legacy behavior but schedules no new tasks until corrected.
 ---@param context AeroGridContext
 ---@param kind "steady"|"background"

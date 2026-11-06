@@ -4137,3 +4137,26 @@ The unchanged strict reset is 13900 with its two original first-arm XFAILs.
 Append/remove/reopen/Add, drag and whole adoption/geometry gates are not admitted
 by this scalar slice. The parent's resized RX preview assertion remains intact
 and requires a separate integration proof; owner activation alone is not a fix.
+
+## 77. Pre-enrollment background ownership and live-preview clock readiness
+
+Common background dispatch now checks scheduler ownership intent before invoking
+a panel hook, not only the instance marker that reconciliation eventually sets.
+This prevents Flight Counter painting while a new placement awaits bounded
+reconciliation. The actual-widget Lua53/int32 regression exercises readiness
+both pending and complete with the marker absent, and retains legacy-owner and
+legacy-observation-mode behavior. Production owners are unchanged.
+
+The resized RX and Navigation preview failures also had a frozen-clock fixture
+cause: the RX task was due at 13101 while all forty bare refreshes remained at
+13100. Those geometry checks now advance forty one-tick callbacks, preserving
+every glyph, tape, container and geometry assertion. The full editor suite passes
+on Lua53/int32 under an in-memory all-panel ownership override, worst callback
+12200 with 32 verified host loads. This is a prototype integration proof, not a
+production-owner full-editor pass or permission to change the strict-reset gate.
+
+Integrated native Chart writes, nested State writes, validation errors and
+picker errors pass at whole maxima 9233/6332/6723/6714. The repeated sixteen-Metric
+tap scenario admits input at 4025 and drawer opening at 3316, but retains a
+21337-instruction legacy steady frame. Its empty admission error list is not a
+whole-frame pass claim.

@@ -154,6 +154,12 @@ local function settleReload()
     end
     error("dashboard reload did not settle")
 end
+local function advanceLivePreview()
+    for _ = 1, 40 do
+        widget.tick(1)
+        refresh()
+    end
+end
 --- Leave the editor with RTN and, when changes ask, pick `choice` in the menu.
 local function exitWith(choice)
     refresh(EVT_VIRTUAL_EXIT)
@@ -1795,9 +1801,7 @@ for _, mode in ipairs({ "battery", "bar", "none" }) do
     assert(entry and entry.instance, "new RX battery preview was not built")
     assert(editor.resize(context.editorSession, 1, 1))
     assert(context.editorUi.handlers.preview(context.editorSession.draft))
-    for _ = 1, 40 do
-        refresh()
-    end
+    advanceLivePreview()
     equal(context.panels[1], entry, "resizing must update the existing preview")
     local instance = entry.instance
     if mode == "battery" then
@@ -1865,6 +1869,7 @@ local navEntry = context.panels[1]
 local navEditor = context.editorUi.handlers.editor
 assert(navEditor.resize(context.editorSession, 0, -1))
 assert(context.editorUi.handlers.preview(context.editorSession.draft))
+advanceLivePreview()
 equal(navEntry.instance.layout.wide, true, "square-to-wide resize must change tape orientation")
 equal(navEntry.instance.showTape, true, "square-to-wide resize must keep tape visible")
 equal(navEntry.instance.tape.root.hidden, false, "resized wide tape must be shown")
@@ -1874,6 +1879,7 @@ assert(
 )
 assert(navEditor.resize(context.editorSession, 0, 1))
 assert(context.editorUi.handlers.preview(context.editorSession.draft))
+advanceLivePreview()
 equal(navEntry.instance.layout.square, true, "wide-to-square resize must restore stacked tape")
 assert(
     navEntry.instance.area.valueY + navEntry.instance.themeBuilder.fontAscent(navEntry.instance.area.value)
