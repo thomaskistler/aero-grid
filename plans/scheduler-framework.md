@@ -1,8 +1,7 @@
 # Scheduler Framework (Phase 1 Specification)
 
-Design only, no code. This is the minimum needed to build the isolated
-framework of Phase 1 in [scheduler-utilization.md](scheduler-utilization.md),
-using the costs in [scheduler-audit.md](scheduler-audit.md) and the bound rule
+This specification and migration ledger supersedes the initial scheduler
+utilization proposal. It uses the costs in [scheduler-audit.md](scheduler-audit.md) and the bound rule
 in [scheduler-contracts.md](scheduler-contracts.md). Costs are Lua VM
 instructions; the figures quoted here are the contracts' declared values and
 will move when they do.

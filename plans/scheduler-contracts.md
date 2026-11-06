@@ -1,6 +1,6 @@
 # Scheduler Margin Rule and Task Contracts
 
-Design addendum to [scheduler-utilization.md](scheduler-utilization.md), using
+Bound rules for [scheduler-framework.md](scheduler-framework.md), using
 the costs in [scheduler-audit.md](scheduler-audit.md). No code changes. Costs are
 Lua VM instructions; **M** = measured, **E** = estimated, **U** = unmeasured, as
 in the audit. Everything labelled "declared" is a proposal.

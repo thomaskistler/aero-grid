@@ -155,7 +155,7 @@ assert(owner.view.active and sticky)
 for _, context in ipairs({ first, second }) do
     assert(context.serviceRuntime.byId.history:session().elapsed > 0)
     local homeStatus = panel(context, "home").feed.homeStatus
-    -- Follow-up: plans/scheduler-utilization.md; restore strict checks after all
+    -- Follow-up: plans/scheduler-framework.md; restore strict checks after all
     -- services migrate and Navigation no longer waits behind mixed-mode work.
     local waiting, message = pcall(equal, homeStatus, "waiting", "no room leaves first-arm capture pending")
     if waiting then
