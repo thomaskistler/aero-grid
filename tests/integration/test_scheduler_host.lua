@@ -442,6 +442,7 @@ end
 local function loadError(name, damage, expected)
     local definition, context = start("mixed", "host-light")
     damage(context.schedulerHost)
+    context.panelTasksDirty = true
     callbacks(definition, context, 60)
     assert(context.schedulerHost, name .. ": retains the migrated scheduler task")
     assert(context.scheduler, name .. ": keeps the scheduler available")
@@ -467,6 +468,7 @@ end, "panel:metric is owned by the scheduler but has no task")
 loadError("Telemetry task missing step", function(host)
     local telemetry = host.context.serviceRuntime.byId.telemetry
     telemetry.tasks.maintenance.step = nil
+    host.scheduler:remove("service:telemetry:maintenance")
     host.taskRevision = -1
 end, "service:telemetry:maintenance: instance needs a step function")
 do
@@ -812,7 +814,9 @@ do
     equal(hiddenPanel.consumed, 0, "hidden panel tasks cannot run while editor construction owns the screen")
     equal(standin.decl.kinds, nil, "host eligibility must not mutate shared service declarations")
     equal(backgroundOnly.decl.kinds["editor-build"], nil)
-    for _, kind in ipairs({ "modal-log", "modal-settings", "modal-menu", "modal-location", "editor-render", "editor-drawer" }) do
+    for _, kind in ipairs({
+        "modal-log", "modal-settings", "modal-menu", "modal-location", "editor-render", "editor-drawer", "editor-input",
+    }) do
         service.queue[#service.queue + 1] = 17
         context.scheduler:run(kind, getTime() + 50, 1500)
         equal(backgroundOnly.consumed, 0, "modal kinds do not admit background-only services")

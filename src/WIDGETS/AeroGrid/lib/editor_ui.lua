@@ -2,6 +2,8 @@
 
 local uiModule = { RUNTIME_API = 1 }
 uiModule.RENDER_BOUNDS = { rows = 1700, finish = 1400 }
+uiModule.INPUT_BOUNDS = { open = 200, tap = 900, select = 350, modal = 100, release = 120, cancel = 120 }
+uiModule.DRAWER_OPEN_BOUNDS = { configure = 3900, add = 300 }
 
 local function label(parent, rect, text, color, font)
     return lvgl.label(parent, {
@@ -40,6 +42,31 @@ local function keyMatches(event, name)
         end
     end
     return false
+end
+
+local function inputReady(state)
+    return state and not state.buildStage and not state.saving and not state.previewPending
+        and not state.previewRefresh and not state.exitCommand and not state.drawerOpen
+end
+
+function uiModule.inputWorkBound(context, event)
+    local state = context.editorUi
+    if state and state.drawerOpen then
+        return matches(event, "EVT_VIRTUAL_EXIT") and uiModule.INPUT_BOUNDS.cancel or nil
+    end
+    if not inputReady(state) then return nil end
+    if state.mode ~= "menu" then
+        return uiModule.INPUT_BOUNDS.modal
+    elseif matches(event, "EVT_VIRTUAL_ENTER") then
+        return uiModule.INPUT_BOUNDS.open
+    elseif matches(event, "EVT_TOUCH_TAP") then
+        return uiModule.INPUT_BOUNDS.tap
+    elseif matches(event, "EVT_VIRTUAL_PREV") or matches(event, "EVT_VIRTUAL_NEXT")
+        or matches(event, "EVT_ROT_LEFT") or matches(event, "EVT_ROT_RIGHT") then
+        return uiModule.INPUT_BOUNDS.select
+    elseif matches(event, "EVT_TOUCH_BREAK") then
+        return uiModule.INPUT_BOUNDS.release
+    end
 end
 
 local function prepareRender(context, state)
@@ -142,6 +169,7 @@ function uiModule.renderWorkBound(state)
         and not state.previewPending
         and not state.previewRefresh
         and not state.exitCommand
+        and not state.drawerOpen
     then
         return state.renderStage == 6 and uiModule.RENDER_BOUNDS.finish or uiModule.RENDER_BOUNDS.rows
     end
@@ -149,6 +177,10 @@ end
 
 function uiModule.drawerWorkBound(context)
     local state = context.editorUi
+    if state.drawerOpen and not state.session.initializing and not state.previewPending
+        and not state.previewRefresh and not state.exitCommand then
+        return uiModule.DRAWER_OPEN_BOUNDS[state.drawerOpen.mode]
+    end
     if
         state.drawerBuild
         and not state.session.initializing
@@ -176,10 +208,11 @@ local function advanceRender(context, state)
     state.renderStage = stage + 1
 end
 
-local function openDrawer(context, state, mode)
+local function openDrawer(_, state, mode)
     state.drag = nil
-    context.editorDrawerModule.open(context, state, mode)
-    render(context, state)
+    if not state.drawerOpen then
+        state.drawerOpen = { mode = mode, selected = state.session.selected }
+    end
 end
 
 --- Save the draft to `name`, or to this dashboard's own layout when nil.
@@ -299,6 +332,16 @@ function uiModule.advance(context)
         elseif command.action == "write" then
             saveAndClose(context, state, command.name)
         end
+        return true
+    end
+    if state.drawerOpen then
+        local pending = state.drawerOpen
+        state.drawerOpen = nil
+        if pending.mode == "configure" then
+            assert(state.handlers.editor.select(state.session, pending.selected))
+        end
+        context.editorDrawerModule.open(context, state, pending.mode)
+        render(context, state)
         return true
     end
     if state.renderStage then
@@ -590,14 +633,11 @@ end
 
 function uiModule.handle(context, event, touch)
     local state = context.editorUi
-    if
-        not state
-        or state.buildStage
-        or state.saving
-        or state.previewPending
-        or state.previewRefresh
-        or state.exitCommand
-    then
+    if state and state.drawerOpen and matches(event, "EVT_VIRTUAL_EXIT") then
+        state.drawerOpen = nil
+        return true
+    end
+    if not inputReady(state) then
         return false
     end
     -- Modal input, including picker/keyboard RTN, belongs to native LVGL.

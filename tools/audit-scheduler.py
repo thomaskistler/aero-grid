@@ -395,6 +395,48 @@ def scenarios():
             {"name": "editor-close", "kind": "refresh", "action": "close-editor",
              "callbacks": 10, "step": 5, "perCall": 1},
         ])
+        phases = list(result[f"editor-drawer-{panel}"]["phases"])
+        phases[2] = {key: value for key, value in phases[2].items() if key != "action"}
+        phases[2]["event"] = "EVT_VIRTUAL_ENTER"
+        result[f"editor-input-{panel}"] = dict(result[f"editor-drawer-{panel}"], phases=phases)
+    phases = list(result["editor-input-metric"]["phases"][:2])
+    for event in ("EVT_ROT_RIGHT", "EVT_ROT_LEFT", "EVT_VIRTUAL_NEXT", "EVT_VIRTUAL_PREV", "EVT_TOUCH_BREAK"):
+        phases.append({"name": event, "kind": "refresh", "event": event,
+                       "callbacks": 1, "step": 5})
+    phases += [{"name": "selection-finish", "kind": "refresh", "callbacks": 16, "step": 5},
+               {"name": "selection-check", "kind": "refresh", "action": "check-render",
+                "callbacks": 1, "step": 5}]
+    phases += list(result["editor-input-metric"]["phases"][2:])
+    phases[-2:-2] = [{"name": "native-input", "kind": "refresh", "event": "EVT_VIRTUAL_ENTER",
+                     "callbacks": 1, "step": 5}]
+    result["editor-input-keys"] = dict(result["editor-input-metric"], phases=phases)
+    phases = list(result["editor-input-metric"]["phases"][:2]) + [
+        {"name": "last-panel-first", "kind": "refresh", "action": "prepare-editor-tap",
+         "event": "EVT_TOUCH_FIRST", "callbacks": 1, "step": 5},
+        {"name": "last-panel-tap", "kind": "refresh", "action": "prepare-editor-tap",
+         "event": "EVT_TOUCH_TAP", "callbacks": 240, "step": 5, "perCall": 4},
+        {"name": "tap-drawer-check", "kind": "refresh", "action": "check-drawer",
+         "callbacks": 1, "step": 5},
+        {"name": "duplicate-tap", "kind": "refresh", "action": "prepare-editor-tap",
+         "event": "EVT_TOUCH_TAP", "callbacks": 1, "step": 5},
+    ] + list(result["editor-input-metric"]["phases"][-1:])
+    result["editor-input-tap"] = dict(result["metric-16"], fullscreen=True, phases=phases)
+    phases = list(result["editor-input-metric"]["phases"][:2]) + [
+        {"name": "panel-picker", "kind": "refresh", "action": "select-editor-add",
+         "event": "EVT_VIRTUAL_ENTER", "callbacks": 16, "step": 5},
+        {"name": "panel-picker-check", "kind": "refresh", "action": "check-render",
+         "callbacks": 1, "step": 5},
+    ]
+    result["editor-input-add"] = dict(result["editor-input-metric"], phases=phases)
+    phases = list(result["editor-input-metric"]["phases"][:2]) + [
+        {"name": "queue-drawer", "kind": "refresh", "event": "EVT_VIRTUAL_ENTER",
+         "callbacks": 1, "step": 5},
+        {"name": "cancel-drawer", "kind": "refresh", "event": "EVT_VIRTUAL_EXIT",
+         "callbacks": 1, "step": 5},
+        {"name": "cancel-check", "kind": "refresh", "action": "check-drawer-cancelled",
+         "callbacks": 1, "step": 5},
+    ]
+    result["editor-input-cancel"] = dict(result["editor-input-metric"], phases=phases)
     for panel in ("metric", "chart", "state"):
         base = result[f"editor-drawer-{panel}"]
         phases = list(base["phases"])

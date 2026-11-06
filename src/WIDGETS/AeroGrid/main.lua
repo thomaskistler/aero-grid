@@ -1845,6 +1845,7 @@ local function refresh(context, widgetEvent, touchState)
             context.editorUi.buildStage
             or context.editorUi.saving
             or context.editorUi.drawerBuild ~= nil
+            or context.editorUi.drawerOpen
             or context.editorUi.drawerPending
             or context.editorUi.exitCommand
             or context.editorUi.previewPending
@@ -1857,8 +1858,18 @@ local function refresh(context, widgetEvent, touchState)
         local renderBound = rendering and context.editorUiModule.renderWorkBound(context.editorUi)
         local drawerBound = context.editorUiModule.drawerWorkBound(context)
         local preview = context.editorUi.previewRefresh
-        if rendering and widgetEvent and widgetEvent ~= 0 and isFullScreen() then
+        local opening = context.editorUi.drawerOpen
+        if
+            (rendering and not opening or opening and widgetEvent == _G.EVT_VIRTUAL_EXIT)
+            and widgetEvent
+            and widgetEvent ~= 0
+            and isFullScreen()
+        then
+            local inputBound = context.editorUiModule.inputWorkBound(context, widgetEvent)
             event(context, widgetEvent, touchState)
+            if inputBound then
+                updateModalServices(context, inputBound, "editor-input")
+            end
             return
         end
         context.editorController.advanceEditor(context)
@@ -1876,6 +1887,7 @@ local function refresh(context, widgetEvent, touchState)
     if widgetEvent ~= nil and widgetEvent ~= 0 and isFullScreen() then
         local wasLogViewer = context.logViewer ~= nil
         local wasLocation = context.locationDetails ~= nil
+        local editorInputBound = context.editorUi and context.editorUiModule.inputWorkBound(context, widgetEvent)
         if widgetEvent == _G.EVT_TOUCH_FIRST then
             context.touchTapHandled = false
         end
@@ -1885,6 +1897,8 @@ local function refresh(context, widgetEvent, touchState)
                 context.touchTapHandled = true
             end
             event(context, widgetEvent, touchState)
+        else
+            editorInputBound = editorInputBound and 0
         end
         if context.reloadState then
             return
@@ -1897,6 +1911,8 @@ local function refresh(context, widgetEvent, touchState)
                 if wasLogViewer then
                     updateModalServices(context, context.logViewerModule.WORK_BOUNDS.input, "modal-log")
                 end
+            elseif editorInputBound then
+                updateModalServices(context, editorInputBound, "editor-input")
             elseif wasLocation then
                 updateModalServices(context, 300, "modal-location")
             end

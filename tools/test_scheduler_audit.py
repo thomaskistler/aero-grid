@@ -247,6 +247,9 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(actions[-3:], ["edit-settings", "check-settings-save", "close-settings"])
         self.assertIn("flightSwitch: L63", self.cli.scenarios()["modal-settings-save-output"]["settingsDocument"])
         variants = self.cli.scenarios()
+        self.assertEqual(variants["editor-input-chart"]["phases"][2]["event"], "EVT_VIRTUAL_ENTER")
+        self.assertNotIn("action", variants["editor-input-chart"]["phases"][2])
+        self.assertIn("duplicate-tap", [phase["name"] for phase in variants["editor-input-tap"]["phases"]])
         self.assertEqual(variants["modal-settings-publication-background"]["phases"][3]["kind"], "background")
         self.assertEqual(variants["modal-settings-publication-error"]["expectedError"],
                          "Model settings: injected save failure")

@@ -174,6 +174,7 @@ local function settleDrawer()
         assert(context.editorUi, "drawer failed: " .. table.concat(context.errors, "; "))
         if
             not context.editorUi.drawerPending
+            and not context.editorUi.drawerOpen
             and context.editorUi.drawerBuild == nil
             and not context.editorUi.previewPending
             and not context.editorUi.previewRefresh

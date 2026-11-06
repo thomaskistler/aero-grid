@@ -104,6 +104,7 @@ host.OVERHEAD = {
     ["editor-render"] = 2400,
     ["editor-drawer"] = 2400,
     loader = 2400,
+    ["editor-input"] = 2400,
 }
 
 host.SERVICE_KINDS = {
@@ -115,6 +116,7 @@ host.SERVICE_KINDS = {
     ["editor-render"] = true,
     ["editor-drawer"] = true,
     loader = true,
+    ["editor-input"] = true,
 }
 
 --- Reserve registration/validation before admitting scheduled work.

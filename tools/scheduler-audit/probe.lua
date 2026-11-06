@@ -144,7 +144,19 @@ local function finish(label, raw, leak)
     end
     if recording then
         record(label, cost, own, units > 0 and units or 1, children)
+        if string.match(label, "^editor:input:") then
+            gate(cost <= 4000, label .. " exceeds the editor input atom cap: " .. cost)
+            local bound = P.editorInputBounds and P.editorInputBounds[string.sub(label, #"editor:input:" + 1)]
+            if bound then
+                gate(cost <= bound, label .. " exceeds the editor input charge: " .. cost)
+            end
+        end
         local stage = tonumber(string.match(label, "^editor:advanceEditor:render:(%d+)$"))
+        local opening = string.match(label, "^editor:advanceEditor:drawer%-open:(%a+)$")
+        if opening then
+            gate(cost <= 4000, label .. " exceeds the drawer-open atom cap: " .. cost)
+            gate(cost <= P.editorOpenBounds[opening], label .. " exceeds the drawer-open charge: " .. cost)
+        end
         if stage and stage >= 2 and P.editorRenderBounds then
             gate(cost <= 4000, label .. " exceeds the editor paint atom cap: " .. cost)
             gate(
@@ -341,6 +353,9 @@ local function editorLabel(token, context)
     if ui.buildStage then
         return "build:" .. tostring(ui.buildStage)
     end
+    if ui.drawerOpen then
+        return "drawer-open:" .. ui.drawerOpen.mode
+    end
     if ui.renderStage and not ui.previewPending and not ui.previewRefresh and not ui.exitCommand then
         return "render:" .. tostring(ui.renderStage)
     end
@@ -374,6 +389,15 @@ local function install(context)
     if scheduling and not installed[scheduling] then
         installed[scheduling] = true
         wrapField(scheduling, "ready", "scheduler:ready")
+        wrapField(scheduling, "finish", function(token, _, kind)
+            if token then
+                return "scheduler:finish:" .. token
+            end
+            if kind == "editor-input" then
+                P.editorInputAdmission = true
+            end
+            return kind or "steady"
+        end)
         wrapField(scheduling, "syncPanels", "scheduler:panels")
         wrapField(scheduling, "resetServiceRelease", "scheduler:reset-service-release")
         wrapField(scheduling, "resetPanelRelease", "scheduler:reset-panel-release")
@@ -480,6 +504,19 @@ local function install(context)
         end)
     end
     P.editorRenderBounds = context.editorUiModule and context.editorUiModule.RENDER_BOUNDS
+    P.editorOpenBounds = context.editorUiModule and context.editorUiModule.DRAWER_OPEN_BOUNDS
+    if context.editorUiModule then
+        wrapField(context.editorUiModule, "handle", function(token, current, e)
+            if token then
+                return "editor:input:" .. token
+            end
+            P.editorInputSeen = true
+            local name = tostring(current.editorUi and current.editorUi.mode) .. ":" .. tostring(e)
+            P.editorInputBounds = P.editorInputBounds or {}
+            P.editorInputBounds[name] = current.editorUiModule.inputWorkBound(current, e)
+            return name
+        end)
+    end
     local drawer = context.editorDrawerModule
     if drawer then
         P.editorDrawerBounds = drawer.WORK_BOUNDS
@@ -971,7 +1008,22 @@ actions = {
     end,
     ["open-drawer"] = function(context)
         refreshFn(context, EVT_VIRTUAL_ENTER)
-        assert(context.editorUi and context.editorUi.drawerBuild)
+        assert(context.editorUi and (context.editorUi.drawerOpen or context.editorUi.drawerBuild))
+    end,
+    ["prepare-editor-tap"] = function(context)
+        local state = assert(context.editorUi)
+        local rect = assert(state.controls[#state.session.draft.panels].rect)
+        config.phases[phaseIndex].touch = {
+            x = (context.left or 0) + rect.x + rect.w - 8,
+            y = (context.top or 0) + rect.y + 8,
+        }
+    end,
+    ["select-editor-add"] = function(context)
+        context.editorUi.keyAdd = true
+    end,
+    ["check-drawer-cancelled"] = function(context)
+        local state = assert(context.editorUi)
+        assert(not state.drawerOpen and not state.nativeDrawer and state.mode == "menu")
     end,
     ["check-drawer"] = function(context)
         local state = assert(context.editorUi)
@@ -1057,6 +1109,9 @@ local function callbackSurface(kind, context)
         if ui.buildStage then
             return "editor-build:" .. tostring(ui.buildStage)
         end
+        if ui.drawerOpen then
+            return "editor-drawer:open:" .. ui.drawerOpen.mode
+        end
         if ui.renderStage then
             return "editor-render:" .. tostring(ui.renderStage)
         end
@@ -1112,10 +1167,14 @@ local function runCallback(kind, context, fn, e, t)
     callbackIndex = callbackIndex + 1
     depth, topSum, top, topLabels = 0, 0, {}, {}
     local surface = callbackSurface(kind, context)
+    P.editorInputSeen, P.editorInputAdmission = nil, nil
     local c0 = count()
     fn(context, e, t)
     local c1 = count()
     pause(true)
+    if P.editorInputSeen or P.editorInputAdmission then
+        surface = "editor-input"
+    end
     local total = c1 - c0 - K_CALLBACK
     if surface and string.sub(surface, 1, 7) == "loader:" then
         gate(total <= 15000, surface .. " exceeds the complete loading callback ceiling: " .. total)
@@ -1144,7 +1203,11 @@ local function runCallback(kind, context, fn, e, t)
         end
     end
     local paintSurface = surface
-        and (string.match(surface, "^editor%-render:[2-6]$") or string.match(surface, "^editor%-drawer:"))
+        and (
+            surface == "editor-input"
+            or string.match(surface, "^editor%-render:[2-6]$")
+            or string.match(surface, "^editor%-drawer:")
+        )
     if
         (kind == "refresh" or kind == "background")
         and (paintSurface or string.sub(config.scenario, 1, 6) == "modal-" and surface)
@@ -1330,21 +1393,31 @@ local function entry(kind, context, fn, e, t)
     end
     recording = phase.record ~= false
     local target = phase.kind == "background" and backgroundFn or fn
-    local callbackEvent = phase.event and assert(_G[phase.event], "unknown native event") or e
+    local callbackEvent = e
+    if phase.event and not phase.eventSent then
+        callbackEvent = assert(_G[phase.event], "unknown native event: " .. phase.event)
+    end
+    local callbackTouch = phase.touch or t
     local step = phase.step or 0
     if kind == "background" and phase.kind ~= "background" then
         runCallback(kind, context, fn, e, t)
     elseif step > 0 and kind == "refresh" then
         for _ = 1, phase.perCall or 1 do
             P.offset = P.offset + step
-            runCallback(phase.kind or kind, context, target, callbackEvent, t)
+            runCallback(phase.kind or kind, context, target, callbackEvent, callbackTouch)
+            if phase.event then
+                phase.eventSent, callbackEvent = true, e
+            end
             advance(context)
             if finished or config.phases[phaseIndex] ~= phase then
                 break
             end
         end
     else
-        runCallback(phase.kind or kind, context, target, callbackEvent, t)
+        runCallback(phase.kind or kind, context, target, callbackEvent, callbackTouch)
+        if phase.event then
+            phase.eventSent = true
+        end
         advance(context)
     end
     recording = true

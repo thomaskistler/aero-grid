@@ -236,5 +236,21 @@ do
     assert(ui.drawerWorkBound(context) == nil, "ordinary drawer commands have no construction eligibility")
 end
 
+do
+    local context, state = setup(0)
+    for _ = 1, 15 do assert(ui.advance(context)) end
+    local opened = 0
+    context.editorDrawerModule.open = function(_, actual, mode)
+        assert(actual == state and mode == "add")
+        opened = opened + 1
+    end
+    EVT_VIRTUAL_ENTER, EVT_VIRTUAL_EXIT = 9302, 9303
+    assert(ui.handle(context, EVT_VIRTUAL_ENTER) and state.drawerOpen.mode == "add")
+    assert(opened == 0 and ui.drawerWorkBound(context) == ui.DRAWER_OPEN_BOUNDS.add)
+    assert(ui.handle(context, EVT_VIRTUAL_EXIT) and not state.drawerOpen and opened == 0)
+    assert(ui.handle(context, EVT_VIRTUAL_ENTER) and ui.advance(context))
+    assert(opened == 1 and not state.drawerOpen and state.renderStage == 1)
+end
+
 lvgl = previousLvgl
 print("editor UI construction: staged geometry/publication, errors, resumed drafts and cancellation passed")

@@ -488,8 +488,10 @@ publication callback. New input preempts unfinished painting instead of being
 dropped. These stages admit services under `editor-render`; geometry
 synchronization and higher-priority save/preview commands keep their own gates.
 Settings drawers construct one control and lay out at most four rows per
-advance. These measured advances admit services under `editor-drawer`; opening
-the form and executing drawer commands remain separate admission gates.
+advance. Ordinary selection and modal input admit services under `editor-input`.
+Enter/tap queues a separately bounded `editor-drawer` opening; Return can cancel
+before construction. Drawer commands and drag enumeration retain separate
+admission gates.
 
 Put the module at `panels/<type>.lua` and reference that type in a layout.
 Regular panels declare `supportedSpans = { "any" }` and adapt their contents to

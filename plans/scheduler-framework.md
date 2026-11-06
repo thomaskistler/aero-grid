@@ -3823,3 +3823,40 @@ python3 tools/audit-scheduler.py layout-loading-chunks model-panels modal-settin
 build/lua32/lua tests/integration/widget/test_flight_loading.lua "$PWD"
 build/lua32/lua tests/integration/widget/test_shared_flight.lua "$PWD"
 ```
+## 68. Ordinary editor input and queued drawer opening (R5)
+
+`editor-input` is a service-only kind (fixed overhead 2400), cloned through the
+shared `SERVICE_KINDS` path. Input preempts painting without running geometry.
+Enter/tap now queues opening separately, retaining the selected panel; Return
+can cancel before the native dialog is constructed. Queued work cannot borrow
+a paint bound. Root field filtering avoids redundant empty-path traversals;
+field contents and order are unchanged.
+
+| Complete handler / controller advance | Native maximum | Charge |
+|---|---:|---:|
+| Enter queue | 119 | 200 |
+| Sixteen-panel gear tap | 742 | 900 |
+| Selection / render preemption | 240 | 350 |
+| Native modal delegation | 26 | 100 |
+| Touch release | 49 | 120 |
+| Cancel queued opening | 19 | 120 |
+| Configure opening | 3451 | 3900 |
+| Native Add menu opening | 208 | 300 |
+
+Nineteen native scenarios cover all fifteen panel roots, supported rotary/virtual
+input, preemption, a sixteen-panel first/tap gesture, duplicate-tap suppression,
+the native Add menu and cancellation. Every admitted callback enforces the 15000
+ceiling and no hidden-panel refresh; full input peaks at 5569 and opening at
+4519. Every handler/opening atom is below 4000, with its fitted normal margin
+covered by the declaration. Event phases inject once rather than replaying
+Enter forever and starving pending rendering.
+
+The sixteen-panel scenario still exposes this branch's pre-existing **26033**
+legacy steady/preview callback, outside the newly admitted surfaces; parent owns
+the idle/stable-preview replacements and must rerun the case after integration.
+This is not a full-frame or owner-activation pass. General drag start/slide,
+dirty Exit, drawer mutations and optional `EVT_KEY_FIRST/REPT` APIs absent from
+Companion 2.12 remain ineligible. Lua53/int32 editor units, actual widget
+admission/cancellation, shared-host eligibility and all 38 audit-tool tests pass.
+Unchanged strict reset remains 13900 with its two original first-arm XFAILs;
+its assertions and the existing full-editor loader guard are unchanged.

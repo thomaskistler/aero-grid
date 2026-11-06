@@ -203,12 +203,16 @@ local function fieldsFor(state, listKey, itemIndex, itemPath, groupKey)
     local result = {}
     for _, field in ipairs(fields) do
         local matches = not listKey or field.key == listKey
-        for index, part in ipairs(selected) do
-            matches = matches and field.path ~= nil and field.path[index] == part
+        if matches and #selected > 0 then
+            for index, part in ipairs(selected) do
+                matches = matches and field.path ~= nil and field.path[index] == part
+            end
         end
-        for index = #selected + 1, #(field.path or {}) do
-            if type(field.path[index]) == "number" then
-                matches = false
+        if matches and field.path then
+            for index = #selected + 1, #field.path do
+                if type(field.path[index]) == "number" then
+                    matches = false
+                end
             end
         end
         if matches and field.type == "table-list" then
