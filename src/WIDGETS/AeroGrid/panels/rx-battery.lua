@@ -853,6 +853,9 @@ function rxBattery.create(parent, rect, settings, services)
 end
 
 local function invalidate(context)
+    if context.reflowWork then
+        context.reflowWork = { invalidated = true }
+    end
     if context.createStage then
         context.createInvalidated, context.gathered, context.rendered = true, nil, nil
     end
@@ -860,6 +863,8 @@ local function invalidate(context)
         context.refreshWork, context.rendered, context.gathered = nil, nil, nil
     end
 end
+
+rxBattery.cancelRefresh = invalidate
 
 function rxBattery.resetSession(context, now)
     invalidate(context)
@@ -1160,6 +1165,47 @@ function rxBattery.update(context, rect, _, detailsOnly)
         context.primitives
     )
     applyGeometry(context, rect, area, detailsOnly)
+end
+
+function rxBattery.reflow(context, rect, _, _, _, begin)
+    local work = context.reflowWork
+    if
+        begin
+        or work
+            and (work.invalidated or work.rect.x ~= rect.x or work.rect.y ~= rect.y or work.rect.w ~= rect.w or work.rect.h ~= rect.h)
+    then
+        invalidate(context)
+        local captured = { x = rect.x, y = rect.y, w = rect.w, h = rect.h }
+        context.reflowWork = {
+            stage = "fit",
+            rect = captured,
+            geometry = regionPlan(
+                context.theme,
+                context.themeBuilder,
+                captured,
+                context.layout,
+                context.fonts,
+                context.sample,
+                nil,
+                context.primitives
+            ),
+        }
+        return false
+    end
+    if not work then
+        return true
+    elseif work.stage == "fit" then
+        if resolveRegion(work.geometry) then
+            work.area, work.geometry, work.stage = finishRegion(work.geometry), nil, "place"
+        end
+    elseif work.stage == "place" then
+        applyGeometry(context, work.rect, work.area)
+        context.reflowWork = nil
+        return true
+    else
+        error("unknown rx-battery reflow stage: " .. tostring(work.stage))
+    end
+    return false
 end
 
 function rxBattery.stageOf(context)

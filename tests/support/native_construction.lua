@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 -- Record the final tree while forwarding every operation to real native LVGL.
-return function(real, cases, sameTree, parent)
+return function(real, cases, sameTree, parent, exercise)
     local api = setmetatable({}, { __index = real })
     local function record(kind, native, properties, owner)
         local node = { kind = kind, native = native, properties = {}, children = {}, hidden = false }
@@ -56,6 +56,7 @@ return function(real, cases, sameTree, parent)
             services = case.dependencies()
             services.staged = true
             owner = record("box", roots[2], {}, nil)
+            self.container = owner
             self.partial = withApi(case.panel.create, owner, case.rect, case.settings, services)
             assert(self.partial.createStage and not self.partial.panel, case.name)
             self.phase = "construct"
@@ -73,12 +74,15 @@ return function(real, cases, sameTree, parent)
             withApi(case.panel.refresh, self.reference)
             withApi(case.panel.refresh, self.partial)
             sameTree(self.reference.panel.root, self.partial.panel.root, case.name .. "/native-refresh")
+            self.phase = exercise and "exercise" or "cleanup"
+        elseif self.phase == "exercise" then
+            withApi(exercise, self, case)
             self.phase = "cleanup"
         else
             -- Deleted native objects must be collected before the next build.
             roots[1]:clear()
             roots[2]:clear()
-            self.reference, self.partial = nil, nil
+            self.reference, self.partial, self.container = nil, nil, nil
             self.index, self.checked, self.phase = self.index + 1, self.checked + 1, "begin"
         end
         return false

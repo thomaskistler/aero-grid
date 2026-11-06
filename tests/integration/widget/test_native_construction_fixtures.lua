@@ -24,7 +24,21 @@ end
 local sameTree = assert(loadfile(root .. "/tests/support/panel_tree.lua"))()
 local parity = assert(loadfile(root .. "/tests/support/native_construction.lua"))()(lvgl, cases, sameTree, host.page)
 local cost = assert(loadfile(root .. "/tests/support/native_construction_cost.lua"))()(host, cases)
-for _, runner in ipairs({ parity, cost }) do
+local rxCases = {}
+for _, case in ipairs(cases) do
+    if case.kind == "rx-battery" then
+        rxCases[#rxCases + 1] = case
+    end
+end
+local reflow = assert(loadfile(root .. "/tests/support/native_rx_reflow.lua"))()(
+    host,
+    rxCases,
+    assert(loadfile(root .. "/tests/support/native_construction.lua"))(),
+    sameTree
+)
+local reflowCost = assert(loadfile(root .. "/tests/support/native_rx_reflow.lua"))()(host, rxCases, nil, nil, true)
+assert(reflowCost.costOnly, "native reflow cost measurement must not record trees")
+for _, runner in ipairs({ parity, cost, reflow, reflowCost }) do
     local done
     for _ = 1, 2000 do
         done = runner:step()
@@ -38,6 +52,6 @@ for _, runner in ipairs({ parity, cost }) do
             break
         end
     end
-    assert(done and runner.checked == #cases, "native fixture must complete every case")
+    assert(done and runner.checked == runner.total, "native fixture must complete every case")
 end
 print("Native construction fixtures: real-API recorder, complete loader/lifecycle controllers and cleanup passed")

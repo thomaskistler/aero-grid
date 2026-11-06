@@ -43,6 +43,16 @@ class InstrumentationTests(unittest.TestCase):
                 self.assertTrue(case["phases"][2]["untilConstruction"])
                 self.assertTrue(audit.lua_literal(case["phases"]))
 
+    def test_rx_reflow_matrix_uses_real_lifecycle_and_separate_cleanup_turns(self):
+        for name in ("rx-reflow-matrix", "rx-reflow-cost"):
+            case = load_cli().scenarios()[name]
+            self.assertEqual(case["constructionKind"], "rx-battery")
+            self.assertTrue(case["constructionParity"])
+            self.assertEqual(case["phases"][1]["action"], name)
+            self.assertTrue(case["phases"][2]["untilConstruction"])
+            for phase in case["phases"]:
+                self.assertEqual(phase["perCall"], 1)
+
     def test_framework_measures_uninstrumented_chart_and_packages_shared_fixture(self):
         cli = load_cli()
         with tempfile.TemporaryDirectory() as directory:

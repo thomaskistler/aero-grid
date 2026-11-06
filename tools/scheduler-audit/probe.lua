@@ -113,7 +113,8 @@ local function finish(label, raw, leak)
     if loadBound then
         gate(cost <= loadBound, label .. " exceeds its bounded loading charge: " .. cost)
     end
-    if label == "lifecycle:advanceReflow" then
+    local rxReflow = string.match(label, "^lifecycle:advanceReflow:rx%-battery:")
+    if label == "lifecycle:advanceReflow" or rxReflow then
         gate(cost <= 4000, "complete geometry advance exceeds the atom cap: " .. cost)
     end
     local loadingConstructor = string.match(label, "^load:panel%-build:([^:]+)$")
@@ -123,6 +124,7 @@ local function finish(label, raw, leak)
         or string.match(label, "^lifecycle:retirePage:")
         or label == "lifecycle:rebuildPage"
         or loadingConstructor and boundedConstructors[loadingConstructor]
+        or rxReflow
     then
         local fitted = math.ceil((cost * 1.10 + 50) / 10) * 10
         gate(fitted <= 4000, label .. " exceeds the fitted lifecycle atom cap: " .. cost .. " -> " .. fitted)
@@ -160,6 +162,9 @@ local function finish(label, raw, leak)
             if bound then
                 gate(cost <= bound, label .. " exceeds the editor input charge: " .. cost)
             end
+        end
+        if rxReflow then
+            record("lifecycle:advanceReflow", cost, own, units > 0 and units or 1, children)
         end
         local stage = tonumber(string.match(label, "^editor:advanceEditor:render:(%d+)$"))
         local opening = string.match(label, "^editor:advanceEditor:drawer%-open:(%a+)$")
@@ -453,7 +458,20 @@ local function install(context)
             if type(value) == "function" and key ~= "workBound" then
                 local name = key
                 local label = "lifecycle:" .. name
-                if name == "advanceAppRebuild" or name == "retirePage" then
+                if name == "advanceReflow" then
+                    label = function(token, current)
+                        if token then
+                            return token
+                        end
+                        local entry = current.panels[current.reflowIndex or 0]
+                        if entry and entry.module.id == "rx-battery" then
+                            local work = entry.instance.reflowWork
+                            local stage = current.reflowEntry ~= entry or not work or work.invalidated
+                            return "lifecycle:advanceReflow:rx-battery:" .. (stage and "begin" or work.stage)
+                        end
+                        return "lifecycle:advanceReflow"
+                    end
+                elseif name == "advanceAppRebuild" or name == "retirePage" then
                     label = function(token, current)
                         if token then
                             return "lifecycle:" .. name .. ":" .. token
@@ -827,7 +845,7 @@ end
 
 local actions
 actions = {
-    ["construction-parity"] = function(context, costOnly)
+    ["construction-parity"] = function(context, costOnly, reflow, reflowCost)
         local function load(relative)
             if relative == "lib/theme.lua" then
                 return context.themeBuilder
@@ -841,7 +859,18 @@ actions = {
             context.themeBuilder,
             config.constructionKind
         )
-        if costOnly then
+        if reflow then
+            local sameTree = assert(loadScript("/WIDGETS/AeroGrid/audit/panel_tree.lua"))()
+            local recorder = assert(loadScript("/WIDGETS/AeroGrid/audit/native_construction.lua"))()
+            P.construction = assert(loadScript("/WIDGETS/AeroGrid/audit/native_rx_reflow.lua"))()(
+                context,
+                cases,
+                recorder,
+                sameTree,
+                reflowCost
+            )
+            assert(not reflowCost or P.construction.costOnly, "RX cost matrix must not record native trees")
+        elseif costOnly then
             P.construction =
                 assert(loadScript("/WIDGETS/AeroGrid/audit/native_construction_cost.lua"))()(context, cases)
         else
@@ -856,6 +885,12 @@ actions = {
     end,
     ["construction-cost"] = function(context)
         actions["construction-parity"](context, true)
+    end,
+    ["rx-reflow-matrix"] = function(context)
+        actions["construction-parity"](context, false, true)
+    end,
+    ["rx-reflow-cost"] = function(context)
+        actions["construction-parity"](context, false, true, true)
     end,
     ["construction-parity-step"] = function()
         P.construction.done = P.construction:step()
