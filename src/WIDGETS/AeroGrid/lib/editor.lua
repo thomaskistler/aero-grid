@@ -665,9 +665,17 @@ local function entryPath(field)
 end
 
 --- One control per declared field of every entry, whether or not it is set.
-local function entryFields(setting, entries, result, rootKey, prefix)
+local function entryFields(setting, entries, result, rootKey, prefix, selected)
     rootKey, prefix = rootKey or setting.key, prefix or {}
-    for index = 1, #entries do
+    local first, last = 1, #entries
+    if selected then
+        first = selected[#prefix + 1]
+        if type(first) ~= "number" or entries[first] == nil then
+            return
+        end
+        last = first
+    end
+    for index = first, last do
         for _, field in ipairs(setting.fields) do
             local relative = entryPath(field)
             local path = copy(prefix)
@@ -675,33 +683,46 @@ local function entryFields(setting, entries, result, rootKey, prefix)
             for _, key in ipairs(relative) do
                 path[#path + 1] = key
             end
-            result[#result + 1] = {
-                key = rootKey,
-                path = path,
-                label = (setting.label or setting.key) .. "[" .. index .. "]." .. table.concat(relative, "."),
-                entryLabel = field.label,
-                itemLabel = field.itemLabel,
-                -- Shown when the entry omits the field; never the live value,
-                -- which the drawer reads from the draft.
-                value = field.default,
-                type = field.fields and "table-list" or field.type,
-                choices = field.choices,
-                min = field.min,
-                max = field.max,
-                step = field.step,
-                required = field.required,
-                empty = field.empty,
-                within = field.within,
-                minItems = field.minItems,
-                maxItems = field.maxItems,
-            }
+            local include = not selected or #selected == #prefix + 1
+            if include then
+                result[#result + 1] = {
+                    key = rootKey,
+                    path = path,
+                    label = (setting.label or setting.key) .. "[" .. index .. "]." .. table.concat(relative, "."),
+                    entryLabel = field.label,
+                    itemLabel = field.itemLabel,
+                    -- Shown when the entry omits the field; never the live value,
+                    -- which the drawer reads from the draft.
+                    value = field.default,
+                    type = field.fields and "table-list" or field.type,
+                    choices = field.choices,
+                    min = field.min,
+                    max = field.max,
+                    step = field.step,
+                    required = field.required,
+                    empty = field.empty,
+                    within = field.within,
+                    minItems = field.minItems,
+                    maxItems = field.maxItems,
+                }
+            end
             if field.fields then
                 local value = entries[index]
                 for _, key in ipairs(relative) do
                     value = type(value) == "table" and value[key] or nil
                 end
-                result[#result].value = type(value) == "table" and #value or 0
-                entryFields(field, value or {}, result, rootKey, path)
+                if include then
+                    result[#result].value = type(value) == "table" and #value or 0
+                end
+                local descend = not selected or #selected > #path
+                if selected then
+                    for part, key in ipairs(path) do
+                        descend = descend and selected[part] == key
+                    end
+                end
+                if descend then
+                    entryFields(field, value or {}, result, rootKey, path, selected)
+                end
             end
         end
     end
@@ -913,14 +934,19 @@ function editor.orderFields(fields, entry)
     return fields
 end
 
-function editor.formFields(session)
+--- Optional selection limits entry expansion to one drawer's key and item path.
+function editor.formFields(session, selection)
     local settings, config, module = editor.settings(session)
     if not settings or type(config) ~= "table" or not module then
         return nil, config
     end
     local fields = {}
     for _, setting in ipairs(settings) do
-        if type(setting) == "table" and type(setting.key) == "string" then
+        if
+            type(setting) == "table"
+            and type(setting.key) == "string"
+            and (not selection or not selection.key or selection.key == setting.key)
+        then
             local value = config[setting.key]
             if setting.section then
                 fields[#fields + 1] = { label = setting.section, type = "section" }
@@ -940,7 +966,9 @@ function editor.formFields(session)
                     visibleWhen = setting.visibleWhen,
                 }
                 if type(setting.fields) == "table" then
-                    entryFields(setting, value, fields)
+                    if not selection or selection.key then
+                        entryFields(setting, value, fields, nil, nil, selection and selection.path)
+                    end
                 else
                     flattenFields(value, { setting.key }, setting.label or setting.key, fields)
                 end

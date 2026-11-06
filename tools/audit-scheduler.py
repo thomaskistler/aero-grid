@@ -271,7 +271,7 @@ def scenarios():
             {"name": "editor-close", "kind": "refresh", "action": "discard-editor",
              "callbacks": 40, "step": 5, "perCall": 4},
         ])
-    for panel in ("navigation", "metric", "chart", "state", "rx-battery", "output", "service-probe", "host-diagnostics"):
+    for panel in PANELS:
         result[f"editor-drawer-{panel}"] = dict(result[f"{panel}-max"], fullscreen=True, phases=[
             {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 4},
             {"name": "editor-build", "kind": "refresh", "action": "open-editor",
@@ -293,6 +293,14 @@ def scenarios():
              "callbacks": 1, "step": 5, "perCall": 1},
         ]
         result[f"editor-entry-{panel}"] = dict(base, phases=phases)
+    phases = list(result["editor-entry-state"]["phases"])
+    phases[-1:-1] = [
+        {"name": "state-build", "kind": "refresh", "action": "open-entry-drawer",
+         "callbacks": 160, "step": 5, "perCall": 4},
+        {"name": "state-check", "kind": "refresh", "action": "check-drawer",
+         "callbacks": 1, "step": 5, "perCall": 1},
+    ]
+    result["editor-state-detail"] = dict(result["editor-entry-state"], phases=phases)
     result["editor-rebuild-navigation-tape"] = dict(result["editor-rebuild-navigation"],
                                                      config={"showTape": False})
     for tag in ("min", "max", "16"):

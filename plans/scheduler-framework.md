@@ -3189,3 +3189,24 @@ input/dismissal now uses its existing measured 300 prior-work charge and
 admission, then passed while still rejecting hidden panel refresh. Native
 `modal-location` passes with a 3021 complete modal callback maximum and 9532
 across the whole scenario. No new kind, bound, owner or recording policy changed.
+
+## 47. Drawer-scoped form generation (R5 prerequisite)
+
+`editor.formFields(session, selection)` can limit expansion to a drawer's key
+and entry path. Ordinary callers still receive the complete field list.
+Root drawers no longer construct every nested entry's unused metadata; entry
+drawers visit only their selected branch. The drawer retains its existing
+filtering and Label-first ordering.
+
+Native opening falls from 7466 to at most 3481 across all fifteen panel
+families. Metric/Chart/State root openings are 1906/2768/2231; nested openings
+are 2708/2768/2449, including the second-level State drawer. All nineteen native
+scenarios pass, with a 10513 whole-scenario maximum; opening now has an explicit
+4000 atom gate in the probe. No input callback gains service eligibility:
+dragging, mutation commands and their enclosing accounting still need their
+own measurements.
+
+Lua53/int32 tests compare every visible field's complete metadata with the
+unfiltered form for every catalog panel and nested entry path. Complete editor
+integration preserves its 15000 mock maximum. All 38 audit-tool tests pass.
+Production ownership and recording policies remain unchanged.

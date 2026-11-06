@@ -872,6 +872,63 @@ local function testStagedInitialization()
     end
 end
 
+local function testDrawerScopedFields()
+    local function equal(a, b)
+        assert(type(a) == type(b), "scoped fields preserve metadata types")
+        if type(a) ~= "table" then
+            assert(a == b, "scoped fields preserve metadata values")
+            return
+        end
+        for key, value in pairs(a) do equal(value, b[key]) end
+        for key in pairs(b) do assert(a[key] ~= nil, "scoped fields preserve every metadata key") end
+    end
+    local function visibleFields(fields, selection)
+        local result = {}
+        for _, field in ipairs(fields) do
+            local matches = not selection.key or field.key == selection.key
+            for index, part in ipairs(selection.path) do
+                matches = matches and field.path ~= nil and field.path[index] == part
+            end
+            for index = #selection.path + 1, #(field.path or {}) do
+                if type(field.path[index]) == "number" then matches = false end
+            end
+            if matches and (selection.key or not field.path or field.type == "table-list") then
+                result[#result + 1] = field
+            end
+        end
+        return result
+    end
+    for _, entry in ipairs(editor.CATALOG) do
+        modules[entry.type] = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/" .. entry.type .. ".lua"))()
+        local input = document()
+        input.panels[1].type, input.panels[1].config = entry.type, {}
+        local session = newSession(input)
+        local all = assert(editor.formFields(session))
+        local selections = { { path = {} } }
+        for _, field in ipairs(all) do
+            local last
+            for index, part in ipairs(field.path or {}) do
+                if type(part) == "number" then last = index end
+            end
+            if last then
+                local path = {}
+                for index = 1, last do path[index] = field.path[index] end
+                selections[#selections + 1] = { key = field.key, path = path }
+            end
+        end
+        for _, selection in ipairs(selections) do
+            local scoped = assert(editor.formFields(session, selection))
+            equal(visibleFields(scoped, selection), visibleFields(all, selection))
+            if not selection.key then
+                for _, field in ipairs(scoped) do
+                    assert(not field.path, "root drawers do not generate unrelated entry controls")
+                end
+            end
+        end
+    end
+end
+
+testDrawerScopedFields()
 testStagedInitialization()
 testAllPanelDrawersStartWithLabel()
 testCatalogAlphabeticalOrder()

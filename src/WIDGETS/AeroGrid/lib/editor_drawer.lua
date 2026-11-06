@@ -187,11 +187,12 @@ end
 
 local function fieldsFor(state, listKey, itemIndex, itemPath, groupKey)
     local editor = state.handlers.editor
+    local selected = itemPath or (listKey and { itemIndex } or {})
     local fields, config
     if groupKey then
         fields, config = editor.drawerFields(state.session, groupKey)
     else
-        fields, config = editor.formFields(state.session)
+        fields, config = editor.formFields(state.session, { key = listKey, path = selected })
     end
     if not fields then
         error(config)
@@ -200,7 +201,6 @@ local function fieldsFor(state, listKey, itemIndex, itemPath, groupKey)
         return fields, config
     end
     local result = {}
-    local selected = itemPath or (listKey and { itemIndex } or {})
     for _, field in ipairs(fields) do
         local matches = not listKey or field.key == listKey
         for index, part in ipairs(selected) do

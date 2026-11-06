@@ -203,8 +203,7 @@ class ScenarioTests(unittest.TestCase):
 
     def test_drawer_scenarios_require_completed_root_and_nested_construction(self):
         scenarios = self.cli.scenarios()
-        for panel in ("navigation", "metric", "chart", "state", "rx-battery", "output",
-                      "service-probe", "host-diagnostics"):
+        for panel in PANELS:
             spec = scenarios[f"editor-drawer-{panel}"]
             self.assertTrue(spec["fullscreen"])
             self.assertEqual(spec["expected"], 1)
@@ -216,6 +215,9 @@ class ScenarioTests(unittest.TestCase):
             self.assertEqual([phase["action"] for phase in spec["phases"] if "action" in phase],
                              ["open-editor", "open-drawer", "check-drawer",
                               "open-entry-drawer", "check-drawer", "close-editor"])
+        actions = [phase["action"] for phase in scenarios["editor-state-detail"]["phases"] if "action" in phase]
+        self.assertEqual(actions.count("open-entry-drawer"), 2)
+        self.assertEqual(actions.count("check-drawer"), 3)
 
     def test_settings_reset_case_keeps_rich_dashboard_and_logical_picker_extremes(self):
         spec = self.cli.scenarios()["modal-settings-reset"]

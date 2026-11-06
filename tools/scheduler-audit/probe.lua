@@ -117,6 +117,9 @@ local function finish(label, raw, leak)
                 label .. " exceeds the editor paint charge: " .. cost)
         end
         local drawerStage = string.match(label, "^editor:drawer:advance:(%a+)")
+        if label == "editor:drawer:open" then
+            gate(cost <= 4000, label .. " exceeds the drawer opening atom cap: " .. cost)
+        end
         local drawerBound = drawerStage and P.editorDrawerBounds and P.editorDrawerBounds[drawerStage]
         if drawerBound then
             gate(cost <= 4000, label .. " exceeds the drawer atom cap: " .. cost)
