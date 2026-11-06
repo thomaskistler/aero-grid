@@ -64,6 +64,18 @@ local linkStatus = {
     -- is still a number on a screen: five hertz is indistinguishable from fifty
     -- and costs a tenth as much of the shared instruction budget.
     refreshInterval = 20,
+    decl = {
+        class = "normal",
+        kinds = { steady = true },
+        first = "prepare",
+        stages = {
+            prepare = { fixed = 0, perUnit = 840, maxUnits = 1 },
+            geometry = { fixed = 0, perUnit = 3210, maxUnits = 1 },
+            layout = { fixed = 0, perUnit = 1080, maxUnits = 1 },
+            render = { fixed = 0, perUnit = 1710, maxUnits = 1 },
+            apply = { fixed = 0, perUnit = 1390, maxUnits = 1 },
+        },
+    },
     settings = {
         { key = "label", label = "Label", type = "string", default = "LINK" },
         { key = "rssiSource", label = "RSSI source", type = "string", default = "RSSI" },
@@ -1099,9 +1111,16 @@ function linkStatus.apply(context, drawn)
     end
 end
 
+function linkStatus.cancelRefresh(context)
+    if context.refreshWork then
+        context.refreshWork, context.rendered = nil, nil
+    end
+end
+
 --- Advance the panel, repainting only when something drawn changed.
 ---@param context AeroGridLinkContext
 function linkStatus.refresh(context)
+    linkStatus.cancelRefresh(context)
     if not context.rssiFeed and not context.qualityFeed then
         return
     end
@@ -1120,14 +1139,8 @@ function linkStatus.refresh(context)
     end
 end
 
---- Reposition after a zone change.
----@param context AeroGridLinkContext
----@param rect AeroGridRect
-function linkStatus.update(context, rect)
+local function applyGeometry(context, rect, area)
     context.rect = rect
-    local area =
-        linkStatus.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts, context.sample)
-
     context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
     context.primitives.setFont(context.value, area.value)
     context.value:set({
@@ -1222,10 +1235,119 @@ function linkStatus.update(context, rect)
         area.pad,
         area.barY,
         area.content,
-        linkStatus.fraction(context.settings, context.reading, context.primitives),
+        (context.text == "NO LINK" or context.stateName == "unavailable") and 0
+            or linkStatus.fraction(context.settings, context.reading, context.primitives),
         area.showVisual == context.showVisual
     )
     context.showVisual = area.showVisual
+end
+
+local FEEDS = { "rssiFeed", "qualityFeed", "modeFeed", "snrFeed", "powerFeed", "minimumFeed", "link" }
+
+local function snapshot(feed)
+    if feed then
+        return {
+            name = feed.name,
+            known = feed.known,
+            available = feed.available,
+            stale = feed.stale,
+            value = feed.value,
+            precision = feed.precision,
+            unitText = feed.unitText,
+            live = feed.live,
+            indicator = feed.indicator,
+            rssi = feed.rssi,
+        }
+    end
+end
+
+local function frozen(context, fn)
+    local original, feeds = {}, context.refreshWork.feeds
+    for _, key in ipairs(FEEDS) do
+        original[key], context[key] = context[key], feeds[key]
+    end
+    local ok, first, second = pcall(fn, context)
+    for _, key in ipairs(FEEDS) do
+        context[key] = original[key]
+    end
+    if not ok then
+        error(first, 0)
+    end
+    return first, second
+end
+
+local function prepareTask(context)
+    local reading = linkStatus.read(context)
+    local noLink = reading.linkDown and reading.available
+    local sample = { digits = noLink and "NO LINK" or "-100", unit = noLink and "" or "dBm" }
+    local work = context.refreshWork
+    work.sample = sample
+    work.stage = context.sample.digits ~= sample.digits and "geometry" or "render"
+end
+
+local function renderTask(context)
+    return context.primitives.changed(context, linkStatus.render)
+end
+
+function linkStatus.stageOf(context)
+    return context.refreshWork and context.refreshWork.stage or "prepare", 1
+end
+
+function linkStatus.step(context, _, stage)
+    context.used = 0
+    if stage ~= linkStatus.stageOf(context) then
+        return nil, true
+    end
+    context.used = 1
+    if stage == "prepare" then
+        if not context.rssiFeed and not context.qualityFeed then
+            return
+        end
+        local feeds = {}
+        for _, key in ipairs(FEEDS) do
+            feeds[key] = snapshot(context[key])
+        end
+        context.refreshWork = { feeds = feeds }
+        frozen(context, prepareTask)
+    elseif stage == "geometry" then
+        local work = context.refreshWork
+        work.area = linkStatus.regionsFor(
+            context.theme,
+            context.themeBuilder,
+            context.rect,
+            context.layout,
+            context.fonts,
+            work.sample
+        )
+        work.stage = "layout"
+    elseif stage == "layout" then
+        local work = context.refreshWork
+        context.sample = work.sample
+        applyGeometry(context, context.rect, work.area)
+        work.stage = "render"
+    elseif stage == "render" then
+        local changed, drawn = frozen(context, renderTask)
+        if not changed then
+            context.refreshWork = nil
+            return
+        end
+        context.refreshWork.drawn, context.refreshWork.stage = drawn, "apply"
+    else
+        linkStatus.apply(context, context.refreshWork.drawn)
+        context.refreshWork = nil
+        return
+    end
+    return nil, true
+end
+
+--- Reposition after a zone change.
+---@param context AeroGridLinkContext
+---@param rect AeroGridRect
+function linkStatus.update(context, rect)
+    linkStatus.cancelRefresh(context)
+    local area =
+        linkStatus.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts, context.sample)
+    applyGeometry(context, rect, area)
 end
 
 return linkStatus

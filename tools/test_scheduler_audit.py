@@ -82,6 +82,33 @@ class InstrumentationTests(unittest.TestCase):
             result = compile_source(text)
             self.assertNotIsInstance(result, tuple, result)
 
+    def test_link_toggle_removes_all_receiver_evidence_and_recovers(self):
+        from lupa.lua53 import LuaRuntime
+        runtime = LuaRuntime(unpack_returned_tuples=True)
+        runtime.execute("""
+            NOW = 0
+            config = { toggleLink = true, swing = 0 }
+            function getTime() return NOW end
+            function getValue() return 42 end
+            function getRSSI() return 72 end
+            function getSourceValue() return 42, true, true end
+            function loadScript() return function() return config end end
+        """)
+        env = runtime.execute((audit.PROBE_DIR / "inputs.lua").read_text())
+        self.assertEqual(env.getValue("RQly"), 42)
+        self.assertEqual(env.getRSSI(), 72)
+        runtime.globals().NOW = 400
+        self.assertEqual(env.getValue("RQly"), 0)
+        self.assertEqual(env.getRSSI(), 0)
+        self.assertEqual(env.getSourceValue(1), (0, True, False))
+        runtime.globals().NOW = 800
+        self.assertEqual(env.getValue("RQly"), 42)
+        self.assertEqual(env.getRSSI(), 72)
+        self.assertEqual(env.getSourceValue(1), (42, True, True))
+        runtime.globals().config.toggleLink = False
+        runtime.globals().NOW = 1200
+        self.assertEqual(env.getSourceValue(1), (42, True, True))
+
 
 class ScenarioTests(unittest.TestCase):
     def setUp(self):
@@ -161,6 +188,16 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(spec["owners"], ["panel:chart", "panel:metric"])
         self.assertEqual(spec["layout"], scenarios["session-reset"]["layout"])
         self.assertEqual(spec["phases"], scenarios["session-reset"]["phases"])
+
+    def test_link_task_scenarios_cover_elrs_and_generic_with_isolated_ownership(self):
+        scenarios = self.cli.scenarios()
+        for tag in ("min", "max", "16", "generic"):
+            spec = scenarios[f"link-status-tasks-{tag}"]
+            self.assertEqual(spec["owners"], ["panel:link-status"])
+            self.assertEqual(spec["config"]["protocol"], "generic" if tag == "generic" else "elrs4")
+            self.assertEqual(spec["config"]["visual"], "bar")
+            self.assertTrue(spec["toggleLink"])
+            self.assertEqual(spec["expected"], 16 if tag == "16" else 1)
 
     def test_navigation_task_scenarios_cover_visible_tapes_and_bearing(self):
         scenarios = self.cli.scenarios()

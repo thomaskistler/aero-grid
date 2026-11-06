@@ -119,6 +119,16 @@ context.zone.w, context.zone.h = 320, 240
 fixture.pump(context, 40)
 assertions.assertEqual(wide.text, "NO LINK", "resize must preserve the disconnected headline")
 assert(wide.themeBuilder.measureText(wide.area.value, wide.text) <= wide.area.valueBudget)
+for _, id in ipairs({ "detailed", "wide-quality", "compact" }) do
+    local panel = fixture.instanceOf(context, id)
+    if panel.bar then
+        assertions.assertEqual(
+            panel.bar.fill.properties.w,
+            0,
+            "resize must not resurrect a lost link's retained reading"
+        )
+    end
+end
 fixture.radio.rssi = 75
 context.zone.w, context.zone.h = 480, 272
 fixture.pump(context, 40)

@@ -214,6 +214,16 @@ def scenarios():
                                                        "satelliteSource": "Sats"})
     result["navigation-tasks-4"] = dict(result["navigation-tasks-max"], expected=4, placements={
         f"n{i}": ((i - 1) % 2 * 2, (i - 1) // 2 * 2, 2, 2) for i in range(1, 5)})
+    for tag in ("min", "max", "16"):
+        base = result[f"link-status-{tag}"] if tag != "16" else dict(result["metric-16"], recipe="link-status")
+        result[f"link-status-tasks-{tag}"] = dict(
+            base, owners=["panel:link-status"], phases=standard_phases(), toggleLink=True,
+            config={"protocol": "elrs4", "reading": "quality", "rssiSource": "1RSS", "qualitySource": "RQly",
+                    "modeSource": "RFMD", "snrSource": "RSNR", "powerSource": "TPWR", "visual": "bar"})
+    result["link-status-tasks-generic"] = dict(result["link-status-tasks-max"],
+        config={"protocol": "generic", "reading": "rssi", "rssiSource": "1RSS", "qualitySource": "RQly",
+                "modeSource": "RFMD", "snrSource": "RSNR", "powerSource": "TPWR",
+                "extrema": "source", "extremaSource": "1RSS-", "visual": "bar"})
     for panel in ("flight-counter", "flight-mode", "flight-timer", "state", "trim-panel", "tx-battery", "model-identity"):
         for tag in ("min", "max", "16"):
             base = result[f"{panel}-{tag}"] if tag != "16" else dict(result["metric-16"], recipe=panel)
@@ -316,6 +326,7 @@ def prepare(capture, name, spec, sd, mode="legacy"):
               "fullscreen": spec.get("fullscreen", False),
               "baseInputs": bool(inputs), "swing": 0.4,
               "toggleSwitches": spec.get("toggleSwitches", spec["recipe"] == "state"),
+              "toggleLink": spec.get("toggleLink", False),
               "failOnError": True, "traceLimit": 300}
     if "loops" in spec:
         config["loops"] = spec["loops"]

@@ -53,9 +53,24 @@ env.getValue = wrapReader("getValue")
 env.getOutputValue = wrapReader("getOutputValue")
 env.getRSSI = wrapReader("getRSSI", true)
 
+if config.toggleLink then
+    for _, name in ipairs({ "getValue", "getRSSI" }) do
+        local reader = env[name]
+        env[name] = function(...)
+            if math.floor(getTime() / 400) % 2 == 1 then
+                return 0
+            end
+            return reader(...)
+        end
+    end
+end
+
 local sourceValue = overrides.getSourceValue or _G.getSourceValue
 if type(sourceValue) == "function" then
     env.getSourceValue = function(...)
+        if config.toggleLink and math.floor(getTime() / 400) % 2 == 1 then
+            return 0, true, false
+        end
         calls = calls + 1
         local value, current, fresh = sourceValue(...)
         return swing(value, calls), current, fresh

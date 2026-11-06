@@ -367,6 +367,11 @@ includes lazy image creation, filesystem fallback and refitting the heading when
 the name changes. Flight Counter shares its reading/painting helper but leaves
 cadence to the scheduler instead
 of applying a second local clock throttle.
+Link Status captures its six source readings and the shared link view before
+yielding. It separately resolves and applies link-loss geometry, renders frozen
+readings and paints; cancellation drops the frame without publishing unfinished
+sample metadata. Reflow keeps a lost/unavailable link's bar empty rather than
+reconstructing a healthy bar from its retained numeric reading.
 
 Scheduler-owned placements enroll one per callback with an explicit setup
 reservation. Existing placements retain their releases, and pending enrollment

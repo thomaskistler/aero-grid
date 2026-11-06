@@ -2512,3 +2512,62 @@ XFAILs; retained shared-module growth is 0.1 KiB.
 
 This validates refresh, not its synchronous construction/reflow envelope.
 Production ownership and all remaining lifecycle/Flight/Smart gates are unchanged.
+
+## 38. Bounded Link Status refresh (production owner unchanged)
+
+Link Status snapshots six normalized source views and the link view in one
+bounded preparation stage. Link-loss/recovery geometry resolution and placement
+are separate stages; rendering uses the captured views and restores the live
+subscriptions even on failure. Paint consumes only that rendered result.
+Resize, synchronous refresh and the new host reset hook discard captured work;
+stale plans consume zero units. Desired sample metadata is not published until
+geometry placement, so cancellation cannot suppress a still-required reflow.
+
+| Refresh stage | Native fixture worst | Lua32 fixture worst | Real native bridge worst | Declaration |
+|---|---:|---:|---:|---:|
+| Capture / prepare | 710 | 708 | 645 | 840 |
+| Geometry | 2832 | 2870 | 2538 | 3210 |
+| Layout | 917 | 931 | 891 | 1080 |
+| Render | 1501 | 1496 | 1346 | 1710 |
+| Apply | 1211 | 1191 | 1126 | 1390 |
+
+The fixture covers seven geometries, menu-corner reservation, generic/ELRS,
+all primary readings, visual/extrema options and twelve feed states. The menu
+corner raises geometry from 1494 to 2832, so the no-corner count alone is not
+used for admission. Native task images now toggle all receiver evidence off
+and back on; every one executes all five stages, rather than only steady
+numeric refreshes. The input-toggle regression checks both numeric readers,
+freshness and recovery.
+
+The integration checks 1920 changing completed frames with mutations to values,
+availability, precision, units, known/stale flags and link status after capture.
+Both actual themes, five geometries, both protocols, all primary/visual/extrema
+choices, stable no-repaint, hidden eligibility, missing feeds and error cleanup
+are covered. Every pending geometry/layout/render/apply stage is cancelled and
+resumed through cancellation, synchronous refresh and resize.
+
+That exercise exposed a coupled legacy reflow bug: resizing while `NO LINK`
+was stable reconstructed the bar from the retained numeric reading, while
+unchanged-frame suppression prevented a repaint. The shared placement helper
+now keeps lost/unavailable bars empty; the existing review suite explicitly
+checks the resized bar. Completed refresh/cancellation frames otherwise match
+actual `a3c911d` source. The old-source comparison deliberately excludes resize,
+whose bar correction is the documented behavior difference; new synchronous
+and task paths are compared through every resize/cancellation stage.
+
+```sh
+python3 tools/audit-scheduler.py --framework link-status-panel --timeout 180
+python3 tools/audit-scheduler.py link-status-tasks-min link-status-tasks-max link-status-tasks-16 link-status-tasks-generic default-gallery --timeout 180
+build/lua32/lua tests/integration/widget/test_link_status_task.lua "$PWD"
+make test-lua32
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+```
+
+Native whole-callback maxima for the five images are
+9189/9189/10871/9838/12738. The unit/review/task, actual-source parity,
+host/reset/shared-module and 33 audit-tool suites pass. Reset remains at
+14300 mock instructions and its two known first-arm XFAILs; retained
+shared-module growth is 0.0 KiB. Task integration also passes standalone Lua32.
+Construction/reflow callback envelopes remain distinct admission gates.
+Production ownership, ten-tick recording policy and deferred stress failures
+are unchanged.
