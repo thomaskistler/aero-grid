@@ -2964,3 +2964,84 @@ Combined native owner-isolated preview/render maxima are 10563/11782 for sixteen
 Metrics/full Chart, and log-with-recording remains 9223. The integrated renderer,
 full editor, initialization/History, host and duplicate-dispatch regressions
 pass. Production broker/panel owners and head work remain legacy.
+
+## 48. Bounded Flight/Smart adapters (R4, production owners unchanged)
+
+The shared broker now exposes two opt-in normal tasks, without deadlines.
+Flight runs at its existing 20-tick cadence and separates session attachment
+into a `configure` stage. Its `run` measurement includes the real private
+co-due Control and Telemetry runtime updates, counting, output and publication.
+Both pollers run in that release rather than halving their cadence. Smart is
+independent, returns a delay of 100 ticks, and guards its last actual poll so
+registry resync or host transfer cannot accelerate the sensor cadence.
+
+The task path retains an arming reference across late callbacks. Sensor receipt
+timestamps and continuity still break missing/stale threshold windows; local
+reading timestamps also bound standard-start and disarm confirmation. Cached
+observations cannot contribute elapsed confirmation time. Legacy polling and
+its old gap/cadence behavior remain in place until explicit activation.
+
+Proposal refresh no longer scans every widget inside a task atom: it advances
+one member, declaration, sort comparison or diagnostic fragment per release.
+It preserves unanimous configuration, sorted conflict diagnostics and pinned
+active-session settings. Factory revision changes invalidate incomplete scans.
+
+| Task stage | Native / Lua32 fixture worst | Native refresh worst | Native background worst | Declaration |
+|---|---:|---:|---:|---:|
+| Flight run | 1492 / 1492 | 1549 | 1549 | 1760 |
+| Flight configure | 1421 / 1421 | 1266 | 1266 | 1620 |
+| Smart run | 1558 / 1558 | 2047 | 1861 | 2310 |
+
+Declarations include the margin against the larger actual bridge measurement,
+not only the smaller fixture. All atoms remain below 4000, Smart below 2600.
+Framework release measurement is 242 native / 244 Lua32 against a charge of
+420; the 132 + 64/examined + 224/run charges are unchanged.
+
+Three isolated adapter images exercise chart+Counter, a background-first
+configuration, and a metric dashboard with no Flight-reading panel. Every
+declared stage executes; per-callback-kind `eligibility:` records distinguish
+refresh from background coverage. Chart+Counter peaks at 10842 refresh / 9285
+background; background-first peaks at 9596 refresh / 11377 background; no-Counter
+peaks at 12143 refresh / 6330 background. These are whole native callbacks, below
+15000. Production default-gallery is 12742 (previously 12738; the inactive
+delay-tolerance guards add four instructions).
+
+Activation is `broker:enableScheduler(context)`, idempotent and restricted to
+`broker:owningContext()` (held weakly). The owning Flight facade has count 1
+and exposes both registrations, independent of panel demand; other widgets
+expose neither. The caller must force host resync/enrollment. Replacing the
+owning facade transfers registrations and clears demand on the old facade.
+`broker:schedulerService(context)` supplies a stable service-like registration
+source even while loading sets `context.serviceRuntime=nil` or constructs a
+partial registry. Resync must preserve these broker releases/due times while
+retiring ordinary dashboard services and skip duplicate facade registrations.
+Model reset preserves task identities, clears pending work/stages and failure
+flags; a previously retired scheduler release needs resync/re-enrollment.
+Before transferring a live owner, `disableScheduler(oldContext)` removes both
+old releases; activate the replacement and resync both registries to clear old
+waiting entries. A failed broker requires model reset before reactivation.
+
+```sh
+python3 tools/audit-scheduler.py --framework flight-tasks smart-task --timeout 180
+python3 tools/audit-scheduler.py flight-smart-tasks flight-smart-tasks-background flight-smart-tasks-no-counter default-gallery --mode mixed --timeout 180
+make test-lua32
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+```
+
+Expected-behavior tests cover both shortcuts, normal cadence, different delayed
+gaps, a threshold crossing after a gap, stale/missing evidence, cached local
+observations, once-only count/output/boundaries, cadence after resync, weak
+ownership, model reset, facade replacement and host transfer. Legacy Flight,
+Smart, persistence, runtime-services, scheduler-host, Counter, shared-Flight,
+chart recording and Flight-readout suites pass, as do the scheduler Lua32 suite
+and 37 audit-tool tests. The mixed golden suite still fails; an isolated
+untouched `ea3d8f5` reproduces the identical actual trace/digest output. No golden
+was rewritten. Its reset run retains the two known first-arm XFAILs.
+
+The isolated adapter activation deliberately waits until loading finishes. It
+does not establish loader/reflow/modal eligibility or complete full-frame
+integration. Parent integration must admit services in those callbacks, stop
+the legacy tick/Smart head calls and their tick charge only after activation,
+and retain identity/document/reset/diagnostic head work. Production OWNERS,
+the ten-tick recording policy and both deferred chart-recording stress
+assertions are unchanged; R5/R6 and combined ownership gates remain open.

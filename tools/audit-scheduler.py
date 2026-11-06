@@ -18,7 +18,7 @@ import sys
 TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
 from scheduler_audit import (CASE_DIR, PROBE_DIR, ROOT, SUPPORT_DIR, WIDGET, lua_literal, patch_chart,  # noqa: E402
-                             patch_loader, patch_main, patch_mode, patch_owners, aggregate, framework_report, hook_check_status,
+                             patch_loader, patch_main, patch_mode, patch_owners, patch_flight_tasks, aggregate, framework_report, hook_check_status,
                              reduce_results, supported_spans)
 from capture_recipes import PANELS, RECIPE_DIR, fixture_inputs, load_recipe  # noqa: E402
 
@@ -327,6 +327,13 @@ def scenarios():
                                  "    colSpan: 2\n    rowSpan: 1\n    config:\n      armSwitch: SAv\n"]),
         "phases": standard_phases(refreshes=800),
     }
+    result["flight-smart-tasks"] = dict(result["flight-smart"], flightTasks=True,
+                                      owners=["service:flight", "service:smart"])
+    result["flight-smart-tasks-background"] = dict(result["flight-smart-tasks"],
+        phases=[{"name": "background", "kind": "background", "callbacks": 800, "step": 5, "perCall": 20},
+                {"name": "refresh", "kind": "refresh", "callbacks": 100, "step": 5, "perCall": 20}])
+    result["flight-smart-tasks-no-counter"] = dict(result["flight-smart-tasks"], expected=1,
+        layout=custom_layout([metric_cell(1, (1, 2, 3))]))
     result["session-reset"] = {
         "recipe": "metric", "expected": 2, "sources": 6, "settings": True, "reset": True,
         "layout": custom_layout([chart_cell("chart-a", 0, 2, (1, 2, 3)),
@@ -368,6 +375,8 @@ def build_native(library):
 
 
 def prepare(capture, name, spec, sd, mode="legacy"):
+    if spec.get("flightTasks") and mode != "mixed":
+        raise ValueError("Flight adapter scenarios require --mode mixed")
     recipe_path = RECIPE_DIR / f"{spec['recipe']}.yaml"
     recipe = load_recipe(recipe_path)
     if "placements" in spec:
@@ -382,6 +391,8 @@ def prepare(capture, name, spec, sd, mode="legacy"):
     shutil.copyfile(WIDGET / "main.lua", widget / "main.lua")
     shutil.copyfile(WIDGET / "lib/dashboard_loader.lua", widget / "lib/dashboard_loader.lua")
     (widget / "main.lua").write_text(patch_mode(patch_main((WIDGET / "main.lua").read_text()), mode))
+    if spec.get("flightTasks"):
+        (widget / "main.lua").write_text(patch_flight_tasks((widget / "main.lua").read_text()))
     (widget / "lib/dashboard_loader.lua").write_text(patch_loader((WIDGET / "lib/dashboard_loader.lua").read_text()))
     (widget / "lib/scheduler_host.lua").write_text(
         patch_owners((WIDGET / "lib/scheduler_host.lua").read_text(), spec.get("owners", [])))
@@ -453,7 +464,7 @@ def prepare_framework(capture, sd, cases):
     shutil.copyfile(PROBE_DIR / "framework.lua", audit / "framework.lua")
     for name in ("scheduler_overhead.lua", "scheduler_measure.lua", "scheduler_mixes.lua",
                  "scheduler_panel_api.lua", "scheduler_chart_fixture.lua", "scheduler_flight_readout.lua",
-                 "scheduler_probe_fixture.lua", "scheduler_diagnostics_fixture.lua"):
+                 "scheduler_probe_fixture.lua", "scheduler_diagnostics_fixture.lua", "scheduler_flight_fixture.lua"):
         shutil.copyfile(SUPPORT_DIR / name, audit / name)
     (audit / "cases").mkdir()
     for case in cases:

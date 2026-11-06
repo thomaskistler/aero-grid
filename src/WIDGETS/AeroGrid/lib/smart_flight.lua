@@ -252,6 +252,7 @@ local function diagnostic(kind, count, candidate, live, received)
 end
 
 function smart:update(now)
+    self.polledAt = now
     self:discover(now)
     local selected = self.selected
     if not selected then

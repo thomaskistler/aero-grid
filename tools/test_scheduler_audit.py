@@ -49,6 +49,16 @@ class InstrumentationTests(unittest.TestCase):
         self.assertIn('local SCHEDULER_MODE = "new"', audit.patch_mode(source, "new"))
         self.assertIn('local SCHEDULER_MODE = "legacy"', audit.patch_mode(source, "legacy"))
 
+    def test_flight_adapter_fixture_keeps_production_activation_isolated(self):
+        source = (audit.WIDGET / "main.lua").read_text()
+        changed = audit.patch_flight_tasks(source)
+        self.assertIn("owner:enableScheduler(context)", changed)
+        self.assertNotIn("owner:enableScheduler(context)", source)
+        self.assertIn('if scheduling and not owner.schedulerEnabled then\n        scheduling:charge("tick")', changed)
+        self.assertIn("not context.stage and not context.reloadState", changed)
+        with self.assertRaises(RuntimeError):
+            audit.patch_flight_tasks(source.replace("    local now = getTime()\n", ""))
+
     def test_owner_overrides_only_patch_named_legacy_owners(self):
         source = (audit.WIDGET / "lib/scheduler_host.lua").read_text()
         self.assertEqual(audit.patch_owners(source, []), source)
@@ -76,6 +86,7 @@ class InstrumentationTests(unittest.TestCase):
                    audit.SUPPORT_DIR / "scheduler_overhead.lua", audit.SUPPORT_DIR / "scheduler_measure.lua",
                    audit.SUPPORT_DIR / "scheduler_mixes.lua"]
         sources += [audit.patch_main((audit.WIDGET / "main.lua").read_text())]
+        sources += [audit.patch_flight_tasks((audit.WIDGET / "main.lua").read_text())]
         sources += [audit.patch_chart((audit.WIDGET / "panels/chart.lua").read_text())]
         for source in sources:
             text = source.read_text() if isinstance(source, Path) else source
@@ -113,6 +124,16 @@ class InstrumentationTests(unittest.TestCase):
 class ScenarioTests(unittest.TestCase):
     def setUp(self):
         self.cli = load_cli()
+
+    def test_flight_adapters_cover_shared_demand_without_a_counter(self):
+        scenarios = self.cli.scenarios()
+        for name in ("flight-smart-tasks", "flight-smart-tasks-no-counter"):
+            self.assertTrue(scenarios[name]["flightTasks"])
+            self.assertEqual(scenarios[name]["owners"], ["service:flight", "service:smart"])
+        self.assertNotIn("type: flight-counter", scenarios["flight-smart-tasks-no-counter"]["layout"])
+        self.assertNotIn("flightTasks", scenarios["flight-smart"])
+        with self.assertRaisesRegex(ValueError, "require --mode mixed"):
+            self.cli.prepare(None, "flight-smart-tasks", scenarios["flight-smart-tasks"], Path("unused"))
 
     def test_probe_tasks_cover_each_service_and_keep_owner_override_isolated(self):
         scenarios = self.cli.scenarios()

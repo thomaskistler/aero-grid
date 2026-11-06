@@ -392,12 +392,7 @@ local function install(context)
                 if type(update) == "function" then
                     instance.update = wrap("service:" .. tostring(instance.id), update)
                 end
-                -- A task the new scheduler owns runs from `step`, not from `update`.
-                if instance.schedulerTasks then
-                    for _, task in ipairs(instance.schedulerTasks) do
-                        wrapField(task.instance, "step", task.id)
-                    end
-                else
+                if not instance.schedulerTasks then
                     wrapField(instance, "step", "service:" .. tostring(instance.id))
                 end
                 wrapField(instance, "resetSession", "reset:" .. tostring(instance.id))
@@ -405,6 +400,17 @@ local function install(context)
                     wrapField(instance, "scanPrecision", "telemetry:scan")
                     wrapField(instance, "poll", "telemetry:poll")
                     wrapField(instance, "publishLink", "telemetry:link")
+                end
+            end
+            -- Broker adapters can be activated after their facade was installed.
+            for _, task in ipairs(instance.schedulerTasks or {}) do
+                if task.id == "service:flight" or task.id == "service:smart" then
+                    local id = task.id
+                    wrapField(task.instance, "step", function(token, _, _, stage)
+                        return token == nil and stage or "task:" .. id .. ":" .. tostring(token)
+                    end)
+                else
+                    wrapField(task.instance, "step", task.id)
                 end
             end
         end
@@ -769,6 +775,12 @@ local function runCallback(kind, context, fn, e, t)
     local suffix = P.loaded and "" or "@load"
     if recording then
         record("callback:" .. kind .. suffix, total, overhead, 1)
+        for _, item in ipairs(top) do
+            local label, cost = string.match(item, "^(task:service:[^=]+)=(%d+)")
+            if label then
+                record("eligibility:" .. kind .. suffix .. ":" .. label, tonumber(cost), tonumber(cost), 1)
+            end
+        end
         if surface then
             record("surface:" .. surface .. ":" .. kind .. suffix, total, overhead, 1, table.concat(top, ","))
         end

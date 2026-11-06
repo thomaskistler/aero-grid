@@ -210,6 +210,19 @@ first caller's settings. Saved model Armed overrides every declaration. A qualif
 pins its arm, detector settings, and output until completion, including output
 cleanup when proposals change or conflict. Counter panels only render state.
 
+Production ownership remains legacy. The measured scheduler adapters are
+activated explicitly with `broker:enableScheduler(owningContext)`, after every
+callback kind admits services. Only that context's Flight facade exposes the
+two normal tasks, with demand independent of panel subscriptions. Flight keeps
+its 20-tick cadence; Smart releases at least 100 ticks apart. Delayed runs retain
+the arming reference, but expired/missing receipt evidence breaks detection
+holds. Shared proposal validation advances one item per release. Model resets
+retain the adapters. `schedulerService(owningContext)` supplies stable broker
+registrations even while a loader replaces the dashboard service registry;
+resync must preserve those releases without also enrolling the dashboard facade.
+Host retirement must call `disableScheduler(oldContext)`
+before activation on a replacement and resynchronize both scheduler registries.
+
 `services.flight:state()` is an immutable live view. It exposes model/epoch,
 configuration revision/status, phase (`ground`, `starting`, `active`, `ending`),
 `active`, flight ID/count, candidate/qualification/disarm/completion timestamps,
@@ -244,7 +257,7 @@ Receipt age remains bounded evidence, not an exact timestamp or instant
 stopped-stream detector. Callbacks too infrequent to observe fresh flags
 conservatively fall back to standard detection.
 
-The Smart poller is due every 100ms. Ordinary chart callbacks continue on
+The legacy Smart poller is due every 100ms. Ordinary chart callbacks continue on
 Smart polling callbacks: the host reduces that callback's dashboard telemetry
 batch from eight sources to four, reserving room for Smart's four sensor
 categories. Both pollers retain round-robin progress; Smart does not skip
@@ -267,9 +280,9 @@ Altitude references require an observed disarmed-to-armed transition using
 a recent sample explicitly witnessed while disarmed, or fresh evidence at
 that transition. Merely current late readings never rebase an armed session.
 Motor interruptions preserve the reference but reset holds; unknown arm resets
-holds without inventing disarm. Metadata changes and scheduling gaps invalidate
-the reference conservatively. Fixed shortcuts are strictly above +3 m or
-10 mph for at least 200 ticks, allowing only precision-scaled conversion
+holds without inventing disarm. Metadata changes invalidate the reference;
+the legacy path also invalidates it on scheduling gaps. Fixed shortcuts are
+strictly above +3 m or 10 mph for at least 200 ticks, allowing only precision-scaled conversion
 roundoff (including float32 firmware). `smartStatus` explains fallback in the native Model settings dialog;
 confirmed field changes persist and update live detection immediately.
 
