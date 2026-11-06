@@ -1506,3 +1506,50 @@ No ownership, modal dispatcher, History/Telemetry ten-tick policy, or stress
 assertion has changed. Measured modal/lifecycle/loader accounting, hidden/editor
 preview eligibility and full scheduler-owned callback checks are still required
 before enabling the adapter or claiming the migration complete.
+
+## 21. Separate panel preparation from construction (R6 prerequisite)
+
+The staged loader now prepares a panel module, validates its contract/span and
+resolves settings in `panel-prepare`, then constructs it in `panel-build`.
+This adds one callback per accepted placement. Rejected preparation reports its
+error without constructing a container; failed construction retains the existing
+clear/hide/report behavior. A replacement load discards prepared state.
+Construction recomputes the rectangle against the current zone, so a resize
+between the two callbacks cannot mount stale geometry. Synchronous editor and
+preview callers retain the original one-call `buildPanel` interface.
+
+This closes the **new initial loading-budget failure from section 20**, without
+weakening its threshold or changing the deferred live-drawing assertion.
+Recording and independent-arm stress again reach line 192: Q1 `drawn=nil`,
+baseline/current revisions 7/98 and 1/43 respectively. Those revisions differ
+from the archived baseline because loading now spans additional callbacks.
+The existing deferred progress failure remains; it has not been repaired.
+Flight-recording still passes.
+
+| Native mixed scenario | Preparation maximum | Construction maximum | Whole-callback maximum |
+|---|---:|---:|---:|
+| chart-min | 1799 | 8882 | 9189 |
+| chart-max | 1823 | 9911 | 10155 |
+| chart-full | 1760 | 9455 | 10801 |
+| default-gallery | 1580 | 4845 | 11845 |
+
+These are the latest real native callback spans, measured with:
+
+```sh
+python3 tools/audit-scheduler.py chart-min chart-max chart-full default-gallery --timeout 180
+```
+
+The production probe now labels preparation by panel type. Legacy trace bounds
+for chart/flight-counter/metric preparation are 2100/1200/1340 respectively;
+these are not new scheduler task declarations. **Construction still exceeds
+4000**, notably chart construction at 9911: this split is not sufficient to make
+the loader scheduler-owned. Further constructor/lifecycle splits and modal/
+callback-kind accounting remain gates. No owner or scheduler eligibility changed.
+
+`test_panel_loading.lua` verifies separate preparation/construction, exact reuse
+of prepared module/settings, current-zone geometry, both failure paths and
+replacement-load invalidation. All-panel spans, builder matrix, background
+initialization, panel reflow/schema, shared module code, session reset and the
+chart parity/preview/flight/reset suites pass. Shared-module retained growth is
+0.1 KiB; session reset remains at 14300 mock instructions and still reports its
+existing first-arm mixed-load XFAIL. The 21 audit-tool tests pass.

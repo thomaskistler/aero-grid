@@ -206,7 +206,7 @@ local function loadLabel(token, context)
     if token == nil then
         local stage = context.stage or "idle"
         local placement = context.pendingPlacement
-        if (stage == "panel-build" or stage == "panel-validate") and placement then
+        if (stage == "panel-build" or stage == "panel-prepare" or stage == "panel-validate") and placement then
             return stage .. ":" .. tostring(placement.type)
         end
         return stage

@@ -145,31 +145,19 @@ function module.new(dependencies)
         }
     end
 
-    --- Load, validate, and instantiate every panel in the selected layout.
-    --- Instantiate one validated placement.
-    ---@param context AeroGridContext
-    ---@param placement table
-    local function buildPanel(context, placement, container, preview)
-        local host = context.panelHost
-
-        --- Record a placement that will not be built, and why.
-        ---
-        --- A panel that never constructs leaves nothing behind but an error in
-        --- a banner that may have scrolled, and it is absent from `panels`
-        --- because there is no instance to put there. So the reason is kept where
-        --- it is known. Without this the diagnostics view could report every panel
-        --- that works and no panel that does not, which is the wrong half.
-        local function reject(reason)
-            if not preview then
-                addError(context, placement.id .. ": " .. tostring(reason))
-                context.rejected[#context.rejected + 1] = {
-                    placement = placement,
-                    reason = tostring(reason),
-                }
-            end
-            return nil, tostring(reason)
+    local function rejectPanel(context, placement, preview, reason)
+        if not preview then
+            addError(context, placement.id .. ": " .. tostring(reason))
+            context.rejected[#context.rejected + 1] = {
+                placement = placement,
+                reason = tostring(reason),
+            }
         end
+        return nil, tostring(reason)
+    end
 
+    local function preparePanel(context, placement, preview)
+        local host = context.panelHost
         local panel, panelError = loadModule(context.path, "panels/" .. placement.type .. ".lua")
         local contractValid, contractError
 
@@ -178,18 +166,23 @@ function module.new(dependencies)
         end
 
         if not panel then
-            return reject(panelError)
+            return rejectPanel(context, placement, preview, panelError)
         end
         if not contractValid then
-            return reject(contractError)
+            return rejectPanel(context, placement, preview, contractError)
         end
         if not host.supportsSpan(panel, placement.colSpan, placement.rowSpan) then
-            return reject("panel does not support span " .. host.spanName(placement.colSpan, placement.rowSpan))
+            return rejectPanel(
+                context,
+                placement,
+                preview,
+                "panel does not support span " .. host.spanName(placement.colSpan, placement.rowSpan)
+            )
         end
 
         local rect, rectError = panelRect(context, placement)
         if not rect then
-            return reject(rectError)
+            return rejectPanel(context, placement, preview, rectError)
         end
 
         local settings, warnings = host.resolveSettings(
@@ -199,11 +192,32 @@ function module.new(dependencies)
             context.modelArmed
         )
         if preview and #warnings > 0 then
-            return reject(table.concat(warnings, "; "))
+            return rejectPanel(context, placement, preview, table.concat(warnings, "; "))
         end
         for _, warning in ipairs(warnings) do
             addError(context, placement.id .. ": " .. warning)
         end
+        return { module = panel, settings = settings, rect = rect }
+    end
+
+    --- Synchronous callers prepare immediately; staged loading retains that work
+    --- for a separate construction callback.
+    local function buildPanel(context, placement, container, preview, prepared)
+        local preparation, message = prepared, nil
+        if not preparation then
+            preparation, message = preparePanel(context, placement, preview)
+            if not preparation then
+                return nil, message
+            end
+        else
+            local rect, rectError = panelRect(context, placement)
+            if not rect then
+                return rejectPanel(context, placement, preview, rectError)
+            end
+            preparation.rect = rect
+        end
+        local host = context.panelHost
+        local panel, settings, rect = preparation.module, preparation.settings, preparation.rect
 
         -- Each panel draws inside its own container, so it cannot reach the
         -- dashboard root or paint over a neighbour. The container is deliberately
@@ -252,7 +266,7 @@ function module.new(dependencies)
             -- Discard whatever the failed panel managed to build.
             container:clear()
             lvgl.hide(container)
-            local _, message = reject(instance)
+            local _, message = rejectPanel(context, placement, preview, instance)
             return nil, message, container
         end
     end
@@ -265,8 +279,8 @@ function module.new(dependencies)
     --- whole dashboard costs far more than that, so loading is spread over
     --- consecutive calls. Every stage is bounded by a fixed amount of work rather
     --- than by the size of the layout: the file is tokenized a fixed number of
-    --- lines at a time, and each panel is parsed, validated, and built in its
-    --- own callback. A layout that fills the grid therefore costs more callbacks,
+    --- lines at a time, and each panel is parsed, validated, prepared and built
+    --- in separate callbacks. A layout that fills the grid therefore costs more callbacks,
     --- never a larger callback.
     ---@param context AeroGridContext
     ---@return boolean busy True while more work remains.
@@ -295,6 +309,7 @@ function module.new(dependencies)
             context.source = nil
             context.loadCandidates = nil
             context.loadCandidateIndex = nil
+            context.pendingPanel = nil
             context.themeNames, context.themeDefinitions = nil, nil
             showErrors(context)
             return false
@@ -684,7 +699,7 @@ function module.new(dependencies)
             if valid then
                 context.identifiers[placement.id] = true
                 context.document.panels[#context.document.panels + 1] = placement
-                context.stage = "panel-build"
+                context.stage = "panel-prepare"
                 return true
             else
                 addError(context, panelError)
@@ -695,8 +710,20 @@ function module.new(dependencies)
             return true
         end
 
+        if stage == "panel-prepare" then
+            context.pendingPanel = preparePanel(context, context.pendingPlacement)
+            if context.pendingPanel then
+                context.stage = "panel-build"
+            else
+                context.pendingPlacement, context.panelMigrationVersion = nil, nil
+                context.stage = "panels"
+            end
+            return true
+        end
+
         if stage == "panel-build" then
-            buildPanel(context, context.pendingPlacement)
+            buildPanel(context, context.pendingPlacement, nil, nil, context.pendingPanel)
+            context.pendingPanel = nil
             context.pendingPlacement = nil
             context.panelMigrationVersion = nil
             context.stage = "panels"
@@ -728,6 +755,7 @@ function module.new(dependencies)
         context.layoutSourceVersion = nil
         context.layoutMigrationVersion = nil
         context.pendingPlacement = nil
+        context.pendingPanel = nil
         context.panelMigrationVersion = nil
         context.identifiers = nil
         context.itemIndex = nil
