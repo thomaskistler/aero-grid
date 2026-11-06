@@ -20,7 +20,7 @@ TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
 from scheduler_audit import (CASE_DIR, PROBE_DIR, ROOT, SUPPORT_DIR, WIDGET, lua_literal, patch_chart,  # noqa: E402
                              patch_loader, patch_main, patch_mode, patch_owners, aggregate, framework_report, hook_check_status,
-                             reduce_results, supported_spans)
+                             history_parity, reduce_results, supported_spans)
 from capture_recipes import PANELS, RECIPE_DIR, fixture_inputs, load_recipe  # noqa: E402
 
 OUTPUT = ROOT / "build/scheduler-audit"
@@ -1164,6 +1164,8 @@ def main():
     parser.add_argument("--report", action="store_true", help="Summarize the results already in build/scheduler-audit")
     parser.add_argument("--timeout", type=int, default=900, help="Seconds before a native run is abandoned")
     parser.add_argument("--traces", action="store_true", help=f"Copy callback traces to {TRACE_DIR}")
+    parser.add_argument("--history-parity", action="store_true",
+                        help="Compare two deterministic-clock captures' valid History samples and gaps")
     parser.add_argument("--mode", choices=("legacy", "mixed"), default="mixed",
                         help="Run migrated tasks in mixed mode, or use legacy mode as a baseline for remaining tasks")
     parser.add_argument("--companion", type=Path, default=COMPANION)
@@ -1204,6 +1206,10 @@ def main():
     unknown = [name for name in names if name not in available]
     if not names or unknown:
         parser.error(f"Choose scenarios from --list; unknown: {unknown}")
+    if args.history_parity and (len(names) != 2 or not all(available[name].get("deterministicClock") for name in names)):
+        parser.error("--history-parity requires exactly two deterministic-clock scenarios, baseline first")
+    if args.history_parity and available[names[0]]["phases"] != available[names[1]]["phases"]:
+        parser.error("--history-parity requires identical callback phases")
     if platform.system() != "Darwin":
         parser.error("This audit requires macOS and the EdgeTX Companion 2.12 simulator.")
     library = args.companion / "Contents/Resources/libedgetx-tx16s-simulator.dylib"
@@ -1212,9 +1218,12 @@ def main():
     executable = build_native(library)
     capture = capture_module()
     checks = {}
+    history_runs = []
     status = 0
     for name in names:
         data = run(capture, executable, library, name, available[name], args.timeout, args.mode)
+        if args.history_parity:
+            history_runs.append(data)
         if "loops" in available[name]:
             checks[name] = data
             if len(checks) == 2:
@@ -1229,6 +1238,10 @@ def main():
         if args.traces and data["trace"] and available[name].get("trace"):
             TRACE_DIR.mkdir(parents=True, exist_ok=True)
             (TRACE_DIR / f"{name}.txt").write_text("\n".join(data["trace"]) + "\n")
+    if args.history_parity:
+        ok, message = history_parity(*history_runs)
+        print(message, file=sys.stdout if ok else sys.stderr)
+        status = status or (0 if ok else 1)
     return status
 
 

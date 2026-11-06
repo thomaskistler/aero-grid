@@ -973,6 +973,8 @@ local function feeds(context)
                     first = feed.first,
                     last = feed.last,
                     full = feed.full == true,
+                    panel = config.deterministicClock and entry.placement.id or nil,
+                    source = config.deterministicClock and item.settings.source or nil,
                     samples = samples and samples[history.views[feed]],
                 }
             end
@@ -1044,6 +1046,7 @@ local function report(context)
         "/audit-results.json",
         json({
             scenario = config.scenario,
+            deterministicClock = config.deterministicClock == true,
             calibration = { K = K, leakWrap = LEAK_WRAP, leakSpan = LEAK_SPAN, callbackK = K_CALLBACK },
             panels = context and #context.panels or 0,
             errors = errors,

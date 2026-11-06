@@ -21,6 +21,32 @@ def load_cli():
 
 
 class InstrumentationTests(unittest.TestCase):
+    def test_history_parity_requires_matched_captures_and_checks_each_sample_series(self):
+        baseline = {
+            "deterministicClock": True, "errors": [], "callbacks": {"refresh": 10, "background": 2},
+            "feeds": [
+                {"panel": "chart", "source": "a", "samples": {"count": 10, "maxGap": 20}},
+                {"panel": "chart", "source": "b", "samples": {"count": 5, "maxGap": 10}},
+            ],
+        }
+        candidate = json.loads(json.dumps(baseline))
+        candidate["feeds"][0]["samples"] = {"count": 11, "maxGap": 15}
+        self.assertTrue(audit.history_parity(baseline, candidate)[0])
+        for field, value in (("count", 4), ("count", 0), ("maxGap", 11), ("count", None), ("count", True)):
+            changed = json.loads(json.dumps(candidate))
+            changed["feeds"][1]["samples"][field] = value
+            self.assertFalse(audit.history_parity(baseline, changed)[0], (field, value))
+        for field, value in (("deterministicClock", False), ("errors", ["failure"]),
+                             ("callbacks", {"refresh": 9, "background": 2}), ("callbacks", {}),
+                             ("feeds", [])):
+            changed = json.loads(json.dumps(candidate))
+            changed[field] = value
+            self.assertFalse(audit.history_parity(baseline, changed)[0], field)
+        candidate["feeds"][1]["source"] = "other"
+        self.assertFalse(audit.history_parity(baseline, candidate)[0])
+        self.assertFalse(audit.history_parity({"deterministicClock": True, "errors": []},
+                                              {"deterministicClock": True, "errors": []})[0])
+
     def test_shared_flight_loading_uses_persisted_documents_and_real_hidden_callbacks(self):
         cases = load_cli().scenarios()
         for name, revision in (("shared-flight-loading", 7), ("shared-flight-loading-edited", 12)):

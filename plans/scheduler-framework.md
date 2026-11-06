@@ -4929,3 +4929,11 @@ Readiness maxima in `flight-smart-tasks` and `migration-tasks-flight-smart`
 - `panel-enroll`: 1908/2150.
 
 Worst callbacks were 9676 and 9936.
+
+The native `--history-parity` option compares two deterministic-clock
+scenarios with identical callback phases. It fails on capture errors, changed
+feed identities, fewer valid samples or a larger maximum gap:
+
+```
+python3 tools/audit-scheduler.py flight-smart-clock flight-smart-clock-flight-tasks --mode mixed --history-parity
+```

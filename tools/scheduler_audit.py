@@ -187,6 +187,35 @@ def hook_check_status(exact, firmware):
     return True, "hook-check: exact counter agrees with getUsage"
 
 
+def history_parity(baseline, candidate):
+    """Compare actual History sample counts and gaps in matched clock captures."""
+    for data in (baseline, candidate):
+        if not data.get("deterministicClock") or data.get("errors") != []:
+            return False, "history parity requires error-free deterministic-clock captures"
+    callbacks = baseline.get("callbacks")
+    if not isinstance(callbacks, dict) or not callbacks or callbacks != candidate.get("callbacks"):
+        return False, "history parity requires matched callback counts"
+    old, new = baseline.get("feeds"), candidate.get("feeds")
+    if not old or not new or len(old) != len(new):
+        return False, "history parity requires matching nonempty feeds"
+    for previous, current in zip(old, new):
+        identity = (previous.get("panel"), previous.get("source"))
+        if not all(identity) or identity != (current.get("panel"), current.get("source")):
+            return False, f"history feed identity mismatch: {identity}"
+        old_samples, new_samples = previous.get("samples"), current.get("samples")
+        if not isinstance(old_samples, dict) or not isinstance(new_samples, dict):
+            return False, f"missing history samples: {identity}"
+        for field in ("count", "maxGap"):
+            if any(type(sample.get(field)) is not int or sample[field] < 0
+                   for sample in (old_samples, new_samples)):
+                return False, f"invalid history {field}: {identity}"
+        if old_samples["count"] < 2 or new_samples["count"] < 2:
+            return False, f"insufficient history samples to measure gaps: {identity}"
+        if new_samples["count"] < old_samples["count"] or new_samples["maxGap"] > old_samples["maxGap"]:
+            return False, f"history parity failed for {identity}: {old_samples} -> {new_samples}"
+    return True, "history parity: all sample counts and maximum gaps meet the baseline"
+
+
 def framework_report(data):
     """Return (ok, lines) for the framework measurements of `--framework`.
 
