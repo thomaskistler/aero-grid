@@ -72,15 +72,16 @@ def synthetic_inputs(names, smart=False, reset=False):
     return f"""local sources = {{
 {body}
 }}
+local byKey = {{}}
 for index, source in ipairs(sources) do
     source.field = 30000 + index
+    byKey[source.field] = source
+    byKey[source.name] = byKey[source.name] or source
 end
 local armIndex = assert(getSwitchIndex("SA" .. CHAR_DOWN))
 local resetIndex = {reset_index}
 local function find(key)
-    for _, source in ipairs(sources) do
-        if source.field == key or source.name == key then return source end
-    end
+    return byKey[key]
 end
 return {{
     getFieldInfo = function(name)
@@ -362,6 +363,10 @@ def scenarios():
                 result[f"lifecycle-construct-{kind}-{size}-{visual}"] = dict(
                     base, fullscreen=True, config=dict(base.get("config", {}), visual=visual),
                     phases=result["lifecycle-app-model"]["phases"])
+                if kind == "rx-battery":
+                    result[f"lifecycle-construct-{kind}-{size}-{visual}-tasks"] = dict(
+                        result[f"lifecycle-construct-{kind}-{size}-{visual}"],
+                        owners=["panel:rx-battery"])
     result["lifecycle-cancel"] = dict(result["modal-settings-reset"], fullscreen=True, phases=[
         {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 4},
         {"name": "partial", "kind": "refresh", "action": "lifecycle-app",
@@ -655,6 +660,11 @@ def scenarios():
     }
     for name in replay:
         result[name]["trace"] = True
+    for tag, base in (("gallery", "default-gallery"), ("stress", "stress"),
+                      ("model", "model-panels"), ("flight-smart", "flight-smart")):
+        result[f"migration-tasks-{tag}"] = dict(
+            result[base], flightTasks=True,
+            owners=["service:flight", "service:smart"] + [f"panel:{panel}" for panel in PANELS])
     loops = [0, 100, 400, 800, 1600, 3000, 6000, 9000]
     for name in ("hook-check", "hook-check-firmware"):
         result[name] = {"recipe": "metric", "placements": {"subject": (0, 0, 1, 1)}, "expected": 1,

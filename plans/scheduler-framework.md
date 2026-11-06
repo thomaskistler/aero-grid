@@ -4056,3 +4056,47 @@ build/lua32/lua tests/integration/widget/test_dashboard_lifecycle_admission.lua 
 python3 -m unittest discover -s tools -p test_scheduler_audit.py
 make test-lua32
 ```
+
+## 75. Combined ownership prototypes and integrated lifecycle gates
+
+On integrated `b889896`, the full scheduler int32 suite and focused Lua53/int32
+lifecycle admission, Flight loading and strict reset suites pass. Reset remains
+10800 with both original first-arm XFAILs. Repeated native administrative cases
+have empty errors: Output foreground 8133, background 7074, sixteen-placement
+retirement 11129, cancellation 8896 and settings drain 8395 whole instructions.
+
+The RX min-bar production-owner lifecycle case fails at 15162, including a
+12261-instruction legacy refresh. Six otherwise identical audit-only RX task
+ownership cases pass: min bar/battery/none 5568/4846/5570; max cases 4846 each.
+No synchronous RX refresh is dispatched in these captures. This closes the
+diagnostic distinction, not the production activation gate.
+
+Four `migration-tasks-*` cases compose all panel owners with the existing
+Flight/Smart prototype. They explicitly enforce the unchanged complete 15000
+callback ceiling:
+
+| Prototype | Whole maximum | Result |
+|---|---:|---|
+| Gallery | 12010 | Pass |
+| Thirty-source, two-chart stress | 15367 | Fail |
+| Model panels | 5753 | Pass |
+| Flight/Smart | 9506 | Pass |
+
+The stress failure is readiness reconciliation: complete `scheduler:ready`
+peaks at 7655, with a 7485-instruction reconciliation before scheduled work
+in the failing callback. The 2300 enrollment reservation does not cover it;
+bounded reconciliation is required before activation.
+
+The synthetic radio reader now indexes fields/names once rather than scanning
+every source on every poll. Regression coverage preserves aliases, duplicate
+name precedence, values, freshness, Smart sensors and native fallbacks, and
+checks constant lookup instruction cost through 128 sources. This fixture-only
+correction removes artificial source-ordinal polling cost; it does not conceal
+the readiness failure or change production Telemetry/History intervals,
+declarations, deferred chart-recording assertions or goldens.
+
+An in-memory all-panel ownership override also reproduces strict reset's
+first-arm `captured` result against the unchanged temporary mixed-mode
+`waiting`/`switch-unavailable` expectation. Activation remains blocked on that
+explicit policy gate; neither the assertion nor production ownership changed.
+All 48 audit-tool tests pass.

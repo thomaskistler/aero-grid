@@ -53,6 +53,28 @@ class InstrumentationTests(unittest.TestCase):
             for phase in case["phases"]:
                 self.assertEqual(phase["perCall"], 1)
 
+    def test_rx_lifecycle_task_cases_change_only_refresh_ownership(self):
+        cases = load_cli().scenarios()
+        for size in ("min", "max"):
+            for visual in ("bar", "battery", "none"):
+                name = f"lifecycle-construct-rx-battery-{size}-{visual}"
+                original, scheduled = cases[name], cases[name + "-tasks"]
+                self.assertNotIn("owners", original)
+                self.assertEqual(scheduled["owners"], ["panel:rx-battery"])
+                self.assertEqual({key: value for key, value in scheduled.items() if key != "owners"},
+                                 original)
+
+    def test_combined_migration_prototypes_preserve_layout_and_callback_shapes(self):
+        cases = load_cli().scenarios()
+        owners = ["service:flight", "service:smart"] + [f"panel:{panel}" for panel in PANELS]
+        for tag, base in (("gallery", "default-gallery"), ("stress", "stress"),
+                          ("model", "model-panels"), ("flight-smart", "flight-smart")):
+            original, scheduled = cases[base], cases[f"migration-tasks-{tag}"]
+            self.assertTrue(scheduled["flightTasks"])
+            self.assertEqual(scheduled["owners"], owners)
+            self.assertEqual({key: value for key, value in scheduled.items()
+                              if key not in ("owners", "flightTasks")}, original)
+
     def test_framework_measures_uninstrumented_chart_and_packages_shared_fixture(self):
         cli = load_cli()
         with tempfile.TemporaryDirectory() as directory:
@@ -389,6 +411,51 @@ class ScenarioTests(unittest.TestCase):
     def test_synthetic_inputs_describe_smart_sensors_only_when_asked(self):
         self.assertNotIn('name = "Alt"', self.cli.synthetic_inputs(3))
         self.assertIn('name = "Alt"', self.cli.synthetic_inputs(3, smart=True))
+
+    def test_synthetic_source_lookup_preserves_values_and_has_constant_instruction_cost(self):
+        from lupa.lua53 import LuaRuntime
+        runtime = LuaRuntime(unpack_returned_tuples=True)
+        runtime.execute("""
+            CHAR_DOWN = "v"
+            function getSwitchIndex(name) return name == "SAv" and 1 or 2 end
+            function getTime() return 100 end
+            function getFieldInfo(name) return { name = name, id = -1 } end
+            function getValue() return -1 end
+            function getSourceValue() return -1, false, false end
+            function getSwitchValue() return false end
+            model = { fallback = 42 }
+        """)
+        for names in (3, 30, 128, ["S01", "S02", "S01"]):
+            for smart in (False, True):
+                runtime.globals().inputs = runtime.execute(self.cli.synthetic_inputs(names, smart, reset=True))
+                runtime.execute("""
+                    local seen, count = {}, 0
+                    while inputs.model.getSensor(count) do
+                        local source = inputs.model.getSensor(count)
+                        seen[source.name] = seen[source.name] or source.field
+                        assert(inputs.getFieldInfo(source.name).id == seen[source.name])
+                        assert(inputs.getFieldInfo("telem" .. (count + 1)).id == source.field)
+                        assert(inputs.getValue(source.field) == source.value)
+                        local value, current, fresh = inputs.getSourceValue(source.field)
+                        assert(value == source.value and current and fresh)
+                        count = count + 1
+                    end
+                    assert(inputs.getFieldInfo("absent").id == -1)
+                    assert(inputs.getValue("absent") == -1)
+                    local value, current, fresh = inputs.getSourceValue("absent")
+                    assert(value == -1 and not current and not fresh)
+                    assert(inputs.getSwitchValue(1) and inputs.getSwitchValue(2))
+                    assert(not inputs.getSwitchValue(9) and inputs.model.fallback == 42)
+                    local function cost(id)
+                        local used = 0
+                        debug.sethook(function() used = used + 1 end, "", 1)
+                        inputs.getValue(id)
+                        debug.sethook()
+                        return used
+                    end
+                    assert(cost(30001) == cost(30000 + count),
+                        "synthetic reader cost must not grow with source ordinal")
+                """)
 
 
 class ReductionTests(unittest.TestCase):

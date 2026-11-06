@@ -1408,6 +1408,9 @@ local function runCallback(kind, context, fn, e, t)
     if string.match(config.scenario, "^lifecycle%-") then
         gate(total <= 15000, kind .. " exceeds the complete lifecycle callback ceiling: " .. total)
     end
+    if string.match(config.scenario, "^migration%-tasks%-") then
+        gate(total <= 15000, kind .. " exceeds the complete migration callback ceiling: " .. total)
+    end
     if previewTasks or surface == "editor-preview" and string.match(config.scenario, "^editor%-preview%-") then
         gate(total <= 15000, kind .. " exceeds the complete preview callback ceiling: " .. total)
         if previewTasks and surface == "editor-preview" then
