@@ -217,6 +217,16 @@ class ScenarioTests(unittest.TestCase):
                              ["open-editor", "open-drawer", "check-drawer",
                               "open-entry-drawer", "check-drawer", "close-editor"])
 
+    def test_settings_reset_case_keeps_rich_dashboard_and_logical_picker_extremes(self):
+        spec = self.cli.scenarios()["modal-settings-reset"]
+        self.assertEqual(spec["expected"], 7)
+        self.assertTrue(spec["settings"])
+        self.assertTrue(spec["fullscreen"])
+        self.assertNotIn("owners", spec)
+        for value in ("armed: L64", "sessionReset: L03", "motorSource: ch32", "flightSwitch: L64"):
+            self.assertIn(value, spec["settingsDocument"])
+        self.assertEqual(spec["layout"].count("  - id:"), 7)
+
     def test_run_requires_measured_actions_and_requests_native_fullscreen(self):
         spec = {"phases": [{"action": "open-editor"}], "fullscreen": True}
         for measured in (False, True):

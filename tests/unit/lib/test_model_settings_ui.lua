@@ -76,9 +76,10 @@ local function fixture(width)
         end,
     })
     assert(state.nextY == 4 and state.smartStatus.hidden)
-    for _ = 1, 12 do
+    for _ = 1, 200 do
         ui.advance(c)
         mock.settle()
+        if not state.build then break end
     end
     assert(not state.build and not state.save and not state.cancel, "no draft-form buttons")
     assert(state.smartStatus.properties.y > state.controls.flightSwitch.parent.properties.y)
@@ -276,8 +277,31 @@ do
     local c, state, control = fixture()
     state.controls.motorReversed.properties.set(1)
     control.filename = "other.yml"
+    assert(ui.workBound(c) == nil, "model changes must not borrow a construction or idle bound")
     ui.advance(c)
     assert(not c.modelSettingsUi and control.attempts == 0 and control.closed == 1)
+end
+
+for _, stage in ipairs({ "heading", "wrap", "field", "finish" }) do
+    local c, old, _, document = fixture(320)
+    local state = ui.open(c, document(), old.handlers)
+    for _ = 1, 200 do
+        if ui.stageOf(state) == stage then break end
+        ui.advance(c)
+    end
+    assert(ui.stageOf(state) == stage and ui.workBound(c) == ui.WORK_BOUNDS[stage])
+    if stage == "wrap" then
+        local sizeText, calls = lcd.sizeText, 0
+        lcd.sizeText = function(...)
+            calls = calls + 1
+            return sizeText(...)
+        end
+        ui.advance(c)
+        lcd.sizeText = sizeText
+        assert(calls <= 1, "a wrapping callback measures at most one candidate")
+    end
+    ui.close(c)
+    assert(not state.description and not ui.advance(c), "cancelled description work must never resume")
 end
 
 do

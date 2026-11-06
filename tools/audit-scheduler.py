@@ -209,12 +209,30 @@ def scenarios():
     result["modal-settings"] = dict(result["chart-max"], fullscreen=True, phases=[
         {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 4},
         {"name": "settings-build", "kind": "refresh", "action": "open-settings",
-         "callbacks": 40, "step": 5, "perCall": 4},
+         "callbacks": 200, "step": 5, "perCall": 4},
         {"name": "settings-idle", "kind": "refresh", "action": "check-settings",
          "callbacks": 40, "step": 5, "perCall": 4},
         {"name": "settings-close", "kind": "refresh", "action": "close-settings",
          "callbacks": 10, "step": 5, "perCall": 1},
     ])
+    settings_cells = [
+        ("chart", "chart", 0, 0, 2, "      metrics:\n        - source: S01\n"),
+        ("link", "link-status", 2, 0, 1, "      reading: quality\n      qualitySource: S02\n"),
+        ("counter", "flight-counter", 2, 1, 1, ""),
+        ("home", "navigation", 0, 2, 1, "      homeMode: first-arm\n"),
+        ("radio-home", "navigation", 2, 2, 1, "      homeMode: edgetx\n"),
+        ("battery", "rx-battery", 0, 3, 1, "      source: S03\n      cells: 0\n"),
+        ("timer", "flight-timer", 2, 3, 1, ""),
+    ]
+    result["modal-settings-reset"] = dict(result["modal-settings"], recipe="metric", sources=3, expected=7, settings=True,
+        settingsDocument="version: 1\nmodelFilename: model1.yml\nrevision: 1\narmed: L64\nsessionReset: L03\n"
+                         "flight:\n  motorSource: ch32\n  flightSwitch: L64\n",
+        layout=custom_layout([
+            f"  - id: {name}\n    type: {kind}\n    col: {col}\n    row: {row}\n"
+            f"    colSpan: 2\n    rowSpan: {height}\n"
+            + ("    config:\n" + config if config else "    config: {}\n")
+            for name, kind, col, row, height, config in settings_cells
+        ]))
     result["modal-log-recording"] = dict(result["modal-log"], recipe="chart", sources=1, expected=2,
         settings=True, layout=custom_layout([
             chart_cell("chart", 0, 2, [1]),
@@ -425,7 +443,7 @@ def prepare(capture, name, spec, sd, mode="legacy"):
         settings = sd / "AEROGRID/models"
         settings.mkdir(parents=True, exist_ok=True)
         (settings / ("model1.yml".encode().hex() + ".yaml")).write_text(
-            MODEL_SETTINGS + ("sessionReset: SBv\n" if spec.get("reset") else "")
+            spec.get("settingsDocument", MODEL_SETTINGS + ("sessionReset: SBv\n" if spec.get("reset") else ""))
             + ("flight:\n  smartDetection: true\n  minFlightDuration: 1\n  disarmDuration: 3\n"
                if spec.get("smart") else ""))
     inputs = (synthetic_inputs(spec["sources"], spec.get("smart", False), spec.get("reset", False)) if "sources" in spec

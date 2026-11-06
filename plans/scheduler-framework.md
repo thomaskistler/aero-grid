@@ -3110,3 +3110,40 @@ Opening remains an explicit atom gate: native form/dialog generation reaches
 save/cancel, editor domain/input commands and arbitrary geometry synchronization
 also remain gates. No production owner, recording policy or deferred stress
 assertion changed.
+
+## 51. Settings construction in the seven-panel reset environment (R5)
+
+The unchanged strict session-reset integration reproduced a 16500 callback
+while constructing the Flight status description, with 11100 inside the UI
+advance. Native work was only 1252: cold text-width cache misses in the mock
+also executed Lua glyph summation. No reset assertion or measurement helper
+was changed. Descriptions now wrap one word per advance; heading creation,
+description publication and field construction are separate work.
+
+| Settings work | Native rich-case maximum | Charged prior work |
+|---|---:|---:|
+| Heading | 150 | 400 |
+| One word / description publication | 152 | 400 |
+| One field, including all 65 output choices | 890 | 1500 |
+| Final status publication | 129 | 300 |
+| Idle | 98 | 300 |
+
+`modal-settings-reset` uses the reset integration's seven panel types and
+positions, Armed L64, sessionReset L03, last motor channel ch32 and output L64.
+The audit verifies that this configuration actually loaded and gates each
+construction stage against its charge. Complete settings callbacks peak at
+6943, and the whole scenario at 11084; the small chart case peaks at 7165
+inside settings. Hidden panels stay ineligible.
+
+The unchanged reset integration passes at 14400, retaining both documented
+first-arm XFAILs. Settings unit tests preserve descriptions and final geometry,
+cover cancellation at each construction phase and limit wrapping to one
+candidate measurement per advance. Model identity/fullscreen cancellation
+cannot borrow a construction charge. All 38 audit-tool tests pass.
+
+```sh
+python3 tools/audit-scheduler.py modal-settings modal-settings-reset --timeout 180
+```
+
+Save/cancel lifecycle work remains separately gated. No production owner,
+recording cadence, reset/stress assertion or shared scheduler API changed.

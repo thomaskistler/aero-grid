@@ -421,7 +421,8 @@ Modal service eligibility is explicit in `scheduler_host.SERVICE_KINDS`;
 only steady-eligible service declarations inherit these kinds, never panels.
 The host charges completed modal work before planning services. Log viewing
 freezes the bounded ring at entry, then stages demand checks, snapshot copying,
-row construction, wrapping and painting. Model settings construction and idle
+row construction, wrapping and painting. Model settings descriptions wrap one
+word per advance, separately from headings and controls. Construction and idle
 callbacks have measured UI bounds; save/cancel handlers retain separate
 lifecycle gates.
 Menu and location overlays also use service-only callbacks: hidden panels do

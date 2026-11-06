@@ -117,6 +117,11 @@ local function finish(label, raw, leak)
             gate(cost <= 4000, label .. " exceeds the drawer atom cap: " .. cost)
             gate(cost <= drawerBound, label .. " exceeds the drawer work charge: " .. cost)
         end
+        local settingsStage = string.match(label, "^modal:settings:advance:(%a+)")
+        local settingsBound = settingsStage and P.settingsBounds and P.settingsBounds[settingsStage]
+        if settingsBound then
+            gate(cost <= settingsBound, label .. " exceeds the settings work charge: " .. cost)
+        end
         local editorPrefix = "editor:advanceEditor:"
         if string.sub(label, 1, #editorPrefix) == editorPrefix then
             record("editor:advanceEditor", cost, own, units > 0 and units or 1, children)
@@ -380,6 +385,8 @@ local function install(context)
         if module then
             if surface[2] == "log" then
                 P.logBounds = module.WORK_BOUNDS
+            elseif surface[2] == "settings" then
+                P.settingsBounds = module.WORK_BOUNDS
             end
             for _, name in ipairs({ "open", "advance", "handle", "close", "ensure" }) do
                 wrapField(module, name, function(token, current)
@@ -387,6 +394,9 @@ local function install(context)
                         return "modal:" .. surface[2] .. ":" .. name .. ":" .. token
                     end
                     local state = current[surface[3]]
+                    if surface[2] == "settings" and state then
+                        return module.stageOf(state) .. ":" .. tostring(state.build or "idle")
+                    end
                     return tostring(
                         state
                                 and (state.build or state.buildStage or state.renderIndex and "render" or state.stage or state.prepareIndex and "wrap" or state.pending and "pending")
@@ -643,6 +653,11 @@ local actions = {
     end,
     ["check-settings"] = function(context)
         assert(context.modelSettingsUi and not context.modelSettingsUi.build)
+        if config.scenario == "modal-settings-reset" then
+            local state = context.modelSettingsUi
+            assert(state.armed == "L64" and state.sessionReset == "L03")
+            assert(state.values.motorSource == "ch32" and state.values.flightSwitch == "L64")
+        end
     end,
     ["close-settings"] = function(context)
         refreshFn(context, EVT_VIRTUAL_EXIT)

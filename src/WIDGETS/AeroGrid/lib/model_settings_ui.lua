@@ -1,14 +1,9 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local ui = { RUNTIME_API = 1 }
-
---- Save/cancel handlers have separate lifecycle contracts, not UI bounds.
-function ui.workBound(context)
-    local state = context.modelSettingsUi
-    if state and not state.pending and not state.closing then
-        return state.build and 1500 or 300
-    end
-end
+local ui = {
+    RUNTIME_API = 1,
+    WORK_BOUNDS = { heading = 400, wrap = 400, field = 1500, finish = 300, idle = 300 },
+}
 
 local fields = {
     {
@@ -52,6 +47,23 @@ local fields = {
     },
 }
 
+function ui.stageOf(state)
+    if state.closing then
+        return "closing"
+    elseif state.pending then
+        return "pending"
+    elseif not state.build then
+        return "idle"
+    elseif state.description then
+        return "wrap"
+    elseif not fields[state.build] then
+        return "finish"
+    elseif fields[state.build].section and not state.fieldReady then
+        return "heading"
+    end
+    return "field"
+end
+
 local function outputAvailable(index)
     if index == 1 then
         return true
@@ -66,6 +78,14 @@ local function active(context, state)
         and not state.pending
         and (not state.handlers.modelFilename or state.handlers.modelFilename() == state.modelFilename)
         and (not state.handlers.fullscreen or state.handlers.fullscreen())
+end
+
+--- Save/cancel handlers have separate lifecycle contracts, not UI bounds.
+function ui.workBound(context)
+    local state = context.modelSettingsUi
+    if state and active(context, state) and not state.closing then
+        return ui.WORK_BOUNDS[ui.stageOf(state)]
+    end
 end
 
 local function retireHost(state)
@@ -83,6 +103,7 @@ function ui.close(context)
     end
     context.modelSettingsUi = nil
     state.generation = state.generation + 1
+    state.description, state.fieldReady = nil, nil
     local dialog = state.dialog
     state.dialog = nil
     if dialog then
@@ -188,50 +209,54 @@ function ui.open(context, document, handlers)
     return state
 end
 
-local function description(state, text)
-    local lines, line = {}, ""
-    for word in string.gmatch(text, "%S+") do
-        local candidate = line == "" and word or line .. " " .. word
-        if line ~= "" and lcd.sizeText(candidate, SMLSIZE) > state.width - 4 then
-            lines[#lines + 1], line = line, word
+local function advanceDescription(state)
+    local job = state.description
+    local word = job.nextWord()
+    if word then
+        local candidate = job.line == "" and word or job.line .. " " .. word
+        if job.line ~= "" and lcd.sizeText(candidate, SMLSIZE) > state.width - 4 then
+            job.lines[#job.lines + 1], job.line = job.line, word
         else
-            line = candidate
+            job.line = candidate
         end
+        return
     end
-    lines[#lines + 1] = line
+    job.lines[#job.lines + 1] = job.line
     local _, lineHeight = lcd.sizeText("Ag", SMLSIZE)
-    local height = #lines * (lineHeight + 2)
+    local height = #job.lines * (lineHeight + 2)
     lvgl.label(state.dialog, {
         x = 4,
         y = state.nextY,
         w = state.width,
         h = height,
-        text = table.concat(lines, "\n"),
+        text = table.concat(job.lines, "\n"),
         font = function()
             return SMLSIZE
         end,
     })
     state.nextY = state.nextY + height + 4
+    state.description, state.fieldReady = nil, true
+end
+
+local function startField(state, field)
+    if state.build > 1 then
+        state.nextY = state.nextY + 12
+    end
+    lvgl.label(state.dialog, {
+        x = 4,
+        y = state.nextY,
+        w = state.width,
+        h = state.height,
+        text = field.section,
+        font = function()
+            return _G.BOLD
+        end,
+    })
+    state.nextY = state.nextY + state.height
+    state.description = { nextWord = string.gmatch(field.description, "%S+"), lines = {}, line = "" }
 end
 
 local function buildField(context, state, field)
-    if field.section then
-        if state.build > 1 then
-            state.nextY = state.nextY + 12
-        end
-        lvgl.label(state.dialog, {
-            x = 4,
-            y = state.nextY,
-            w = state.width,
-            h = state.height,
-            text = field.section,
-            font = function()
-                return _G.BOLD
-            end,
-        })
-        state.nextY = state.nextY + state.height
-        description(state, field.description)
-    end
     local row = lvgl.setting(state.dialog, {
         x = 4,
         y = state.nextY,
@@ -360,9 +385,14 @@ function ui.advance(context)
     end
     if state.build then
         local field = fields[state.build]
-        if field then
+        if state.description then
+            advanceDescription(state)
+        elseif field and field.section and not state.fieldReady then
+            startField(state, field)
+        elseif field then
             buildField(context, state, field)
             state.build = state.build + 1
+            state.fieldReady = nil
         else
             state.smartStatus:set({ y = state.nextY })
             lvgl.show(state.smartStatus)
