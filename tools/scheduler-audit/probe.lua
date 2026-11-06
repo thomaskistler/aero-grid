@@ -250,6 +250,13 @@ local function install(context)
                 lifecycle[key] = wrap("lifecycle:" .. key, value)
             end
         end
+        local controller = context.editorController
+        if controller and not installed[controller] then
+            installed[controller] = true
+            for _, name in ipairs({ "openEditor", "advanceEditor", "restorePreview" }) do
+                controller[name] = wrap("editor:" .. name, controller[name])
+            end
+        end
     end
     local runtime = context.serviceRuntime
     if runtime then
@@ -419,6 +426,9 @@ local function report(context)
 end
 
 local function ready(context)
+    if config.fullscreen and not lvgl.isFullScreen() then
+        return false
+    end
     return not context.stage
         and not context.reloadState
         and #context.panels >= (config.expectedPanels or 1)
@@ -426,6 +436,22 @@ local function ready(context)
 end
 
 local actions = {
+    ["open-editor"] = function(context)
+        assert(context.editorController.openEditor(context), "native editor scenario must open the editor")
+    end,
+    ["check-editor"] = function(context)
+        assert(
+            context.editorUi and not context.editorUi.buildStage,
+            "native editor scenario must reach a completed editor preview"
+        )
+    end,
+    ["close-editor"] = function(context)
+        assert(context.editorUi and context.editorSession and not context.editorSession.dirty)
+        context.editorUiModule.close(context, false)
+        context.editorController.restorePreview(context)
+        context.editorSession = nil
+        assert(not context.editorUi, "native editor scenario must close the editor")
+    end,
     reflow = function(context)
         local zone = context.zone
         context.zone = { w = zone.w - 8, h = zone.h, xabs = zone.xabs, yabs = zone.yabs }
@@ -435,9 +461,39 @@ local actions = {
     end,
 }
 
+local function callbackSurface(kind, context)
+    if kind ~= "refresh" then
+        return nil
+    end
+    local ui = context.editorUi
+    if ui then
+        if ui.buildStage then
+            return "editor-build:" .. tostring(ui.buildStage)
+        end
+        for _, stage in ipairs({
+            "saving",
+            "drawerBuild",
+            "drawerPending",
+            "exitCommand",
+            "previewPending",
+            "previewRefresh",
+        }) do
+            if ui[stage] then
+                return "editor:" .. stage
+            end
+        end
+        return "editor-preview"
+    end
+    if context.logViewer then
+        return "log-viewer"
+    end
+    return nil
+end
+
 local function runCallback(kind, context, fn, e, t)
     callbackIndex = callbackIndex + 1
     depth, topSum, top, topLabels = 0, 0, {}, {}
+    local surface = callbackSurface(kind, context)
     local c0 = count()
     fn(context, e, t)
     local c1 = count()
@@ -447,6 +503,13 @@ local function runCallback(kind, context, fn, e, t)
     local suffix = P.loaded and "" or "@load"
     if recording then
         record("callback:" .. kind .. suffix, total, overhead, 1)
+        if surface then
+            record("surface:" .. surface .. ":" .. kind .. suffix, total, overhead, 1)
+        end
+        local phase = config.phases[phaseIndex]
+        if P.loaded and phase and phase.name then
+            record("phase:" .. phase.name .. ":" .. kind, total, overhead, 1)
+        end
         local variant = #top == 0 and "idle" or "busy"
         record("overhead:" .. kind .. suffix .. ":" .. variant, overhead, overhead, 1)
         if #top == 1 then
@@ -567,7 +630,7 @@ local function entry(kind, context, fn, e, t)
     end
     if phase.action and not phase.started then
         phase.started = true
-        actions[phase.action](context)
+        runCallback("action:" .. phase.action, context, assert(actions[phase.action], "unknown native action"))
         return
     end
     recording = phase.record ~= false

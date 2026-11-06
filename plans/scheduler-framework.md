@@ -1626,3 +1626,58 @@ This closes chart construction's oversized-body gate, not R6 as a whole.
 Other constructors, theme/header loading, reflow, input/modal accounting and
 callback-kind eligibility still require their own splits and complete callback
 checks. Flight/Smart and all production panel owners remain legacy.
+
+## 23. Native editor/modal callback inventory (R5/R6, gates open)
+
+The native runner can now enter fullscreen through the same real long-press
+input used by the screenshot harness. Editor scenarios wait for native
+`lvgl.isFullScreen()` and a completed dashboard before progressing; they assert
+successful editor entry, completed UI construction, and clean exit. No fake
+fullscreen API or replacement editor implementation is used.
+
+Audit actions now execute inside instruction-counted callback windows rather
+than outside the measurement. Capture rejects a result that omits an action's
+timed sample. Per-phase and per-editor-build-stage callback rows distinguish
+stable preview from the ten UI-building callbacks. Controller entry/advance/
+restore bodies have their own calibrated spans.
+
+```sh
+python3 tools/audit-scheduler.py editor-preview-metric editor-preview-chart metric-16 --timeout 180
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+```
+
+Both commands exit 0; the latter has 23 passing tests. The native command is
+an inventory capture, **not an admission pass**: it deliberately measures
+oversized callbacks without the firmware instruction-limit hook terminating
+them. Current mixed-owner measurements:
+
+| Surface | 16 metric placements | One maximum-span chart |
+|---|---:|---:|
+| Editor entry body | 18868 | 1943 |
+| Timed entry action, including audit wrapper | 18909 | 1984 |
+| Largest editor-building controller body | 6680 | 1622 |
+| Largest actual UI-building callback | 7105 | 2573 |
+| Stable editor-preview callback | 21763 | 12034 |
+| Clean exit/preview restoration action | 702 | 162 |
+| Largest callback across the scenario | 24543 | 12034 |
+
+Entry actions measure the actual controller but do not include the enclosing
+production input callback's Flight/head work; their totals are not full-input
+callback bounds. In particular, the 18868 entry body already fails both the
+4000 atom and 15000 whole-callback gates before that extra work. UI construction
+stage 10 accounts for the 6680 body and also needs a split.
+
+The 16-metric preview callback invokes six legacy metric refreshes after modal
+service work without reserving them first. The matched ordinary `metric-16`
+scenario independently reaches 24528 instructions (24236 in its steady phase).
+Its worst samples likewise contain six metric refreshes of approximately
+3136-4239 instructions each. This is measured production legacy work, not new
+scheduler-owned dispatch. Merely adding a modal kind would not fix the atom,
+legacy preview accounting or whole-callback budget.
+
+Next gates are bounded session copying/entry and final editor UI construction,
+legacy preview admission before scheduler allocation, and explicit service-only
+modal/preview eligibility without starving History. The chart editor's observed
+whole-callback pass does not establish those gates for all placements. No
+production dispatch, owner, callback kind, deferred stress assertion or ten-tick
+History/Telemetry policy changed in this measurement slice.

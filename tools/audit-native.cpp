@@ -60,12 +60,20 @@ template<typename T> static T symbol(void* library, const char* name) {
 }
 
 int main(int argc, char** argv) {
-    if (argc < 3 || argc > 5) {
-        std::fprintf(stderr, "Usage: audit-native LIBRARY ISOLATED_SD [TIMEOUT_SECONDS] [passthrough]\n");
+    if (argc < 3 || argc > 6) {
+        std::fprintf(stderr, "Usage: audit-native LIBRARY ISOLATED_SD [TIMEOUT_SECONDS] [passthrough] [fullscreen]\n");
         return 2;
     }
     int timeout = argc >= 4 ? std::atoi(argv[3]) : 120;
-    bool passthrough = argc == 5 && std::strcmp(argv[4], "passthrough") == 0;
+    bool passthrough = false, fullscreen = false;
+    for (int index = 4; index < argc; ++index) {
+        if (std::strcmp(argv[index], "passthrough") == 0) passthrough = true;
+        else if (std::strcmp(argv[index], "fullscreen") == 0) fullscreen = true;
+        else {
+            std::fprintf(stderr, "Unknown audit mode: %s\n", argv[index]);
+            return 2;
+        }
+    }
     void* library = dlopen(argv[1], RTLD_NOW);
     if (!library) {
         std::fprintf(stderr, "%s\n", dlerror());
@@ -84,6 +92,9 @@ int main(int argc, char** argv) {
     auto flush = symbol<void (*)()>(library, "lcdFlushed");
     auto buffer = symbol<unsigned char**>(library, "simuLcdBuf");
     auto changed = symbol<bool*>(library, "simuLcdRefresh");
+    auto touchDown = fullscreen ? symbol<void (*)(short, short)>(library, "_Z14touchPanelDownss") : nullptr;
+    auto touchUp = fullscreen ? symbol<void (*)()>(library, "_Z12touchPanelUpv") : nullptr;
+    if (fullscreen && (!touchDown || !touchUp)) return 1;
     if (!flush || !buffer || !changed) return 1;
     if (!init || !start || !stop || !lua_sethook_ || !lua_pushcclosure_ || !lua_setglobal_ || !lua_pushinteger_
         || !lua_toboolean_ || !target) {
@@ -110,6 +121,8 @@ int main(int argc, char** argv) {
     bool finished = false;
     for (int tick = 0; tick < timeout * 100; ++tick) {
         usleep(10000);
+        if (fullscreen && tick == 500) touchDown(200, 140);
+        if (fullscreen && tick == 600) touchUp();
         if (*buffer && *changed) {
             *changed = false;
             flush();

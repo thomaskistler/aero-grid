@@ -177,6 +177,17 @@ def scenarios():
         "recipe": "metric", "layout": (WIDGET / "layouts/Default.yaml").read_text(),
         "expected": 9, "settings": True, "toggleSwitches": True, "phases": standard_phases(),
     }
+    for name, base in (("editor-preview-metric", result["metric-16"]),
+                       ("editor-preview-chart", result["chart-max"])):
+        result[name] = dict(base, fullscreen=True, phases=[
+            {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 4},
+            {"name": "editor-build", "kind": "refresh", "action": "open-editor",
+             "callbacks": 80, "step": 5, "perCall": 4},
+            {"name": "editor-preview", "kind": "refresh", "action": "check-editor",
+             "callbacks": 120, "step": 5, "perCall": 4},
+            {"name": "editor-close", "kind": "refresh", "action": "close-editor",
+             "callbacks": 40, "step": 5, "perCall": 4},
+        ])
     result["light-control"] = {
         "recipe": "trim-panel", "expected": 2, "toggleSwitches": True,
         "layout": custom_layout([
@@ -262,6 +273,7 @@ def prepare(capture, name, spec, sd, mode="legacy"):
     if inputs:
         (audit / "base-inputs.lua").write_text(inputs)
     config = {"scenario": name, "expectedPanels": spec["expected"], "phases": spec["phases"],
+              "fullscreen": spec.get("fullscreen", False),
               "baseInputs": bool(inputs), "swing": 0.4,
               "toggleSwitches": spec.get("toggleSwitches", spec["recipe"] == "state"),
               "failOnError": True, "traceLimit": 300}
@@ -282,6 +294,8 @@ def run(capture, executable, library, name, spec, timeout, mode="legacy"):
     command = [str(executable), str(library), str(sd), str(timeout)]
     if name.endswith("-firmware"):
         command.append("passthrough")
+    if spec.get("fullscreen"):
+        command.append("fullscreen")
     with (directory / "simulator.log").open("w") as log:
         result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=timeout + 30)
     results = sd / "audit-results.json"
@@ -290,6 +304,11 @@ def run(capture, executable, library, name, spec, timeout, mode="legacy"):
     data = json.loads(results.read_text())
     if data.get("errors"):
         raise RuntimeError(f"{name}: widget errors: {data['errors']}")
+    actions = [phase["action"] for phase in spec["phases"] if phase.get("action")]
+    for action in set(actions):
+        samples = data.get("stats", {}).get(f"callback:action:{action}", {}).get("n", 0)
+        if samples != actions.count(action):
+            raise RuntimeError(f"{name}: missing timed action callbacks for {action}")
     (directory / "results.json").write_text(json.dumps(data, indent=1) + "\n")
     return data
 

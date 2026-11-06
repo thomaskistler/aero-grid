@@ -90,6 +90,36 @@ class ScenarioTests(unittest.TestCase):
         for panel in ("model-identity", "flight-mode", "flight-timer", "tx-battery"):
             self.assertIn(f"type: {panel}", spec["layout"])
 
+    def test_editor_scenarios_require_native_fullscreen_and_completed_preview(self):
+        scenarios = self.cli.scenarios()
+        for name, count in (("editor-preview-metric", 16), ("editor-preview-chart", 1)):
+            spec = scenarios[name]
+            self.assertTrue(spec["fullscreen"])
+            self.assertEqual(spec["expected"], count)
+            self.assertEqual([phase["action"] for phase in spec["phases"] if "action" in phase],
+                             ["open-editor", "check-editor", "close-editor"])
+
+    def test_run_requires_measured_actions_and_requests_native_fullscreen(self):
+        spec = {"phases": [{"action": "open-editor"}], "fullscreen": True}
+        for measured in (False, True):
+            with self.subTest(measured=measured), tempfile.TemporaryDirectory() as directory:
+                def native(command, **kwargs):
+                    sd = Path(command[2])
+                    sd.mkdir()
+                    data = {"stats": {"callback:action:open-editor": {"n": 1}}} if measured else {}
+                    (sd / "audit-results.json").write_text(json.dumps(data))
+                    return mock.Mock(returncode=0)
+
+                with mock.patch.object(self.cli, "OUTPUT", Path(directory)), \
+                        mock.patch.object(self.cli, "prepare"), \
+                        mock.patch.object(self.cli.subprocess, "run", side_effect=native) as run:
+                    if measured:
+                        self.cli.run(None, Path("native"), Path("library"), "editor", spec, 30)
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, "missing timed action"):
+                            self.cli.run(None, Path("native"), Path("library"), "editor", spec, 30)
+                    self.assertIn("fullscreen", run.call_args.args[0])
+
     def test_every_scenario_names_its_expected_panels(self):
         for name, spec in self.cli.scenarios().items():
             self.assertIn("expected", spec, name)
