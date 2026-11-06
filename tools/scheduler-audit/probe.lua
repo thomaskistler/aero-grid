@@ -269,6 +269,8 @@ local function install(context)
         installed[scheduling] = true
         wrapField(scheduling, "ready", "scheduler:ready")
         wrapField(scheduling, "syncPanels", "scheduler:panels")
+        wrapField(scheduling, "resetServiceRelease", "scheduler:reset-service-release")
+        wrapField(scheduling, "resetPanelRelease", "scheduler:reset-panel-release")
     end
     for _, task in pairs(context.schedulerHost and context.schedulerHost.panelTasks or {}) do
         if not installed[task] then

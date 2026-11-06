@@ -250,6 +250,7 @@ def scenarios():
                                  metric_cell(1, (4, 5, 6)).replace("row: 0", "row: 2")]),
         "phases": standard_phases(refreshes=800),
     }
+    result["session-reset-tasks"] = dict(result["session-reset"], owners=["panel:chart", "panel:metric"])
     result["chart-full"] = {
         "recipe": "metric", "layout": custom_layout([chart_cell("chart-a", 0, 4, (1, 2, 3))]), "expected": 1,
         "sources": 3, "settings": True,

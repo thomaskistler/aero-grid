@@ -2,11 +2,15 @@
 
 return function(load)
     local scheduler = load("lib/scheduler.lua")
+    local host = load("lib/scheduler_host.lua")
+    local panelHost = load("lib/panel_host.lua")
     local decl = {
         class = "normal",
         stages = {
             run = { fixed = 0, perUnit = 670, maxUnits = 1 },
             cancel = { fixed = 0, perUnit = 70, maxUnits = 1 },
+            service = { fixed = 0, perUnit = 730, maxUnits = 1 },
+            panel = { fixed = 0, perUnit = 780, maxUnits = 1 },
         },
     }
     local cases = {}
@@ -35,6 +39,68 @@ return function(load)
                                         },
                                         due = base + index,
                                     }))
+                                end
+                                for _, target in ipairs({ "service", "panel" }) do
+                                    for _, name in ipairs({ "metric", "navigation", "output" }) do
+                                        for _, position in ipairs({ 1, 64, 128 }) do
+                                            cases[#cases + 1] = {
+                                                stage = target,
+                                                grant = 1,
+                                                setup = function()
+                                                    local context = { panelHost = panelHost }
+                                                    local scheduling =
+                                                        host.attach(context, { mode = "mixed", load = load, api = {} })
+                                                    scheduling.owners =
+                                                        { ["service:reset"] = "new", ["panel:" .. name] = "new" }
+                                                    local queued = {
+                                                        class = "normal",
+                                                        stages = { run = { fixed = 0, perUnit = 100, maxUnits = 1 } },
+                                                    }
+                                                    for index = 1, 128 do
+                                                        assert(context.scheduler:add({
+                                                            id = index == position and "service:reset" or index,
+                                                            decl = queued,
+                                                            instance = {
+                                                                step = function()
+                                                                    return 10
+                                                                end,
+                                                            },
+                                                            due = index,
+                                                        }))
+                                                    end
+                                                    local entry = {
+                                                        module = load("panels/" .. name .. ".lua"),
+                                                        placement = { id = "reset" },
+                                                        instance = {
+                                                            refreshWork = { stage = "layout" },
+                                                            pendingDrawn = {},
+                                                            rendered = {},
+                                                            showRows = 32,
+                                                            applyRow = 3,
+                                                        },
+                                                    }
+                                                    scheduling.panelTasks[entry] =
+                                                        { id = "service:reset", stage = "apply" }
+                                                    return {
+                                                        step = function()
+                                                            if target == "service" then
+                                                                local _, message = scheduling:resetServiceRelease(
+                                                                    { id = "reset" },
+                                                                    0,
+                                                                    1
+                                                                )
+                                                                assert(not message, message)
+                                                            else
+                                                                assert(not scheduling:resetPanelRelease(entry, 0))
+                                                            end
+                                                            return 10
+                                                        end,
+                                                    },
+                                                        0
+                                                end,
+                                            }
+                                        end
+                                    end
                                 end
                                 for _, name in ipairs({ "metric", "navigation", "output" }) do
                                     local panel = load("panels/" .. name .. ".lua")

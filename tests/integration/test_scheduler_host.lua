@@ -803,4 +803,128 @@ do
     equal(backgroundOnly.consumed, 1, "background-only services retain their original kind")
 end
 
+do
+    local _, context = start("mixed", "host-light")
+    local host = context.schedulerHost
+    local first, second = standin.new(), standin.new()
+    local service = {
+        id = "reset-test",
+        count = 1,
+        interval = 20,
+        schedulerTasks = {
+            { id = "service:reset-a", instance = first },
+            { id = "service:reset-b", instance = second },
+        },
+    }
+    host.owners["service:reset-a"], host.owners["service:reset-b"] = "new", "new"
+    context.serviceRuntime.order[#context.serviceRuntime.order + 1] = service
+    host:resync(context)
+    assert(host:enroll() == nil)
+    local a, b = context.scheduler.byId["service:reset-a"], context.scheduler.byId["service:reset-b"]
+    assert(context.scheduler:reschedule(a.id, getTime() + 1000))
+    assert(context.scheduler:reschedule(b.id, getTime() + 2000))
+    local nextIndex, message = host:resetServiceRelease(service, getTime(), 1)
+    equal(nextIndex, 2)
+    equal(message, nil)
+    equal(context.scheduler:dueOf(a.id), getTime())
+    equal(context.scheduler:dueOf(b.id), getTime() + 2000, "one release per callback")
+    equal(host:resetServiceRelease(service, getTime(), nextIndex), nil)
+    equal(context.scheduler:dueOf(b.id), getTime())
+    equal(context.scheduler.byId[a.id], a)
+    service.failed = true
+    equal(host:resetServiceRelease(service, getTime(), 1), 2)
+    equal(context.scheduler.byId[a.id], nil, "failed reset services cannot run")
+    equal(context.scheduler.byId[b.id], b)
+    host:resetServiceRelease(service, getTime(), 2)
+    equal(context.scheduler.byId[b.id], nil)
+
+    service.failed, service.count = nil, 0
+    host:resync(context)
+    assert(host:enroll() == nil)
+    local resetTick = getTime()
+    host:resetServiceRelease(service, resetTick, 1)
+    host:resetServiceRelease(service, resetTick, 2)
+    fixture.tick(100)
+    service.count = 1
+    assert(host:enroll() == nil)
+    equal(context.scheduler:dueOf(a.id), resetTick, "pending enrollment preserves reset release")
+    equal(context.scheduler:dueOf(b.id), resetTick)
+end
+
+for _, scenario in ipairs({
+    { kind = "refresh" },
+    { kind = "background" },
+    { kind = "refresh", reset = true },
+    { kind = "background", reset = true },
+    { kind = "refresh", fail = true },
+}) do
+    local kind = scenario.kind
+    local definition, context = start("mixed", "host-light")
+    local host, entry = context.schedulerHost, context.panels[1]
+    host.owners["panel:metric"] = "new"
+    context.panelTasksDirty = true
+    assert(host:ready(context))
+    local task = assert(host.panelTasks[entry])
+    entry.instance.refreshWork = { stage = "apply", drawn = {} }
+    task.stage = "apply"
+    assert(context.scheduler:reschedule(task.id, getTime() + 1000))
+    local record = context.scheduler.byId[task.id]
+    local module, resets, cancellations = {}, 0, 0
+    for key, value in pairs(entry.module) do
+        module[key] = value
+    end
+    if scenario.reset then
+        module.resetSession = function()
+            resets = resets + 1
+            return nil, resets < 3
+        end
+    end
+    module.cancelRefresh = function(instance)
+        cancellations = cancellations + 1
+        if scenario.fail then
+            error("deliberate reset cancellation failure")
+        end
+        assert(not scenario.reset or resets == 3, "cancellation waits for the final reset stage")
+        entry.instance.refreshWork = nil
+        instance.rendered = nil
+    end
+    entry.module = module
+    context.sessionResetPending = true
+    for _ = 1, 200 do
+        fixture.tick(1)
+        definition[kind](context)
+        if not context.sessionResetPending then
+            break
+        end
+    end
+    assert(not context.sessionResetPending, "reset finishes in " .. kind)
+    equal(cancellations, 1)
+    equal(resets, scenario.reset and 3 or 0)
+    if scenario.fail then
+        equal(entry.failed, true)
+        equal(context.scheduler.byId[task.id], nil)
+        assert(logged(context, "deliberate reset cancellation failure"))
+    else
+        equal(entry.instance.refreshWork, nil, "reset cancels captured frames even without a reset hook")
+        equal(task.stage, "prepare", "cancelled task republishes its initial stage")
+        equal(context.scheduler.byId[task.id], record)
+        assert(context.scheduler.elapsed(getTime(), context.scheduler:dueOf(task.id)) >= 0)
+        equal(#context.errors, 0)
+    end
+end
+
+do
+    local _, context = start("mixed", "host-light")
+    local host, entry = context.schedulerHost, context.panels[1]
+    host.owners["panel:metric"] = "new"
+    local now = getTime()
+    entry.instance.refreshWork = { stage = "render" }
+    assert(not host:resetPanelRelease(entry, now))
+    equal(entry.instance.refreshWork, nil)
+    equal(entry.nextRefresh, now, "not-yet-enrolled panel retains the reset release")
+    context.panelTasksDirty = true
+    assert(host:ready(context))
+    equal(context.scheduler:dueOf(host.panelTasks[entry].id), now)
+end
+
 print("Scheduler host passed")

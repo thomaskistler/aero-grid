@@ -154,6 +154,14 @@ class ScenarioTests(unittest.TestCase):
             self.assertEqual(spec["owners"], ["panel:metric"])
             self.assertEqual([phase["name"] for phase in spec["phases"]], ["refresh", "background"])
 
+    def test_reset_tasks_use_the_real_reset_stimulus_with_isolated_panel_owners(self):
+        scenarios = self.cli.scenarios()
+        spec = scenarios["session-reset-tasks"]
+        self.assertTrue(spec["reset"])
+        self.assertEqual(spec["owners"], ["panel:chart", "panel:metric"])
+        self.assertEqual(spec["layout"], scenarios["session-reset"]["layout"])
+        self.assertEqual(spec["phases"], scenarios["session-reset"]["phases"])
+
     def test_navigation_task_scenarios_cover_visible_tapes_and_bearing(self):
         scenarios = self.cli.scenarios()
         for tag in ("min", "max", "16", "4", "bearing"):

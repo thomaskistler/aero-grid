@@ -2428,3 +2428,53 @@ These are measured primitives, not admission of complete reset callbacks.
 host cancellation, registered-release wakeup, complete callback accounting and
 eligibility remain the next gate. No production owners, ten-tick recording policy
 or deferred chart-recording stress assertions changed.
+
+## 36. Reset cancellation and registered-release wakeup
+
+Session reset now releases registered scheduler work rather than only changing
+legacy `due`/`nextRefresh` fields. After a service finishes its existing bounded
+reset protocol, a separate callback releases one of its tasks; multi-task services
+continue one release per callback. Failed services have their releases removed.
+Unsubscribed tasks retain the reset release until demand permits enrollment.
+Replacing the registry discards these old-instance release intents.
+
+For scheduler-owned panels, the host waits until the existing reset protocol
+finishes, cancels captured work, republishes stage/grant demand and requeues the
+same task record. Panels without a legacy reset hook receive cancellation too.
+Pending placements retain `nextRefresh` without requiring a registered record.
+Legacy panel owners acquire neither cancellation nor extra reset callbacks.
+Cancellation errors disable the panel, remove its release and surface through the
+existing error display. Ordinary scheduled work remains paused throughout reset.
+
+| Complete host operation, up to 128 queued tasks | Native worst | Fixture declaration |
+|---|---:|---:|
+| One service reset release | 616 | 730 |
+| Panel cancellation, stage publication and release | 657 | 780 |
+
+These are complete host-method bounds, not only the underlying queue operation.
+The host integration checks immediate and pending service releases, one release
+per invocation, failed-service removal, foreground/background cancellation,
+three-step reset completion before cancellation, cancellation failure reporting
+and pending panel enrollment. It preserves task-record identity.
+
+```sh
+python3 tools/audit-scheduler.py --framework lifecycle-release --timeout 180
+python3 tools/audit-scheduler.py session-reset-tasks session-reset default-gallery --timeout 180
+make test-lua32
+build/lua32/lua tests/integration/test_scheduler_host.lua "$PWD"
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+```
+
+The native commands exit 0. `session-reset-tasks` uses the real reset stimulus
+with isolated Chart/Metric ownership; whole-callback maxima for those three
+images are 10844/10149/12732. Actual host panel/service release spans peak at
+185/115 in the owned-panel image. The unchanged legacy reset integration remains
+at 14300 mock instructions with its two known first-arm XFAILs; editor
+initialization and shared-module regression suites pass (0.2 KiB retained growth).
+Lua32 scheduler bounds and the host integration pass; all 31 audit-tool tests pass.
+
+This closes reset wakeup/captured-frame cancellation, not lifecycle admission
+as a whole. Reset still owns its callbacks exclusively; full modal/loader/reflow/
+retirement accounting and Flight/Smart eligibility remain open. Production
+ownership, ten-tick Telemetry/History and deferred chart-recording failures remain
+unchanged.

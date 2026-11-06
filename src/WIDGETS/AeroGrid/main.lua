@@ -1501,6 +1501,28 @@ local function pumpSessionReset(context)
         context.sessionResetJob = job
         context.refreshOwner = nil
     end
+    local scheduling = context.schedulerHost
+    if job.releaseService then
+        local nextIndex, message = scheduling:resetServiceRelease(job.releaseService, job.now, job.releaseIndex)
+        if message then
+            addError(context, message)
+            showErrors(context)
+        end
+        job.releaseIndex = nextIndex
+        if not nextIndex then
+            job.releaseService = nil
+        end
+        return true
+    end
+    if job.releasePanel then
+        local message = scheduling:resetPanelRelease(job.releasePanel, job.now)
+        if message then
+            addError(context, message)
+            showErrors(context)
+        end
+        job.releasePanel = nil
+        return true
+    end
     local runtime = context.serviceRuntime
     local service = runtime and runtime.order[job.service]
     while service do
@@ -1517,6 +1539,9 @@ local function pumpSessionReset(context)
                 if not ok or not nextItem then
                     service.revision = service.revision + 1
                     service.due = job.now
+                    if scheduling and scheduling.scheduler then
+                        job.releaseService, job.releaseIndex = service, 1
+                    end
                     job.service, job.item = job.service + 1, 1
                     return true
                 end
@@ -1536,8 +1561,25 @@ local function pumpSessionReset(context)
             end
             entry.nextRefresh = job.now
             if not unfinished then
+                if scheduling and scheduling.scheduler and scheduling.owners["panel:" .. entry.module.id] == "new" then
+                    job.releasePanel = entry
+                end
                 job.panel = job.panel + 1
             end
+            return true
+        end
+        if
+            not entry.failed
+            and scheduling
+            and scheduling.scheduler
+            and scheduling.owners["panel:" .. entry.module.id] == "new"
+        then
+            local message = scheduling:resetPanelRelease(entry, job.now)
+            if message then
+                addError(context, message)
+                showErrors(context)
+            end
+            job.panel = job.panel + 1
             return true
         end
         job.panel = job.panel + 1

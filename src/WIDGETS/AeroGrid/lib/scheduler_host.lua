@@ -124,6 +124,7 @@ function host.attach(context, options)
         registeredTasks = {},
         panelTasks = {},
         serviceDeclarations = {},
+        resetReleases = {},
     }, host)
 
     local legacy = { spent = 0 }
@@ -339,6 +340,71 @@ function host:resync(context)
     end
     self.waiting = waiting
     self.registeredTasks = registered
+    self.resetReleases = {}
+end
+
+--- Release at most one service task after a session reset.
+---@return integer? nextIndex
+---@return string? message
+function host:resetServiceRelease(instance, now, index)
+    if not self.scheduler then
+        return
+    end
+    local item = instance.schedulerTasks and instance.schedulerTasks[index]
+    if instance.schedulerTasks and not item or not instance.schedulerTasks and index > 1 then
+        return
+    end
+    local id = item and item.id or "service:" .. instance.id
+    if schedulerOwned(self, id) then
+        if instance.failed then
+            self.scheduler:remove(id)
+            self.resetReleases[id] = nil
+        elseif self.scheduler:dueOf(id) ~= nil then
+            local ok, message = self.scheduler:reschedule(id, now)
+            if not ok then
+                return nil, id .. ": reset release: " .. message
+            end
+        else
+            self.resetReleases[id] = now
+        end
+    end
+    if instance.schedulerTasks and instance.schedulerTasks[index + 1] then
+        return index + 1
+    end
+end
+
+--- Cancel a captured frame and publish its new stage before waking its release.
+---@return string? message
+function host:resetPanelRelease(entry, now)
+    if not self.scheduler or self.owners["panel:" .. entry.module.id] ~= "new" then
+        return
+    end
+    local task = self.panelTasks[entry]
+    if not entry.failed then
+        local ok, message = self.context.panelHost.dispatch(entry, "cancelRefresh")
+        if not ok then
+            if task then
+                self.scheduler:remove(task.id)
+            end
+            return entry.placement.id .. ": reset cancellation: " .. tostring(message)
+        end
+    end
+    if entry.failed then
+        if task then
+            self.scheduler:remove(task.id)
+        end
+        return
+    end
+    entry.nextRefresh = now
+    if task then
+        if entry.module.stageOf then
+            task.stage, task.want = entry.module.stageOf(entry.instance)
+        end
+        local ok, message = self.scheduler:reschedule(task.id, now)
+        if not ok then
+            return task.id .. ": reset release: " .. message
+        end
+    end
 end
 
 --- Register the task of every service the scheduler owns once it has subscribers: a
@@ -356,7 +422,8 @@ function host:enroll()
             -- The service step may need the same wrap-safe time comparison.
             task.tickElapsed = scheduler.elapsed
             local interval = task.interval or instance.interval
-            local due = getTime() + (item.critical and 0 or scheduler.stagger(item.index, interval))
+            local due = self.resetReleases[item.id]
+                or getTime() + (item.critical and 0 or scheduler.stagger(item.index, interval))
             local ok, reason = scheduler:add({
                 id = item.id,
                 decl = serviceDeclaration(self, task.decl),
@@ -366,6 +433,7 @@ function host:enroll()
             if not ok then
                 return item.id .. ": " .. reason
             end
+            self.resetReleases[item.id] = nil
         end
     end
     return nil
