@@ -1866,6 +1866,14 @@ panels:
 
     resetRadio()
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
+    local model = context.serviceRuntime.byId.model
+    for _ = 1, 1000 do
+        if model.revision > 0 then
+            break
+        end
+        pump(context, 1)
+    end
+    assert(model.revision > 0, "model identity was not read")
     pump(context, 40)
 
     -- The same shape in model-identity, which could not be made to fail before
