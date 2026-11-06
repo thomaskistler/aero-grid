@@ -887,7 +887,7 @@ def prepare_framework(capture, sd, cases):
                  "scheduler_panel_api.lua", "scheduler_chart_fixture.lua", "scheduler_flight_readout.lua",
                  "scheduler_probe_fixture.lua", "scheduler_diagnostics_fixture.lua", "scheduler_flight_fixture.lua",
                  "theme_resolution_fixture.lua", "scheduler_registration_fixture.lua", "memory_files.lua",
-                 "construction_cases.lua"):
+                 "construction_cases.lua", "scheduler_broker_registration.lua"):
         shutil.copyfile(SUPPORT_DIR / name, audit / name)
     (audit / "cases").mkdir()
     for case in cases:

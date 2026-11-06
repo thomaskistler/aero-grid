@@ -21,9 +21,7 @@ for _, item in ipairs(case.cases) do
     end
     equal(task:step(1, "run", now), 1)
     assert(additions <= 1, "a ready turn cannot enroll multiple service tasks")
-    if state.action == "enroll" and state.size == 16 then
-        equal(additions, 0, "panel enrollment and service enrollment cannot share an atom")
-    end
+    equal(next(state.scheduling.panelTasks), nil, "idle panels cannot share service allocation")
     state.scheduling.scheduler.add = add
     state.settle(state.context, state.scheduling)
     local owner, context, scheduling = state.owner, state.context, state.scheduling
@@ -94,10 +92,10 @@ for _, item in ipairs(case.cases) do
         local ordinary = model.new(owner.env, support)
         ordinary:timer(0)
         context.serviceRuntime = { order = { ordinary }, byId = { model = ordinary } }
-        state.ready(context, scheduling)
+        state.settle(context, scheduling)
         assert(scheduler:dueOf("service:model") ~= nil)
         context.serviceRuntime = nil
-        state.ready(context, scheduling)
+        state.settle(context, scheduling)
         equal(scheduler:dueOf("service:model"), nil, "replaced dashboard services still retire")
         equal(scheduler:dueOf("service:flight"), 47)
         equal(scheduler:dueOf("service:smart"), 83)
@@ -121,7 +119,9 @@ do
     end
     state.context.serviceRuntime = { order = { telemetry }, byId = { telemetry = telemetry } }
     local scheduling = state.scheduling
-    state.ready(state.context, scheduling)
+    repeat
+        state.ready(state.context, scheduling)
+    until not scheduling.reconciliation
     assert(#scheduling.waiting > 1, "demanded services remain pending across callbacks")
     assert(scheduling:verify(state.context) == nil, "legitimate pending services satisfy verification")
     local pending = scheduling.waiting[1]
@@ -141,7 +141,7 @@ do
         equal(scheduling.panelSetup, 2300, "bulk admission is charged before allocation")
         return add(self, spec)
     end
-    for _ = 1, 60 do
+    for _ = 1, 160 do
         additions = 0
         state.ready(state.context, scheduling)
         assert(additions <= 1, "bulk service demand cannot create an unbounded enrollment atom")

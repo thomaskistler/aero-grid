@@ -54,6 +54,20 @@ local function fixture(exclusive)
         return entry
     end
     local function run(kind)
+        if
+            host.reconciliation
+            or host.checked ~= context.panels
+            or host.registry ~= context.serviceRuntime
+            or context.panelTasksDirty
+        then
+            for _ = 1, 512 do
+                assert(host:ready(context), table.concat(errors, "\n"))
+                if not host.reconciliation then
+                    break
+                end
+            end
+            assert(not host.reconciliation, "bounded reconciliation must eventually finish")
+        end
         assert(host:ready(context), table.concat(errors, "\n"))
         host:begin(kind or "steady")
         host:finish(kind or "steady")
@@ -194,7 +208,11 @@ do
     local context, host, add, _, errors = fixture()
     local entry = add("invalid")
     entry.instance = nil
-    assert(not host:ready(context))
+    for _ = 1, 16 do
+        if not host:ready(context) then
+            break
+        end
+    end
     assert(#errors == 1 and string.find(errors[1], "has no task instance", 1, true))
     assert(not host.scheduler.byId["panel:invalid"])
 end
@@ -256,10 +274,11 @@ do
     active.module, context.panelTasksDirty = idleModule, true
     run()
     assert(host.scheduler.count == 0 and not host.panelTasks[active])
-    assert(active.instance.schedulerOwned and host.panelSetup == scheduling.PANEL_ENROLL_COST)
+    assert(active.instance.schedulerOwned)
     active.module, context.panelTasksDirty = activeModule, true
     run()
     assert(host.panelTasks[active] and active.instance.runs == 2, "leaving idle enrolls a genuine task")
+    assert(not host.idlePanels[active] and host:verify(context, true) == nil)
     context.panels = { active }
     run()
     assert(not first.instance.schedulerOwned and not last.instance.schedulerOwned)
@@ -276,7 +295,7 @@ do
         entries[index].module = { id = "sample", idle = true }
     end
     run()
-    assert(host.scheduler.count == 0 and not host.pendingPanels and host.panelSetup == scheduling.PANEL_ENROLL_COST)
+    assert(host.scheduler.count == 0 and not host.pendingPanels)
     run()
     assert(host.panelSetup == 0, "idle checks are charged only when synchronization is needed")
     assert(host:verify(context) == nil)
@@ -294,16 +313,22 @@ do
     local context, host, add, _, errors = fixture()
     local entry = add("not-idle")
     entry.module = { id = "sample", idle = true, refresh = function() end }
-    assert(not host:ready(context))
+    for _ = 1, 16 do
+        if not host:ready(context) then
+            break
+        end
+    end
     assert(string.find(errors[1], "declares idle but has periodic work", 1, true))
     assert(host.scheduler.count == 0)
 end
 
 do
-    local context, host, add = fixture()
+    local context, host, add, run = fixture()
     local entry = add("missing-task")
     entry.module = { id = "sample" }
-    assert(not host:ready(context), "a missing task is not an implicit idle declaration")
+    assert(not pcall(run), "a missing task is not an implicit idle declaration")
+    assert(host.pendingPanels[entry], "rejected metadata cannot silently consume its pending entry")
+    assert(not host:ready(context), "subsequent admission cannot turn rejection into success")
 end
 
 print("Scheduler panel lifecycle passed")

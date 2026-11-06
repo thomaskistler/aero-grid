@@ -134,6 +134,19 @@ panels:
 
 -- Starts a widget in `mode` on `layoutName` and loads it. Every panel dispatch is
 -- logged as `{ tick, panel id, event }` in `context.dispatches`.
+local function settleHost(host, context)
+    if not host then
+        return
+    end
+    for _ = 1, 1024 do
+        assert(host:ready(context))
+        if not host.reconciliation and not host.pendingPanels then
+            return
+        end
+    end
+    error("bounded host reconciliation did not finish")
+end
+
 local function start(mode, layoutName, probe)
     fixture.reset()
     for index = 1, 2 do
@@ -153,6 +166,9 @@ local function start(mode, layoutName, probe)
         definition.refresh(context)
         guard = guard + 1
         assert(guard < 400, "staged load never finished")
+    end
+    if mode ~= "new" then
+        settleHost(context.schedulerHost, context)
     end
     context.dispatches = {}
     local dispatch = context.panelHost.dispatch
@@ -202,7 +218,7 @@ local function logged(context, text)
 end
 
 local function awaitService(host, context, id)
-    for _ = 1, #host.waiting + 3 do
+    for _ = 1, 1024 do
         assert(host:ready(context))
         if host.scheduler.byId[id] then
             return host.scheduler.byId[id]
@@ -815,7 +831,13 @@ do
     equal(standin.decl.kinds, nil, "host eligibility must not mutate shared service declarations")
     equal(backgroundOnly.decl.kinds["editor-build"], nil)
     for _, kind in ipairs({
-        "modal-log", "modal-settings", "modal-menu", "modal-location", "editor-render", "editor-drawer", "editor-input",
+        "modal-log",
+        "modal-settings",
+        "modal-menu",
+        "modal-location",
+        "editor-render",
+        "editor-drawer",
+        "editor-input",
     }) do
         service.queue[#service.queue + 1] = 17
         context.scheduler:run(kind, getTime() + 50, 1500)
@@ -892,7 +914,7 @@ for _, scenario in ipairs({
     local host, entry = context.schedulerHost, context.panels[1]
     host.owners["panel:metric"] = "new"
     context.panelTasksDirty = true
-    assert(host:ready(context))
+    settleHost(host, context)
     local task = assert(host.panelTasks[entry])
     entry.instance.refreshWork = { stage = "apply", drawn = {} }
     task.stage = "apply"
@@ -952,7 +974,7 @@ do
     equal(entry.instance.refreshWork, nil)
     equal(entry.nextRefresh, now, "not-yet-enrolled panel retains the reset release")
     context.panelTasksDirty = true
-    assert(host:ready(context))
+    settleHost(host, context)
     equal(context.scheduler:dueOf(host.panelTasks[entry].id), now)
 end
 

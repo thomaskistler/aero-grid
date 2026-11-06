@@ -11,6 +11,8 @@
 
 local host = { RUNTIME_API = 1 }
 host.__index = host
+-- Unverified dashboard records retain deadlines but cannot run during reconciliation.
+local RECONCILE_KIND = "host-reconcile"
 
 --- The one owner of every task: `service:<id>` for a service update and
 --- `panel:<type>` for a panel's refresh (the chart's stages included). Flipping a
@@ -94,6 +96,7 @@ host.PANEL_BOUNDS = {
 
 --- Declared fixed cost of a callback at 16 panels (contracts, callback overhead).
 host.OVERHEAD = {
+    [RECONCILE_KIND] = 2400,
     steady = 1250,
     background = 1130,
     ["editor-build"] = 2400,
@@ -123,6 +126,7 @@ host.SERVICE_KINDS = {
 --- Panel and service enrollment never share the same callback.
 host.PANEL_ENROLL_COST = 4000
 host.SERVICE_ENROLL_COST = 2300
+host.RECONCILE_COST = 900
 
 --- Declared cost of the head work `pumpFlight` runs before the scheduler: the
 --- reset poll and the flight tick (which stay legacy at the head until R4).
@@ -152,7 +156,12 @@ function host.attach(context, options)
         panelTasks = {},
         idlePanels = {},
         serviceDeclarations = {},
+        brokerDeclarations = {},
+        panelEntries = {},
+        panelQueue = {},
+        panelCursor = 1,
         resetReleases = {},
+        resetOwners = {},
     }, host)
 
     local legacy = { spent = 0 }
@@ -178,11 +187,12 @@ function host.attach(context, options)
     return self
 end
 
-local function serviceDeclaration(self, declaration)
+local function serviceDeclaration(self, declaration, persistent)
     if type(declaration) ~= "table" or declaration.kinds ~= nil and type(declaration.kinds) ~= "table" then
         return declaration
     end
-    local result = self.serviceDeclarations[declaration]
+    local cache = persistent and self.brokerDeclarations or self.serviceDeclarations
+    local result = cache[declaration]
     if not result then
         result = {}
         for key, value in pairs(declaration) do
@@ -195,7 +205,8 @@ local function serviceDeclaration(self, declaration)
         for kind, allowed in pairs(host.SERVICE_KINDS) do
             result.kinds[kind] = allowed and result.kinds.steady == true
         end
-        self.serviceDeclarations[declaration] = result
+        result.kinds[RECONCILE_KIND] = persistent == true
+        cache[declaration] = result
     end
     return result
 end
@@ -216,6 +227,14 @@ local function serviceRegistry(context)
     return context.serviceRuntime and context.serviceRuntime.order or {}, persistent
 end
 
+local function pendingService(self, instance, id)
+    if self.pendingServices[id] == instance and self.registeredTasks[id] == instance then
+        return true
+    end
+    local job = self.reconciliation
+    return job and job.registry == self.context.serviceRuntime and job.ids[id] == nil
+end
+
 --- Check the owner table against what is loaded; returns a message, or nil.
 --- Every legacy item needs a declared bound for scheduler accounting; every new
 --- item needs a registered task. `new` mode needs all items owned by the scheduler.
@@ -233,7 +252,7 @@ function host:verify(context, panelsVerified)
         elseif owner == "new" then
             return not idle
                     and not self.scheduler.byId[key]
-                    and not (self.pendingServices[key] and self.pendingServices[key] == self.registeredTasks[key])
+                    and not pendingService(self, instance, key)
                     and key .. " is owned by the scheduler but has no task"
                 or nil
         elseif self.mode == "new" then
@@ -257,7 +276,7 @@ function host:verify(context, panelsVerified)
                             instance.count > 0
                             and (task.want or 0) > 0
                             and not self.scheduler.byId[item.id]
-                            and self.pendingServices[item.id] ~= instance
+                            and not pendingService(self, instance, item.id)
                         then
                             return item.id .. " is owned by the scheduler but has no task"
                         end
@@ -280,6 +299,9 @@ function host:verify(context, panelsVerified)
         local owner = self.owners[key]
         local task = self.panelTasks[entry]
         local pending = self.pendingPanels and self.pendingPanels[entry]
+            or self.reconciliation
+                and self.reconciliation.panels == context.panels
+                and not self.reconciliation.panelsPresent[entry]
         local message
         if owner == "new" then
             local idle = panelsVerified and self.idlePanels[entry]
@@ -310,6 +332,7 @@ function host:syncPanels(context)
         self.panelSetup = host.PANEL_ENROLL_COST
     end
     for _, entry in ipairs(context.panels) do
+        self.panelEntries[entry] = true
         if self.owners["panel:" .. entry.module.id] == "new" and not entry.failed then
             if type(entry.instance) ~= "table" then
                 return "panel:" .. entry.module.id .. " is owned by the scheduler but has no task instance"
@@ -412,6 +435,7 @@ function host:resync(context)
                             task = item.instance,
                             id = item.id,
                             critical = item.critical,
+                            persistent = instance == persistent,
                             -- Preserve the pre-refactor single-task stagger.
                             index = instance.tasks and instance.tasks.run == item.instance and index - 1
                                 or (index - 1) * 3 + taskIndex - 1,
@@ -425,17 +449,19 @@ function host:resync(context)
             end
         end
     end
-    local resetReleases = {}
+    local resetReleases, resetOwners = {}, {}
     self.waiting, self.pendingServices = waiting, {}
     for _, item in ipairs(waiting) do
         self.pendingServices[item.id] = item.instance
         if self.registeredTasks[item.id] == item.instance then
             resetReleases[item.id] = self.resetReleases[item.id]
+            resetOwners[item.id] = self.resetOwners[item.id]
         end
     end
     self.enrollCursor = #waiting
     self.registeredTasks = registered
     self.resetReleases = resetReleases
+    self.resetOwners = resetOwners
 end
 
 --- Release at most one service task after a session reset.
@@ -453,14 +479,15 @@ function host:resetServiceRelease(instance, now, index)
     if schedulerOwned(self, id) then
         if instance.failed then
             self.scheduler:remove(id)
-            self.resetReleases[id] = nil
-        elseif self.scheduler:dueOf(id) ~= nil then
+            self.resetReleases[id], self.resetOwners[id] = nil, nil
+        elseif self.registeredTasks[id] == instance and self.scheduler:dueOf(id) ~= nil then
             local ok, message = self.scheduler:reschedule(id, now)
             if not ok then
                 return nil, id .. ": reset release: " .. message
             end
         else
             self.resetReleases[id] = now
+            self.resetOwners[id] = instance
         end
     end
     if instance.schedulerTasks and instance.schedulerTasks[index + 1] then
@@ -528,19 +555,254 @@ function host:enroll()
                 or getTime() + (item.critical and 0 or scheduler.stagger(item.index, interval))
             local ok, reason = scheduler:add({
                 id = item.id,
-                decl = serviceDeclaration(self, task.decl),
+                decl = serviceDeclaration(self, task.decl, item.persistent),
                 instance = task,
                 due = due,
             })
             if not ok then
                 return item.id .. ": " .. reason
             end
-            table.remove(waiting, position)
+            if position < #waiting then
+                waiting[position] = waiting[#waiting]
+            end
+            waiting[#waiting] = nil
             self.pendingServices[item.id] = nil
             self.resetReleases[item.id] = nil
+            self.resetOwners[item.id] = nil
         end
     end
     return nil
+end
+
+local function serviceProblem(self, instance, item)
+    local id = item and item.id or "service:" .. instance.id
+    local owner = self.owners[id]
+    if not schedulerOwned(self, id) and owner ~= "legacy" then
+        return id .. " has no owner"
+    elseif not schedulerOwned(self, id) then
+        if self.mode == "new" then
+            return id .. " is not owned by the scheduler"
+        elseif not (item and self.serviceBounds[instance.id] or not item and self:serviceBound(instance)) then
+            return id .. " has no declared bound"
+        end
+    end
+end
+
+local function beginReconciliation(self, context, order, persistent, revision)
+    self.waiting, self.pendingServices = {}, {}
+    self.enrollCursor = 0
+    self.panelQueue, self.panelCursor, self.pendingPanels = {}, 1, nil
+    self.reconciliation = {
+        panels = context.panels,
+        registry = context.serviceRuntime,
+        revision = revision,
+        order = order,
+        persistent = persistent,
+        phase = "services",
+        index = 0,
+        taskIndex = 1,
+        ids = {},
+        panelsPresent = {},
+    }
+    context.panelTasksDirty = nil
+end
+
+local function reconcileService(self, job)
+    local instance = job.index == 0 and job.persistent or job.order[job.index]
+    if not instance then
+        if job.index == 0 then
+            job.phase, job.remaining = "broker-enroll", #self.waiting
+        else
+            job.phase, job.cursor = "retire-services", nil
+        end
+        return
+    end
+    if job.persistent and instance.id == "flight" and instance ~= job.persistent then
+        job.index, job.taskIndex = job.index + 1, 1
+        return
+    end
+    local item = instance.schedulerTasks and instance.schedulerTasks[job.taskIndex]
+    if instance.schedulerTasks and not item or not instance.schedulerTasks and job.taskIndex > 1 then
+        if job.index == 0 then
+            job.phase, job.remaining = "broker-enroll", #self.waiting
+        else
+            job.index, job.taskIndex = job.index + 1, 1
+        end
+        return
+    end
+    local message = serviceProblem(self, instance, item)
+    if message then
+        return message
+    end
+    local id, task = item and item.id or "service:" .. instance.id, item and item.instance or instance
+    if job.persistent and job.ids[id] == job.persistent and not instance.schedulerTasks and instance.count == 0 then
+        job.index, job.taskIndex = job.index + 1, 1
+        return
+    end
+    if job.ids[id] then
+        return id .. " is registered more than once"
+    end
+    job.ids[id] = instance
+    if schedulerOwned(self, id) and not instance.failed then
+        local previous, record = self.registeredTasks[id], self.scheduler.byId[id]
+        if previous ~= instance or record and record.instance ~= task then
+            self.scheduler:remove(id)
+            if self.resetOwners[id] and self.resetOwners[id] ~= instance then
+                self.resetReleases[id] = nil
+                self.resetOwners[id] = nil
+            end
+            record = nil
+        end
+        self.registeredTasks[id] = instance
+        if not record then
+            self.waiting[#self.waiting + 1] = {
+                id = id,
+                instance = instance,
+                task = task,
+                critical = item and item.critical,
+                persistent = instance == job.persistent,
+                index = instance.tasks and instance.tasks.run == task and math.max(0, job.index - 1)
+                    or math.max(0, job.index - 1) * 3 + job.taskIndex - 1,
+            }
+            self.pendingServices[id] = instance
+        end
+    end
+    job.taskIndex = job.taskIndex + 1
+end
+
+local function reconcilePanel(self, context, job)
+    local entry = job.panels[job.index]
+    if not entry then
+        job.phase, job.cursor = "retire-panels", nil
+        return
+    end
+    local key = "panel:" .. entry.module.id
+    local owner = self.owners[key]
+    local idle = rawget(entry.module, "idle") == true
+    self.panelEntries[entry], job.panelsPresent[entry] = true, true
+    if owner == "new" then
+        if type(entry.instance) ~= "table" then
+            return key .. " is owned by the scheduler but has no task instance"
+        elseif idle and not context.panelHost.isIdle(entry.module) then
+            return key .. " declares idle but has periodic work"
+        end
+        rawset(entry.instance, "schedulerOwned", not entry.failed and true or nil)
+        local task = self.panelTasks[entry]
+        if idle or entry.failed then
+            if task then
+                self.scheduler:remove(task.id)
+                self.panelTasks[entry] = nil
+            end
+            self.idlePanels[entry] = idle and not entry.failed and true or nil
+        else
+            self.idlePanels[entry] = nil
+            if not task or not self.scheduler.byId[task.id] then
+                self.panelQueue[#self.panelQueue + 1] = entry
+                self.pendingPanels = self.pendingPanels or {}
+                self.pendingPanels[entry] = true
+            end
+        end
+    else
+        if type(entry.instance) == "table" then
+            rawset(entry.instance, "schedulerOwned", nil)
+        end
+        local task = self.panelTasks[entry]
+        if task then
+            self.scheduler:remove(task.id)
+            self.panelTasks[entry] = nil
+        end
+        self.idlePanels[entry] = nil
+        if owner ~= "legacy" then
+            return key .. " has no owner"
+        elseif self.mode == "new" then
+            return key .. " is not owned by the scheduler"
+        elseif not self.panelBounds[entry.module.id] then
+            return key .. " has no declared bound"
+        end
+    end
+    job.index = job.index + 1
+end
+
+local function advanceReconciliation(self, context)
+    local job = self.reconciliation
+    if job.phase == "services" then
+        return reconcileService(self, job)
+    elseif job.phase == "broker-enroll" then
+        if job.remaining > 0 then
+            local message = self:enroll()
+            if message then
+                return message
+            end
+            job.remaining = job.remaining - 1
+            if job.remaining > 0 then
+                return
+            end
+        end
+        self.reconciledBroker = job.persistent
+        job.index, job.taskIndex, job.phase = 1, 1, "services"
+    elseif job.phase == "retire-services" then
+        local id, instance = next(self.registeredTasks, job.cursor)
+        job.cursor = id
+        if not id then
+            job.phase, job.cursor = "retire-resets", nil
+        elseif job.ids[id] ~= instance or instance.failed or not schedulerOwned(self, id) then
+            self.scheduler:remove(id)
+            self.registeredTasks[id], self.pendingServices[id], self.resetReleases[id] = nil, nil, nil
+            self.resetOwners[id] = nil
+        end
+    elseif job.phase == "retire-resets" then
+        local id, instance = next(self.resetOwners, job.cursor)
+        job.cursor = id
+        if not id then
+            job.phase, job.index = "panels", 1
+        elseif job.ids[id] ~= instance then
+            self.resetOwners[id], self.resetReleases[id] = nil, nil
+        end
+    elseif job.phase == "panels" then
+        return reconcilePanel(self, context, job)
+    elseif job.phase == "retire-panels" then
+        local entry = next(self.panelEntries, job.cursor)
+        job.cursor = entry
+        if not entry then
+            self.checked, self.registry, self.taskRevision = job.panels, job.registry, job.revision
+            self.persistent = job.persistent
+            self.reconciliation = nil
+        elseif not job.panelsPresent[entry] then
+            local task = self.panelTasks[entry]
+            if task then
+                self.scheduler:remove(task.id)
+            end
+            if type(entry.instance) == "table" then
+                rawset(entry.instance, "schedulerOwned", nil)
+            end
+            self.panelEntries[entry], self.panelTasks[entry], self.idlePanels[entry] = nil, nil, nil
+        end
+    end
+end
+
+local function enrollPanel(self, context)
+    local entry = self.panelQueue[self.panelCursor]
+    if not entry then
+        self.pendingPanels = nil
+        return
+    end
+    self.panelSetup = host.PANEL_ENROLL_COST
+    local ok, task = pcall(context.panelHost.task, entry)
+    if not ok then
+        return "panel:" .. entry.module.id .. " is owned by the scheduler but has no task: " .. tostring(task)
+    end
+    task.id = "panel:" .. entry.placement.id
+    local accepted, reason =
+        self.scheduler:add({ id = task.id, decl = task.decl, instance = task, due = entry.nextRefresh })
+    if not accepted then
+        return task.id .. ": " .. reason
+    end
+    self.panelTasks[entry] = task
+    self.pendingPanels[entry] = nil
+    self.panelCursor = self.panelCursor + 1
+    if self.panelCursor > #self.panelQueue then
+        self.pendingPanels = nil
+    end
 end
 
 --- True when the host can run this callback. A failed check is logged and the
@@ -551,32 +813,51 @@ function host:ready(context)
     self.panelSetup = 0
     local telemetry = context.serviceRuntime and context.serviceRuntime.byId.telemetry
     local taskRevision = telemetry and telemetry.schedulerRevision or 0
-    local changed = self.checked ~= context.panels
-        or self.registry ~= context.serviceRuntime
-        or context.panelTasksDirty
-        or self.taskRevision ~= taskRevision
-    if not changed and not self.pendingPanels and self.waiting[1] == nil then
+    local order, persistent = serviceRegistry(context)
+    if not self.scheduler then
+        self.checked, self.registry, self.taskRevision, self.persistent =
+            context.panels, context.serviceRuntime, taskRevision, persistent
+        context.panelTasksDirty = nil
         return true
     end
-    local message, panelsVerified
-    if self.scheduler then
-        local panelsChanged = self.checked ~= context.panels or context.panelTasksDirty or self.pendingPanels ~= nil
-        if panelsChanged then
-            message = self:syncPanels(context)
-            panelsVerified = not message
-        end
-        if changed then
-            self:resync(context)
-        end
-        message = message or self:enroll()
+    local job = self.reconciliation
+    local snapshot = job
+        or {
+            panels = self.checked,
+            registry = self.registry,
+            revision = self.taskRevision,
+            persistent = self.persistent,
+        }
+    local changed = snapshot.panels ~= context.panels
+        or snapshot.registry ~= context.serviceRuntime
+        or context.panelTasksDirty
+        or snapshot.revision ~= taskRevision
+        or snapshot.persistent ~= persistent
+    if not changed and not job and not self.pendingPanels and self.waiting[1] == nil then
+        return true
     end
-    message = message or (changed and self:verify(context, panelsVerified))
+    local message
+    if self.scheduler then
+        if changed then
+            beginReconciliation(self, context, order, persistent, taskRevision)
+        end
+        if self.reconciliation then
+            self.panelSetup = host.RECONCILE_COST
+            if self.reconciliation.phase == "broker-enroll" then
+                self.panelSetup = 0
+            end
+            message = advanceReconciliation(self, context)
+            self.panelSetup = math.max(self.panelSetup, host.RECONCILE_COST)
+        elseif self.pendingPanels then
+            message = enrollPanel(self, context)
+        else
+            message = self:enroll()
+        end
+    end
     if message then
         self.api.log(context, "scheduler: " .. message .. "; using legacy fallback for unowned work")
         return false
     end
-    self.checked, self.registry, self.taskRevision = context.panels, context.serviceRuntime, taskRevision
-    context.panelTasksDirty = nil
     return true
 end
 
@@ -620,8 +901,9 @@ end
 function host:finish(kind)
     self.active = false
     local plan
-    if self.scheduler then
-        self.scheduler:run(kind, getTime(), self.head + self.legacy.spent)
+    local _, persistent = serviceRegistry(self.context)
+    if self.scheduler and (not self.reconciliation or persistent and persistent == self.reconciledBroker) then
+        self.scheduler:run(self.reconciliation and RECONCILE_KIND or kind, getTime(), self.head + self.legacy.spent)
         plan = self.scheduler.lastPlan.U
     end
     if self.probe then
@@ -657,11 +939,13 @@ function host:report(context)
                 if owner == instance then
                     self.scheduler:remove(taskId)
                     self.registeredTasks[taskId] = nil
+                    self.resetReleases[taskId], self.resetOwners[taskId] = nil, nil
                 end
             end
             for index = #self.waiting, 1, -1 do
                 if self.waiting[index].instance == instance then
-                    self.pendingServices[self.waiting[index].id] = nil
+                    local taskId = self.waiting[index].id
+                    self.pendingServices[taskId], self.resetReleases[taskId], self.resetOwners[taskId] = nil, nil, nil
                     table.remove(self.waiting, index)
                 end
             end

@@ -410,14 +410,16 @@ only visible failure-first rows while counting the whole report. Its log snapsho
 also stages shared demand checks and retention trimming; painting preserves the
 existing newest-first, three-changed-line limit.
 
-Scheduler-owned placements enroll one per callback with an explicit setup
-reservation. Existing placements retain their releases, and pending enrollment
-does not recreate service tasks or reset their recording cadence. Hidden panels
-remain ineligible for refresh. The host sets the internal `schedulerOwned`
-instance flag for all new-owned placements, including those awaiting enrollment,
-and clears it on retirement, failure or return to legacy ownership. Flight
-Counter uses it to suppress its legacy background painting before admission as
-well as after; legacy-owned counters retain their existing background behavior.
+Registry, subscription and panel changes reconcile one task or placement per
+callback, with a separate bounded retirement pass. Surviving records retain
+their absolute releases. Until reconciliation finishes, only the actual owning
+Flight broker's tasks may run; ordinary deadlines remain pending. Panel and
+service enrollment each have an explicit setup reservation and never share a
+callback. Hidden panels remain ineligible for refresh.
+The internal `schedulerOwned` flag appears when a placement's contract is
+scanned, and clears on retirement, failure or return to legacy ownership.
+Callers must use the owner table, not a missing instance flag, to decide whether
+legacy background work is allowed during the pending scan.
 These adapters do not change production ownership or waive lifecycle gates.
 Panels with no periodic work may declare `idle = true` instead of a task.
 The contract rejects combining it with refresh/background callbacks or scheduler
@@ -429,7 +431,9 @@ resizing before publication restarts only positioning.
 Service admission examines at most one queued task per callback, reserves its
 cost before allocation, and never shares a callback with panel setup. Dormant
 tasks retain a fair queue position. Registry resync preserves surviving service
-releases and queued reset times, while retiring replaced instances.
+releases and queued reset times, while retiring replaced instances. Queued resets
+belong to their service instance, so a replacement cannot wake the old task with
+the same ID.
 Stable editor previews share the steady callback's service/panel accounting;
 scheduler-owned previews never also use legacy refresh.
 An enabled owning Flight broker supplies a stable scheduler registration source

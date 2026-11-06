@@ -4309,3 +4309,70 @@ both callback kinds; every error list is empty and the largest whole callback
 is 9696. Lua53/int32 host, preparation, loading, lifecycle, admission, Flight and
 strict-reset regressions pass; reset stays 10800 with both original XFAILs.
 All 51 combined audit-tool tests pass.
+
+## 80. Bounded shared-host readiness (R4 prerequisite; owners unchanged)
+
+`ready` no longer composes whole-registry `resync`/`verify` with enrollment.
+It scans one service task, validates one panel contract, or retires one tracked
+record/reset per callback. Canonical broker tasks reconcile and enroll first;
+an internal service-only kind then keeps that broker runnable while dashboard
+membership remains unverified. Ordinary records retain their absolute deadlines
+without executing. Registry gaps, replacement/restart, queued demand, dormant
+fairness, reset ownership, duplicate IDs and failed services retain explicit
+handling. An unscanned placement need not yet have its instance marker: common
+legacy background dispatch must consult owner intent instead.
+
+Actual-source fixtures cover 30 and 128 total tasks (27/125 real Telemetry
+subscriptions, their maintenance task, and the actual Flight/Smart broker), plus
+16 idle panel contracts. A forced tail retirement exercises the dense critical
+list rather than only cheap head removal. Complete readiness measurements:
+
+| Atom | Native maximum | Normal fitted charge | Host reservation |
+|---|---:|---:|---:|
+| Replacing a service task, including removal and queueing | 704 | 830 | 900 |
+| Retiring a tail task at the 128-task envelope | 559 | 670 | 900 |
+| Ordinary service scan/verification | 286 | 370 | 900 |
+| One idle panel contract | 219 | 300 | 900 |
+| Canonical enrollment, 9 shared eligibility kinds | 1221 | 1400 | 2300 |
+| Canonical enrollment, 17 shared eligibility kinds | 1597 | 1810 | 2300 |
+| Real Telemetry enrollment | 914 | 1060 | 2300 |
+| Actual composed panel enrollment | 1901 | 2150 | 4000 |
+
+The shared-kind measurements include `editor-drawer`, `loader`, `editor-input`
+and the existing optional `reflow` contract entry. Eight prospective kinds add
+376 measured instructions; further kind additions still require remeasurement.
+Service and panel allocation never share a callback. Framework release cost is
+242 against 420 charged; its public API and 132/64/224 terms are unchanged.
+
+The same four all-panel + Flight/Smart prototypes now require reconciliation to
+settle and actual canonical, Telemetry and non-idle panel stages to execute.
+They cannot pass merely by suppressing work:
+
+| Prototype | Refresh maximum | Background maximum |
+|---|---:|---:|
+| Gallery | 10501 | 9477 |
+| Thirty-source, two-chart stress | 14058 | 13392 |
+| Model panels | 3911 | 2337 |
+| Flight/Smart | 9839 | 9294 |
+
+All error lists are empty; creation and loading callbacks are also below 15000.
+Stress complete readiness peaks at 1901, not 7655; all 30 source stages execute
+at least 86 times, and both Chart publication and Metric rendering occur.
+The focused regressions pass on Lua53/int32, as does the full int32 scheduler
+suite. The native reset fixture now declares its matrix once instead of growing
+it during setup, registers the actual reset owner and checks the resulting
+deadline; its normal fitted cancellation/service/panel charges are 80/760/810.
+
+```sh
+python3 tools/audit-scheduler.py --framework host-readiness broker-registration idle-panels lifecycle-release --timeout 180
+python3 tools/audit-scheduler.py migration-tasks-gallery migration-tasks-stress migration-tasks-model migration-tasks-flight-smart --mode mixed --timeout 240
+make test-lua32
+```
+
+No loader/main/editor/panel-validator or production owner changes are included.
+Telemetry/History's ten-tick policy, deferred recording stress assertions and
+strict reset expectations are unchanged. Final merged callback eligibility and
+the explicit first-arm policy decision remain activation gates.
+An additional chart-recording run still fails its unchanged line 134 startup
+assertion, also reproduced with the untouched prerequisite host. No deferred
+stress assertions or fixture clocks were adjusted.

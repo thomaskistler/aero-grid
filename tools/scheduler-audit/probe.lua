@@ -170,6 +170,11 @@ local function finish(label, raw, leak)
     end
     if recording then
         record(label, cost, own, units > 0 and units or 1, children)
+        if string.match(label, "^scheduler:ready:") then
+            record("scheduler:ready", cost, own, units > 0 and units or 1, children)
+            gate(cost <= 4000, "host readiness exceeds its atom cap: " .. cost)
+            gate(cost <= P.readinessBound, "host readiness exceeds its work charge: " .. cost)
+        end
         if string.match(label, "^editor:input:") then
             gate(cost <= 4000, label .. " exceeds the editor input atom cap: " .. cost)
             local bound = P.editorInputBounds and P.editorInputBounds[string.sub(label, #"editor:input:" + 1)]
@@ -441,7 +446,27 @@ local function install(context)
     local scheduling = context.schedulerHost
     if scheduling and not installed[scheduling] then
         installed[scheduling] = true
-        wrapField(scheduling, "ready", "scheduler:ready")
+        wrapField(scheduling, "ready", function(token)
+            if token then
+                P.readinessBound = math.max(scheduling.panelSetup, scheduling.RECONCILE_COST)
+                return "scheduler:ready:" .. token
+            end
+            local job = scheduling.reconciliation
+            if job then
+                return job.phase
+            elseif
+                scheduling.checked ~= context.panels
+                or scheduling.registry ~= context.serviceRuntime
+                or context.panelTasksDirty
+            then
+                return "begin"
+            elseif scheduling.pendingPanels then
+                return "panel-enroll"
+            elseif scheduling.waiting[1] then
+                return "service-enroll"
+            end
+            return "settled"
+        end)
         wrapField(scheduling, "finish", function(token, _, kind)
             if token then
                 return "scheduler:finish:" .. token
@@ -815,6 +840,31 @@ end
 local function report(context)
     local errors = unexpectedErrors(context)
     gate(not config.expectedError or P.expectedErrorSeen, "expected scenario error was not reported")
+    if string.match(config.scenario, "^migration%-tasks%-") then
+        local scheduling = context.schedulerHost
+        gate(
+            scheduling and not scheduling.reconciliation and not scheduling.pendingPanels,
+            "host readiness never settled"
+        )
+        for _, name in ipairs({ "flight", "smart" }) do
+            gate(stats["task:service:" .. name .. ":run"], "canonical task never ran: " .. name)
+        end
+        local telemetry = context.serviceRuntime and context.serviceRuntime.byId.telemetry
+        for _, item in ipairs(telemetry and telemetry.schedulerTasks or {}) do
+            if telemetry.count > 0 and item.instance.want > 0 then
+                gate(stats[item.id], "Telemetry task never ran: " .. item.id)
+            end
+        end
+        for _, entry in ipairs(context.panels) do
+            if not entry.module.idle then
+                local prefix, observed = "task:panel:" .. entry.module.id .. ":", false
+                for label in pairs(stats) do
+                    observed = observed or string.sub(label, 1, #prefix) == prefix
+                end
+                gate(observed, "panel task never ran: " .. entry.module.id)
+            end
+        end
+    end
     for message in pairs(gateErrors) do
         errors[#errors + 1] = message
     end
