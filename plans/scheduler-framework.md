@@ -4531,6 +4531,7 @@ admitted editor-drawer surface callback 7191 (oversized Chart). Whole callback
 maxima 10013-13868, except the existing unadmitted 16-panel tap steady 26033.
 Fixture items stage 178/400. Full int32 suite and 39 tooling tests pass.
 Production owners, recording policy and deferred stress assertions are unchanged.
+
 ## 85. Reflow service-only co-admission (R6)
 
 Prerequisite: integrated `39e6d37`. Foreground geometry now reserves through the
@@ -4612,3 +4613,11 @@ editor/controller, deferred Chart assertion, or strict reset expectation changes
 are included. Unknown/custom/unproven callbacks remain explicitly ineligible.
 Final ownership activation and the existing first-arm policy gate remain with
 the parent; this cost/parity proof does not authorize either.
+
+Integrated replay on `21eb531`, including the drawer imports, passes all 16
+ordinary reflow captures and error corners. The ordinary captures have empty
+error lists and peak at 9510 instructions for Chart. Combined lifecycle,
+handoff, oversized-list and unchanged strict-reset regressions pass on Lua53
+and int32, as do the int32 scheduler suite and 56 audit-tool tests. The
+separate integrated Chart drawer opening exceeds its declared 1500 charge
+(1578 native); editor admission requires further fitted-cost verification.
