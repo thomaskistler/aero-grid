@@ -46,6 +46,18 @@ for _, stage in ipairs({ "buildStage", "saving", "previewPending", "previewRefre
     assert(ui.inputWorkBound(context, EVT_VIRTUAL_ENTER) == nil, stage)
     state[stage] = nil
 end
+do
+    local pending = true
+    state.handlers = { blocked = function() return pending end }
+    state.drawerOpen, state.previewPending, state.renderStage = { mode = "configure", selected = 1 }, true, 2
+    assert(ui.inputWorkBound(context, EVT_VIRTUAL_EXIT) == nil)
+    assert(ui.renderWorkBound(state) == nil and ui.drawerWorkBound(context) == nil)
+    assert(not ui.handle(context, EVT_VIRTUAL_EXIT) and state.drawerOpen)
+    assert(not ui.advance(context) and state.previewPending and state.renderStage == 2,
+        "registration pauses all preview work without dropping queued commands")
+    pending = false
+    assert(ui.handle(context, EVT_VIRTUAL_EXIT) and not state.drawerOpen)
+end
 context.editorUi = nil
 assert(ui.inputWorkBound(context, EVT_VIRTUAL_ENTER) == nil)
 print("Editor input eligibility excludes drag, exit and lifecycle work")

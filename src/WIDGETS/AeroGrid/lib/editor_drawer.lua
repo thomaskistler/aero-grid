@@ -3,7 +3,12 @@
 local drawer = { RUNTIME_API = 1 }
 drawer.WORK_BOUNDS = { build = 1700, layout = 500, finish = 200 }
 
+local function blocked(state)
+    return state.handlers.blocked and state.handlers.blocked()
+end
+
 function drawer.workBound(state)
+    if blocked(state) then return nil end
     if state.drawerLayout then
         return drawer.WORK_BOUNDS.layout
     elseif state.drawerBuild then
@@ -54,6 +59,7 @@ local function enqueue(state, action, generation)
         and (not generation or generation == state.drawerGeneration)
         and not state.drawerPending
         and not state.drawerBuild
+        and not blocked(state)
     then
         state.drawerPending = action
     end
@@ -296,7 +302,8 @@ function drawer.open(context, state, mode, listKey, itemIndex, itemPath, groupKe
                 return 1
             end,
             set = function(index)
-                if context.editorUi == state and generation == state.drawerGeneration and not state.drawerPending then
+                if context.editorUi == state and generation == state.drawerGeneration
+                    and not state.drawerPending and not blocked(state) then
                     local item = assert(catalog[index], "invalid panel selection")
                     state.drawerPending = { action = "add", panelType = item.type }
                 end
@@ -380,8 +387,9 @@ function drawer.open(context, state, mode, listKey, itemIndex, itemPath, groupKe
 end
 
 --- Queue an exit-flow command from a native callback of this generation.
-local function exitCommand(context, state, generation, command)
-    if context.editorUi == state and generation == state.drawerGeneration and not state.exitCommand then
+local function exitCommand(context, state, generation, command, closing)
+    if context.editorUi == state and generation == state.drawerGeneration
+        and not state.exitCommand and (closing or not blocked(state)) then
         state.exitCommand = command
     end
 end
@@ -429,7 +437,7 @@ function drawer.openName(context, state, name, message)
                     state.nativeDrawer:clear()
                     state.nativeDrawer = nil
                     retireDialogHost(state)
-                    exitCommand(context, state, generation, { action = "exit" })
+                    exitCommand(context, state, generation, { action = "exit" }, true)
                 end
             end,
         }),
@@ -438,7 +446,8 @@ function drawer.openName(context, state, name, message)
     local height = lvgl.UI_ELEMENT_HEIGHT or 32
     local width = math.floor(context.zone.w * 0.8) - 16
     local function active()
-        return generation == state.drawerGeneration and state.nativeDrawer ~= nil and not state.exitCommand
+        return generation == state.drawerGeneration and state.nativeDrawer ~= nil
+            and not state.exitCommand and not blocked(state)
     end
     lvgl.textEdit(state.nativeDrawer, {
         x = 4,
@@ -449,7 +458,7 @@ function drawer.openName(context, state, name, message)
         length = 32,
         active = active,
         set = function(value)
-            if generation == state.drawerGeneration then
+            if generation == state.drawerGeneration and not blocked(state) then
                 state.saveAsName = value
             end
         end,
@@ -595,6 +604,7 @@ local function addControl(context, state, field, index)
                 and state.drawerBuild == nil
                 and not state.drawerPending
                 and field.active ~= false
+                and not blocked(state)
         end,
     }
     local function get()
@@ -798,6 +808,12 @@ local function addControl(context, state, field, index)
             set(value)
         end
     end
+    if options.set then
+        local setter = options.set
+        options.set = function(value)
+            if not blocked(state) then setter(value) end
+        end
+    end
     control = assert(lvgl[kind](row, options), "cannot create native " .. kind)
     local errorLabel = lvgl.label(state.nativeDrawer, {
         x = 12,
@@ -840,6 +856,7 @@ local function fieldError(state, control, message)
 end
 
 function drawer.advance(context, state)
+    if blocked(state) then return false end
     if state.drawerLayout then
         local last = math.min(#state.drawerControls, state.drawerLayout + 3)
         state.drawerLayoutY = relayout(state, state.drawerLayout, last, state.drawerLayoutY)

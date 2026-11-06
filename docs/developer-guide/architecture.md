@@ -497,6 +497,10 @@ advance. Ordinary selection and modal input admit services under `editor-input`.
 Enter/tap queues a separately bounded `editor-drawer` opening; Return can cancel
 before construction. Drawer commands and drag enumeration retain separate
 admission gates.
+Compatible saved-layout adoption starts bounded Flight registration when the
+host exposes `beginFlightRegistration`. Editor entry, preview work and native
+drawer edits pause while registration/publication or its pending error drains;
+queued work resumes afterward. Native window retirement is still recorded.
 
 Put the module at `panels/<type>.lua` and reference that type in a layout.
 Regular panels declare `supportedSpans = { "any" }` and adapt their contents to

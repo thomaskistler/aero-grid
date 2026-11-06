@@ -49,8 +49,13 @@ local function inputReady(state)
         and not state.previewRefresh and not state.exitCommand and not state.drawerOpen
 end
 
+local function blocked(state)
+    return state and state.handlers and state.handlers.blocked and state.handlers.blocked()
+end
+
 function uiModule.inputWorkBound(context, event)
     local state = context.editorUi
+    if blocked(state) then return nil end
     if state and state.drawerOpen then
         return matches(event, "EVT_VIRTUAL_EXIT") and uiModule.INPUT_BOUNDS.cancel or nil
     end
@@ -161,6 +166,7 @@ local function render(_, state)
 end
 
 function uiModule.renderWorkBound(state)
+    if blocked(state) then return nil end
     -- Geometry synchronization can invoke panel-specific lifecycle work.
     if
         state.renderStage
@@ -177,6 +183,7 @@ end
 
 function uiModule.drawerWorkBound(context)
     local state = context.editorUi
+    if blocked(state) then return nil end
     if state.drawerOpen and not state.session.initializing and not state.previewPending
         and not state.previewRefresh and not state.exitCommand then
         return uiModule.DRAWER_OPEN_BOUNDS[state.drawerOpen.mode]
@@ -266,7 +273,7 @@ end
 
 function uiModule.advance(context)
     local state = context.editorUi
-    if not state then
+    if not state or blocked(state) then
         return false
     end
     if state.session.initializing then
@@ -633,6 +640,7 @@ end
 
 function uiModule.handle(context, event, touch)
     local state = context.editorUi
+    if blocked(state) then return false end
     if state and state.drawerOpen and matches(event, "EVT_VIRTUAL_EXIT") then
         state.drawerOpen = nil
         return true

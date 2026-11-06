@@ -3952,3 +3952,24 @@ are unchanged and progress past the previous premature reload failures. The
 remaining RX resized-preview glyph assertion observes a live feed but no panel
 refresh while production panel ownership is still legacy; it remains a final
 owner-activation gate rather than a passing full-editor claim.
+## 72. Editor adoption and asynchronous Flight registration (R5/R6 interface)
+
+The actual saved-layout adoption call site now prefers
+`context.beginFlightRegistration(context)` over synchronous `configureFlight`;
+hosts without that hook retain the legacy compatibility path. The parent owns
+the hook, job driver and error reporting. No member fanout/parser is duplicated.
+Controller entry/advancement, preview/input eligibility and native drawer
+setters/actions pause while `flightRegistrationJob`, `flightPublicationJob` or
+`pendingFlightError` exists. Pending commands are retained; unavoidable native
+window retirement records its return command for after the job drains.
+
+Lua53/int32 units and the actual widget input regression verify blocked
+programmatic setters, queued rendering/opening preservation, resumed controls,
+and compatible adoption starting the hook without invoking synchronous
+configuration. All nineteen native input/drawer scenarios still pass the
+unchanged declarations: input maximum 765/900, Configure opening 3484/3900,
+complete admitted input 5615. The local sixteen-panel legacy steady/preview
+maximum remains 26033 outside these gates; parent owns that integration.
+Strict reset remains 13900/two unchanged XFAILs. General adoption/mutation
+callbacks are not newly admitted by this interface change; complete runtime
+registration driving remains the parent's `debddc8` gate.

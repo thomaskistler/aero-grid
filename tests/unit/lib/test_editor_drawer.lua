@@ -99,6 +99,20 @@ do
     end
     assert(#state.drawerControls == 16)
     assert(drawer.advance({}, state) and state.drawerLayout)
+    local pending = true
+    state.handlers.blocked = function() return pending end
+    assert(not drawer.workBound(state) and not drawer.advance({}, state) and state.drawerLayout == 1)
+    pending = false
+    while state.drawerLayout do drawer.advance({}, state) end
+    pending = true
+    local control = state.drawerControls[1].object
+    assert(not control.properties.active())
+    control.properties.set(0)
+    assert(not state.drawerPending, "native setters cannot queue edits while registration drains")
+    pending = false
+    assert(control.properties.active())
+    control.properties.set(0)
+    assert(state.drawerPending and state.drawerPending.action == "write", "controls resume after registration")
 end
 
 lvgl = previous

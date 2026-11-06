@@ -87,4 +87,31 @@ input(EVT_TOUCH_TAP)
 assert(not handled, "duplicate native taps must not replay input or prevent service admission")
 context.editorUiModule.handle = handle
 context.schedulerHost.finish, context.panelHost.dispatch = finish, dispatch
+for _, field in ipairs({ "flightRegistrationJob", "flightPublicationJob", "pendingFlightError" }) do
+    context[field] = field == "pendingFlightError" and "registration failed" or {}
+    assert(not context.editorController.openEditor(context), "registration must block native editor entry")
+    assert(not context.editorController.advanceEditor(context))
+    assert(not context.editorUiModule.inputWorkBound(context, EVT_VIRTUAL_ENTER))
+    assert(not context.editorUiModule.handle(context, EVT_VIRTUAL_EXIT))
+    for _, entry in ipairs(state.drawerControls) do
+        local properties = entry.object.properties
+        if properties.set and properties.active then
+            assert(not properties.active())
+            properties.set(0)
+            assert(not state.drawerPending, "disabled native controls must reject programmatic edits too")
+        end
+    end
+    context[field] = nil
+end
+local started
+context.beginFlightRegistration = function(host)
+    assert(host == context)
+    started, host.flightRegistrationJob = true, {}
+    return true
+end
+context.configureFlight = function() error("saved-layout adoption must not synchronously re-read model settings") end
+context.editorSavedDocument = context.editorModule.clone(context.document)
+state.handlers.close(true)
+assert(started and context.flightRegistrationJob and not context.reloadState,
+    "compatible saved adoption starts registration without reloading or blocking the callback")
 print("Editor input/preemption/native delegation admit services without hidden panel refresh")

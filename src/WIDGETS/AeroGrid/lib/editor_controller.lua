@@ -16,6 +16,10 @@ function module.new(dependencies)
     local advanceConstruction = dependencies.advanceConstruction
     local updateEmptyHint = dependencies.updateEmptyHint
 
+    local function flightPending(context)
+        return context.flightRegistrationJob or context.flightPublicationJob or context.pendingFlightError
+    end
+
     local function previewLayout(context, document)
         local placements = {}
         for _, placement in ipairs(document.panels) do
@@ -192,7 +196,9 @@ function module.new(dependencies)
                 context.flightSources[#context.flightSources + 1] = placement
             end
         end
-        if context.configureFlight then
+        if context.beginFlightRegistration then
+            context.beginFlightRegistration(context)
+        elseif context.configureFlight then
             context.configureFlight(context)
         end
         return true
@@ -323,6 +329,7 @@ function module.new(dependencies)
     ---@param context AeroGridContext
     ---@return boolean opened
     local function openEditor(context)
+        if flightPending(context) then return false end
         if not isFullScreen() or context.stage or context.reloadState or not context.document then
             return false
         end
@@ -395,6 +402,7 @@ function module.new(dependencies)
         session.modelArmed = context.modelArmed
         local handlers = {
             editor = context.editorModule,
+            blocked = function() return flightPending(context) end,
             logError = function(operation, message)
                 local placement = session.draft and session.draft.panels[session.selected]
                 logError(
@@ -509,6 +517,7 @@ function module.new(dependencies)
 
     --- Advance editor setup or saving without discarding a failed save's draft.
     local function advanceEditor(context)
+        if flightPending(context) then return false end
         local saving = context.editorUi.saving ~= nil
         local advanced, advanceError = pcall(context.editorUiModule.advance, context)
         if not advanced then
