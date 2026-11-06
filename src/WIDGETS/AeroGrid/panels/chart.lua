@@ -1898,6 +1898,9 @@ end
 
 --- Retain both plot buffers and retire old traces in bounded batches.
 function chart.resetSession(context)
+    if context.reflowWork then
+        context.reflowWork.invalidated = true
+    end
     context.readingWork = nil
     context.taskPhase = nil
     local reset = context.resetWork
@@ -2389,6 +2392,9 @@ function chart.create(parent, rect, settings, services)
 end
 
 function chart.update(context, rect)
+    if context.reflowWork then
+        context.reflowWork = { invalidated = true }
+    end
     resizeShell(context, rect)
     chart.geometry(context, rect)
     if context.framePhase then
@@ -2396,6 +2402,46 @@ function chart.update(context, rect)
         context.armMarkers.job, context.resumeMarkers.job = nil, nil
     end
     chart.refresh(context)
+end
+
+function chart.reflow(context, rect, _, _, _, begin)
+    if begin or context.reflowWork and context.reflowWork.invalidated then
+        resizeShell(context, rect)
+        context.readingWork, context.taskPhase = nil, nil
+        context.reflowWork = { stage = "font", index = 1, geometry = startGeometry(context, rect) }
+        return false
+    end
+    local work = context.reflowWork
+    if not work then
+        return true
+    elseif work.stage == "font" then
+        if selectLegendFont(context, work.geometry) then
+            work.stage = "layout"
+        end
+    elseif work.stage == "layout" then
+        work.layout = layoutGeometry(context, rect, work.geometry)
+        work.stage = "position"
+    elseif work.stage == "position" then
+        local item = context.series[work.index]
+        if item then
+            positionLegend(context, work.index, item, work.layout)
+        end
+        work.index = work.index + 1
+        if work.index > #context.series then
+            work.stage = "finish"
+        end
+    elseif work.stage == "finish" then
+        finishGeometry(context)
+        if context.framePhase then
+            context.framePhase, context.pending, context.axisWork = "axis", nil, nil
+            context.armMarkers.job, context.resumeMarkers.job = nil, nil
+        end
+        context.reflowWork = nil
+        return true
+    else
+        error("unknown chart reflow stage: " .. tostring(work.stage))
+    end
+    return false
 end
 
 return chart

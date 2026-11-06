@@ -80,10 +80,12 @@ local function finish(label, raw, leak)
     if type(label) ~= "string" then
         label = "unlabelled"
     end
-    local themeBound = ({ ["load:theme-read"] = 200, ["load:theme-tokenize"] = 1700,
-        ["load:theme-parse"] = 500 })[label]
+    local themeBound = ({ ["load:theme-read"] = 200, ["load:theme-tokenize"] = 1700, ["load:theme-parse"] = 500 })[label]
     if themeBound then
         gate(cost <= themeBound, label .. " exceeds its bounded theme-loading charge: " .. cost)
+    end
+    if label == "lifecycle:advanceReflow" then
+        gate(cost <= 4000, "complete geometry advance exceeds the atom cap: " .. cost)
     end
     if previewTasks and string.sub(label, 1, 11) == "task:panel:" then
         gate(cost <= 4000, label .. " exceeds the preview atom cap: " .. cost)
@@ -113,8 +115,10 @@ local function finish(label, raw, leak)
         local stage = tonumber(string.match(label, "^editor:advanceEditor:render:(%d+)$"))
         if stage and stage >= 2 and P.editorRenderBounds then
             gate(cost <= 4000, label .. " exceeds the editor paint atom cap: " .. cost)
-            gate(cost <= P.editorRenderBounds[stage == 6 and "finish" or "rows"],
-                label .. " exceeds the editor paint charge: " .. cost)
+            gate(
+                cost <= P.editorRenderBounds[stage == 6 and "finish" or "rows"],
+                label .. " exceeds the editor paint charge: " .. cost
+            )
         end
         local drawerStage = string.match(label, "^editor:drawer:advance:(%a+)")
         if label == "editor:drawer:open" then
@@ -139,21 +143,21 @@ end
 
 -- A labelled measurement window. `label` is a string, or a function that is
 -- called before the work (returning a token) and after it (returning the label).
-local function core(leak, label, fn, a, b, c, d, e)
+local function core(leak, label, fn, a, b, c, d, e, f, g, h)
     pause(true)
     depth = depth + 1
     childSum[depth], visits[depth], childList[depth] = 0, 0, {}
     local token
     if type(label) == "function" then
-        token = label(nil, a, b, c, d, e)
+        token = label(nil, a, b, c, d, e, f, g, h)
     end
     pause(false)
     local c0 = count()
-    local r1, r2, r3, r4 = fn(a, b, c, d, e)
+    local r1, r2, r3, r4 = fn(a, b, c, d, e, f, g, h)
     local c1 = count()
     pause(true)
     if type(label) == "function" then
-        label = label(token, a, b, c, d, e)
+        label = label(token, a, b, c, d, e, f, g, h)
     end
     finish(label, c1 - c0, leak)
     pause(false)
@@ -161,15 +165,15 @@ local function core(leak, label, fn, a, b, c, d, e)
 end
 
 -- Direct spans: patched call sites in the isolated copy call this.
-local function span(label, fn, a, b, c, d, e)
-    return core(LEAK_SPAN, label, fn, a, b, c, d, e)
+local function span(label, fn, a, b, c, d, e, f, g, h)
+    return core(LEAK_SPAN, label, fn, a, b, c, d, e, f, g, h)
 end
 _G.AUDIT_SPAN = span
 
 -- Wrapper spans: installed over existing functions at run time.
 local function wrap(label, fn)
-    return function(a, b, c, d, e)
-        return core(LEAK_WRAP, label, fn, a, b, c, d, e)
+    return function(a, b, c, d, e, f, g, h)
+        return core(LEAK_WRAP, label, fn, a, b, c, d, e, f, g, h)
     end
 end
 
@@ -219,10 +223,17 @@ local function calibrate()
     K_CALLBACK = c1 - c0 - floor
 end
 
-local function panelLabel(token, entry, event)
+local function panelLabel(token, entry, event, ...)
     local module = entry and entry.module
     local id = module and rawget(module, "id") or "unknown"
     local instance = entry and entry.instance
+    if event == "reflow" then
+        if token == nil then
+            local work = instance.reflowWork
+            return (select(5, ...) or work and work.invalidated) and "begin" or work and work.stage or "done"
+        end
+        return "panel:" .. id .. ":reflow:" .. tostring(token)
+    end
     if event == "step" and module and type(module.stageOf) == "function" then
         return token == nil and module.stageOf(instance) or "panel:" .. id .. ":step:" .. tostring(token)
     end
@@ -373,7 +384,8 @@ local function install(context)
             if state.drawerLayout then
                 return "layout"
             elseif state.drawerBuild then
-                return state.drawerBuild <= #state.drawerFields and "build:" .. tostring(state.drawerFields[state.drawerBuild].type)
+                return state.drawerBuild <= #state.drawerFields
+                        and "build:" .. tostring(state.drawerFields[state.drawerBuild].type)
                     or "finish"
             end
             return "command"
@@ -693,8 +705,10 @@ local actions = {
     end,
     ["check-drawer"] = function(context)
         local state = assert(context.editorUi)
-        assert(state.nativeDrawer and not state.drawerBuild and not state.drawerLayout
-            and not state.renderStage, "native drawer construction must finish")
+        assert(
+            state.nativeDrawer and not state.drawerBuild and not state.drawerLayout and not state.renderStage,
+            "native drawer construction must finish"
+        )
         assert(#state.drawerControls == #state.drawerFields)
     end,
     ["open-entry-drawer"] = function(context)
@@ -777,8 +791,8 @@ local function callbackSurface(kind, context)
             return "editor-render:" .. tostring(ui.renderStage)
         end
         if ui.drawerBuild then
-            return "editor-drawer:" .. (ui.drawerLayout and "layout"
-                or ui.drawerBuild <= #ui.drawerFields and "build" or "finish")
+            return "editor-drawer:"
+                .. (ui.drawerLayout and "layout" or ui.drawerBuild <= #ui.drawerFields and "build" or "finish")
         end
         if ui.previewRefresh then
             local action = ui.previewRefresh.actions[ui.previewRefresh.index]
@@ -839,8 +853,8 @@ local function runCallback(kind, context, fn, e, t)
             end
         end
     end
-    local paintSurface = surface and (string.match(surface, "^editor%-render:[2-6]$")
-        or string.match(surface, "^editor%-drawer:"))
+    local paintSurface = surface
+        and (string.match(surface, "^editor%-render:[2-6]$") or string.match(surface, "^editor%-drawer:"))
     if kind == "refresh" and (paintSurface or string.sub(config.scenario, 1, 6) == "modal-" and surface) then
         gate(total <= 15000, surface .. " exceeds the complete callback ceiling: " .. total)
         for _, label in ipairs(topLabels) do

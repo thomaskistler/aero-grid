@@ -265,10 +265,31 @@ placeCard = function(context, index, rect, area)
 end
 
 function showcase.update(context, rect)
+    if context.reflowWork then
+        context.reflowWork = { invalidated = true }
+    end
     local area = layout(context, rect)
     for index = 1, #context.cards do
         placeCard(context, index, rect, area)
     end
+end
+
+function showcase.reflow(context, rect, _, _, _, begin)
+    if begin or context.reflowWork and context.reflowWork.invalidated then
+        context.reflowWork = { stage = "place", area = layout(context, rect), index = 1 }
+        return false
+    end
+    local work = context.reflowWork
+    if not work then
+        return true
+    end
+    placeCard(context, work.index, rect, work.area)
+    work.index = work.index + 1
+    if work.index > #context.cards then
+        context.reflowWork = nil
+        return true
+    end
+    return false
 end
 
 return showcase

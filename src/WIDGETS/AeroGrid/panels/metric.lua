@@ -578,6 +578,9 @@ local function prepareSupporting(context)
 end
 
 function metric.cancelRefresh(context)
+    if context.reflowWork then
+        context.reflowWork.invalidated = true
+    end
     if context.refreshWork then
         local stage = context.refreshWork.stage
         if stage == "geometry" or stage == "layout" then
@@ -1238,9 +1241,30 @@ reflow = function(context, rect)
 end
 
 function metric.update(context, rect)
+    if context.reflowWork then
+        context.reflowWork = { invalidated = true }
+    end
     metric.cancelRefresh(context)
     reflow(context, rect)
     context.refreshGeometry = nil
+end
+
+function metric.reflow(context, rect, _, _, _, begin)
+    if begin or context.reflowWork and context.reflowWork.invalidated then
+        metric.cancelRefresh(context)
+        context.reflowWork = { stage = "apply", area = geometry(context, rect) }
+        return false
+    end
+    local work = context.reflowWork
+    if not work then
+        return true
+    elseif work.stage == "apply" then
+        applyGeometry(context, rect, work.area)
+        context.refreshGeometry, context.reflowWork = nil, nil
+        return true
+    else
+        error("unknown metric reflow stage: " .. tostring(work.stage))
+    end
 end
 
 return metric

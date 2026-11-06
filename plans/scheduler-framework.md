@@ -3190,7 +3190,7 @@ admission, then passed while still rejecting hidden panel refresh. Native
 `modal-location` passes with a 3021 complete modal callback maximum and 9532
 across the whole scenario. No new kind, bound, owner or recording policy changed.
 
-## 47. Drawer-scoped form generation (R5 prerequisite)
+## 54. Drawer-scoped form generation (R5 prerequisite)
 
 `editor.formFields(session, selection)` can limit expansion to a drawer's key
 and entry path. Ordinary callers still receive the complete field list.
@@ -3210,3 +3210,41 @@ Lua53/int32 tests compare every visible field's complete metadata with the
 unfiltered form for every catalog panel and nested entry path. Complete editor
 integration preserves its 15000 mock maximum. All 38 audit-tool tests pass.
 Production ownership and recording policies remain unchanged.
+
+## 55. Staged host geometry and faithful lifecycle measurements (R6 slice)
+
+The host advances one placement per reflow callback. Optional `reflow` callbacks
+advance one geometry stage and return a boolean completion result; legacy panels
+retain their synchronous `update` path. Chart shares its construction geometry,
+Metric separates calculation and placement, Navigation separates geometry,
+capture, reading and tape stages, and Theme Showcase places one card per turn.
+Zone changes restart the job; reset, cancellation and synchronous updates
+invalidate captured work rather than allowing obsolete geometry to resume.
+These paths do not grant services or change production owners.
+
+The native span/wrapper previously forwarded only five arguments, silently
+dropping placement and the reflow start flag. It now forwards eight, preserving
+nil holes and four return values; a regression covers each instrumented path.
+Measurements below therefore execute actual geometry rather than a false
+49-instruction no-op.
+
+The pure-Lua geometry fixture covers six geometries, long captions, range
+visuals, satellite states, empty/populated charts and both Showcase palettes.
+Maximum stage costs are Metric1757/1838, Navigation2834/510/1434/773/2328,
+Chart680/973/811/1558/1130 and Showcase1712/362. Declarations also retain
+the larger real-widget Metric begin2918 and Showcase begin1926 measurements.
+Complete native host reflow maxima are3254 for sixteen Metrics,1401 for Chart,
+2589 for Navigation and2262 for Showcase. All fit the normal4000 atom margin.
+The stable preview scenarios peak at10785/12114 whole-callback instructions.
+
+Native reflow scenarios also cover every synchronous fallback. Output3908 and
+TX Battery3596 still require splitting for the fitted normal margin; they are
+not admitted by this slice. Other complete fallback maxima are at most3420.
+The raw4000 enclosing gate remains active, but is not a claim that an uncharged
+lifecycle callback is eligible. Full lifecycle admission/retirement/rebuild,
+theme resolution, settings publication and final ownership remain open.
+
+Existing immediate post-reflow checks and new restart/reset/cancellation parity
+checks pass. Unchanged combined session-reset assertions retain both first-arm
+XFAILs and a14700 mock maximum. The deferred chart stress assertions and
+ten-tick Telemetry/History policy are unchanged.

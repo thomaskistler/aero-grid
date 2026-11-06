@@ -22,6 +22,7 @@
 ---@field create fun(parent: any, rect: table, settings: table, services: table): any
 ---@field construct? fun(instance: any, rect: table): boolean Finish one staged construction step; true when ready.
 ---@field update? fun(instance: any, rect: table, settings: table)
+---@field reflow? fun(instance: any, rect: table, settings: table, services: table?, placement: table?, begin: boolean): boolean One geometry stage; begin restarts, true completes.
 ---@field refresh? fun(instance: any)
 ---@field decl? table Scheduler declaration for a migrated panel.
 ---@field idle? boolean Explicitly declares no periodic refresh or background work.
@@ -51,7 +52,7 @@ panelHost.API_VERSION = 1
 
 --- Optional lifecycle callbacks, in a fixed order so errors stay deterministic.
 local OPTIONAL_CALLBACKS =
-    { "construct", "update", "refresh", "step", "stageOf", "background", "resetSession", "event", "destroy" }
+    { "construct", "update", "reflow", "refresh", "step", "stageOf", "background", "resetSession", "event", "destroy" }
 
 --- Restrict module identifiers to the same path-safe characters as layout types.
 ---@param value any
@@ -311,7 +312,9 @@ function panelHost.dispatch(entry, event, ...)
     end
 
     local ok, resultOrError, unfinished = pcall(callback, entry.instance, ...)
-    if ok and (event == "refresh" or event == "step") and type(resultOrError) == "number" then
+    if ok and event == "reflow" and type(resultOrError) ~= "boolean" then
+        ok, resultOrError = false, "reflow must return a boolean"
+    elseif ok and (event == "refresh" or event == "step") and type(resultOrError) == "number" then
         if resultOrError < 1 or resultOrError > 6000 or resultOrError ~= math.floor(resultOrError) then
             ok, resultOrError = false, "refresh interval must be a whole number from 1 to 6000 ticks"
         else

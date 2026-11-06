@@ -1040,6 +1040,9 @@ function navigation.apply(context, drawn)
 end
 
 function navigation.cancelRefresh(context)
+    if context.reflowWork then
+        context.reflowWork.invalidated = true
+    end
     if context.refreshWork then
         context.refreshWork, context.rendered = nil, nil
     end
@@ -1189,10 +1192,52 @@ reflow = function(context, rect, span)
 end
 
 function navigation.update(context, rect, settings, _, span)
+    if context.reflowWork then
+        context.reflowWork = { invalidated = true }
+    end
     navigation.cancelRefresh(context)
     reflow(context, rect, span)
     local _, drawn = context.primitives.changed(context, navigation.render)
     navigation.apply(context, drawn)
+end
+
+function navigation.reflow(context, rect, _, _, span, begin)
+    if begin or context.reflowWork and context.reflowWork.invalidated then
+        navigation.cancelRefresh(context)
+        reflow(context, rect, span)
+        context.reflowWork = { stage = "render" }
+        return false
+    end
+    local work = context.reflowWork
+    if not work then
+        return true
+    elseif work.stage == "render" then
+        local _, drawn = context.primitives.changed(context, navigation.render)
+        work.drawn, work.stage = drawn, "reading"
+    elseif work.stage == "reading" then
+        applyReading(context, work.drawn)
+        if context.tape then
+            context.tape.pending = nil
+            work.stage = "tape-frame"
+        else
+            context.reflowWork = nil
+            return true
+        end
+    elseif work.stage == "tape-frame" then
+        if prepareTape(context) then
+            work.stage = "tape"
+        else
+            context.reflowWork = nil
+            return true
+        end
+    elseif work.stage == "tape" then
+        applyTape(context, work.drawn, true)
+        context.reflowWork = nil
+        return true
+    else
+        error("unknown navigation reflow stage: " .. tostring(work.stage))
+    end
+    return false
 end
 
 return navigation

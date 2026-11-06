@@ -326,6 +326,7 @@ Use `panels/flight-mode.lua` as a small working example and
 | `construct(context, rect)` | Optional bounded construction step. When `services.staged` is true, `create` returns partial state and the loader calls this once per callback until it returns `true`; return `false` while unfinished. |
 | `refresh(context)` | Optional callback to update existing objects from snapshots. May return a whole-number interval of 1–6000 ticks; nil preserves the current interval. A second result of `true` reserves subsequent turns among panels of the same type until the update completes; other panel types and services continue running. |
 | `update(context, rect, settings, detailsOnly, placement)` | Optional geometry/configuration update. Host reflows and editor resizes pass the current grid placement as the fifth argument, leaving the internal `detailsOnly` argument unset. |
+| `reflow(context, rect, settings, services, placement, begin)` | Optional staged geometry update, preferred over `update` during host resizing. `begin=true` starts or restarts; each later call advances once, returning `true` only when complete. It must not refresh live data. |
 | `background(context)` | Optional work when the dashboard is not visible. |
 | `resetSession(context, now)` | Optional session-data reset without rebuilding the panel. A second result of `true` requests another bounded reset turn. |
 | `event(context, event)` | Optional event handling; return true when consumed. |

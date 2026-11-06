@@ -194,6 +194,16 @@ def scenarios():
         ])
     result["editor-preview-metric-tasks"] = dict(result["editor-preview-metric"], owners=["panel:metric"])
     result["editor-preview-chart-tasks"] = dict(result["editor-preview-chart"], owners=["panel:chart"])
+    for panel in (*PANELS, "theme-showcase"):
+        base = result["metric-max"] if panel == "theme-showcase" else result[f"{panel}-max"]
+        result[f"panel-reflow-{panel}"] = dict(base, phases=standard_phases() + [
+            {"name": "reflow", "kind": "refresh", "action": "reflow", "callbacks": 60, "step": 5, "perCall": 1},
+        ])
+        if panel == "theme-showcase":
+            result[f"panel-reflow-{panel}"]["layout"] = custom_layout([
+                "  - id: subject\n    type: theme-showcase\n    col: 0\n    row: 0\n"
+                "    colSpan: 4\n    rowSpan: 4\n",
+            ])
     result["modal-log"] = dict(result["host-diagnostics-max"], fullscreen=True, logEntries=256,
         config={"section": "log", "maxEntries": 256}, phases=[
             {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 4},

@@ -84,28 +84,6 @@ function module.new(dependencies)
         end
     end
 
-    --- Panels repositioned per widget callback during a reflow.
-    ---
-    --- Three is the current measurement-based setting. Reflow cost grows with the
-    --- number of panels per batch, so larger values can make one callback the
-    --- dashboard bottleneck while smaller values take more callbacks to settle.
-    --- The suite compares the measured worst reflow callback with the dashboard's
-    --- other live callbacks, so this choice is re-evaluated when panel work changes.
-    ---
-    --- What it costs is passes. Sixteen panels settle in six callbacks rather
-    --- than four, and `MainWindow::run` calls `ViewMain::refreshWidgets` once per
-    --- `MENU_TASK_PERIOD`, which is 50 ms (`radio/src/tasks.cpp:50`), so a full
-    --- reflow takes about 300 ms rather than 200. A reflow only happens when the
-    --- host zone moves or resizes, which is a screen change: nobody is reading a
-    --- value at that moment.
-    ---
-    --- The headroom is the real argument. Reflow is the only per-callback cost
-    --- that multiplies one panel's work by a constant, so the constant is the
-    --- cheapest protection against a future panel being expensive to move. At
-    --- 4, a panel costing 3750 to reposition breaches the suite's ceiling; at
-    --- 3 it takes 4935 to do the same.
-    local REFLOW_BATCH = 2
-
     --- Begin repositioning after EdgeTX changes the host zone.
     --- Like loading, this is spread over callbacks: a full grid costs more than
     --- the instruction budget allows in one call.
@@ -131,43 +109,49 @@ function module.new(dependencies)
         context.top = context.zone.yabs or 0
         context.fullScreen = isFullScreen()
         context.reflowIndex = 1
+        context.reflowEntry = nil
     end
 
-    --- Reposition the next batch of panels.
+    --- Advance one panel's geometry, without advancing its live refresh.
     ---@param context AeroGridContext
     ---@return boolean busy True while more panels remain.
     local function advanceReflow(context)
         local index = context.reflowIndex
-        local last = math.min(index + REFLOW_BATCH - 1, #context.panels)
-
-        for position = index, last do
-            local entry = context.panels[position]
-            if entry and not entry.failed then
-                local rect = panelRect(context, entry.placement)
-                if rect then
-                    entry.container:set({ x = rect.x, y = rect.y, w = rect.w, h = rect.h })
-                    local ok, dispatchError = context.panelHost.dispatch(
-                        entry,
-                        "update",
-                        { x = 0, y = 0, w = rect.w, h = rect.h },
-                        entry.settings,
-                        nil,
-                        entry.placement
+        local entry = context.panels[index]
+        if entry and not entry.failed then
+            local rect = panelRect(context, entry.placement)
+            if rect then
+                entry.container:set({ x = rect.x, y = rect.y, w = rect.w, h = rect.h })
+                local staged = type(rawget(entry.module, "reflow")) == "function"
+                local ok, dispatchError, done = context.panelHost.dispatch(
+                    entry,
+                    staged and "reflow" or "update",
+                    { x = 0, y = 0, w = rect.w, h = rect.h },
+                    entry.settings,
+                    nil,
+                    entry.placement,
+                    context.reflowEntry ~= entry
+                )
+                if not ok and dispatchError then
+                    addError(
+                        context,
+                        entry.placement.id .. ": " .. (staged and "reflow" or "update") .. ": " .. dispatchError
                     )
-                    if not ok and dispatchError then
-                        addError(context, entry.placement.id .. ": update: " .. dispatchError)
-                    end
+                elseif ok and staged and not done then
+                    context.reflowEntry = entry
+                    return true
                 end
             end
         end
 
-        if last >= #context.panels then
+        context.reflowEntry = nil
+        if index >= #context.panels then
             context.reflowIndex = nil
             showErrors(context)
             return false
         end
 
-        context.reflowIndex = last + 1
+        context.reflowIndex = index + 1
         return true
     end
 
@@ -215,6 +199,7 @@ function module.new(dependencies)
     end
 
     local function retirePage(context)
+        context.reflowIndex, context.reflowEntry = nil, nil
         context.locationDetails = nil
         context.locationOverlay = nil
         context.logViewer = nil
