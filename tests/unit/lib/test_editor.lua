@@ -192,6 +192,8 @@ local function testAddSpanDeclarations()
         { spans = { "any", "2x2" }, size = 1 },
         { size = 1 },
         { spans = {} },
+        { spans = { "0x9", "1x9", "01x1", "1x01" } },
+        { spans = { "0x9", "2x2" }, size = 2 },
     }) do
         local module = editor.clone(modules.sample)
         module.supportedSpans = case.spans
