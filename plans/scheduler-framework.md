@@ -4737,7 +4737,10 @@ service count, Telemetry scheduler revision, persistent broker and reconciled
 broker are unchanged, no dormant facade has gained demand, and no full job is
 unfinished. The job starts at the panels phase and keeps service records,
 `waiting`, `pendingServices` and the enroll cursor. Any service, demand,
-revision or broker change still starts or keeps a full job.
+revision or broker change still starts or keeps a full job. This includes a
+service appended, or dormant-facade demand that appears, after a panel-only job
+began without another dirty mark: `ready` checks the job's service count and
+dormant facades on each step and replaces it with a full job.
 
 Services remain admitted with the ordinary callback kind only when there are no
 scheduler-owned panel tasks and no panel owner is `new`. Otherwise the existing
@@ -4752,17 +4755,19 @@ every readiness phase is compared fitted against its unchanged runtime charge:
 
 | Readiness phase | Raw max | Fitted | Charge |
 | --- | ---: | ---: | ---: |
-| Panel-only begin | 390 | 480 | 900 |
-| Panel-only panels | 101 | 170 | 900 |
-| Panel-only retire-panels | 119 | 190 | 900 |
-| Full begin | 390 | 480 | 900 |
-| Full services | 249 | 330 | 900 |
-| Full retire-services | 156 | 230 | 900 |
-| Service enroll | 929 | 1080 | 2300 |
+| Panel-only begin | 391 | 490 | 900 |
+| Panel-only panels | 115 | 180 | 900 |
+| Panel-only retire-panels | 133 | 200 | 900 |
+| Full begin | 391 | 490 | 900 |
+| Full services | 252 | 330 | 900 |
+| Full retire-services | 159 | 230 | 900 |
+| Service enroll | 927 | 1070 | 2300 |
 
-Whole callbacks peak at 7560 (metric), 9712 (chart) and 6702 (navigation).
-Chart is 9710 with the old host. Its editor-render finish rises from 33 to
-3103 raw because services stay live; steady finish is unchanged at 4894. The
+Values include the escalation guard. Whole callbacks peak at 7542 (metric),
+10017 (chart) and 7268 (navigation); chart was 9710 with the old host. Chart
+editor-render finish rises from 33 to 3103 raw because services stay live.
+Steady finish peaks vary between runs with sampled service work (chart 4894 to
+4980 raw); the guard adds work only to ready while a panel-only job runs. The
 16-panel `editor-preview-metric` worst callback (21145, six legacy Metric
 refreshes) is unchanged from baseline. The original 40-callback scenarios
 legitimately run full reconciliation, because services are still enrolling and
@@ -4772,7 +4777,9 @@ the Telemetry revision changes.
 baseline once line 88 is bypassed: one refresh after `close(false)` leaves
 bounded `retirePage` in `clear`. That assertion is unchanged. Host regressions
 cover owned and unowned panels, unchanged service records, no dispatch of the
-removed task, revision escalation and full-job precedence. Readiness, reset
+removed task, revision escalation, full-job precedence, and late service
+growth or dormant demand replacing panel-only work. In those cases the
+replacement job excludes services and the duplicate-demand scan is reported. Readiness, reset
 (8400, two XFAILs), Flight loading, background initialization and
 `make test-lua32` pass. Editor, mixed and widget comparisons match baseline
 on both widths.
@@ -4782,4 +4789,5 @@ python3 tools/audit-scheduler.py editor-rebuild-metric-settled --timeout 300
 python3 tools/audit-scheduler.py editor-rebuild-chart-settled --timeout 300
 python3 tools/audit-scheduler.py editor-rebuild-navigation-settled --timeout 300
 build/lua32/lua tests/integration/test_scheduler_host.lua "$PWD"
+build/lua32/lua tests/unit/lib/test_scheduler_readiness.lua "$PWD"
 ```

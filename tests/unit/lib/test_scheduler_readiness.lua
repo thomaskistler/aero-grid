@@ -216,6 +216,37 @@ do
     state.settle(context, host)
 end
 
+-- Dormant demand that appears after panel-only work began still gets a service scan.
+do
+    local state = case.prepare(30)
+    local context, host = state.context, state.scheduling
+    state.reconciled()
+    state.settle(context, host)
+    local idle = load("lib/smart_flight.lua").new(state.owner.env, support)
+    context.serviceRuntime.order[#context.serviceRuntime.order + 1] = idle
+    context.panelTasksDirty = true
+    state.reconciled()
+    state.settle(context, host)
+    context.panelTasksDirty = true
+    assert(host:ready(context))
+    assert(host.reconciliation and host.reconciliation.panelOnly, "placement-only work skips services")
+    local messages = {}
+    host.api.log = function(_, message)
+        messages[#messages + 1] = message
+    end
+    idle.count = 1
+    for _ = 1, 128 do
+        if not host:ready(context) then
+            break
+        end
+    end
+    assert(messages[1] and string.find(messages[1], "service:smart is registered more than once", 1, true),
+        "late dormant demand replaces panel-only work")
+    idle.count, context.panelTasksDirty = 0, true
+    state.reconciled()
+    state.settle(context, host)
+end
+
 do
     local state = case.prepare(30)
     local context, host = state.context, state.scheduling

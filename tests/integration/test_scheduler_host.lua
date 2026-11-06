@@ -1047,6 +1047,31 @@ for _, owned in ipairs({ false, true }) do
     assert(host:ready(context))
     assert(not host.reconciliation.panelOnly, "an unfinished service job is never shortened")
     settleHost(host, context)
+
+end
+
+-- Service growth after panel-only work began replaces it before anything else runs.
+do
+    local definition, context = start("mixed", "host-light")
+    local host = context.schedulerHost
+    callbacks(definition, context, 80)
+    settleHost(host, context)
+    context.panelTasksDirty = true
+    assert(host:ready(context))
+    assert(host.reconciliation.panelOnly and host.reconciliation.servicesLive)
+    local order = context.serviceRuntime.order
+    order[#order + 1] = { id = "audit-extra", count = 0 }
+    assert(host:ready(context))
+    local job = host.reconciliation
+    assert(job and not job.panelOnly and not job.servicesLive, "service growth replaces panel-only work")
+    equal(job.services, #order)
+    table.remove(order)
+    context.scheduler.lastPlan.kind = "sentinel"
+    fixture.tick(5)
+    definition.refresh(context)
+    assert(context.scheduler.lastPlan.kind ~= "steady", "services are not admitted during the full scan")
+    settleHost(host, context)
+    equal(#context.errors, 0)
 end
 
 print("Scheduler host passed")

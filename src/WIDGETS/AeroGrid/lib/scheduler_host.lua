@@ -857,6 +857,13 @@ function host:ready(context)
         or context.panelTasksDirty
         or snapshot.revision ~= taskRevision
         or snapshot.persistent ~= persistent
+    if job and job.panelOnly and not changed then
+        -- Service growth or dormant demand after panel-only work began needs a full scan.
+        changed = job.services ~= #order
+        for index = 1, #job.dormant do
+            changed = changed or job.dormant[index].count ~= 0
+        end
+    end
     if not changed and not job and not self.pendingPanels and self.waiting[1] == nil then
         return true
     end
