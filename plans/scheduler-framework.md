@@ -3329,3 +3329,24 @@ activate production owners or remove legacy Flight head work.
 python3 tools/audit-scheduler.py --framework flight-publication --timeout 180
 build/lua32/lua tests/unit/lib/test_scheduler_publication.lua "$PWD"
 ```
+## 57. Bounded theme resolution (R6 slice, integration pending)
+
+`theme.beginBuild(mode)` captures the selected definition and private output;
+`theme.advanceBuild(work)` returns nil until the final resolved theme.
+Discarding work cancels it without catalog mutation or publication.
+`theme.build` retains its synchronous API through the same operations.
+Legibility advances one correction at a time, critical surface search one
+lightness at a time, and alert search one candidate at a time.
+
+Native `theme-resolution` measures all 3459 advances across 34 built-in,
+unknown/empty and adversarial custom requests. Stage maximum/charge:
+begin146/220, legibility1873/2200, chart1424/1650, alert377/500,
+display30/100, finalize66/130, done26/80. Every advance is below 90% of its
+charge and the 4000 atom. The frozen pre-change resolver supplies direct
+full-output parity, including notice order and converted colors, on Lua53 and
+int32; interleaved catalog replacement, simultaneous widgets and cancellation
+preserve private work. Existing theme/alert/Showcase regressions pass.
+
+Dashboard-loader/header publication and complete real-widget/native callback
+integration remain the parent R6 gate. No production owner, recording interval,
+chart assertion or golden changes in this slice.

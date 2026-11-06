@@ -522,7 +522,8 @@ def prepare_framework(capture, sd, cases):
     shutil.copyfile(PROBE_DIR / "framework.lua", audit / "framework.lua")
     for name in ("scheduler_overhead.lua", "scheduler_measure.lua", "scheduler_mixes.lua",
                  "scheduler_panel_api.lua", "scheduler_chart_fixture.lua", "scheduler_flight_readout.lua",
-                 "scheduler_probe_fixture.lua", "scheduler_diagnostics_fixture.lua", "scheduler_flight_fixture.lua"):
+                 "scheduler_probe_fixture.lua", "scheduler_diagnostics_fixture.lua", "scheduler_flight_fixture.lua",
+                 "theme_resolution_fixture.lua"):
         shutil.copyfile(SUPPORT_DIR / name, audit / name)
     (audit / "cases").mkdir()
     for case in cases:
