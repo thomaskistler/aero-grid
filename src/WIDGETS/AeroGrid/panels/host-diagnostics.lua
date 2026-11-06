@@ -728,4 +728,6 @@ function diagnostics.update(context, rect)
     context.visibleLines = area.lines
 end
 
+diagnostics.reflowDecl = { callback = diagnostics.update, bound = 1800 }
+
 return diagnostics

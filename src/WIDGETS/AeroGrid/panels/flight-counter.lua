@@ -172,4 +172,6 @@ function flightCounter.update(context, rect)
     context.primitives.centreReading(context, context.themeBuilder, area, area.value, context.text)
 end
 
+flightCounter.reflowDecl = { callback = flightCounter.update, bound = 3730 }
+
 return flightCounter

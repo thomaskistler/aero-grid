@@ -15,6 +15,10 @@ local module = {
         settingsDrainOverhead = 300,
         settingsDrain = 2400,
         menuClose = 200,
+        reflowBegin = 400,
+        reflowFinish = 200,
+        reflowSkip = 150,
+        reflowWait = 100,
     },
 }
 
@@ -139,6 +143,11 @@ function module.new(dependencies)
             context.reflowIndex, context.reflowEntry = nil, nil
             return false
         end
+        if index > #context.panels then
+            context.reflowIndex, context.reflowEntry = nil, nil
+            showErrors(context)
+            return false
+        end
         local entry = context.panels[index]
         if entry and not entry.failed then
             local rect = panelRect(context, entry.placement)
@@ -167,12 +176,6 @@ function module.new(dependencies)
         end
 
         context.reflowEntry = nil
-        if index >= #context.panels then
-            context.reflowIndex = nil
-            showErrors(context)
-            return false
-        end
-
         context.reflowIndex = index + 1
         return true
     end
@@ -378,10 +381,41 @@ function module.new(dependencies)
         context.reloadState = nil
     end
 
-    --- Only measured host bookkeeping is eligible for service co-admission.
+    --- Only measured lifecycle atoms are eligible for service co-admission.
     --- Constructors, publication and third-party callbacks need their own proof.
     local function workBound(context, operation)
-        if operation == "rebuildPage" then
+        if operation == "beginReflow" then
+            return module.WORK_BOUNDS.reflowBegin
+        elseif operation == "advanceReflow" or operation == "waitReflow" then
+            local index = context.reflowIndex
+            if not index or context.reloadState or context.pageRetirement then
+                return module.WORK_BOUNDS.reflowSkip
+            end
+            local entry = context.panels[index]
+            local bound
+            if not entry or entry.failed then
+                bound = entry and module.WORK_BOUNDS.reflowSkip or module.WORK_BOUNDS.reflowFinish
+            else
+                local panel = entry.module
+                local callback = rawget(panel, "reflow")
+                if type(callback) ~= "function" then
+                    callback = rawget(panel, "update")
+                end
+                local declaration = rawget(panel, "reflowDecl")
+                if
+                    type(declaration) ~= "table"
+                    or type(callback) ~= "function"
+                    or rawget(declaration, "callback") ~= callback
+                then
+                    return nil
+                end
+                bound = rawget(declaration, "bound")
+                if type(bound) ~= "number" or bound <= 0 or bound > 4000 or bound ~= math.floor(bound) then
+                    return nil
+                end
+            end
+            return operation == "waitReflow" and module.WORK_BOUNDS.reflowWait or bound
+        elseif operation == "rebuildPage" then
             return module.WORK_BOUNDS.rebuild
         elseif operation ~= "retirePage" and operation ~= "advanceAppRebuild" then
             return nil

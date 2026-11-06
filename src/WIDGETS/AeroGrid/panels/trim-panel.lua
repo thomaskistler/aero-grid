@@ -572,4 +572,6 @@ end
 
 trimPanel.step = trimPanel.refresh
 
+trimPanel.reflowDecl = { callback = trimPanel.update, bound = 3710 }
+
 return trimPanel

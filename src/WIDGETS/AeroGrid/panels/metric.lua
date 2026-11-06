@@ -1360,4 +1360,6 @@ function metric.reflow(context, rect, _, _, _, begin)
     return false
 end
 
+metric.reflowDecl = { callback = metric.reflow, bound = 3790 }
+
 return metric

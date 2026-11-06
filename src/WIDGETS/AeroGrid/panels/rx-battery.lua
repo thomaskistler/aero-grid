@@ -1318,4 +1318,6 @@ function rxBattery.construct(context, rect)
     return false
 end
 
+rxBattery.reflowDecl = { callback = rxBattery.reflow, bound = 2260 }
+
 return rxBattery

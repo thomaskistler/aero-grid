@@ -665,4 +665,6 @@ function modelIdentity.update(context, rect)
     context.showImage = area.showImage
 end
 
+modelIdentity.reflowDecl = { callback = modelIdentity.update, bound = 2730 }
+
 return modelIdentity

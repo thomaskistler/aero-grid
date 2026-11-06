@@ -586,4 +586,6 @@ function output.reflow(context, rect, settings, _, _, begin)
     return false
 end
 
+output.reflowDecl = { callback = output.reflow, bound = 2230 }
+
 return output

@@ -141,6 +141,8 @@ local function finish(label, raw, leak)
         or loadingConstructor and boundedConstructors[loadingConstructor]
         or loadingPreparation
         or boundedReflow
+        or label == "lifecycle:advanceReflow"
+        or label == "lifecycle:beginReflow"
     then
         local fitted = math.ceil((cost * 1.10 + 50) / 10) * 10
         gate(fitted <= 4000, label .. " exceeds the fitted lifecycle atom cap: " .. cost .. " -> " .. fitted)
@@ -281,6 +283,14 @@ local function wrapField(owner, key, label)
     end
     keys[key] = true
     owner[key] = wrap(label, original)
+    local declaration = rawget(owner, "reflowDecl")
+    if
+        (key == "reflow" or key == "update")
+        and type(declaration) == "table"
+        and rawget(declaration, "callback") == original
+    then
+        declaration.callback = owner[key]
+    end
 end
 
 local function calibrate()
@@ -479,7 +489,7 @@ local function install(context)
                 P.editorInputAdmission = true
             end
             P.lifecycleAdmissionKind = kind
-            if kind == "loader" and (context.reloadState or context.appRebuild) then
+            if kind == "loader" and (context.reloadState or context.appRebuild or context.reflowIndex) then
                 P.lifecycleServiceOnly = true
             end
             return kind or "steady"
@@ -523,23 +533,37 @@ local function install(context)
             if type(value) == "function" and key ~= "workBound" then
                 local name = key
                 local label = "lifecycle:" .. name
-                if name == "advanceReflow" then
+                if name == "beginReflow" or name == "advanceReflow" then
                     label = function(token, current)
                         if token then
                             return token
                         end
+                        local label = "lifecycle:" .. name
                         local entry = current.panels[current.reflowIndex or 0]
-                        if entry then
+                        if name == "advanceReflow" and entry and not entry.failed then
                             local work = entry.instance.reflowWork
                             local stage = current.reflowEntry ~= entry or not work or work.invalidated
                             local prefix = current.recordingReflow and "recorded:lifecycle:advanceReflow:"
                                 or "lifecycle:advanceReflow:"
-                            return prefix
+                            label = prefix
                                 .. entry.module.id
                                 .. ":"
                                 .. (not rawget(entry.module, "reflow") and "update" or stage and "begin" or work.stage)
+                        elseif name == "advanceReflow" then
+                            label = label .. (current.reflowIndex and not entry and ":finish" or ":skip")
                         end
-                        return "lifecycle:advanceReflow"
+                        P.lifecycleBounds = P.lifecycleBounds or {}
+                        local bound = lifecycle.workBound(current, name)
+                        P.lifecycleBounds[label] = bound
+                        if not config.constructionParity then
+                            P.lifecycleOperation = name
+                            gate(
+                                (bound ~= nil) == (P.lifecycleAdmissionKind == "loader"),
+                                label .. " has incorrect geometry service admission"
+                            )
+                            P.lifecycleServiceOnly = bound ~= nil
+                        end
+                        return label
                     end
                 elseif name == "advanceAppRebuild" or name == "retirePage" then
                     label = function(token, current)
@@ -1595,6 +1619,25 @@ actions = {
         local zone = context.zone
         context.zone = { w = zone.w - 8, h = zone.h, xabs = zone.xabs, yabs = zone.yabs }
     end,
+    ["check-reflow"] = function(context)
+        assert(not context.reflowIndex and not context.reflowEntry, "ordinary reflow must finish")
+        for _, entry in ipairs(context.panels) do
+            assert(not entry.failed and not entry.instance.reflowWork, "geometry cannot remain partial")
+        end
+    end,
+    ["reflow-errors"] = function(context)
+        context.panels[1].failed = nil
+        context.errors = { config.expectedError }
+        context.reflowIndex, context.reflowEntry = #context.panels + 1, nil
+    end,
+    ["reflow-skip"] = function(context)
+        context.panels[1].failed = true
+        context.reflowIndex, context.reflowEntry = 1, nil
+    end,
+    ["check-reflow-errors"] = function(context)
+        actions["check-reflow"](context)
+        assert(context.errorLabel and context.errors[1] == config.expectedError)
+    end,
     reload = function(context)
         context.reloadState = "clear"
     end,
@@ -1689,6 +1732,9 @@ local function runCallback(kind, context, fn, e, t)
     P.editorInputSeen, P.editorInputAdmission = nil, nil
     P.lifecycleOperation, P.lifecycleAdmissionKind, P.lifecycleServiceOnly = nil, nil, nil
     local restarting = (kind == "refresh" or kind == "background") and context.reloadState == "rebuild"
+    local waitingReflow = kind == "background" and context.reflowIndex
+    local reflowIndex, reflowEntry = context.reflowIndex, context.reflowEntry
+    local waitingBound = waitingReflow and context.dashboardLifecycle.workBound(context, "waitReflow")
     if restarting then
         P.lifecycleOperation = "restartLoading"
     end
@@ -1696,6 +1742,14 @@ local function runCallback(kind, context, fn, e, t)
     fn(context, e, t)
     local c1 = count()
     pause(true)
+    if waitingReflow and not P.lifecycleOperation then
+        P.lifecycleOperation = "waitReflow"
+        gate(context.reflowIndex == reflowIndex and context.reflowEntry == reflowEntry,
+            "background waiting advanced geometry")
+        gate((waitingBound ~= nil) == (P.lifecycleAdmissionKind == "loader"),
+            "background reflow has incorrect service admission")
+        P.lifecycleServiceOnly = waitingBound ~= nil
+    end
     if restarting then
         gate(P.lifecycleAdmissionKind == "loader", "page restart must reserve service-only loader work")
     end

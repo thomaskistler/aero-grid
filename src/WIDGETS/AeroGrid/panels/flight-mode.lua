@@ -366,4 +366,6 @@ end
 
 flightMode.step = flightMode.refresh
 
+flightMode.reflowDecl = { callback = flightMode.update, bound = 3960 }
+
 return flightMode

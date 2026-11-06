@@ -373,4 +373,6 @@ function probe.update(context, rect)
     context.visibleRows = area.rows
 end
 
+probe.reflowDecl = { callback = probe.update, bound = 1900 }
+
 return probe

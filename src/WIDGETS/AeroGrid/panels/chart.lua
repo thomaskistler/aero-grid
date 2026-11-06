@@ -2483,4 +2483,6 @@ function chart.reflow(context, rect, _, _, _, begin)
     return false
 end
 
+chart.reflowDecl = { callback = chart.reflow, bound = 1770 }
+
 return chart

@@ -1458,4 +1458,6 @@ function linkStatus.construct(context, rect)
     return false
 end
 
+linkStatus.reflowDecl = { callback = linkStatus.reflow, bound = 3240 }
+
 return linkStatus

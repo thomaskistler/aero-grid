@@ -1240,4 +1240,6 @@ function navigation.reflow(context, rect, _, _, span, begin)
     return false
 end
 
+navigation.reflowDecl = { callback = navigation.reflow, bound = 3470 }
+
 return navigation

@@ -912,4 +912,6 @@ end
 
 txBattery.step = txBattery.refresh
 
+txBattery.reflowDecl = { callback = txBattery.reflow, bound = 2130 }
+
 return txBattery

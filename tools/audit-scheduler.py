@@ -241,16 +241,35 @@ def scenarios():
     for panel in (*PANELS, "theme-showcase"):
         base = result["metric-max"] if panel == "theme-showcase" else result[f"{panel}-max"]
         result[f"panel-reflow-{panel}"] = dict(base, phases=standard_phases() + [
-            {"name": "reflow", "kind": "refresh", "action": "reflow", "callbacks": 60, "step": 5, "perCall": 1},
+            {"name": "reflow-begin", "kind": "refresh", "action": "reflow",
+             "callbacks": 1, "step": 5, "perCall": 1, "trace": True},
+            {"name": "reflow-wait", "kind": "background",
+             "callbacks": 4, "step": 5, "perCall": 1, "trace": True},
+            {"name": "reflow", "kind": "refresh", "callbacks": 60, "step": 5, "perCall": 1, "trace": True},
+            {"name": "reflow-check", "kind": "refresh", "action": "check-reflow",
+             "callbacks": 1, "step": 5, "perCall": 1},
         ])
-        if panel in ("output", "tx-battery"):
-            for phase in result[f"panel-reflow-{panel}"]["phases"]:
-                phase["trace"] = phase["name"] == "reflow"
+        for phase in result[f"panel-reflow-{panel}"]["phases"]:
+            phase["trace"] = phase["name"].startswith("reflow")
         if panel == "theme-showcase":
             result[f"panel-reflow-{panel}"]["layout"] = custom_layout([
                 "  - id: subject\n    type: theme-showcase\n    col: 0\n    row: 0\n"
                 "    colSpan: 4\n    rowSpan: 4\n",
             ])
+    result["panel-reflow-errors"] = dict(result["metric-max"], phases=standard_phases() + [
+        {"name": "reflow-error-skip", "kind": "refresh", "action": "reflow-skip",
+         "callbacks": 1, "step": 5, "perCall": 1, "trace": True},
+        {"name": "reflow-error-new", "kind": "refresh", "action": "reflow-errors",
+         "callbacks": 1, "step": 5, "perCall": 1, "trace": True},
+        {"name": "reflow-error-existing", "kind": "refresh", "action": "reflow-errors",
+         "callbacks": 1, "step": 5, "perCall": 1, "trace": True},
+        {"name": "reflow-error-begin", "kind": "refresh", "action": "reflow",
+         "callbacks": 60, "step": 5, "perCall": 1, "trace": True},
+        {"name": "reflow-error-check", "kind": "refresh", "action": "check-reflow-errors",
+         "callbacks": 1, "step": 5, "perCall": 1},
+    ], expectedError="expected reflow error " * 128)
+    for phase in result["panel-reflow-errors"]["phases"]:
+        phase["trace"] = phase["name"].startswith("reflow")
     result["modal-log"] = dict(result["host-diagnostics-max"], fullscreen=True, logEntries=256,
         config={"section": "log", "maxEntries": 256}, phases=[
             {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 4},
@@ -902,6 +921,7 @@ def prepare(capture, name, spec, sd, mode="legacy"):
     if inputs:
         (audit / "base-inputs.lua").write_text(inputs)
     config = {"scenario": name, "expectedPanels": spec["expected"], "phases": spec["phases"],
+              "constructionParity": spec.get("constructionParity", False),
               "fullscreen": spec.get("fullscreen", False),
               "baseInputs": bool(inputs), "swing": 0.4,
               "toggleSwitches": spec.get("toggleSwitches", spec["recipe"] == "state"),

@@ -755,4 +755,6 @@ end
 
 flightTimer.step = flightTimer.refresh
 
+flightTimer.reflowDecl = { callback = flightTimer.update, bound = 3970 }
+
 return flightTimer

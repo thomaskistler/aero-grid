@@ -170,7 +170,7 @@ for _, background in ipairs({ false, true }) do
         definition.refresh(context)
     end
     context.schedulerHost.finish = finish
-    assert(not called and context.reflowIndex, "reflow remains a separate unproven admission gate")
+    assert(called and context.reflowIndex, "bounded reflow must retain service-only progress")
 end
 
 do

@@ -4531,3 +4531,84 @@ admitted editor-drawer surface callback 7191 (oversized Chart). Whole callback
 maxima 10013-13868, except the existing unadmitted 16-panel tap steady 26033.
 Fixture items stage 178/400. Full int32 suite and 39 tooling tests pass.
 Production owners, recording policy and deferred stress assertions are unchanged.
+## 85. Reflow service-only co-admission (R6)
+
+Prerequisite: integrated `39e6d37`. Foreground geometry now reserves through the
+existing loader-kind service path before mutation. `beginReflow`, each complete
+`advanceReflow`, and final error presentation occupy separate callbacks.
+Background waiting admits services without advancing geometry. Canonical
+releases are not pulled forward, and hidden panel tasks/refreshes remain excluded.
+
+Each shipped module declares the exact `reflow` or `update` function and a
+conservative maximum for the complete enclosing lifecycle advance. Missing,
+invalid, or replaced callbacks remain `nil`; IDs alone do not establish proof.
+The native wrapper preserves declaration identity only when wrapping the
+original declared callback.
+
+| Module | Callback | Fitted enclosing maximum / declaration |
+|---|---|---:|
+| Metric | reflow | 3790 |
+| Link | reflow | 3240 |
+| TX Battery | reflow | 2130 |
+| Flight Timer | update | 3970 |
+| Navigation | reflow | 3470 |
+| Chart | reflow | 1770 |
+| Output | reflow | 2230 |
+| Theme Showcase | reflow | 2630 |
+| Flight Counter | update | 3730 |
+| Flight Mode | update | 3960 |
+| Model Identity | update | 2730 |
+| State | reflow | 3430 |
+| Trim | update | 3710 |
+| Host Diagnostics | update | 1800 |
+| Service Probe | update | 1900 |
+| RX Battery | reflow | 2260 |
+
+The parent replayed all 15 `reflow-cost-<kind>` captures and separate parity
+matrices against unchanged production source `39e6d37`: empty errors and the
+same per-stage results as `f188ea4`. This slice changes their declarations, not
+their geometry implementations. Fresh local `rx-reflow-cost` on the integrated
+source plus this slice measures complete RX begin/fit/place at native
+789/1827/2009, fitted 920/2060/2260, over 2448/2424/1224 calls. Its declaration
+does not borrow the constructor bound. Matrix setup/recording drivers can exceed
+15000 and are not production callback evidence; native configuration now
+explicitly distinguishes those drivers from ordinary widget callbacks.
+
+| Complete administrative geometry atom | Native max | Fitted | Declaration |
+|---|---:|---:|---:|
+| Begin, including an existing error label | 149 | 220 | 400 |
+| Finish, including new/existing error presentation | 67 | 130 | 200 |
+| Skip failed entry | 18 | 70 | 150 |
+
+All 16 ordinary `panel-reflow-*` captures plus `panel-reflow-errors` have empty
+error lists and exercise actual main callbacks, not synthetic main patches.
+They cover separate begin, four background waits, panel stages, completion, and
+error-label corners. Largest complete geometry callback is 6276; largest
+background wait is 4932. Fitted fixed overhead peaks at 920/710 respectively,
+below 2400. The complete fixture maximum, including steady callbacks, is 10085,
+below 15000. Background waiting reserves 100 and performs no geometry atom.
+Every admitted ordinary atom uses the existing fitted 4000 ceiling.
+
+Lua53/int32 lifecycle, admission, reset, staged/remaining/RX/fitted geometry and
+native-controller regressions pass, including interrupted/resize/reset trees.
+The all-kind controllers complete 2344 cases twice per width. Strict reset is
+8400 with both original switch-unavailable XFAILs unchanged. The old
+`test_panel_reflow` fixed-40 readiness failure reproduces on the prerequisite;
+the parent's readiness-only correction `2b2cb28` also passes against this
+slice on both widths, evaluated without importing that test change.
+All 55 audit-tool tests pass.
+
+```sh
+python3 tools/audit-scheduler.py rx-reflow-cost --timeout 300
+python3 tools/audit-scheduler.py --list | grep '^panel-reflow-'
+# Run the listed ordinary cases serially in this worktree.
+build/lua32/lua tests/integration/widget/test_reflow_admission.lua "$PWD"
+build/lua32/lua tests/integration/widget/test_session_reset.lua "$PWD"
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+```
+
+No production owner, ten-tick policy, Flight handoff, restart/App-finish,
+editor/controller, deferred Chart assertion, or strict reset expectation changes
+are included. Unknown/custom/unproven callbacks remain explicitly ineligible.
+Final ownership activation and the existing first-arm policy gate remain with
+the parent; this cost/parity proof does not authorize either.

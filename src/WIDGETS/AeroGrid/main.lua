@@ -2007,10 +2007,11 @@ local function refresh(context, widgetEvent, touchState)
         or context.top ~= (context.zone.yabs or 0)
         or context.fullScreen ~= isFullScreen()
     then
-        context.dashboardLifecycle.beginReflow(context)
+        advanceLifecycle(context, "beginReflow")
+        return
     end
     if context.reflowIndex then
-        context.dashboardLifecycle.advanceReflow(context)
+        advanceLifecycle(context, "advanceReflow")
         return
     end
     if not context.appRebuild and not isFullScreen() and not context.editorUi then
@@ -2084,6 +2085,10 @@ local function background(context)
         advanceLoading(context)
         return
     elseif context.reflowIndex then
+        local bound = context.dashboardLifecycle.workBound(context, "waitReflow")
+        if bound then
+            updateModalServices(context, bound, "loader")
+        end
         return
     elseif context.appRebuild then
         advanceLifecycle(context, "advanceAppRebuild")

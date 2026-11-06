@@ -21,6 +21,25 @@ def load_cli():
 
 
 class InstrumentationTests(unittest.TestCase):
+    def test_ordinary_reflow_separates_begin_wait_and_production_advances(self):
+        cases = load_cli().scenarios()
+        for panel in (*PANELS, "theme-showcase"):
+            phases = cases[f"panel-reflow-{panel}"]["phases"][-4:]
+            self.assertEqual([phase["name"] for phase in phases],
+                             ["reflow-begin", "reflow-wait", "reflow", "reflow-check"])
+            self.assertEqual(phases[0]["callbacks"], 1)
+            self.assertEqual(phases[1]["kind"], "background")
+            self.assertGreater(phases[1]["callbacks"], 0)
+            self.assertTrue(all(phase["trace"] for phase in phases[:3]))
+            self.assertTrue(all(phase["perCall"] == 1 for phase in phases))
+            self.assertEqual(phases[-1]["action"], "check-reflow")
+        errors = cases["panel-reflow-errors"]
+        self.assertGreater(len(errors["expectedError"]), 256)
+        self.assertEqual([phase["action"] for phase in errors["phases"] if
+                          phase["name"] in ("reflow-error-new", "reflow-error-existing")],
+                         ["reflow-errors", "reflow-errors"])
+        self.assertEqual(errors["phases"][-1]["action"], "check-reflow-errors")
+
     def test_lifecycle_captures_allow_native_cleanup_between_turns(self):
         cases = load_cli().scenarios()
         for name in [key for key in cases if key.startswith(("lifecycle-", "construction-"))]:

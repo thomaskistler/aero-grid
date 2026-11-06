@@ -467,4 +467,6 @@ end
 
 statePanel.step = statePanel.refresh
 
+statePanel.reflowDecl = { callback = statePanel.reflow, bound = 3430 }
+
 return statePanel
