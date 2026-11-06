@@ -711,8 +711,8 @@ end
 --- Reposition after a zone change.
 ---@param context AeroGridTxBatteryContext
 ---@param rect AeroGridRect
-function txBattery.update(context, rect)
-    local area = txBattery.regionsFor(
+local function geometry(context, rect)
+    return txBattery.regionsFor(
         context.theme,
         context.themeBuilder,
         context.primitives,
@@ -720,7 +720,9 @@ function txBattery.update(context, rect)
         context.layout,
         context.fonts
     )
+end
 
+local function placeReading(context, rect, area)
     context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
     context.primitives.setFont(context.value, area.value)
     context.value:set({
@@ -749,7 +751,9 @@ function txBattery.update(context, rect)
     context.showDetail = area.showDetail
     context.detailWidth = area.detailWidth
     context.area = area
+end
 
+local function placeVisual(context, area)
     local ranged = txBattery.hasRange(context.settings, context.range)
     local fraction = txBattery.fraction(context.settings, context.reading, context.range, context.primitives)
 
@@ -787,11 +791,51 @@ function txBattery.update(context, rect)
     context.glyphShown = glyphShown
     context.showVisual = area.showVisual
     context.detailAnchor = nil
+end
+
+local function publishGeometry(context)
     -- Reconcile text visibility and refit any restored percentage immediately,
     -- even when the voltage has not changed since the previous rectangle.
     context.rendered = nil
     local _, drawn = context.primitives.changed(context, txBattery.render)
     txBattery.apply(context, drawn)
+end
+
+function txBattery.cancelRefresh(context)
+    if context.reflowWork then
+        context.reflowWork = { invalidated = true }
+    end
+end
+
+function txBattery.update(context, rect)
+    txBattery.cancelRefresh(context)
+    local area = geometry(context, rect)
+    placeReading(context, rect, area)
+    placeVisual(context, area)
+    publishGeometry(context)
+end
+
+function txBattery.reflow(context, rect, _, _, _, begin)
+    if begin or context.reflowWork and context.reflowWork.invalidated then
+        context.reflowWork = { stage = "reading", area = geometry(context, rect) }
+        return false
+    end
+    local work = context.reflowWork
+    if not work then
+        return true
+    end
+    if work.stage == "reading" then
+        placeReading(context, rect, work.area)
+        work.stage = "visual"
+    elseif work.stage == "visual" then
+        placeVisual(context, work.area)
+        work.stage = "publish"
+    else
+        publishGeometry(context)
+        context.reflowWork = nil
+        return true
+    end
+    return false
 end
 
 txBattery.step = txBattery.refresh

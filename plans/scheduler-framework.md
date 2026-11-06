@@ -3393,3 +3393,56 @@ snapshot before this wiring. In-memory diagnostics show215 baseline turns
 versus219 here, and the same later fullscreen N/A-versus-live-value assertion.
 Neither guard nor assertion was changed; runtime progress remains a migration
 integration gate rather than a passing-suite claim.
+
+## 59. Bounded Output and TX Battery host geometry (R6 slice)
+
+Output now separates frame/header setup, hiding eight old rows, subscribing one
+channel, measuring eight captions, placing one row, capturing cached readings,
+and painting two rows. The caption scan and render snapshot stay consistent
+through publication. Unresolved names finish geometry with rows hidden, matching
+synchronous update; ordinary refresh resumes them after services run. Cancellation
+also clears an unpainted render cache, so reset cannot lose the next repaint.
+TX Battery shares its synchronous helpers across calculation, reading placement,
+visual placement and cached-reading publication. Neither path polls data sources.
+Both preserve synchronous update and restart invalidated geometry.
+
+| Stage | Native fixture maximum | Native widget maximum | Declaration |
+| --- | ---: | ---: | ---: |
+| Output begin | 1689 | 1112 | 1920 |
+| Output hide / subscribe | 223 / 637 | 201 / 74 | 300 / 760 |
+| Output captions / place | 1005 / 349 | 873 / 330 | 1160 / 440 |
+| Output render / apply | 1952 / 1017 | 748 / 903 | 2200 / 1170 |
+| TX Battery begin / reading | 1268 / 1577 | 1541 / 720 | 1750 / 1790 |
+| TX Battery visual / publication | 777 / 730 | 389 / 805 | 910 / 940 |
+
+The largest panel atoms fit at 2200 (Output) and 1790 (TX Battery) under
+`ceil10(measured * 1.10 + 50)`. Complete native `advanceReflow` atoms are
+1448/1877, fitting at 1650/2120, below the unchanged 4000 gate. Their enclosing
+refresh callbacks peak at 2075/2504. Whole-scenario maxima, including loading
+and ordinary legacy refresh, are 7680/4857 across these runs; those are not
+geometry atom declarations. Reflow-only traces distinguish these surfaces.
+
+```sh
+python3 tools/audit-scheduler.py --framework panel-reflow --timeout 240
+python3 tools/audit-scheduler.py panel-reflow-output panel-reflow-tx-battery --mode mixed --timeout 180
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+```
+
+Both native runs have no errors or high-bound findings. Fixture coverage includes
+cold real Control subscriptions, every row/caption/paint cursor through 32
+channels, narrow/stacked layouts, long headers, invalidated restarts and all
+three battery visuals. Lua53/int32 regressions compare 1040 completed trees and
+interruptions across both themes, live/unavailable/stale data, estimate/range
+branches, delayed channel names, every resize/cancel/update/reset continuation,
+and frozen Output publication. Existing immediate post-reflow checks are
+unchanged and pass. Output behavior, task, review and retained-memory tests,
+TX Battery unit tests, Control task parity and all 42 audit-tool tests pass.
+Combined session-reset retains both first-arm XFAILs and its 14700 mock maximum.
+The targeted int32 geometry fixture also passes every declared/fitted cap.
+The separate TX Battery unit suite's exact `0.5` fraction assertion fails on
+int32 (`0.4999999`); the same expression produces that result from unchanged
+`b116e2d` source. Its Lua53 suite passes; this pre-existing float32 assertion
+is not changed here.
+
+Production ownership, host/service policies, theme/lifecycle integration,
+ten-tick recording and deferred chart stress/reset assertions are untouched.

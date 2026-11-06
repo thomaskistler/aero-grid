@@ -328,7 +328,7 @@ Use `panels/flight-mode.lua` as a small working example and
 | `construct(context, rect)` | Optional bounded construction step. When `services.staged` is true, `create` returns partial state and the loader calls this once per callback until it returns `true`; return `false` while unfinished. |
 | `refresh(context)` | Optional callback to update existing objects from snapshots. May return a whole-number interval of 1–6000 ticks; nil preserves the current interval. A second result of `true` reserves subsequent turns among panels of the same type until the update completes; other panel types and services continue running. |
 | `update(context, rect, settings, detailsOnly, placement)` | Optional geometry/configuration update. Host reflows and editor resizes pass the current grid placement as the fifth argument, leaving the internal `detailsOnly` argument unset. |
-| `reflow(context, rect, settings, services, placement, begin)` | Optional staged geometry update, preferred over `update` during host resizing. `begin=true` starts or restarts; each later call advances once, returning `true` only when complete. It must not refresh live data. |
+| `reflow(context, rect, settings, services, placement, begin)` | Optional staged geometry update, preferred over `update` during host resizing. `begin=true` starts or restarts; each later call advances once, returning `true` only when complete. It must not poll data sources; bounded capture/painting of cached subscriptions may finish the resized presentation. |
 | `background(context)` | Optional work when the dashboard is not visible. |
 | `resetSession(context, now)` | Optional session-data reset without rebuilding the panel. A second result of `true` requests another bounded reset turn. |
 | `event(context, event)` | Optional event handling; return true when consumed. |
@@ -350,6 +350,13 @@ unit font even when no reading has arrived yet.
 Metric separates validation/subscriptions, fitted frame creation, and controls
 with publication. Pending geometry changes use separate reflow/publication
 steps; ordinary construction does not add an empty publication callback.
+
+Output reflow hides eight rows, subscribes one channel, measures eight captions,
+or places one row per turn, then captures the cached readings and paints two rows
+per turn. Unresolved channel names leave rows hidden until ordinary refresh can
+resume them; geometry never waits for services to run. TX Battery separates
+geometry, reading placement, visual placement and cached-reading publication.
+Both preserve synchronous updates and invalidate unfinished reflow on cancellation.
 
 Metric also exposes a scheduler-only refresh adapter: prepare a frozen copy of
 the three readings, resolve geometry if needed, apply geometry, render and

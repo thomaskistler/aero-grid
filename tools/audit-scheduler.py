@@ -207,6 +207,9 @@ def scenarios():
         result[f"panel-reflow-{panel}"] = dict(base, phases=standard_phases() + [
             {"name": "reflow", "kind": "refresh", "action": "reflow", "callbacks": 60, "step": 5, "perCall": 1},
         ])
+        if panel in ("output", "tx-battery"):
+            for phase in result[f"panel-reflow-{panel}"]["phases"]:
+                phase["trace"] = phase["name"] == "reflow"
         if panel == "theme-showcase":
             result[f"panel-reflow-{panel}"]["layout"] = custom_layout([
                 "  - id: subject\n    type: theme-showcase\n    col: 0\n    row: 0\n"

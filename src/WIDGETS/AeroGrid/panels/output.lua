@@ -444,6 +444,10 @@ local function render(context, names)
 end
 
 function output.cancelRefresh(context)
+    if context.reflowWork then
+        context.reflowWork = { invalidated = true }
+        context.rendered = nil
+    end
     if context.pendingDrawn then
         context.rendered = nil
     end
@@ -498,20 +502,88 @@ function output.step(context, grant, stage)
     end
 end
 
-function output.update(context, rect, settings)
-    output.cancelRefresh(context)
+local function beginGeometry(context, rect, settings)
     context.settings = settings
     context.area = output.regionsFor(context, rect)
     context.primitives.resizeHeader(context, rect, context.area.frame, settings.label)
-    for _, row in ipairs(context.rows) do
-        context.primitives.reconcile(row.root, false)
-    end
     context.nextRow = 1
     context.layoutNames = nil
     context.showRows = 0
     context.stateName = nil
     context.rendered = nil
+end
+
+function output.update(context, rect, settings)
+    output.cancelRefresh(context)
+    beginGeometry(context, rect, settings)
+    for _, row in ipairs(context.rows) do
+        context.primitives.reconcile(row.root, false)
+    end
     output.refresh(context)
+end
+
+function output.reflow(context, rect, settings, _, _, begin)
+    if begin or context.reflowWork and context.reflowWork.invalidated then
+        output.cancelRefresh(context)
+        beginGeometry(context, rect, settings or context.settings)
+        context.reflowWork = { stage = "hide", index = 1 }
+        return false
+    end
+    local work = context.reflowWork
+    if not work then
+        return true
+    end
+    if work.stage == "hide" then
+        local last = math.min(#context.rows, work.index + 7)
+        for index = work.index, last do
+            context.primitives.reconcile(context.rows[index].root, false)
+        end
+        work.index = last + 1
+        if last == #context.rows then
+            work.stage, work.index = "subscribe", 1
+        end
+    elseif work.stage == "subscribe" then
+        local index = work.index
+        if index <= context.area.count then
+            local row = context.rows[index] or createRow(context, index)
+            local channel = context.area.firstChannel + index - 1
+            if row.channel ~= channel then
+                row.channel = channel
+                row.feed = context.control and context.control:output(channel - 1)
+            end
+            work.index = index + 1
+        else
+            work.stage = "captions"
+        end
+    elseif work.stage == "captions" then
+        if captionSlice(context, 8) then
+            work.stage, work.index = "place", 1
+        elseif not context.captionWork then
+            -- Unready service names leave rows hidden, just like update().
+            -- The normal prepare task resumes them after services can run.
+            context.reflowWork = nil
+            return true
+        end
+    elseif work.stage == "place" then
+        if work.index <= context.area.count then
+            placeRow(context, context.rows[work.index], work.index)
+            context.showRows = work.index
+            work.index = work.index + 1
+            context.nextRow = work.index
+        else
+            work.stage = "render"
+        end
+    elseif work.stage == "render" then
+        work.drawn = render(context, context.layoutNames)
+        work.stage, work.index = "apply", 1
+    else
+        work.index = work.drawn and output.apply(context, work.drawn, work.index, 2)
+        if not work.index then
+            context.reflowWork = nil
+            return true
+        end
+    end
+    return false
 end
 
 return output
