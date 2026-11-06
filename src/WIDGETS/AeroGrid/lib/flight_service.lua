@@ -12,14 +12,18 @@ local function above(value, threshold)
     return value - threshold > ROUNDING * math.max(1, math.abs(value), math.abs(threshold))
 end
 
-local function reliable(reading, now)
+local function reliable(reading, now, window)
     return reading
         and reading.available ~= false
         and reading.fresh == true
         and type(reading.updatedAt) == "number"
         and now >= reading.updatedAt
-        and now - reading.updatedAt <= 100
+        and now - reading.updatedAt <= (window or 100)
 end
+
+-- Smart is polled at 1 Hz; a late poll must not age its readings out between
+-- polls. Receipt evidence is bounded separately by Smart's 120-tick window.
+local SMART_WINDOW = 120
 
 local function smartReference(context, now, armLive, armed)
     if not context.settings.smartDetection then
@@ -42,7 +46,7 @@ local function smartReference(context, now, armLive, armed)
         context.wasArmed, context.altitudeReference = false, nil
         context.altitudeSince, context.speedSince = nil, nil
         local altitude = sensors and sensors.altitude
-        if context.smartAvailable ~= false and reliable(altitude, now) then
+        if context.smartAvailable ~= false and reliable(altitude, now, SMART_WINDOW) then
             -- The arm and sensor pollers are independent. Confirm the sample
             -- against a false-arm observation at or after its receipt evidence.
             if context.referencePendingAt and context.referencePendingAt <= context.arm.updatedAt then
@@ -59,7 +63,7 @@ local function smartReference(context, now, armLive, armed)
         end
     elseif context.wasArmed == false then
         local altitude = sensors and sensors.altitude
-        if context.smartAvailable ~= false and reliable(altitude, now) then
+        if context.smartAvailable ~= false and reliable(altitude, now, SMART_WINDOW) then
             if
                 context.referenceCandidateAt
                 and now >= context.referenceCandidateAt
@@ -92,9 +96,9 @@ local function smartReason(context, now)
     end
     local baro = context.smartAvailable ~= false
         and context.altitudeReference ~= nil
-        and reliable(altitude, now)
+        and reliable(altitude, now, SMART_WINDOW)
         and above(altitude.value, context.altitudeReference + 3)
-    local moving = context.smartAvailable ~= false and reliable(speed, now) and above(speed.value, 4.4704)
+    local moving = context.smartAvailable ~= false and reliable(speed, now, SMART_WINDOW) and above(speed.value, 4.4704)
     context.altitudeSince = baro and (context.altitudeSince or now) or nil
     context.speedSince = moving and (context.speedSince or now) or nil
     if context.altitudeSince and altitude.confirmedAt and altitude.confirmedAt - context.altitudeSince >= 200 then

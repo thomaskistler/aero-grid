@@ -52,6 +52,38 @@ do
     equal(c.phase, "ground")
 end
 
+-- 1 Hz Smart polls arrive up to a Flight tick late; ticks in between still use
+-- the latest poll. Beyond Smart's 120-tick window the reading is stale.
+for _, age in ipairs({ 104, 120, 121 }) do
+    local c, _, writes = context()
+    local a = c.smart.altitude
+    local function poll(now, altitude)
+        a.value, a.fresh, a.updatedAt, a.evidenceAt, a.confirmedAt = altitude, true, now, now, now
+        a.sampleFresh, a.continuity = true, 0
+    end
+    local function tick(now, armed)
+        c.arm.value, c.arm.fresh, c.arm.updatedAt = armed, true, now
+        c.motor.value, c.motor.fresh, c.motor.updatedAt = 0, true, now
+        c.link.live, c.link.updatedAt = true, now
+        flight.advance(c, now)
+    end
+    poll(0, 100)
+    tick(0, false)
+    tick(age, true)
+    equal(c.altitudeReference, age <= 120 and 100 or nil, "a late Smart poll keeps the arming reference")
+    local now = age
+    for next = 106, 742, 106 do
+        while now + 20 < next do
+            now = now + 20
+            tick(now, true)
+        end
+        poll(next, 104)
+        now = next
+        tick(now, true)
+    end
+    equal(writes(), age <= 120 and 1 or 0, "late 1 Hz Smart polls keep the altitude hold")
+end
+
 for _, gap in ipairs({ 121, 250, 1000 }) do
     local c, observe, writes = context()
     observe(0, 100, false)
