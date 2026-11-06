@@ -213,6 +213,11 @@ local function finish(label, raw, leak)
             gate(cost <= 4000, label .. " exceeds the drawer-open atom cap: " .. cost)
             gate(fit(cost) <= P.editorOpenBounds[opening], label .. " exceeds the drawer-open charge: " .. cost .. " -> " .. fit(cost))
         end
+        local dragStage = string.match(label, "^editor:advanceEditor:drag:(%a+)$")
+        if dragStage and P.editorDragBounds then
+            gate(cost <= 4000, label .. " exceeds the drag atom cap: " .. cost)
+            gate(fit(cost) <= P.editorDragBounds[dragStage], label .. " exceeds the drag charge: " .. cost .. " -> " .. fit(cost))
+        end
         if stage and stage >= 2 and P.editorRenderBounds then
             gate(cost <= 4000, label .. " exceeds the editor paint atom cap: " .. cost)
             gate(
@@ -454,6 +459,11 @@ local function editorLabel(token, context)
     if ui.drawerOpen then
         return "drawer-open:" .. ui.drawerOpen.mode
     end
+    local dragStage = not ui.previewPending and not ui.previewRefresh and not ui.exitCommand
+        and context.editorUiModule.dragStage(ui)
+    if dragStage then
+        return "drag:" .. dragStage
+    end
     if ui.renderStage and not ui.previewPending and not ui.previewRefresh and not ui.exitCommand then
         return "render:" .. tostring(ui.renderStage)
     end
@@ -677,6 +687,7 @@ local function install(context)
     end
     P.editorRenderBounds = context.editorUiModule and context.editorUiModule.RENDER_BOUNDS
     P.editorOpenBounds = context.editorUiModule and context.editorUiModule.DRAWER_OPEN_BOUNDS
+    P.editorDragBounds = context.editorUiModule and context.editorUiModule.DRAG_BOUNDS
     if context.editorUiModule then
         wrapField(context.editorUiModule, "handle", function(token, current, e)
             if token then
@@ -1456,6 +1467,35 @@ actions = {
             x = (context.left or 0) + rect.x + rect.w - 8,
             y = (context.top or 0) + rect.y + 8,
         }
+    end,
+    ["prepare-editor-drag"] = function(context)
+        local state = assert(context.editorUi)
+        local phase = config.phases[phaseIndex]
+        local rect = assert(state.controls[1].rect)
+        local corner = phase.corner
+        phase.touch = {
+            x = (context.left or 0) + rect.x + (corner and rect.w - 4 or rect.w / 2),
+            y = (context.top or 0) + rect.y + (corner and rect.h - 4 or rect.h / 2),
+        }
+    end,
+    ["prepare-editor-slide"] = function(context)
+        local state = assert(context.editorUi)
+        local phase = config.phases[phaseIndex]
+        local rect = assert(state.controls[#state.session.draft.panels].rect)
+        phase.touch = {
+            x = (context.left or 0) + rect.x + rect.w - 4,
+            y = (context.top or 0) + rect.y + rect.h - 4,
+        }
+    end,
+    ["check-editor-drag"] = function(context)
+        local state = assert(context.editorUi)
+        assert(state.drag, "drag must have started")
+        assert(not state.statusError, tostring(state.status))
+    end,
+    ["check-editor-dragged"] = function(context)
+        local state = assert(context.editorUi)
+        assert(not state.drag and not state.renderStage, "drag must finish")
+        assert(not state.statusError or state.status == "", tostring(state.status))
     end,
     ["select-editor-add"] = function(context)
         context.editorUi.keyAdd = true

@@ -4792,3 +4792,30 @@ python3 tools/audit-scheduler.py editor-rebuild-navigation-settled --timeout 300
 build/lua32/lua tests/integration/test_scheduler_host.lua "$PWD"
 build/lua32/lua tests/unit/lib/test_scheduler_readiness.lua "$PWD"
 ```
+## 89. Staged editor drag (R5)
+
+Synchronous drag enumeration measured 14912 raw on resize touch-down (complete
+callback 15759) and 4964 on a crowded move slide; 128-item lists reached 62445.
+Touch-down now only queues a job. Later editor callbacks advance it under
+`editor-input`: resize `module` (load), `settings` (staged deep copy, 48 units),
+then `positions`. Each geometric candidate runs `beginSettingsValidation` and
+24 `advanceSettingsValidation` units per step; the first warning rejects, which
+matches `validateSettings`. Legacy validators stay one call per candidate, and
+resize enumeration is admitted only for `MEASURED_FORMS` types. Move examines
+two candidates per step. Target rects are cached four per step. Slides record
+the point; `apply` snaps to a cached target via `editor.move` or the
+prevalidated `editor.applyResize`. Release keeps a pending slide and drops other
+input until it applies. Draft, count or selection changes cancel the job.
+Synchronous `movePositions`/`resizePositions` compose the same steps.
+
+Native sweep: 26 cases cover move/resize on sparse, crowded and quick-release
+grids, resize for all 15 types, and 128-item Metric/Chart/State/nested lists.
+Raw maxima: first 646 (hit on the last of 16 panels), slide 151, module 1261, settings 1987, positions 1435,
+rects 1120, apply 1037. Worst whole callback is 8251. Charged bounds: first
+800, slide 240, module 1500, settings 2300, positions 1700, rects 1350, apply
+1250. Each stage's fitted value is below its bound, and the probe gates each
+fitted stage and the 4000 atom.
+
+The editor fixture's existing post-event render drain also drains pending
+drag; no assertion changed. Open: preview geometry. Owners, the recording
+policy and the deferred stress assertions are unchanged.

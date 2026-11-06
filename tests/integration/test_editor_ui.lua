@@ -118,10 +118,15 @@ local function refresh(event, touch)
             .. tostring(context.stage)
     )
     widget.lvglMock.settle()
-    if event and context.editorUi and context.editorUi.renderStage then
-        for _ = 1, 6 do
+    local function busy()
+        return context.editorUi
+            and (context.editorUi.renderStage or context.editorUiModule.dragPending(context.editorUi))
+    end
+    if event and busy() then
+        -- Staged drag targets and the released slide drain before the next gesture.
+        for _ = 1, 80 do
             refresh()
-            if not context.editorUi or not context.editorUi.renderStage then
+            if not busy() then
                 break
             end
         end

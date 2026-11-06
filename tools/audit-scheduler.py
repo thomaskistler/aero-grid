@@ -617,6 +617,42 @@ def scenarios():
          "event": "EVT_TOUCH_TAP", "callbacks": 1, "step": 5},
     ] + list(result["editor-input-metric"]["phases"][-1:])
     result["editor-input-tap"] = dict(result["metric-16"], fullscreen=True, phases=phases)
+    for name, base in (("sparse", "editor-input-metric"), ("crowded", "metric-16")):
+        for mode, corner in (("move", False), ("resize", True)):
+            def touch(phase, event, action=None, callbacks=1):
+                item = {"name": phase, "kind": "refresh", "callbacks": callbacks, "step": 5}
+                if event:
+                    item["event"] = event
+                if action:
+                    item["action"] = action
+                return item
+            first = [touch("drag-first", "EVT_TOUCH_FIRST", "prepare-editor-drag"),
+                     touch("drag-check", None, "check-editor-drag")]
+            first[0]["corner"] = corner
+            finish = [touch("drag-settle", None, None, 160),
+                      touch("drag-finish", None, "check-editor-dragged")]
+            phases = list(result["editor-input-metric"]["phases"][:2]) + first + [
+                touch("drag-early-slide", "EVT_TOUCH_SLIDE", "prepare-editor-slide"),
+                touch("drag-targets", None, None, 24),
+                touch("drag-slide", "EVT_TOUCH_SLIDE", "prepare-editor-slide"),
+                touch("drag-render", None, None, 16),
+                touch("drag-release", "EVT_TOUCH_BREAK"),
+            ] + finish
+            result["editor-drag-%s-%s" % (mode, name)] = dict(
+                result[base], fullscreen=True, phases=phases)
+            phases = list(result["editor-input-metric"]["phases"][:2]) + first + [
+                touch("drag-early-slide", "EVT_TOUCH_SLIDE", "prepare-editor-slide"),
+                touch("drag-release", "EVT_TOUCH_BREAK"),
+            ] + finish
+            result["editor-drag-%s-%s-quick" % (mode, name)] = dict(
+                result[base], fullscreen=True, phases=phases)
+    for kind in [name[len("editor-input-"):] for name in list(result)
+                 if name.startswith("editor-input-") and "phases" in result[name]
+                 and name[len("editor-input-"):] not in ("metric", "keys", "tap", "add", "cancel")]:
+        source = result["editor-drag-resize-sparse"]
+        result["editor-drag-resize-" + kind] = dict(
+            result["editor-input-" + kind], fullscreen=True,
+            phases=list(result["editor-input-" + kind]["phases"][:2]) + source["phases"][2:])
     phases = list(result["editor-input-metric"]["phases"][:2]) + [
         {"name": "panel-picker", "kind": "refresh", "action": "select-editor-add",
          "event": "EVT_VIRTUAL_ENTER", "callbacks": 16, "step": 5},
@@ -888,6 +924,14 @@ def scenarios():
     for name in ("hook-check", "hook-check-firmware"):
         result[name] = {"recipe": "metric", "placements": {"subject": (0, 0, 1, 1)}, "expected": 1,
                         "baseInputs": True, "phases": [], "loops": loops}
+    source = result["editor-drag-resize-sparse"]
+    for kind in ("metric", "chart", "state", "states"):
+        base = "editor-list-large-" + kind
+        result["editor-drag-resize-large-" + kind] = dict(
+            result[base], phases=[phase for phase in result[base]["phases"]
+                                  if phase.get("action") in (None, "open-editor", "pad-drawer-list")
+                                  and phase["name"] in ("settle", "editor-build")
+                                  or phase.get("action") == "pad-drawer-list"] + source["phases"][2:])
     return result
 
 

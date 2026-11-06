@@ -1917,29 +1917,40 @@ local function refresh(context, widgetEvent, touchState)
             or context.editorUi.previewPending
             or context.editorUi.previewRefresh
             or context.editorUi.renderStage
+            or context.editorUiModule.dragPending(context.editorUi)
         )
     then
         local building = context.editorUi.buildStage ~= nil
         local rendering = context.editorUi.renderStage
+        local dragging = context.editorUiModule.dragPending(context.editorUi)
         local renderBound = rendering and context.editorUiModule.renderWorkBound(context.editorUi)
         local drawerBound = context.editorUiModule.drawerWorkBound(context)
+        local dragBound = context.editorUiModule.dragWorkBound(context)
         local preview = context.editorUi.previewRefresh
         local opening = context.editorUi.drawerOpen
         if
-            (rendering and not opening or opening and widgetEvent == _G.EVT_VIRTUAL_EXIT)
+            ((rendering or dragging) and not opening or opening and widgetEvent == _G.EVT_VIRTUAL_EXIT)
             and widgetEvent
             and widgetEvent ~= 0
             and isFullScreen()
         then
             local inputBound = context.editorUiModule.inputWorkBound(context, widgetEvent)
             event(context, widgetEvent, touchState)
-            if inputBound then
-                updateModalServices(context, inputBound, "editor-input")
+            -- Continuous sliding must not starve drag targets: one drag stage follows.
+            local stagePending = context.editorUi and context.editorUiModule.dragPending(context.editorUi)
+            local stageBound = stagePending and context.editorUiModule.dragWorkBound(context)
+            if stagePending then
+                context.editorController.advanceEditor(context)
+            end
+            if inputBound and (stageBound or not stagePending) then
+                updateModalServices(context, inputBound + (stageBound or 0), "editor-input")
             end
             return
         end
         context.editorController.advanceEditor(context)
-        if context.editorUi and renderBound then
+        if context.editorUi and dragBound then
+            updateModalServices(context, dragBound, "editor-input")
+        elseif context.editorUi and renderBound then
             updateModalServices(context, renderBound, "editor-render")
         elseif context.editorUi and drawerBound then
             updateModalServices(context, drawerBound, "editor-drawer")

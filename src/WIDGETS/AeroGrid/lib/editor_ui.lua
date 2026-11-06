@@ -2,8 +2,11 @@
 
 local uiModule = { RUNTIME_API = 1 }
 uiModule.RENDER_BOUNDS = { rows = 1700, finish = 1400 }
-uiModule.INPUT_BOUNDS = { open = 220, tap = 900, select = 350, modal = 120, release = 220, cancel = 140 }
+uiModule.INPUT_BOUNDS = {
+    open = 220, tap = 900, select = 350, modal = 120, release = 220, cancel = 140, first = 800, slide = 240,
+}
 uiModule.DRAWER_OPEN_BOUNDS = { configure = 1500, add = 350 }
+uiModule.DRAG_BOUNDS = { module = 1500, settings = 2300, positions = 1700, rects = 1350, apply = 1250 }
 
 local function label(parent, rect, text, color, font)
     return lvgl.label(parent, {
@@ -45,12 +48,18 @@ local function keyMatches(event, name)
 end
 
 local function inputReady(state)
+    -- A released drag applies its last slide before further input.
     return state and not state.buildStage and not state.saving and not state.previewPending
         and not state.previewRefresh and not state.exitCommand and not state.drawerOpen
+        and not (state.drag and state.drag.released)
 end
 
 local function blocked(state)
     return state and state.handlers and state.handlers.blocked and state.handlers.blocked()
+end
+
+function uiModule.dragPending(state)
+    return uiModule.dragStage(state) ~= nil
 end
 
 function uiModule.inputWorkBound(context, event)
@@ -71,6 +80,10 @@ function uiModule.inputWorkBound(context, event)
         return uiModule.INPUT_BOUNDS.select
     elseif matches(event, "EVT_TOUCH_BREAK") then
         return uiModule.INPUT_BOUNDS.release
+    elseif matches(event, "EVT_TOUCH_FIRST") then
+        return uiModule.INPUT_BOUNDS.first
+    elseif matches(event, "EVT_TOUCH_SLIDE") then
+        return uiModule.INPUT_BOUNDS.slide
     end
 end
 
@@ -176,6 +189,7 @@ function uiModule.renderWorkBound(state)
         and not state.previewRefresh
         and not state.exitCommand
         and not state.drawerOpen
+        and not uiModule.dragStage(state)
     then
         return state.renderStage == 6 and uiModule.RENDER_BOUNDS.finish or uiModule.RENDER_BOUNDS.rows
     end
@@ -200,6 +214,7 @@ function uiModule.drawerWorkBound(context)
         and not state.previewRefresh
         and not state.exitCommand
         and not state.renderStage
+        and not uiModule.dragStage(state)
     then
         return context.editorDrawerModule.workBound(state)
     end
@@ -356,6 +371,10 @@ function uiModule.advance(context)
             context, state, pending.mode, pending.listKey, pending.itemIndex, pending.itemPath, pending.groupKey
         )
         render(context, state)
+        return true
+    end
+    if uiModule.dragStage(state) then
+        uiModule.advanceDrag(context, state)
         return true
     end
     if state.renderStage then
@@ -561,9 +580,115 @@ local function coordinates(context, touch)
     return x, y
 end
 
+local function applySlide(context, state, drag, x, y)
+    local nearest, distance
+    for index, position in ipairs(drag.positions) do
+        local rect = drag.rects[index]
+        local edgeX = drag.resize and not drag.left and rect.x + rect.w or rect.x
+        local edgeY = drag.resize and not drag.top and rect.y + rect.h or rect.y
+        local dx, dy = x - drag.offsetX - edgeX, y - drag.offsetY - edgeY
+        local candidate = dx * dx + dy * dy
+        if not distance or candidate < distance then
+            nearest, distance = position, candidate
+        end
+    end
+    if nearest then
+        local p = state.session.draft.panels[state.session.selected]
+        local moved, err
+        if drag.resize then
+            moved, err = state.handlers.editor.applyResize(state.session, nearest)
+        else
+            moved, err = state.handlers.editor.move(state.session, nearest.col - p.col, nearest.row - p.row)
+        end
+        if not moved then
+            state.status, state.statusError = tostring(err), true
+            state.handlers.logError(drag.resize and "resize" or "move", err)
+        end
+        render(context, state)
+    end
+end
+
+--- The pending drag stage: target enumeration, cached geometry, or applying
+--- the latest slide.
+function uiModule.dragStage(state)
+    local drag = state and state.drag
+    if not drag then
+        return nil
+    elseif drag.job then
+        return drag.job.phase
+    elseif not drag.positions then
+        return nil
+    elseif #drag.rects < #drag.positions then
+        return "rects"
+    elseif drag.x then
+        return "apply"
+    end
+end
+
+function uiModule.dragWorkBound(context)
+    local state = context.editorUi
+    if blocked(state) or not state or state.session.initializing or state.previewPending
+        or state.previewRefresh or state.exitCommand or state.drawerOpen then
+        return nil
+    end
+    local stage = uiModule.dragStage(state)
+    if not stage then
+        return nil
+    end
+    -- Resize enumeration runs panel-specific settings validation.
+    if state.drag.resize and (stage == "module" or stage == "settings" or stage == "positions") then
+        local placement = state.session.draft.panels[state.session.selected]
+        if not placement or not context.editorDrawerModule.MEASURED_FORMS[placement.type] then
+            return nil
+        end
+    end
+    return uiModule.DRAG_BOUNDS[stage]
+end
+
+function uiModule.advanceDrag(context, state)
+    local drag, session = state.drag, state.session
+    if session.draft ~= drag.draft or #session.draft.panels ~= drag.count or session.selected ~= drag.selected then
+        state.drag = nil
+        return
+    end
+    if drag.job then
+        local positions, err = state.handlers.editor.advancePositions(session, drag.job, drag.resize and 1 or 2)
+        if positions == false then
+            state.drag = nil
+            state.status, state.statusError = tostring(err), true
+            state.handlers.logError(drag.resize and "resize" or "move", err)
+            render(context, state)
+        elseif positions then
+            drag.job, drag.positions = nil, positions
+        end
+        return
+    end
+    if #drag.rects < #drag.positions then
+        for _ = 1, 4 do
+            local position = drag.positions[#drag.rects + 1]
+            if not position then
+                break
+            end
+            drag.rects[#drag.rects + 1] = assert(context.grid.rect(context.zone, position, 4, 4, 4))
+        end
+        return
+    end
+    local x, y = drag.x, drag.y
+    drag.x, drag.y = nil, nil
+    if drag.released then
+        state.drag = nil
+    end
+    applySlide(context, state, drag, x, y)
+end
+
 local function drag(context, state, event, touch)
     if matches(event, "EVT_TOUCH_BREAK") then
-        state.drag = nil
+        -- A slide that arrived before targets were ready still applies.
+        if state.drag and state.drag.x then
+            state.drag.released = true
+        else
+            state.drag = nil
+        end
         return true
     end
     local x, y = coordinates(context, touch)
@@ -582,64 +707,26 @@ local function drag(context, state, event, touch)
                 local cornerWidth, cornerHeight = math.min(24, rect.w / 3), math.min(24, rect.h / 3)
                 local left, right = x < rect.x + cornerWidth, x >= rect.x + rect.w - cornerWidth
                 local top, bottom = y < rect.y + cornerHeight, y >= rect.y + rect.h - cornerHeight
-                if (left or right) and (top or bottom) then
-                    local positions, err = state.handlers.editor.resizePositions(state.session, left, top)
-                    if not positions then
-                        state.status, state.statusError = tostring(err), true
-                        state.handlers.logError("resize", err)
-                        render(context, state)
-                        return true
-                    end
-                    state.drag = {
-                        resize = true,
-                        left = left,
-                        top = top,
-                        offsetX = x - (left and rect.x or rect.x + rect.w),
-                        offsetY = y - (top and rect.y or rect.y + rect.h),
-                        positions = positions,
-                    }
-                    return true
-                end
+                local resize = (left or right) and (top or bottom)
+                local job = assert(state.handlers.editor.startPositions(state.session, resize, left, top))
                 state.drag = {
-                    offsetX = x - rect.x,
-                    offsetY = y - rect.y,
-                    positions = assert(state.handlers.editor.movePositions(state.session)),
+                    resize = resize,
+                    left = resize and left or nil,
+                    top = resize and top or nil,
+                    offsetX = x - ((resize and not left) and rect.x + rect.w or rect.x),
+                    offsetY = y - ((resize and not top) and rect.y + rect.h or rect.y),
+                    job = job,
+                    positions = {},
+                    rects = {},
+                    draft = state.session.draft,
+                    count = #state.session.draft.panels,
+                    selected = state.session.selected,
                 }
                 return true
             end
         end
-    elseif matches(event, "EVT_TOUCH_SLIDE") and state.drag then
-        local nearest, distance
-        for _, position in ipairs(state.drag.positions) do
-            local rect = assert(context.grid.rect(context.zone, position, 4, 4, 4))
-            local edgeX = state.drag.resize and not state.drag.left and rect.x + rect.w or rect.x
-            local edgeY = state.drag.resize and not state.drag.top and rect.y + rect.h or rect.y
-            local dx, dy = x - state.drag.offsetX - edgeX, y - state.drag.offsetY - edgeY
-            local candidate = dx * dx + dy * dy
-            if not distance or candidate < distance then
-                nearest, distance = position, candidate
-            end
-        end
-        if nearest then
-            local p = state.session.draft.panels[state.session.selected]
-            local moved, err
-            if state.drag.resize then
-                moved, err = state.handlers.editor.resize(
-                    state.session,
-                    nearest.colSpan - p.colSpan,
-                    nearest.rowSpan - p.rowSpan,
-                    nearest.col,
-                    nearest.row
-                )
-            else
-                moved, err = state.handlers.editor.move(state.session, nearest.col - p.col, nearest.row - p.row)
-            end
-            if not moved then
-                state.status, state.statusError = tostring(err), true
-                state.handlers.logError(state.drag.resize and "resize" or "move", err)
-            end
-            render(context, state)
-        end
+    elseif matches(event, "EVT_TOUCH_SLIDE") and state.drag and not state.drag.released then
+        state.drag.x, state.drag.y = x, y
         return true
     end
     return false

@@ -598,25 +598,164 @@ local function moveTarget(session, placement, index, col, row, bounded)
     return moved, nil, conflict
 end
 
-function editor.movePositions(session)
+--- Start enumerating drag targets for the selected panel. Resize targets
+--- keep the opposite corner fixed.
+function editor.startPositions(session, resize, left, top)
     local placement, index, selectionError = findSelected(session)
     if not placement then
         return nil, selectionError
     end
-    local positions, seen = {}, {}
-    for row = 0, 4 - placement.rowSpan do
-        for col = 0, 4 - placement.colSpan do
-            local moved = moveTarget(session, placement, index, col, row, true)
-            if moved then
-                local key = moved.row * 4 + moved.col
-                if not seen[key] then
-                    seen[key] = true
-                    positions[#positions + 1] = moved
+    return {
+        placement = placement,
+        index = index,
+        resize = resize,
+        left = left,
+        top = top,
+        cursor = 0,
+        positions = {},
+        seen = {},
+        phase = resize and "module" or "positions",
+    }
+end
+
+local COPY_UNITS, VALIDATION_UNITS = 48, 24
+
+local function resolveCopiedSettings(job)
+    local values, knownConfig = {}, {}
+    for _, setting in ipairs(job.module.settings or {}) do
+        if type(setting) == "table" and type(setting.key) == "string" then
+            local value = job.config[setting.key]
+            if value ~= nil then
+                knownConfig[setting.key] = value
+            else
+                value = copy(setting.default)
+            end
+            values[setting.key] = value
+        end
+    end
+    job.settings, job.knownConfig, job.config, job.copy = values, knownConfig, nil, nil
+end
+
+local function stagedValidation(module)
+    return type(module.validateSettings) == "function"
+        and type(module.beginSettingsValidation) == "function"
+        and type(module.advanceSettingsValidation) == "function"
+end
+
+-- Advance one candidate's staged panel validation. Returns true when it
+-- finished; the first warning rejects it as validateSettings would.
+local function advanceValidation(job)
+    local module, work = job.module, job.validation
+    for _ = 1, VALIDATION_UNITS do
+        local ok, done = pcall(module.advanceSettingsValidation, work)
+        local failed = not ok or type(done) ~= "boolean"
+            or type(work.warnings) == "table" and #work.warnings > 0
+        if failed or done then
+            if not failed then
+                job.positions[#job.positions + 1] = job.candidate
+            end
+            job.validation, job.candidate = nil, nil
+            return true
+        end
+    end
+end
+
+local function examineResize(session, job, cursor)
+    local placement = job.placement
+    local width, height = cursor % 4 + 1, cursor // 4 + 1
+    local candidate = {
+        col = job.left and placement.col + placement.colSpan - width or placement.col,
+        row = job.top and placement.row + placement.rowSpan - height or placement.row,
+        colSpan = width,
+        rowSpan = height,
+    }
+    if
+        not session.grid.validatePlacement(candidate, 4, 4)
+        or not supportsSpan(job.module, width, height)
+        or overlapsAny(session.grid, session.draft.panels, candidate, job.index)
+    then
+        return
+    end
+    if not stagedValidation(job.module) then
+        if validatePanelSettings(job.module, job.settings, job.knownConfig, candidate, session.modelArmed) then
+            job.positions[#job.positions + 1] = candidate
+        end
+        return
+    end
+    local ok, work = pcall(job.module.beginSettingsValidation, job.settings, candidate, job.knownConfig,
+        session.modelArmed)
+    if ok and type(work) == "table" then
+        if type(work.warnings) ~= "table" or #work.warnings == 0 then
+            job.validation, job.candidate = work, candidate
+        end
+    end
+    return true
+end
+
+--- Examine at most `limit` of the 16 candidates. Resize enumeration copies
+--- settings and runs staged panel validation in bounded units. Returns the
+--- positions when complete, nil when more remain, or false and an error.
+function editor.advancePositions(session, job, limit)
+    local placement = job.placement
+    if job.phase == "module" then
+        local module, moduleError = getPanelModule(session, placement.type)
+        if not module then
+            return false, moduleError
+        end
+        job.module = module
+        job.config, job.copy = startCopy(placement.config or {})
+        job.phase = "settings"
+        return nil
+    elseif job.phase == "settings" then
+        for _ = 1, COPY_UNITS do
+            if not copyStep(job.copy) then
+                resolveCopiedSettings(job)
+                job.phase = "positions"
+                break
+            end
+        end
+        return nil
+    end
+    if job.validation then
+        advanceValidation(job)
+        return nil
+    end
+    for _ = 1, limit do
+        local cursor = job.cursor
+        if cursor >= 16 then
+            break
+        end
+        job.cursor = cursor + 1
+        if job.resize then
+            if examineResize(session, job, cursor) then
+                -- Staged validation starts in its own step.
+                break
+            end
+        else
+            local col, row = cursor % 4, cursor // 4
+            if col <= 4 - placement.colSpan and row <= 4 - placement.rowSpan then
+                local moved = moveTarget(session, placement, job.index, col, row, true)
+                if moved then
+                    local key = moved.row * 4 + moved.col
+                    if not job.seen[key] then
+                        job.seen[key] = true
+                        job.positions[#job.positions + 1] = moved
+                    end
                 end
             end
         end
     end
-    return positions
+    if job.cursor >= 16 and not job.validation then
+        return job.positions
+    end
+end
+
+function editor.movePositions(session)
+    local job, selectionError = editor.startPositions(session, false)
+    if not job then
+        return nil, selectionError
+    end
+    return editor.advancePositions(session, job, 16)
 end
 
 function editor.move(session, colDelta, rowDelta)
@@ -677,35 +816,39 @@ function editor.resize(session, colDelta, rowDelta, col, row)
 end
 
 function editor.resizePositions(session, left, top)
-    local placement, index, selectionError = findSelected(session)
-    if not placement then
+    local job, selectionError = editor.startPositions(session, true, left, top)
+    if not job then
         return nil, selectionError
     end
-    local module, moduleError = getPanelModule(session, placement.type)
-    if not module then
+    local positions, moduleError
+    repeat
+        positions, moduleError = editor.advancePositions(session, job, 16)
+    until positions ~= nil
+    if positions == false then
         return nil, moduleError
     end
-    local settings, knownConfig = settingsFor(module, placement.config or {})
-    local positions = {}
-    for height = 1, 4 do
-        for width = 1, 4 do
-            local candidate = {
-                col = left and placement.col + placement.colSpan - width or placement.col,
-                row = top and placement.row + placement.rowSpan - height or placement.row,
-                colSpan = width,
-                rowSpan = height,
-            }
-            if
-                session.grid.validatePlacement(candidate, 4, 4)
-                and supportsSpan(module, width, height)
-                and not overlapsAny(session.grid, session.draft.panels, candidate, index)
-                and validatePanelSettings(module, settings, knownConfig, candidate, session.modelArmed)
-            then
-                positions[#positions + 1] = candidate
-            end
-        end
-    end
     return positions
+end
+
+--- Apply a resize target that `advancePositions` already validated for this
+--- placement's settings; geometry is rechecked against the current draft.
+function editor.applyResize(session, candidate)
+    local placement, _, selectionError = findSelected(session)
+    if not placement then
+        return false, selectionError
+    end
+    local valid, placementError = session.grid.validatePlacement(candidate, 4, 4)
+    if not valid then
+        return false, placementError
+    end
+    local conflict = overlapsAny(session.grid, session.draft.panels, candidate, session.selected)
+    if conflict then
+        return false, "overlaps panel " .. conflict.id
+    end
+    placement.col, placement.row = candidate.col, candidate.row
+    placement.colSpan, placement.rowSpan = candidate.colSpan, candidate.rowSpan
+    session.dirty = true
+    return true
 end
 
 function editor.setValue(session, key, value)

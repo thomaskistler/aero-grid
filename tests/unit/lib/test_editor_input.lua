@@ -24,11 +24,34 @@ for _, event in ipairs({
     assert(ui.inputWorkBound(context, event) == ui.INPUT_BOUNDS.select)
 end
 assert(ui.inputWorkBound(context, EVT_TOUCH_BREAK) == ui.INPUT_BOUNDS.release)
+assert(ui.inputWorkBound(context, EVT_TOUCH_FIRST) == ui.INPUT_BOUNDS.first, "drag start only queues enumeration")
+assert(ui.inputWorkBound(context, EVT_TOUCH_SLIDE) == ui.INPUT_BOUNDS.slide, "slides only record the target")
 for _, event in ipairs({
-    EVT_TOUCH_FIRST, EVT_TOUCH_SLIDE, EVT_VIRTUAL_EXIT, EVT_KEY_FIRST(KEY_LEFT), EVT_KEY_REPT(KEY_RIGHT),
+    EVT_VIRTUAL_EXIT, EVT_KEY_FIRST(KEY_LEFT), EVT_KEY_REPT(KEY_RIGHT),
 }) do
-    assert(ui.inputWorkBound(context, event) == nil, "unmeasured drag, exit and optional key APIs stay ineligible")
+    assert(ui.inputWorkBound(context, event) == nil, "unmeasured exit and optional key APIs stay ineligible")
 end
+state.session.selected = 1
+for _, case in ipairs({
+    { drag = { resize = true, job = { phase = "module" }, rects = {}, positions = {} }, stage = "module" },
+    { drag = { resize = true, job = { phase = "settings" }, rects = {}, positions = {} }, stage = "settings" },
+    { drag = { job = { phase = "positions" }, rects = {}, positions = {} }, stage = "positions" },
+    { drag = { rects = {}, positions = { {} } }, stage = "rects" },
+    { drag = { rects = { {} }, positions = { {} }, x = 1, y = 1 }, stage = "apply" },
+}) do
+    state.drag = case.drag
+    assert(ui.dragStage(state) == case.stage and ui.dragWorkBound(context) == ui.DRAG_BOUNDS[case.stage], case.stage)
+end
+state.drag = { resize = true, job = { phase = "positions" }, rects = {}, positions = {} }
+state.session.draft.panels[1].type = "custom"
+assert(ui.dragWorkBound(context) == nil, "custom resize validation remains unmeasured")
+state.session.draft.panels[1].type = "metric"
+state.previewRefresh = true
+assert(ui.dragWorkBound(context) == nil, "preview work keeps its own charge")
+state.previewRefresh = nil
+state.drag.released = true
+assert(ui.inputWorkBound(context, EVT_TOUCH_TAP) == nil, "a released drag applies before further input")
+state.drag, state.session.selected = nil, nil
 state.keyAdd = true
 assert(ui.inputWorkBound(context, EVT_VIRTUAL_ENTER) == ui.INPUT_BOUNDS.open)
 state.keyAdd = false
@@ -66,4 +89,4 @@ do
 end
 context.editorUi = nil
 assert(ui.inputWorkBound(context, EVT_VIRTUAL_ENTER) == nil)
-print("Editor input eligibility excludes drag, exit and lifecycle work")
+print("Editor input eligibility admits measured drag stages and excludes exit and lifecycle work")
