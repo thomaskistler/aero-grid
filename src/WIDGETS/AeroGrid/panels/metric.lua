@@ -685,13 +685,7 @@ function metric.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, uni
     return area
 end
 
---- Build the panel's LVGL objects.
----@param parent any
----@param rect AeroGridRect
----@param config AeroGridMetricSettings
----@param services table Host-provided shared objects.
----@return AeroGridMetricContext
-function metric.create(parent, rect, config, services)
+local function beginMetric(parent, rect, config, services)
     local theme = services.theme
     local primitives = services.primitives
     local fonts = services.fonts
@@ -759,24 +753,41 @@ function metric.create(parent, rect, config, services)
         end
     end
 
+    context.createParent = parent
+    context.createPresentation = presentation
+    context.createStage = "frame"
+    return context
+end
+
+local function createFrame(context, rect)
+    local theme, primitives, fonts = context.theme, context.primitives, context.fonts
+    local settings, layout = context.settings, context.layout
     local sample = metric.widestSample(settings, metric.digitsFor(context))
     context.unitText = tostring(settings.unit or "")
-    local area = metric.regionsFor(theme, services.themeBuilder, rect, layout, fonts, sample, context.unitText)
+    local area = metric.regionsFor(theme, context.themeBuilder, rect, layout, fonts, sample, context.unitText)
     context.sample = sample
     context.sampleDigits = metric.digitsFor(context)
 
-    local panel
     context.panel, context.label, context.badge = primitives.panelWithHeader(
-        parent,
+        context.createParent,
         rect,
         theme,
-        presentation,
+        context.createPresentation,
         area.frame,
         fonts,
         settings.label,
-        services.themeBuilder
+        context.themeBuilder
     )
-    panel = context.panel
+    context.area = area
+    context.rect = rect
+    context.createParent = nil
+    context.createStage = "controls"
+end
+
+local function createControls(context)
+    local theme, primitives, fonts = context.theme, context.primitives, context.fonts
+    local layout, settings, area = context.layout, context.settings, context.area
+    local panel, presentation = context.panel, context.createPresentation
 
     context.value = primitives.value(panel.root, theme, {
         x = area.valueX,
@@ -827,7 +838,11 @@ function metric.create(parent, rect, config, services)
             color = presentation.accent,
         })
     end
+end
 
+local function createSupporting(context)
+    local theme, primitives, fonts = context.theme, context.primitives, context.fonts
+    local layout, area, panel = context.layout, context.area, context.panel
     if layout.showRange then
         context.rangeText = metric.detailText(context)
         context.range = primitives.label(panel.root, theme, {
@@ -844,7 +859,7 @@ function metric.create(parent, rect, config, services)
         primitives.centreLabel(
             context,
             "rangeAnchor",
-            services.themeBuilder,
+            context.themeBuilder,
             context.range,
             area.detailCentre,
             area.detailY,
@@ -866,7 +881,7 @@ function metric.create(parent, rect, config, services)
         primitives.centreLabel(
             context,
             "secondaryAnchor",
-            services.themeBuilder,
+            context.themeBuilder,
             context.secondary,
             area.rowRightCentre,
             area.rowRightY or area.detailY,
@@ -905,9 +920,57 @@ function metric.create(parent, rect, config, services)
             lvgl.hide(context.radial.arc)
         end
     end
+end
 
+local function finishConstruction(context, rect)
+    local previous = context.rect
+    if previous.x ~= rect.x or previous.y ~= rect.y or previous.w ~= rect.w or previous.h ~= rect.h then
+        context.createStage = "reflow"
+        return false
+    end
     if not context.feed then
         metric.setValue(context, nil)
+    end
+    context.createStage = nil
+    return true
+end
+
+function metric.construct(context, rect)
+    local stage = context.createStage
+    if stage == "frame" then
+        createFrame(context, rect)
+    elseif stage == "controls" then
+        createControls(context)
+        createSupporting(context)
+        context.createPresentation = nil
+        return finishConstruction(context, rect)
+    elseif stage == "reflow" then
+        metric.update(context, rect)
+        if context.unit then
+            context.primitives.setFont(context.unit, context.area.unitFont)
+        end
+        context.createStage = "publish"
+    elseif stage == "publish" then
+        return finishConstruction(context, rect)
+    elseif not stage then
+        return true
+    else
+        error("unknown metric construction stage: " .. tostring(stage))
+    end
+    return false
+end
+
+--- Build synchronously unless the loader requests hidden staged construction.
+---@param parent any
+---@param rect AeroGridRect
+---@param config AeroGridMetricSettings
+---@param services table Host-provided shared objects.
+---@return AeroGridMetricContext
+function metric.create(parent, rect, config, services)
+    local context = beginMetric(parent, rect, config, services)
+    if services.staged ~= true then
+        while not metric.construct(context, rect) do
+        end
     end
     return context
 end

@@ -3,7 +3,7 @@
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(root).new()
 local definition = fixture.module("main.lua")
-for _, layout in ipairs({ "review-chart", "review-navigation" }) do
+for _, layout in ipairs({ "review-chart", "review-navigation", "review-metric" }) do
     local context = definition.create(
         { x = 0, y = 0, w = 480, h = 272 },
         { Layout = layout, Theme = "modern-dark" },
@@ -47,7 +47,11 @@ for _, layout in ipairs({ "review-chart", "review-navigation" }) do
             break
         end
         if
-            (partial.instance.createStage == "position" or partial.instance.createStage == "publish") and not resized
+            (
+                partial.instance.createStage == "position"
+                or partial.instance.createStage == "publish"
+                or partial.module.id == "metric" and partial.instance.createStage == "controls"
+            ) and not resized
         then
             context.zone = { x = 0, y = 0, w = 800, h = 480 }
             rect = assert(context.dashboardLoader.panelRect(context, placement))

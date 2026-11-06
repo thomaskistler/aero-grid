@@ -1935,3 +1935,76 @@ Metric construction still lacks safe declaration margin, stable multi-panel
 editor preview accounting remains open, and ordinary loading/reflow/modal
 eligibility still gates Flight/Smart and panel-owner changes. All owners,
 ten-tick recording policy and deferred chart-recording failures remain unchanged.
+
+## 28. Bounded metric construction (R5/R6, refresh still legacy)
+
+Metric now uses the same optional construction lifecycle. Validation and real
+Telemetry subscriptions, fitted frame/header creation, and controls with initial
+publication are separate atoms. A first split still measured 4237 instructions
+for cold subscriptions plus frame creation: the final split separates those
+bodies rather than raising the cap. A normal metric completes after two
+`construct` calls; controls and publication share a measured stage so a full grid
+still fits the existing test helper's 200-callback startup guard.
+
+A partial metric may not yet own a panel root. Its parent and style references
+are discarded after frame/control creation, and the loader keeps it hidden and
+outside the live registry throughout. A changed rectangle queues reflow before
+publication, with another publication step if needed. Reflow initializes the
+unit font even when a value has not arrived yet, as in navigation construction.
+Unchanged geometry does not pay for a redundant reflow or change the old initial
+rendering behavior.
+
+| Construction body | Native fixture worst | Declared charge |
+|---|---:|---:|
+| Validation / cold subscriptions | 1348 | 1540 |
+| Fitted geometry / frame / header | 2946 | 3300 |
+| Controls / supporting readings / ordinary publication | 1232 | 1410 |
+| Pending resize reflow | 3015 | 3370 |
+| Separate publication after reflow | 760 | 890 |
+| Framework release | 242 | 420 |
+
+`metric-construction.lua` measures every stage across zero/one/three readings,
+all three visual modes, square/wide/tall/tiny geometry, cold/warm Telemetry
+subscriptions, precisions zero through three, long labels, explicit/suppressed
+units, absent Telemetry and pending resizes. Construction declarations remain
+fixtures, not production refresh declarations. The 4000 atom cap is unchanged.
+
+```sh
+python3 tools/audit-scheduler.py --framework metric-construction navigation-construction chart-construction --timeout 180
+python3 tools/audit-scheduler.py metric-min metric-max editor-rebuild-metric default-gallery --timeout 180
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+make test-lua32
+```
+
+All exit 0. Real metric-preview controller bodies peak at validation/subscriptions
+1287, frame 2408, controls/publication 1081, preparation 1270, placement copy 757,
+retirement 140 and final editor render 930. Complete scenario maxima are
+9641/9189 for metric-min/max, 9347 for metric preview reconstruction and 12411 for
+default-gallery. The former 3995-instruction synchronous preview body is gone.
+
+The new metric construction integration suite checks synchronous/staged
+visible-tree parity and first refresh across both themes, three spans, all
+visuals and zero/one/three readings. It resizes at every pending stage, verifies
+the final geometry/unit font and reference cleanup, and checks idempotent
+completion. Navigation shares its visible-tree comparison helper. The loading
+lifecycle suite now exercises metric as well as chart/navigation, including
+failure/malformed results, hidden enrollment, resize, reload and page retirement.
+All targeted metric/navigation, editor UI/initialization, loading, builder,
+all-spans and reflow suites pass under the supported Lua 5.3 runner. Full editor
+UI remains at 15000 mock instructions; neither that ceiling nor the startup
+guard was relaxed. Lua32 scheduler bounds and all 24 audit-tool tests pass.
+An additional comparison against actual pre-extraction `b4d92a0` passed 90
+initial/first-refresh visible-tree cases across both themes and five geometries.
+
+Metric refresh still has its oversized legacy bound and needs its own task
+adapter. Other panel tasks, stable multi-panel preview accounting, measured
+loader/modal/reflow eligibility and Flight/Smart admission remain open. No
+production owner, ten-tick recording policy or deferred chart-recording
+assertion changed.
+
+Additional shared-module, scheduler-host, session-reset, chart-reset and chart
+flight-recording suites pass. Shared retained growth remains 0.1 KiB; session
+reset peaks at 14300 mock instructions and retains its two existing first-arm
+XFAILs. Both deferred chart-recording stress modes were rerun without edits:
+they still fail at line 192, ordinary Q7 revisions 2/93 and independent-arms Q1
+revisions 0/42, matching the prior checkpoint rather than failing during loading.

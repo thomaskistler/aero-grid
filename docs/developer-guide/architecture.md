@@ -329,6 +329,9 @@ available; direct synchronous callers still omit `services.staged`.
 Navigation splits shell/subscriptions, controls, tape allocation, reflow and
 publication. A resize before publication returns it to reflow, including the
 unit font even when no reading has arrived yet.
+Metric separates validation/subscriptions, fitted frame creation, and controls
+with publication. Pending geometry changes use separate reflow/publication
+steps; ordinary construction does not add an empty publication callback.
 
 Put the module at `panels/<type>.lua` and reference that type in a layout.
 Regular panels declare `supportedSpans = { "any" }` and adapt their contents to

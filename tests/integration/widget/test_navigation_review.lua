@@ -124,37 +124,7 @@ local function instance(cols, rows, rect, settings, staged)
     })
 end
 
-local function sameValue(first, second, path)
-    if type(first) == "function" and string.sub(path, -5) == ".font" then
-        assertions.assertEqual(first(), second(), path)
-        return
-    end
-    if type(first) ~= "table" then
-        assertions.assertEqual(first, second, path)
-        return
-    end
-    assert(type(second) == "table")
-    for key, value in pairs(first) do
-        sameValue(value, second[key], path .. "." .. tostring(key))
-    end
-    for key in pairs(second) do
-        assert(first[key] ~= nil, "unexpected property " .. tostring(key))
-    end
-end
-
-local function sameTree(first, second, path)
-    path = path or "root"
-    assertions.assertEqual(first.kind, second.kind)
-    assertions.assertEqual(first.hidden, second.hidden)
-    if first.hidden then
-        return -- Hidden pools are positioned lazily when revealed.
-    end
-    sameValue(first.properties, second.properties, path)
-    assertions.assertEqual(#first.children, #second.children)
-    for index, child in ipairs(first.children) do
-        sameTree(child, second.children[index], path .. ".children[" .. index .. "]")
-    end
-end
+local sameTree = assert(loadfile(root .. "/tests/support/panel_tree.lua"))()
 
 for _, shape in ipairs({ { 1, 1, 90, 50 }, { 4, 1, 480, 65 }, { 4, 4, 480, 272 } }) do
     for flags = 0, 3 do
