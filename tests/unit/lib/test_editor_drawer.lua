@@ -182,7 +182,9 @@ do
     drawer.close(state)
     module.settings = { { key = "raw", type = "table", default = { value = 1 } } }
     drawer.open({ zone = { w = 480 } }, state, "configure")
-    while state.drawerOpening.phase == "snapshot" do drawer.advance({}, state) end
+    while state.drawerOpening.phase == "module" or state.drawerOpening.phase == "snapshot" do
+        drawer.advance({}, state)
+    end
     assert(drawer.workBound(state) == nil, "custom recursive schemas must not borrow a production forms bound")
     drawer.advance({}, state)
     assert(state.drawerUnmeasured and drawer.workBound(state) == nil)
@@ -198,6 +200,44 @@ do
     end
     assert(#state.drawerFields == 2, "unmeasured custom schemas must remain editable")
     drawer.close(state)
+end
+
+do
+    local editor = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/editor.lua"))()
+    local module = { supportedSpans = { "2x1", "1x1", "9x9" }, settings = { { key = "a", type = "boolean", default = true } } }
+    local panels = {}
+    for index = 0, 14 do
+        panels[#panels + 1] = { id = "m-" .. index, type = "metric", col = index % 4, row = index // 4, colSpan = 1, rowSpan = 1 }
+    end
+    local state = {
+        screen = node(), session = {
+            selected = 1, draft = { panels = panels },
+            loadPanel = function() return module end, panelHost = { validateModule = function() return true end },
+        },
+        handlers = { editor = editor, logError = function() end },
+    }
+    state.drawerPending = { action = "add", panelType = "metric" }
+    local phases = {}
+    while state.drawerPending do
+        local phase = state.drawerPending.phase or "module"
+        phases[#phases + 1] = phase
+        assert(drawer.workBound(state) == drawer.WORK_BOUNDS["add-" .. phase], "each Add stage declares its own bound")
+        drawer.advance({ zone = { w = 480 } }, state)
+    end
+    assert(table.concat(phases, ",") == "module,spans,cells,cells,cells,cells,place,commit,open",
+        "Add stages occupancy and placement: " .. table.concat(phases, ","))
+    local added = panels[16]
+    assert(added and added.col == 3 and added.row == 3 and added.colSpan == 1 and added.id == "metric-1"
+        and added.config.a == true and state.session.selected == 16, "staged Add keeps the synchronous placement")
+    drawer.close(state)
+
+    state.drawerPending = { action = "add", panelType = "custom" }
+    assert(drawer.workBound(state) == nil, "uncatalogued module validation is unmeasured")
+    drawer.advance({}, state)
+    assert(drawer.workBound(state) == drawer.WORK_BOUNDS["add-spans"])
+    table.remove(panels)
+    drawer.advance({}, state)
+    assert(not state.drawerPending and state.statusError and #panels == 15, "a layout change cancels a staged Add")
 end
 
 lvgl = previous

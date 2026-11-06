@@ -6,6 +6,7 @@ local function node()
 end
 local native = {
     box = node,
+    dialog = node,
     button = node,
     setting = node,
     choice = node,

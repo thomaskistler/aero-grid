@@ -2,8 +2,8 @@
 
 local uiModule = { RUNTIME_API = 1 }
 uiModule.RENDER_BOUNDS = { rows = 1700, finish = 1400 }
-uiModule.INPUT_BOUNDS = { open = 200, tap = 900, select = 350, modal = 100, release = 120, cancel = 120 }
-uiModule.DRAWER_OPEN_BOUNDS = { configure = 1500, add = 300 }
+uiModule.INPUT_BOUNDS = { open = 220, tap = 900, select = 350, modal = 120, release = 220, cancel = 140 }
+uiModule.DRAWER_OPEN_BOUNDS = { configure = 1500, add = 350 }
 
 local function label(parent, rect, text, color, font)
     return lvgl.label(parent, {

@@ -4689,3 +4689,38 @@ python3 -m unittest discover -s tools -p test_scheduler_audit.py
 Production changes are confined to `dashboard_loader.lua`. Live/nil scheduler
 ownership, first-arm/reset expectations, ten-tick policy, main and editor are
 unchanged.
+## 87. Fitted editor gates and staged panel Add (R5)
+
+Probe gates for modal log, settings, editor input/paint, drawer opening and
+drawer work now compare the fitted declaration `ceil10(1.10*raw+50)`, not the
+raw cost. The 4000 atom and 15000 whole-callback gates stay raw, as do the
+loader/readiness gates owned by R6. A complete fitted sweep moved these bounds:
+log idle 70, settings publish 450, input open/release 220, cancel 140, modal
+120, drawer-open add 350, forms 1850, snapshot 800, write 1100.
+
+Configure opening previously ran settings preparation inside the open atom
+(oversized Chart 1578, fitted 1790, against 1500). It is now a separate `module`
+phase charged 1500; preparation failure closes the dialog and reports. The
+phase is admitted only for `MEASURED_FORMS` types.
+
+Synchronous `editor.add` measured up to 10541 on a crowded Chart grid. Free
+placement now uses an occupancy mask over a static, area-ordered span list,
+and Add advances in phases: `module` 1500, `spans` 1000, `cells` (four panels)
+600, `place` (two spans) 750, `commit` 700 and `open` 1000. A draft or panel
+count change cancels it with "layout changed while adding a panel". The
+synchronous API composes the same steps. The phases are charged only for
+measured panel types.
+
+Native fitted sweep: every `editor-*` and `modal-*` case plus 17 Add cases
+(15 types, crowded Metric/Chart) pass. Crowded add-place is 621 raw, 740
+fitted. Offline int32 fixtures cover `module` and every `add-*` stage.
+
+Integration fixtures now wait on state, not elapsed callbacks: the Add picker
+waits for the deferred opener, and chart preview reopens after the Flight
+registration job drains. Neither changed an assertion.
+
+Open: preview retirement sets `panelTasksDirty`, so the host performs a full
+reconciliation that admits only persistent tasks. History is therefore
+suspended during preview (`test_editor_initialization:88`). The host change
+is R6-owned. Drag and the general preview remain to be bounded. Owners, the
+recording policy and the deferred stress assertions are unchanged.

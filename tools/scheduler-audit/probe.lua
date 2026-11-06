@@ -25,6 +25,11 @@ end
 
 local stats, trace, errorsSeen, worst = {}, {}, {}, {}
 local gateErrors = {}
+-- Declarations must cover the framework margin rule, not only the raw sample.
+local function fit(cost)
+    return math.ceil((cost * 1.10 + 50) / 10) * 10
+end
+
 local function gate(condition, message)
     if not condition then
         gateErrors[message] = true
@@ -160,7 +165,7 @@ local function finish(label, raw, leak)
         gate(cost <= 4000, label .. " exceeds the modal atom cap: " .. cost)
         local stage = string.match(label, "^modal:log:advance:(.+)$")
         local bound = stage and P.logBounds and P.logBounds[stage]
-        gate(not bound or cost <= bound, label .. " exceeds its declared modal charge: " .. cost)
+        gate(not bound or fit(cost) <= bound, label .. " exceeds its declared modal charge: " .. cost .. " -> " .. fit(cost))
     end
     if string.sub(label, 1, 5) == "unit:" and depth >= 1 then
         visits[depth] = visits[depth] + 1
@@ -187,7 +192,7 @@ local function finish(label, raw, leak)
             gate(cost <= 4000, label .. " exceeds the editor input atom cap: " .. cost)
             local bound = P.editorInputBounds and P.editorInputBounds[string.sub(label, #"editor:input:" + 1)]
             if bound then
-                gate(cost <= bound, label .. " exceeds the editor input charge: " .. cost)
+                gate(fit(cost) <= bound, label .. " exceeds the editor input charge: " .. cost .. " -> " .. fit(cost))
             end
         end
         if boundedReflow then
@@ -197,13 +202,13 @@ local function finish(label, raw, leak)
         local opening = string.match(label, "^editor:advanceEditor:drawer%-open:(%a+)$")
         if opening then
             gate(cost <= 4000, label .. " exceeds the drawer-open atom cap: " .. cost)
-            gate(cost <= P.editorOpenBounds[opening], label .. " exceeds the drawer-open charge: " .. cost)
+            gate(fit(cost) <= P.editorOpenBounds[opening], label .. " exceeds the drawer-open charge: " .. cost .. " -> " .. fit(cost))
         end
         if stage and stage >= 2 and P.editorRenderBounds then
             gate(cost <= 4000, label .. " exceeds the editor paint atom cap: " .. cost)
             gate(
-                cost <= P.editorRenderBounds[stage == 6 and "finish" or "rows"],
-                label .. " exceeds the editor paint charge: " .. cost
+                fit(cost) <= P.editorRenderBounds[stage == 6 and "finish" or "rows"],
+                label .. " exceeds the editor paint charge: " .. cost .. " -> " .. fit(cost)
             )
         end
         local drawerStage = string.match(label, "^editor:drawer:advance:([%w_%-]+)")
@@ -213,22 +218,22 @@ local function finish(label, raw, leak)
         local drawerBound = drawerStage and P.editorDrawerBounds and P.editorDrawerBounds[drawerStage]
         if drawerBound then
             gate(cost <= 4000, label .. " exceeds the drawer atom cap: " .. cost)
-            gate(cost <= drawerBound, label .. " exceeds the drawer work charge: " .. cost)
+            gate(fit(cost) <= drawerBound, label .. " exceeds the drawer work charge: " .. cost .. " -> " .. fit(cost))
         end
         local settingsStage = string.match(label, "^modal:settings:advance:([%w_%-]+)")
         local settingsBound = settingsStage and P.settingsBounds and P.settingsBounds[settingsStage]
         if settingsBound then
-            gate(cost <= settingsBound, label .. " exceeds the settings work charge: " .. cost)
+            gate(fit(cost) <= settingsBound, label .. " exceeds the settings work charge: " .. cost .. " -> " .. fit(cost))
         end
         local saveStage = string.match(label, "^modal:settings:store:([%w_]+)")
         local saveBound = saveStage and P.settingsStoreBounds and P.settingsStoreBounds[saveStage]
         if saveBound then
-            gate(cost <= saveBound, label .. " exceeds the settings store charge: " .. cost)
+            gate(fit(cost) <= saveBound, label .. " exceeds the settings store charge: " .. cost .. " -> " .. fit(cost))
         end
         local loadStage = string.match(label, "^modal:settings:load:([%w_]+)")
         local loadBound = loadStage and P.settingsLoadBounds and P.settingsLoadBounds[loadStage]
         if loadBound then
-            gate(cost <= 4000 and cost <= loadBound, label .. " exceeds the settings reader charge: " .. cost)
+            gate(cost <= 4000 and fit(cost) <= loadBound, label .. " exceeds the settings reader charge: " .. cost .. " -> " .. fit(cost))
         end
         local editorPrefix = "editor:advanceEditor:"
         if string.sub(label, 1, #editorPrefix) == editorPrefix then
@@ -696,6 +701,8 @@ local function install(context)
             local action = state.drawerPending and state.drawerPending.action
             if action == "parent" or action == "group" or action == "item" then
                 return "navigate:" .. action
+            elseif action == "add" then
+                return "add-" .. (state.drawerPending.phase or "module")
             end
             return action or "command"
         end)
@@ -1442,6 +1449,27 @@ actions = {
     end,
     ["select-editor-add"] = function(context)
         context.editorUi.keyAdd = true
+    end,
+    ["queue-editor-add"] = function(context)
+        local state = assert(context.editorUi)
+        assert(not state.drawerPending and not state.drawerOpen and state.mode == "menu")
+        P.addCount = #state.session.draft.panels
+        -- Equivalent to the native panel picker's set callback.
+        state.drawerPending = { action = "add", panelType = config.phases[phaseIndex].panelType }
+    end,
+    ["check-editor-add"] = function(context)
+        local state, phase = assert(context.editorUi), config.phases[phaseIndex]
+        assert(not state.drawerPending and not state.drawerAdd, "panel addition must finish")
+        local panels = state.session.draft.panels
+        if phase.full then
+            assert(#panels == P.addCount and state.statusError
+                and string.find(state.status, "no free grid cells", 1, true), "full grid must report its error")
+            return
+        end
+        assert(#panels == P.addCount + 1 and state.session.selected == #panels)
+        assert(panels[#panels].type == phase.panelType and state.session.dirty)
+        assert(state.nativeDrawer and not state.drawerBuild and not state.drawerLayout and not state.drawerOpen,
+            "added panel must open its Configure drawer")
     end,
     ["check-drawer-cancelled"] = function(context)
         local state = assert(context.editorUi)

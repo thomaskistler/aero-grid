@@ -4,7 +4,7 @@ local ui = {
     RUNTIME_API = 1,
     WORK_BOUNDS = {
         heading = 400, wrap = 400, field = 1500, finish = 300, idle = 300, command = 800,
-        ["publish-start"] = 450, publish = 400, ["save-error"] = 350, closing = 300,
+        ["publish-start"] = 450, publish = 450, ["save-error"] = 350, closing = 300,
     },
     LOAD_BOUNDS = { start = 350, legacy = 300, ["publish-start"] = 450, publish = 450, setup = 400, error = 400 },
 }

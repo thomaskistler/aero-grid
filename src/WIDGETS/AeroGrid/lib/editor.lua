@@ -262,26 +262,65 @@ local function getPanelModule(session, typeName)
     return module
 end
 
-local function freePlacement(session, colSpan, rowSpan)
+local function markOccupied(occupied, panel)
+    local col, row = tonumber(panel.col), tonumber(panel.row)
+    local colSpan, rowSpan = tonumber(panel.colSpan), tonumber(panel.rowSpan)
+    if col and row and colSpan and rowSpan then
+        for y = math.max(0, math.floor(row)), math.min(3, math.ceil(row + rowSpan) - 1) do
+            for x = math.max(0, math.floor(col)), math.min(3, math.ceil(col + colSpan) - 1) do
+                occupied[y * 4 + x] = true
+            end
+        end
+    end
+end
+
+local function freePlacement(occupied, colSpan, rowSpan)
     for row = 0, 4 - rowSpan do
         for col = 0, 4 - colSpan do
-            local candidate = {
-                col = col,
-                row = row,
-                colSpan = colSpan,
-                rowSpan = rowSpan,
-            }
-            if not overlapsAny(session.grid, session.draft.panels, candidate) then
-                return candidate
+            local clear = true
+            for y = row, row + rowSpan - 1 do
+                for x = col, col + colSpan - 1 do
+                    if occupied[y * 4 + x] then
+                        clear = false
+                        break
+                    end
+                end
+                if not clear then
+                    break
+                end
+            end
+            if clear then
+                return { col = col, row = row, colSpan = colSpan, rowSpan = rowSpan }
             end
         end
     end
     return nil
 end
 
+-- Grid spans in placement preference order: smallest area, then lowest, then narrowest.
+local SPAN_ORDER = {}
+for width = 1, 4 do
+    for height = 1, 4 do
+        SPAN_ORDER[#SPAN_ORDER + 1] = { width, height }
+    end
+end
+table.sort(SPAN_ORDER, function(first, second)
+    local firstArea, secondArea = first[1] * first[2], second[1] * second[2]
+    if firstArea ~= secondArea then
+        return firstArea < secondArea
+    end
+    if first[2] ~= second[2] then
+        return first[2] < second[2]
+    end
+    return first[1] < second[1]
+end)
+
 local function candidateSpans(module)
-    local result, seen = {}, {}
     local spans = module.supportedSpans
+    if spans == nil then
+        return { { 1, 1 } }
+    end
+    local seen, result = {}, {}
     if type(spans) == "table" then
         for _, span in ipairs(spans) do
             if span == "any" then
@@ -292,25 +331,17 @@ local function candidateSpans(module)
                 width, height = string.match(span, "^(%d+)x(%d+)$")
             end
             width, height = tonumber(width), tonumber(height)
-            if width and height and not seen[span] then
-                result[#result + 1] = { width, height }
-                seen[span] = true
+            if width and height then
+                seen[width * 8 + height] = true
             end
         end
     end
-    if #result == 0 and spans == nil then
-        result[1] = { 1, 1 }
+    -- Spans outside the 4x4 grid can never be placed, so they need no ordering.
+    for _, span in ipairs(SPAN_ORDER) do
+        if seen[span[1] * 8 + span[2]] then
+            result[#result + 1] = span
+        end
     end
-    table.sort(result, function(first, second)
-        local firstArea, secondArea = first[1] * first[2], second[1] * second[2]
-        if firstArea ~= secondArea then
-            return firstArea < secondArea
-        end
-        if first[2] ~= second[2] then
-            return first[2] < second[2]
-        end
-        return first[1] < second[1]
-    end)
     return result
 end
 
@@ -379,25 +410,45 @@ function editor.sizes(session)
     end
     return sizes
 end
-function editor.add(session, typeName)
+function editor.addModule(session, typeName)
     if not safeIdentifier(typeName) then
-        return false, "invalid panel type"
+        return nil, "invalid panel type"
     end
-    local module, moduleError = getPanelModule(session, typeName)
-    if not module then
-        return false, moduleError
+    return getPanelModule(session, typeName)
+end
+
+function editor.addCandidates(_, module)
+    return { occupied = {}, panel = 1, spans = candidateSpans(module), index = 1 }
+end
+
+--- Marks at most `limit` placements as occupied; true once every placement is marked.
+function editor.advanceOccupancy(job, panels, limit)
+    local last = math.min(#panels, job.panel + (limit or #panels) - 1)
+    for index = job.panel, last do
+        markOccupied(job.occupied, panels[index])
     end
-    local placement
-    for _, span in ipairs(candidateSpans(module)) do
-        placement = freePlacement(session, span[1], span[2])
+    job.panel = last + 1
+    return job.panel > #panels
+end
+
+-- Examines at most `limit` candidate spans; nil means more spans remain.
+function editor.advancePlacement(job, limit)
+    local spans = job.spans
+    local last = math.min(#spans, job.index + (limit or #spans) - 1)
+    for index = job.index, last do
+        local placement = freePlacement(job.occupied, spans[index][1], spans[index][2])
         if placement then
-            break
+            return placement
         end
     end
-    if not placement then
+    job.index = last + 1
+    if job.index > #spans then
         return false, "no free grid cells support this panel"
     end
+    return nil
+end
 
+function editor.commitAdd(session, typeName, module, placement)
     local used = {}
     for _, item in ipairs(session.draft.panels) do
         used[item.id] = true
@@ -427,6 +478,20 @@ function editor.add(session, typeName)
     session.selected = #session.draft.panels
     session.dirty = true
     return true
+end
+
+function editor.add(session, typeName)
+    local module, moduleError = editor.addModule(session, typeName)
+    if not module then
+        return false, moduleError
+    end
+    local candidates = editor.addCandidates(session, module)
+    editor.advanceOccupancy(candidates, session.draft.panels)
+    local placement, placementError = editor.advancePlacement(candidates)
+    if not placement then
+        return false, placementError
+    end
+    return editor.commitAdd(session, typeName, module, placement)
 end
 
 function editor.remove(session, index)

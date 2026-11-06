@@ -3,7 +3,8 @@
 local drawer = { RUNTIME_API = 1 }
 drawer.WORK_BOUNDS = {
     build = 1700, layout = 500, finish = 200,
-    write = 1000, error = 500, snapshot = 700, summaries = 300, forms = 1800, items = 400,
+    write = 1100, error = 500, module = 1500, snapshot = 800, summaries = 300, forms = 1850, items = 400,
+    ["add-module"] = 1500, ["add-spans"] = 1000, ["add-cells"] = 600, ["add-place"] = 750, ["add-commit"] = 700, ["add-open"] = 1000,
     append = 1000, ["remove-item"] = 1000, remove = 500, navigate = 400, back = 400,
 }
 drawer.MEASURED_FORMS = {
@@ -30,6 +31,10 @@ function drawer.workBound(state)
         local opening = state.drawerOpening
         if opening.phase == "forms" and not opening.fields
             and legacyFields(opening.job.settings[opening.index], opening.job.module) then return nil end
+        if opening.phase == "module" then
+            local placement = state.session.draft.panels[state.session.selected]
+            if not (placement and drawer.MEASURED_FORMS[placement.type]) then return nil end
+        end
         return drawer.WORK_BOUNDS[state.drawerOpening.phase]
     elseif state.drawerRefresh then
         return state.drawerLayout and drawer.WORK_BOUNDS.layout
@@ -42,6 +47,12 @@ function drawer.workBound(state)
         local action = state.drawerPending.action
         if action == "parent" or action == "item" then
             return drawer.WORK_BOUNDS.navigate
+        elseif action == "add" then
+            local phase = state.drawerPending.phase or "module"
+            -- Module validation and default copying scale with an unmeasured custom schema.
+            if not drawer.MEASURED_FORMS[state.drawerPending.panelType]
+                and (phase == "module" or phase == "commit") then return nil end
+            return drawer.WORK_BOUNDS["add-" .. phase]
         end
         return drawer.WORK_BOUNDS[action]
     end
@@ -324,9 +335,15 @@ function drawer.open(context, state, mode, listKey, itemIndex, itemPath, groupKe
         end
     end
     state.mode = mode
-    local snapshot, snapshotError = state.handlers.editor.startSettings(state.session)
-    assert(snapshot, snapshotError)
     local placement = state.session.draft.panels[state.session.selected]
+    -- Module lookup/validation is its own charged turn after the dialog opens.
+    -- Ineligible group drawers and selection errors keep the synchronous path.
+    local snapshot
+    if groupKey or not placement then
+        local snapshotError
+        snapshot, snapshotError = state.handlers.editor.startSettings(state.session)
+        assert(snapshot, snapshotError)
+    end
     state.drawerUnmeasured = not drawer.MEASURED_FORMS[placement.type]
     local title = placement.type
     for _, item in ipairs(state.handlers.editor.CATALOG) do
@@ -353,7 +370,7 @@ function drawer.open(context, state, mode, listKey, itemIndex, itemPath, groupKe
     state.drawerItemPath = itemPath
     state.drawerFields, state.drawerControls = {}, {}
     state.drawerBuild = 1
-    state.drawerOpening = { phase = "snapshot", job = snapshot, index = 1 }
+    state.drawerOpening = { phase = snapshot and "snapshot" or "module", job = snapshot, index = 1 }
     state.drawerControlHeight = lvgl.UI_ELEMENT_HEIGHT or 32
     state.drawerPadding = math.floor(state.drawerControlHeight / 16 + 0.5)
     state.drawerRowHeight = state.drawerControlHeight + state.drawerPadding * 2
@@ -910,7 +927,14 @@ function drawer.advance(context, state)
     if blocked(state) then return false end
     if state.drawerOpening then
         local opening, editor = state.drawerOpening, state.handlers.editor
-        if opening.phase == "snapshot" then
+        if opening.phase == "module" then
+            local snapshot, snapshotError = editor.startSettings(state.session)
+            if not snapshot then
+                closeDialog(state)
+                error(snapshotError, 0)
+            end
+            opening.job, opening.phase = snapshot, "snapshot"
+        elseif opening.phase == "snapshot" then
             if editor.advanceSettings(opening.job) then
                 opening.phase = "forms"
                 state.drawerBuildConfig = opening.job.config
@@ -1090,20 +1114,48 @@ function drawer.advance(context, state)
             end
             reopen(state, parent and command.key, nil, parent)
         end
-    elseif command.action == "remove" or command.action == "add" then
-        if command.action == "remove" then
-            ok, err = editor.remove(state.session)
-        else
-            ok, err = editor.add(state.session, command.panelType)
-        end
-        if ok then
-            if command.action == "add" then
-                drawer.open(context, state, "configure")
-            else
-                drawer.close(state)
-                state.mode = "menu"
-                state.previewPending = true
+    elseif command.action == "add" then
+        local phase, session = command.phase or "module", state.session
+        if phase ~= "module" and (session.draft ~= command.draft or #session.draft.panels ~= command.count) then
+            ok, err = false, "layout changed while adding a panel"
+        elseif phase == "module" then
+            command.module, err = editor.addModule(session, command.panelType)
+            ok = command.module and true or false
+            command.phase, command.draft, command.count = "spans", session.draft, #session.draft.panels
+        elseif phase == "spans" then
+            command.candidates, ok = editor.addCandidates(session, command.module), true
+            command.phase = "cells"
+        elseif phase == "cells" then
+            ok = true
+            if editor.advanceOccupancy(command.candidates, session.draft.panels, 4) then
+                command.phase = "place"
             end
+        elseif phase == "place" then
+            local placement
+            placement, err = editor.advancePlacement(command.candidates, 2)
+            ok = placement ~= false
+            if placement then
+                command.placement, command.candidates, command.phase = placement, nil, "commit"
+            end
+        elseif phase == "commit" then
+            ok, err = editor.commitAdd(session, command.panelType, command.module, command.placement)
+            command.phase = "open"
+            command.count = #session.draft.panels
+        else
+            drawer.open(context, state, "configure")
+            ok = true
+            command = nil
+        end
+        if ok and command then
+            state.drawerPending = command
+            return true
+        end
+    elseif command.action == "remove" then
+        ok, err = editor.remove(state.session)
+        if ok then
+            drawer.close(state)
+            state.mode = "menu"
+            state.previewPending = true
         end
     elseif command.action == "error" then
         ok, err = false, command.message

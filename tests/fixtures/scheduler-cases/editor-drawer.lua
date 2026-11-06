@@ -73,7 +73,10 @@ return function(load)
         end
     end
     local editor = load("lib/editor.lua")
-    for _, stage in ipairs({ "write", "error", "snapshot", "summaries", "forms", "items", "navigate", "append", "remove-item", "remove", "back" }) do
+    for _, stage in ipairs({
+        "write", "error", "module", "snapshot", "summaries", "forms", "items", "navigate", "append", "remove-item", "remove",
+        "back", "add-module", "add-spans", "add-cells", "add-place", "add-commit", "add-open",
+    }) do
         for _, part in ipairs({ "start", "advance", "finish", "states", "join" }) do
             cases[#cases + 1] = {
                 stage = stage, grant = 1,
@@ -113,6 +116,32 @@ return function(load)
                             index = part == "finish" and 129 or part == "advance" and 128 or 1,
                             parts = part == "join" and { "Safe", "Armed" } or nil,
                         } }
+                    elseif stage == "module" then
+                        state.drawerOpening = { phase = "module", index = 1 }
+                    elseif string.sub(stage, 1, 4) == "add-" then
+                        local panels, spans = state.session.draft.panels, {}
+                        panels[1].id, panels[1].col, panels[1].row, panels[1].colSpan, panels[1].rowSpan = "p0", 0, 0, 1, 1
+                        for index = 1, 14 do
+                            panels[index + 1] = { id = "p" .. index, type = "test", col = index % 4, row = index // 4,
+                                colSpan = 1, rowSpan = 1, config = {} }
+                        end
+                        for width = 1, 4 do
+                            for height = 1, 4 do spans[#spans + 1] = width .. "x" .. height end
+                        end
+                        definition.supportedSpans = spans
+                        local phase = string.sub(stage, 5)
+                        local command = { action = "add", panelType = "test", phase = phase, module = definition,
+                            draft = state.session.draft, count = #panels }
+                        if phase == "cells" or phase == "place" then
+                            command.candidates = editor.addCandidates(state.session, definition)
+                            if phase == "place" or part ~= "start" then
+                                editor.advanceOccupancy(command.candidates, panels, part == "advance" and 12 or nil)
+                            end
+                            command.candidates.index = phase == "place" and part == "finish" and 15 or 1
+                        elseif phase == "commit" then
+                            command.placement = { col = 3, row = 3, colSpan = 1, rowSpan = 1 }
+                        end
+                        state.drawerPending = command
                     elseif stage == "forms" then
                         local job = assert(editor.startSettings(state.session))
                         while not editor.advanceSettings(job) do end
@@ -152,7 +181,18 @@ return function(load)
                     function task:step()
                         local oldIndex, oldName = getSwitchIndex, getSwitchName
                         getSwitchIndex, getSwitchName = function() return 1 end, function() return "SAv" end
-                        local ok, message = pcall(api.withApi, drawer.advance, {}, state)
+                        local ok, message = pcall(api.withApi, function(...)
+                            local box = lvgl.box
+                            -- Drawer hosts are cleared when a dialog cannot nest; the shared mock has no clear.
+                            lvgl.box = function(...)
+                                local object = box(...)
+                                object.clear = function() end
+                                return object
+                            end
+                            local result = drawer.advance(...)
+                            lvgl.box = box
+                            return result
+                        end, { zone = { w = 480, h = 272 } }, state)
                         getSwitchIndex, getSwitchName = oldIndex, oldName
                         assert(ok, message)
                         return 1

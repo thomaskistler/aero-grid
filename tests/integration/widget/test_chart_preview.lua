@@ -20,7 +20,11 @@ local controls = context.serviceRuntime.byId.control
 local telemetryCount, controlCount = telemetry.count, controls.count
 
 local function preview(edit)
-    context.editorController.openEditor(context)
+    -- A saved layout re-registers Flight sources before the editor may reopen.
+    assert(fixture.pumpUntil(context, function()
+        return not context.flightRegistrationJob
+    end, 100))
+    assert(context.editorController.openEditor(context))
     assert(fixture.pumpUntil(context, function()
         return context.editorUi and not context.editorUi.buildStage
     end, 300))

@@ -743,6 +743,27 @@ def scenarios():
          "callbacks": 1, "step": 5},
     ]
     result["editor-list-large-states"] = dict(base, phases=phases)
+    opening = list(result["editor-drawer-metric"]["phases"][:2])
+    closing = [{"name": "editor-discard", "kind": "refresh", "action": "discard-editor",
+                "callbacks": 20, "step": 5}]
+    for panel in PANELS:
+        result[f"editor-add-{panel}"] = dict(result["metric-min"], fullscreen=True, phases=opening + [
+            {"name": "add-queue", "kind": "refresh", "action": "queue-editor-add", "panelType": panel,
+             "callbacks": 1, "step": 5},
+            {"name": "add-build", "kind": "refresh", "callbacks": 320, "step": 5, "perCall": 4},
+            {"name": "add-check", "kind": "refresh", "action": "check-editor-add", "panelType": panel,
+             "callbacks": 1, "step": 5},
+        ] + closing)
+    crowded = dict(result["metric-16"], expected=15, placements={
+        key: value for key, value in result["metric-16"]["placements"].items() if key != "m16"})
+    for panel, full in (("metric", False), ("chart", True)):
+        result[f"editor-add-crowded-{panel}"] = dict(crowded, fullscreen=True, phases=opening + [
+            {"name": "add-queue", "kind": "refresh", "action": "queue-editor-add", "panelType": panel,
+             "callbacks": 1, "step": 5},
+            {"name": "add-build", "kind": "refresh", "callbacks": 320, "step": 5, "perCall": 4},
+            {"name": "add-check", "kind": "refresh", "action": "check-editor-add", "panelType": panel,
+             "full": full, "callbacks": 1, "step": 5},
+        ] + closing)
     phases = list(result["editor-entry-state"]["phases"])
     phases[-1:-1] = [
         {"name": "state-build", "kind": "refresh", "action": "open-entry-drawer",

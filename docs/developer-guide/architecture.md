@@ -500,7 +500,8 @@ Settings drawers construct one control and lay out at most four rows per
 advance. Ordinary selection and modal input admit services under `editor-input`.
 Enter/tap queues a separately bounded `editor-drawer` opening; Return can cancel
 before construction. Opening snapshots settings in bounded grants and expands
-one metadata declaration per advance before constructing controls.
+one metadata declaration per advance before constructing controls; settings
+preparation runs as its own step.
 List rows and condition summaries expand one item per turn, including oversized
 lists opened for repair. Native text getters return the staged summary.
 Only measured catalog schemas receive these bounds; custom schemas, generic
@@ -519,7 +520,9 @@ List removal, panel removal and item/parent/Return navigation admit services;
 reopening runs separately, keeping controls disabled until construction finishes.
 Return during queued reopening follows that drawer's parent/back route.
 Native Return during append retains the edit and queues navigation after its
-commit. Panel Add, drag enumeration and preview geometry retain separate gates.
+commit. Panel Add prepares the module, then places against an occupancy mask in
+bounded steps before committing and opening its drawer; a layout change during
+Add cancels it. Drag enumeration and preview geometry retain separate gates.
 
 Put the module at `panels/<type>.lua` and reference that type in a layout.
 Regular panels declare `supportedSpans = { "any" }` and adapt their contents to

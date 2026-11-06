@@ -122,6 +122,10 @@ local function drawerReady()
         return not state.buildStage
             and not state.drawerPending
             and not state.drawerBuild
+            and not state.drawerOpen
+            and not state.drawerOpening
+            and not state.drawerLayout
+            and not state.drawerRefresh
             and not state.previewPending
             and not state.previewRefresh
     end, "editor/drawer did not settle")
@@ -213,6 +217,10 @@ for catalogIndex, item in ipairs(editor.CATALOG) do
     frame(EVT_TOUCH_BREAK)
     local add = assert(context.editorUi.addRect, "empty grid has no Add button")
     tap(add.x + add.w / 2, add.y + add.h / 2)
+    -- Add queues its picker; the editor opens it on a following refresh.
+    untilReady(function()
+        return fixture.lvglMock.menu() ~= nil and not context.editorUi.drawerOpen
+    end, "Add did not open the picker")
     local menu = fixture.lvglMock.menu()
     assert(menu.title == "Select panel" and menu.values[catalogIndex] == item.label, "catalog/picker mismatch")
     menu.set(catalogIndex)
