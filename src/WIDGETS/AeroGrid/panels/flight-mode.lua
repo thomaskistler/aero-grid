@@ -321,10 +321,11 @@ end
 --- Reposition after a zone change.
 ---@param context AeroGridFlightModeContext
 ---@param rect AeroGridRect
-function flightMode.update(context, rect)
-    local area =
-        flightMode.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts, context.widest)
+local function regions(context, rect)
+    return flightMode.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts, context.widest)
+end
 
+local function applyGeometry(context, rect, area)
     context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
     context.area = area
     context.primitives.setFont(context.value, area.name)
@@ -364,8 +365,39 @@ function flightMode.update(context, rect)
     )
 end
 
+function flightMode.update(context, rect)
+    flightMode.cancelRefresh(context)
+    applyGeometry(context, rect, regions(context, rect))
+end
+
+function flightMode.cancelRefresh(context)
+    if context.reflowWork then
+        context.reflowWork = { invalidated = true }
+    end
+end
+
+--- Staged `update`: the regions, then the writes. Nothing drawn changes until
+--- the second step, so a refresh between them still sees one geometry.
+function flightMode.reflow(context, rect, _, _, _, begin)
+    local work = context.reflowWork
+    if
+        begin
+        or work
+            and (work.invalidated or work.rect.x ~= rect.x or work.rect.y ~= rect.y or work.rect.w ~= rect.w or work.rect.h ~= rect.h)
+    then
+        local captured = { x = rect.x, y = rect.y, w = rect.w, h = rect.h }
+        context.reflowWork = { stage = "place", rect = captured, area = regions(context, captured) }
+        return false
+    end
+    if work then
+        context.reflowWork = nil
+        applyGeometry(context, work.rect, work.area)
+    end
+    return true
+end
+
 flightMode.step = flightMode.refresh
 
-flightMode.reflowDecl = { callback = flightMode.update, bound = 3960 }
+flightMode.reflowDecl = { callback = flightMode.reflow, bound = 3960 }
 
 return flightMode

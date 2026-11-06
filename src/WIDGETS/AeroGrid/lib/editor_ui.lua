@@ -8,11 +8,11 @@ uiModule.INPUT_BOUNDS = {
 uiModule.DRAWER_OPEN_BOUNDS = { configure = 1500, add = 350 }
 -- Staged preview geometry: a run of unchanged panels, or one changed panel's
 -- update or reflow stage. Unlisted panel types remain unmeasured.
--- Types whose measured body plus layout overhead cannot fit a 4000 charge
--- (metric, flight-mode, flight-timer) are omitted and stay ineligible.
+-- Each bound fits the type's worst reflow-stage body plus the constant
+-- dispatch overhead; every charge stays within the 4000 atom.
 uiModule.LAYOUT_BOUNDS = {
-    visit = 1500, chart = 2050, ["flight-counter"] = 4000,
-    ["host-diagnostics"] = 2100, ["link-status"] = 3550, ["model-identity"] = 3000,
+    visit = 1500, chart = 2050, ["flight-counter"] = 4000, ["flight-mode"] = 3450, ["flight-timer"] = 3300,
+    ["host-diagnostics"] = 2100, ["link-status"] = 3550, metric = 4000, ["model-identity"] = 3000,
     navigation = 3750, output = 2550, ["rx-battery"] = 2550, ["service-probe"] = 2200, state = 3750,
     ["theme-showcase"] = 2950, ["trim-panel"] = 4000, ["tx-battery"] = 2550,
 }

@@ -702,19 +702,45 @@ local function applyGeometry(context, rect, area)
     context.showVisual = showVisual
 end
 
+local function regions(context, rect)
+    return flightTimer.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts, context.area)
+end
+
 function flightTimer.update(context, rect)
     while context.createStage do
         flightTimer.construct(context, rect)
     end
-    local area =
-        flightTimer.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts, context.area)
-    applyGeometry(context, rect, area)
+    flightTimer.cancelRefresh(context)
+    applyGeometry(context, rect, regions(context, rect))
 end
 
 function flightTimer.cancelRefresh(context)
     if context.createStage then
         context.createInvalidated = true
     end
+    if context.reflowWork then
+        context.reflowWork = { invalidated = true }
+    end
+end
+
+--- Staged `update`: the regions, then the writes. Nothing drawn changes until
+--- the second step, so a refresh between them still sees one geometry.
+function flightTimer.reflow(context, rect, _, _, _, begin)
+    local work = context.reflowWork
+    if
+        begin
+        or work
+            and (work.invalidated or work.rect.x ~= rect.x or work.rect.y ~= rect.y or work.rect.w ~= rect.w or work.rect.h ~= rect.h)
+    then
+        local captured = { x = rect.x, y = rect.y, w = rect.w, h = rect.h }
+        context.reflowWork = { stage = "place", rect = captured, area = regions(context, captured) }
+        return false
+    end
+    if work then
+        context.reflowWork = nil
+        applyGeometry(context, work.rect, work.area)
+    end
+    return true
 end
 
 function flightTimer.construct(context, rect)
@@ -755,6 +781,6 @@ end
 
 flightTimer.step = flightTimer.refresh
 
-flightTimer.reflowDecl = { callback = flightTimer.update, bound = 3970 }
+flightTimer.reflowDecl = { callback = flightTimer.reflow, bound = 3970 }
 
 return flightTimer

@@ -228,7 +228,7 @@ for target = 1, 6 do
         assert(bound <= 4000, step .. " layout charge must fit the atom cap")
     end
     for _, panelType in ipairs({ "metric", "flight-mode", "flight-timer" }) do
-        assert(ui.LAYOUT_BOUNDS[panelType] == nil, panelType .. " geometry lacks fitted proof")
+        assert(ui.LAYOUT_BOUNDS[panelType], panelType .. " geometry is measured")
     end
     assert(ui.advance(context) and state.renderStage == 1 and advanced == 1)
     assert(ui.renderWorkBound(state) == nil, "unmeasured panel geometry remains ineligible")
