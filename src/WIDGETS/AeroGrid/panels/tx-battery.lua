@@ -35,6 +35,11 @@ local txBattery = {
     supportedSpans = { "any" },
     -- A transmitter pack moves over minutes, not frames.
     refreshInterval = 50,
+    decl = {
+        class = "normal",
+        kinds = { steady = true },
+        stages = { run = { fixed = 0, perUnit = 1410, maxUnits = 1 } },
+    },
     settings = {
         -- "TX BATTERY" needs ten characters of a header that has about five.
         { key = "label", label = "Label", type = "string", default = "TX" },
@@ -788,5 +793,7 @@ function txBattery.update(context, rect)
     local _, drawn = context.primitives.changed(context, txBattery.render)
     txBattery.apply(context, drawn)
 end
+
+txBattery.step = txBattery.refresh
 
 return txBattery

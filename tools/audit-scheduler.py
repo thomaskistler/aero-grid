@@ -214,7 +214,7 @@ def scenarios():
                                                        "satelliteSource": "Sats"})
     result["navigation-tasks-4"] = dict(result["navigation-tasks-max"], expected=4, placements={
         f"n{i}": ((i - 1) % 2 * 2, (i - 1) // 2 * 2, 2, 2) for i in range(1, 5)})
-    for panel in ("flight-counter", "flight-mode", "flight-timer", "state", "trim-panel"):
+    for panel in ("flight-counter", "flight-mode", "flight-timer", "state", "trim-panel", "tx-battery"):
         for tag in ("min", "max", "16"):
             base = result[f"{panel}-{tag}"] if tag != "16" else dict(result["metric-16"], recipe=panel)
             result[f"{panel}-tasks-{tag}"] = dict(base, owners=[f"panel:{panel}"], phases=standard_phases(),

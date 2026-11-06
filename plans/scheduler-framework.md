@@ -2259,3 +2259,47 @@ ten-tick Telemetry/History policy and deferred recording stress assertions remai
 unchanged. Remaining panel families, lifecycle/reset cancellation, loader/modal/
 reflow/retirement accounting, multi-panel preview and Flight/Smart eligibility
 remain admission gates.
+
+## 33. Bounded TX Battery refresh (R1, owner still legacy)
+
+TX Battery directly reuses its unchanged refresh as a steady-only, single-unit
+task stage with the original fifty-tick interval. The adapter does not retain a
+partial frame across callbacks. Its complete native fixture bridge peaks at 1232 instructions;
+the real model-service bridge peaks at 854. The declaration is 1410, below the
+4000 atom cap with the calibration margin.
+
+The fixture covers five geometries, battery/bar/no visualization, percentage
+enabled/disabled and thirteen input variants with five seeds. It exercises
+changed/stable/unavailable/stale/warning/critical voltages, range loss/recovery,
+invalid or absent radio range, explicit layout overrides, missing feeds and cold
+reading/percentage placement. Range changes include reconciliation of text,
+units, bars and battery glyphs rather than measuring formatting alone.
+
+The integration suite compares 1440 changing completed frames across both
+actual themes, all geometries/visuals/percentage settings, and radio versus layout
+ranges. Every frame is repeated to verify no redundant painting. Resized trees
+and hidden-callback eligibility are checked as well. This suite passes against
+actual pre-extraction `2785146` source and under Lua32. Existing TX Battery review
+and unit, reflow/loading, shared-module and scheduler-host suites pass; shared
+retained growth remains 0.0 KiB in this run.
+
+```sh
+python3 tools/audit-scheduler.py --framework tx-battery-panel --timeout 180
+python3 tools/audit-scheduler.py tx-battery-tasks-min tx-battery-tasks-max tx-battery-tasks-16 model-panels default-gallery --timeout 180
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+make test-lua32
+build/lua32/lua tests/integration/widget/test_tx_battery_task.lua "$PWD"
+```
+
+All commands exit 0. Small, large and sixteen-placement task cases and the
+coupled four-model-panel case peak at 9189 whole-callback instructions;
+production-owner default-gallery remains at 12625. Panel enrollment peaks at
+1013 and complete readiness at 2629, including service setup.
+All 29 audit-tool tests and Lua32 scheduler bounds pass.
+
+The isolated task images are the only owner overrides. RX Battery still needs
+separate treatment because its refresh can trigger supporting-row reflow;
+it must not inherit this single-stage declaration. Model Identity, Link Status,
+diagnostics/probe and idle-panel admission, full lifecycle/reset/loader/modal/
+reflow accounting and Flight/Smart eligibility remain open. No production owner,
+ten-tick recording policy or deferred stress assertion changes are included.

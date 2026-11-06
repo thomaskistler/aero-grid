@@ -166,7 +166,7 @@ class ScenarioTests(unittest.TestCase):
 
     def test_single_stage_panels_override_only_their_own_panel_owner(self):
         scenarios = self.cli.scenarios()
-        for panel in ("flight-counter", "flight-mode", "flight-timer", "state", "trim-panel"):
+        for panel in ("flight-counter", "flight-mode", "flight-timer", "state", "trim-panel", "tx-battery"):
             for tag in ("min", "max", "16"):
                 spec = scenarios[f"{panel}-tasks-{tag}"]
                 self.assertEqual(spec["owners"], [f"panel:{panel}"])
