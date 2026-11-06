@@ -15,6 +15,9 @@ radio.values[100] = 8.0
 
 local context = fixture.createLoaded(nil, { Layout = "Default", Theme = "modern-dark" })
 fixture.allowSchedulerWork(context)
+assert(fixture.pumpUntil(context, function(value)
+    return value.serviceRuntime.byId.control.revision > 0
+end, 400), "dashboard control task must receive its initial release")
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assertions.assertEqual(#context.panels, 9)
