@@ -376,6 +376,10 @@ Service Probe captures fixed-size service reports before painting one or two row
 per grant. Control reports instead scan one subscription per step, including
 switches that produce no row, and stop at the captured registry extent or visible
 row limit. Cancellation, synchronous refresh and reflow discard pending work.
+Host Diagnostics scans variable-length reports one entry at a time, retaining
+only visible failure-first rows while counting the whole report. Its log snapshot
+also stages shared demand checks and retention trimming; painting preserves the
+existing newest-first, three-changed-line limit.
 
 Scheduler-owned placements enroll one per callback with an explicit setup
 reservation. Existing placements retain their releases, and pending enrollment

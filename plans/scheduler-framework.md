@@ -2629,3 +2629,74 @@ This validates refresh/report production, not synchronous construction/reflow
 or the remaining Host Diagnostics and modal/lifecycle/Flight/Smart gates.
 Production ownership, ten-tick recording policy and deferred stress failures
 are unchanged.
+
+## 40. Bounded Host Diagnostics reports (production owner unchanged)
+
+Host Diagnostics now prepares, collects, finalizes and paints separate bounded
+stages. Theme notices advance one per step. Panel and source reports examine
+one entry per step, retain only the visible rows in each priority class, and
+count the entire captured registry so failures/unbound sources remain first
+without changing the header totals. Fixed identity reporting retains its
+filesystem fallback and explicit report-error lines.
+
+Visible log reads previously called `read(limit)`, whose shared demand scan
+still traversed every host and panel before copying those limited rows.
+`readVisibleStep` advances one demand entry or one eviction per call, then
+captures at most twelve immutable entry references. Formatting advances one
+entry per step. Retention uses the same demand predicate as synchronous reads,
+including failed panels, previews and disabled logging. Paint remains newest
+first and stops after three changed lines across all grants of one refresh.
+Cancellation, synchronous refresh and reflow discard pending work.
+
+| Refresh stage | Native / Lua32 fixture worst | Real native bridge worst | Declaration |
+|---|---:|---:|---:|
+| Prepare | 377 / 377 | 344 | 470 |
+| Collect | 353 / 353 | 348 | 440 |
+| Finish | 313 / 313 | 286 | 400 |
+| Apply one / two / three lines | 236 / 280 / 317 (both) | 309 | 340 + 50 per line |
+
+The fixture explicitly measures log demand, eviction, bounded capture and
+formatting, sparse/large reports, empty/missing services and filesystem states.
+The actual bridge maximum is included when declaring paint, rather than relying
+only on the smaller fixture fit.
+
+Integration compares 1280 changing completed frames across both themes, four
+geometries (including no room for rows), all five sections and four host states.
+Reports include 128 entries per category and logs retained at 256 entries.
+One/two/three-line grants, source mutations after capture, partial-scan/paint
+cancellation, synchronous refresh/reflow, stable frames, hidden eligibility and
+visible error fallback pass. Completed frames match actual `b9d458c` source.
+The shared-log unit suite also scans sixteen hosts with sixteen demand entries
+each, verifies at most one eviction per call, shrinks 256 retained entries to
+one and checks snapshot immutability and disabled-log retention.
+
+Fifteen isolated native images cover every section at minimum/maximum span and
+four simultaneous 2x2 placements. Audit-only setup populates real shared logs
+with 256 messages and subscribes eight real sources, so these images do not
+silently test only empty-report fallbacks. Every expected stage executes.
+Identity/theme/panels/log images peak at 9189 whole-callback instructions;
+source images peak at 10788/10792/11023, and default-gallery at 12738.
+
+```sh
+python3 tools/audit-scheduler.py --framework host-diagnostics-panel --timeout 180
+# Repeat for identity, theme, panels, sources and log:
+python3 tools/audit-scheduler.py host-diagnostics-tasks-log-min host-diagnostics-tasks-log-max host-diagnostics-tasks-log-4 --timeout 180
+build/lua32/lua tests/integration/widget/test_host_diagnostics_task.lua "$PWD"
+make test-lua32
+python3 -m unittest discover -s tools -p test_scheduler_audit.py
+```
+
+The full scheduler Lua32 suite, standalone int32 report/log tests, targeted
+unit/integration/host/reset/shared-module suites, actual-source parity and
+35 audit-tool tests pass. The log-viewer regression exposed an older test
+harness call that bypassed the refactored task's clock adapter; the same failure
+reproduces with the pre-change panel/logger. It now invokes `nav.tasks.run:step`
+instead of the owner body's `nav:step`, without changing production Navigation.
+Viewer callbacks peak at 14100 mock instructions; reset remains at 14300 with
+its two known first-arm XFAILs. Retained shared-module growth is 0.1 KiB.
+
+This closes bounded report/refresh production, not synchronous constructors,
+reflows, log-viewer lifecycle callbacks or shared logging append/demand work
+outside this snapshot path. Production ownership, ten-tick recording policy,
+deferred stress assertions and remaining modal/lifecycle/Flight/Smart gates
+are unchanged.

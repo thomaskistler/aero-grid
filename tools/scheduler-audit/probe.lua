@@ -722,6 +722,16 @@ local function entry(kind, context, fn, e, t)
         return
     end
     P.loaded = true
+    if not P.diagnosticsSeeded then
+        P.diagnosticsSeeded = true
+        local telemetry = context.serviceRuntime and context.serviceRuntime.byId.telemetry
+        for index = 1, config.diagnosticsSources or 0 do
+            telemetry:subscribe(string.format("S%02d", index))
+        end
+        for index = 1, config.logEntries or 0 do
+            context.diagnosticsLog:append(context, "audit", "message " .. index, index * 100)
+        end
+    end
     local phase = config.phases[phaseIndex]
     if not phase then
         return

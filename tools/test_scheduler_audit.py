@@ -123,6 +123,17 @@ class ScenarioTests(unittest.TestCase):
                 self.assertEqual(case["config"]["service"], service)
                 self.assertEqual(case["expected"], 4 if tag == "4" else 1)
 
+    def test_diagnostics_tasks_cover_each_report_and_seed_real_log_and_sources(self):
+        scenarios = self.cli.scenarios()
+        for section in ("identity", "theme", "panels", "sources", "log"):
+            for tag in ("min", "max", "4"):
+                case = scenarios[f"host-diagnostics-tasks-{section}-{tag}"]
+                self.assertEqual(case["owners"], ["panel:host-diagnostics"])
+                self.assertEqual(case["config"]["section"], section)
+                self.assertEqual(case["expected"], 4 if tag == "4" else 1)
+                self.assertEqual(case["logEntries"], 256 if section == "log" else 0)
+                self.assertEqual(case["diagnosticsSources"], 8 if section == "sources" else 0)
+
     def test_every_panel_is_audited_at_its_smallest_and_largest_span(self):
         scenarios = self.cli.scenarios()
         for panel in PANELS:
@@ -330,7 +341,8 @@ class FrameworkReportTests(unittest.TestCase):
             self.assertTrue((widget / "lib/scheduler.lua").is_file())
             for name in ("framework.lua", "scheduler_overhead.lua", "scheduler_measure.lua", "scheduler_mixes.lua",
                          "scheduler_flight_readout.lua", "scheduler_probe_fixture.lua",
-                         "cases/stub.lua", "cases/telemetry.lua", "cases/service-probe-panel.lua"):
+                         "scheduler_diagnostics_fixture.lua", "cases/stub.lua", "cases/telemetry.lua",
+                         "cases/service-probe-panel.lua", "cases/host-diagnostics-panel.lua"):
                 self.assertTrue((widget / "audit" / name).is_file(), name)
             self.assertIn('"stub"', (widget / "audit/config.lua").read_text())
 

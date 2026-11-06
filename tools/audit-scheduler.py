@@ -233,6 +233,17 @@ def scenarios():
                 base, owners=["panel:service-probe"], phases=standard_phases(),
                 config={"service": service, "source": "trim-ail" if service == "control" else "GPS" if service == "navigation" else "RSSI",
                         "index": 0})
+    for section in ("identity", "theme", "panels", "sources", "log"):
+        for tag in ("min", "max", "4"):
+            base = result[f"host-diagnostics-{tag}"] if tag != "4" else {
+                "recipe": "host-diagnostics", "expected": 4, "baseInputs": True,
+                "placements": {f"d{i}": ((i - 1) % 2 * 2, (i - 1) // 2 * 2, 2, 2) for i in range(1, 5)}}
+            result[f"host-diagnostics-tasks-{section}-{tag}"] = dict(
+                base, owners=["panel:host-diagnostics"], phases=standard_phases(),
+                config={"section": section, "maxEntries": 256}, logEntries=256 if section == "log" else 0,
+                diagnosticsSources=8 if section == "sources" else 0)
+            if section == "sources":
+                result[f"host-diagnostics-tasks-{section}-{tag}"]["sources"] = 8
     for panel in ("flight-counter", "flight-mode", "flight-timer", "state", "trim-panel", "tx-battery", "model-identity"):
         for tag in ("min", "max", "16"):
             base = result[f"{panel}-{tag}"] if tag != "16" else dict(result["metric-16"], recipe=panel)
@@ -336,6 +347,7 @@ def prepare(capture, name, spec, sd, mode="legacy"):
               "baseInputs": bool(inputs), "swing": 0.4,
               "toggleSwitches": spec.get("toggleSwitches", spec["recipe"] == "state"),
               "toggleLink": spec.get("toggleLink", False),
+              "logEntries": spec.get("logEntries", 0), "diagnosticsSources": spec.get("diagnosticsSources", 0),
               "failOnError": True, "traceLimit": 300}
     if "loops" in spec:
         config["loops"] = spec["loops"]
@@ -384,7 +396,7 @@ def prepare_framework(capture, sd, cases):
     shutil.copyfile(PROBE_DIR / "framework.lua", audit / "framework.lua")
     for name in ("scheduler_overhead.lua", "scheduler_measure.lua", "scheduler_mixes.lua",
                  "scheduler_panel_api.lua", "scheduler_chart_fixture.lua", "scheduler_flight_readout.lua",
-                 "scheduler_probe_fixture.lua"):
+                 "scheduler_probe_fixture.lua", "scheduler_diagnostics_fixture.lua"):
         shutil.copyfile(SUPPORT_DIR / name, audit / name)
     (audit / "cases").mkdir()
     for case in cases:

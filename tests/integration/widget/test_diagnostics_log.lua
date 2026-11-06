@@ -66,7 +66,7 @@ for _ = 1, 20 do
     definition.background(flight)
 end
 nav.due = getTime()
-nav:step(2, "run", nav.due)
+nav.tasks.run:step(2, "run", nav.due)
 assert(log.count == 1, "hidden-screen services must record the first-arm outcome")
 local capture = log:read()[1]
 assert(capture.panel == "nav" and capture.host == "review-diagnostics-log#1")
