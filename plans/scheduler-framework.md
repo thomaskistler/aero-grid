@@ -4301,3 +4301,11 @@ build/lua32/lua tests/integration/widget/test_panel_loading.lua "$PWD"
 python3 -m unittest discover -s tools -p test_scheduler_audit.py
 make test-lua32
 ```
+
+Parent integration on `dcd1088` repeats all 38 native preparation cases with
+empty errors and the same 1199/1370 maximum. Seven integrated captures include
+cancellation, multi-panel App return, and root recreation/error presentation in
+both callback kinds; every error list is empty and the largest whole callback
+is 9696. Lua53/int32 host, preparation, loading, lifecycle, admission, Flight and
+strict-reset regressions pass; reset stays 10800 with both original XFAILs.
+All 51 combined audit-tool tests pass.
