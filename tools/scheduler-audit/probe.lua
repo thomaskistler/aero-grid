@@ -227,7 +227,7 @@ local function finish(label, raw, leak)
         end
         local layoutStep = string.match(label, "^editor:advanceEditor:layout:([%w_%-]+)$")
         if layoutStep then
-            gate(cost <= 4000, label .. " exceeds the layout atom cap: " .. cost)
+            gate(fit(cost) <= 4000, label .. " exceeds the fitted layout atom cap: " .. cost .. " -> " .. fit(cost))
             local bound = P.editorLayoutBounds and P.editorLayoutBounds[layoutStep]
             if bound then
                 gate(fit(cost) <= bound, label .. " exceeds the layout charge: " .. cost .. " -> " .. fit(cost))

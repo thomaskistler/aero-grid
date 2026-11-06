@@ -4881,9 +4881,11 @@ On integrated e175e04 the 28 per-type cases exposed a TX Battery lifecycle
 reflow charge below its fitted measurement: 1978 raw / 2230 fitted against
 2130. The declaration is now 2300.
 
-The preview layout probe currently checks the raw atom against 4000, not the
-required fitted ceiling, and several layout reservations exceed 4000. Those
-steps require further proof or splitting before their activation gate is closed.
+Layout steps are gated on the fitted 4000 atom cap. A per-type bound is the
+fitted cost of the matrix body plus 600 overhead, and must be at most 4000.
+Metric (3052), flight-mode (3193) and flight-timer (3204) cannot meet that
+bound, so those steps are ineligible pending further proof or splitting. The
+other bounds are at most 4000. Native worst case: metric raw 3223, fitted 3600.
 ## 92. Broker activation continuity
 
 The Flight/Smart History deficit came from restarting reconciliation, not from

@@ -212,7 +212,7 @@ for target = 1, 6 do
     assert(calls() == 2, "one geometry synchronization per requested rendering")
 
     -- Staged geometry: each step declares the measured bound of its panel type.
-    local steps, advanced = { "metric", "custom", "visit" }, 0
+    local steps, advanced = { "navigation", "custom", "visit" }, 0
     state.handlers.startLayout = function() return { step = 1 } end
     state.handlers.layoutStep = function(job) return steps[job.step] end
     state.handlers.advanceLayout = function(job)
@@ -223,7 +223,13 @@ for target = 1, 6 do
     assert(ui.handle(context, EVT_ROT_RIGHT) and state.renderStage == 1)
     assert(ui.renderWorkBound(state) == ui.LAYOUT_BOUNDS.visit, "the first step only indexes and visits")
     state.layoutJob = { step = 1 }
-    assert(ui.renderWorkBound(state) == ui.LAYOUT_BOUNDS.metric, "a measured panel type declares its bound")
+    assert(ui.renderWorkBound(state) == ui.LAYOUT_BOUNDS.navigation, "a measured panel type declares its bound")
+    for step, bound in pairs(ui.LAYOUT_BOUNDS) do
+        assert(bound <= 4000, step .. " layout charge must fit the atom cap")
+    end
+    for _, panelType in ipairs({ "metric", "flight-mode", "flight-timer" }) do
+        assert(ui.LAYOUT_BOUNDS[panelType] == nil, panelType .. " geometry lacks fitted proof")
+    end
     assert(ui.advance(context) and state.renderStage == 1 and advanced == 1)
     assert(ui.renderWorkBound(state) == nil, "unmeasured panel geometry remains ineligible")
     assert(ui.advance(context) and state.renderStage == 1)
