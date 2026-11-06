@@ -4693,8 +4693,8 @@ unchanged.
 
 Probe gates for modal log, settings, editor input/paint, drawer opening and
 drawer work now compare the fitted declaration `ceil10(1.10*raw+50)`, not the
-raw cost. The 4000 atom and 15000 whole-callback gates stay raw, as do the
-loader/readiness gates owned by R6. A complete fitted sweep moved these bounds:
+raw cost. The 4000 atom and 15000 whole-callback gates stay raw. Loader and
+readiness gates also compare fitted costs. A complete fitted sweep moved these bounds:
 log idle 70, settings publish 450, input open/release 220, cancel 140, modal
 120, drawer-open add 350, forms 1850, snapshot 800, write 1100.
 
@@ -4724,3 +4724,62 @@ reconciliation that admits only persistent tasks. History is therefore
 suspended during preview (`test_editor_initialization:88`). The host change
 is R6-owned. Drag and the general preview remain to be bounded. Owners, the
 recording policy and the deferred stress assertions are unchanged.
+
+## 88. Panel-only host reconciliation (R6)
+
+Editor preview retirement removes a panel in place and marks
+`panelTasksDirty`. Previously `host:ready` treated that as a full
+reconciliation: it rescanned every unchanged service and rebuilt the waiting
+list, and `host:finish` excluded History/Telemetry for about 32 callbacks.
+
+`host:ready` now starts a panel-only job when the panels table, registry,
+service count, Telemetry scheduler revision, persistent broker and reconciled
+broker are unchanged, no dormant facade has gained demand, and no full job is
+unfinished. The job starts at the panels phase and keeps service records,
+`waiting`, `pendingServices` and the enroll cursor. Any service, demand,
+revision or broker change still starts or keeps a full job.
+
+Services remain admitted with the ordinary callback kind only when there are no
+scheduler-owned panel tasks and no panel owner is `new`. Otherwise the existing
+reconcile-kind exclusion applies until removed tasks retire, so a stale panel
+task is never dispatched. Owners, reset releases and the ten-tick policy are
+unchanged. Waiting records keep their shape; panel-only work no longer
+reallocates them.
+
+Native `editor-rebuild-<panel>-settled` captures enroll services for 400
+callbacks before a real preview edit. All three have empty error lists, and
+every readiness phase is compared fitted against its unchanged runtime charge:
+
+| Readiness phase | Raw max | Fitted | Charge |
+| --- | ---: | ---: | ---: |
+| Panel-only begin | 390 | 480 | 900 |
+| Panel-only panels | 101 | 170 | 900 |
+| Panel-only retire-panels | 119 | 190 | 900 |
+| Full begin | 390 | 480 | 900 |
+| Full services | 249 | 330 | 900 |
+| Full retire-services | 156 | 230 | 900 |
+| Service enroll | 929 | 1080 | 2300 |
+
+Whole callbacks peak at 7560 (metric), 9712 (chart) and 6702 (navigation).
+Chart is 9710 with the old host. Its editor-render finish rises from 33 to
+3103 raw because services stay live; steady finish is unchanged at 4894. The
+16-panel `editor-preview-metric` worst callback (21145, six legacy Metric
+refreshes) is unchanged from baseline. The original 40-callback scenarios
+legitimately run full reconciliation, because services are still enrolling and
+the Telemetry revision changes.
+
+`test_editor_initialization.lua:88` now passes. Its line 119 still fails, as on
+baseline once line 88 is bypassed: one refresh after `close(false)` leaves
+bounded `retirePage` in `clear`. That assertion is unchanged. Host regressions
+cover owned and unowned panels, unchanged service records, no dispatch of the
+removed task, revision escalation and full-job precedence. Readiness, reset
+(8400, two XFAILs), Flight loading, background initialization and
+`make test-lua32` pass. Editor, mixed and widget comparisons match baseline
+on both widths.
+
+```sh
+python3 tools/audit-scheduler.py editor-rebuild-metric-settled --timeout 300
+python3 tools/audit-scheduler.py editor-rebuild-chart-settled --timeout 300
+python3 tools/audit-scheduler.py editor-rebuild-navigation-settled --timeout 300
+build/lua32/lua tests/integration/test_scheduler_host.lua "$PWD"
+```

@@ -158,6 +158,7 @@ function host.attach(context, options)
         serviceDeclarations = {},
         brokerDeclarations = {},
         panelEntries = {},
+        dormant = {},
         panelQueue = {},
         panelCursor = 1,
         resetReleases = {},
@@ -232,7 +233,7 @@ local function pendingService(self, instance, id)
         return true
     end
     local job = self.reconciliation
-    return job and job.registry == self.context.serviceRuntime and job.ids[id] == nil
+    return job and not job.panelOnly and job.registry == self.context.serviceRuntime and job.ids[id] == nil
 end
 
 --- Check the owner table against what is loaded; returns a message, or nil.
@@ -589,22 +590,41 @@ local function serviceProblem(self, instance, item)
     end
 end
 
-local function beginReconciliation(self, context, order, persistent, revision)
-    self.waiting, self.pendingServices = {}, {}
-    self.enrollCursor = 0
+--- A panel-only job keeps every reconciled service task, its waiting enrollment
+--- and reset releases; only the placement set is reconciled.
+local function beginReconciliation(self, context, order, persistent, revision, panelOnly)
+    if not panelOnly then
+        self.waiting, self.pendingServices = {}, {}
+        self.enrollCursor = 0
+    end
     self.panelQueue, self.panelCursor, self.pendingPanels = {}, 1, nil
     self.reconciliation = {
         panels = context.panels,
         registry = context.serviceRuntime,
+        services = #order,
         revision = revision,
         order = order,
         persistent = persistent,
-        phase = "services",
-        index = 0,
+        phase = panelOnly and "panels" or "services",
+        index = panelOnly and 1 or 0,
         taskIndex = 1,
         ids = {},
         panelsPresent = {},
+        panelOnly = panelOnly,
+        -- Dormant facades whose later demand needs a service scan.
+        dormant = panelOnly and self.dormant or {},
     }
+    if panelOnly then
+        -- Without a scheduler-owned panel type, an unscanned placement cannot hold a task.
+        local owned = next(self.panelTasks) ~= nil
+        for key, owner in pairs(self.owners) do
+            if owned then
+                break
+            end
+            owned = owner == "new" and string.sub(key, 1, 6) == "panel:"
+        end
+        self.reconciliation.servicesLive = not owned
+    end
     context.panelTasksDirty = nil
 end
 
@@ -637,6 +657,7 @@ local function reconcileService(self, job)
     end
     local id, task = item and item.id or "service:" .. instance.id, item and item.instance or instance
     if job.persistent and job.ids[id] == job.persistent and not instance.schedulerTasks and instance.count == 0 then
+        job.dormant[#job.dormant + 1] = instance
         job.index, job.taskIndex = job.index + 1, 1
         return
     end
@@ -766,7 +787,7 @@ local function advanceReconciliation(self, context)
         job.cursor = entry
         if not entry then
             self.checked, self.registry, self.taskRevision = job.panels, job.registry, job.revision
-            self.persistent = job.persistent
+            self.persistent, self.services, self.dormant = job.persistent, job.services, job.dormant
             self.reconciliation = nil
         elseif not job.panelsPresent[entry] then
             local task = self.panelTasks[entry]
@@ -818,6 +839,7 @@ function host:ready(context)
     if not self.scheduler then
         self.checked, self.registry, self.taskRevision, self.persistent =
             context.panels, context.serviceRuntime, taskRevision, persistent
+        self.services = #order
         context.panelTasksDirty = nil
         return true
     end
@@ -826,6 +848,7 @@ function host:ready(context)
         or {
             panels = self.checked,
             registry = self.registry,
+            services = self.services,
             revision = self.taskRevision,
             persistent = self.persistent,
         }
@@ -840,7 +863,18 @@ function host:ready(context)
     local message
     if self.scheduler then
         if changed then
-            beginReconciliation(self, context, order, persistent, taskRevision)
+            -- Services stay reconciled only when no service job is unfinished.
+            local panelOnly = (not job or job.panelOnly)
+                and snapshot.panels == context.panels
+                and snapshot.registry == context.serviceRuntime
+                and snapshot.services == #order
+                and snapshot.revision == taskRevision
+                and snapshot.persistent == persistent
+                and self.reconciledBroker == persistent
+            for index = 1, panelOnly and #self.dormant or 0 do
+                panelOnly = panelOnly and self.dormant[index].count == 0
+            end
+            beginReconciliation(self, context, order, persistent, taskRevision, panelOnly)
         end
         if self.reconciliation then
             self.panelSetup = host.RECONCILE_COST
@@ -903,8 +937,11 @@ function host:finish(kind)
     self.active = false
     local plan
     local _, persistent = serviceRegistry(self.context)
-    if self.scheduler and (not self.reconciliation or persistent and persistent == self.reconciledBroker) then
-        self.scheduler:run(self.reconciliation and RECONCILE_KIND or kind, getTime(), self.head + self.legacy.spent)
+    local job = self.reconciliation
+    -- Reconciled services keep their kind while no possibly stale panel task exists.
+    local reconciling = job and not job.servicesLive
+    if self.scheduler and (not reconciling or persistent and persistent == self.reconciledBroker) then
+        self.scheduler:run(reconciling and RECONCILE_KIND or kind, getTime(), self.head + self.legacy.spent)
         plan = self.scheduler.lastPlan.U
     end
     if self.probe then

@@ -575,6 +575,10 @@ def scenarios():
             {"name": "editor-close", "kind": "refresh", "action": "discard-editor",
              "callbacks": 40, "step": 5, "perCall": 4},
         ])
+        # Services finish enrolling first, so preview retirement reconciles panels only.
+        result[f"editor-rebuild-{panel}-settled"] = dict(result[f"editor-rebuild-{panel}"], phases=[
+            dict(result[f"editor-rebuild-{panel}"]["phases"][0], callbacks=400),
+            *result[f"editor-rebuild-{panel}"]["phases"][1:]])
     for panel in PANELS:
         result[f"editor-drawer-{panel}"] = dict(result[f"{panel}-max"], fullscreen=True, phases=[
             {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 4},

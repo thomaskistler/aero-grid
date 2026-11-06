@@ -189,6 +189,13 @@ local function finish(label, raw, leak)
             local fitted = fit(cost)
             gate(fitted <= 4000, "host readiness exceeds its fitted atom cap: " .. cost .. " -> " .. fitted)
             gate(fitted <= P.readinessBound, "host readiness exceeds its work charge: " .. cost .. " -> " .. fitted)
+            local job = P.readinessHost and P.readinessHost.reconciliation
+            if string.match(label, "^scheduler:ready:panel%-only:") or label == "scheduler:ready:begin" and job and job.panelOnly then
+                local panelLabel = label == "scheduler:ready:begin" and "scheduler:ready:panel-only:begin" or label
+                record(panelLabel, cost, own, units > 0 and units or 1, children)
+                gate(fitted <= P.readinessHost.RECONCILE_COST,
+                    panelLabel .. " exceeds its fitted reconciliation charge: " .. fitted)
+            end
         end
         if string.match(label, "^editor:input:") then
             gate(cost <= 4000, label .. " exceeds the editor input atom cap: " .. cost)
@@ -482,11 +489,12 @@ local function install(context)
         wrapField(scheduling, "ready", function(token)
             if token then
                 P.readinessBound = math.max(scheduling.panelSetup, scheduling.RECONCILE_COST)
+                P.readinessHost = scheduling
                 return "scheduler:ready:" .. token
             end
             local job = scheduling.reconciliation
             if job then
-                return job.phase
+                return (job.panelOnly and "panel-only:" or "") .. job.phase
             elseif
                 scheduling.checked ~= context.panels
                 or scheduling.registry ~= context.serviceRuntime

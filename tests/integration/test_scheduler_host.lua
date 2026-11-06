@@ -978,4 +978,75 @@ do
     equal(context.scheduler:dueOf(host.panelTasks[entry].id), now)
 end
 
+-- A placement-only change keeps reconciled services runnable; a possibly stale
+-- scheduler-owned panel task is retired before that kind is admitted again.
+for _, owned in ipairs({ false, true }) do
+    local definition, context = start("mixed", "host-light")
+    local host = context.schedulerHost
+    if owned then
+        host.owners["panel:metric"] = "new"
+        context.panelTasksDirty = true
+        settleHost(host, context)
+    end
+    callbacks(definition, context, 80)
+    settleHost(host, context)
+    local removed = context.panels[1]
+    local removedTask = host.panelTasks[removed]
+    assert(owned == (removedTask ~= nil))
+    local waiting, pending = host.waiting, host.pendingServices
+    local services = {}
+    for id, record in pairs(context.scheduler.byId) do
+        if string.sub(id, 1, 8) == "service:" then
+            services[id] = record
+        end
+    end
+    assert(next(services), "services are enrolled before the placement change")
+    table.remove(context.panels, 1)
+    context.panelTasksDirty = true
+    local mark, kinds = #context.dispatches + 1, {}
+    for _ = 1, 64 do
+        fixture.tick(5)
+        context.scheduler.lastPlan.kind = "sentinel"
+        definition.refresh(context)
+        local job = host.reconciliation
+        assert(not job or job.panelOnly, "placement-only changes skip service reconciliation")
+        kinds[#kinds + 1] = context.scheduler.lastPlan.kind
+        if not job and not host.pendingPanels then
+            break
+        end
+    end
+    assert(not host.reconciliation, "panel-only reconciliation finishes")
+    equal(host.waiting, waiting, "waiting service enrollment survives")
+    equal(host.pendingServices, pending)
+    for id, record in pairs(services) do
+        equal(context.scheduler.byId[id], record, id .. " keeps its scheduled record")
+    end
+    equal(host.panelEntries[removed], nil)
+    equal(host.panelTasks[removed], nil)
+    if owned then
+        equal(context.scheduler.byId[removedTask.id], nil, "removed panel task is retired")
+        assert(kinds[1] == "host-reconcile" or kinds[1] == "sentinel",
+            "no possibly stale panel task runs before retirement")
+    else
+        equal(kinds[1], "steady", "reconciled services keep their kind during panel-only work")
+    end
+    for index = mark, #context.dispatches do
+        assert(context.dispatches[index][2] ~= removed.placement.id, "removed placement is never dispatched")
+    end
+    equal(#context.errors, 0)
+
+    table.remove(context.panels, 1)
+    context.panelTasksDirty = true
+    assert(host:ready(context))
+    assert(host.reconciliation.panelOnly)
+    local telemetry = context.serviceRuntime.byId.telemetry
+    telemetry.schedulerRevision = (telemetry.schedulerRevision or 0) + 1
+    assert(host:ready(context))
+    assert(not host.reconciliation.panelOnly, "a service revision change replaces panel-only work")
+    context.panelTasksDirty = true
+    assert(host:ready(context))
+    assert(not host.reconciliation.panelOnly, "an unfinished service job is never shortened")
+    settleHost(host, context)
+end
+
 print("Scheduler host passed")
