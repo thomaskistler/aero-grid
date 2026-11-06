@@ -359,11 +359,13 @@ and painting have separate stages; synchronous callers compose the same search
 and placement helpers. Resizing, synchronous refresh and session reset cancel
 pending work, and stale plans consume no work. Gathered scalars, rather than a
 live cells table, remain authoritative until that frame finishes.
-Flight Mode, Flight Timer, State, Trim and TX Battery reuse their synchronous
-refresh as a single task stage. State is bounded by three entries of three
+Flight Mode, Flight Timer, State, Trim, TX Battery and Model Identity reuse their
+synchronous refresh as a single task stage. State is bounded by three entries of three
 conditions; Trim has three axes. TX Battery includes live range changes and
-battery/bar visibility reconciliation within its measured atom. Flight Counter
-shares its reading/painting helper but leaves cadence to the scheduler instead
+battery/bar visibility reconciliation within its measured atom. Model Identity
+includes lazy image creation, filesystem fallback and refitting the heading when
+the name changes. Flight Counter shares its reading/painting helper but leaves
+cadence to the scheduler instead
 of applying a second local clock throttle.
 
 Scheduler-owned placements enroll one per callback with an explicit setup

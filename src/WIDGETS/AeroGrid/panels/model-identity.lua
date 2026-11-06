@@ -40,6 +40,11 @@ local modelIdentity = {
     -- Model identity changes only when the model changes, which reloads the
     -- widget anyway. Five seconds is already generous.
     refreshInterval = 500,
+    decl = {
+        class = "normal",
+        kinds = { steady = true },
+        stages = { run = { fixed = 0, perUnit = 1290, maxUnits = 1 } },
+    },
     settings = {
         -- Responsive content, like `navigation`: which arrangement is drawn.
         {
@@ -588,6 +593,8 @@ function modelIdentity.refresh(context)
         modelIdentity.apply(context, drawn)
     end
 end
+
+modelIdentity.step = modelIdentity.refresh
 
 --- Reposition after a zone change.
 ---@param context AeroGridIdentityContext

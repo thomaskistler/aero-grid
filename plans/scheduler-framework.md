@@ -2478,3 +2478,37 @@ as a whole. Reset still owns its callbacks exclusively; full modal/loader/reflow
 retirement accounting and Flight/Smart eligibility remain open. Production
 ownership, ten-tick Telemetry/History and deferred chart-recording failures remain
 unchanged.
+
+## 37. Model Identity refresh adapter (production owner unchanged)
+
+Model Identity's task calls its unchanged synchronous refresh as one steady-only
+stage, retaining its 500-tick interval. Native worst is 1095 instructions and
+Lua32 worst is 1122; the declaration is 1290, using the larger margin. This
+includes lazy image creation, filesystem lookup and
+missing/throwing/unavailable filesystem fallbacks, long heading refits, changed
+label lists, cold anchors, unavailable and absent subscriptions, cached/rejected
+images and stable frames.
+
+The fixture uses actual native text measurements and seven geometries,
+all four presentations, labels enabled/disabled and ten states with five seeds.
+Integration compares 2560 changing frames across both actual themes, five
+geometries, all presentations and four filesystem modes. It checks complete tree
+parity, image/rejection state, stable no-repaint, resize and hidden eligibility.
+The same integration matches actual pre-extraction `0f8b86f` source and passes
+standalone Lua32.
+
+```sh
+python3 tools/audit-scheduler.py --framework model-identity-panel --timeout 180
+python3 tools/audit-scheduler.py model-identity-tasks-min model-identity-tasks-max model-identity-tasks-16 default-gallery --timeout 180
+build/lua32/lua tests/integration/widget/test_model_identity_task.lua "$PWD"
+make test-lua32
+```
+
+All commands exit 0. Native small/large/sixteen-placement images peak at 9189
+whole-callback instructions, and default-gallery at 12732; actual bridge peak
+is 980. Identity unit, host/reset/shared-module and 31 audit-tool regressions pass.
+The reset regression reports 14200 mock instructions and its two known first-arm
+XFAILs; retained shared-module growth is 0.1 KiB.
+
+This validates refresh, not its synchronous construction/reflow envelope.
+Production ownership and all remaining lifecycle/Flight/Smart gates are unchanged.
