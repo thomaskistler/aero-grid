@@ -132,10 +132,10 @@ for _, rect in ipairs({
                 },
             })
         end
-        local legacy, panel = create(), create()
-        local task = taskFor(panel)
-        chart.render(legacy)
-        local expected = readings(legacy)
+        local expectedPanel, panel = create(), create()
+        local expectedTask, task = taskFor(expectedPanel), taskFor(panel)
+        finish(expectedTask)
+        local expected = readings(expectedPanel)
         assert(advance(task) == 1)
         if count == 3 then
             assert(panel.series[2].readingRevision == nil, "one grant changes at most one series")
@@ -145,9 +145,9 @@ for _, rect in ipairs({
         end
         finish(task)
         equal(readings(panel), expected, "completed readings")
-        chart.render(legacy)
+        finish(expectedTask)
         finish(task)
-        equal(readings(panel), readings(legacy), "next reading revision")
+        equal(readings(panel), readings(expectedPanel), "next reading revision")
         assert(advance(task) == 10 and panel.readingWork == nil, "stable readings need no follow-on stages")
 
         for _, target in ipairs({ "measure", "layout", "font", "layout-final", "position" }) do
@@ -176,4 +176,4 @@ for _, rect in ipairs({
     end
 end
 
-print("Chart staged readings and geometry parity passed")
+print("Chart staged readings and geometry passed")

@@ -100,10 +100,12 @@ local function create(cold, boundaries)
     if cold then
         return panel
     end
-    chart.render(panel)
-    assert(select(2, chart.refresh(panel)))
-    assert(select(2, chart.refresh(panel)))
-    assert(panel.framePhase == "traces")
+    local frame = panelHost.task({ module = chart, instance = panel, interval = 20 })
+    for _ = 1, 2000 do
+        if panel.taskPhase == "trace" then break end
+        assert(frame:step(frame.want or 1, frame.stage, getTime()) == 1)
+    end
+    assert(panel.taskPhase == "trace" and panel.framePhase == "traces")
     local run = { pts = {}, pool = {}, size = 0, changes = {} }
     panel.series[1].runs[1] = run
     for index = 1, 4096 do
@@ -149,16 +151,16 @@ local function snapshot(panel)
 end
 
 for grant = 1, 2 do
-    local legacy, panel = create(), create()
+    local expected, panel = create(), create()
+    local expectedTask = panelHost.task({ module = module, instance = expected, interval = 10 })
     local done
     for _ = 1, 10000 do
-        local _, unfinished = chart.refresh(legacy)
-        if not unfinished then
+        if expectedTask:step(expectedTask.want or 1, expectedTask.stage, getTime()) == 10 then
             done = true
             break
         end
     end
-    assert(done, "legacy comparison frame must complete")
+    assert(done, "comparison frame must complete")
     local task = panelHost.task({ module = module, instance = panel, interval = 10 })
     local trimmed, finished = false, false
     for _ = 1, 10000 do
@@ -183,7 +185,7 @@ for grant = 1, 2 do
         end
     end
     assert(finished and trimmed, "grant-sized traces must finish including oversized old buffers")
-    assert(snapshot(panel) == snapshot(legacy), "partial trace grants preserve legacy runs, connectors and markers")
+    assert(snapshot(panel) == snapshot(expected), "partial trace grants preserve runs, connectors and markers")
 end
 
 local expired = create()
@@ -199,13 +201,16 @@ assert(expired.pending == nil and expired.frameExpired == nil)
 assert(task:step(1, "project", getTime()) == 1 and task.used == 0 and task.stage == "trace")
 
 for grant = 1, 2 do
-    local legacy, panel = create(), create()
-    local completed
+    local expected, panel = create(), create()
+    local completed, expectedDone
+    local expectedTask = panelHost.task({ module = chart, instance = expected, interval = 10 })
     for _ = 1, 10000 do
-        if not select(2, chart.refresh(legacy)) then
+        if expectedTask:step(expectedTask.want or 1, expectedTask.stage, getTime()) ~= 1 and not expected.framePhase then
+            expectedDone = true
             break
         end
     end
+    assert(expectedDone, "comparison frame must complete")
     local full = panelHost.task({ module = chart, instance = panel, interval = 10 })
     for _ = 1, 10000 do
         local stage = full.stage
@@ -222,7 +227,7 @@ for grant = 1, 2 do
     end
     assert(completed, "the full scheduler-owned frame must complete")
     assert(panel.displayRoot.hidden and not panel.plotRoot.hidden, "publication swaps both plot roots together")
-    assert(snapshot(panel) == snapshot(legacy), "the full frame adapter preserves completed legacy traces")
+    assert(snapshot(panel) == snapshot(expected), "the full frame preserves completed traces across grants")
 end
 
 local function fullTask(panel)
@@ -279,15 +284,8 @@ local function frameSnapshot(panel)
     return table.concat(result, "\n")
 end
 for grant = 1, 2 do
-    local panel, legacy = create(true, true), create(true, true)
-    local legacyDone
-    for _ = 1, 10000 do
-        if not select(2, chart.refresh(legacy)) then
-            legacyDone = true
-            break
-        end
-    end
-    assert(legacyDone)
+    local panel, expected = create(true, true), create(true, true)
+    finishFrame(fullTask(expected), expected)
     local full = fullTask(panel)
     for _ = 1, 10000 do
         local stage = full.stage
@@ -299,20 +297,16 @@ for grant = 1, 2 do
     assert(not panel.framePhase)
     assert(#panel.flightBands == 2 and #panel.armMarkers.markerKeys > 0 and #panel.resumeMarkers.markerKeys > 0)
     assert(
-        frameSnapshot(panel) == frameSnapshot(legacy),
-        "axis, grid, session markers, flight bands and complete-frame publication preserve legacy output"
+        frameSnapshot(panel) == frameSnapshot(expected),
+        "axis, grid, session markers, flight bands and complete-frame publication are consistent across grants"
     )
 end
 
-local cold, legacyCold = create(true), create(true)
-for _ = 1, 10000 do
-    if not select(2, chart.refresh(legacyCold)) then
-        break
-    end
-end
+local cold, expectedCold = create(true), create(true)
+finishFrame(fullTask(expectedCold), expectedCold)
 local coldTask = fullTask(cold)
 finishFrame(coldTask, cold)
-assert(snapshot(cold) == snapshot(legacyCold), "cold frame capture preserves legacy geometry and traces")
+assert(snapshot(cold) == snapshot(expectedCold), "cold frame capture preserves geometry and traces")
 local published = cold.plotRoot
 assert(coldTask.stage == "frame")
 finishFrame(coldTask, cold)
@@ -373,7 +367,7 @@ for _, missing in ipairs({ "absent", "failed" }) do
     end
     local full = fullTask(panel)
     assert(finishFrame(full, panel) == 20 and panel.taskPhase == nil and not panel.framePhase)
-    assert(panel.status.properties.text == "HISTORY N/A", "unavailable History retains the legacy status")
+    assert(panel.status.properties.text == "HISTORY N/A", "unavailable History displays its status")
 end
 
 print("Chart trace grants and bounded coordinate retirement passed")
