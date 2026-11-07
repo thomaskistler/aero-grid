@@ -52,6 +52,11 @@ instrument = function(relative, module)
     if type(module) ~= "table" or modules[module] then
         return
     end
+    local name = names[module.decl]
+    if relative ~= "lib/costs.lua" and relative ~= "lib/services.lua" and relative ~= "main.lua"
+        and not (name and type(module.step) == "function") then
+        return
+    end
     modules[module] = true
     if relative == "lib/costs.lua" then
         local new = module.new
@@ -73,7 +78,6 @@ instrument = function(relative, module)
             end
         end)
     end
-    local name = names[module.decl]
     if name and type(module.step) == "function" then
         module.step = recorder:task(name, module.step)
     end

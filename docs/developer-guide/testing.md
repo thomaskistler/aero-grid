@@ -89,12 +89,15 @@ on macOS with EdgeTX Companion 2.12:
 ```sh
 python3 tools/audit-scheduler.py --instructions
 python3 tools/audit-scheduler.py --snapshot
+python3 tools/audit-scheduler.py --instruction-report
 ```
 
-Both commands run fresh mock and native measurements. `--instructions` rejects
+The first two commands run fresh mock and native measurements. `--instructions` rejects
 any recorded maximum increase; `--snapshot` updates the shipped estimates only
 after the full profile passes behavior, coverage, runtime, safety, and efficiency
 checks. An incomplete or failed profile leaves the snapshot unchanged.
+`--instruction-report` reads the saved measurements and produces a per-task,
+stage, and grant table with observed min/max and the current shipped bound.
 
 **This workflow is still WIP:** the shipped snapshot contains seeded estimates,
 not a validated measured baseline. Chart measurement is deferred; its estimates

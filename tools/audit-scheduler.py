@@ -1169,6 +1169,8 @@ def main():
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--instructions", action="store_true", help="Run the full instruction regression profile")
     parser.add_argument("--snapshot", action="store_true", help="Run the full profile and atomically update instruction estimates")
+    parser.add_argument("--instruction-report", nargs="?", const=OUTPUT / "instruction-profile.json", type=Path,
+                        help="Show measured min/current-bound/max per task, stage and grant as Markdown and CSV")
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--framework", nargs="*", metavar="CASE", help=f"Measure the scheduler framework's own cost "
                         f"and the case files in {CASE_DIR.relative_to(ROOT)} (all, or the names given)")
@@ -1179,6 +1181,11 @@ def main():
                         help="Compare two deterministic-clock captures' valid History samples and gaps")
     parser.add_argument("--companion", type=Path, default=COMPANION)
     args = parser.parse_args()
+    if args.instruction_report is not None:
+        if args.instructions or args.snapshot or args.scenario or args.all or args.list or args.framework is not None or args.report:
+            parser.error("--instruction-report reads saved measurements and cannot be combined with execution options")
+        import instruction_snapshot
+        return instruction_snapshot.task_report(args.instruction_report)
     if args.instructions or args.snapshot:
         if args.scenario or args.all or args.list or args.framework is not None or args.report:
             parser.error("Instruction profiles cannot be combined with partial scenario or report options")

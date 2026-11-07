@@ -10,6 +10,7 @@ from pathlib import Path
 import hashlib
 import importlib.util
 import copy
+import csv
 import json
 import os
 import tempfile
@@ -259,9 +260,9 @@ def _module(name, path):
 
 def required_keys(data, declarations):
     required, errors = set(), []
-    deferred = data["record"]["deferred"]
+    deferred_tasks = data["record"]["deferred"]
     for task, stages in data["estimates"]["tasks"].items():
-        if task in deferred:
+        if task in deferred_tasks:
             continue
         for stage in stages:
             maximum = declarations.get(f"{task}|{stage}")
@@ -353,6 +354,85 @@ def native_rows(scenario, results, estimates=None):
     return rows
 
 
+def task_rows(data, measurement):
+    """Observed ranges beside the current shipped bound, including missing grants."""
+    keys = set()
+    by_environment = {}
+    for environment in ("mock", "native"):
+        rows = measurement["observations"][environment]
+        by_environment[environment] = rows
+        keys.update(key for key, row in rows.items() if row["kind"] == "task")
+    keys.update(key for key in measurement.get("requiredObservations", []) if key.startswith("task|"))
+    # Earlier profile reports kept coverage keys only in their diagnostics.
+    prefix = "coverage: missing task|"
+    keys.update("task|" + error[len(prefix):] for error in measurement["errors"] if error.startswith(prefix))
+    result = []
+    for key in keys:
+        _, task, stage, grant = key.split("|")
+        grant = int(grant)
+        environments = {environment: rows.get(key) for environment, rows in by_environment.items()}
+        observed = [row for row in environments.values() if row is not None]
+        estimate = data["estimates"]["tasks"].get(task, {}).get(stage)
+        current = None if estimate is None else estimate["fixed"] + grant * estimate["perUnit"]
+        minimum = min((row["min"] for row in observed), default=None)
+        maximum = max((row["max"] for row in observed), default=None)
+        samples = sum(row["n"] for row in observed)
+        flags = []
+        if estimate is None:
+            flags.append("MISSING ESTIMATE")
+        if not observed:
+            flags.append("UNMEASURED")
+        elif task not in data["record"]["deferred"]:
+            if samples < MIN_SAMPLES:
+                flags.append("SAMPLES < 10")
+            if current is not None and maximum > current:
+                flags.append("OVER BOUND")
+            if spread(minimum, maximum):
+                flags.append("SPREAD")
+        if task in data["record"]["deferred"]:
+            flags.append("DEFERRED")
+        row = dict(task=task, stage=stage, grant=grant, min=minimum, curr=current,
+                   max=maximum, samples=samples, status=", ".join(flags) or "within bound")
+        for environment, observation in environments.items():
+            for field in ("min", "max", "n"):
+                row[environment + "_" + field] = None if observation is None else observation[field]
+        result.append(row)
+    return sorted(result, key=lambda row: (row["task"], row["stage"], row["grant"]))
+
+
+def task_report(path, output=None):
+    """Generate an inspectable Markdown table and CSV without remeasuring."""
+    measurement = json.loads(path.read_text(encoding="ascii"))
+    rows = task_rows(load(), measurement)
+    output = output or path.with_name("instruction-tasks.md")
+    def cell(value):
+        return "N/A" if value is None else str(value)
+    def environment(row, name):
+        if row[name + "_n"] is None:
+            return "not measured"
+        return f"{row[name + '_min']}-{row[name + '_max']} ({row[name + '_n']})"
+    lines = [
+        "# Measured task instructions", "",
+        "**min/max:** observed instructions across mock and native. "
+        "**curr:** the current shipped bound (`fixed + perUnit * grant`), not the latest sample.",
+        "", f"Source: `{path.name}`. Profile findings: **{len(measurement['errors'])}**. "
+        "This report is not a validated baseline.",
+        "", "| Task | Stage | Grant | min | curr (bound) | max | Mock min-max (n) | Native min-max (n) | Status |",
+        "| --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- |",
+    ]
+    for row in rows:
+        values = [row["task"], row["stage"], row["grant"], row["min"], row["curr"], row["max"],
+                  environment(row, "mock"), environment(row, "native"), row["status"]]
+        lines.append("| " + " | ".join(cell(value) for value in values) + " |")
+    output.write_text("\n".join(lines) + "\n", encoding="ascii")
+    with output.with_suffix(".csv").open("w", encoding="ascii", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=list(rows[0]) if rows else ["task", "stage", "grant", "min", "curr", "max"])
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"{len(rows)} task/stage/grant rows: {output}")
+    return 0
+
+
 def profile(audit, args):
     """Fresh full mock/native profile; incomplete evidence never writes a file."""
     snapshot = load()
@@ -427,6 +507,8 @@ def profile(audit, args):
     if source_sha() != inputs_sha:
         errors.append("provenance: measurement inputs changed during the profile; refusing replacement")
     report = {"observations": observations, "errors": errors, "sourceSha": inputs_sha,
+              "requiredObservations": sorted(required),
+              "declarations": declarations,
               "coverage": {"mock": completed, "native": native_completed,
                            "requiredMock": [path.relative_to(ROOT).as_posix() for path in suites],
                            "requiredNative": list(dict.fromkeys(names))}}

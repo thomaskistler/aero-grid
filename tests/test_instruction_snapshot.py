@@ -108,6 +108,30 @@ class InstructionSnapshotTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             snapshot.propose(data, observations, {"test|run": 1}, required | {"task|test|run|2"})
 
+    def test_task_table_shows_min_current_bound_max_and_missing_grants(self):
+        data, observations, required = self.data()
+        next(iter(observations["native"].values())).update(min=110, max=210)
+        measurement = {"observations": observations, "requiredObservations": sorted(required | {"task|test|run|2"}),
+                       "errors": []}
+        rows = snapshot.task_rows(data, measurement)
+        self.assertEqual((rows[0]["min"], rows[0]["curr"], rows[0]["max"]), (100, 220, 210))
+        self.assertEqual((rows[0]["mock_n"], rows[0]["native_n"], rows[0]["samples"]), (5, 5, 10))
+        self.assertEqual(rows[1]["curr"], 440)
+        self.assertIsNone(rows[1]["min"])
+        self.assertIn("UNMEASURED", rows[1]["status"])
+
+    def test_required_keys_preserve_prior_observations_except_deferred_tasks(self):
+        data, observations, required = self.data()
+        callback = self.row(kind="callback", name="refresh", stage="dense", grant=0)
+        callback_key = snapshot.observation_key(callback)
+        chart = self.row(name="panel.chart")
+        chart_key = snapshot.observation_key(chart)
+        data["record"]["observations"]["native"].update({callback_key: callback, chart_key: chart})
+        data["record"]["deferred"]["panel.chart"] = "measurement deferred"
+        keys, errors = snapshot.required_keys(data, {"test|run": 1})
+        self.assertEqual(errors, [])
+        self.assertEqual(keys, required | {callback_key})
+
     def test_atomic_write_and_radio_safe_roundtrip(self):
         data, _, _ = self.data()
         data["record"]["provenance"] = {'quoted"key': "first\nsecond"}
