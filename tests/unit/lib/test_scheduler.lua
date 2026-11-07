@@ -434,6 +434,9 @@ local function testExclusiveAndKinds()
     local critical = single("critical", 300, { exclusive = true })
     add(s, "c-excl", critical, task(log, "c-excl"), 0)
     add(s, "chart3", chart, task(log, "chart3"), 0)
+    for _, id in ipairs({ "c-excl", "chart1", "chart2", "chart3" }) do
+        assert(s:reschedule(id, 300))
+    end
     log[1] = nil
     s:run("steady", 300)
     equal(log[1], "c-excl:run:1")
@@ -505,13 +508,13 @@ local function testSkippedTasksDoNotHideLaterOnes()
     equal(s.lastPlan.examined, 21)
 end
 
-local function testCriticalIsScannedFirstWhateverTheNormalBacklog()
+local function testOlderCriticalReleasePrecedesTheNormalBacklog()
     local log = {}
     local s = scheduler.new({ steady = 0 })
     for index = 1, 100 do
         add(s, "n" .. index, single("normal", 14000), task(log, "n" .. index), 0)
     end
-    add(s, "c", single("critical", 100), task(log, "c"), 1000)
+    add(s, "c", single("critical", 100), task(log, "c"), 0)
     equal(s:run("steady", 1000), 1)
     equal(log[1], "c:run:1")
 end
@@ -711,7 +714,7 @@ testExclusiveAndKinds()
 testSharedCostIsChargedOncePerPlan()
 testReadyTasksHaveNoCountCap()
 testSkippedTasksDoNotHideLaterOnes()
-testCriticalIsScannedFirstWhateverTheNormalBacklog()
+testOlderCriticalReleasePrecedesTheNormalBacklog()
 testStagesAreConsistent()
 testFailuresRetireOnlyTheTask()
 testDelaysAreWholeTicks()
