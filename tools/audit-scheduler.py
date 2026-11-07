@@ -901,6 +901,7 @@ def scenarios():
                                  "    colSpan: 2\n    rowSpan: 1\n    config:\n      armSwitch: SAv\n"]),
         "phases": standard_phases(refreshes=800),
     }
+    result["flight-smart"]["owners"] = []
     result["flight-smart-tasks"] = dict(result["flight-smart"], flightTasks=True,
                                       owners=["service:flight", "service:smart"])
     result["flight-smart-tasks-background"] = dict(result["flight-smart-tasks"],
@@ -1000,8 +1001,10 @@ def prepare(capture, name, spec, sd, mode="legacy"):
             '    end\n' + anchor)
         (widget / "main.lua").write_text(source)
     (widget / "lib/dashboard_loader.lua").write_text(patch_loader((WIDGET / "lib/dashboard_loader.lua").read_text()))
-    (widget / "lib/scheduler_host.lua").write_text(
-        patch_owners((WIDGET / "lib/scheduler_host.lua").read_text(), spec.get("owners", [])))
+    host_source = (WIDGET / "lib/scheduler_host.lua").read_text()
+    if "owners" in spec:
+        host_source = patch_owners(host_source, spec["owners"])
+    (widget / "lib/scheduler_host.lua").write_text(host_source)
     (widget / "panels/chart.lua").write_text(patch_chart((WIDGET / "panels/chart.lua").read_text()))
     if "layout" in spec:
         (widget / "layouts/capture-panels.yaml").write_text(spec["layout"])

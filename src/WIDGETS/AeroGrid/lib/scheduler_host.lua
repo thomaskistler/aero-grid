@@ -27,26 +27,26 @@ host.OWNERS = {
     ["service:control-normal"] = "new",
     ["service:control-outputs"] = "new",
     ["service:armed"] = "new",
-    ["service:flight"] = "legacy",
+    ["service:flight"] = "new",
     ["service:navigation"] = "new",
     ["service:history"] = "new",
-    ["service:smart"] = "legacy",
-    ["panel:chart"] = "legacy",
-    ["panel:flight-counter"] = "legacy",
-    ["panel:flight-mode"] = "legacy",
-    ["panel:flight-timer"] = "legacy",
-    ["panel:host-diagnostics"] = "legacy",
-    ["panel:link-status"] = "legacy",
-    ["panel:metric"] = "legacy",
-    ["panel:model-identity"] = "legacy",
-    ["panel:navigation"] = "legacy",
+    ["service:smart"] = "new",
+    ["panel:chart"] = "new",
+    ["panel:flight-counter"] = "new",
+    ["panel:flight-mode"] = "new",
+    ["panel:flight-timer"] = "new",
+    ["panel:host-diagnostics"] = "new",
+    ["panel:link-status"] = "new",
+    ["panel:metric"] = "new",
+    ["panel:model-identity"] = "new",
+    ["panel:navigation"] = "new",
     ["panel:output"] = "legacy",
-    ["panel:rx-battery"] = "legacy",
-    ["panel:service-probe"] = "legacy",
-    ["panel:state"] = "legacy",
-    ["panel:theme-showcase"] = "legacy",
-    ["panel:trim-panel"] = "legacy",
-    ["panel:tx-battery"] = "legacy",
+    ["panel:rx-battery"] = "new",
+    ["panel:service-probe"] = "new",
+    ["panel:state"] = "new",
+    ["panel:theme-showcase"] = "new",
+    ["panel:trim-panel"] = "new",
+    ["panel:tx-battery"] = "new",
 }
 
 --- The declared cost of one release of a service that carries its task
@@ -946,6 +946,7 @@ function host:ready(context)
     local changed = snapshot.panels ~= context.panels
         or snapshot.registry ~= context.serviceRuntime
         or context.panelTasksDirty
+        or self.brokerDirty
         or snapshot.revision ~= taskRevision
         or snapshot.persistent ~= persistent
     if job and (job.panelOnly or job.brokerOnly) and not changed then
@@ -963,6 +964,7 @@ function host:ready(context)
         if changed then
             -- Services stay reconciled only when no service job is unfinished.
             local panelOnly = (not job or job.panelOnly)
+                and not self.brokerDirty
                 and snapshot.panels == context.panels
                 and snapshot.registry == context.serviceRuntime
                 and snapshot.services == #order
@@ -972,11 +974,12 @@ function host:ready(context)
             for index = 1, panelOnly and #self.dormant or 0 do
                 panelOnly = panelOnly and self.dormant[index].count == 0
             end
-            local spliced = job and snapshot.persistent ~= persistent
+            local spliced = job and not self.brokerDirty and snapshot.persistent ~= persistent
                 and spliceBroker(self, context, order, persistent, taskRevision)
             -- Only the broker changed: its bounded task ids are the only possibly stale releases.
             local previous = self.persistent
             local brokerOnly = not panelOnly
+                and not self.brokerDirty
                 and not job
                 and not context.panelTasksDirty
                 and snapshot.panels == context.panels
@@ -994,6 +997,7 @@ function host:ready(context)
             if not spliced then
                 beginReconciliation(self, context, order, persistent, taskRevision, panelOnly, brokerOnly)
             end
+            self.brokerDirty = nil
         end
         if self.reconciliation then
             self.panelSetup = host.RECONCILE_COST

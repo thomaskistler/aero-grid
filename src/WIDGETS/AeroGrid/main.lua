@@ -1343,6 +1343,22 @@ pumpFlight = function(context, inputPending)
     then
         local current = owner:owningContext()
         local facade = context.serviceRuntime and context.serviceRuntime.byId.flight
+        if current and current ~= context and not context.flightFactory.members[current] and owner.schedulerEnabled then
+            local previous = current.schedulerHost
+            local function release(id)
+                return previous and previous.scheduler and previous.scheduler:dueOf(id)
+                    or previous and previous.resetOwners[id] == owner.taskService and previous.resetReleases[id]
+            end
+            local flightDue, smartDue = release("service:flight"), release("service:smart")
+            owner:disableScheduler(current)
+            owner:enableScheduler(context)
+            scheduling.brokerDirty = true
+            for id, due in pairs({ ["service:flight"] = flightDue, ["service:smart"] = smartDue }) do
+                scheduling.resetReleases[id], scheduling.resetOwners[id] = due, owner.taskService
+            end
+            current = context
+            scheduling:charge("tick")
+        end
         if
             (current == context or current == nil)
             and (not owner.schedulerEnabled or current == nil)
