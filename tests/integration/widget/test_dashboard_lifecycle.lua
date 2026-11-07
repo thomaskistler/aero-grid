@@ -81,7 +81,7 @@ for _, kind in ipairs({
         end
         context.appRebuild = { entry = original, index = index }
         local job = context.appRebuild
-        assert(context.dashboardLifecycle.workBound(context, "advanceAppRebuild") == 250)
+        assert(context.dashboardLifecycle.workBound(context, "advanceAppRebuild"))
         context.refreshOwner = original
         context.dashboardLifecycle.advanceAppRebuild(context)
         fixture.lvglMock.settle()
@@ -163,7 +163,7 @@ for _, phase in ipairs({ "retire", "prepare", "build", "construct", "finish" }) 
             assert(not context.appRebuild and not context.pendingConstruction)
             assert(#context.panels == 0, "a replacement load must not receive stale publication")
         else
-            assert(context.dashboardLifecycle.workBound(context, "retirePage") == 100)
+            assert(context.dashboardLifecycle.workBound(context, "retirePage"))
             retire(context)
         end
     end

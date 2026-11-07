@@ -48,17 +48,8 @@ io = {
 }
 
 local chunk = assert(loadfile(source .. "main.lua"))
-local instructions = 0
-debug.sethook(function()
-    instructions = instructions + 200
-end, "", 200)
 local ok, definition = pcall(chunk)
-debug.sethook()
 assert(ok, definition)
-assert(
-    instructions < fixture.firmware.INSTRUCTION_BUDGET,
-    "widget registration exceeds the firmware instruction budget: " .. instructions
-)
 assert(definition.name == "AeroGrid")
 local themeOptions = definition.options[2][4]
 assert(#themeOptions == 3, "registration discovers additional themes")

@@ -16,7 +16,7 @@ EdgeTX widgets.
 | `tests/fixtures/layouts/development/` | Simulator and review layouts used by tests and disposable SD images. |
 | `src/WIDGETS/AeroGrid/assets/` | Runtime editor icon and its license. |
 | `tests/unit/` | Focused module and panel tests. |
-| `tests/integration/` | Host, editor, dashboard, budget, and resource tests using mocked EdgeTX. |
+| `tests/integration/` | Host, editor, dashboard, and resource tests using mocked EdgeTX. |
 | `tests/support/` | Assertions, firmware-aware EdgeTX/LVGL mocks, and widget/layout fixture helpers. |
 | `tests/fixtures/` | Deterministic simulator SD card, test-only panels, and test layouts. |
 | `tools/` | Release packaging, native screenshots, capture recipes, and Python tooling tests. |
@@ -606,8 +606,8 @@ EdgeTX limits a widget callback to **20,000 Lua VM instructions**. Creation,
 parsing, panel building, reload, and reflow are staged across callbacks.
 Services have bounded subscription updates, and panel work is capped and
 phase-staggered. Do not replace this with one synchronous "simpler" loader.
-The [budget tests](testing.md#performance-and-resource-regressions) require
-strictly less than 75% of the callback allowance.
+Automated tests do not currently enforce instruction counts; use the native
+audit tooling when measuring callback costs.
 
 Avoid object churn and retained callbacks. Shared labels install a persistent
 font callback; change its backing state through `primitives.setFont` rather

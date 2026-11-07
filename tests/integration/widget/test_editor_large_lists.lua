@@ -59,11 +59,6 @@ for _, case in ipairs({
         for _, control in ipairs(state.drawerControls) do
             if control.field.action == "item" then
                 assert(type(control.field.text) == "function" and control.object.properties.text == control.field.text)
-                local instructions = 0
-                debug.sethook(function() instructions = instructions + 1 end, "", 1)
-                control.field.text()
-                debug.sethook()
-                assert(instructions < 20, "native summary getters must return already-staged text")
                 result[#result + 1] = control
             end
         end

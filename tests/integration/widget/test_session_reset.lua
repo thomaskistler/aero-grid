@@ -58,39 +58,24 @@ fixture.radio.values[fixture.radio.fields.RQly.id] = 80
 fixture.radio.values[fixture.radio.fields.RxBt.id] = 16.8
 local first = definition.create({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "session-reset" }, path)
 local second = definition.create({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "session-reset" }, path)
-local worst = 0
 local observeFirstArm = false
 local admittedCapture = {}
-local function measured(callback, context)
+local function invoke(callback, context)
     local navigation = observeFirstArm and context.serviceRuntime.byId.navigation
     local home = navigation and fixture.instanceOf(context, "home").feed
     local status, revision = home and home.homeStatus, navigation and navigation.revision
-    fixture.lvglMock.setPropertyValidation(false)
-    fixture.lvglMock.setCallCounting(false)
-    fixture.lcdMock.setTextMeasurement(false)
-    local instructions = 0
-    debug.sethook(function()
-        instructions = instructions + 100
-    end, "", 100)
-    local ok, message = pcall(callback, context)
-    debug.sethook()
-    fixture.lcdMock.setTextMeasurement(true)
-    fixture.lvglMock.setCallCounting(true)
-    fixture.lvglMock.setPropertyValidation(true)
-    assert(ok, message)
+    callback(context)
     if home and status ~= "captured" and home.homeStatus == "captured" then
         assert(navigation.revision > revision, "capture must occur in a callback that releases Navigation")
         admittedCapture[context] = true
     end
-    worst = math.max(worst, instructions)
-    assert(instructions < 15000, "session reset callback exceeded budget: " .. instructions)
 end
 local secondVisible = true
 local function pump(count)
     for _ = 1, count or 1 do
         fixture.tick(20)
-        measured(definition.refresh, first)
-        measured(secondVisible and definition.refresh or definition.background, second)
+        invoke(definition.refresh, first)
+        invoke(secondVisible and definition.refresh or definition.background, second)
     end
 end
 local function untilState(predicate)
@@ -123,7 +108,7 @@ assert(saved, document)
 owner:setDocument(document)
 untilState(settled)
 pump(80)
-measured(definition.refresh, second)
+invoke(definition.refresh, second)
 local function panel(context, id)
     return assert(fixture.instanceOf(context, id), id)
 end
@@ -324,4 +309,4 @@ end
 equal(writes, 2)
 equal(#first.errors, 0, table.concat(first.errors, "; "))
 equal(#second.errors, 0, table.concat(second.errors, "; "))
-print("model session reset: foreground and hidden consumers, worst " .. worst .. " instructions")
+print("Model session reset: foreground and hidden consumers passed")

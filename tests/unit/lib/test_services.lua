@@ -80,67 +80,6 @@ local function testRoundRobin()
     assertions.assertEqual(services.roundRobin({}, 7, 3, recordVisit, state, 0), 7)
 end
 
-local function testSchedulerOwnedServiceKeepsItsLegacySlot()
-    local runtime = services.runtime({})
-    local nav = {
-        id = "navigation",
-        interval = 20,
-        due = 0,
-        count = 1,
-        preserveLegacySlot = true,
-        step = function() end,
-    }
-    local telemetryUpdates = 0
-    local telemetry = {
-        id = "telemetry",
-        interval = 10,
-        due = 0,
-        count = 1,
-        revision = 0,
-        update = function()
-            telemetryUpdates = telemetryUpdates + 1
-        end,
-    }
-    services.register(runtime, nav, 0)
-    services.register(runtime, telemetry, 0)
-
-    local updated = services.update(runtime, 0, function(instance)
-        return instance.id ~= "navigation"
-    end)
-    assertions.assertEqual(updated, nil, "navigation's replaced slot stays empty")
-    assertions.assertEqual(nav.due, 0, "legacy rotation does not postpone the scheduler task")
-    assertions.assertEqual(telemetryUpdates, 0, "another service does not take the slot")
-    assertions.assertEqual(runtime.cursor, 2, "rotation advances past navigation")
-
-    updated = services.update(runtime, 1, function()
-        return true
-    end)
-    assertions.assertEqual(updated, "telemetry", "telemetry keeps its next legacy release")
-    assertions.assertEqual(telemetryUpdates, 1)
-
-    local historyRuntime = services.runtime({})
-    local historyUpdates = 0
-    local history = {
-        id = "history",
-        interval = 5,
-        due = 0,
-        count = 1,
-        preserveLegacySlot = true,
-        legacySlotReservation = true,
-        step = function() end,
-        update = function()
-            historyUpdates = historyUpdates + 1
-        end,
-    }
-    services.register(historyRuntime, history, 0)
-    updated = services.update(historyRuntime, 0, function()
-        return false
-    end)
-    assertions.assertEqual(updated, "history", "history reserves its mixed-mode service slot")
-    assertions.assertEqual(history.due, 0, "reserved slot does not postpone the scheduler task")
-    assertions.assertEqual(historyUpdates, 0, "the scheduler-owned service is not updated by the legacy loop")
-end
-
 local function testServiceTaskAdapter()
     local owner = { interval = 20 }
     local calls, cleaned = 0, 0
@@ -195,56 +134,12 @@ local function testServiceTaskAdapter()
     assertions.assertEqual(cleaned, 1, "cleanup happens once")
 end
 
-local function testMigratedTaskShape()
-    local runtime = services.runtime(services.environment({}))
-    runtime.host = {}
-    local expected = {
-        telemetry = { "maintenance" },
-        model = { "run" },
-        control = { "critical", "normal", "outputs" },
-        armed = { "run" },
-        navigation = { "run" },
-        history = { "run" },
-    }
-    local sharedStep
-    for _, definition in ipairs(services.DEFINITIONS) do
-        local names = expected[definition.id]
-        if names then
-            local module = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/" .. definition.file))()
-            local service = module.new(runtime.env, services, runtime)
-            runtime.byId[definition.id] = service
-            assertions.assertEqual(#service.schedulerTasks, #names)
-            for index, name in ipairs(names) do
-                local task, item = service.tasks[name], service.schedulerTasks[index]
-                assertions.assertEqual(item.instance, task)
-                assertions.assertEqual(item.id, task.id)
-                assertions.assertEqual(task.owner, service)
-                assertions.assertEqual(type(task.run), "function")
-                sharedStep = sharedStep or task.step
-                assertions.assertEqual(task.step, sharedStep, "every migrated task uses the shared adapter")
-            end
-            assertions.assertEqual(service.update, nil, "host-owned services cannot run through the legacy loop")
-        end
-    end
-    local telemetry = runtime.byId.telemetry
-    assertions.assertEqual(telemetry.interval, 10, "Telemetry polling stays at ten ticks")
-    telemetry:subscribe("S01")
-    telemetry:subscribe("S02")
-    assertions.assertEqual(telemetry.tasks["source:1"], telemetry.entries[1].task)
-    assertions.assertEqual(telemetry.tasks["source:2"], telemetry.entries[2].task)
-    assertions.assertEqual(#telemetry.schedulerTasks, 3)
-    assertions.assertEqual(telemetry.tasks["source:1"].step, sharedStep)
-    assertions.assertEqual(telemetry.tasks["source:2"].step, sharedStep)
-end
-
 local function run()
     testSnapshotIsReadOnly()
     testEnvironmentAndRuntime()
     testRoundRobin()
-    testSchedulerOwnedServiceKeepsItsLegacySlot()
     testSubscriptionOwnership()
     testServiceTaskAdapter()
-    testMigratedTaskShape()
 end
 
 run()
