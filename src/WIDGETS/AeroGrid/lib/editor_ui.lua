@@ -1,22 +1,10 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 local uiModule = { RUNTIME_API = 1 }
-uiModule.RENDER_BOUNDS = { rows = 1700, finish = 1400 }
-uiModule.INPUT_BOUNDS = {
-    open = 220, tap = 900, select = 350, modal = 120, release = 220, cancel = 140, first = 800, slide = 240,
-}
-uiModule.DRAWER_OPEN_BOUNDS = { configure = 1500, add = 350 }
 -- Staged preview geometry: a run of unchanged panels, or one changed panel's
 -- update or reflow stage. Unlisted panel types remain unmeasured.
 -- Each bound fits the type's worst reflow-stage body plus the constant
 -- dispatch overhead; every charge stays within the 4000 atom.
-uiModule.LAYOUT_BOUNDS = {
-    visit = 1500, chart = 2050, ["flight-counter"] = 4000, ["flight-mode"] = 3450, ["flight-timer"] = 3300,
-    ["host-diagnostics"] = 2100, ["link-status"] = 3550, metric = 4000, ["model-identity"] = 3000,
-    navigation = 3750, output = 2550, ["rx-battery"] = 2550, ["service-probe"] = 2200, state = 3750,
-    ["theme-showcase"] = 2950, ["trim-panel"] = 4000, ["tx-battery"] = 2550,
-}
-uiModule.DRAG_BOUNDS = { module = 1500, settings = 2300, positions = 1700, rects = 1350, apply = 1250 }
 
 local function label(parent, rect, text, color, font)
     return lvgl.label(parent, {
@@ -841,6 +829,26 @@ function uiModule.handle(context, event, touch)
         end
     end
     return false
+end
+
+function uiModule.bindCosts(costs)
+    uiModule.RENDER_BOUNDS = costs:group("editor-render", {
+        "rows", "finish"
+    })
+    uiModule.INPUT_BOUNDS = costs:group("editor-input", {
+        "open", "tap", "select", "modal", "release", "cancel", "first", "slide"
+    })
+    uiModule.DRAWER_OPEN_BOUNDS = costs:group("editor-drawer-open", {
+        "configure", "add"
+    })
+    uiModule.LAYOUT_BOUNDS = costs:group("editor-layout", {
+        "visit", "chart", "flight-counter", "flight-mode", "flight-timer", "host-diagnostics",
+        "link-status", "metric", "model-identity", "navigation", "output", "rx-battery",
+        "service-probe", "state", "theme-showcase", "trim-panel", "tx-battery"
+    })
+    uiModule.DRAG_BOUNDS = costs:group("editor-drag", {
+        "module", "settings", "positions", "rects", "apply"
+    })
 end
 
 return uiModule

@@ -290,6 +290,6 @@ function showcase.reflow(context, rect, _, _, _, begin)
     return false
 end
 
-showcase.reflowDecl = { callback = showcase.reflow, bound = 2630 }
+showcase.reflowDecl = { callback = showcase.reflow }
 
 return showcase

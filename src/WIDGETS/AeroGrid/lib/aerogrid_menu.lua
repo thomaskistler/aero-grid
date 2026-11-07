@@ -1,16 +1,16 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local menu = { RUNTIME_API = 1, CLOSE_WORK_BOUND = 200 }
+local menu = { RUNTIME_API = 1 }
 
 function menu.workBound(state)
     if state and not state.action then
-        return state.pending and 1000 or 300
+        return state.pending and menu.WORK_BOUNDS.pending or menu.WORK_BOUNDS.idle
     end
 end
 
 function menu.closeWorkBound(state)
     if state and state.root then
-        return menu.CLOSE_WORK_BOUND
+        return menu.WORK_BOUNDS.close
     end
 end
 
@@ -444,6 +444,10 @@ function menu.advance(context)
     state.pending = nil
     open(context, state)
     return true
+end
+
+function menu.bindCosts(costs)
+    menu.WORK_BOUNDS = costs:group("menu", { "close", "pending", "idle" })
 end
 
 return menu

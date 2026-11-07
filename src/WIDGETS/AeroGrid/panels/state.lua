@@ -8,7 +8,7 @@ local statePanel = {
     decl = {
         class = "normal",
         kinds = { steady = true },
-        stages = { run = { fixed = 0, perUnit = 1330, maxUnits = 1 } },
+        stages = { run = { maxUnits = 1 } },
     },
     settings = {
         {
@@ -459,6 +459,6 @@ function statePanel.reflow(context, rect, _, _, _, begin)
     return false
 end
 
-statePanel.reflowDecl = { callback = statePanel.reflow, bound = 3430 }
+statePanel.reflowDecl = { callback = statePanel.reflow }
 
 return statePanel

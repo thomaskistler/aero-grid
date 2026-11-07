@@ -2,20 +2,6 @@
 
 local registration = { RUNTIME_API = 1 }
 
-registration.BOUNDS = {
-    begin = 120,
-    retained = 180,
-    sources = 270,
-    arms = 350,
-    claim = 350,
-    declaration = 350,
-    commit = 200,
-    reject = 110,
-    ["load-begin"] = 110,
-    ["load-start"] = 400,
-    ["publish-start"] = 400,
-    publish = 400,
-}
 
 function registration.workBound(job)
     if job.done then
@@ -283,6 +269,13 @@ function registration.configure(context)
     member.declarations, member.pending, member.error = declarations, false, nil
     member.modelFilename, member.layoutName = context.modelFilename or member.modelFilename, context.layoutName
     context.flightFactory.revision = (context.flightFactory.revision or 0) + 1
+end
+
+function registration.bindCosts(costs)
+    registration.BOUNDS = costs:group("flight-registration", {
+        "begin", "retained", "sources", "arms", "claim", "declaration", "commit", "reject",
+        "load-begin", "load-start", "publish-start", "publish"
+    })
 end
 
 return registration

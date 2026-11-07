@@ -6,6 +6,7 @@
 -- paused, so recording a sample does not change what is recorded.
 
 local config = assert(loadScript("/WIDGETS/AeroGrid/audit/config.lua"))()
+local costs = assert(loadScript("/WIDGETS/AeroGrid/audit/costs.lua"))(nil, true)
 local previewTasks = string.match(config.scenario, "^editor%-preview%-.+%-tasks$") ~= nil
 local count, pause
 local P = { offset = 0 }
@@ -1124,7 +1125,7 @@ local function beginPanelReflow(context, costOnly)
         local path = string.sub(relative, 1, 9) == "@support/"
                 and "/WIDGETS/AeroGrid/audit/" .. string.sub(relative, 10)
             or "/WIDGETS/AeroGrid/" .. relative
-        return assert(loadScript(path))(...)
+        return costs:bind(relative, assert(loadScript(path))(...))
     end
     local cases = load("@support/reflow_cases.lua")(load, context, config.reflowKind)
     P.construction = load("@support/native_panel_reflow.lua")(
@@ -1166,7 +1167,7 @@ actions = {
             elseif relative == "lib/primitives.lua" then
                 return context.primitives
             end
-            return assert(loadScript("/WIDGETS/AeroGrid/" .. relative))()
+            return costs:bind(relative, assert(loadScript("/WIDGETS/AeroGrid/" .. relative))())
         end
         local cases = assert(loadScript("/WIDGETS/AeroGrid/audit/construction_cases.lua"))()(
             load,

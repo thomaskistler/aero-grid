@@ -54,7 +54,7 @@ local trimPanel = {
     decl = {
         class = "normal",
         kinds = { steady = true },
-        stages = { run = { fixed = 0, perUnit = 1850, maxUnits = 1 } },
+        stages = { run = { maxUnits = 1 } },
     },
     settings = {
         -- Source names are configurable; their positions are fixed by axis.
@@ -570,6 +570,6 @@ function trimPanel.update(context, rect)
     )
 end
 
-trimPanel.reflowDecl = { callback = trimPanel.update, bound = 3710 }
+trimPanel.reflowDecl = { callback = trimPanel.update }
 
 return trimPanel

@@ -57,20 +57,20 @@ telemetryService.INTERVAL = 10
 
 telemetryService.decl = {
     class = "critical",
-    stages = { run = { fixed = 480, perUnit = 320, maxUnits = 24 } },
+    stages = { run = { maxUnits = 24 } },
 }
 telemetryService.plainDecl = {
     class = "critical",
-    stages = { run = { fixed = 0, perUnit = 320, maxUnits = 1 } },
+    stages = { run = { maxUnits = 1 } },
 }
 telemetryService.recordedOneDecl = {
     class = "critical",
-    stages = { run = { fixed = 0, perUnit = 740, maxUnits = 1 } },
+    stages = { run = { maxUnits = 1 } },
 }
 telemetryService.maintenanceDecl = {
     class = "critical",
     -- One entry inspection per source; the host admits at most 128 tasks.
-    stages = { run = { fixed = 450, perUnit = 10, maxUnits = 128 } },
+    stages = { run = { maxUnits = 128 } },
 }
 local SOURCE_TASK_PREFIX = "service:telemetry:source:"
 local SOURCE_DECLARATIONS = {}
@@ -677,6 +677,13 @@ function telemetryService:describe(rows, reading)
     index = row(rows, index, "LINK", self.linkLive and "UP" or "DOWN")
 
     return index - 1
+end
+
+function telemetryService.bindCosts(costs)
+    costs:stages("telemetry.recorded", telemetryService.decl)
+    costs:stages("telemetry.plain", telemetryService.plainDecl)
+    costs:stages("telemetry.recorded-one", telemetryService.recordedOneDecl)
+    costs:stages("telemetry.maintenance", telemetryService.maintenanceDecl)
 end
 
 return telemetryService

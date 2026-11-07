@@ -2,39 +2,8 @@
 
 local module = { RUNTIME_API = 1 }
 
-local loadBounds = {
-    ["theme-read"] = 240,
-    ["theme-tokenize"] = 3200,
-    ["theme-parse"] = 900,
-    ["theme-validate"] = 1800,
-    ["theme-resolve-begin"] = 240,
-    ["theme-publish"] = 500,
-    read = 750,
-    tokenize = 3300,
-    header = 950,
-    ["header-parse"] = 1650,
-    ["header-migrate"] = 300,
-    ["header-validate"] = 350,
-    ["header-finalize"] = 350,
-    ["panel-tokens"] = 1120,
-    ["panel-parse"] = 1650,
-    ["panel-migrate"] = 400,
-    panels = 250,
-    services = 1500,
-    ["load-error"] = 1500,
-    ["flight-identity"] = 800,
-    ["flight-store-module"] = 2000,
-    ["flight-store-writer"] = 2000,
-    ["flight-store-armed"] = 2000,
-    ["flight-store-create"] = 1200,
-    ["flight-load-begin"] = 300,
-    ["flight-load-wait"] = 100,
-    ["flight-load-notice"] = 400,
-    ["flight-register-begin"] = 320,
-    ["flight-register-error"] = 1500,
-    ["load-finish"] = 1500,
-}
-local resolutionBounds = { legibility = 2400, chart = 1800, alert = 2200, display = 650, finalize = 180 }
+local loadBounds, resolutionBounds, sharedFlightOverhead
+
 local sharedFlightStages = {
     ["flight-identity"] = true,
     ["flight-store-module"] = true,
@@ -75,8 +44,8 @@ local function sharedFlightHelp(context)
     local current = sharedFlightContext(context)
     if current then
         local bound = current.dashboardLoader.workBound(current)
-        if type(bound) == "number" and bound >= 0 and bound + 300 <= 4000 then
-            return current, bound + 300
+        if type(bound) == "number" and bound >= 0 and bound + sharedFlightOverhead <= 4000 then
+            return current, bound + sharedFlightOverhead
         end
         return nil, false
     end
@@ -1359,6 +1328,22 @@ function module.new(dependencies)
         workBound = workBound,
         beginLoad = beginLoad,
     }
+end
+
+function module.bindCosts(costs)
+    loadBounds = costs:group("dashboard-loader", {
+        "theme-read", "theme-tokenize", "theme-parse", "theme-validate", "theme-resolve-begin",
+        "theme-publish", "read", "tokenize", "header", "header-parse", "header-migrate",
+        "header-validate", "header-finalize", "panel-tokens", "panel-parse", "panel-migrate",
+        "panels", "services", "load-error", "flight-identity", "flight-store-module",
+        "flight-store-writer", "flight-store-armed", "flight-store-create",
+        "flight-load-begin", "flight-load-wait", "flight-load-notice", "flight-register-begin",
+        "flight-register-error", "load-finish"
+    })
+    resolutionBounds = costs:group("theme-resolution", {
+        "legibility", "chart", "alert", "display", "finalize"
+    })
+    sharedFlightOverhead = costs:bound("dashboard-loader", "sharedFlightOverhead")
 end
 
 return module

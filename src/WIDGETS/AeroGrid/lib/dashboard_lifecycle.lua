@@ -2,24 +2,6 @@
 
 local module = {
     RUNTIME_API = 1,
-    WORK_BOUNDS = {
-        cancel = 100,
-        panel = 200,
-        pending = 200,
-        menu = 100,
-        page = 200,
-        finalize = 100,
-        rebuild = 200,
-        retire = 250,
-        finish = 150,
-        settingsDrainOverhead = 300,
-        settingsDrain = 2400,
-        menuClose = 200,
-        reflowBegin = 400,
-        reflowFinish = 200,
-        reflowSkip = 150,
-        reflowWait = 100,
-    },
 }
 
 --- Bind host operations once; callbacks retain their original work limits.
@@ -429,7 +411,7 @@ function module.new(dependencies)
         local phase = job and job.phase or (operation == "retirePage" and "cancel" or "retire")
         if phase == "settings" then
             if not context.modelSettingsUi then
-                return 100
+                return module.WORK_BOUNDS.settingsAbsent
             end
             local settingsUi = context.modelSettingsUiModule
             if settingsUi and settingsUi.RUNTIME_API == 1 and type(settingsUi.retirementWorkBound) == "function" then
@@ -472,6 +454,15 @@ function module.new(dependencies)
         retirePage = retirePage,
         rebuildPage = rebuildPage,
     }
+end
+
+function module.bindCosts(costs)
+    module.WORK_BOUNDS = costs:group("dashboard-lifecycle", {
+        "cancel", "panel", "pending", "menu", "page", "finalize", "rebuild", "retire",
+        "finish", "settingsDrainOverhead", "settingsDrain", "settingsAbsent", "reflowBegin",
+        "reflowFinish", "reflowSkip", "reflowWait"
+    })
+    module.WORK_BOUNDS.menuClose = costs:bound("menu", "close")
 end
 
 return module

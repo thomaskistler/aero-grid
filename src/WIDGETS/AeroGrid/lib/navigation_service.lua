@@ -40,7 +40,7 @@ local EARTH_RADIUS = 6371000
 
 navigationService.decl = {
     class = "normal",
-    stages = { run = { fixed = 120, perUnit = 770, maxUnits = POLL_CAP } },
+    stages = { run = { maxUnits = POLL_CAP } },
 }
 
 --- Coordinates closer than this to the null island are treated as no fix.
@@ -539,6 +539,10 @@ function navigationService:describe(rows, view)
     index = row(rows, index, "BRG", view.bearing and string.format("%.0f deg", view.bearing) or "-")
 
     return index - 1
+end
+
+function navigationService.bindCosts(costs)
+    costs:stages("navigation", navigationService.decl)
 end
 
 return navigationService

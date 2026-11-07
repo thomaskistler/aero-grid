@@ -51,7 +51,7 @@ local FACET_CAP = 4
 --- as 36 + 105 per facet and declared by the margin rule for the normal class.
 modelService.decl = {
     class = "normal",
-    stages = { run = { fixed = 90, perUnit = 120, maxUnits = FACET_CAP } },
+    stages = { run = { maxUnits = FACET_CAP } },
 }
 
 --- Ticks between model identity reads. Identity changes only when the model
@@ -533,6 +533,10 @@ function modelService:describe(rows)
     end
 
     return index - 1
+end
+
+function modelService.bindCosts(costs)
+    costs:stages("model", modelService.decl)
 end
 
 return modelService

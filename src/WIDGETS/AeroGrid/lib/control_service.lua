@@ -54,15 +54,15 @@ local OUTPUT_CAP = 32
 controlService.TASK_DECLARATIONS = {
     critical = {
         class = "critical",
-        stages = { run = { fixed = 200, perUnit = 100, maxUnits = POLL_CAP } },
+        stages = { run = { maxUnits = POLL_CAP } },
     },
     normal = {
         class = "normal",
-        stages = { run = { fixed = 130, perUnit = 240, maxUnits = POLL_CAP } },
+        stages = { run = { maxUnits = POLL_CAP } },
     },
     outputs = {
         class = "normal",
-        stages = { run = { fixed = 120, perUnit = 60, maxUnits = OUTPUT_CAP } },
+        stages = { run = { maxUnits = OUTPUT_CAP } },
     },
 }
 
@@ -855,6 +855,12 @@ function controlService:describe(rows)
         index = describeEntry(self, rows, index, entry)
     end
     return index - 1
+end
+
+function controlService.bindCosts(costs)
+    for name, decl in pairs(controlService.TASK_DECLARATIONS) do
+        costs:stages("control." .. name, decl)
+    end
 end
 
 return controlService

@@ -1038,6 +1038,7 @@ def prepare(capture, name, spec, sd):
     (audit / "config.lua").write_text("return " + lua_literal(config) + "\n")
     for file in ("probe.lua", "inputs.lua"):
         shutil.copyfile(PROBE_DIR / file, audit / file)
+    shutil.copyfile(SUPPORT_DIR / "costs.lua", audit / "costs.lua")
     if spec.get("constructionParity"):
         for file in ("construction_cases.lua", "panel_tree.lua", "native_construction.lua",
                      "native_construction_cost.lua", "native_rx_reflow.lua",
@@ -1129,6 +1130,7 @@ def prepare_framework(capture, sd, cases):
     shutil.copyfile(PROBE_DIR / "framework-main.lua", widget / "main.lua")
     shutil.copyfile(WIDGET / "panels/chart.lua", widget / "panels/chart.lua")
     shutil.copyfile(PROBE_DIR / "framework.lua", audit / "framework.lua")
+    shutil.copyfile(SUPPORT_DIR / "costs.lua", audit / "costs.lua")
     for name in ("scheduler_overhead.lua", "scheduler_measure.lua", "scheduler_mixes.lua",
                  "scheduler_panel_api.lua", "scheduler_chart_fixture.lua", "scheduler_flight_readout.lua",
                  "scheduler_probe_fixture.lua", "scheduler_diagnostics_fixture.lua", "scheduler_flight_fixture.lua",

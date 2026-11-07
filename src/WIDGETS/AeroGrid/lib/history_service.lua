@@ -18,7 +18,7 @@ history.BYTES_PER_POINT = BYTES
 
 history.decl = {
     class = "normal",
-    stages = { run = { fixed = 410, perUnit = 90, maxUnits = SESSION_CAP } },
+    stages = { run = { maxUnits = SESSION_CAP } },
 }
 
 local function finite(value)
@@ -768,6 +768,10 @@ function history:step(grant, _, now)
     self.due = now + self.interval
     self.revision = self.revision + 1
     return self.interval
+end
+
+function history.bindCosts(costs)
+    costs:stages("history", history.decl)
 end
 
 return history

@@ -8,22 +8,6 @@ host.__index = host
 local RECONCILE_KIND = "host-reconcile"
 local EMPTY_ORDER = {}
 
---- Declared fixed cost of a callback at 16 panels (contracts, callback overhead).
-host.OVERHEAD = {
-    [RECONCILE_KIND] = 2400,
-    steady = 1250,
-    background = 1130,
-    ["editor-build"] = 2400,
-    ["modal-log"] = 2400,
-    ["modal-settings"] = 2400,
-    ["modal-menu"] = 2400,
-    ["modal-location"] = 2400,
-    ["editor-render"] = 2400,
-    ["editor-drawer"] = 2400,
-    loader = 2400,
-    ["editor-input"] = 2400,
-}
-
 host.SERVICE_KINDS = {
     ["editor-build"] = true,
     ["modal-log"] = true,
@@ -36,16 +20,24 @@ host.SERVICE_KINDS = {
     ["editor-input"] = true,
 }
 
---- Reserve registration/validation before admitting scheduled work.
---- Panel and service enrollment never share the same callback.
-host.PANEL_ENROLL_COST = 4000
-host.SERVICE_ENROLL_COST = 2300
-host.RECONCILE_COST = 900
 --- Broker task ids a broker-only reconciliation may retire before services run.
 host.BROKER_TASK_LIMIT = 4
 
---- Reset polling and one-time broker handoff run before scheduled work.
-host.HEAD_COSTS = { reset = 620, handoff = 3600 }
+--- Declared fixed cost of a callback at 16 panels (contracts, callback
+--- overhead) by kind; enrollment, reconciliation, reset polling and the
+--- one-time broker handoff, all reserved before scheduled work. Panel and
+--- service enrollment never share the same callback.
+function host.bindCosts(costs)
+    local kinds = { RECONCILE_KIND, "steady", "background" }
+    for kind in pairs(host.SERVICE_KINDS) do
+        kinds[#kinds + 1] = kind
+    end
+    host.OVERHEAD = costs:group("host-overhead", kinds)
+    host.PANEL_ENROLL_COST = costs:bound("host", "panelEnroll")
+    host.SERVICE_ENROLL_COST = costs:bound("host", "serviceEnroll")
+    host.RECONCILE_COST = costs:bound("host", "reconcile")
+    host.HEAD_COSTS = costs:group("host", { "reset", "handoff" })
+end
 
 --- Attach a host to `context`. `options`: `probe` (boolean), `load`
 --- (relative path -> module) and `api` (`log`, `error`, `show` of main.lua).

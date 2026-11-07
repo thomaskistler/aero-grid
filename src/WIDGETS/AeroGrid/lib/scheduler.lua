@@ -43,19 +43,22 @@ local scheduler = {
     AGE_TICKS = 100,
     MAX_TASKS = 128,
     MAX_DELAY = 1 << 30,
-    -- The planner's own cost, charged against the budget: a callback, a task
-    -- examined, a task run or retired. Upper bounds from the instruction counts
-    -- of tests/support/scheduler_overhead.lua, which fails if one is exceeded.
-    FIXED_COST = 196,
-    EXAMINE_COST = 64,
-    RUN_COST = 224,
 }
 scheduler.__index = scheduler
 
 local CEILING, MARGIN, NORMAL_RESERVE = scheduler.CEILING, scheduler.MARGIN, scheduler.NORMAL_RESERVE
 local AGE_TICKS = scheduler.AGE_TICKS
 local MAX_TASKS, MAX_DELAY = scheduler.MAX_TASKS, scheduler.MAX_DELAY
-local FIXED_COST, EXAMINE_COST, RUN_COST = scheduler.FIXED_COST, scheduler.EXAMINE_COST, scheduler.RUN_COST
+-- The planner's own cost, charged against the budget: a callback, a task
+-- examined, a task run or retired.
+local FIXED_COST, EXAMINE_COST, RUN_COST
+
+function scheduler.bindCosts(costs)
+    FIXED_COST = costs:bound("scheduler", "fixed")
+    EXAMINE_COST = costs:bound("scheduler", "examine")
+    RUN_COST = costs:bound("scheduler", "run")
+    scheduler.FIXED_COST, scheduler.EXAMINE_COST, scheduler.RUN_COST = FIXED_COST, EXAMINE_COST, RUN_COST
+end
 local STEADY_AND_BACKGROUND = { steady = true, background = true }
 local STAGGER_SPACING = 5
 local MAX_SHARED = 2

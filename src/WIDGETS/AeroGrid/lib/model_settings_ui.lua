@@ -2,11 +2,6 @@
 
 local ui = {
     RUNTIME_API = 1,
-    WORK_BOUNDS = {
-        heading = 400, wrap = 400, field = 1500, finish = 300, idle = 300, command = 800,
-        ["publish-start"] = 450, publish = 450, ["save-error"] = 350, closing = 300,
-    },
-    LOAD_BOUNDS = { start = 350, legacy = 300, ["publish-start"] = 450, publish = 450, setup = 400, error = 400 },
 }
 
 local fields = {
@@ -112,7 +107,7 @@ function ui.workBound(context, event)
         local loading = state.loading
         if loading.phase == "read" then
             local bound = state.handlers.loadWorkBound(loading.job)
-            return bound and bound + 200
+            return bound and bound + ui.STORE_OVERHEAD
         elseif loading.phase == "publish-start" and not state.handlers.startPublication then
             return nil
         end
@@ -121,7 +116,7 @@ function ui.workBound(context, event)
     if state and state.saving then
         if state.saving.phase == "store" and state.handlers.saveWorkBound then
             local bound = state.handlers.saveWorkBound(state.saving.job)
-            return bound and bound + 200
+            return bound and bound + ui.STORE_OVERHEAD
         end
         if state.saving.phase == "publish-start" and not state.handlers.startPublication then
             return nil
@@ -157,7 +152,7 @@ function ui.retirementWorkBound(context)
             return nil
         end
         local bound = ui.workBound(context)
-        if type(bound) == "number" and bound >= 850 and bound <= 2100 and bound == math.floor(bound) then
+        if type(bound) == "number" and bound >= ui.SAVE_RANGE[1] and bound <= ui.SAVE_RANGE[2] and bound == math.floor(bound) then
             return bound
         end
     elseif saving.phase == "publish-start" then
@@ -764,6 +759,23 @@ function ui.handle(context, event)
     end
     if exitEvent(event) then state.closing = true end
     return true
+end
+
+function ui.bindCosts(costs)
+    ui.WORK_BOUNDS = costs:group("settings-ui", {
+        "heading", "wrap", "field", "finish", "idle", "command", "publish-start", "publish",
+        "save-error", "closing"
+    })
+    ui.LOAD_BOUNDS = costs:group("settings-ui-load", {
+        "start", "legacy", "publish-start", "publish", "setup", "error"
+    })
+    -- Settings work wrapped around one bounded store step.
+    ui.STORE_OVERHEAD = costs:bound("settings-ui", "storeOverhead")
+    local low, high = math.huge, 0
+    for _, bound in pairs(costs.bounds["settings-store-save"]) do
+        low, high = math.min(low, bound), math.max(high, bound)
+    end
+    ui.SAVE_RANGE = { low + ui.STORE_OVERHEAD, high + ui.STORE_OVERHEAD }
 end
 
 return ui

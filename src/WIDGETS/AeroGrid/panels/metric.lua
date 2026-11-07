@@ -126,11 +126,11 @@ metric.decl = {
     first = "prepare",
     kinds = { steady = true },
     stages = {
-        prepare = { fixed = 0, perUnit = 610, maxUnits = 1 },
-        geometry = { fixed = 0, perUnit = 3720, maxUnits = 1 },
-        layout = { fixed = 0, perUnit = 1310, maxUnits = 1 },
-        render = { fixed = 0, perUnit = 840, maxUnits = 1 },
-        apply = { fixed = 0, perUnit = 1030, maxUnits = 1 },
+        prepare = { maxUnits = 1 },
+        geometry = { maxUnits = 1 },
+        layout = { maxUnits = 1 },
+        render = { maxUnits = 1 },
+        apply = { maxUnits = 1 },
     },
 }
 
@@ -1326,6 +1326,6 @@ function metric.reflow(context, rect, _, _, _, begin)
     return false
 end
 
-metric.reflowDecl = { callback = metric.reflow, bound = 3790 }
+metric.reflowDecl = { callback = metric.reflow }
 
 return metric

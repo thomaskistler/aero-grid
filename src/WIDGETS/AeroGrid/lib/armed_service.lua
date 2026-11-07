@@ -9,7 +9,7 @@ local POLL_CAP = 6
 
 armed.decl = {
     class = "critical",
-    stages = { run = { fixed = 180, perUnit = 120, maxUnits = POLL_CAP } },
+    stages = { run = { maxUnits = POLL_CAP } },
 }
 
 local function valid(name)
@@ -161,6 +161,10 @@ function armed:state(legacy)
     local view = self.support.snapshot(state)
     self.views[name] = view
     return view
+end
+
+function armed.bindCosts(costs)
+    costs:stages("armed", armed.decl)
 end
 
 return armed

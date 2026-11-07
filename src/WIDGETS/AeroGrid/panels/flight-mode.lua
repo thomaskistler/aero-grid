@@ -34,7 +34,7 @@ local flightMode = {
     decl = {
         class = "normal",
         kinds = { steady = true },
-        stages = { run = { fixed = 0, perUnit = 830, maxUnits = 1 } },
+        stages = { run = { maxUnits = 1 } },
     },
     settings = {
         -- Four characters, because a single-cell header has room for about five
@@ -397,6 +397,6 @@ function flightMode.reflow(context, rect, _, _, _, begin)
     return true
 end
 
-flightMode.reflowDecl = { callback = flightMode.reflow, bound = 3960 }
+flightMode.reflowDecl = { callback = flightMode.reflow }
 
 return flightMode

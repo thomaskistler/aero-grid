@@ -31,6 +31,9 @@ def run_test(path: Path) -> None:
         end
         return logs
     """)
+    lua.execute(
+        (ROOT / "tests/support/costs.lua").read_text(encoding="ascii"), str(ROOT)
+    )
     try:
         lua.execute(path.read_text(encoding="ascii"), str(ROOT))
     except Exception:

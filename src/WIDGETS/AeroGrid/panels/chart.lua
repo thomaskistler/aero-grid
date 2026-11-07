@@ -1476,11 +1476,11 @@ chart.readingDecl = {
     first = "readings",
     kinds = { steady = true },
     stages = {
-        readings = { fixed = 0, perUnit = 850, maxUnits = 1 },
-        measure = { fixed = 0, perUnit = 780, maxUnits = 1 },
-        layout = { fixed = 0, perUnit = 1100, maxUnits = 1 },
-        font = { fixed = 0, perUnit = 1300, maxUnits = 1 },
-        position = { fixed = 0, perUnit = 3070, maxUnits = 1 },
+        readings = { maxUnits = 1 },
+        measure = { maxUnits = 1 },
+        layout = { maxUnits = 1 },
+        font = { maxUnits = 1 },
+        position = { maxUnits = 1 },
     },
 }
 
@@ -1575,9 +1575,9 @@ chart.traceDecl = {
     first = "trace",
     kinds = { steady = true },
     stages = {
-        trace = { fixed = 0, perUnit = 440, maxUnits = 1 },
-        project = { fixed = 280, perUnit = 1280, maxUnits = 2 },
-        apply = { fixed = 0, perUnit = 780, maxUnits = 1 },
+        trace = { maxUnits = 1 },
+        project = { maxUnits = 2 },
+        apply = { maxUnits = 1 },
     },
 }
 
@@ -2017,13 +2017,13 @@ chart.decl = {
     first = "frame",
     kinds = { steady = true },
     stages = {
-        frame = { fixed = 0, perUnit = 1500, maxUnits = 1 },
-        axis = { fixed = 370, perUnit = 60, maxUnits = 8 },
-        plot = { fixed = 0, perUnit = 2010, maxUnits = 1 },
-        flights = { fixed = 0, perUnit = 640, maxUnits = 1 },
-        resumes = { fixed = 0, perUnit = 470, maxUnits = 1 },
-        arms = { fixed = 0, perUnit = 470, maxUnits = 1 },
-        publish = { fixed = 0, perUnit = 280, maxUnits = 1 },
+        frame = { maxUnits = 1 },
+        axis = { maxUnits = 8 },
+        plot = { maxUnits = 1 },
+        flights = { maxUnits = 1 },
+        resumes = { maxUnits = 1 },
+        arms = { maxUnits = 1 },
+        publish = { maxUnits = 1 },
         readings = chart.readingDecl.stages.readings,
         measure = chart.readingDecl.stages.measure,
         layout = chart.readingDecl.stages.layout,
@@ -2352,6 +2352,6 @@ function chart.reflow(context, rect, _, _, _, begin)
     return false
 end
 
-chart.reflowDecl = { callback = chart.reflow, bound = 1770 }
+chart.reflowDecl = { callback = chart.reflow }
 
 return chart
