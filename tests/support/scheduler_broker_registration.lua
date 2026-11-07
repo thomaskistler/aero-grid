@@ -61,8 +61,9 @@ return function(load)
                                 instance = {},
                             }
                         end
+                        local previous = getTime
+                        getTime = function() return radio.now end
                         local scheduling = host.attach(target, {
-                            mode = "mixed",
                             load = load,
                             api = {
                                 log = function(_, message)
@@ -70,12 +71,7 @@ return function(load)
                                 end,
                             },
                         })
-                        scheduling.owners = {}
-                        for key, value in pairs(host.OWNERS) do
-                            scheduling.owners[key] = value
-                        end
-                        scheduling.owners["service:flight"], scheduling.owners["service:smart"] = "new", "new"
-                        scheduling.owners["panel:sample"] = "new"
+                        getTime = previous
                         return scheduling
                     end
                     local scheduling = attach(context)

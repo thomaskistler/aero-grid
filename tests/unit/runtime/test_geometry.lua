@@ -189,7 +189,7 @@ local function testRefreshScheduling()
     -- The contract rejects a nonsensical interval rather than misscheduling.
     local function rejects(interval)
         local ok = panelHost.validateModule(
-            { id = "d", apiVersion = 1, create = function() end, refreshInterval = interval },
+            { id = "d", apiVersion = 1, create = function() end, idle = true, refreshInterval = interval },
             "d"
         )
         assertEqual(ok, false, "accepted interval " .. tostring(interval))
@@ -197,7 +197,7 @@ local function testRefreshScheduling()
     rejects(-1)
     rejects(1.5)
     rejects("fast")
-    assert(panelHost.validateModule({ id = "d", apiVersion = 1, create = function() end, refreshInterval = 0 }, "d"))
+    assert(panelHost.validateModule({ id = "d", apiVersion = 1, create = function() end, idle = true, refreshInterval = 0 }, "d"))
 end
 
 --- Every origin wording must fit the width it is given, and must step down
@@ -1906,14 +1906,16 @@ local function testTelemetryLinkView()
     -- Subscribing to the link is itself a reason to run the service.
     assert(service.count >= 2, "the link subscription was not counted")
 
-    service:update(0)
+    service.tasks.maintenance:step(1, "run", 0)
+    service.entries[1].task:step(1, "run", 0)
     assertEqual(link.live, true)
     assertEqual(link.rssi, 80)
     assertEqual(link.indicator, true)
 
     harness.rssi = 0
     harness.values[100] = 0
-    service:update(10)
+    service.tasks.maintenance:step(1, "run", 10)
+    service.entries[1].task:step(1, "run", 10)
     assertEqual(link.live, false, "a dead link was reported as live")
     assertEqual(link.indicator, true)
     assertEqual(pack.state, "stale")
@@ -1925,7 +1927,8 @@ local function testTelemetryLinkView()
     local otherLink = other.service:link()
     local reading = other.service:subscribe("RxBt")
     other.rssi = 0
-    other.service:update(0)
+    other.service.tasks.maintenance:step(1, "run", 0)
+    other.service.entries[1].task:step(1, "run", 0)
     assertEqual(reading.value, 24.4, "a live reading was discarded as stale")
     assertEqual(otherLink.live, true, "the link view still trusted an indicator a reading had disproved")
     assertEqual(otherLink.indicator, false, "a broken indicator was not reported")

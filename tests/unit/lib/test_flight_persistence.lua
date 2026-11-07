@@ -20,7 +20,7 @@ local env = {
 }
 local service = control.new(env, support)
 local feed = service:globalVariable(8, 0)
-service:update(0)
+service.tasks.normal:step(service.tasks.normal.want, "run", 0)
 equal(feed.raw, 39)
 equal(service:incrementFlightCount(), 40)
 equal(mode, 0)
@@ -57,25 +57,19 @@ for _, pair in ipairs({
     { "L01", "L01" },
 }) do
     local arm = switches:switch(pair[1])
-    switches:update(100)
+    switches.tasks.critical:step(switches.tasks.critical.want, "run", 100)
     equal(selected, pair[2])
     enabled = true
-    switches:update(100)
-    -- Update each subscribed switch regardless of the service slice limit.
-    for _, entry in ipairs(switches.entries) do
-        entry.read(switches, entry, 100)
-    end
+    switches.tasks.critical:step(switches.tasks.critical.want, "run", 100)
     equal(arm.value, true)
     equal(arm.updatedAt, 100)
     enabled = false
-    for _, entry in ipairs(switches.entries) do
-        entry.read(switches, entry, 120)
-    end
+    switches.tasks.critical:step(switches.tasks.critical.want, "run", 120)
     equal(arm.value, false)
     equal(arm.fresh, true)
 end
 local missing = switches:switch("MISSING")
-switches:update(140)
+switches.tasks.critical:step(switches.tasks.critical.want, "run", 140)
 assert(not missing.available and not missing.fresh, "unknown switch is unavailable, not disarmed")
 
 local model = modelService.new({

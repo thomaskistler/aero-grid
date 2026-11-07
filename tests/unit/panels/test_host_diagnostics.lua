@@ -34,13 +34,20 @@ for index = 1, 3 do
     }
 end
 local context = { host = host, section = "log", visibleLines = 3, rows = rows, texts = {} }
-panel.refresh(context)
+local task = panelHost.task({ module = panel, instance = context, interval = 20 })
+local function settle()
+    for now = 1, 100 do
+        if task:step(task.want or 1, task.stage, now) ~= 1 then return end
+    end
+    error("diagnostics task did not finish")
+end
+settle()
 assert(string.find(rows[1].text, "event 8", 1, true))
 assert(string.find(rows[3].text, "event 10", 1, true))
 context.visibleLines = 1
-panel.refresh(context)
+settle()
 assert(string.find(rows[1].text, "event 10", 1, true), "shrinking keeps the newest message visible")
 context.visibleLines = 3
-panel.refresh(context)
+settle()
 assert(string.find(rows[1].text, "event 8", 1, true), "enlarging restores older visible messages")
 print("Host diagnostics log panel tests passed")

@@ -7,7 +7,7 @@ local panelHost = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/panel_host.
 assert(type(panelHost.isIdle) == "function" and not panelHost.isIdle(nil))
 
 local function testPanelContract()
-    local valid = { id = "demo", apiVersion = 1, create = function() end }
+    local valid = { id = "demo", apiVersion = 1, create = function() end, idle = true }
     assert(panelHost.validateModule(valid, "demo"))
 
     local function rejects(module, typeName, pattern)
@@ -21,16 +21,14 @@ local function testPanelContract()
     rejects({ id = "../evil", apiVersion = 1, create = function() end }, "../evil", "invalid id")
     rejects({ id = "other", apiVersion = 1, create = function() end }, "demo", "does not match type")
     rejects({ id = "demo", apiVersion = 1 }, "demo", "no create function")
-    rejects({ id = "demo", apiVersion = 1, create = function() end, refresh = 5 }, "demo", "refresh must be a function")
+    rejects({ id = "demo", apiVersion = 1, create = function() end, refresh = 5 }, "demo", "periodic panel work must use scheduler tasks")
     rejects(
         { id = "demo", apiVersion = 1, create = function() end, construct = true },
         "demo",
         "construct must be a function"
     )
-    rejects({ id = "demo", apiVersion = 1, create = function() end, supportedSpans = 5 }, "demo", "supportedSpans")
-    for _, cost in ipairs({ 0, 7, 1.5, "6", 0 / 0 }) do
-        rejects({ id = "demo", apiVersion = 1, create = function() end, refreshCost = cost }, "demo", "refreshCost")
-    end
+    rejects({ id = "demo", apiVersion = 1, create = function() end, idle = true, supportedSpans = 5 }, "demo", "supportedSpans")
+    rejects({ id = "demo", apiVersion = 1, create = function() end }, "demo", "must declare a scheduler task or be idle")
     local idle = { id = "demo", apiVersion = 1, create = function() end, idle = true }
     assert(panelHost.validateModule(idle, "demo") and panelHost.isIdle(idle))
     assert(not pcall(panelHost.task, { module = idle, instance = {} }))
@@ -43,7 +41,7 @@ local function testPanelContract()
     idle.idle = "true"
     rejects(idle, "demo", "idle must be a boolean")
     idle.idle = false
-    assert(panelHost.validateModule(idle, "demo") and not panelHost.isIdle(idle))
+    rejects(idle, "demo", "must declare a scheduler task or be idle")
 end
 
 local function testSupportedSpans()
@@ -128,7 +126,7 @@ local function testSettingsContinuation()
 end
 
 local function testPreparationCompatibility()
-    local panel = { id = "demo", apiVersion = 1, create = function() end, supportedSpans = {}, settings = {} }
+    local panel = { id = "demo", apiVersion = 1, create = function() end, idle = true, supportedSpans = {}, settings = {} }
     for index = 1, 128 do
         panel.supportedSpans[index] = "1x1"
         panel.settings[index] = { key = "setting" .. index, type = "number", default = index }
@@ -190,32 +188,32 @@ local function run()
     local result
     local entry = {
         module = {
-            refresh = function()
+            step = function()
                 return result
             end,
         },
         instance = {},
         interval = 20,
     }
-    assert(panelHost.dispatch(entry, "refresh"))
+    assert(panelHost.dispatch(entry, "step", 1, "run", 0))
     assertions.assertEqual(entry.interval, 20)
     for _, interval in ipairs({ 1, 5, 100, 6000 }) do
         result = interval
-        assert(panelHost.dispatch(entry, "refresh"))
+        assert(panelHost.dispatch(entry, "step", 1, "run", 0))
         assertions.assertEqual(entry.interval, interval)
     end
-    entry.module.refresh = function()
+    entry.module.step = function()
         return 1, true
     end
-    local ok, message, interval, unfinished = panelHost.dispatch(entry, "refresh")
+    local ok, message, interval, unfinished = panelHost.dispatch(entry, "step", 1, "run", 0)
     assert(ok and not message and interval == 1 and unfinished == true)
-    entry.module.refresh = function()
+    entry.module.step = function()
         return result
     end
     for _, interval in ipairs({ 0, -1, 1.5, 6001, math.huge, 0 / 0 }) do
         result = interval
         entry.failed = false
-        local ok, message = panelHost.dispatch(entry, "refresh")
+        local ok, message = panelHost.dispatch(entry, "step", 1, "run", 0)
         assert(not ok and entry.failed and string.find(message, "refresh interval", 1, true))
     end
 end

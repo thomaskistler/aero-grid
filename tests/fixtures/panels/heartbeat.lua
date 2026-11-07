@@ -27,6 +27,11 @@ local heartbeat = {
     -- Faster than a telemetry readout because it animates, but still far below
     -- the frame rate.
     refreshInterval = 10,
+    decl = {
+        class = "normal",
+        kinds = { steady = true },
+        stages = { run = { fixed = 0, perUnit = 1000, maxUnits = 1 } },
+    },
     settings = {
         { key = "label", label = "Label", type = "string", default = "HEARTBEAT" },
         {
@@ -147,7 +152,7 @@ end
 
 --- Advance the visible activity indicator once per host refresh.
 ---@param context AeroGridHeartbeatContext
-function heartbeat.refresh(context)
+function heartbeat.step(context)
     context.ticks = context.ticks + 1
     context.phase = context.phase % PHASES + 1
     context.primitives.setBar(context.bar, context.phase / PHASES)
@@ -158,12 +163,7 @@ function heartbeat.refresh(context)
         context.text = text
         context.counter:set({ text = text })
     end
-end
-
---- Keep counting while the dashboard screen is not visible.
----@param context AeroGridHeartbeatContext
-function heartbeat.background(context)
-    context.backgroundTicks = context.backgroundTicks + 1
+    return 10
 end
 
 --- Count input events without consuming them, so host routing stays observable.

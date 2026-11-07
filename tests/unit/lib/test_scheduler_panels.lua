@@ -12,7 +12,6 @@ local function fixture(exclusive)
     local errors = {}
     local context = { panels = {}, panelHost = panelHost }
     local host = scheduling.attach(context, {
-        mode = "mixed",
         load = function(relative)
             return assert(loadfile(root .. "/src/WIDGETS/AeroGrid/" .. relative))()
         end,
@@ -26,7 +25,6 @@ local function fixture(exclusive)
             show = function() end,
         },
     })
-    host.owners = { ["panel:sample"] = "new" }
     local module = {
         id = "sample",
         decl = {
@@ -69,7 +67,6 @@ local function fixture(exclusive)
             assert(not host.reconciliation, "bounded reconciliation must eventually finish")
         end
         assert(host:ready(context), table.concat(errors, "\n"))
-        host:begin(kind or "steady")
         host:finish(kind or "steady")
     end
     return context, host, add, run, errors
@@ -81,7 +78,7 @@ do
     run()
     assert(first.instance.runs == 1 and second.instance.runs == 0, "enrollment is bounded to one placement")
     assert(host.pendingPanels[second])
-    assert(first.instance.schedulerOwned and second.instance.schedulerOwned, "pending placements are already owned")
+    assert(host.panelEntries[first] and host.panelEntries[second], "both placements were reconciled")
     run()
     assert(not host.pendingPanels)
     assert(first.instance.runs == 1 and second.instance.runs == 1, "same-type placements have independent releases")
@@ -115,7 +112,7 @@ do
     run()
     assert(host.panelTasks[first] == nil and host.panelTasks[replacement], "same-count replacement retires old task")
     assert(host.panelTasks[second] == kept, "surviving placements keep their task")
-    assert(not first.instance.schedulerOwned and replacement.instance.schedulerOwned)
+    assert(not host.panelEntries[first] and host.panelEntries[replacement])
     now = now + 10
     run()
     assert(first.instance.runs == 1 and replacement.instance.runs == 2, "retired panel is never called again")
@@ -172,7 +169,6 @@ for _, failure in ipairs({ "raise", "interval" }) do
     assert(host:report(context) and #errors == 1)
     assert(not host:report(context) and #errors == 1, "a retired task is reported once")
     assert(host.panelTasks[bad] == nil and not host.scheduler.byId["panel:bad"])
-    assert(not bad.instance.schedulerOwned, "failure clears the ownership marker")
     run()
     assert(healthy.instance.runs == 1, "one failed panel cannot stop another")
     now = now + 10
@@ -189,7 +185,7 @@ do
     run()
     assert(not host.pendingPanels and host.panelTasks[last])
     assert(not host.panelTasks[first] and not host.panelTasks[pending])
-    assert(not first.instance.schedulerOwned and not pending.instance.schedulerOwned and last.instance.schedulerOwned)
+    assert(not host.panelEntries[first] and not host.panelEntries[pending] and host.panelEntries[last])
     assert(not host.scheduler.byId["panel:first"] and not host.scheduler.byId["panel:pending"])
     assert(first.instance.runs == 1 and pending.instance.runs == 0 and last.instance.runs == 1)
 end
@@ -220,7 +216,6 @@ do
             return 10
         end,
     }
-    host.owners["service:clock"] = "new"
     context.serviceRuntime = { order = { clock }, byId = { clock = clock } }
     run()
     local serviceTask = assert(host.scheduler.byId["service:clock"])
@@ -242,7 +237,7 @@ do
         assert(current == serviceTask, "partial enrollment must not resync service tasks")
         now = now + 10
     end
-    assert(not host.pendingPanels and host:verify(context) == nil)
+    assert(not host.pendingPanels)
     run()
 end
 
@@ -253,9 +248,9 @@ do
     first.module, last.module = idleModule, idleModule
     run()
     assert(active.instance.runs == 1, "idle placements do not consume the enrollment slot")
-    assert(first.instance.schedulerOwned and last.instance.schedulerOwned)
+    assert(host.panelEntries[first] and host.panelEntries[last])
     assert(not host.panelTasks[first] and not host.panelTasks[last] and not host.pendingPanels)
-    assert(host.scheduler.count == 1 and host:verify(context) == nil)
+    assert(host.scheduler.count == 1)
     now = now + 10
     run("background")
     assert(active.instance.runs == 1 and not host.panelTasks[first])
@@ -263,14 +258,14 @@ do
     active.module, context.panelTasksDirty = idleModule, true
     run()
     assert(host.scheduler.count == 0 and not host.panelTasks[active])
-    assert(active.instance.schedulerOwned)
+    assert(host.panelEntries[active])
     active.module, context.panelTasksDirty = activeModule, true
     run()
     assert(host.panelTasks[active] and active.instance.runs == 2, "leaving idle enrolls a genuine task")
-    assert(not host.idlePanels[active] and host:verify(context, true) == nil)
+    assert(host.panelTasks[active])
     context.panels = { active }
     run()
-    assert(not first.instance.schedulerOwned and not last.instance.schedulerOwned)
+    assert(not host.panelEntries[first] and not host.panelEntries[last])
 end
 
 do
@@ -283,14 +278,13 @@ do
     run()
     assert(host.scheduler.count == 0 and not host.pendingPanels)
     run()
-    assert(host:verify(context) == nil)
     for _, entry in ipairs(entries) do
-        assert(entry.instance.schedulerOwned)
+        assert(host.panelEntries[entry])
     end
     context.panels = {}
     run()
     for _, entry in ipairs(entries) do
-        assert(not entry.instance.schedulerOwned)
+        assert(not host.panelEntries[entry])
     end
 end
 

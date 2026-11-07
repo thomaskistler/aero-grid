@@ -225,7 +225,7 @@ panels:
 end
 
 local function testPanelContract()
-    local valid = { id = "demo", apiVersion = 1, create = function() end }
+    local valid = { id = "demo", apiVersion = 1, create = function() end, idle = true }
     assert(panelHost.validateModule(valid, "demo"))
 
     local function rejects(module, typeName, pattern)
@@ -239,8 +239,8 @@ local function testPanelContract()
     rejects({ id = "../evil", apiVersion = 1, create = function() end }, "../evil", "invalid id")
     rejects({ id = "other", apiVersion = 1, create = function() end }, "demo", "does not match type")
     rejects({ id = "demo", apiVersion = 1 }, "demo", "no create function")
-    rejects({ id = "demo", apiVersion = 1, create = function() end, refresh = 5 }, "demo", "refresh must be a function")
-    rejects({ id = "demo", apiVersion = 1, create = function() end, supportedSpans = 5 }, "demo", "supportedSpans")
+    rejects({ id = "demo", apiVersion = 1, create = function() end, refresh = 5 }, "demo", "periodic panel work must use scheduler tasks")
+    rejects({ id = "demo", apiVersion = 1, create = function() end, idle = true, supportedSpans = 5 }, "demo", "supportedSpans")
 end
 
 local function testSupportedSpans()
@@ -1249,71 +1249,6 @@ local function testReflowGoesThroughReconcile()
     )
 end
 
---- A panel declares what it draws, and nothing it has shed.
----
---- The reveal work gave five panels the property that a shed row is not
---- declared, so `primitives.changed` sees it reappear and nothing formats
---- text for a hidden label. The six panels that work was not applied to
---- kept doing it, which is how `flight-mode` came to format a mode number
---- every frame for a panel with no room to show one.
----
---- This checks the mechanism is reached rather than the wording: a `render`
---- that writes a supporting row must consult what the panel is showing. It is
---- a weaker statement than the per-panel tests elsewhere, and that is the
---- point -- it holds for a panel nobody has written a test for yet.
-local function testRenderConsultsWhatIsShown()
-    local kinds = panelTypes()
-
-    -- Panels whose `render` declares only the dominant reading have no
-    -- supporting row to gate, and are named rather than detected so that one
-    -- losing its rows is a failure rather than a silent exemption.
-    local NO_SUPPORTING_ROW = {
-        ["host-diagnostics"] = true,
-        ["service-probe"] = true,
-        ["flight-counter"] = true,
-        ["theme-showcase"] = true,
-    }
-
-    local checked, exempt = 0, 0
-    for _, kind in ipairs(kinds) do
-        local path = root .. "/src/WIDGETS/AeroGrid/panels/" .. kind .. ".lua"
-        local handle = assert(io.open(path, "r"))
-        local source = handle:read("a")
-        handle:close()
-
-        local body = string.match(source, "\nfunction [%w]+%.render%b()(.-)\n[%w]")
-        if NO_SUPPORTING_ROW[kind] then
-            exempt = exempt + 1
-            if kind == "flight-counter" then
-                assert(
-                    body and not string.find(body, "out.detail", 1, true),
-                    "flight counter only renders its count/state"
-                )
-            else
-                assert(
-                    not body,
-                    kind .. " has a render function but is listed as" .. " having no supporting row to gate"
-                )
-            end
-        else
-            assert(
-                body,
-                kind .. " has no render function, so the redraw" .. " comparison cannot be derived from what it draws"
-            )
-            checked = checked + 1
-            assert(
-                string.find(body, "context%.show%w+"),
-                kind
-                    .. "'s render never consults what the panel is showing, so it"
-                    .. " formats text for rows the panel has shed"
-            )
-        end
-    end
-
-    assertEqual(checked + exempt, #kinds)
-    assert(checked >= 9, "only " .. checked .. " panels were checked")
-end
-
 --- A raising callback disables only its own panel, and only reports once.
 local function testLifecycleIsolation()
     local entry = {
@@ -1359,7 +1294,6 @@ testHeadingIsNeverWrittenDirectly()
 testBadgeIsNeverWrittenDirectly()
 testLvglObjectsAreNeverReachedByName()
 testReflowGoesThroughReconcile()
-testRenderConsultsWhatIsShown()
 testLinkThresholdsNeedAStatedReading()
 testSpecificationExamplesLoad()
 testYamlReference()

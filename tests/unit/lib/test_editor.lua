@@ -10,6 +10,7 @@ local modules = {
     sample = {
         id = "sample",
         apiVersion = 1,
+        idle = true,
         supportedSpans = { "1x1", "2x1", "1x2" },
         settings = {
             { key = "label", type = "string", default = "SAMPLE" },
@@ -370,6 +371,7 @@ local function testDeclaredEntryFieldsAreAlwaysOffered()
     modules.listed = {
         id = "listed",
         apiVersion = 1,
+        idle = true,
         supportedSpans = { "1x1" },
         settings = {
             {

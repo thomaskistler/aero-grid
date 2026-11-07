@@ -37,7 +37,6 @@ assert(
     "navigation service registration did not settle"
 )
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-assertions.assertEqual(context.schedulerHost.owners["service:navigation"], "new")
 assert(context.schedulerHost.scheduler.byId["service:navigation"], "navigation service must be scheduler-owned")
 assertions.assertEqual(context.serviceRuntime.byId.navigation.update, nil)
 assertions.assertEqual(context.document.version, 5)

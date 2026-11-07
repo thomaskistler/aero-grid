@@ -9,6 +9,11 @@ local navigationService = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/nav
 local armedService = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/armed_service.lua"))()
 local GPS_DELAY_TICKS = edgetx.firmware.GPS_DELAY_TICKS
 
+local function stepNavigation(service, now)
+    local task = service.tasks.run
+    return task:step(math.min(task.want, navigationService.decl.stages.run.maxUnits), "run", now)
+end
+
 local function testPositionChecksAndDistance()
     assertions.assertEqual(navigationService.hasPosition(0.1, 0.2), true)
     assertions.assertEqual(navigationService.hasPosition(0, 0), false)
@@ -61,11 +66,15 @@ local function captureFixture(homes)
     local env = services.environment({})
     runtime.byId.armed = armedService.new(env, services, runtime)
     local service = navigationService.new(env, services, runtime)
+    service.tasks.run.tickElapsed = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.lua"))().elapsed
     local view = service:subscribe("GPS", "SFv")
     local function update(now, armed, pollAge)
         arm.value, arm.updatedAt = armed, now
         reading.updatedAt = now - (pollAge or 0)
-        service:update(now)
+        if runtime.byId.armed.tasks.run.want > 0 then
+            runtime.byId.armed.tasks.run:step(runtime.byId.armed.tasks.run.want, "run", now)
+        end
+        stepNavigation(service, now)
     end
     return service, view, reading, arm, update
 end
@@ -177,14 +186,14 @@ local function testArmObservationAndFreshness()
     update(80, false)
     arm.value, arm.updatedAt = true, 100
     reading.updatedAt = -1001
-    service:update(100)
+    stepNavigation(service, 100)
     assertions.assertEqual(view.homeStatus, "missed", "old cached coordinates cannot be captured")
 
     service, view, reading, arm, update = captureFixture()
     update(0, false)
     arm.value, arm.updatedAt = true, 20
     reading.updatedAt, reading.raw.delay = 5, 28
-    service:update(20)
+    stepNavigation(service, 20)
     assertions.assertEqual(view.homeStatus, "captured", "GPS delay uses 160 ms timeout units")
     assert(math.abs(view.age - ((28 * GPS_DELAY_TICKS + 15) / 100)) < 0.0001, "GPS age must include delay and poll age")
 
@@ -192,14 +201,14 @@ local function testArmObservationAndFreshness()
     update(0, false)
     arm.value, arm.updatedAt = true, 20
     reading.updatedAt, reading.raw.delay = 12, 62
-    service:update(20)
+    stepNavigation(service, 20)
     assertions.assertEqual(view.homeStatus, "captured", "ten-second boundary is inclusive")
 
     service, view, reading, arm, update = captureFixture()
     update(0, false)
     arm.value, arm.updatedAt = true, 20
     reading.updatedAt, reading.raw.delay = 12, 63
-    service:update(20)
+    stepNavigation(service, 20)
     assertions.assertEqual(view.homeStatus, "missed", "GPS older than ten seconds cannot be captured")
 end
 
@@ -301,7 +310,7 @@ local function testCaptureDiagnostics()
         update(0, false)
         arm.value, arm.updatedAt, reading.updatedAt = true, 20, 20
         case[2](reading)
-        service:update(20)
+        stepNavigation(service, 20)
         assert(#events == 2, "each panel sharing a subscription must be identified")
         for _, event in ipairs(events) do
             local outcome = case[1] == "captured" and "captured" or "missed"
@@ -365,7 +374,7 @@ local function testCaptureDiagnostics()
             )
         )
     end
-    service:update(100)
+    stepNavigation(service, 100)
     service.runtime.host.diagnosticsLog.limit = function()
         return 0
     end
@@ -427,7 +436,7 @@ local function testCapturePolicy()
                 service.entries[1].reading = reading
                 service.entries[1].wasArmed = false
                 arm.value, arm.updatedAt = true, now
-                service:update(now)
+                stepNavigation(service, now)
                 assertions.assertEqual(
                     view.homeStatus == "captured",
                     originalAccepts(reading, now) == true,

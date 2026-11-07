@@ -11,7 +11,6 @@ fixture.radioMock.indexFields()
 radio.globalDetails[0].prec = 0
 local context = fixture.createLoaded(nil, { Layout = "Default", Theme = "modern-dark" })
 local originalPanelBounds = context.schedulerHost.panelBounds
-fixture.allowSchedulerWork(context)
 local control = context.serviceRuntime.byId.control
 
 local callbacks = 0

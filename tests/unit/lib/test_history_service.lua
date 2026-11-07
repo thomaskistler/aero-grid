@@ -48,9 +48,14 @@ local function harness(options, configured)
         if otherArm ~= nil then
             values[2] = otherArm
         end
-        control:update(now)
-        telemetry:update(now)
-        history:update(now)
+        local armed = runtime.byId.armed.tasks.run
+        if armed.want > 0 then armed:step(armed.want, "run", now) end
+        for _, item in ipairs(telemetry.schedulerTasks) do
+            local task = item.instance
+            task:step(task.want, "run", now)
+        end
+        local task = history.tasks.run
+        task:step(task.want, "run", now)
     end
     return history, session, feed, poll, telemetry, control
 end
@@ -64,9 +69,33 @@ local function recorder(options)
         arm.updatedAt = at
         reading.value, reading.updatedAt = value, at
         history:sample(reading, at)
-        history:update(at)
+        local task = history.tasks.run
+        task:step(task.want, "run", at)
     end
     return history, feed, sample, reading, session
+end
+
+do
+    local history, _, _, _, telemetry = harness()
+    local scheduler = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.lua"))()
+    local queue = scheduler.new({ steady = 0 })
+    local samples, releases = {}, {}
+    telemetry:observe({ sample = function(_, _, now) samples[#samples + 1] = now end })
+    for _, service in ipairs({ telemetry, history }) do
+        for _, item in ipairs(service.schedulerTasks) do
+            local task = item.instance
+            task.tickElapsed = scheduler.elapsed
+            assert(queue:add({ id = item.id, decl = task.decl, instance = task, due = 0 }))
+        end
+    end
+    for now = 0, 30 do
+        local revision = history.revision
+        queue:run("steady", now, 0)
+        if history.revision ~= revision then releases[#releases + 1] = now end
+    end
+    equal(table.concat(samples, ","), "0,10,20,30", "Telemetry polls at ten-tick releases")
+    equal(table.concat(releases, ","), "0,10,20,30", "History advances at ten-tick releases")
+    assert(not queue:takeErrors())
 end
 
 local function knots(history, feed)
@@ -494,7 +523,8 @@ failureTelemetry:observe({
 failurePoll(0, 1, 12)
 equal(failureTelemetry.failed, nil, "an observer failure must not retire telemetry")
 failures.failure = "history observer failed"
-local ok, message = pcall(failures.update, failures, 10)
+local failedTask = failures.tasks.run
+local ok, message = pcall(failedTask.step, failedTask, failedTask.want, "run", 10)
 assert(not ok and string.find(message, "history observer failed", 1, true))
 
 local resetHistory, resetFeed, resetSample, _, resetView = recorder({ smoothing = "strong" })

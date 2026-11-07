@@ -186,23 +186,6 @@ local function createLoaded(zone, options, path)
     return widgetHelpers.createLoaded(definition, zone, options or DEFAULT_OPTIONS, path)
 end
 
-local function allowTestPanelScheduler(context)
-    local owners, bounds = {}, {}
-    for id, owner in pairs(context.schedulerHost.owners) do
-        owners[id] = owner
-    end
-    for _, entry in ipairs(context.panels) do
-        local id = "panel:" .. entry.module.id
-        owners[id] = owners[id] or "legacy"
-        bounds[entry.module.id] = 0
-    end
-    context.schedulerHost.owners = owners
-    context.schedulerHost.panelBounds = setmetatable(bounds, {
-        __index = context.schedulerHost.panelBounds,
-    })
-    context.schedulerHost.checked = nil
-end
-
 --- Find a loaded panel entry by its layout id.
 local function entryById(context, id)
     return widgetHelpers.entryById(context, id)
@@ -598,16 +581,13 @@ local function testStatesCoverBothPalettes()
     local function render(mode)
         resetRadio()
         local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "main", Theme = mode }, widgetPath)
-        allowTestPanelScheduler(context)
         local ready = false
         for _ = 1, 500 do
             pump(context, 1)
             local critical, warning = entryById(context, "s-critical"), entryById(context, "s-warning")
             if
-                critical.instance.stateName
-                and critical.instance.stateName ~= "unavailable"
-                and warning.instance.stateName
-                and warning.instance.stateName ~= "unavailable"
+                critical.instance.stateName == "critical"
+                and warning.instance.stateName == "warning"
             then
                 ready = true
                 break
@@ -2325,7 +2305,6 @@ end
 local function testTelemetryDrivesPanels()
     resetRadio()
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, referencePath)
-    allowTestPanelScheduler(context)
     local pack = entryById(context, "pack").instance
     local current = entryById(context, "current").instance
 
@@ -2396,7 +2375,6 @@ local function testOnlyReferencedSourcesArePolled()
     end
 
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, referencePath)
-    allowTestPanelScheduler(context)
     for _ = 1, 40 do
         tick(20)
         definition.refresh(context)
@@ -3995,7 +3973,6 @@ local function testBadgesEndFlushWithTheirPanel()
         -- reflow path deliberately broken.
         local zone = mode[2]()
         local context = createLoaded(zone, DEFAULT_OPTIONS, widget)
-        allowTestPanelScheduler(context)
         assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
         pump(context, 60)
         inspect(mode[1] .. " resting", context)

@@ -142,11 +142,21 @@ local function fixture(cadence)
         }
     end
     owner.members[first], owner.members[second] = participant("L01"), participant("L01")
+    owner.factory = { broker = owner, revision = 1 }
+    first.flightFactory = owner.factory
+    first.serviceRuntime = { byId = { flight = { broker = owner } } }
+    owner:enableScheduler(first)
+    local scheduler = load("lib/scheduler.lua").new({ steady = 0 })
+    for _, item in ipairs(owner.schedulerTasks) do
+        local task = item.instance
+        task.tickElapsed = scheduler.elapsed
+        assert(scheduler:add({ id = item.id, decl = task.decl, instance = task, due = 0 }))
+    end
     local function step(count)
         for _ = 1, count or 1 do
             radio.now = radio.now + (cadence or 20)
-            owner:tick(radio.now)
-            owner:tick(radio.now)
+            scheduler:run("steady", radio.now, 0)
+            assert(not scheduler:takeErrors())
         end
     end
     return owner, radio, step, first, second, participant
@@ -195,6 +205,7 @@ do
     assert(owner.output and not owner.output.desired, "a full output queue must retain the release request")
     radio.full = false
     owner.members[first].pending, owner.members[second].pending = false, false
+    owner.factory.revision = owner.factory.revision + 1
     pump(20)
     equal(owner.epoch, epoch + 1, "holding reset cannot repeatedly clear data")
     equal(radio.sticky, false, "the dedicated flight output is released with retry")
@@ -218,6 +229,11 @@ end
 
 do
     local owner, radio, step = fixture()
+    for _ = 1, 50 do
+        if owner.session then break end
+        step()
+    end
+    assert(owner.session, "Flight task must configure before testing a reset")
     radio.arms[1] = true
     step(2)
     equal(owner.session.phase, "starting")
@@ -243,6 +259,7 @@ assert(not pcall(function()
 end))
 owner.members[first] = nil
 owner.members[second] = participant("L02")
+owner.factory.revision = owner.factory.revision + 1
 step(5)
 equal(owner.view.status, "ready", "a pending configuration does not replace the pinned flight")
 equal(owner.view.active, true)
@@ -266,17 +283,23 @@ assert(boundaries[2].at < boundaries[2].observedAt)
 
 owner, radio, step, first, second, participant = fixture()
 owner.members[second] = participant("L02")
+owner.factory.revision = owner.factory.revision + 1
 radio.arms[1], radio.arms[2] = true, true
 step(20)
 equal(owner.view.status, "conflict")
 equal(radio.writes, 0)
 equal(#radio.commands, 0, "cold conflicts cannot commandeer an output")
 owner.members[second] = participant("L01")
+owner.factory.revision = owner.factory.revision + 1
 step(3)
 equal(radio.writes, 0, "conflict time is not qualification time")
-step(15)
+for _ = 1, 40 do
+    if radio.writes == 1 then break end
+    step()
+end
 equal(radio.writes, 1)
 owner.members[second] = participant("L02")
+owner.factory.revision = owner.factory.revision + 1
 radio.full = true
 radio.arms[1] = false
 step(15)
@@ -319,17 +342,26 @@ equal(radio.writes, 1, "old-model work cannot increment in a new model")
 owner, radio, step, first, second, participant = fixture()
 local dead = {}
 owner.members[dead] = participant("L02")
-step()
+owner.factory.revision = owner.factory.revision + 1
+for _ = 1, 50 do
+    if owner.view.status == "conflict" then break end
+    step()
+end
 equal(owner.view.status, "conflict")
 dead = nil
 collectgarbage("collect")
-step()
+for _ = 1, 50 do
+    if owner.view.status == "ready" then break end
+    step()
+end
 equal(owner.view.status, "ready", "dead participants must not retain configuration conflicts")
 owner.members[first].pending = true
+owner.factory.revision = owner.factory.revision + 1
 radio.arms[1] = true
 step(15)
 equal(radio.writes, 0, "a rebuild declaration must resolve before new qualification")
 owner.members[first].pending = false
+owner.factory.revision = owner.factory.revision + 1
 step(15)
 equal(radio.writes, 1)
 
@@ -374,6 +406,7 @@ radio.full = true
 step(15)
 assert(owner.output and not owner.output.flightId)
 owner.members[second] = participant("L02")
+owner.factory.revision = owner.factory.revision + 1
 radio.full = false
 step(10)
 equal(#radio.commands, 0, "idle initialization cannot acquire an output during a conflict")
@@ -381,7 +414,10 @@ equal(owner.output, nil)
 equal(owner.view.outputError, nil, "a canceled idle write is no longer waiting for queue capacity")
 
 owner, radio, step = fixture()
-step(3)
+for _ = 1, 50 do
+    if owner.session and owner.session.groundAt then break end
+    step()
+end
 assert(owner.session.groundAt)
 radio.now = radio.now + 200
 owner:tick(radio.now)
@@ -429,7 +465,10 @@ local settings = config.resolve({
     flightSwitch = "L20",
 })
 owner:setDocument({ revision = 2, flight = settings })
-step(45)
+for _ = 1, 150 do
+    if owner.session and owner.session.smart and owner.session.smart.altitude.value ~= nil then break end
+    step()
+end
 equal(owner.session.smart.altitude.value, 0, "received zero is a trustworthy altitude, not missing data")
 radio.arms[1] = true
 step(4)

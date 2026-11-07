@@ -174,7 +174,7 @@ fixture.radio.values[305] = -1024
 fixture.pump(context, 20)
 equal(instance.text, "DISARMED")
 local writes = instance.value.writes
-panel.refresh(instance)
+fixture.pump(context, 20)
 equal(instance.value.writes, writes, "unchanged text was repainted")
 
 context, instance = create({ entry("sa", "MODE", "MID"), entry("sb", "RATE", "MID") })

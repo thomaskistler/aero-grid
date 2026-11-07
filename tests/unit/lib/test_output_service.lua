@@ -51,6 +51,12 @@ local env = support.environment({
     },
 })
 local service = control.new(env, support)
+local function stepTask(owner, name, stamp)
+    local task = owner.tasks[name]
+    if task.want > 0 then
+        task:step(math.min(task.want, task.decl.stages.run.maxUnits), "run", stamp)
+    end
+end
 local feed = service:output(0)
 equal(service:output(0), feed)
 equal(service.count, 1)
@@ -65,7 +71,8 @@ local function settle()
     for _ = 1, 150 do
         now = now + 20
         local before = reads
-        service:update(now)
+        stepTask(service, "outputs", now)
+        stepTask(service, "normal", now)
         assert(reads - before <= 6, "metadata reads must respect the service poll cap")
     end
 end
@@ -78,12 +85,13 @@ equal(feed.trim.name, "trim-ail")
 equal(feed.trim.fraction, 0.25)
 local metadataReads = reads
 raw, trimRaw = 768, 512
-service:update(now + 10)
+stepTask(service, "outputs", now + 10)
 equal(feed.fraction, 0.75, "outputs update between ordinary control polls")
 equal(feed.trim.fraction, 0.25, "trims retain their slower polling cadence")
 equal(reads, metadataReads, "output metadata retains its slower polling cadence")
 now = now + 20
-service:update(now)
+stepTask(service, "outputs", now)
+stepTask(service, "normal", now)
 equal(feed.trim.fraction, 0.5, "trims update on the next ordinary control poll")
 assert(reads > metadataReads, "metadata scanning resumes on the ordinary control poll")
 local rows = {}
@@ -180,7 +188,8 @@ for _, nextMode in ipairs({ 1, 0 }) do
     mode = nextMode
     for _ = 1, 10 do
         now = now + 20
-        service:update(now)
+        stepTask(service, "outputs", now)
+        stepTask(service, "normal", now)
         equal(feed.name, "ail", "flight mode rescans must retain resolved captions")
         assert(feed.nameReady)
     end
@@ -216,7 +225,8 @@ settle()
 local missing = control.new({}, support)
 equal(missing.interval, 20, "services without outputs retain their original cadence")
 local absent = missing:output(0)
-missing:update(0)
+stepTask(missing, "outputs", 0)
+stepTask(missing, "normal", 0)
 assert(not absent.available)
 assert(absent.nameReady, "missing metadata APIs must resolve to an unnamed channel")
 assert(not pcall(function()

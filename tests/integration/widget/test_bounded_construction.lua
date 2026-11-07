@@ -4,13 +4,13 @@ local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(root).new()
 local sameTree = assert(loadfile(root .. "/tests/support/panel_tree.lua"))()
 local host = fixture.createLoaded(nil, { Layout = "review-metric", Theme = "modern-dark" })
+local panelHost = fixture.module("lib/panel_host.lua")
 fixture.pump(host, 40)
 assert(#host.errors == 0, table.concat(host.errors, "\n"))
 local cases = assert(loadfile(root .. "/tests/support/construction_cases.lua"))()(fixture.module, host.themeBuilder)
 local checked = 0
 for _, case in ipairs(cases) do
     local panel = case.panel
-    local legacy = BASELINES and BASELINES[case.kind] or panel
     local function create(module, staged, rect)
         local services = case.dependencies()
         services.staged = staged
@@ -29,7 +29,14 @@ for _, case in ipairs(cases) do
         end
         error(case.name .. ": construction did not finish")
     end
-    local reference, synchronous, staged = create(legacy, false), create(panel, false), create(panel, true)
+    local function finishTask(context)
+        local task = panelHost.task({ module = panel, instance = context, interval = 20 })
+        for now = 1, 200 do
+            if task:step(task.want or 1, task.stage, now) ~= 1 then return end
+        end
+        error(case.name .. ": task did not finish")
+    end
+    local synchronous, staged = create(panel, false), create(panel, true)
     assert(staged.createStage and not staged.panel, case.name .. ": create must defer real construction")
     local stages = {}
     for _ = 1, 20 do
@@ -39,12 +46,10 @@ for _, case in ipairs(cases) do
         end
     end
     assert(not staged.createStage, case.name)
-    sameTree(reference.panel.root, synchronous.panel.root, case.name .. "/legacy")
     sameTree(synchronous.panel.root, staged.panel.root, case.name .. "/staged")
-    for _, context in ipairs({ reference, synchronous, staged }) do
-        (context == reference and legacy or panel).refresh(context)
+    for _, context in ipairs({ synchronous, staged }) do
+        finishTask(context)
     end
-    sameTree(reference.panel.root, synchronous.panel.root, case.name .. "/legacy-refresh")
     sameTree(synchronous.panel.root, staged.panel.root, case.name .. "/refresh")
 
     -- Interrupt every real stage, including repeated RX candidate fits.
@@ -58,18 +63,14 @@ for _, case in ipairs(cases) do
         if stop == 1 then
             expected = create(panel, false, changed)
         else
-            panel.refresh(expected)
+            finishTask(expected)
             panel.update(expected, changed)
         end
         if case.kind == "metric" and not expected.feed then
             panel.setValue(expected, nil)
         end
-        panel.refresh(partial)
-        panel.refresh(expected)
-        if case.kind == "flight-timer" then
-            local _, drawn = expected.primitives.changed(expected, panel.render)
-            panel.apply(expected, drawn)
-        end
+        finishTask(partial)
+        finishTask(expected)
         sameTree(expected.panel.root, partial.panel.root, case.name .. "/resize-" .. stop)
 
         for _, event in ipairs({ "cancelRefresh", "resetSession", "update" }) do
@@ -90,12 +91,8 @@ for _, case in ipairs(cases) do
                     panel[event](expected, 1000)
                 end
                 finish(partial, event == "update" and changed or case.rect)
-                panel.refresh(partial)
-                panel.refresh(expected)
-                if case.kind == "flight-timer" then
-                    local _, drawn = expected.primitives.changed(expected, panel.render)
-                    panel.apply(expected, drawn)
-                end
+                finishTask(partial)
+                finishTask(expected)
                 sameTree(expected.panel.root, partial.panel.root, case.name .. "/" .. event .. "-" .. stop)
             end
         end

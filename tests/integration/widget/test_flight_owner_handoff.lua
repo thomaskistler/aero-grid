@@ -10,20 +10,13 @@ local first = definition.create(
     { Layout = "review-metric", Theme = "modern-dark" },
     root .. "/build/test-widget-fixture/"
 )
-local owners = {}
-for key, value in pairs(first.schedulerHost.owners) do
-    owners[key] = value
-end
-owners["service:flight"], owners["service:smart"] = "legacy", "legacy"
-first.schedulerHost.owners = owners
 assert(fixture.pumpUntil(first, function(context)
     return not context.stage and not context.reloadState
 end, 512, 10))
 fixture.pump(first, 100, 10)
 local owner, host = first.flightBroker, first.schedulerHost
-assert(owner:owningContext() == first and not owner.schedulerEnabled)
-assert(first.serviceRuntime.byId.flight.count == 0, "handoff must not require a Flight panel subscriber")
-host.owners = setmetatable({}, { __index = host.owners })
+assert(owner:owningContext() == first and owner.schedulerEnabled)
+assert(first.serviceRuntime.byId.flight.schedulerTasks, "Flight tasks must run without a Flight panel subscriber")
 
 local function advance(context, background)
     fixture.tick(10)
@@ -35,22 +28,9 @@ local function advance(context, background)
     fixture.lvglMock.settle()
 end
 
-host.owners["service:flight"], host.owners["service:smart"] = "new", "legacy"
-advance(first)
-assert(not owner.schedulerEnabled, "Flight and Smart must transfer together")
-host.owners["service:flight"], host.owners["service:smart"] = "legacy", "new"
-advance(first)
-assert(not owner.schedulerEnabled, "Smart alone cannot transfer the shared broker")
-host.owners["service:flight"] = "new"
-host.mode = "legacy"
-advance(first)
-assert(not owner.schedulerEnabled, "legacy observation must not activate scheduled Flight")
-host.mode = "mixed"
-
 first.reloadState = "clear"
 for _ = 1, 512 do
     advance(first)
-    assert(not owner.schedulerEnabled, "initial handoff must wait for the settled dashboard")
     if not first.stage and not first.reloadState then
         break
     end
@@ -80,18 +60,8 @@ local function watchScheduling(context)
     end
 end
 watchScheduling(first)
-first.flightDashboardDue = true
-advance(first)
-assert(owner.schedulerEnabled and not first.flightDashboardDue)
-assert(
-    not host.scheduler.byId["service:flight"] and not host.scheduler.byId["service:smart"],
-    "handoff fixture must exercise pending canonical enrollment"
-)
-assert(host.head == host.headCosts.tick, "one-time handoff must retain its bounded head reservation")
 for turn = 1, 150 do
     advance(first, turn % 2 == 0)
-    assert(host.head == 0, "the legacy tick charge must stop after handoff")
-    assert(not first.flightPolled, "legacy Smart reservation must not survive scheduled ownership")
 end
 local flight = assert(host.scheduler.byId["service:flight"])
 local smart = assert(host.scheduler.byId["service:smart"])
@@ -111,27 +81,25 @@ assert(fixture.pumpUntil(second, function(context)
     return not context.stage and not context.reloadState
 end, 512, 10))
 assert(second.flightBroker == owner)
-second.schedulerHost.owners = setmetatable({
-    ["service:flight"] = "new",
-    ["service:smart"] = "new",
-}, { __index = second.schedulerHost.owners })
 watchScheduling(second)
 for _ = 1, 50 do
+    advance(first)
     advance(second)
 end
 assert(owner:owningContext() == first, "another live widget cannot displace the canonical owner")
 assert(not second.scheduler.byId["service:flight"] and not second.scheduler.byId["service:smart"])
 
 local retiredFacade = owner.facade
-owner.context = setmetatable({}, { __mode = "v" })
-advance(second)
+assert(fixture.pumpUntil(second, function()
+    return owner:owningContext() == second
+end, 150, 10), "a parked owner must hand off to a live widget")
 assert(owner:owningContext() == second and owner.facade == second.serviceRuntime.byId.flight)
 assert(retiredFacade.count == 0 and not retiredFacade.schedulerTasks)
 for _ = 1, 150 do
     advance(second)
 end
 assert(second.scheduler.byId["service:flight"] and second.scheduler.byId["service:smart"])
-assert(second.scheduler.byId["service:flight"].due < due, "a collected owner has no transferable host releases")
+assert(second.scheduler.byId["service:flight"].due == due, "Flight release survives a parked owner")
 
 assert(fixture.pumpUntil(first, function()
     return not host.reconciliation and not host.scheduler.byId["service:flight"]
@@ -165,4 +133,4 @@ end, 150, 10), "the replacement host must enroll pending canonical tasks")
 assert(second.scheduler.byId["service:flight"].due == flightDue, "pending Flight release survives retirement")
 assert(second.scheduler.byId["service:smart"].due == smartDue, "pending Smart release survives retirement")
 assert(#first.errors == 0 and #second.errors == 0)
-print("Real Flight/Smart handoff preserves paired ownership, canonical releases and nil-owner reclaim")
+print("Real Flight/Smart handoff preserves paired ownership and canonical releases")

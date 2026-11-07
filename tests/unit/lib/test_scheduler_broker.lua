@@ -59,7 +59,7 @@ for _, item in ipairs(case.cases) do
         state.ready(context, scheduling)
         equal(scheduler:dueOf("service:flight"), flightDue, "same-owner activation preserves the Flight release")
         equal(scheduler:dueOf("service:smart"), smartDue, "same-owner activation preserves the Smart release")
-        assert(scheduling:verify(context) == nil)
+        assert(not scheduling.reconciliation)
     end
     if state.action == "facade" then
         equal(state.facade.count, 0)
@@ -122,11 +122,8 @@ do
         state.ready(state.context, scheduling)
     until not scheduling.reconciliation
     assert(#scheduling.waiting > 1, "demanded services remain pending across callbacks")
-    assert(scheduling:verify(state.context) == nil, "legitimate pending services satisfy verification")
     local pending = scheduling.waiting[1]
-    scheduling.pendingServices[pending.id] = nil
-    assert(scheduling:verify(state.context), "missing registrations cannot masquerade as pending work")
-    scheduling.pendingServices[pending.id] = pending.instance
+    equal(scheduling.pendingServices[pending.id], pending.instance)
     for index in ipairs(telemetry.schedulerTasks) do
         scheduling:resetServiceRelease(telemetry, 17, index)
     end

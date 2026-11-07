@@ -87,7 +87,14 @@ return function(load)
             layoutName = "Test",
             declarations = { { armKey = "L01", source = "Armed" } },
         }
-        local proposal, signature = owner:proposals(radio.now)
+        local proposal, signature, status
+        for _ = 1, 16 do
+            proposal, signature, status = owner:proposals(radio.now)
+            if status == "ready" then
+                break
+            end
+        end
+        assert(status == "ready", "flight proposal did not complete")
         owner:attach(proposal, signature, radio.now)
         owner:enableScheduler(host)
         local smart = owner.smartRuntime.byId.smart

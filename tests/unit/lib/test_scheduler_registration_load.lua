@@ -46,11 +46,6 @@ for _, scenario in ipairs({
             end,
         },
     })
-    scheduling.owners = {}
-    for key, value in pairs(host.OWNERS) do
-        scheduling.owners[key] = value
-    end
-    scheduling.owners["service:flight"], scheduling.owners["service:smart"] = "new", "new"
     for _ = 1, 8 do
         assert(scheduling:ready(context))
     end

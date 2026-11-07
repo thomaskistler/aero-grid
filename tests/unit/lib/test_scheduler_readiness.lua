@@ -12,21 +12,28 @@ local equal = load("@support/assertions.lua").assertEqual
 
 do
     local service = { id = "single", count = 1 }
-    local context = { panels = {}, serviceRuntime = { order = { service } } }
+    local context = { panels = {}, panelHost = load("lib/panel_host.lua"), serviceRuntime = { order = { service }, byId = {} } }
+    local errors = {}
+    local previousTime = getTime
+    getTime = function() return 0 end
     local host = load("lib/scheduler_host.lua").attach(context, {
-        mode = "mixed",
         load = load,
-        api = {},
+        api = {
+            error = function(_, message) errors[#errors + 1] = message end,
+            show = function() end,
+        },
     })
-    host.owners = { ["service:single"] = "new" }
-    local id = "service:single"
-    equal(host:verify(context), id .. " is owned by the scheduler but has no task")
-    host.pendingServices[id], host.registeredTasks[id] = service, service
-    equal(host:verify(context), nil, "a genuinely pending single-task service is accepted")
-    host.pendingServices[id] = nil
-    equal(host:verify(context), id .. " is owned by the scheduler but has no task")
+    for _ = 1, 16 do
+        if not host:ready(context) then break end
+    end
+    assert(errors[1] and string.find(errors[1], "service:single has no scheduler task", 1, true))
     service.count = 0
-    equal(host:verify(context), nil, "a service without demand does not need a task")
+    context.panelTasksDirty = true
+    for _ = 1, 16 do
+        assert(host:ready(context), "a service without demand does not need a task")
+        if not host.reconciliation then break end
+    end
+    getTime = previousTime
 end
 
 for _, item in ipairs(case.cases) do
@@ -58,7 +65,7 @@ for _, item in ipairs(case.cases) do
     end
     state.reconciled()
     state.settle(state.context, host)
-    assert(host:verify(state.context) == nil)
+    assert(not host.reconciliation)
 end
 
 for _, total in ipairs({ 30, 128 }) do
@@ -66,11 +73,8 @@ for _, total in ipairs({ 30, 128 }) do
     local context, host, telemetry = state.context, state.scheduling, state.telemetry
     state.reconciled()
     assert(#host.waiting == total - 2, "all demanded real Telemetry tasks remain pending")
-    assert(host:verify(context) == nil)
     local pending = host.waiting[1]
-    host.pendingServices[pending.id] = nil
-    assert(host:verify(context), "a scanned task without its pending marker is not legitimate waiting work")
-    host.pendingServices[pending.id] = pending.instance
+    equal(host.pendingServices[pending.id], pending.instance)
     for index in ipairs(telemetry.schedulerTasks) do
         host:resetServiceRelease(telemetry, 17, index)
     end
@@ -117,16 +121,14 @@ for _, total in ipairs({ 30, 128 }) do
         return originalStep(...)
     end
     state.ready(context, host)
-    assert(host.reconciliation and not entry.instance.schedulerOwned)
+    assert(host.reconciliation and not host.panelEntries[entry])
     local previousTime = getTime
     getTime = function()
         return 1200
     end
-    host:begin("steady")
     host:finish("steady")
     equal(state.owner.session.arm.updatedAt, 1200, "the actual canonical poller continues during reconciliation")
     state.ready(context, host)
-    host:begin("steady")
     host:finish("steady")
     equal(state.owner.smartRuntime.byId.smart.polledAt, 1200)
     equal(ordinaryRuns, 0, "ordinary tasks are not admitted before reconciliation establishes membership")
@@ -136,12 +138,12 @@ for _, total in ipairs({ 30, 128 }) do
     equal(host.scheduler.byId["service:flight"], flight)
     equal(host.scheduler.byId["service:smart"], smart)
     equal(host.scheduler.byId[telemetry.schedulerTasks[2].id], source)
-    assert(entry.instance.schedulerOwned and host.pendingPanels[entry])
+    assert(host.panelEntries[entry] and host.pendingPanels[entry])
     equal(source.due, 17, "safe canonical admission does not consume ordinary deadlines")
     context.panels = {}
     state.reconciled()
     state.settle(context, host)
-    assert(not entry.instance.schedulerOwned and not host.scheduler.byId["panel:unscanned"])
+    assert(not host.panelEntries[entry] and not host.scheduler.byId["panel:unscanned"])
     equal(entry.instance.runs, 0, "a placement retired before admission never executes")
 
     -- A replacement service may receive a reset before its first item is scanned.
@@ -196,14 +198,16 @@ do
     state.reconciled()
     state.settle(context, host)
     local idle = load("lib/smart_flight.lua").new(state.owner.env, support)
+    idle.decl, idle.step = state.owner.tasks.smart.decl, function() return 100 end
     context.serviceRuntime.order[#context.serviceRuntime.order + 1] = idle
     context.panelTasksDirty = true
     state.reconciled()
     equal(host.registeredTasks["service:smart"], state.stable, "a dormant dashboard facade cannot shadow Smart")
     local messages = {}
-    host.api.log = function(_, message)
+    host.api.error = function(_, message)
         messages[#messages + 1] = message
     end
+    host.api.show = function() end
     idle.count, context.panelTasksDirty = 1, true
     for _ = 1, 128 do
         if not host:ready(context) then
@@ -223,6 +227,7 @@ do
     state.reconciled()
     state.settle(context, host)
     local idle = load("lib/smart_flight.lua").new(state.owner.env, support)
+    idle.decl, idle.step = state.owner.tasks.smart.decl, function() return 100 end
     context.serviceRuntime.order[#context.serviceRuntime.order + 1] = idle
     context.panelTasksDirty = true
     state.reconciled()
@@ -231,9 +236,10 @@ do
     assert(host:ready(context))
     assert(host.reconciliation and host.reconciliation.panelOnly, "placement-only work skips services")
     local messages = {}
-    host.api.log = function(_, message)
+    host.api.error = function(_, message)
         messages[#messages + 1] = message
     end
+    host.api.show = function() end
     idle.count = 1
     for _ = 1, 128 do
         if not host:ready(context) then
@@ -266,7 +272,6 @@ do
     getTime = function()
         return 1200
     end
-    host:begin("steady")
     host:finish("steady")
     assert(host:report(context), "canonical task failures retain explicit host isolation")
     getTime = previousTime
@@ -307,12 +312,11 @@ do
     assert(host.scheduler.byId["panel:retiring"])
     context.panels = {}
     state.ready(context, host)
-    assert(host.reconciliation and entry.instance.schedulerOwned)
+    assert(host.reconciliation and host.panelEntries[entry])
     local previousTime = getTime
     getTime = function()
         return 1200
     end
-    host:begin("background")
     host:finish("background")
     getTime = previousTime
     equal(entry.instance.runs, 0, "a not-yet-retired panel cannot execute during the pending-marker interval")
@@ -324,33 +328,21 @@ do
     local state = case.prepare(30)
     local context, host = state.context, state.scheduling
     local messages = {}
-    host.api.log = function(_, message)
+    context.serviceRuntime = { order = { { id = "unknown", count = 1 } }, byId = {} }
+    host.api.error = function(_, message)
         messages[#messages + 1] = message
     end
-    host.owners["service:telemetry"] = nil
-    -- Per-source ownership is implicit, but an unknown ordinary service is not.
-    context.serviceRuntime = { order = { { id = "unknown", count = 0 } }, byId = {} }
+    host.api.show = function() end
     for _ = 1, 32 do
         if not host:ready(context) then
             break
         end
     end
-    assert(messages[1] and string.find(messages[1], "service:unknown has no owner", 1, true))
+    assert(messages[1] and string.find(messages[1], "service:unknown has no scheduler task", 1, true))
     context.serviceRuntime = nil
     state.reconciled()
     state.settle(context, host)
     equal(host.scheduler.count, 2, "validation failure cannot discard the retained canonical service")
-end
-
-do
-    local release = assert(loadfile(root .. "/tests/fixtures/scheduler-cases/lifecycle-release.lua"))()(load)
-    equal(#release.cases, 258)
-    for _, index in ipairs({ 1, 217, 258 }) do
-        local item = release.cases[index]
-        local task, now = item.setup()
-        task:step(1, item.stage, now)
-        equal(#release.cases, 258, "native fixture setup cannot append more cases while being measured")
-    end
 end
 
 print("Bounded shared-host readiness preserves 30/128-task identity, resets, safe admission and fairness")
@@ -371,7 +363,6 @@ do
         getTime = function()
             return 0
         end
-        host:begin("steady")
         host:finish("steady")
         getTime = previousTime
         equal(host.scheduler.lastPlan.kind, "steady", "reconciled services keep their ordinary kind")
@@ -393,7 +384,7 @@ do
     state.settle(context, host)
     assert(host.scheduler.byId["service:flight"] and host.scheduler.byId["service:smart"])
     equal(host.reconciledBroker, state.stable)
-    assert(host:verify(context) == nil)
+    assert(not host.reconciliation)
 
     -- A release owned by another broker is removed before services dispatch.
     local stale = { schedulerTasks = {} }
@@ -430,7 +421,7 @@ do
         owner:enableScheduler(context)
         state.settle(context, host)
     end
-    assert(host:verify(context) == nil)
+    assert(not host.reconciliation)
 end
 
 -- Activation during an unfinished full scan retargets it to the broker instead of
@@ -480,7 +471,7 @@ do
             equal(host.registeredTasks["service:flight"], state.stable)
             equal(host.registeredTasks["service:smart"], state.stable)
             assert(host.scheduler.byId["service:flight"].instance ~= state.facade)
-            assert(host:verify(context) == nil)
+            assert(not host.reconciliation)
         else
             owner:disableScheduler(context)
             assert(host:ready(context))

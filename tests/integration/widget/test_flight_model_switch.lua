@@ -64,12 +64,6 @@ for _, parked in ipairs({
     local records
     if parked == "scheduled" then
         local host = first.schedulerHost
-        local owners = {}
-        for key, value in pairs(host.owners) do
-            owners[key] = value
-        end
-        owners["service:flight"], owners["service:smart"] = "new", "new"
-        host.owners = owners
         owner:enableScheduler(first)
         for _ = 1, 128 do
             assert(host:ready(first))

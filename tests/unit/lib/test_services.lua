@@ -37,12 +37,12 @@ local function testEnvironmentAndRuntime()
         due = 0,
         count = 1,
         revision = 0,
-        update = function() end,
     }
 
     services.register(runtime, service, 0)
-    local updatedId = services.update(runtime, 0)
-    assertions.assertEqual(updatedId, "demo")
+    assertions.assertEqual(runtime.order[1], service)
+    assertions.assertEqual(runtime.byId.demo, service)
+    assertions.assertEqual(service.due, 0)
 end
 
 local function recordVisit(owner, entry, now)

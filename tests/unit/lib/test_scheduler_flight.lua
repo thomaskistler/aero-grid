@@ -180,7 +180,12 @@ do
     assert(not pcall(owner.enableScheduler, owner, {}), "another widget must not enroll a duplicate broker")
     owner.session.altitudeReference, owner.session.wasArmed = 100, true
     owner.session.sensorGeneration = owner.session.smart.generation
+    owner.output = nil
     radio.armed, radio.now = true, 1400
+    for _ = 1, 16 do
+        local _, _, status = owner:proposals(radio.now)
+        if status == "ready" then break end
+    end
     run:step(1, "run", radio.now)
     equal(owner.session.altitudeReference, 100, "late ticks do not erase the arming reference")
     owner:reset("other.yml")
@@ -287,8 +292,6 @@ end
 
 for _, variant in ipairs({ "proposal", "conflict" }) do
     local owner = fixture(variant)
-    local expected, signature, status = owner:resolveProposals()
-    local message = owner.state.configurationError
     local proposal, actualSignature, actualStatus
     for now = 1100, 30000, 20 do
         proposal, actualSignature, actualStatus = owner:proposals(now)
@@ -297,8 +300,16 @@ for _, variant in ipairs({ "proposal", "conflict" }) do
         end
     end
     assert(not owner.proposalScan, "bounded proposal traversal completes")
-    equal(actualStatus, status)
-    equal(actualSignature, signature)
-    equal(proposal and proposal.armKey, expected and expected.armKey)
-    equal(owner.state.configurationError, message, "conflict diagnostics preserve every sorted participant")
+    if variant == "proposal" then
+        equal(actualStatus, "ready")
+        equal(proposal.armKey, "L01")
+        assert(actualSignature)
+    else
+        equal(actualStatus, "conflict")
+        equal(proposal, nil)
+        local message = owner.state.configurationError
+        for n = 1, 16 do
+            assert(string.find(message, "Widget" .. n .. "/Armed (L" .. n .. ")", 1, true))
+        end
+    end
 end

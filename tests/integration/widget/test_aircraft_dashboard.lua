@@ -14,7 +14,6 @@ radio.values[142] = 4.2
 radio.values[100] = 8.0
 
 local context = fixture.createLoaded(nil, { Layout = "Default", Theme = "modern-dark" })
-fixture.allowSchedulerWork(context)
 assert(fixture.pumpUntil(context, function(value)
     return value.serviceRuntime.byId.control.revision > 0
 end, 400), "dashboard control task must receive its initial release")
@@ -93,11 +92,11 @@ local rxBattery = fixture.module("panels/rx-battery.lua")
 local originalRect = battery.rect
 local originalFont = battery.area.value
 rxBattery.update(battery, { x = 0, y = 0, w = 80, h = originalRect.h })
-rxBattery.refresh(battery)
+fixture.pump(context, 40)
 assertions.assertEqual(battery.showDetail, false, "narrow panels must shed supporting readings")
 assert(battery.countLabel.hidden and battery.packLabel.hidden)
 rxBattery.update(battery, originalRect)
-rxBattery.refresh(battery)
+fixture.pump(context, 40)
 assertions.assertEqual(battery.area.supportingPlacement, "side")
 assertions.assertEqual(battery.area.value, originalFont, "supporting readings must not shrink the headline")
 assertions.assertEqual(battery.countText, "2S")
@@ -105,7 +104,7 @@ assertions.assertEqual(battery.packText, "8.0V")
 assert(not battery.countLabel.hidden and not battery.packLabel.hidden)
 
 battery.settings.showCount = false
-rxBattery.refresh(battery)
+fixture.pump(context, 40)
 assertions.assertEqual(battery.countText, "")
 assertions.assertEqual(battery.packText, "8.0V")
 assertions.assertEqual(battery.packLabel.properties.y, battery.area.detailY)
@@ -113,22 +112,22 @@ assertions.assertEqual(battery.area.countShown, false, "a disabled count must no
 assertions.assertEqual(battery.area.packShown, true)
 battery.settings.showCount = true
 battery.settings.showPack = false
-rxBattery.refresh(battery)
+fixture.pump(context, 40)
 assertions.assertEqual(battery.countText, "2S")
 assertions.assertEqual(battery.packText, "")
 assertions.assertEqual(battery.area.packShown, false, "a disabled voltage must not reserve a stack row")
 assertions.assertEqual(battery.area.countShown, true)
 battery.settings.showPack = true
-rxBattery.refresh(battery)
+fixture.pump(context, 40)
 assertions.assertEqual(battery.packText, "8.0V")
 assert(battery.packLabel.properties.y > battery.countLabel.properties.y)
 
 rxBattery.update(battery, { x = 0, y = 0, w = originalRect.w, h = 136 })
-rxBattery.refresh(battery)
+fixture.pump(context, 40)
 assertions.assertEqual(battery.area.supportingPlacement, "footer")
 assertions.assertEqual(battery.packLabel.properties.y, battery.countLabel.properties.y)
 rxBattery.update(battery, originalRect)
-rxBattery.refresh(battery)
+fixture.pump(context, 40)
 assertions.assertEqual(battery.area.supportingPlacement, "side")
 
 local span = { colSpan = 2, rowSpan = 1 }

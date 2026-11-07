@@ -44,7 +44,7 @@ equal(control.tasks.critical.want, 0, "claimed arm conditions are removed from C
 equal(#control.criticalEntries, 0, "a shared switch is transferred rather than double-polled")
 equal(first.origin, "legacy")
 equal(first.generation, 7)
-control:update(now)
+service.tasks.run:step(2, "run", now)
 equal(reads, 2)
 equal(first.value, false)
 equal(first.fresh, true, "disarmed is a reliable reading")
@@ -58,15 +58,15 @@ equal(first.available, true)
 equal(first.fresh, false, "expired samples cannot remain fresh")
 assert(first.revision > initialRevision, "freshness changes advance the published revision")
 equal(first.status, "unavailable")
-control:update(now)
+service.tasks.run:step(2, "run", now)
 equal(first.fresh, true)
 values[1] = nil
 now = 120
-control:update(now)
+service.tasks.run:step(2, "run", now)
 equal(first.available, false)
 equal(first.fresh, false, "missing input is not a disarm event")
 values[1] = true
-control:update(now)
+service.tasks.run:step(2, "run", now)
 equal(first.value, true)
 control.failed = true
 equal(first.fresh, false)

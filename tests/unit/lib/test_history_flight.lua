@@ -63,8 +63,10 @@ local function harness(modelArm)
     local samples = 0
     local function poll(now, armed, value, independentlyArmed)
         values[1], values[2] = armed, independentlyArmed
-        control:update(now)
-        history:advance(now)
+        local armedTask = runtime.byId.armed.tasks.run
+        armedTask:step(armedTask.want, "run", now)
+        local task = history.tasks.run
+        task:step(task.want, "run", now)
         for _, name in ipairs({ "V", "A" }) do
             history:sample({
                 name = name,
@@ -79,7 +81,6 @@ local function harness(modelArm)
         if session.recording and value ~= nil then
             samples = samples + 1
         end
-        history:update(now)
         return samples
     end
     return history, session, feed, poll, independent, other, second

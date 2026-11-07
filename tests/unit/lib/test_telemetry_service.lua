@@ -5,6 +5,7 @@ local root = (... and ... ~= "" and ...) or "."
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local services = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/services.lua"))()
 local telemetryService = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/telemetry_service.lua"))()
+local scheduler = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.lua"))()
 
 local function testSubscribeReturnsLiveView()
     local env = services.environment({
@@ -47,15 +48,17 @@ local function testTransmitterLocalSourceIsNotLinkEvidence()
     local link = service:link()
     local mode = service:subscribe("RFMD", false)
     assertions.assertEqual(service:subscribe("RFMD"), mode, "source identity remains shared")
-    service:update(10)
+    local task = service.entries[1].task
+    task:step(task.want, "run", 10)
     assertions.assertEqual(mode.value, 27, "local data remains readable")
     assertions.assertEqual(link.live, false, "a second subscriber cannot turn local data into receiver evidence")
     service:subscribe("RQly")
-    service:update(20)
+    task = service.entries[2].task
+    task:step(task.want, "run", 20)
     assertions.assertEqual(link.live, true, "receiver data can contradict the missing RSSI indicator")
 end
 
-local function testHostPollingBudgetKeepsRoundRobinProgress()
+local function testSchedulerPollsAllSources()
     local reads = {}
     local service = telemetryService.new(
         services.environment({
@@ -75,20 +78,19 @@ local function testHostPollingBudgetKeepsRoundRobinProgress()
     for index = 1, 24 do
         service:subscribe(tostring(index))
     end
-    service.pollCap = 4
-    for step = 1, 6 do
-        service:update(step * 10)
-        assertions.assertEqual(service.cursor, step * 4 % 24 + 1)
+    local queue = scheduler.new({ steady = 0 })
+    for _, entry in ipairs(service.entries) do
+        local task = entry.task
+        task.tickElapsed = scheduler.elapsed
+        assert(queue:add({ id = task.id, decl = task.decl, instance = task, due = 0 }))
+    end
+    for now = 0, 9 do
+        queue:run("steady", now, 0)
     end
     for index = 1, 24 do
-        assertions.assertEqual(reads[index], 1, "a reduced budget must still visit every source")
+        assertions.assertEqual(reads[index], 1, "each source must make progress before its next release")
     end
-    service.pollCap = nil
-    service:update(70)
-    assertions.assertEqual(service.cursor, 9, "normal polling capacity returns when Smart work is absent")
-    service.pollCap = 100
-    service:update(80)
-    assertions.assertEqual(service.cursor, 17, "a host cannot raise the service's existing cap")
+    assert(not queue:takeErrors())
 end
 
 local function testSharedSubscribersKeepTheFastestRequestedInterval()
@@ -113,13 +115,15 @@ local function testSharedSubscribersKeepTheFastestRequestedInterval()
     service:subscribe("1", nil, 20)
     assertions.assertEqual(service.entries[1].interval, 20)
     assertions.assertEqual(service.interval, 20)
-    service:update(0)
-    service:update(10)
+    local task = service.entries[1].task
+    task.tickElapsed = scheduler.elapsed
+    task:step(task.want, "run", 0)
+    task:step(task.want, "run", 10)
     assertions.assertEqual(reads, 1, "a 20-tick consumer must not poll at tick 10")
     service:subscribe("1")
     assertions.assertEqual(service.entries[1].interval, 10, "omitted intervals retain the legacy rate")
     assertions.assertEqual(service.interval, 10, "the fastest same-source request controls polling")
-    service:update(20)
+    task:step(task.want, "run", 20)
     assertions.assertEqual(reads, 2)
     assertions.assertEqual(feed.value, 2)
 end
@@ -165,10 +169,11 @@ local function testSchedulerPollsEachSourceWithItsObserversAtomically()
             end,
         })
     end
-    local delay = service:step(1, "run", 10)
-    assertions.assertEqual(delay, 1, "partial grants resume the source batch")
+    local first, second = service.entries[1].task, service.entries[2].task
+    local delay = first:step(first.want, "run", 10)
+    assertions.assertEqual(delay, 10)
     assertions.assertEqual(table.concat(calls, ","), "1:10,1:10,1:10")
-    delay = service:step(1, "run", 11)
+    delay = second:step(second.want, "run", 11)
     assertions.assertEqual(delay, 10)
     assertions.assertEqual(table.concat(calls, ","), "1:10,1:10,1:10,2:11,2:11,2:11")
 end
@@ -185,7 +190,7 @@ local function run()
     testSubscribeReturnsLiveView()
     testLinkSubscriptionExists()
     testTransmitterLocalSourceIsNotLinkEvidence()
-    testHostPollingBudgetKeepsRoundRobinProgress()
+    testSchedulerPollsAllSources()
     testSharedSubscribersKeepTheFastestRequestedInterval()
     testSourceTaskIdsRemainStableAsSubscriptionsGrow()
     testSchedulerPollsEachSourceWithItsObserversAtomically()

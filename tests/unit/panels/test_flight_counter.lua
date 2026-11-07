@@ -35,9 +35,28 @@ local function new()
             context.sounds[#context.sounds + 1] = { count, ended }
         end,
     }
+    local last, previous
     local function step(now)
+        local current = {
+            arm = context.arm.value,
+            armFresh = context.arm.fresh,
+            motor = context.motor.value,
+            motorFresh = context.motor.fresh,
+            link = context.link.live,
+        }
+        if last then
+            context.arm.value, context.arm.fresh = previous.arm, previous.armFresh
+            context.motor.value, context.motor.fresh, context.link.live = previous.motor, previous.motorFresh, previous.link
+            for at = last + 20, now - 1, 20 do
+                context.arm.updatedAt, context.motor.updatedAt, context.link.updatedAt = at, at, at
+                detector.advance(context, at)
+            end
+        end
+        context.arm.value, context.arm.fresh = current.arm, current.armFresh
+        context.motor.value, context.motor.fresh, context.link.live = current.motor, current.motorFresh, current.link
         context.arm.updatedAt, context.motor.updatedAt, context.link.updatedAt = now, now, now
         detector.advance(context, now)
+        last, previous = now, current
     end
     return context, step
 end

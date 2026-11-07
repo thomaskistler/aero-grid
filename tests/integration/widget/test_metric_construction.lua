@@ -10,6 +10,14 @@ local metric = fixture.module("panels/metric.lua")
 local host = fixture.module("lib/panel_host.lua")
 local builder = context.panels[1].instance.themeBuilder
 
+local function finishTask(instance)
+    local task = host.task({ module = metric, instance = instance, interval = 20 })
+    for now = 1, 100 do
+        if task:step(task.want or 1, task.stage, now) ~= 1 then return end
+    end
+    error("metric task did not finish")
+end
+
 for _, mode in ipairs({ "modern-dark", "modern-light" }) do
     local theme = builder.build(mode)
     for _, shape in ipairs({ { 1, 1, 117, 65 }, { 4, 1, 480, 65 }, { 2, 2, 238, 134 } }) do
@@ -45,8 +53,8 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                 assert(not staged.createParent and not staged.createPresentation and not staged.createStage)
                 assert(metric.construct(staged, rect), "completed construction is idempotent")
                 sameTree(synchronous.panel.root, staged.panel.root)
-                metric.refresh(synchronous)
-                metric.refresh(staged)
+                finishTask(synchronous)
+                finishTask(staged)
                 sameTree(synchronous.panel.root, staged.panel.root)
 
                 for _, resizeAt in ipairs({ "frame", "geometry", "header", "controls", "reflow", "place", "publish" }) do
@@ -79,7 +87,7 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                         assert(done and not partial.createStage and not partial.createParent)
                         assert(partial.panel.root.properties.w == changed.w)
                         assert(partial.panel.root.properties.h == changed.h)
-                        metric.refresh(partial)
+                        finishTask(partial)
                         if partial.unit and not partial.unit.hidden then
                             assert(partial.unit.properties.font() == partial.area.unitFont)
                         end

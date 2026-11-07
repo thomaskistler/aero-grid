@@ -63,16 +63,6 @@ function WidgetFixture.new()
         end)
     end
 
-    function self.allowSchedulerWork(context)
-        local bounds = {}
-        for _, entry in ipairs(context.panels or {}) do
-            bounds[entry.module.id] = 0
-        end
-        context.schedulerHost.panelBounds = setmetatable(bounds, {
-            __index = context.schedulerHost.panelBounds,
-        })
-    end
-
     function self.pumpUntil(context, predicate, limit, step)
         for _ = 1, limit or 100 do
             if predicate(context) then
