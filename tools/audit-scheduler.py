@@ -372,7 +372,7 @@ def scenarios():
             {"name": "app-check", "kind": "refresh", "action": "check-lifecycle",
              "callbacks": 1, "step": 5, "perCall": 1},
             {"name": "retire", "kind": "refresh", "action": "lifecycle-retire",
-             "callbacks": 400, "step": 5, "perCall": 1, "trace": True},
+             "callbacks": 800, "step": 5, "perCall": 1, "trace": True},
             {"name": "retire-check", "kind": "refresh", "action": "check-lifecycle",
              "callbacks": 1, "step": 5, "perCall": 1},
         ])
