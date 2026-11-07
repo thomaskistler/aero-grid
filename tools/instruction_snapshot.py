@@ -7,12 +7,152 @@ coverage) is built only by the measurement tools.
 """
 
 from pathlib import Path
+import hashlib
+import importlib.util
+import copy
+import json
+import os
+import tempfile
 
 from lupa.lua53 import LuaRuntime, lua_type
 
 ROOT = Path(__file__).resolve().parents[1]
 SNAPSHOT = ROOT / "src/WIDGETS/AeroGrid/lib/instruction_snapshot.lua"
 SCHEMA = 1
+CEILING = 15000
+MARGIN = 400
+MIN_SAMPLES = 10
+
+
+def target(maximum):
+    """ceil10(1.1 * maximum), using exact integer arithmetic."""
+    if type(maximum) is not int or not 0 <= maximum <= CEILING:
+        raise ValueError(f"invalid measured maximum: {maximum!r}")
+    return ((11 * maximum + 99) // 100) * 10
+
+
+def spread(minimum, maximum):
+    return maximum - minimum > 300 and 2 * maximum > 3 * minimum
+
+
+def fit(grants):
+    """Measured incremental growth above grant one, then minimal startup cost."""
+    if 1 not in grants:
+        raise ValueError("stage fitting requires grant one")
+    targets = {grant: target(maximum) for grant, maximum in grants.items()}
+    per_unit = 1
+    for grant, budget in targets.items():
+        if type(grant) is not int or grant < 1:
+            raise ValueError(f"invalid fitting grant: {grant!r}")
+        if grant > 1:
+            growth = budget - targets[1]
+            per_unit = max(per_unit, (growth + grant - 2) // (grant - 1))
+    if len(targets) == 1:
+        return {"fixed": 0, "perUnit": max(1, targets[1])}
+    fixed = max(0, max(budget - grant * per_unit for grant, budget in targets.items()))
+    return {"fixed": fixed, "perUnit": per_unit}
+
+
+def observation_key(row):
+    return "|".join(str(row[field]) for field in ("kind", "name", "stage", "grant"))
+
+
+def deferred(data, row):
+    return (row["kind"] == "task" and row["name"] in data["record"]["deferred"]
+            or row["kind"] == "bound" and row["stage"] == "chart"
+            and row["name"] in ("panel-reflow", "editor-layout"))
+
+
+def merge_observations(rows):
+    """Keep cheap, no-op and failed executions, without averaging maxima."""
+    merged = {}
+    for row in rows:
+        for field in ("kind", "name", "stage", "minScenario", "maxScenario"):
+            if not isinstance(row.get(field), str):
+                raise ValueError(f"observation lacks {field}: {row!r}")
+        for field in ("grant", "n", "min", "max", "failures"):
+            if type(row.get(field)) is not int or row[field] < 0:
+                raise ValueError(f"invalid observation {field}: {row!r}")
+        if row["n"] == 0 or row["min"] > row["max"] or row["failures"] > row["n"]:
+            raise ValueError(f"invalid observation range/count: {row!r}")
+        expected = row.get("expectedFailures", 0)
+        if type(expected) is not int or not 0 <= expected <= row["failures"]:
+            raise ValueError(f"invalid expected failure count: {row!r}")
+        key = observation_key(row)
+        previous = merged.get(key)
+        if previous is None:
+            merged[key] = dict(row)
+            continue
+        previous["n"] += row["n"]
+        previous["failures"] += row["failures"]
+        previous["expectedFailures"] = previous.get("expectedFailures", 0) + expected
+        if row["min"] < previous["min"]:
+            previous["min"], previous["minScenario"] = row["min"], row["minScenario"]
+        if row["max"] > previous["max"]:
+            previous["max"], previous["maxScenario"] = row["max"], row["maxScenario"]
+    return merged
+
+
+def check(snapshot, observations, required, *, updating=False):
+    """Independent regression, runtime, safety, coverage and spread findings.
+
+    `required` is an explicit set of observation keys, including every legal
+    grant of every non-deferred task stage and every foreground/framework bound.
+    Environment records stay separate; only coverage and targets combine them.
+    """
+    findings = []
+    if set(observations) != {"mock", "native"} or not all(observations.values()):
+        findings.append("coverage: fresh mock AND native observations are required")
+    previous = snapshot["record"]["observations"]
+    combined = {}
+    for environment, rows in observations.items():
+        if environment not in ("mock", "native"):
+            findings.append(f"coverage: unknown environment {environment}")
+            continue
+        for key, row in rows.items():
+            if key != observation_key(row):
+                raise ValueError(f"observation key mismatch: {key}")
+            if row["max"] > CEILING:
+                findings.append(f"safety: {environment}:{key} exceeds {CEILING}")
+            if row["failures"] > row.get("expectedFailures", 0):
+                findings.append(f"behavior: {environment}:{key} has failed executions")
+            if deferred(snapshot, row):
+                continue
+            old = previous.get(environment, {}).get(key)
+            if not updating:
+                if old is None:
+                    findings.append(f"regression: missing recorded maximum for {environment}:{key}")
+                elif row["max"] > old["max"]:
+                    findings.append(f"regression: {environment}:{key} grew from {old['max']} to {row['max']}")
+            estimates = snapshot["estimates"]
+            if row["kind"] == "task":
+                stage = estimates["tasks"].get(row["name"], {}).get(row["stage"])
+                if stage is None:
+                    findings.append(f"runtime: missing task estimate for {key}")
+                elif row["max"] > stage["fixed"] + stage["perUnit"] * row["grant"]:
+                    findings.append(f"runtime: {environment}:{key} exceeds its declared bound")
+                elif stage["fixed"] + stage["perUnit"] > CEILING - MARGIN:
+                    findings.append(f"safety: {key} cannot fit beneath the ceiling and margin")
+            elif row["kind"] == "bound":
+                bound = estimates["bounds"].get(row["name"], {}).get(row["stage"])
+                if bound is None:
+                    findings.append(f"runtime: missing foreground/framework estimate for {key}")
+                elif row["max"] > bound:
+                    findings.append(f"runtime: {environment}:{key} exceeds its declared bound")
+            elif row["kind"] != "callback":
+                findings.append(f"coverage: unknown observation kind for {key}")
+            combined.setdefault(key, []).append(row)
+    for key in sorted(required):
+        rows = combined.get(key, [])
+        if not rows:
+            findings.append(f"coverage: missing {key}")
+        elif rows[0]["kind"] == "task" and sum(row["n"] for row in rows) < MIN_SAMPLES:
+            findings.append(f"coverage: {key} needs {MIN_SAMPLES} combined samples")
+    for key, rows in combined.items():
+        minimum, maximum = min(row["min"] for row in rows), max(row["max"] for row in rows)
+        if rows[0]["kind"] == "task" and spread(minimum, maximum):
+            findings.append(f"efficiency: {key} spreads from {minimum} to {maximum}")
+    return findings
 
 
 def _python(value):
@@ -34,17 +174,19 @@ def load(path=SNAPSHOT):
 def _key(key):
     if isinstance(key, int):
         return f"[{key}]"
-    return f'["{key}"]'
+    return f"[{_value(key, 0)}]"
 
 
 def _value(value, indent):
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, int):
+        if not 0 <= value <= 2147483647:
+            raise ValueError(f"snapshot integer is outside radio range: {value}")
         return str(value)
     if isinstance(value, str):
-        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-        return f'"{escaped}"'
+        value.encode("ascii")
+        return json.dumps(value)
     if isinstance(value, dict):
         if not value:
             return "{}"
@@ -64,6 +206,9 @@ def render(estimates, record):
         for stage, estimate in stages.items():
             if set(estimate) != {"fixed", "perUnit"}:
                 raise ValueError(f"{task}.{stage}: estimates need exactly fixed and perUnit")
+            if (type(estimate["fixed"]) is not int or estimate["fixed"] < 0
+                    or type(estimate["perUnit"]) is not int or estimate["perUnit"] <= 0):
+                raise ValueError(f"{task}.{stage}: invalid scheduler coefficients")
     return (
         "-- SPDX-License-Identifier: GPL-2.0-only\n\n"
         "-- GENERATED by tools/instruction_snapshot.py. Do not edit by hand.\n"
@@ -78,9 +223,235 @@ def render(estimates, record):
     )
 
 
-def write(estimates, record, path=SNAPSHOT):
-    """Replace the snapshot atomically."""
+def write(estimates, record, path=SNAPSHOT, *, expected_sha):
+    """Replace atomically without overwriting a known concurrent edit."""
     text = render(estimates, record)
-    temporary = path.with_suffix(".lua.tmp")
-    temporary.write_text(text, encoding="ascii")
-    temporary.replace(path)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="ascii", dir=path.parent,
+                                         prefix=path.name + ".", suffix=".tmp", delete=False) as file:
+            temporary = Path(file.name)
+            file.write(text)
+            file.flush()
+            os.fsync(file.fileno())
+        if hashlib.sha256(path.read_bytes()).hexdigest() != expected_sha:
+            raise RuntimeError("instruction snapshot changed during measurement; refusing replacement")
+        temporary.replace(path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+DEFERRED_SUITES = {
+    f"tests/integration/widget/{name}.lua" for name in (
+        "test_chart_recording", "test_chart_independent_arming",
+        "test_chart_flight_recording", "test_smart_chart_budget",
+    )
+}
+
+
+def _module(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def required_keys(data, declarations):
+    required, errors = set(), []
+    deferred = data["record"]["deferred"]
+    for task, stages in data["estimates"]["tasks"].items():
+        if task in deferred:
+            continue
+        for stage in stages:
+            maximum = declarations.get(f"{task}|{stage}")
+            if maximum is None:
+                errors.append(f"coverage: no declaration measured for {task}.{stage}")
+                continue
+            required.update(f"task|{task}|{stage}|{grant}" for grant in range(1, maximum + 1))
+    for group, bounds in data["estimates"]["bounds"].items():
+        for name in bounds:
+            if name == "chart" and group in ("panel-reflow", "editor-layout"):
+                continue
+            required.add(f"bound|{group}|{name}|0")
+    for rows in data["record"]["observations"].values():
+        required.update(key for key, row in rows.items() if not deferred(data, row))
+    return required, errors
+
+
+def propose(data, observations, declarations, required):
+    """No absent observation may change an estimate or disappear from the record."""
+    combined = {}
+    for rows in observations.values():
+        for row in rows.values():
+            key = observation_key(row)
+            combined[key] = max(combined.get(key, 0), row["max"])
+    missing = required - combined.keys()
+    if missing:
+        raise ValueError(f"cannot fit incomplete observations: {sorted(missing)}")
+    estimates = copy.deepcopy(data["estimates"])
+    for task, stages in estimates["tasks"].items():
+        if task in data["record"]["deferred"]:
+            continue
+        for stage in stages:
+            maximum = declarations.get(f"{task}|{stage}")
+            if maximum is None:
+                raise ValueError(f"cannot fit an undeclared stage: {task}.{stage}")
+            stages[stage] = fit({grant: combined[f"task|{task}|{stage}|{grant}"]
+                                 for grant in range(1, maximum + 1)})
+    for group, bounds in estimates["bounds"].items():
+        for name in bounds:
+            if name == "chart" and group in ("panel-reflow", "editor-layout"):
+                continue
+            bounds[name] = target(combined[f"bound|{group}|{name}|0"])
+    return estimates
+
+
+def native_rows(scenario, results, estimates=None):
+    """Use actual granted units, not the number of entries that happened to work."""
+    service_names = {
+        "model": "model", "armed": "armed", "navigation": "navigation", "history": "history",
+        "control": "control.critical", "control-normal": "control.normal",
+        "control-outputs": "control.outputs", "flight": "flight", "smart": "flight.smart",
+        "telemetry:maintenance": "telemetry.maintenance",
+    }
+    estimates = estimates or load()["estimates"]
+    rows = []
+    for label, stat in results["stats"].items():
+        kind = name = stage = None
+        if label.startswith("task:panel:"):
+            panel, stage = label[len("task:panel:"):].rsplit(":", 1)
+            kind, name = "task", "panel." + panel
+        elif label.startswith("task:service:"):
+            task, stage = label[len("task:service:"):].rsplit(":", 1)
+            if task.startswith("telemetry:source:"):
+                name = "telemetry." + task.split(":")[2]
+            else:
+                name = service_names.get(task)
+            if name is None:
+                raise ValueError(f"unmapped native scheduler task: {label}")
+            kind = "task"
+        elif label.startswith("callback:"):
+            kind, name = "callback", label.split(":")[1]
+            if name not in ("create", "update", "refresh", "background"):
+                continue
+            stage = scenario + ":" + ":".join(label.split(":")[2:])
+        elif label.startswith("load:theme-resolve:"):
+            kind, name, stage = "bound", "theme-resolution", label.split(":")[-1]
+        elif label.startswith("load:") and label.count(":") == 1:
+            candidate = label.split(":")[1]
+            if candidate in estimates["bounds"]["dashboard-loader"]:
+                kind, name, stage = "bound", "dashboard-loader", candidate
+        if kind is None:
+            continue
+        for grant, bucket in stat["units"].items():
+            if "min" not in bucket:
+                raise ValueError(f"native observations need per-grant minima: {scenario}:{label}")
+            rows.append(dict(kind=kind, name=name, stage=stage, grant=int(grant) if kind == "task" else 0,
+                             n=bucket["n"], min=bucket["min"], max=bucket["max"], failures=0,
+                             minScenario=scenario, maxScenario=scenario))
+    return rows
+
+
+def profile(audit, args):
+    """Fresh full mock/native profile; incomplete evidence never writes a file."""
+    snapshot = load()
+    initial_sha = hashlib.sha256(SNAPSHOT.read_bytes()).hexdigest()
+    def source_sha():
+        digest = hashlib.sha256()
+        for directory in ("src", "tests", "tools"):
+            for path in sorted((ROOT / directory).rglob("*")):
+                if path.is_file() and path.suffix in (".lua", ".py", ".cpp", ".yaml", ".yml", ".txt"):
+                    digest.update(path.relative_to(ROOT).as_posix().encode("ascii"))
+                    digest.update(path.read_bytes())
+        return digest.hexdigest()
+    inputs_sha = source_sha()
+    runner = _module("instruction_test_runner", ROOT / "tests/run.py")
+    errors, mock, native, declarations = [], [], [], {}
+    suites = [path for path in sorted((ROOT / "tests").rglob("test_*.lua"))
+              if "support" not in path.relative_to(ROOT).parts
+              and path.relative_to(ROOT).as_posix() not in DEFERRED_SUITES]
+    completed = []
+    for path in suites:
+        try:
+            rows, declared = runner.run_test(path, instructions=True)
+            for value in rows.values():
+                row = _python(value)
+                # A passing behavioral suite has validated its negative cases.
+                row["expectedFailures"] = row["failures"]
+                mock.append(row)
+            for key, maximum in declared.items():
+                declarations[key] = max(declarations.get(key, 0), maximum)
+            completed.append(path.relative_to(ROOT).as_posix())
+        except Exception as error:
+            errors.append(f"behavior: {path.relative_to(ROOT)}: {error}")
+    available = audit.scenarios()
+    names = ["hook-check", "hook-check-firmware", "stress", "metric-16", "model-panels",
+             "flight-smart-tasks", "session-reset"]
+    names.extend(name for name in available if name.startswith("lifecycle-app"))
+    # Panel extrema supply native stages missed by ordinary dashboard releases.
+    names.extend(name for name in available if name.endswith(("-min", "-max"))
+                 and not name.startswith("chart-"))
+    names.append("theme-showcase-tasks")
+    checks, native_completed = {}, []
+    try:
+        library = args.companion / "Contents/Resources/libedgetx-tx16s-simulator.dylib"
+        if not library.is_file():
+            raise RuntimeError(f"native simulator library not found: {library}")
+        executable, capture = audit.build_native(library), audit.capture_module()
+        for name in dict.fromkeys(names):
+            try:
+                results = audit.run(capture, executable, library, name, available[name], args.timeout)
+                if name.startswith("hook-check"):
+                    checks[name] = results
+                else:
+                    native.extend(native_rows(name, results, snapshot["estimates"]))
+                native_completed.append(name)
+            except Exception as error:
+                errors.append(f"native: {name}: {error}")
+        if len(checks) != 2:
+            errors.append("safety: both native hook checks must complete")
+        else:
+            ok, message = audit.hook_check_status(checks["hook-check"], checks["hook-check-firmware"])
+            if not ok:
+                errors.append("safety: " + message)
+    except Exception as error:
+        errors.append("native: " + str(error))
+    observations = {"mock": merge_observations(mock), "native": merge_observations(native)}
+    required, coverage_errors = required_keys(snapshot, declarations)
+    errors.extend(coverage_errors)
+    if args.snapshot and not coverage_errors and required <= {
+            key for rows in observations.values() for key in rows}:
+        snapshot["estimates"] = propose(snapshot, observations, declarations, required)
+    errors.extend(check(snapshot, observations, required, updating=args.snapshot))
+    if source_sha() != inputs_sha:
+        errors.append("provenance: measurement inputs changed during the profile; refusing replacement")
+    report = {"observations": observations, "errors": errors, "sourceSha": inputs_sha,
+              "coverage": {"mock": completed, "native": native_completed,
+                           "requiredMock": [path.relative_to(ROOT).as_posix() for path in suites],
+                           "requiredNative": list(dict.fromkeys(names))}}
+    output = ROOT / "build/scheduler-audit/instruction-profile.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(report, indent=2) + "\n", encoding="ascii")
+    if errors:
+        print(f"Instruction profile failed ({len(errors)} findings); snapshot unchanged. See {output}")
+        for error in errors[:20]:
+            print(error)
+        return 1
+    if args.snapshot:
+        estimates = snapshot["estimates"]
+        record = snapshot["record"]
+        for environment, previous in record["observations"].items():
+            for key, row in previous.items():
+                if deferred(snapshot, row):
+                    observations[environment].setdefault(key, row)
+        record.update(observations=observations, coverage=report["coverage"],
+                      environments={"mock": {"lua": "5.3", "runtime": "lupa"},
+                                    "native": {"simulator": args.companion.name, "luaIntegerBits": 32}},
+                      provenance={"profile": "full mock/native", "git": audit.subprocess.check_output(
+                          ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(), "sourceSha": inputs_sha})
+        write(estimates, record, expected_sha=initial_sha)
+        print("Instruction snapshot replaced after full profile checks")
+    else:
+        print("Instruction regression profile passed")
+    return 0

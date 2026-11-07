@@ -1167,6 +1167,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("scenario", nargs="*", help="Scenario names; omit with --list or --all")
     parser.add_argument("--all", action="store_true")
+    parser.add_argument("--instructions", action="store_true", help="Run the full instruction regression profile")
+    parser.add_argument("--snapshot", action="store_true", help="Run the full profile and atomically update instruction estimates")
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--framework", nargs="*", metavar="CASE", help=f"Measure the scheduler framework's own cost "
                         f"and the case files in {CASE_DIR.relative_to(ROOT)} (all, or the names given)")
@@ -1177,6 +1179,11 @@ def main():
                         help="Compare two deterministic-clock captures' valid History samples and gaps")
     parser.add_argument("--companion", type=Path, default=COMPANION)
     args = parser.parse_args()
+    if args.instructions or args.snapshot:
+        if args.scenario or args.all or args.list or args.framework is not None or args.report:
+            parser.error("Instruction profiles cannot be combined with partial scenario or report options")
+        import instruction_snapshot
+        return instruction_snapshot.profile(sys.modules[__name__], args)
     available = scenarios()
     if args.framework is not None:
         cases = sorted(CASE_DIR.glob("*.lua"))

@@ -33,9 +33,9 @@ end
 local stats, trace, errorsSeen, worst = {}, {}, {}, {}
 local gateErrors = {}
 local historySamples = {}
--- Declarations must cover the framework margin rule, not only the raw sample.
+-- Exact ceil10(1.1 * cost), including on int32/float32 radio Lua.
 local function fit(cost)
-    return math.ceil((cost * 1.10 + 50) / 10) * 10
+    return ((11 * cost + 99) // 100) * 10
 end
 
 local function gate(condition, message)
@@ -44,6 +44,8 @@ local function gate(condition, message)
     end
 end
 local depth, childSum, visits, childList = 0, {}, {}, {}
+local childLeak, grants = {}, {}
+local callbackLeak = 0
 local top, topLabels, topSum = {}, {}, 0
 local callbackIndex, phaseIndex, phaseDone = 0, 1, 0
 local kindCounts = {}
@@ -74,10 +76,11 @@ local function record(label, cost, own, units, children)
     end
     local bucket = entry.units[units]
     if not bucket then
-        bucket = { n = 0, max = 0, selfMax = 0 }
+        bucket = { n = 0, min = cost, max = 0, selfMax = 0 }
         entry.units[units] = bucket
     end
     bucket.n = bucket.n + 1
+    bucket.min = math.min(bucket.min, cost)
     if cost > bucket.max then
         bucket.max = cost
     end
@@ -93,16 +96,16 @@ local function finish(label, raw, leak)
         depth = d - 1
         return
     end
-    local cost = raw - K
+    local cost = raw - K - childLeak[d]
     local own = cost - childSum[d]
-    local units = visits[d]
     local children = table.concat(childList[d], ",")
     depth = d - 1
     if type(label) ~= "string" then
         label = "unlabelled"
     end
+    local units = string.match(label, "^task:") and grants[d] or visits[d]
     if label == "flight:enableScheduler" then
-        local fitted = math.ceil((cost * 1.10 + 50) / 10) * 10
+        local fitted = fit(cost)
         gate(fitted <= 3600, "Flight handoff exceeds its one-time head reservation: " .. fitted)
     end
     if P.lifecycleServiceOnly or P.lifecycleOperation then
@@ -114,27 +117,13 @@ local function finish(label, raw, leak)
             "lifecycle callback dispatched hidden panel work: " .. label
         )
     end
-    local loadBound = loaderDeclarations[label]
-        or ({
-            ["load:theme-read"] = 240,
-            ["load:theme-tokenize"] = 3200,
-            ["load:theme-parse"] = 900,
-            ["load:theme-resolve-begin"] = 240,
-            ["load:tokenize"] = 3300,
-            ["load:header"] = 950,
-            ["load:header-parse"] = 1650,
-            ["load:header-validate"] = 350,
-            ["load:header-finalize"] = 350,
-            ["load:panel-tokens"] = 1120,
-            ["load:panel-parse"] = 1650,
-            ["load:read"] = 750,
-            ["load:load-error"] = 1500,
-        })[label]
+    local loadStage = string.match(label, "^load:([%w%-]+)$")
+    local loadBound = loaderDeclarations[label] or loadStage and costs.bounds["dashboard-loader"][loadStage]
     local resolution = string.match(label, "^load:theme%-resolve:(%a+)$")
     if resolution then
-        loadBound = ({ legibility = 2400, chart = 1800, alert = 2200, display = 650, finalize = 180 })[resolution]
+        loadBound = costs:bound("theme-resolution", resolution)
     elseif string.match(label, "^load:theme%-publish:") then
-        loadBound = 500
+        loadBound = costs:bound("dashboard-loader", "theme-publish")
     end
     if loadBound then
         local fitted = fit(cost)
@@ -159,7 +148,7 @@ local function finish(label, raw, leak)
         or label == "lifecycle:advanceReflow"
         or label == "lifecycle:beginReflow"
     then
-        local fitted = math.ceil((cost * 1.10 + 50) / 10) * 10
+        local fitted = fit(cost)
         gate(fitted <= 4000, label .. " exceeds the fitted lifecycle atom cap: " .. cost .. " -> " .. fitted)
         local bound = label == "lifecycle:restartLoading" and 600
             or label == "lifecycle:rebuildPage" and 200
@@ -180,13 +169,16 @@ local function finish(label, raw, leak)
         visits[depth] = visits[depth] + 1
     end
     if depth >= 1 then
-        childSum[depth] = childSum[depth] + raw + leak
+        childSum[depth] = childSum[depth] + cost
+        childLeak[depth] = childLeak[depth] + leak + childLeak[d]
         local siblings = childList[depth]
         siblings[#siblings + 1] = label .. "=" .. cost
     elseif label == "flight:identity" then
+        callbackLeak = callbackLeak + leak + childLeak[d]
         -- Runs in every callback: part of the fixed overhead, not a schedulable task.
     else
-        topSum = topSum + raw + leak
+        topSum = topSum + cost
+        callbackLeak = callbackLeak + leak + childLeak[d]
         top[#top + 1] = label .. "=" .. cost .. (units > 0 and "/" .. units or "")
         topLabels[#topLabels + 1] = label
     end
@@ -278,6 +270,7 @@ local function core(leak, label, fn, a, b, c, d, e, f, g, h)
     pause(true)
     depth = depth + 1
     childSum[depth], visits[depth], childList[depth] = 0, 0, {}
+    childLeak[depth], grants[depth] = 0, b
     local token
     if type(label) == "function" then
         token = label(nil, a, b, c, d, e, f, g, h)
@@ -340,8 +333,10 @@ local function calibrate()
     end
     calibrating = true
     span("calibrate", bare)
-    K = calibrationRaw
-    local baseline = window(function() end)
+    K = calibrationRaw - 1
+    local baseline = window(function()
+        empty()
+    end)
     local direct = window(function()
         span("calibrate", empty)
     end)
@@ -350,8 +345,8 @@ local function calibrate()
         wrapped()
     end)
     calibrating = false
-    LEAK_SPAN = direct - baseline - K
-    LEAK_WRAP = viaWrapper - baseline - K
+    LEAK_SPAN = direct - baseline
+    LEAK_WRAP = viaWrapper - baseline
     local shape = function() end
     local c0 = count()
     local c1 = count()
@@ -360,6 +355,26 @@ local function calibrate()
     shape(P, c0, c1)
     c1 = count()
     K_CALLBACK = c1 - c0 - floor
+    local child = empty
+    local function parent()
+        local value = child()
+        return value
+    end
+    span("calibration:parent", parent)
+    child = wrap("calibration:child", empty)
+    span("calibration:parent", parent)
+    assert(stats["calibration:parent"].min == stats["calibration:parent"].max,
+        "native nested instruction calibration changed the parent cost")
+    local middle = parent
+    local function grandparent()
+        local value = middle()
+        return value
+    end
+    span("calibration:grandparent", grandparent)
+    middle = wrap("calibration:middle", parent)
+    span("calibration:grandparent", grandparent)
+    assert(stats["calibration:grandparent"].min == stats["calibration:grandparent"].max,
+        "native instruction calibration subtracted descendants twice")
 end
 
 local function panelLabel(token, entry, event, ...)
@@ -875,7 +890,9 @@ local function install(context)
                         return token == nil and stage or "task:" .. id .. ":" .. tostring(token)
                     end)
                 else
-                    wrapField(task.instance, "step", task.id)
+                    wrapField(task.instance, "step", function(token, current, _, stage)
+                        return token == nil and stage or "task:" .. current.id .. ":" .. tostring(token)
+                    end)
                 end
             end
         end
@@ -1908,7 +1925,7 @@ end
 
 local function runCallback(kind, context, fn, e, t)
     callbackIndex = callbackIndex + 1
-    depth, topSum, top, topLabels = 0, 0, {}, {}
+    depth, topSum, top, topLabels, callbackLeak = 0, 0, {}, {}, 0
     local surface = callbackSurface(kind, context)
     P.editorInputSeen, P.editorInputAdmission = nil, nil
     P.lifecycleOperation, P.lifecycleAdmissionKind, P.lifecycleServiceOnly = nil, nil, nil
@@ -1949,18 +1966,18 @@ local function runCallback(kind, context, fn, e, t)
             )
         end
     end
-    local total = c1 - c0 - K_CALLBACK
+    local total = c1 - c0 - K_CALLBACK - callbackLeak
     if P.lifecycleOperation then
         gate(total <= 15000, surface .. " exceeds the complete lifecycle callback ceiling: " .. total)
         if P.lifecycleServiceOnly then
-            local fitted = math.ceil(((total - topSum) * 1.10 + 50) / 10) * 10
+            local fitted = fit(total - topSum)
             gate(fitted <= 2400, surface .. " exceeds the service-only fixed overhead: " .. fitted)
         end
     end
     if surface and string.sub(surface, 1, 7) == "loader:" then
         gate(total <= 15000, surface .. " exceeds the complete loading callback ceiling: " .. total)
         if surface == "loader:flight-load-wait" then
-            local fitted = math.ceil(((total - topSum) * 1.10 + 50) / 10) * 10
+            local fitted = fit(total - topSum)
             gate(fitted <= 2400, "shared Flight loading exceeds fitted service-only overhead: " .. fitted)
         end
         for _, label in ipairs(topLabels) do

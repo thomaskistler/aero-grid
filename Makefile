@@ -26,7 +26,7 @@ LUA32_VERSION := 5.3.6
 LUA32_SHA256 := fc5fd69bb8736323f026672b1b7235da613d7177e72558893a0bdcd320466d60
 LUA32_DIR := $(BUILD_DIR)/lua32
 LUA32 := $(LUA32_DIR)/lua
-SCHEDULER_TESTS := $(sort $(wildcard tests/unit/lib/test_scheduler*.lua))
+SCHEDULER_TESTS := $(sort $(wildcard tests/unit/lib/test_scheduler*.lua) tests/unit/lib/test_costs.lua tests/unit/lib/test_instruction_recorder.lua)
 
 .PHONY: help setup test test-lua32 test-installer check build clean lint format docs docs-serve capture-setup video-setup release-package
 

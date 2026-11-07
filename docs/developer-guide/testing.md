@@ -83,10 +83,23 @@ implementation; making the mock agree with an assumption can hide a real bug.
 
 ## Performance and resource regressions
 
-Automated suites check behavior and scheduler admission, not instruction counts.
-Scheduler migration parity and legacy/new scheduler coexistence tests have been removed.
-There is no automated instruction-count regression gate or snapshot workflow yet.
-Native instruction measurement remains available through `tools/audit-scheduler.py`.
+`make test` checks behavior and scheduler admission. Run the instruction profile
+on macOS with EdgeTX Companion 2.12:
+
+```sh
+python3 tools/audit-scheduler.py --instructions
+python3 tools/audit-scheduler.py --snapshot
+```
+
+Both commands run fresh mock and native measurements. `--instructions` rejects
+any recorded maximum increase; `--snapshot` updates the shipped estimates only
+after the full profile passes behavior, coverage, runtime, safety, and efficiency
+checks. An incomplete or failed profile leaves the snapshot unchanged.
+
+**This workflow is still WIP:** the shipped snapshot contains seeded estimates,
+not a validated measured baseline. Chart measurement is deferred; its estimates
+and separate behavioral tests remain unchanged. Neither targeted measurements
+nor a seeded snapshot establish release readiness.
 
 The resource suites check reload collectibility, object counts, sustained
 updates, and font callback retention. They cannot measure native LVGL/bitmap
