@@ -191,6 +191,15 @@ local function entryById(context, id)
     return widgetHelpers.entryById(context, id)
 end
 
+local function waitForPanelFailure(context, id)
+    local entry = assert(entryById(context, id))
+    for _ = 1, 100 do
+        if entry.failed and #context.errors > 0 then return end
+        pump(context, 1)
+    end
+    error(id .. ": panel task did not fail")
+end
+
 --- Every shipped panel exposes its panel through the shared primitive.
 local function panelOf(entry)
     return widgetHelpers.panelOf(entry)
@@ -2566,12 +2575,14 @@ panels:
 ]],
         {
             ["exploder.lua"] = [==[
-local exploder = {id = "exploder", apiVersion = 1, supportedSpans = {"any"}}
+local exploder = {id = "exploder", apiVersion = 1, supportedSpans = {"any"},
+  decl = {class = "normal", kinds = {steady = true},
+    stages = {run = {fixed = 0, perUnit = 1000, maxUnits = 1}}}}
 function exploder.create(parent, rect, settings, services)
   return {panel = services.primitives.panel(parent, rect, services.theme,
     services.state("normal", "cyan"))}
 end
-function exploder.refresh()
+function exploder.step()
   error("exploder failed", 0)
 end
 return exploder
@@ -2583,7 +2594,7 @@ return exploder
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
     assertEqual(#context.panels, 2)
 
-    pump(context, 1)
+    waitForPanelFailure(context, "boom")
 
     local boom = entryById(context, "boom")
     local safe = entryById(context, "safe")
@@ -2625,12 +2636,14 @@ panels:
 ]],
         {
             ["exploder.lua"] = [==[
-local exploder = {id = "exploder", apiVersion = 1, supportedSpans = {"any"}}
+local exploder = {id = "exploder", apiVersion = 1, supportedSpans = {"any"},
+  decl = {class = "normal", kinds = {steady = true},
+    stages = {run = {fixed = 0, perUnit = 1000, maxUnits = 1}}}}
 function exploder.create(parent, rect, settings, services)
   return {panel = services.primitives.panel(parent, rect, services.theme,
     services.state("normal", "cyan"))}
 end
-function exploder.refresh()
+function exploder.step()
   error("exploder failed", 0)
 end
 return exploder
@@ -2649,7 +2662,7 @@ return exploder
     end
 
     local context = createLoaded(appZone(), DEFAULT_OPTIONS, widgetPath)
-    pump(context, 1)
+    waitForPanelFailure(context, "boom")
 
     assert(context.reserved, "App mode did not reserve the menu button corner")
     assertEqual(context.reserved.w, MENU_BUTTON_WIDTH, "reserved width")
@@ -2674,7 +2687,7 @@ return exploder
     -- Outside App mode the button is either hidden or drawn above the widget, so
     -- nothing is reserved and the overlay keeps the whole zone.
     local plain = createLoaded(fullScreenZone(), DEFAULT_OPTIONS, widgetPath)
-    pump(plain, 1)
+    waitForPanelFailure(plain, "boom")
     assertEqual(plain.reserved, nil, "a Full screen zone reserved a corner")
     assertEqual(assert(plain.errorLabel).properties.y, 8, "the overlay gave up room it did not have to")
 
@@ -2697,7 +2710,7 @@ return exploder
     -- the overlay it already created follows.
     lvglMock.setAppMode(true)
     local moving = createLoaded(appZone(), DEFAULT_OPTIONS, widgetPath)
-    pump(moving, 1)
+    waitForPanelFailure(moving, "boom")
     local moved = assert(moving.errorLabel).properties.y
     assert(moved > 8, "App mode overlay was not moved clear")
     moving.zone.yabs = MENU_BUTTON_HEIGHT
@@ -4994,12 +5007,14 @@ panels:
 ]],
         {
             ["exploder.lua"] = [==[
-local exploder = {id = "exploder", apiVersion = 1, supportedSpans = {"any"}}
+local exploder = {id = "exploder", apiVersion = 1, supportedSpans = {"any"},
+  decl = {class = "normal", kinds = {steady = true},
+    stages = {run = {fixed = 0, perUnit = 1000, maxUnits = 1}}}}
 function exploder.create(parent, rect, settings, services)
   return {panel = services.primitives.panel(parent, rect, services.theme,
     services.state("normal", "cyan"))}
 end
-function exploder.refresh()
+function exploder.step()
   error("exploder failed", 0)
 end
 return exploder
@@ -5035,7 +5050,7 @@ return exploder
 
     -- A panel that genuinely fails must still reach the overlay, so the
     -- fix cannot have been "stop reporting things".
-    pump(context, 1)
+    waitForPanelFailure(context, "boom")
     assertEqual(#context.errors, 1, "a real failure stopped being reported")
     assert(string.match(context.errors[1], "exploder failed"), context.errors[1])
     assert(context.errorLabel, "a real failure was not shown")
@@ -6951,26 +6966,26 @@ panels:
 ]],
         {
             ["raiser.lua"] = [==[
-local raiser = {id = "raiser", apiVersion = 1, supportedSpans = {"any"},
+local raiser = {id = "raiser", apiVersion = 1, supportedSpans = {"any"}, idle = true,
   settings = {{key = "label", type = "string", default = ""}}}
 function raiser.create() error("deliberate failure") end
 return raiser
 ]==],
-            -- Builds, then raises on its first refresh, which is the other way a
+            -- Builds, then raises in its first task, which is the other way a
             -- panel dies and the only one the host keeps an entry for.
             ["latebreak.lua"] = [==[
 local latebreak = {id = "latebreak", apiVersion = 1, supportedSpans = {"any"},
-  settings = {{key = "label", type = "string", default = ""}}}
+  settings = {{key = "label", type = "string", default = ""}},
+  decl = {class = "normal", kinds = {steady = true},
+    stages = {run = {fixed = 0, perUnit = 1000, maxUnits = 1}}}}
 function latebreak.create() return {ticks = 0} end
-function latebreak.refresh() error("deliberate late failure") end
+function latebreak.step() error("deliberate late failure") end
 return latebreak
 ]==],
         }
     )
 
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
-    settle(context, 30)
-
     local function linesOf(id)
         local panel = entryById(context, id).instance
         local out = {}
@@ -6978,6 +6993,17 @@ return latebreak
             out[#out + 1] = panel.rows[index].properties.text
         end
         return table.concat(out, "\n")
+    end
+
+    for _ = 1, 600 do
+        local later = entryById(context, "later")
+        if later and later.failed
+            and string.find(linesOf("panels"), "2 failed", 1, true)
+            and string.find(linesOf("wires"), "1 unbound", 1, true)
+        then
+            break
+        end
+        settle(context, 1)
     end
 
     -- A panel that failed during create is otherwise only an error banner,
@@ -7007,7 +7033,7 @@ return latebreak
     -- where the one that never built is only in `rejected`. Both have to
     -- appear, and until this covered it only the rejected half ever did.
     local later = entryById(context, "later")
-    assert(later and later.failed, "the panel that raises on refresh was not disabled")
+    assert(later and later.failed, "the panel that raises in its task was not disabled")
     panels = linesOf("panels")
     assert(
         string.find(panels, "later latebreak 2x2 FAILED", 1, true),
