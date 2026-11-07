@@ -155,4 +155,30 @@ for _, id in ipairs({ "flight-counter", "flight-mode", "flight-timer" }) do
         end
     end
 end
+
+do
+    local timer = fixture.module("panels/flight-timer.lua")
+    local theme = builder.build("modern-dark")
+    local settings = assert(panelHost.resolveSettings(timer, {}))
+    local instance = timer.create(
+        lvgl.box({ x = 0, y = 0, w = 238, h = 134 }),
+        { x = 0, y = 0, w = 238, h = 134 },
+        settings,
+        {
+            theme = theme,
+            themeBuilder = builder,
+            primitives = reference.primitives,
+            fonts = builder.typography(2, 2),
+            span = { colSpan = 2, rowSpan = 2 },
+            state = function(name, accent) return builder.state(theme, name, accent) end,
+        }
+    )
+    local task = panelHost.task({ module = timer, instance = instance, interval = timer.refreshInterval })
+    assert(task:step(1, "run", 0) == timer.refreshInterval)
+    assert(instance.stateName == "unavailable" and instance.value.properties.text == "--:--")
+    assert(instance.showDetail and instance.detailLabel.properties.text == "NO TIMER")
+    local writes = instance.value.writes
+    task:step(1, "run", timer.refreshInterval)
+    assert(instance.value.writes == writes, "an unavailable timer must not repaint unchanged output")
+end
 print("Flight readout tasks: readings, intervals, stable frames, hidden eligibility and counter wrap passed")

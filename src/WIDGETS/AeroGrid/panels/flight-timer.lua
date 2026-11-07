@@ -633,9 +633,6 @@ end
 --- Advance the panel, repainting only when something drawn changed.
 ---@param context AeroGridTimerContext
 function flightTimer.step(context)
-    if not context.feed then
-        return
-    end
     local changed, drawn = context.primitives.changed(context, flightTimer.render)
     if changed then
         flightTimer.apply(context, drawn)
