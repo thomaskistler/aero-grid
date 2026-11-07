@@ -308,7 +308,7 @@ end
 
 --- Advance the panel, repainting only when something drawn changed.
 ---@param context AeroGridFlightModeContext
-function flightMode.refresh(context)
+function flightMode.step(context)
     if not context.feed then
         return
     end
@@ -322,7 +322,14 @@ end
 ---@param context AeroGridFlightModeContext
 ---@param rect AeroGridRect
 local function regions(context, rect)
-    return flightMode.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts, context.widest)
+    return flightMode.regionsFor(
+        context.theme,
+        context.themeBuilder,
+        rect,
+        context.layout,
+        context.fonts,
+        context.widest
+    )
 end
 
 local function applyGeometry(context, rect, area)
@@ -395,8 +402,6 @@ function flightMode.reflow(context, rect, _, _, _, begin)
     end
     return true
 end
-
-flightMode.step = flightMode.refresh
 
 flightMode.reflowDecl = { callback = flightMode.reflow, bound = 3960 }
 

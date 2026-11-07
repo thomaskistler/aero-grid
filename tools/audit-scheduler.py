@@ -19,7 +19,7 @@ import sys
 TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
 from scheduler_audit import (CASE_DIR, PROBE_DIR, ROOT, SUPPORT_DIR, WIDGET, lua_literal, patch_chart,  # noqa: E402
-                             patch_loader, patch_main, patch_mode, patch_owners, aggregate, framework_report, hook_check_status,
+                             patch_loader, patch_main, aggregate, framework_report, hook_check_status,
                              history_parity, reduce_results, supported_spans)
 from capture_recipes import PANELS, RECIPE_DIR, fixture_inputs, load_recipe  # noqa: E402
 
@@ -54,9 +54,7 @@ def capture_module():
 
 
 def matching_history_scenarios(baseline, candidate):
-    """Only ownership, instrumentation and trace export may differ."""
-    if baseline.get("owners") or baseline.get("flightTasks"):
-        return False
+    """Compare captures with matching inputs and phases."""
     ignored = {"owners", "flightTasks", "trace"}
     return ({key: value for key, value in baseline.items() if key not in ignored}
             == {key: value for key, value in candidate.items() if key not in ignored})
@@ -969,9 +967,7 @@ def build_native(library):
     return executable
 
 
-def prepare(capture, name, spec, sd, mode="legacy"):
-    if spec.get("flightTasks") and mode != "mixed":
-        raise ValueError("Flight adapter scenarios require --mode mixed")
+def prepare(capture, name, spec, sd):
     recipe_path = RECIPE_DIR / f"{spec['recipe']}.yaml"
     recipe = load_recipe(recipe_path)
     if "placements" in spec:
@@ -987,7 +983,7 @@ def prepare(capture, name, spec, sd, mode="legacy"):
     # Capture's own readiness hooks are replaced; start again from the shipped sources.
     shutil.copyfile(WIDGET / "main.lua", widget / "main.lua")
     shutil.copyfile(WIDGET / "lib/dashboard_loader.lua", widget / "lib/dashboard_loader.lua")
-    (widget / "main.lua").write_text(patch_mode(patch_main((WIDGET / "main.lua").read_text()), mode))
+    (widget / "main.lua").write_text(patch_main((WIDGET / "main.lua").read_text()))
     if spec.get("lifecycleDrain"):
         source = (widget / "main.lua").read_text()
         anchor = ('    if context.modelSettingsUi then\n'
@@ -1001,10 +997,6 @@ def prepare(capture, name, spec, sd, mode="legacy"):
             '    end\n' + anchor)
         (widget / "main.lua").write_text(source)
     (widget / "lib/dashboard_loader.lua").write_text(patch_loader((WIDGET / "lib/dashboard_loader.lua").read_text()))
-    host_source = (WIDGET / "lib/scheduler_host.lua").read_text()
-    if "owners" in spec:
-        host_source = patch_owners(host_source, spec["owners"])
-    (widget / "lib/scheduler_host.lua").write_text(host_source)
     (widget / "panels/chart.lua").write_text(patch_chart((WIDGET / "panels/chart.lua").read_text()))
     if "layout" in spec:
         (widget / "layouts/capture-panels.yaml").write_text(spec["layout"])
@@ -1055,13 +1047,13 @@ def prepare(capture, name, spec, sd, mode="legacy"):
         shutil.copyfile(SUPPORT_DIR / "native_preparation.lua", audit / "native_preparation.lua")
 
 
-def run(capture, executable, library, name, spec, timeout, mode="legacy"):
-    directory = OUTPUT / (name if mode == "legacy" else f"{name}-{mode}")
+def run(capture, executable, library, name, spec, timeout):
+    directory = OUTPUT / name
     if directory.exists():
         shutil.rmtree(directory)
     directory.mkdir(parents=True)
     sd = directory / "sdcard"
-    prepare(capture, name, spec, sd, mode)
+    prepare(capture, name, spec, sd)
     command = [str(executable), str(library), str(sd), str(timeout)]
     if name.endswith("-firmware"):
         command.append("passthrough")
@@ -1181,8 +1173,6 @@ def main():
     parser.add_argument("--traces", action="store_true", help=f"Copy callback traces to {TRACE_DIR}")
     parser.add_argument("--history-parity", action="store_true",
                         help="Compare two deterministic-clock captures' valid History samples and gaps")
-    parser.add_argument("--mode", choices=("legacy", "mixed"), default="mixed",
-                        help="Run migrated tasks in mixed mode, or use legacy mode as a baseline for remaining tasks")
     parser.add_argument("--companion", type=Path, default=COMPANION)
     args = parser.parse_args()
     available = scenarios()
@@ -1224,7 +1214,7 @@ def main():
     if args.history_parity and (len(names) != 2 or not all(available[name].get("deterministicClock") for name in names)):
         parser.error("--history-parity requires exactly two deterministic-clock scenarios, baseline first")
     if args.history_parity and not matching_history_scenarios(available[names[0]], available[names[1]]):
-        parser.error("--history-parity requires a legacy baseline and matching inputs and phases")
+        parser.error("--history-parity requires matching inputs and phases")
     if platform.system() != "Darwin":
         parser.error("This audit requires macOS and the EdgeTX Companion 2.12 simulator.")
     library = args.companion / "Contents/Resources/libedgetx-tx16s-simulator.dylib"
@@ -1236,7 +1226,7 @@ def main():
     history_runs = []
     status = 0
     for name in names:
-        data = run(capture, executable, library, name, available[name], args.timeout, args.mode)
+        data = run(capture, executable, library, name, available[name], args.timeout)
         if args.history_parity:
             history_runs.append(data)
         if "loops" in available[name]:
@@ -1248,7 +1238,7 @@ def main():
             continue
         rows = reduce_results(data)
         worst = max((row["max"] for label, row in rows.items() if label.startswith("callback:")), default=0)
-        print(f"{name} ({args.mode}): {data['panels']} panels, worst callback {worst} instructions, "
+        print(f"{name}: {data['panels']} panels, worst callback {worst} instructions, "
               f"{len(rows)} measured tasks")
         if args.traces and data["trace"] and available[name].get("trace"):
             TRACE_DIR.mkdir(parents=True, exist_ok=True)

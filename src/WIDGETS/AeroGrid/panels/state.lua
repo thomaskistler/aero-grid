@@ -385,7 +385,7 @@ function statePanel.cancelRefresh(context)
     end
 end
 
-function statePanel.refresh(context)
+function statePanel.step(context)
     statePanel.cancelRefresh(context)
     local changed, drawn = context.primitives.changed(context, statePanel.render)
     if changed then
@@ -409,7 +409,7 @@ local function applyGeometry(context, rect, area)
         context["anchor" .. index] = nil
     end
     context.rendered = nil
-    statePanel.refresh(context)
+    statePanel.step(context)
 end
 
 function statePanel.update(context, rect)
@@ -464,8 +464,6 @@ function statePanel.reflow(context, rect, _, _, _, begin)
     end
     return false
 end
-
-statePanel.step = statePanel.refresh
 
 statePanel.reflowDecl = { callback = statePanel.reflow, bound = 3430 }
 

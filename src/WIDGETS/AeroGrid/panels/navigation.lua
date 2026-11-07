@@ -1048,23 +1048,6 @@ function navigation.cancelRefresh(context)
     end
 end
 
---- Advance the panel, repainting only when something drawn changed.
----@param context AeroGridNavigationContext
-function navigation.refresh(context)
-    navigation.cancelRefresh(context)
-    if not context.feed and not (context.tape and context.tape.pending) then
-        return
-    end
-    local changed, drawn = context.primitives.changed(context, navigation.render)
-    local pending = context.tape and context.tape.pending
-    if pending then
-        context.tape.pending = nil
-    end
-    if changed or pending then
-        navigation.apply(context, drawn)
-    end
-end
-
 function navigation.stageOf(context)
     return context.refreshWork and context.refreshWork.stage or "render", 1
 end

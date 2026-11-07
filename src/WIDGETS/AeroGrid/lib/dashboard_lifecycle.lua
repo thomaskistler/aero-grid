@@ -224,9 +224,6 @@ function module.new(dependencies)
             end
             for index, current in ipairs(context.panels) do
                 if current == entry then
-                    if context.refreshOwner == entry then
-                        context.refreshOwner = nil
-                    end
                     table.remove(context.panels, index)
                     context.panelTasksDirty = true
                     job.index = index
@@ -280,7 +277,6 @@ function module.new(dependencies)
             context.reflowIndex, context.reflowEntry = nil, nil
             context.locationDetails, context.locationOverlay = nil, nil
             context.logViewer, context.logOverlay = nil, nil
-            context.refreshOwner = nil
             context.appRebuild = nil
             job = { phase = "settings", pending = context.pendingConstruction }
             context.pageRetirement = job
@@ -312,8 +308,12 @@ function module.new(dependencies)
             job.phase = "menu"
             return
         elseif job.phase == "menu" then
-            if context.nativeDialogsCreated and not isFullScreen() and context.aeroMenuModule
-                and context.aerogridMenu then
+            if
+                context.nativeDialogsCreated
+                and not isFullScreen()
+                and context.aeroMenuModule
+                and context.aerogridMenu
+            then
                 context.aeroMenuModule.close(context)
                 context.aerogridMenu = nil
             end

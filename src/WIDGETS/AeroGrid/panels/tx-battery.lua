@@ -725,7 +725,7 @@ end
 
 --- Advance the panel, repainting only when something drawn changed.
 ---@param context AeroGridTxBatteryContext
-function txBattery.refresh(context)
+function txBattery.step(context)
     if not context.feed then
         return
     end
@@ -909,8 +909,6 @@ function txBattery.construct(context, rect)
     end
     return false
 end
-
-txBattery.step = txBattery.refresh
 
 txBattery.reflowDecl = { callback = txBattery.reflow, bound = 2300 }
 

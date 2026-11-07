@@ -157,36 +157,6 @@ local function captionSlice(context, limit)
     return true
 end
 
-local function layoutCaptions(context)
-    local area, builder = context.area, context.themeBuilder
-    local names = context.layoutNames
-    local changed = names == nil
-    for index = 1, area.count do
-        local feed = context.rows[index].feed
-        if context.settings.showNames ~= false and feed and not feed.nameReady then
-            return false
-        end
-        if names and names[index] ~= (context.settings.showNames ~= false and feed and feed.name or "") then
-            changed = true
-        end
-    end
-    if changed then
-        names = names or {}
-        local prefixWidth, namedWidth = 0, 0
-        for index = 1, area.count do
-            local feed = context.rows[index].feed
-            local name = context.settings.showNames ~= false and feed and feed.name or ""
-            names[index] = name
-            local prefix = "CH" .. (area.firstChannel + index - 1)
-            local caption = name ~= "" and prefix .. ": " .. string.sub(name, 1, 3) or prefix
-            prefixWidth = math.max(prefixWidth, builder.measureText(area.font, prefix))
-            namedWidth = math.max(namedWidth, builder.measureText(area.font, caption))
-        end
-        applyCaptionLayout(context, names, prefixWidth, namedWidth)
-    end
-    return true
-end
-
 local function rectangle(parent, color, rounded)
     return lvgl.rectangle(parent, {
         x = 0,
@@ -201,7 +171,7 @@ end
 
 local function createRow(context, index)
     local theme, primitives = context.theme, context.primitives
-    local root = lvgl.box(context.panel.root, { x = 0, y = 0, w = 1, h = 1 })
+    local root = lvgl.box(context.rowsRoot, { x = 0, y = 0, w = 1, h = 1 })
     lvgl.hide(root)
     local row = { root = root, dots = {} }
     row.caption = primitives.label(root, theme, { x = 0, y = 0, text = "", font = context.area.font })
@@ -324,6 +294,7 @@ function output.create(parent, rect, settings, services)
         control = services.control,
         settings = settings,
         rows = {},
+        showRows = 0,
     }
     local builder, surface = context.themeBuilder, context.theme.rgb.surface
     local light = builder.contrast(surface, 0x000000) > builder.contrast(surface, 0xFFFFFF)
@@ -343,7 +314,8 @@ function output.create(parent, rect, settings, services)
         settings.label,
         context.themeBuilder
     )
-    output.refresh(context)
+    context.rowsRoot = lvgl.box(context.panel.root, { x = 0, y = 0, w = rect.w, h = rect.h })
+    lvgl.hide(context.rowsRoot)
     return context
 end
 
@@ -394,9 +366,13 @@ function output.apply(context, drawn, first, count)
             presentation.accent
         )
     end
+    if not context.rowsShown and drawn.captionsReady then
+        lvgl.show(context.rowsRoot)
+        context.rowsShown = true
+    end
 end
 
-local function prepare(context, captionLimit)
+local function prepare(context)
     local area = context.area
     context.showRows = context.showRows or 0
     -- Subscribe before measuring captions, so no provisional column reaches the screen.
@@ -412,13 +388,7 @@ local function prepare(context, captionLimit)
             row.feed = context.control and context.control:output(channel - 1)
         end
     end
-    local captionsReady
-    if captionLimit then
-        captionsReady = captionSlice(context, captionLimit)
-    else
-        captionsReady = layoutCaptions(context)
-    end
-    if not captionsReady then
+    if not captionSlice(context, 8) then
         return
     end
     -- Mount at most one new row per callback, keeping tall panels within the
@@ -431,7 +401,7 @@ local function prepare(context, captionLimit)
         context.rendered = nil
     end
     context.showRows = math.min((context.nextRow or 1) - 1, area.count)
-    return true
+    return context.showRows == area.count
 end
 
 local function render(context, names)
@@ -454,14 +424,6 @@ function output.cancelRefresh(context)
     context.pendingDrawn, context.applyRow, context.renderReady, context.captionWork = nil, nil, nil, nil
 end
 
-function output.refresh(context)
-    output.cancelRefresh(context)
-    local drawn = prepare(context) and render(context)
-    if drawn then
-        output.apply(context, drawn)
-    end
-end
-
 function output.stageOf(context)
     if context.pendingDrawn then
         return "apply", math.max(1, math.min(2, context.showRows - context.applyRow + 1))
@@ -480,7 +442,7 @@ function output.step(context, grant, stage)
         return nil, true
     end
     if stage == "prepare" then
-        context.renderReady = prepare(context, 8)
+        context.renderReady = prepare(context)
         context.used = 1
     elseif stage == "render" then
         context.pendingDrawn = render(context, context.layoutNames)
@@ -505,6 +467,9 @@ end
 local function beginGeometry(context, rect, settings)
     context.settings = settings
     context.area = output.regionsFor(context, rect)
+    context.rowsRoot:set({ w = rect.w, h = rect.h })
+    lvgl.hide(context.rowsRoot)
+    context.rowsShown = nil
     context.primitives.resizeHeader(context, rect, context.area.frame, settings.label)
     context.nextRow = 1
     context.layoutNames = nil
@@ -519,7 +484,6 @@ function output.update(context, rect, settings)
     for _, row in ipairs(context.rows) do
         context.primitives.reconcile(row.root, false)
     end
-    output.refresh(context)
 end
 
 function output.reflow(context, rect, settings, _, _, begin)

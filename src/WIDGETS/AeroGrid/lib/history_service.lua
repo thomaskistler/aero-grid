@@ -120,8 +120,6 @@ function history.new(env, support, runtime)
         revision = 0,
         interval = INTERVAL,
         count = 0,
-        preserveLegacySlot = true,
-        legacySlotReservation = true,
         due = 0,
         env = env,
         support = support,
@@ -142,15 +140,6 @@ function history.new(env, support, runtime)
         decl = history.decl,
         run = history.step,
     })
-    if runtime.host then
-        setmetatable(service, {
-            __index = function(_, key)
-                if key ~= "update" then
-                    return history[key]
-                end
-            end,
-        })
-    end
     return service
 end
 
@@ -431,15 +420,6 @@ local function drainBoundaries(service, now)
     end
     service.boundaryAt = now
     service:boundaries()
-end
-
-function history:advance(now)
-    self.now = now
-    local flight = self.runtime.byId.flight
-    self.flightState = flight and flight:state()
-    for _, session in ipairs(self.sessions) do
-        advance(session, now, self.flightState)
-    end
 end
 
 local function recordingOptions(options)
@@ -746,19 +726,6 @@ local function updateEntry(_, entry)
             publish(entry)
         end
     end
-end
-
-local function update(service, now)
-    if service.failure then
-        error(service.failure)
-    end
-    service:advance(now)
-    drainBoundaries(service, now)
-    service.cursor = service.support.roundRobin(service.entries, service.cursor, 1, updateEntry, service, now)
-end
-
-function history:update(now)
-    update(self, now)
 end
 
 --- Advance recording sessions in bounded units, then maintain one history entry.

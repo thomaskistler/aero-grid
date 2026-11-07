@@ -137,28 +137,10 @@ function flightCounter.create(parent, rect, settings, services)
     return context
 end
 
-local function refreshReading(context)
+function flightCounter.step(context)
     local changed, drawn = context.primitives.changed(context, flightCounter.render)
     if changed then
         flightCounter.apply(context, drawn)
-    end
-end
-
-local function tick(context)
-    local now = context.clock()
-    if context.lastTick and now - context.lastTick < flightCounter.refreshInterval then
-        return
-    end
-    context.lastTick = now
-    refreshReading(context)
-end
-
-flightCounter.refresh = tick
-flightCounter.step = refreshReading
-
-function flightCounter.background(context)
-    if not context.schedulerOwned then
-        tick(context)
     end
 end
 

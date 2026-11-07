@@ -620,27 +620,6 @@ function metric.cancelRefresh(context)
     end
 end
 
---- Advance the panel, repainting only when something drawn changed.
----@param context AeroGridMetricContext
-function metric.refresh(context)
-    metric.cancelRefresh(context)
-    if not context.feed then
-        return
-    end
-    if preparePrecision(context) or context.refreshGeometry then
-        metric.update(context, context.rect)
-        context.rendered = nil
-    end
-    if prepareSupporting(context) then
-        metric.update(context, context.rect)
-        context.rendered = nil
-    end
-    local changed, drawn = context.primitives.changed(context, metric.render)
-    if changed then
-        metric.apply(context, drawn)
-    end
-end
-
 local function snapshot(feed)
     if feed then
         return {

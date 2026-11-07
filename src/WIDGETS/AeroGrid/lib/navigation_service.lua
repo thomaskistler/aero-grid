@@ -91,7 +91,6 @@ function navigationService.new(env, support, runtime)
         revision = 0,
         count = 0,
         due = 0,
-        preserveLegacySlot = true,
         env = env,
         support = support,
         runtime = runtime,
@@ -106,15 +105,6 @@ function navigationService.new(env, support, runtime)
         decl = navigationService.decl,
         run = navigationService.step,
     })
-    if runtime.host then
-        setmetatable(service, {
-            __index = function(_, key)
-                if key ~= "update" then
-                    return navigationService[key]
-                end
-            end,
-        })
-    end
     return service
 end
 
@@ -477,16 +467,6 @@ function navigationService:step(grant, _, now)
     self.due = now + delay
     self.revision = self.revision + 1
     return delay
-end
-
---- Refresh a bounded slice of the subscriptions.
----@param now integer
-local function pollEntry(service, entry, now)
-    service:poll(entry, now)
-end
-
-function navigationService:update(now)
-    self.cursor = self.support.roundRobin(self.entries, self.cursor, POLL_CAP, pollEntry, self, now)
 end
 
 function navigationService:resetSession(_, index)

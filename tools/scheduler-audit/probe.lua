@@ -580,8 +580,7 @@ local function install(context)
                 end
                 return "scheduler:finish:" .. token
             end
-            if config.deterministicClock and not P.firstFlightRelease and scheduling.scheduler
-                and scheduling.owners["service:flight"] == "new" then
+            if config.deterministicClock and not P.firstFlightRelease and scheduling.scheduler then
                 P.flightAdmission = P.flightAdmission or {}
                 P.flightAdmissionPending = {
                     at = getTime(),
@@ -857,10 +856,6 @@ local function install(context)
         for _, instance in ipairs(runtime.order) do
             if not installed[instance] then
                 installed[instance] = true
-                local update = instance.update
-                if type(update) == "function" then
-                    instance.update = wrap("service:" .. tostring(instance.id), update)
-                end
                 if not instance.schedulerTasks then
                     wrapField(instance, "step", "service:" .. tostring(instance.id))
                 end
@@ -897,6 +892,9 @@ local function install(context)
                 local update = instance.update
                 if type(update) == "function" then
                     instance.update = wrap("flight-" .. name .. ":" .. tostring(instance.id), update)
+                end
+                for _, item in ipairs(instance.schedulerTasks or {}) do
+                    wrapField(item.instance, "step", "flight-" .. name .. ":" .. item.id)
                 end
             end
         end

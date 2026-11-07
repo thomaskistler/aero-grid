@@ -65,9 +65,7 @@
 
 local WIDGET_PATH = "/WIDGETS/AeroGrid/"
 
--- Mixed mode runs migrated tasks in the scheduler and the rest in the legacy loop.
--- The probe is development-only; releases use the same mixed owner table without it.
-local SCHEDULER_MODE = "mixed"
+-- The probe is development-only; releases leave it disabled.
 local SCHEDULER_PROBE = false
 local RESTART_LOAD_BOUND = 600
 
@@ -535,34 +533,6 @@ local function showErrors(context)
     })
 end
 
---- Dispatch one lifecycle callback to every live panel in isolation.
---- A panel that raises is disabled and reported without affecting the others.
----@param context AeroGridContext
----@param event string
----@param ... any
-local function dispatchAll(context, event, ...)
-    local failures = false
-    local scheduling = context.schedulerHost
-    local scheduledBackground = event == "background" and scheduling and scheduling.mode ~= "legacy"
-
-    for _, entry in ipairs(context.panels) do
-        if
-            not entry.failed
-            and not (scheduledBackground and scheduling.owners["panel:" .. entry.module.id] == "new")
-        then
-            local ok, dispatchError = context.panelHost.dispatch(entry, event, ...)
-            if not ok and dispatchError then
-                addError(context, entry.placement.id .. ": " .. event .. ": " .. dispatchError)
-                failures = true
-            end
-        end
-    end
-
-    if failures then
-        showErrors(context)
-    end
-end
-
 local sharedDiagnosticsLog
 local flightFactories = {}
 local pumpFlight
@@ -758,12 +728,11 @@ local function create(zone, widgetOptions, path)
             addError(context, "panel host: incompatible panel API")
             context.panelHost = nil
         end
-        if SCHEDULER_MODE ~= "legacy" or SCHEDULER_PROBE then
+        do
             local scheduling = runtimeModule("lib/scheduler_host.lua")
             local ok, message = false, "module did not load"
             if scheduling then
                 ok, message = pcall(scheduling.attach, context, {
-                    mode = SCHEDULER_MODE,
                     probe = SCHEDULER_PROBE,
                     load = function(relative)
                         if relative == "lib/scheduler.lua" then
@@ -999,154 +968,19 @@ local function event(context, widgetEvent, touchState)
     return false
 end
 
---- Refresh slots per frame; expensive panels may consume multiple slots.
---- Phase staggering normally keeps the number well below this; the cap is a
---- guarantee for layouts that defeat staggering, such as many panels all
---- asking to refresh every frame.
-local REFRESH_CAP = 6
-local PREVIEW_SERVICE_RESERVE = 4000
-
---- Dispatch `refresh` to the panels that are due, newest cursor first.
---- Returns the number dispatched so tests can observe the scheduling.
---- In `mixed` mode `legacy` accounts legacy work against the new scheduler's
---- remaining budget. A legacy preview may also impose a panel-only allowance;
---- deferred entries retain their deadlines.
----@param context AeroGridContext
----@param legacy? table
----@return integer dispatched
-local function dispatchDue(context, legacy)
-    local panels = context.panels
-    local count = #panels
-    if count == 0 then
-        return 0
-    end
-
-    local now = getTime()
-    local cursor = context.refreshCursor or 1
-    if cursor > count then
-        cursor = 1
-    end
-
-    local limit = REFRESH_CAP
-    local dispatched, failures, examined, work, chargedWork = 0, false, 0, 0, 0
-
-    while examined < count and work < limit do
-        local entry = panels[cursor]
-        examined = examined + 1
-
-        local owner = context.refreshOwner
-        local waiting = owner and entry ~= owner and entry.module.id == owner.module.id
-        if
-            entry
-            and not entry.failed
-            and not waiting
-            and not (legacy and legacy.skips(entry))
-            and now >= (entry.nextRefresh or 0)
-            and (not legacy or not legacy.panelRoom or legacy.panelCost(entry) <= legacy.panelRoom - chargedWork)
-        then
-            local cost = rawget(entry.module, "refreshCost") or 1
-            if work + cost > limit then
-                break
-            end
-            work = work + cost
-            if legacy then
-                chargedWork = chargedWork + legacy.panelCost(entry)
-            end
-            dispatched = dispatched + 1
-            if context.probe then
-                local scheduling = context.schedulerHost
-                context.probe:ran("panel:" .. entry.placement.id, scheduling.panelBounds[entry.module.id] or 0)
-            end
-
-            local ok, dispatchError, _, unfinished = context.panelHost.dispatch(entry, "refresh")
-            -- Advance from now, without accumulating missed deadlines.
-            entry.nextRefresh = now + entry.interval
-            if not ok and dispatchError then
-                addError(context, entry.placement.id .. ": refresh: " .. dispatchError)
-                failures = true
-            end
-            -- Serialize staged panels of the same type, without starving
-            -- unrelated panels or the data services between their turns.
-            if ok and unfinished then
-                context.refreshOwner = entry
-            elseif context.refreshOwner == entry then
-                context.refreshOwner = nil
-            end
-        end
-
-        cursor = cursor % count + 1
-    end
-
-    -- Resume from where we stopped so every panel is served in turn.
-    context.refreshCursor = cursor
-    if legacy then
-        legacy.spent = legacy.spent + chargedWork
-    end
-    if failures then
-        showErrors(context)
-    end
-
-    return dispatched
-end
-
---- Advance the shared data services by at most one service per callback.
---- Services are charged to the same instruction budget as everything else, so
---- polling all five every cycle is not affordable. Each service declares its
---- own interval and caps how much it reads in one update, and the registry
---- serves whichever due service is next in rotation.
---- In `mixed` mode `legacy` skips services owned by the new scheduler.
----@param context AeroGridContext
----@param legacy? table
----@return string? id Service updated, for tests and error reporting.
-local function updateServices(context, legacy)
-    local registry = context.serviceRuntime
-    if not registry then
-        return nil
-    end
-
-    local telemetry = registry.byId.telemetry
-    if telemetry then
-        telemetry.pollCap = context.flightPolled and 4 or nil
-    end
-    local admit = legacy and legacy.admit
-    if not admit and context.schedulerHost then
-        admit = context.schedulerHost.legacy.admit
-    end
-    local id, serviceError = context.servicesModule.update(registry, getTime(), admit)
-    if serviceError then
-        addError(context, id .. ": " .. serviceError)
-        showErrors(context)
-    end
-
-    if id and context.schedulerHost then
-        context.schedulerHost:served(registry.byId[id])
-    end
-
-    return id
-end
-
---- Update legacy-owned services and run scheduler-owned tasks during a modal
---- callback. Panels remain on their existing modal paths until their migration.
+--- Run service tasks alongside reserved modal work; panel tasks stay ineligible.
 ---@param context AeroGridContext
 ---@param used? integer Reserved bounded modal work.
 ---@param kind? string Defaults to the existing steady modal path.
 local function updateModalServices(context, used, kind)
     local scheduling = context.schedulerHost
     if not scheduling then
-        updateServices(context)
         return
     end
-    local ready = scheduling:ready(context)
-    kind = kind or "steady"
-    local legacy = scheduling:begin(kind)
-    if legacy then
-        legacy.spent = legacy.spent + (used or 0)
+    if not scheduling:ready(context) then
+        return
     end
-    updateServices(context, legacy)
-    if not ready and legacy then
-        legacy.spent = math.max(legacy.spent, scheduling.scheduler.CEILING)
-    end
-    scheduling:finish(kind)
+    scheduling:finish(kind or "steady", used)
 end
 
 local function advanceLoading(context)
@@ -1202,62 +1036,13 @@ local function advanceFlightJob(context)
     return true
 end
 
---- The scheduled work of a steady or background callback with the host attached:
---- the legacy loop, then the new scheduler with
---- what is left (`new` mode has no legacy loop; panel `background` hooks are part
---- of the callback's overhead for legacy-owned panels). A layout the owner table cannot
---- cover keeps its legacy behavior but schedules no new tasks until corrected.
+--- Run eligible tasks without falling back to unbudgeted execution.
 ---@param context AeroGridContext
 ---@param kind "steady"|"background"
 local function scheduled(context, kind)
     local scheduling = context.schedulerHost
-    if not scheduling:ready(context) then
-        if scheduling.mode == "new" then
-            context.schedulerHost, context.scheduler, context.probe = nil, nil, nil
-            updateServices(context)
-            if kind == "steady" then
-                dispatchDue(context)
-            else
-                dispatchAll(context, "background")
-            end
-            return
-        end
-        local legacy = scheduling:begin(kind)
-        updateServices(context, legacy)
-        if kind == "steady" then
-            dispatchDue(context, legacy)
-        else
-            dispatchAll(context, "background")
-        end
-        legacy.spent = math.max(legacy.spent, scheduling.scheduler.CEILING)
-        scheduling:finish(kind)
+    if not scheduling or not scheduling:ready(context) then
         return
-    end
-    local legacyAccounting = scheduling:begin(kind)
-    local hasLegacy = scheduling.mode ~= "new"
-    if hasLegacy then
-        updateServices(context, legacyAccounting)
-    end
-    if kind == "background" then
-        dispatchAll(context, "background")
-    elseif hasLegacy then
-        if context.editorUi and legacyAccounting then
-            local scheduler = scheduling.scheduler
-            -- Leave a complete service atom and its release between legacy previews.
-            legacyAccounting.panelRoom = math.max(
-                0,
-                scheduler.CEILING
-                    - scheduler.MARGIN
-                    - scheduler.FIXED_COST
-                    - PREVIEW_SERVICE_RESERVE
-                    - scheduler.EXAMINE_COST
-                    - scheduler.RUN_COST
-                    - scheduling.overhead[kind]
-                    - scheduling.head
-                    - legacyAccounting.spent
-            )
-        end
-        dispatchDue(context, legacyAccounting)
     end
     -- Reserve the callback for long-press hit testing; scheduled work resumes
     -- on the next ordinary callback.
@@ -1267,8 +1052,7 @@ local function scheduled(context, kind)
     scheduling:finish(kind)
 end
 
-pumpFlight = function(context, inputPending)
-    context.flightPolled = nil
+pumpFlight = function(context)
     local scheduling = context.schedulerHost
     if scheduling then
         scheduling.head = 0
@@ -1333,18 +1117,22 @@ pumpFlight = function(context, inputPending)
         return false
     end
     local now = getTime()
+    local facade = context.serviceRuntime and context.serviceRuntime.byId.flight
     if
         scheduling
-        and scheduling.mode ~= "legacy"
-        and scheduling.owners["service:flight"] == "new"
-        and scheduling.owners["service:smart"] == "new"
+        and not context.runtimeFailed
         and not context.stage
         and not context.reloadState
+        and facade
+        and facade.broker == owner
+        and not owner.failed
+        and not (owner.taskService and owner.taskService.failed)
     then
         local current = owner:owningContext()
-        local facade = context.serviceRuntime and context.serviceRuntime.byId.flight
-        if current and current ~= context and not context.flightFactory.members[current] and owner.schedulerEnabled then
-            local previous = current.schedulerHost
+        local previous = current and current.schedulerHost
+        -- Allow two Flight intervals before reclaiming a registered but parked host.
+        local parked = not previous or scheduling.scheduler.elapsed(now, previous.lastRun) >= 40
+        if current and current ~= context and (not context.flightFactory.members[current] or parked) then
             local function release(id)
                 return previous and previous.scheduler and previous.scheduler:dueOf(id)
                     or previous and previous.resetOwners[id] == owner.taskService and previous.resetReleases[id]
@@ -1352,23 +1140,18 @@ pumpFlight = function(context, inputPending)
             local flightDue, smartDue = release("service:flight"), release("service:smart")
             owner:disableScheduler(current)
             owner:enableScheduler(context)
+            scheduling.lastRun = now
             scheduling.brokerDirty = true
             for id, due in pairs({ ["service:flight"] = flightDue, ["service:smart"] = smartDue }) do
                 scheduling.resetReleases[id], scheduling.resetOwners[id] = due, owner.taskService
             end
             current = context
-            scheduling:charge("tick")
+            scheduling:charge("handoff")
         end
-        if
-            (current == context or current == nil)
-            and (not owner.schedulerEnabled or current == nil)
-            and facade
-            and facade.broker == owner
-        then
+        if (current == context or current == nil) and (not owner.schedulerEnabled or current == nil) then
             owner:enableScheduler(context)
-            context.flightDashboardDue = nil
-            -- The old head reservation also covers this one-time handoff.
-            scheduling:charge("tick")
+            scheduling.lastRun = now
+            scheduling:charge("handoff")
         end
     end
     if resetConfigured or owner.resetRuntime or owner.errors.reset then
@@ -1385,48 +1168,12 @@ pumpFlight = function(context, inputPending)
             return false
         end
     end
-    if owner.smartRuntime and not owner.schedulerEnabled then
-        if inputPending or context.flightDashboardDue then
-            context.flightDashboardDue = nil
-            return false
-        end
-        if owner.lastTick and now >= owner.lastTick and now < (owner.nextPumpAt or 0) then
-            return false
-        end
-    end
-    local ok, message = true, nil
-    if not owner.schedulerEnabled then
-        ok, message = pcall(owner.tick, owner, now, filename)
-    end
-    if not ok then
-        owner:error("detection", message)
-    end
-    if scheduling and not owner.schedulerEnabled then
-        scheduling:charge("tick")
-    end
-    -- Share ordinary polling capacity, not whole chart callbacks. Construction
-    -- still needs its own slice, with a fair turn for each widget's UI work.
-    local reserved = false
-    if owner.smartRuntime and not owner.schedulerEnabled then
-        context.flightPolled = true
-        owner.nextPumpAt = now + 10
-        reserved = not not (
-            context.stage
-            or context.reloadState
-            or context.editorUi
-            or context.modelSettingsUi
-            or context.logViewer
-            or context.appRebuild
-            or context.reflowIndex
-        )
-        context.flightDashboardDue = reserved or nil
-    end
     local state = owner.view
     if
         context.flightReportedRevision == (state.diagnosticRevision or 0)
         and context.flightReportedEpoch == state.epoch
     then
-        return reserved
+        return false
     end
     context.flightReportedRevision, context.flightReportedEpoch = state.diagnosticRevision or 0, state.epoch
     local messages = {}
@@ -1450,7 +1197,7 @@ pumpFlight = function(context, inputPending)
         end
         showErrors(context)
     end
-    return reserved
+    return false
 end
 
 local function openModelSettings(context)
@@ -1517,7 +1264,9 @@ local function openModelSettings(context)
             return owner.store:loadWorkBound(job)
         end,
         nextLegacyCondition = function(previous)
-            if previous and owner.members[previous] == nil then previous = nil end
+            if previous and owner.members[previous] == nil then
+                previous = nil
+            end
             local host = next(owner.members, previous)
             return host, host and host.legacyWidgetArmed
         end,
@@ -1673,7 +1422,6 @@ local function pumpSessionReset(context)
     if not job then
         job = { service = 1, item = 1, panel = 1, now = getTime() }
         context.sessionResetJob = job
-        context.refreshOwner = nil
     end
     local scheduling = context.schedulerHost
     if job.releaseService then
@@ -1735,19 +1483,14 @@ local function pumpSessionReset(context)
             end
             entry.nextRefresh = job.now
             if not unfinished then
-                if scheduling and scheduling.scheduler and scheduling.owners["panel:" .. entry.module.id] == "new" then
+                if scheduling then
                     job.releasePanel = entry
                 end
                 job.panel = job.panel + 1
             end
             return true
         end
-        if
-            not entry.failed
-            and scheduling
-            and scheduling.scheduler
-            and scheduling.owners["panel:" .. entry.module.id] == "new"
-        then
+        if not entry.failed and scheduling then
             local message = scheduling:resetPanelRelease(entry, job.now)
             if message then
                 addError(context, message)
@@ -1778,7 +1521,7 @@ local function refresh(context, widgetEvent, touchState)
             return
         end
     end
-    if pumpFlight(context, widgetEvent ~= nil and widgetEvent ~= 0) then
+    if pumpFlight(context) then
         return
     end
     if advanceFlightJob(context) then
@@ -2026,12 +1769,7 @@ local function refresh(context, widgetEvent, touchState)
     end
 
     if context.editorUi then
-        if context.schedulerHost then
-            scheduled(context, "steady")
-        else
-            updateServices(context)
-            dispatchDue(context)
-        end
+        scheduled(context, "steady")
         return
     end
 
@@ -2076,14 +1814,7 @@ local function refresh(context, widgetEvent, touchState)
         return
     end
 
-    -- Services are refreshed before panels so every panel rendering this
-    -- cycle sees the same set of readings.
-    if context.schedulerHost then
-        scheduled(context, "steady")
-        return
-    end
-    updateServices(context)
-    dispatchDue(context)
+    scheduled(context, "steady")
 end
 
 --- Keep panels updated while the dashboard screen is not visible.
@@ -2143,12 +1874,7 @@ local function background(context)
         advanceLifecycle(context, "advanceAppRebuild")
         return
     end
-    if context.schedulerHost then
-        scheduled(context, "background")
-        return
-    end
-    updateServices(context)
-    dispatchAll(context, "background")
+    scheduled(context, "background")
 end
 
 return {

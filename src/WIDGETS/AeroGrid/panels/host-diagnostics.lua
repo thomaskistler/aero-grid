@@ -509,27 +509,6 @@ function diagnostics.cancelRefresh(context)
     context.refreshWork = nil
 end
 
---- Repaint only the lines whose text changed.
----@param context table
-function diagnostics.refresh(context)
-    diagnostics.cancelRefresh(context)
-    local lines = diagnostics.lines(context.host, context.section, context.visibleLines)
-    local start = context.section == "log" and math.max(1, #lines - context.visibleLines + 1) or 1
-    local changed = 0
-
-    for position = 1, context.visibleLines do
-        local index = context.section == "log" and context.visibleLines - position + 1 or position
-        local text = lines[start + index - 1] or ""
-        if applyLine(context, index, text) then
-            changed = changed + 1
-            -- A history shift changes every row; keep its repaint within the host budget.
-            if context.section == "log" and changed == 3 then
-                break
-            end
-        end
-    end
-end
-
 local function prepareReport(context)
     local host, section = context.host, context.section
     local work = {

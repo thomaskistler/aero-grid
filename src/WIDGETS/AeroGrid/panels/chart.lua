@@ -5,7 +5,6 @@ local chart = {
     apiVersion = 1,
     supportedSpans = { "2x1", "3x1", "4x1", "2x2", "3x2", "4x2", "3x3", "4x3", "4x4" },
     refreshInterval = 20,
-    refreshCost = 6,
     settings = {
         { key = "label", label = "Label", type = "string", default = "" },
         { key = "armSwitch", label = "Arm switch position", type = "string", default = "", legacyArm = true },
@@ -89,7 +88,6 @@ local chart = {
 local DURATIONS = { ["30s"] = 30, ["1m"] = 60, ["2m"] = 120, ["5m"] = 300, ["10m"] = 600 }
 local COLORS = { "cyan", "orange", "green" }
 local LEGEND_FONTS = { MIDSIZE, 0, SMLSIZE }
-local PROJECTION_CAP = 7
 local POINT_RETIRE_CAP = 128
 local BREAK_WIDTH = 24
 local textCache = setmetatable({}, { __mode = "k" })
@@ -1028,7 +1026,7 @@ local function addPoint(job, run, at, value, x, y)
     end
 end
 
-local function finishRun(run, bounded)
+local function finishRun(run)
     flushColumn(run)
     if run.size == 1 then
         local first = run.pts[1]
@@ -1036,21 +1034,14 @@ local function finishRun(run, bounded)
         second[1], second[2] = first[1], first[2]
         run.pool[2], run.pts[2], run.size = second, second, 2
     end
-    -- Bounded projection leaves old coordinate-tail retirement to the apply stage.
-    if not bounded then
-        for index = #run.pts, run.size + 1, -1 do
-            run.pts[index] = nil
-        end
-    end
 end
 
-local function prepare(context, item, bounded)
+local function prepare(context, item)
     local run = runFor(item, 1)
     run.boundary = nil
     local feed = item.feed
     local job = item.job or {}
     item.job = job
-    job.bounded = bounded == true
     job.index, job.last = feed.first, feed.last
     if item.snapshot then
         job.tailAt, job.tailValue, job.tailBroken, job.tailResumed =
@@ -1096,14 +1087,14 @@ local function projectPoint(job, item, at, value, broken, resumed, x, y)
         -- Coincident endpoints add no connector pixels. Sharing their native
         -- line avoids an object per arm cycle, while retaining every gap marker.
         if not coincident and (run.size > 0 or run.column) then
-            finishRun(run, job.bounded)
+            finishRun(run)
             job.runIndex = job.runIndex + 1
             run = runFor(item, job.runIndex)
             if resumed and job.previousAt >= job.start and at <= job.finish then
                 run.dotted = true
                 appendPixel(run, job.previousX, job.previousY)
                 appendPixel(run, x, y)
-                finishRun(run, job.bounded)
+                finishRun(run)
                 job.runIndex = job.runIndex + 1
                 run = runFor(item, job.runIndex)
             end
@@ -1128,7 +1119,7 @@ end
 local function project(context, item, limit)
     local job, feed = item.job, item.feed
     if job.geometryVersion ~= context.geometryVersion or job.index < feed.first then
-        prepare(context, item, job.bounded)
+        prepare(context, item)
     end
     if job.seekLow then
         for _ = 1, limit do
@@ -1152,7 +1143,7 @@ local function project(context, item, limit)
     end
     for _ = 1, limit do
         if job.index > job.last then
-            finishRun(item.runs[job.runIndex], job.bounded)
+            finishRun(item.runs[job.runIndex])
             item.runCount, item.applyIndex = job.runIndex, 1
             item.markerIndex, item.markerPhase = 1, "hide"
             item.drawnRevision, item.drawnVersion = job.revision, job.version
@@ -1365,61 +1356,52 @@ local function applyConnector(context, item, run)
     return false
 end
 
-local function applyRuns(context, item, units, bounded)
+local function applyRuns(context, item)
     local limit = math.max(item.runCount, #item.runs)
-    local changes = 0
-    for _ = 1, units or 16 do
-        local index = item.applyIndex
-        if index > limit then
-            return applyMarkers(context, item, bounded and 1 or nil)
+    local index = item.applyIndex
+    if index > limit then
+        return applyMarkers(context, item, 1)
+    end
+    local run = item.runs[index]
+    if index <= item.runCount then
+        local last = #run.pts
+        for point = last, math.max(run.size + 1, last - POINT_RETIRE_CAP + 1), -1 do
+            run.pts[point] = nil
         end
-        local run = item.runs[index]
-        if bounded and index <= item.runCount then
-            local last = #run.pts
-            for point = last, math.max(run.size + 1, last - POINT_RETIRE_CAP + 1), -1 do
-                run.pts[point] = nil
-            end
-            if #run.pts > run.size then
-                return false
-            end
-        end
-        if index <= item.runCount and run.size >= 2 and run.dotted then
-            if not applyConnector(context, item, run) then
-                return false
-            end
-            changes = changes + 1
-        elseif index <= item.runCount and run.size >= 2 then
-            if run.connector then
-                lvgl.hide(run.connector)
-            end
-            if run.line then
-                run.changes.pts, run.changes.color = run.pts, item.color
-                run.line:set(run.changes)
-                if not run.visible then
-                    lvgl.show(run.line)
-                end
-            else
-                run.line = lvgl.line(context.plotRoot, { pts = run.pts, color = item.color, thickness = 1 })
-            end
-            run.visible = true
-            changes = changes + 1
-        else
-            if run.connector then
-                lvgl.hide(run.connector)
-            end
-            if run.line and run.visible then
-                lvgl.hide(run.line)
-                run.visible = false
-                changes = changes + 1
-            end
-        end
-        item.applyIndex = index + 1
-        if changes == 4 then
-            break
+        if #run.pts > run.size then
+            return false
         end
     end
+    if index <= item.runCount and run.size >= 2 and run.dotted then
+        if not applyConnector(context, item, run) then
+            return false
+        end
+    elseif index <= item.runCount and run.size >= 2 then
+        if run.connector then
+            lvgl.hide(run.connector)
+        end
+        if run.line then
+            run.changes.pts, run.changes.color = run.pts, item.color
+            run.line:set(run.changes)
+            if not run.visible then
+                lvgl.show(run.line)
+            end
+        else
+            run.line = lvgl.line(context.plotRoot, { pts = run.pts, color = item.color, thickness = 1 })
+        end
+        run.visible = true
+    else
+        if run.connector then
+            lvgl.hide(run.connector)
+        end
+        if run.line and run.visible then
+            lvgl.hide(run.line)
+            run.visible = false
+        end
+    end
+    item.applyIndex = index + 1
     if item.applyIndex > limit then
-        return applyMarkers(context, item, bounded and 1 or nil)
+        return applyMarkers(context, item, 1)
     end
     return false
 end
@@ -1485,29 +1467,6 @@ local function readingGeometryWidth(context, width)
     then
         return math.max(width, context.legendWidth or 0)
     end
-end
-
-function chart.render(context)
-    if not readingsChanged(context) then
-        return false
-    end
-    local width = 64
-    for _, item in ipairs(context.series) do
-        width = math.max(width, renderReading(context, item, item.feed))
-    end
-    local required = readingGeometryWidth(context, width)
-    if required then
-        context.legendWidth = required
-        chart.geometry(context, context.rect)
-    end
-    for _, item in ipairs(context.series) do
-        positionReading(context, item, item.valueY)
-        if context.showExtrema and item.extremaDirty then
-            positionExtrema(context, item, item.extremaY)
-        end
-    end
-    context.readingGeometry = context.geometryVersion
-    return true
 end
 
 -- Shared bounds include the enclosing frame's frozen-feed binding.
@@ -1648,30 +1607,28 @@ function chart.traceStep(context, grant, stage)
                     or item.drawnHigh ~= item.high
                 )
             then
-                prepare(context, item, true)
+                prepare(context, item)
                 context.pending = item
                 context.cursor = index % #context.series + 1
                 return nil, true
             end
         end
     elseif stage == "project" then
-        context.pending.job.bounded = true
         project(context, context.pending, grant)
         context.used = grant
         if not context.frameExpired then
             return nil, true
         end
     else
-        if applyRuns(context, context.pending, 1, true) then
+        if applyRuns(context, context.pending) then
             context.pending = nil
         end
         return nil, true
     end
 end
 
-local function refreshPlot(context, creating, workOnly, gridQuota)
+local function refreshPlot(context, creating)
     local session = context.session
-    local hasFlights = not creating and (session.flightLast or 0) > 0
     local elapsed = session and session.elapsed or 0
     local window = timeWindow(context.settings, elapsed)
     local start = context.settings.timeRange == "rolling" and math.max(0, elapsed - window) or 0
@@ -1680,32 +1637,14 @@ local function refreshPlot(context, creating, workOnly, gridQuota)
         context.window, context.start, context.pixelStart = window, start, pixelStart
         context.version = context.version + 1
     end
-    local version = context.version
-    -- Stable readings also keep their ranges, leaving room for more projection.
-    -- Reserve the next non-overlay callback for projection after updating live
-    -- readings, so a continuous telemetry stream cannot starve the traces.
-    local readingsChanged
-    if workOnly then
-        readingsChanged = context.taskReadingsChanged
-    elseif not context.projectionTurn then
-        readingsChanged = chart.render(context)
-    end
-    context.projectionTurn = false
-    local projectionCap = readingsChanged and PROJECTION_CAP or 8
-    if
-        hasFlights
-        and (context.history.sampledAt == context.clock() or context.history.boundaryAt == context.clock())
-    then
-        projectionCap = math.min(projectionCap, 9)
-    end
-    local reflowed = version ~= context.version
+    local readingsChanged = context.taskReadingsChanged
     if context.axis and context.axis.geometryVersion ~= context.geometryVersion then
         context.framePhase, context.pending = "axis", nil
         return 5
     end
     updateHeader(context)
     if not creating then
-        updateGrid(context, gridQuota)
+        updateGrid(context, 1)
     end
     local status = ""
     local full = false
@@ -1735,63 +1674,17 @@ local function refreshPlot(context, creating, workOnly, gridQuota)
     end
     text(context.status, status, context.theme.color.textFaint)
     if status ~= "" and status ~= "HISTORY FULL" and status ~= "PREVIEW" and status ~= "PREVIEW: NO DATA" then
-        if workOnly then
-            context.taskBlocked = true
-        end
+        context.taskBlocked = true
         if readingsChanged then
             context.rangesReady = false
         end
         return 20
     end
-    if workOnly then
-        context.taskBlocked = false
-    end
+    context.taskBlocked = false
     if readingsChanged or not context.rangesReady then
         chart.ranges(context)
         context.rangesReady = true
     end
-    if workOnly then
-        return
-    end
-    if reflowed or readingsChanged and hasFlights then
-        context.projectionTurn = true
-        return 5
-    end
-    if context.pending then
-        local item = context.pending
-        if item.job.geometryVersion ~= context.geometryVersion then
-            prepare(context, item)
-        end
-        if item.job.projecting then
-            project(context, item, projectionCap)
-            return 5
-        end
-        if applyRuns(context, item) then
-            context.pending = nil
-        end
-        return 5
-    end
-    for offset = 0, #context.series - 1 do
-        local index = (context.cursor + offset - 1) % #context.series + 1
-        local item = context.series[index]
-        if
-            item.feed
-            and (
-                item.drawnVersion ~= context.version
-                or item.drawnRevision ~= item.feed.plotRevision
-                or item.drawnLow ~= item.low
-                or item.drawnHigh ~= item.high
-            )
-        then
-            prepare(context, item)
-            project(context, item, projectionCap)
-            context.pending = item
-
-            context.cursor = index % #context.series + 1
-            break
-        end
-    end
-    return context.pending and 5 or chart.intervalFor(window, context.area.w, #context.series)
 end
 
 local PLOT_FIELDS = {
@@ -1946,7 +1839,7 @@ function chart.resetSession(context)
             end
         end
         context.framePhase, context.frameSession, context.frameExpired = nil, nil, nil
-        context.pending, context.axisWork, context.projectionTurn, context.rangesReady = nil, nil, nil, false
+        context.pending, context.axisWork, context.rangesReady = nil, nil, false
         reset = { groups = {}, group = 1, index = 1 }
         context.resetWork = reset
         local function markers(pool)
@@ -2022,10 +1915,7 @@ local function publishFrame(context)
     return chart.intervalFor(context.window, context.area.w, #context.series)
 end
 
-function chart.refresh(context, creating, quota, deferPublish)
-    if creating or not context.history or context.history.failed then
-        return refreshPlot(context, true)
-    end
+local function advanceFrame(context, quota)
     if not context.framePhase then
         if not needsFrame(context) then
             return chart.intervalFor(context.window, context.area.w, #context.series)
@@ -2078,22 +1968,6 @@ function chart.refresh(context, creating, quota, deferPublish)
         if prepareAxis(context, quota) then
             context.framePhase = "traces"
         end
-    elseif context.framePhase == "traces" then
-        refreshPlot(context)
-        done = not context.pending and context.gridVersion == context.version
-        for _, item in ipairs(context.series) do
-            if item.feed and item.feed.available then
-                done = done
-                    and item.drawnVersion == context.version
-                    and item.drawnRevision == item.feed.plotRevision
-                    and item.drawnLow == item.low
-                    and item.drawnHigh == item.high
-            end
-        end
-        if done then
-            context.framePhase = "flights"
-        end
-        done = false
     elseif context.framePhase == "flights" then
         if not updateFlights(context) then
             context.framePhase = "resumes"
@@ -2132,11 +2006,7 @@ function chart.refresh(context, creating, quota, deferPublish)
         return 1, true
     end
     if done then
-        if deferPublish then
-            context.framePhase = "publish"
-        else
-            return publishFrame(context)
-        end
+        context.framePhase = "publish"
     end
     return 1, true
 end
@@ -2205,7 +2075,7 @@ function chart.step(context, grant, stage)
     context.used = 1
     if stage == "frame" then
         if context.history and not context.history.failed and not context.framePhase then
-            local interval = chart.refresh(context)
+            local interval = advanceFrame(context)
             if not context.framePhase then
                 return interval
             end
@@ -2225,13 +2095,13 @@ function chart.step(context, grant, stage)
             context.taskPhase = context.taskFrame and "axis" or "plot"
         end
     elseif stage == "axis" then
-        chart.refresh(context, nil, grant, true)
+        advanceFrame(context, grant)
         context.used = grant
         if context.framePhase == "traces" then
             context.taskPhase = "plot"
         end
     elseif stage == "plot" then
-        frozenTask(context, refreshPlot, not context.taskFrame, true, 1)
+        frozenTask(context, refreshPlot, not context.taskFrame)
         context.taskReadingsChanged = nil
         if not context.taskFrame then
             context.taskPhase = nil
@@ -2262,7 +2132,7 @@ function chart.step(context, grant, stage)
         context.taskPhase = nil
         return publishFrame(context)
     else
-        chart.refresh(context, nil, grant, true)
+        advanceFrame(context, grant)
         context.taskPhase = context.framePhase
     end
     return nil, true
@@ -2434,13 +2304,12 @@ function chart.update(context, rect)
     if context.reflowWork then
         context.reflowWork = { invalidated = true }
     end
+    if context.framePhase then
+        rollbackFrame(context)
+    end
+    context.taskPhase, context.readingWork, context.taskFrame = nil, nil, nil
     resizeShell(context, rect)
     chart.geometry(context, rect)
-    if context.framePhase then
-        context.framePhase, context.pending, context.axisWork = "axis", nil, nil
-        context.armMarkers.job, context.resumeMarkers.job = nil, nil
-    end
-    chart.refresh(context)
 end
 
 function chart.reflow(context, rect, _, _, _, begin)

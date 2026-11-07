@@ -583,7 +583,7 @@ end
 
 --- Advance the panel, repainting only when something drawn changed.
 ---@param context AeroGridIdentityContext
-function modelIdentity.refresh(context)
+function modelIdentity.step(context)
     if not context.feed then
         return
     end
@@ -593,8 +593,6 @@ function modelIdentity.refresh(context)
         modelIdentity.apply(context, drawn)
     end
 end
-
-modelIdentity.step = modelIdentity.refresh
 
 --- Reposition after a zone change.
 ---@param context AeroGridIdentityContext

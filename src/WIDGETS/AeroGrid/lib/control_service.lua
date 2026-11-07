@@ -89,18 +89,16 @@ local RESX = 1024
 ---@param env table Result of services.environment.
 ---@param support table The loaded lib/services.lua module.
 ---@return table
-function controlService.new(env, support, runtime)
+function controlService.new(env, support)
     local service = setmetatable({
         id = "control",
         interval = INTERVAL,
         revision = 0,
         count = 0,
         due = 0,
-        controlsDue = 0,
         env = env,
         support = support,
         entries = {},
-        cursor = 1,
         criticalEntries = {},
         criticalCursor = 1,
         criticalRemaining = nil,
@@ -141,20 +139,6 @@ function controlService.new(env, support, runtime)
         end,
     })
 
-    -- The flight broker has a private registry updated from the legacy flight
-    -- tick. Keep that isolated runtime on its existing path; the dashboard-owned
-    -- service is scheduled exclusively through the host tasks above.
-    if runtime and runtime.host then
-        setmetatable(service, {
-            __index = function(_, key)
-                if key ~= "update" then
-                    return controlService[key]
-                end
-            end,
-        })
-    else
-        service.update = controlService.update
-    end
     return service
 end
 
@@ -846,22 +830,6 @@ function controlService:incrementFlightCount()
         self:readVariable(entry)
     end
     return nextCount
-end
-
---- Refresh a bounded slice of the subscriptions.
----@param now integer
-local function readEntry(service, entry, now)
-    entry.read(service, entry, now)
-end
-
-function controlService:update(now)
-    for _, entry in ipairs(self.outputEntries) do
-        self:readOutputValue(entry)
-    end
-    if #self.outputEntries == 0 or now >= self.controlsDue then
-        self.controlsDue = now + INTERVAL
-        self.cursor = self.support.roundRobin(self.entries, self.cursor, POLL_CAP, readEntry, self, now)
-    end
 end
 
 --- Round a signed percentage half away from zero.

@@ -1145,28 +1145,6 @@ function linkStatus.cancelRefresh(context)
     end
 end
 
---- Advance the panel, repainting only when something drawn changed.
----@param context AeroGridLinkContext
-function linkStatus.refresh(context)
-    linkStatus.cancelRefresh(context)
-    if not context.rssiFeed and not context.qualityFeed then
-        return
-    end
-    local reading = linkStatus.read(context)
-    local noLink = reading.linkDown and reading.available
-    local digits = noLink and "NO LINK" or "-100"
-    if context.sample.digits ~= digits then
-        context.sample.digits = digits
-        context.sample.unit = noLink and "" or "dBm"
-        linkStatus.update(context, context.rect)
-        context.rendered = nil
-    end
-    local changed, drawn = context.primitives.changed(context, linkStatus.render)
-    if changed then
-        linkStatus.apply(context, drawn)
-    end
-end
-
 local function applyGeometry(context, rect, area)
     context.rect = rect
     context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)

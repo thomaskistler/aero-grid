@@ -25,24 +25,17 @@ LOADER_PATCHES = (
 )
 # Call sites inside the chart's staged frame, wrapped so each stage is measured.
 CHART_PATCHES = (
-    ("chart.render(context)", "AUDIT_SPAN(\"chart.render\", chart.render, context)",
-     "    elseif not context.projectionTurn then\n        readingsChanged = chart.render(context)\n"),
-    ("    updateHeader(context)\n    if not creating then\n        updateGrid(context, gridQuota)\n",
+    ("    updateHeader(context)\n    if not creating then\n        updateGrid(context, 1)\n",
      "    AUDIT_SPAN(\"chart.header\", updateHeader, context)\n    if not creating then\n"
-     "        AUDIT_SPAN(\"chart.grid\", updateGrid, context, gridQuota)\n", None),
+     "        AUDIT_SPAN(\"chart.grid\", updateGrid, context, 1)\n", None),
     ("        chart.ranges(context)\n        context.rangesReady = true\n",
      "        AUDIT_SPAN(\"chart.ranges\", chart.ranges, context)\n        context.rangesReady = true\n", None),
-    ("            prepare(context, item)\n        end\n        if item.job.projecting then\n"
-     "            project(context, item, projectionCap)\n            return 5\n        end\n"
-     "        if applyRuns(context, item) then\n",
-     "            AUDIT_SPAN(\"chart.prepare\", prepare, context, item)\n        end\n"
-     "        if item.job.projecting then\n"
-     "            AUDIT_SPAN(\"chart.project\", project, context, item, projectionCap)\n            return 5\n        end\n"
-     "        if AUDIT_SPAN(\"chart.apply\", applyRuns, context, item) then\n", None),
-    ("            prepare(context, item)\n            project(context, item, projectionCap)\n            context.pending = item\n",
-     "            AUDIT_SPAN(\"chart.prepare\", prepare, context, item)\n"
-     "            AUDIT_SPAN(\"chart.project\", project, context, item, projectionCap)\n            context.pending = item\n",
-     None),
+    ("                prepare(context, item)\n",
+     "                AUDIT_SPAN(\"chart.prepare\", prepare, context, item)\n", None),
+    ("        project(context, context.pending, grant)\n",
+     "        AUDIT_SPAN(\"chart.project\", project, context, context.pending, grant)\n", None),
+    ("        if applyRuns(context, context.pending) then\n",
+     "        if AUDIT_SPAN(\"chart.apply\", applyRuns, context, context.pending) then\n", None),
     ("        if prepareAxis(context, quota) then\n",
      "        if AUDIT_SPAN(\"chart.axis\", prepareAxis, context, quota) then\n", None),
     ("        if not updateFlights(context) then\n",
@@ -81,27 +74,6 @@ def patch_main(source):
         raise RuntimeError("main.lua: expected two foreground/background restart calls")
     source = source.replace(restart, '        AUDIT_SPAN("lifecycle:restartLoading", restartLoading, context)\n')
     return MAIN_PREFIX + source
-
-
-def patch_mode(source, mode):
-    """The host mode of main.lua (`mixed` ships; other modes are audit baselines)."""
-    if mode not in ("legacy", "mixed", "new"):
-        raise ValueError(f"Unsupported scheduler audit mode: {mode}")
-    if mode == "mixed":
-        return source
-    return replace_once(source, 'local SCHEDULER_MODE = "mixed"', f'local SCHEDULER_MODE = "{mode}"', "main.lua")
-
-
-def patch_owners(source, owners):
-    """Recreate pre-migration owners, then enable named migrated tasks."""
-    for task_id in re.findall(r'\["((?:panel:[\w-]+|service:flight|service:smart))"\] = "(?:legacy|new)"', source):
-        source = re.sub(rf'(\["{re.escape(task_id)}"\] = ")(?:legacy|new)(")', r'\1legacy\2', source)
-    for task_id in owners:
-        if not re.fullmatch(r"(?:panel|service):[\w-]+", task_id):
-            raise ValueError(f"Invalid scheduler owner: {task_id}")
-        source = replace_once(source, f'["{task_id}"] = "legacy"',
-                              f'["{task_id}"] = "new"', "scheduler_host.lua")
-    return source
 
 
 def patch_loader(source):

@@ -487,7 +487,7 @@ end
 
 --- Advance the panel, repainting only when something drawn changed.
 ---@param context table
-function trimPanel.refresh(context)
+function trimPanel.step(context)
     local changed, drawn = context.primitives.changed(context, trimPanel.render)
     if changed then
         trimPanel.apply(context, drawn)
@@ -569,8 +569,6 @@ function trimPanel.update(context, rect)
         aileron and elevator and aileron.available and elevator.available
     )
 end
-
-trimPanel.step = trimPanel.refresh
 
 trimPanel.reflowDecl = { callback = trimPanel.update, bound = 3710 }
 

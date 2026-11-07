@@ -52,12 +52,8 @@
 local telemetryService = { RUNTIME_API = 1 }
 telemetryService.__index = telemetryService
 
---- Ticks of 10ms between polls. Unspecified subscribers keep the legacy rate.
+--- Ticks of 10ms between polls.
 telemetryService.INTERVAL = 10
-
---- Subscriptions refreshed per update, served round robin. Sixteen sources
---- split across two updates still give every source 5 Hz at the interval above.
-telemetryService.POLL_CAP = 8
 
 telemetryService.decl = {
     class = "critical",
@@ -70,10 +66,6 @@ telemetryService.plainDecl = {
 telemetryService.recordedOneDecl = {
     class = "critical",
     stages = { run = { fixed = 0, perUnit = 740, maxUnits = 1 } },
-}
-telemetryService.legacyDecl = {
-    class = "critical",
-    stages = { run = { fixed = 260, perUnit = 1220, maxUnits = telemetryService.POLL_CAP } },
 }
 telemetryService.maintenanceDecl = {
     class = "critical",
@@ -158,9 +150,7 @@ function telemetryService.new(env, support, runtime)
         support = support,
         names = {},
         entries = {},
-        cursor = 1,
         scanCursor = 1,
-        want = 1,
         schedulerTasks = {},
         schedulerRevision = 0,
         runtime = runtime,
@@ -183,15 +173,6 @@ function telemetryService.new(env, support, runtime)
             return owner.interval
         end,
     })
-    if runtime and runtime.host then
-        setmetatable(service, {
-            __index = function(_, key)
-                if key ~= "update" then
-                    return telemetryService[key]
-                end
-            end,
-        })
-    end
     return service
 end
 
@@ -238,12 +219,8 @@ local function updateSourceTask(service, entry)
 
     local recorders = recorderCount(service, entry)
     local declaration, units = sourceDeclaration(recorders)
-    local category = recorders == 0 and "plain:"
-        or recorders == 1 and "recorded-one:"
-        or "recorded:"
-    local taskId = SOURCE_TASK_PREFIX
-        .. category
-        .. tostring(task.sourceIndex)
+    local category = recorders == 0 and "plain:" or recorders == 1 and "recorded-one:" or "recorded:"
+    local taskId = SOURCE_TASK_PREFIX .. category .. tostring(task.sourceIndex)
     local changed = task.id ~= taskId
         or task.decl ~= declaration
         or task.want ~= units
@@ -319,12 +296,7 @@ function telemetryService:subscribe(name, linkEvidence, interval)
 
     if interval == nil then
         interval = telemetryService.INTERVAL
-    elseif
-        type(interval) ~= "number"
-        or interval < 1
-        or interval > MAX_INTERVAL
-        or interval % 1 ~= 0
-    then
+    elseif type(interval) ~= "number" or interval < 1 or interval > MAX_INTERVAL or interval % 1 ~= 0 then
         error("telemetry interval must be a positive whole number of ticks", 2)
     end
 
@@ -332,9 +304,6 @@ function telemetryService:subscribe(name, linkEvidence, interval)
     if not entry then
         entry = self.support.addSubscription(self, self.entries, newEntry(name, interval))
         self.names[name] = entry
-        if not self.batchRemaining then
-            self.want = math.min(self.pollCap or telemetryService.POLL_CAP, telemetryService.POLL_CAP, #self.entries)
-        end
         if #self.entries == 1 and not self.linkSubscribed then
             self.interval = interval
         elseif interval < self.interval then
@@ -608,11 +577,11 @@ beginUpdate = function(service, now)
     service:publishLink(now)
 end
 
-finishUpdate = function(service, now, scan)
+finishUpdate = function(service, now)
     service:publishLink(now)
     local entries = service.entries
     local total = #entries
-    if scan ~= false and total > 0 then
+    if total > 0 then
         -- Advance at most one precision search per completed release, in
         -- rotation, so a dashboard never pays multiple scans in one update.
         local scan = service.scanCursor
@@ -651,58 +620,6 @@ function telemetryService.stepSource(service, entry, grant, now)
     service:publishLink(now)
     service.revision = service.revision + 1
     return entry.interval
-end
-
-function telemetryService:update(now)
-    beginUpdate(self, now)
-    local entries = self.entries
-    if #entries > 0 then
-        local cap = math.min(self.pollCap or telemetryService.POLL_CAP, telemetryService.POLL_CAP)
-        self.cursor = self.support.roundRobin(entries, self.cursor, cap, pollEntry, self, now)
-    end
-    finishUpdate(self, now)
-end
-
---- Poll one bounded round-robin slice. A poll and all of its history observers
---- remain one atomic unit; a partial grant resumes at the next source.
----@param grant integer
----@param _ string
----@param now integer
----@return integer delay
-function telemetryService:step(grant, _, now)
-    beginUpdate(self, now)
-
-    local entries = self.entries
-    local total = #entries
-    if total == 0 then
-        finishUpdate(self, now)
-        self.due = now + self.interval
-        return self.interval
-    end
-
-    if not self.batchRemaining then
-        self.batchRemaining = math.min(self.pollCap or telemetryService.POLL_CAP, telemetryService.POLL_CAP, total)
-    end
-    local visits = math.min(grant, self.batchRemaining)
-    for _ = 1, visits do
-        local entry = entries[self.cursor]
-        self.cursor = self.cursor % total + 1
-        pollEntry(self, entry, now)
-    end
-    self.batchRemaining = self.batchRemaining - visits
-    if self.batchRemaining > 0 then
-        self.want = self.batchRemaining
-        finishUpdate(self, now, false)
-        self.revision = self.revision + 1
-        return 1
-    end
-
-    self.batchRemaining = nil
-    self.want = math.min(self.pollCap or telemetryService.POLL_CAP, telemetryService.POLL_CAP, total)
-    finishUpdate(self, now)
-    self.revision = self.revision + 1
-    self.due = now + self.interval
-    return self.interval
 end
 
 --- Format a reading for display, honoring its precision.

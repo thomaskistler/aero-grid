@@ -632,7 +632,7 @@ end
 
 --- Advance the panel, repainting only when something drawn changed.
 ---@param context AeroGridTimerContext
-function flightTimer.refresh(context)
+function flightTimer.step(context)
     if not context.feed then
         return
     end
@@ -703,7 +703,14 @@ local function applyGeometry(context, rect, area)
 end
 
 local function regions(context, rect)
-    return flightTimer.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts, context.area)
+    return flightTimer.regionsFor(
+        context.theme,
+        context.themeBuilder,
+        rect,
+        context.layout,
+        context.fonts,
+        context.area
+    )
 end
 
 function flightTimer.update(context, rect)
@@ -778,8 +785,6 @@ function flightTimer.construct(context, rect)
     end
     return false
 end
-
-flightTimer.step = flightTimer.refresh
 
 flightTimer.reflowDecl = { callback = flightTimer.reflow, bound = 3970 }
 

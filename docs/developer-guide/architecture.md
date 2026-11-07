@@ -211,25 +211,25 @@ subscriptions require a post-save rebuild.
 ## Shared flight tracking
 
 The factory-scoped broker in `flight_service.lua` owns a separate non-UI
-Control/Telemetry runtime and optional Smart sensor poller. Any live widget callback can pump it. Dashboard
+Control/Telemetry runtime and optional Smart sensor poller. Dashboard
 registrations are weakly held; rebuilds mark proposals pending before replacing
 them. Unanimous effective arm/configuration proposals are required, not the
 first caller's settings. Saved model Armed overrides every declaration. A qualified session
 pins its arm, detector settings, and output until completion, including output
 cleanup when proposals change or conflict. Counter panels only render state.
 
-Production ownership remains legacy. The measured scheduler adapters are
-activated explicitly with `broker:enableScheduler(owningContext)`, after every
-callback kind admits services. Only that context's Flight facade exposes the
-two normal tasks, with demand independent of panel subscriptions. Flight keeps
+The owning widget schedules Flight and Smart, with demand independent of
+panel subscriptions. Flight keeps
 its 20-tick cadence; Smart releases at least 100 ticks apart. Delayed runs retain
 the arming reference, but expired/missing receipt evidence breaks detection
-holds. Shared proposal validation advances one item per release. Model resets
-retain the adapters. `schedulerService(owningContext)` supplies stable broker
+holds. Shared proposal validation advances one item per release.
+`schedulerService(owningContext)` supplies stable broker
 registrations even while a loader replaces the dashboard service registry;
 resync must preserve those releases without also enrolling the dashboard facade.
 Host retirement must call `disableScheduler(oldContext)`
 before activation on a replacement and resynchronize both scheduler registries.
+An active widget can also reclaim an owner that has not reached its scheduler
+for 40 ticks, preserving task deadlines and any pending configuration stage.
 
 `services.flight:state()` is an immutable live view. It exposes model/epoch,
 configuration revision/status, phase (`ground`, `starting`, `active`, `ending`),
@@ -265,14 +265,8 @@ Receipt age remains bounded evidence, not an exact timestamp or instant
 stopped-stream detector. Callbacks too infrequent to observe fresh flags
 conservatively fall back to standard detection.
 
-The legacy Smart poller is due every 100ms. Ordinary chart callbacks continue on
-Smart polling callbacks: the host reduces that callback's dashboard telemetry
-batch from eight sources to four, reserving room for Smart's four sensor
-categories. Both pollers retain round-robin progress; Smart does not skip
-whole chart callbacks. Selected metadata is compared directly rather than
-rebuilding identity strings on every poll. Expensive loading/editor work
-still gets separate, per-widget fair slices, and pending input takes priority.
-Discovery uses numeric `telemN` sources and custom
+Smart runs at most once per second and shares the instruction budget with
+dashboard work. Discovery uses numeric `telemN` sources and custom
 sensor metadata from `model.getSensor`, never names or units alone. Supported
 single-module families are CRSF (including ELRS) and native FrSky S.Port;
 unknown/MULTI or multiple active modules fall back rather than guessing.
@@ -288,8 +282,8 @@ Altitude references require an observed disarmed-to-armed transition using
 a recent sample explicitly witnessed while disarmed, or fresh evidence at
 that transition. Merely current late readings never rebase an armed session.
 Motor interruptions preserve the reference but reset holds; unknown arm resets
-holds without inventing disarm. Metadata changes invalidate the reference;
-the legacy path also invalidates it on scheduling gaps. Fixed shortcuts are
+holds without inventing disarm. Metadata changes invalidate the reference.
+Fixed shortcuts are
 strictly above +3 m or 10 mph for at least 200 ticks, allowing only precision-scaled conversion
 roundoff (including float32 firmware). `smartStatus` explains fallback in the native Model settings dialog;
 confirmed field changes publish to live detection after verified persistence.
@@ -327,13 +321,14 @@ Use `panels/flight-mode.lua` as a small working example and
 | `id`, `apiVersion`, `supportedSpans` | Identify the module, check compatibility, and advertise valid grid sizes. |
 | `settings` | Typed fields, defaults, bounds, and choices used by validation and the editor. |
 | `refreshInterval` | Desired foreground interval in 10 ms ticks; work still shares the host budget. |
-| `refreshCost` | Whole-number share of the six host refresh slots (default 1). Chart uses all six so dense layouts cannot batch expensive redraws into one callback. |
 | `create(parent, rect, settings, services)` | Build LVGL objects, subscribe to data, and return private instance state. |
 | `construct(context, rect)` | Optional bounded construction step. When `services.staged` is true, `create` returns partial state and the loader calls this once per callback until it returns `true`; return `false` while unfinished. |
-| `refresh(context)` | Optional callback to update existing objects from snapshots. May return a whole-number interval of 1–6000 ticks; nil preserves the current interval. A second result of `true` reserves subsequent turns among panels of the same type until the update completes; other panel types and services continue running. |
+| `decl`, `step(context, grant, stage, now)` | Declare bounded periodic work and execute the granted units. A whole-number result of 1–6000 ticks changes the interval; nil preserves it. A second result of `true` requests another bounded turn. |
+| `stageOf(context)` | Optional current stage and requested unit count for staged tasks. |
+| `idle = true` | Declare no periodic work instead of a task. |
 | `update(context, rect, settings, detailsOnly, placement)` | Optional geometry/configuration update. Host reflows and editor resizes pass the current grid placement as the fifth argument, leaving the internal `detailsOnly` argument unset. |
 | `reflow(context, rect, settings, services, placement, begin)` | Optional staged geometry update, preferred over `update` during host resizing. `begin=true` starts or restarts; each later call advances once, returning `true` only when complete. It must not poll data sources; bounded capture/painting of cached subscriptions may finish the resized presentation. |
-| `background(context)` | Optional work when the dashboard is not visible. |
+| `cancelRefresh(context)` | Optional cancellation of captured task work, used when resetting a session. |
 | `resetSession(context, now)` | Optional session-data reset without rebuilding the panel. A second result of `true` requests another bounded reset turn. |
 | `event(context, event)` | Optional event handling; return true when consumed. |
 | `destroy(context)` | Optional cleanup of panel-owned references. |
@@ -355,93 +350,31 @@ Metric separates validation/subscriptions, fitted frame creation, and controls
 with publication. Pending geometry changes use separate reflow/publication
 steps; ordinary construction does not add an empty publication callback.
 
-Output reflow hides eight rows, subscribes one channel, measures eight captions,
-or places one row per turn, then captures the cached readings and paints two rows
-per turn. Unresolved channel names leave rows hidden until ordinary refresh can
-resume them; geometry never waits for services to run. TX Battery separates
-geometry, reading placement, visual placement and cached-reading publication.
-Both preserve synchronous updates and invalidate unfinished reflow on cancellation.
+Dashboard services and panels use the scheduler; there is no legacy
+refresh/update loop or execution-mode switch. Panels must provide `decl` and
+`step`, or declare `idle = true`. Idle panels cannot also declare periodic work.
+Task declarations control foreground/background eligibility and bounded grants.
+Invalid contracts are reported rather than run through a fallback.
 
-Metric also exposes a scheduler-only refresh adapter: prepare a frozen copy of
-the three readings, resolve geometry if needed, apply geometry, render and
-paint. Geometry resolution and placement are separate bounded stages. Resizes,
-forced values and synchronous refreshes invalidate a pending frame; a stale
-planned stage consumes no work. Its production owner remains legacy until the
-remaining callback/lifecycle gates pass.
-Navigation freezes its rendered output, then applies readings, tape frame/style
-and bearing marks in separate stages. Cold tape geometry and alert-surface
-colors must not share an atom with scrolling the full mark pool. Its synchronous
-refresh/update APIs still compose the same helpers.
-Metric, Navigation and Output also expose `cancelRefresh(instance)` for discarding
-a captured task frame without invoking a legacy session-reset callback. Metric
-retains a geometry-dirty flag when cancelled sizing metadata has not yet been
-applied; the next bounded refresh or synchronous reflow must finish that geometry.
-Output synchronous refresh also cancels partial caption/capture/row work before
-painting current readings. Session reset invokes these hooks only for
-scheduler-owned panels, after their existing reset protocol finishes, and
-republishes the task stage before waking its release. Services release one task
-per callback after resetting; pending subscriptions retain that release until
-enrollment. Reset callbacks do not also run ordinary scheduled work.
-RX Battery gathers a bounded cells summary before yielding, then searches one
-supporting-row presence mask per geometry step. Geometry placement, rendering
-and painting have separate stages; synchronous callers compose the same search
-and placement helpers. Resizing, synchronous refresh and session reset cancel
-pending work, and stale plans consume no work. Gathered scalars, rather than a
-live cells table, remain authoritative until that frame finishes.
-Flight Mode, Flight Timer, State, Trim, TX Battery and Model Identity reuse their
-synchronous refresh as a single task stage. State is bounded by three entries of three
-conditions; Trim has three axes. TX Battery includes live range changes and
-battery/bar visibility reconciliation within its measured atom. Model Identity
-includes lazy image creation, filesystem fallback and refitting the heading when
-the name changes. Flight Counter shares its reading/painting helper but leaves
-cadence to the scheduler instead
-of applying a second local clock throttle.
-Link Status captures its six source readings and the shared link view before
-yielding. It separately resolves and applies link-loss geometry, renders frozen
-readings and paints; cancellation drops the frame without publishing unfinished
-sample metadata. Reflow keeps a lost/unavailable link's bar empty rather than
-reconstructing a healthy bar from its retained numeric reading.
-Service Probe captures fixed-size service reports before painting one or two rows
-per grant. Control reports instead scan one subscription per step, including
-switches that produce no row, and stop at the captured registry extent or visible
-row limit. Cancellation, synchronous refresh and reflow discard pending work.
-Host Diagnostics scans variable-length reports one entry at a time, retaining
-only visible failure-first rows while counting the whole report. Its log snapshot
-also stages shared demand checks and retention trimming; painting preserves the
-existing newest-first, three-changed-line limit.
+Staged panels capture readings before yielding and invalidate unfinished work
+when geometry or session state changes. Charts retain bounded projection,
+painting and atomic plot publication. Output keeps its rows hidden until the
+initial captions and readings have all been painted. Construction and reflow
+remain separate from periodic tasks.
 
-Registry, subscription and panel changes reconcile one task or placement per
-callback, with a separate bounded retirement pass. Surviving records retain
-their absolute releases. Until reconciliation finishes, only the actual owning
-Flight broker's tasks may run; ordinary deadlines remain pending. Panel and
-service enrollment each have an explicit setup reservation and never share a
-callback. Hidden panels remain ineligible for refresh.
-The internal `schedulerOwned` flag appears when a placement's contract is
-scanned, and clears on retirement, failure or return to legacy ownership.
-Callers must use the owner table, not a missing instance flag, to decide whether
-legacy background work is allowed during the pending scan.
-Production services and built-in panels use scheduler ownership except Output,
-which retains its legacy refresh until staged caption publication is atomic.
-Panels with no periodic work may declare `idle = true` instead of a task.
-The contract rejects combining it with refresh/background callbacks or scheduler
-stages. Idle placements retain ownership/retirement tracking but register no
-no-op tasks; synchronization is charged, not steady idle callbacks.
-Theme Showcase also supports staged construction, retaining the synchronous API
-for direct callers. Loading keeps it hidden until its geometry is complete;
-resizing before publication restarts only positioning.
-Service admission examines at most one queued task per callback, reserves its
-cost before allocation, and never shares a callback with panel setup. Dormant
-tasks retain a fair queue position. Registry resync preserves surviving service
-releases and queued reset times, while retiring replaced instances. Queued resets
-belong to their service instance, so a replacement cannot wake the old task with
-the same ID.
-Stable editor previews share the steady callback's service/panel accounting;
-scheduler-owned previews never also use legacy refresh.
+Registry and placement changes reconcile incrementally, reserving setup cost
+before task execution. Surviving tasks retain their releases; deferred work
+remains due when no room is available. Telemetry and History keep their 10-tick
+policy. Session resets cancel captured frames and release tasks in bounded turns,
+without also running ordinary work in those reset callbacks. Stable editor
+previews use the same scheduler as the dashboard.
+
 An enabled owning Flight broker supplies a stable scheduler registration source
 across dashboard reloads. Host resynchronization preserves its releases and
 deadlines while retiring replaced dashboard services; Flight facades do not
-register duplicate tasks. Same-owner model/session resets retain release times;
-explicit cross-host handoff removes old releases and enrolls afresh instead.
+register duplicate tasks. Same-owner model/session resets retain release times.
+Explicit cross-host handoff removes the old registrations while preserving
+pending deadlines and task stages.
 
 Model settings can publish an already-persisted, immutable document through
 `broker:startPublication(document)` and `advancePublication(job)`. The first

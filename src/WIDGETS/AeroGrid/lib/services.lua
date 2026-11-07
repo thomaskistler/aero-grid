@@ -1,23 +1,19 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
---- Shared data service registry, scheduler, and snapshot plumbing.
+--- Shared data service registry, task adapters, and snapshot plumbing.
 ---
 --- The host owns polling so panels never read EdgeTX sources themselves.
---- Two rules keep that affordable inside EdgeTX's 20000-instruction callback
---- budget, which every service update shares with every panel refresh:
+--- Services share the scheduler's instruction budget with panel work:
 ---
 --- 1. A service only reads what a loaded panel actually subscribed to. A
 ---    service with no subscriptions is skipped entirely, so a dashboard of
 ---    metrics never pays for GPS, trims, or global variables.
---- 2. At most one legacy-owned service is updated per host cycle, chosen round robin among
----    those due, and each service further caps how many subscriptions it
----    refreshes in one update. Per-callback cost is therefore bounded by the
----    caps rather than by how much the layout asks for.
+--- 2. Each task declares bounded work units; the scheduler grants only the
+---    work that fits, retaining deferred releases.
 ---
 --- Panels receive immutable views. The service mutates its own state table
 --- in place, which costs no allocation per cycle, and hands out a proxy whose
---- writes raise. Services update before panels refresh, so a panel
---- sees one consistent set of readings for the cycle.
+--- writes raise. Staged panels capture the readings they need before yielding.
 
 ---@class AeroGridServiceInstance
 ---@field id string Service name used in the services table.
@@ -26,7 +22,6 @@
 ---@field revision integer Incremented on every completed update.
 ---@field count integer Number of live subscriptions.
 ---@field failed? boolean Set after an update raises, which retires the service.
----@field update? fun(self: AeroGridServiceInstance, now: integer) Legacy-owned service entry point.
 ---@field step? fun(self: AeroGridServiceInstance, grant: integer, stage: string, now: integer): integer
 ---@field tasks? table<string, table> Named scheduler tasks.
 ---@field schedulerTasks? table[] Ordered task registrations.
@@ -131,7 +126,7 @@ end
 ---@param env table Result of services.environment.
 ---@return table runtime
 function services.runtime(env)
-    return { env = env, order = {}, byId = {}, cursor = 1, updates = 0 }
+    return { env = env, order = {}, byId = {} }
 end
 
 local function taskStep(task, grant, stage, now)
@@ -182,74 +177,6 @@ function services.register(runtime, instance, now)
     order[#order + 1] = instance
     runtime.byId[instance.id] = instance
     instance.due = now + (#order - 1)
-end
-
---- Update at most one due service.
---- Returns the service updated so the host can report a failure exactly once,
---- and so tests can observe the scheduling instead of inferring it.
---- `admit(instance)` lets the host skip scheduler-owned services. Scheduler-only
---- services also have no `update` method.
----@param runtime table
----@param now integer
----@param admit? fun(instance: AeroGridServiceInstance): boolean
----@return string? id
----@return string? error
-function services.update(runtime, now, admit)
-    local order = runtime.order
-    local count = #order
-    if count == 0 then
-        return nil
-    end
-
-    local cursor = runtime.cursor
-    if cursor > count then
-        cursor = 1
-    end
-
-    for _ = 1, count do
-        local instance = order[cursor]
-        cursor = cursor % count + 1
-
-        local due = instance and not instance.failed and instance.count > 0 and now >= instance.due
-        local admitted = due and (not admit or admit(instance))
-
-        -- Keep a scheduler-owned service's legacy rotation slot from pulling
-        -- another service into this callback. Do not postpone the scheduler's
-        -- release by overwriting the service task's own due time.
-        if due and not admitted and instance.preserveLegacySlot then
-            if type(instance.step) ~= "function" then
-                instance.due = now + instance.interval
-            end
-            runtime.cursor = cursor
-            return instance.legacySlotReservation and instance.id or nil
-        end
-
-        -- Scheduler-only services have no legacy update entry point. The host
-        -- releases them from the task table instead.
-        if
-            due
-            and admitted
-            and type(instance.update) == "function"
-        then
-            instance.due = now + instance.interval
-            runtime.cursor = cursor
-            runtime.updates = runtime.updates + 1
-
-            -- A source that misbehaves must not raise inside a widget callback, and
-            -- a service that fails once is retired rather than left to fail forever.
-            local ok, updateError = pcall(instance.update, instance, now)
-            if not ok then
-                instance.failed = true
-                return instance.id, tostring(updateError)
-            end
-
-            instance.revision = instance.revision + 1
-            return instance.id
-        end
-    end
-
-    runtime.cursor = cursor
-    return nil
 end
 
 --- Publish service-owned state and append one subscription in polling order.

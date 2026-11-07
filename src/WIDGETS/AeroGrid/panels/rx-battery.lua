@@ -1037,25 +1037,6 @@ function rxBattery.apply(context, drawn)
     end
 end
 
---- Advance the panel, repainting only when something drawn changed.
----@param context AeroGridRxBatteryContext
-function rxBattery.refresh(context)
-    invalidate(context)
-    if not context.feed and not context.lowestFeed then
-        return
-    end
-    -- What the row has to say decides what fits, so a change in its shape
-    -- rearranges the panel before it is painted.
-    local reflowed = rxBattery.measureSupporting(context)
-    if reflowed then
-        rxBattery.update(context, context.rect, nil, true)
-    end
-    local changed, drawn = context.primitives.changed(context, rxBattery.render)
-    if changed or reflowed then
-        rxBattery.apply(context, drawn)
-    end
-end
-
 --- Reposition after a zone change.
 ---@param context AeroGridRxBatteryContext
 ---@param rect AeroGridRect

@@ -17,7 +17,6 @@
 ---@field refreshInterval? integer Ticks of 10ms between refreshes. 0 or absent
 ---  means every frame. Telemetry rarely needs more than a few hertz, and the
 ---  host pays every panel's cost inside one instruction budget.
----@field refreshCost? integer Host refresh slots consumed, 1 to 6; defaults to 1.
 ---@field settings? AeroGridPanelSetting[]
 ---@field validateSettings? fun(settings: table, span?: table, config?: table, modelArmed?: string): table
 ---@field beginSettingsValidation? fun(settings: table, span?: table, config?: table, modelArmed?: string): table
@@ -26,14 +25,13 @@
 ---@field construct? fun(instance: any, rect: table): boolean Finish one staged construction step; true when ready.
 ---@field update? fun(instance: any, rect: table, settings: table)
 ---@field reflow? fun(instance: any, rect: table, settings: table, services: table?, placement: table?, begin: boolean): boolean One geometry stage; begin restarts, true completes.
----@field refresh? fun(instance: any)
----@field decl? table Scheduler declaration for a migrated panel.
----@field idle? boolean Explicitly declares no periodic refresh or background work.
+---@field decl? table Scheduler declaration; required unless idle.
+---@field idle? boolean Explicitly declares no periodic work.
 ---@field step? fun(instance: any, grant: integer, stage: string, now: integer): integer?, boolean?
 ---@field stageOf? fun(instance: any): string, integer?
---- A numeric refresh result selects the next interval in 10ms ticks.
---- A second result of true requests consecutive turns until this update finishes.
----@field background? fun(instance: any)
+--- A numeric step result selects the next interval in 10ms ticks.
+--- A second result of true requests another bounded turn.
+---@field cancelRefresh? fun(instance: any)
 ---@field resetSession? fun(instance: any, now: integer) Second result true requests another reset turn.
 ---@field event? fun(instance: any, event: any): boolean
 ---@field destroy? fun(instance: any)
@@ -55,7 +53,7 @@ panelHost.API_VERSION = 1
 
 --- Optional lifecycle callbacks, in a fixed order so errors stay deterministic.
 local OPTIONAL_CALLBACKS =
-    { "construct", "update", "reflow", "refresh", "step", "stageOf", "background", "resetSession", "event", "destroy" }
+    { "construct", "update", "reflow", "step", "stageOf", "cancelRefresh", "resetSession", "event", "destroy" }
 
 --- Restrict module identifiers to the same path-safe characters as layout types.
 ---@param value any
@@ -120,12 +118,16 @@ function panelHost.validateModule(module, typeName)
         if callback ~= nil and type(callback) ~= "function" then
             return false, name .. " must be a function"
         end
-        local idle = field(module, "idle")
-        if idle ~= nil and type(idle) ~= "boolean" then
-            return false, "idle must be a boolean"
-        elseif idle and not panelHost.isIdle(module) then
-            return false, "an idle panel cannot declare periodic work"
-        end
+    end
+    local idle = field(module, "idle")
+    if idle ~= nil and type(idle) ~= "boolean" then
+        return false, "idle must be a boolean"
+    elseif idle and not panelHost.isIdle(module) then
+        return false, "an idle panel cannot declare periodic work"
+    elseif field(module, "refresh") ~= nil or field(module, "background") ~= nil then
+        return false, "periodic panel work must use scheduler tasks"
+    elseif not idle and (type(field(module, "decl")) ~= "table" or type(field(module, "step")) ~= "function") then
+        return false, "panel must declare a scheduler task or be idle"
     end
 
     local spans = field(module, "supportedSpans")
@@ -142,11 +144,6 @@ function panelHost.validateModule(module, typeName)
     if interval ~= nil and (type(interval) ~= "number" or interval < 0 or interval ~= math.floor(interval)) then
         return false, "refreshInterval must be a non-negative whole number of ticks"
     end
-    local cost = field(module, "refreshCost")
-    if cost ~= nil and (type(cost) ~= "number" or cost < 1 or cost > 6 or cost ~= math.floor(cost)) then
-        return false, "refreshCost must be a whole number from 1 to 6"
-    end
-
     return true
 end
 
@@ -375,7 +372,7 @@ end
 --- The first failure permanently disables that panel so a broken module
 --- cannot repeatedly raise errors or take down the surrounding dashboard.
 ---@param entry AeroGridPanelEntry
----@param event string Optional callback name such as "refresh".
+---@param event string Lifecycle callback name.
 ---@param ... any Additional callback arguments.
 ---@return boolean ok
 ---@return string? error Set only on the call that first fails.
@@ -394,7 +391,7 @@ function panelHost.dispatch(entry, event, ...)
     local ok, resultOrError, unfinished = pcall(callback, entry.instance, ...)
     if ok and event == "reflow" and type(resultOrError) ~= "boolean" then
         ok, resultOrError = false, "reflow must return a boolean"
-    elseif ok and (event == "refresh" or event == "step") and type(resultOrError) == "number" then
+    elseif ok and event == "step" and type(resultOrError) == "number" then
         if resultOrError < 1 or resultOrError > 6000 or resultOrError ~= math.floor(resultOrError) then
             ok, resultOrError = false, "refresh interval must be a whole number from 1 to 6000 ticks"
         else

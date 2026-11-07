@@ -284,14 +284,6 @@ function probe.cancelRefresh(context)
     context.refreshWork = nil
 end
 
-function probe.refresh(context)
-    probe.cancelRefresh(context)
-    local count = describe(context)
-    for index = 1, context.visibleRows do
-        applyRow(context, count, index)
-    end
-end
-
 function probe.stageOf(context)
     local work = context.refreshWork
     local want = work and work.stage == "apply" and math.min(2, context.visibleRows - work.applyRow + 1) or 1
