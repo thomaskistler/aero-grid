@@ -44,9 +44,15 @@ for _, theme in ipairs({ "modern-dark", "modern-light" }) do
                 end,
             }
             local function settle(context)
-                for _ = 1, 100 do
-                    module.refresh(context)
+                local task = hostModule.task({ module = module, instance = context, interval = 20 })
+                for step = 1, 2000 do
+                    if task:step(task.want or 1, task.stage, getTime()) ~= 1 then return end
+                    if kind == "output" and feeds[0].nameReady == false and step == 100 then
+                        assert(context.showRows == 0, "rows must wait for unresolved names")
+                        return
+                    end
                 end
+                error(kind .. ": panel task did not finish")
             end
             local function create()
                 local context = module.create(
@@ -78,7 +84,7 @@ for _, theme in ipairs({ "modern-dark", "modern-light" }) do
                 local rect = { x = 1, y = 2, w = shape[1], h = shape[2] }
                 finish(staged, rect, module.reflow(staged, rect, settings, nil, placement, true))
                 module.update(synchronous, rect, settings)
-                -- Output's synchronous update mounts one row per refresh.
+                -- Output's synchronous update mounts rows through its task.
                 -- Compare without refreshing the completed staged geometry.
                 if kind == "output" then
                     settle(synchronous)
@@ -197,11 +203,8 @@ for _, theme in ipairs({ "modern-dark", "modern-light" }) do
                             assert(staged.reflowWork.invalidated)
                         elseif interruption == "reset" then
                             local scheduler = host.schedulerHost
-                            local owner = scheduler.owners["panel:" .. kind]
-                            scheduler.owners["panel:" .. kind] = "new"
                             local entry = { module = module, instance = staged, placement = { id = "subject" } }
                             local message = scheduler:resetPanelRelease(entry, getTime())
-                            scheduler.owners["panel:" .. kind] = owner
                             assert(not message and not entry.failed, message)
                             assert(staged.reflowWork.invalidated)
                         else
