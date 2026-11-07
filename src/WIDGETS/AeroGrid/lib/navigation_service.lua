@@ -421,36 +421,11 @@ end
 ---@param now integer
 ---@return integer delay
 function navigationService:read(grant, now)
-    local entries = self.entries
-    local total = #entries
-    if total == 0 then
+    if #self.entries == 0 then
         return INTERVAL
     end
-
-    local cursor = self.cursor
-    if cursor > total then
-        cursor = 1
-    end
-
-    local remaining = self.remaining
-    if remaining == nil then
-        remaining = math.min(POLL_CAP, total)
-    end
-    local reads = math.min(grant, remaining)
-    for _ = 1, reads do
-        local entry = entries[cursor]
-        cursor = cursor % total + 1
-        self:poll(entry, now)
-    end
-    self.cursor = cursor
-    remaining = remaining - reads
-    if remaining > 0 then
-        self.remaining = remaining
-        return 1
-    end
-
-    self.remaining = nil
-    return INTERVAL
+    local more = self.support.poll(self, "cursor", "remaining", self.entries, POLL_CAP, grant, self, self.poll, now)
+    return more and 1 or INTERVAL
 end
 
 --- Scheduler release for the navigation subscriptions.

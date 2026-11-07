@@ -722,24 +722,18 @@ function flightTimer.cancelRefresh(context)
     if context.createStage then
         context.createInvalidated = true
     end
-    if context.reflowWork then
-        context.reflowWork = { invalidated = true }
-    end
+    context.primitives.invalidateReflow(context)
 end
 
 --- Staged `update`: the regions, then the writes. Nothing drawn changes until
 --- the second step, so a refresh between them still sees one geometry.
 function flightTimer.reflow(context, rect, _, _, _, begin)
-    local work = context.reflowWork
-    if
-        begin
-        or work
-            and (work.invalidated or work.rect.x ~= rect.x or work.rect.y ~= rect.y or work.rect.w ~= rect.w or work.rect.h ~= rect.h)
-    then
-        local captured = { x = rect.x, y = rect.y, w = rect.w, h = rect.h }
+    local captured = context.primitives.reflowStart(context, rect, begin)
+    if captured then
         context.reflowWork = { stage = "place", rect = captured, area = regions(context, captured) }
         return false
     end
+    local work = context.reflowWork
     if work then
         context.reflowWork = nil
         applyGeometry(context, work.rect, work.area)
@@ -760,14 +754,7 @@ function flightTimer.construct(context, rect)
         applyGeometry(context, context.rect, context.area)
         context.createStage = "publish"
     elseif stage == "publish" then
-        local previous = context.rect
-        if
-            context.createInvalidated
-            or previous.x ~= rect.x
-            or previous.y ~= rect.y
-            or previous.w ~= rect.w
-            or previous.h ~= rect.h
-        then
+        if context.createInvalidated or not context.primitives.sameRect(context.rect, rect) then
             context.createStage = "geometry"
         else
             local _, drawn = context.primitives.changed(context, flightTimer.render)

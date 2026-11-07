@@ -1149,14 +1149,9 @@ function rxBattery.update(context, rect, _, detailsOnly)
 end
 
 function rxBattery.reflow(context, rect, _, _, _, begin)
-    local work = context.reflowWork
-    if
-        begin
-        or work
-            and (work.invalidated or work.rect.x ~= rect.x or work.rect.y ~= rect.y or work.rect.w ~= rect.w or work.rect.h ~= rect.h)
-    then
+    local captured = context.primitives.reflowStart(context, rect, begin)
+    if captured then
         invalidate(context)
-        local captured = { x = rect.x, y = rect.y, w = rect.w, h = rect.h }
         context.reflowWork = {
             stage = "fit",
             rect = captured,
@@ -1173,6 +1168,7 @@ function rxBattery.reflow(context, rect, _, _, _, begin)
         }
         return false
     end
+    local work = context.reflowWork
     if not work then
         return true
     elseif work.stage == "fit" then
@@ -1276,14 +1272,7 @@ function rxBattery.construct(context, rect)
         context.primitives.setFont(context.unit, context.area.unitFont)
         context.createStage = "publish"
     elseif stage == "publish" then
-        local previous = context.rect
-        if
-            context.createInvalidated
-            or previous.x ~= rect.x
-            or previous.y ~= rect.y
-            or previous.w ~= rect.w
-            or previous.h ~= rect.h
-        then
+        if context.createInvalidated or not context.primitives.sameRect(context.rect, rect) then
             context.createStage = "geometry"
         else
             local _, drawn = context.primitives.changed(context, rxBattery.render)

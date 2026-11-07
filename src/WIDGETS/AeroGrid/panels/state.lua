@@ -380,9 +380,7 @@ function statePanel.create(parent, rect, settings, services)
 end
 
 function statePanel.cancelRefresh(context)
-    if context.reflowWork then
-        context.reflowWork = { invalidated = true }
-    end
+    context.primitives.invalidateReflow(context)
 end
 
 function statePanel.step(context)
@@ -418,17 +416,13 @@ function statePanel.update(context, rect)
 end
 
 function statePanel.reflow(context, rect, _, _, _, begin)
-    local work = context.reflowWork
-    if
-        begin
-        or work
-            and (work.invalidated or work.rect.x ~= rect.x or work.rect.y ~= rect.y or work.rect.w ~= rect.w or work.rect.h ~= rect.h)
-    then
-        local captured = { x = rect.x, y = rect.y, w = rect.w, h = rect.h }
+    local captured = context.primitives.reflowStart(context, rect, begin)
+    if captured then
         local spec = regionSpec(context, captured)
         context.reflowWork = { rect = captured, spec = spec, iteration = 0, stage = "fit" }
         return false
     end
+    local work = context.reflowWork
     if not work then
         return true
     elseif work.stage == "fit" then

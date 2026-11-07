@@ -84,37 +84,14 @@ end
 ---@param now integer
 ---@return integer delay
 function armed:step(grant, _, now)
-    local entries = self.entries
-    local total = #entries
-    if total == 0 then
+    if #self.entries == 0 then
         return INTERVAL
     end
-
-    local cursor = self.cursor
-    if cursor > total then
-        cursor = 1
-    end
-    local remaining = self.remaining
-    if remaining == nil then
-        remaining = math.min(POLL_CAP, total)
-    end
-    local reads = math.min(grant, remaining)
     local control = self.runtime.byId.control
-    for _ = 1, reads do
-        local entry = entries[cursor]
-        cursor = cursor % total + 1
-        entry.read(control, entry, now)
-    end
-    self.cursor = cursor
-    remaining = remaining - reads
+    local more = self.support.poll(self, "cursor", "remaining", self.entries, POLL_CAP, grant, control, nil, now)
     control.markScheduledUpdate(control, now)
     self.revision = self.revision + 1
-    if remaining > 0 then
-        self.remaining = remaining
-        return 1
-    end
-    self.remaining = nil
-    return INTERVAL
+    return more and 1 or INTERVAL
 end
 
 function armed:state(legacy)

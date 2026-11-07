@@ -764,7 +764,7 @@ function history:step(grant, _, now)
     self.sessionCursor = 1
     self.tasks.run.want = math.min(SESSION_CAP, #self.sessions)
     drainBoundaries(self, now)
-    self.cursor = self.support.roundRobin(self.entries, self.cursor, 1, updateEntry, self, now)
+    self.support.poll(self, "cursor", "remaining", self.entries, 1, 1, self, updateEntry, now)
     self.due = now + self.interval
     self.revision = self.revision + 1
     return self.interval

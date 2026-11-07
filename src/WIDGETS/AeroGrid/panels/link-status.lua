@@ -1137,9 +1137,7 @@ function linkStatus.cancelRefresh(context)
     if context.createStage then
         context.createInvalidated = true
     end
-    if context.reflowWork then
-        context.reflowWork = { invalidated = true }
-    end
+    context.primitives.invalidateReflow(context)
     if context.refreshWork then
         context.refreshWork, context.rendered = nil, nil
     end
@@ -1360,14 +1358,9 @@ function linkStatus.update(context, rect)
 end
 
 function linkStatus.reflow(context, rect, _, _, _, begin)
-    local work = context.reflowWork
-    if
-        begin
-        or work
-            and (work.invalidated or work.rect.x ~= rect.x or work.rect.y ~= rect.y or work.rect.w ~= rect.w or work.rect.h ~= rect.h)
-    then
+    local captured = context.primitives.reflowStart(context, rect, begin)
+    if captured then
         linkStatus.cancelRefresh(context)
-        local captured = { x = rect.x, y = rect.y, w = rect.w, h = rect.h }
         context.reflowWork = {
             stage = "geometry",
             rect = captured,
@@ -1375,6 +1368,7 @@ function linkStatus.reflow(context, rect, _, _, _, begin)
         }
         return false
     end
+    local work = context.reflowWork
     if not work then
         return true
     elseif work.stage == "geometry" then
@@ -1413,14 +1407,7 @@ function linkStatus.construct(context, rect)
         context.primitives.setFont(context.unit, context.area.unitFont)
         context.createStage = "publish"
     elseif stage == "publish" then
-        local previous = context.rect
-        if
-            context.createInvalidated
-            or previous.x ~= rect.x
-            or previous.y ~= rect.y
-            or previous.w ~= rect.w
-            or previous.h ~= rect.h
-        then
+        if context.createInvalidated or not context.primitives.sameRect(context.rect, rect) then
             context.createStage = "geometry"
         else
             local _, drawn = context.primitives.changed(context, linkStatus.render)
