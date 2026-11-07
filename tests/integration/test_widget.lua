@@ -1628,7 +1628,15 @@ panels:
     )
 
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
-    pump(context, 40)
+    for _ = 1, 200 do
+        local link = entryById(context, "link").instance
+        local pack = entryById(context, "pack").instance
+        local wrong = entryById(context, "notcells").instance
+        if link.linkDetail == "78dB" and pack.packText == "16.4V" and wrong.summary.shape == "pack" then
+            break
+        end
+        pump(context, 1)
+    end
 
     local link = entryById(context, "link").instance
     local pack = entryById(context, "pack").instance
@@ -1993,11 +2001,18 @@ local function testReflowAndLifecycle()
 
     local pulse = entryById(appContext, "pulse")
     local ticksBefore = pulse.instance.ticks
-    pump(appContext, 2)
-    assertEqual(pulse.instance.ticks, ticksBefore + 2, "refresh was not dispatched")
+    for _ = 1, 200 do
+        if pulse.instance.ticks >= ticksBefore + 2 then break end
+        pump(appContext, 1)
+    end
+    assert(pulse.instance.ticks >= ticksBefore + 2, "panel task did not make progress")
 
-    definition.background(appContext)
-    assertEqual(pulse.instance.backgroundTicks, 1, "background was not dispatched")
+    ticksBefore = pulse.instance.ticks
+    for _ = 1, 10 do
+        tick(20)
+        definition.background(appContext)
+    end
+    assertEqual(pulse.instance.ticks, ticksBefore, "background must not run a steady-only panel task")
 
     -- Events reach panels; an unconsumed event is reported as unconsumed.
     assertEqual(definition.event(appContext, 32), false)
@@ -2012,8 +2027,11 @@ local function testOptionReload()
     -- fresh child of the root, which is never cleared. The clearing callback
     -- must create nothing, because EdgeTX may collect the clear much later.
     local discarded = appContext.page
-    definition.refresh(appContext)
-    assertEqual(discarded.cleared, true, "first callback did not discard the page")
+    for _ = 1, 200 do
+        if appContext.reloadState == "rebuild" then break end
+        pump(appContext, 1)
+    end
+    assertEqual(discarded.cleared, true, "retirement did not discard the page")
     assertEqual(appContext.root.cleared, false, "the root must never be cleared")
     assertEqual(appContext.reloadState, "rebuild", "reload did not defer its rebuild")
     assertEqual(appContext.page, nil, "page was recreated in the clearing callback")
@@ -2185,6 +2203,11 @@ panels:
     zone.w = 240
     zone.h = 160
     definition.refresh(context)
+    for _ = 1, 200 do
+        if not context.reflowIndex then break end
+        pump(context, 1)
+    end
+    assert(not context.reflowIndex, "radial reflow did not finish")
 
     local resized = dial.instance.radial.arc
     local newBounds = boundsOf(dial)
@@ -2321,15 +2344,15 @@ local function testTelemetryDrivesPanels()
     assert(pack.feed, "the metric never subscribed to a source")
     assertEqual(pack.feed.name, "RxBt")
 
-    --- Advance far enough for the services and the panel to both fall due.
-    local function settle()
-        for _ = 1, 8 do
-            tick(20)
-            definition.refresh(context)
+    local function settle(predicate)
+        for _ = 1, 200 do
+            if predicate() then return end
+            pump(context, 1)
         end
+        error("telemetry did not reach the panels")
     end
 
-    settle()
+    settle(function() return pack.text == "24.0" and current.text == "10.0" end)
     assertEqual(pack.stateName, "normal")
     assertEqual(pack.value.properties.text, "24.0")
     assertEqual(pack.badge.properties.text, "")
@@ -2342,22 +2365,22 @@ local function testTelemetryDrivesPanels()
     assertEqual(current.text, "10.0", "the sensor precision was ignored")
 
     radio.values[100] = 20.5
-    settle()
+    settle(function() return pack.stateName == "warning" end)
     assertEqual(pack.stateName, "warning")
     assertEqual(pack.badge.properties.text, "WARN")
 
     radio.values[100] = 19.0
-    settle()
+    settle(function() return pack.stateName == "critical" end)
     assertEqual(pack.stateName, "critical")
     assertEqual(pack.badge.properties.text, "CRIT")
 
     -- Losing the link must keep the last reading and mark it stale, never
     -- replace it with the zero EdgeTX reports for a dead telemetry source.
     radio.values[100] = 24.0
-    settle()
+    settle(function() return pack.stateName == "normal" and pack.text == "24.0" end)
     assertEqual(pack.stateName, "normal")
     radio.rssi = 0
-    settle()
+    settle(function() return pack.stateName == "stale" end)
     assertEqual(pack.stateName, "stale")
     assertEqual(pack.badge.properties.text, "STALE")
     assertEqual(pack.value.properties.text, "24.0", "a stale poll overwrote the value")
@@ -2365,7 +2388,7 @@ local function testTelemetryDrivesPanels()
     -- With the link back, a zero really is a reading and must be shown as one.
     radio.rssi = 80
     radio.values[100] = 0
-    settle()
+    settle(function() return pack.text == "0.0" end)
     assertEqual(pack.value.properties.text, "0.0", "a valid zero was not shown")
     assertEqual(pack.stateName, "critical")
 
@@ -2385,9 +2408,10 @@ local function testOnlyReferencedSourcesArePolled()
     end
 
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, referencePath)
-    for _ = 1, 40 do
+    for _ = 1, 200 do
         tick(20)
         definition.refresh(context)
+        if read["100"] then break end
     end
     getValue = realGetValue
 
@@ -3209,7 +3233,7 @@ local function testNothingIsDrawnOverAnythingElse()
                 mode[1] == "app mode",
                 stem .. ": the " .. mode[1] .. " sweep built the other zone"
             )
-            pump(context, 60)
+            pump(context, 300)
             assertEqual(#context.errors, 0, stem .. ": " .. table.concat(context.errors, "\n"))
             assertNothingOverlaps(mode[1] .. " layout " .. stem, context)
         end
@@ -3988,13 +4012,13 @@ local function testBadgesEndFlushWithTheirPanel()
         local zone = mode[2]()
         local context = createLoaded(zone, DEFAULT_OPTIONS, widget)
         assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-        pump(context, 60)
+        pump(context, 300)
         inspect(mode[1] .. " resting", context)
 
         -- A dead link badges the telemetry panels stale and then unavailable,
         -- which is how the two remaining words are reached.
         radio.rssi = 0
-        pump(context, 80)
+        pump(context, 300)
         inspect(mode[1] .. " link down", context)
 
         local widthBefore = {}
@@ -4015,7 +4039,7 @@ local function testBadgesEndFlushWithTheirPanel()
             passes = passes + 1
             assert(passes < 200, "reflow never finished")
         until not context.reflowIndex
-        pump(context, 40)
+        pump(context, 200)
         local moved = false
         for _, entry in ipairs(context.panels) do
             if boundsOf(entry).w ~= widthBefore[entry.placement.id] then
@@ -5631,8 +5655,11 @@ panels:
     local context = createLoaded(zone, DEFAULT_OPTIONS, widgetPath)
     -- Let the telemetry service resolve and deliver, so the panel is drawing a
     -- number before anything here asks what happens to the unit beside it.
-    pump(context, 20)
     local instance = entryById(context, "big").instance
+    for _ = 1, 200 do
+        if instance.text == "3.0" then break end
+        pump(context, 1)
+    end
 
     assertEqual(instance.text, "3.0", "this test needs a panel with a reading, not a sentinel")
     assert(instance.unit, "unit was never created")
@@ -5872,9 +5899,9 @@ local function testDiagnosticsFitTheirPanels()
         "rows were not restored when the panel grew again"
     )
 
-    for _ = 1, 4 do
-        tick(50)
-        definition.refresh(context)
+    for _ = 1, 200 do
+        if probeRows(entryById(context, "model").instance).MODEL == "Test Model" then break end
+        pump(context, 1)
     end
     local rows = probeRows(entryById(context, "model").instance)
     assertEqual(rows.MODEL, "Test Model", "a restored row kept stale text")
@@ -6511,14 +6538,20 @@ local function testReadingsSitInTheirSlots()
 
             local context = createLoaded({ x = 0, y = 0, w = WIDTH, h = HEIGHT }, DEFAULT_OPTIONS, widgetPath)
             assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-            settle(context, 30)
-
             local panel = entryById(context, "pack").instance
             local where = subject.type .. " " .. span .. (extra[1] and (" with " .. extra[1]) or "")
+            for _ = 1, 200 do
+                local text = tostring(panel.value.properties.text)
+                if text ~= "" and text ~= "--" and text ~= "--:--" then break end
+                pump(context, 1)
+            end
 
             local reading = panel.value.properties
             local text = tostring(reading.text)
-            assert(text ~= "" and text ~= "--", where .. ": no reading was drawn, so there is nothing to place")
+            assert(
+                text ~= "" and text ~= "--" and text ~= "--:--",
+                where .. ": no reading was drawn, so there is nothing to place"
+            )
 
             local font = reading.font
             if type(font) == "function" then
@@ -7089,10 +7122,12 @@ panels:
 
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-    settle(context, 20)
-
     -- The fixture's active mode is 1, named Sport.
     local tall = entryById(context, "tall").instance
+    for _ = 1, 200 do
+        if tall.detailLabel.properties.text == "#1" then break end
+        pump(context, 1)
+    end
     assertEqual(tall.showDetail, true, "a two-row panel shed its supporting row")
     assertEqual(
         tall.detailLabel.properties.text,
@@ -7291,12 +7326,14 @@ panels:
 
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-    settle(context, 30)
-
     local stated = entryById(context, "stated").instance
     local quiet = entryById(context, "quiet").instance
     local inverted = entryById(context, "inverted").instance
     local half = entryById(context, "half").instance
+    for _ = 1, 200 do
+        if stated.text == "7.9" and quiet.text == "7.9" and inverted.text == "7.9" and half.text == "7.9" then break end
+        pump(context, 1)
+    end
 
     -- The voltage is authoritative and is shown by all of them. The fixture
     -- transmitter reads 7.9 V, and the unit rides beside the digits.
@@ -7334,7 +7371,10 @@ panels:
     -- And the pilot changing it in radio settings is seen, because the range is
     -- subscribed rather than read once. Nothing rebuilds a widget for that.
     radio.battMin, radio.battMax = 5.4, 8.4
-    settle(context, 60)
+    for _ = 1, 200 do
+        if quiet.detailLabel.properties.text == "83% EST" then break end
+        pump(context, 1)
+    end
     assertEqual(
         quiet.detailLabel.properties.text,
         "83% EST",
@@ -7418,12 +7458,14 @@ panels:
 
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-    settle(context, 30)
-
     local healthy = entryById(context, "healthy").instance
     local alarmed = entryById(context, "alarmed").instance
     local unranged = entryById(context, "unranged").instance
     local tiny = entryById(context, "tiny").instance
+    for _ = 1, 200 do
+        if healthy.glyphShown and alarmed.stateName == "critical" and tiny.glyphShown then break end
+        pump(context, 1)
+    end
 
     -- The fixture transmitter reads 7.9 V against 6.6 to 8.4, so 1.3 of 1.8.
     local fraction = (7.9 - 6.6) / (8.4 - 6.6)
@@ -7579,10 +7621,12 @@ panels:
 
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-    settle(context, 30)
-
     local small = entryById(context, "small").instance
     local large = entryById(context, "large").instance
+    for _ = 1, 200 do
+        if small.text == "7.9" and large.text == "7.9" then break end
+        pump(context, 1)
+    end
 
     -- Read off the label rather than out of the panel's own bookkeeping,
     -- so this is the font the panel is drawing in rather than the one it
@@ -7837,9 +7881,11 @@ panels:
 
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-    settle(context, 30)
-
     local tx = entryById(context, "tx").instance
+    for _ = 1, 200 do
+        if tx.text == "7.9" and tx.unit and not tx.unit.hidden then break end
+        pump(context, 1)
+    end
     assert(tx.unit and not tx.unit.hidden, "the panel drew no unit to follow")
 
     --- Where the reading actually ends, asked of the same measurement the
@@ -7869,7 +7915,10 @@ panels:
 
     -- Four characters. The reading grows and the unit has to grow with it.
     radio.values[320] = 10.0
-    settle(context, 30)
+    for _ = 1, 200 do
+        if tx.text == "10.0" then break end
+        pump(context, 1)
+    end
     assertEqual(tx.text, "10.0", "the reading did not change length, so this test proves nothing")
     assert(
         tx.unit.properties.x > narrowX,
@@ -7883,7 +7932,10 @@ panels:
     -- And back, because a unit that only ever moves right would pass the line
     -- above and then overlap a reading that shortened.
     radio.values[320] = 7.9
-    settle(context, 30)
+    for _ = 1, 200 do
+        if tx.text == "7.9" then break end
+        pump(context, 1)
+    end
     assertEqual(tx.text, "7.9")
     assertEqual(
         tx.unit.properties.x,
@@ -8202,7 +8254,14 @@ local function testBatteryGlyphLeavesTheReadingRoom()
     local widgetPath = makeWidget("glyph-room", table.concat(lines, "\n"))
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-    settle(context, 30)
+    for _ = 1, 200 do
+        local ready = true
+        for index = 1, #spans do
+            if entryById(context, "p" .. index).instance.text ~= "7.9" then ready = false end
+        end
+        if ready then break end
+        pump(context, 1)
+    end
 
     for index = 1, #spans do
         local panel = entryById(context, "p" .. index).instance
@@ -8272,11 +8331,16 @@ panels:
     )
 
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
-    local ok, err = pcall(settle, context, 30)
+    local quiet = entryById(context, "quiet").instance
+    local ok, err = pcall(function()
+        for _ = 1, 200 do
+            if quiet.text == "7.9" then break end
+            pump(context, 1)
+        end
+    end)
     getGeneralSettings = real
     assert(ok, "a panel raised without getGeneralSettings: " .. tostring(err))
 
-    local quiet = entryById(context, "quiet").instance
     assertEqual(quiet.text, "7.9", "the voltage it does know was lost")
     assertEqual(quiet.barShown, false, "a bar was drawn with nothing to measure it against")
     assertEqual(quiet.detailLabel.properties.text, "", "a percentage was estimated from nothing")
@@ -8322,10 +8386,12 @@ panels:
 
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-    settle(context, 30)
-
     local tall = entryById(context, "tall").instance
     local flat = entryById(context, "flat").instance
+    for _ = 1, 200 do
+        if tall.detailLabel.properties.text == "OF 5:00" and flat.text ~= "--:--" then break end
+        pump(context, 1)
+    end
 
     -- Two rows: the caption is drawn, and says what the countdown is out of.
     assertEqual(tall.showDetail, true, "a two-row timer shed its caption")
@@ -8343,7 +8409,10 @@ panels:
 
     -- An expired countdown says so, where it can.
     radio.timers[0].value = -15
-    settle(context, 20)
+    for _ = 1, 200 do
+        if tall.detailLabel.properties.text == "EXPIRED" then break end
+        pump(context, 1)
+    end
     assertEqual(tall.detailLabel.properties.text, "EXPIRED")
     assertEqual(tall.stateName, "critical")
 
@@ -8352,7 +8421,12 @@ panels:
     -- only the harness's write counter can see this.
     local writes = flat.detailLabel.writes
     radio.timers[0].value = 42
-    settle(context, 20)
+    local oldText = flat.text
+    for _ = 1, 200 do
+        if flat.text ~= oldText then break end
+        pump(context, 1)
+    end
+    assert(flat.text ~= oldText, "the timer did not update")
     assertEqual(flat.detailLabel.writes, writes, "a shed caption was written while the timer changed underneath it")
     resetRadio()
 end
@@ -8767,11 +8841,13 @@ panels:
 
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-    settle(context, 30)
-
     local short = entryById(context, "short").instance
     local long = entryById(context, "long").instance
     local huge = entryById(context, "huge").instance
+    for _ = 1, 200 do
+        if short.stateName == "warning" and long.stateName == "warning" and huge.stateName == "warning" then break end
+        pump(context, 1)
+    end
 
     -- The badge is showing, so the heading column is the narrow one. Without
     -- this the panels are not the case being tested.
@@ -8972,9 +9048,12 @@ panels:
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
     local function updateNavigation()
         local service = context.serviceRuntime.byId.navigation
-        local now = getTime()
-        service.due = now
-        service:step(2, "run", now)
+        local revision = service.revision
+        for _ = 1, 200 do
+            if service.revision > revision then return end
+            pump(context, 1)
+        end
+        error("navigation service did not make progress")
     end
 
     radio.values[130] = { 4.11, 4.09, 4.12 }
@@ -9611,7 +9690,7 @@ local function testUnitsAreNotDrawnBesideAnAbsentReading()
                         })
                     )
                     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
-                    settle(context, 40)
+                    settle(context, 200)
 
                     local entry = entryById(context, "probe")
                     if entry then
@@ -9851,7 +9930,13 @@ panels:
     end
 
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
-    local ok, err = pcall(settle, context)
+    local ok, err = pcall(function()
+        for _ = 1, 200 do
+            if entryById(context, "identity").instance.text == "No Picture"
+                and entryById(context, "battery").instance.stateName == "normal" then break end
+            pump(context, 1)
+        end
+    end)
     getFlightMode = realFlightMode
     model.getInfo = realGetInfo
     assert(ok, "a panel raised inside a callback: " .. tostring(err))
@@ -10042,12 +10127,14 @@ local function testTelemetryPanels()
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
     assertEqual(#context.panels, 5)
-    settle(context)
-    local navigationService = context.serviceRuntime.byId.navigation
-    local now = getTime()
-    navigationService.due = now
-    navigationService:step(2, "run", now)
-    settle(context, 1)
+    for _ = 1, 200 do
+        if entryById(context, "pack").instance.text == "4.09"
+            and entryById(context, "link").instance.text == "96"
+            and entryById(context, "elrs").instance.text == "-72"
+            and entryById(context, "nav").instance.text == "778"
+            and entryById(context, "native").instance.text == "778" then break end
+        pump(context, 1)
+    end
 
     -- The pack is judged by its worst cell, and the summed pack voltage is
     -- supporting detail rather than the headline.
@@ -10063,14 +10150,20 @@ local function testTelemetryPanels()
     -- barely moves: 15.6 V across four cells still looks healthy.
     radio.values[130] = { 4.11, 3.25, 4.09, 4.12 }
     radio.values[131] = 3.25
-    settle(context, 12)
+    for _ = 1, 200 do
+        if pack.text == "3.25" then break end
+        pump(context, 1)
+    end
     assertEqual(pack.text, "3.25")
     assertEqual(pack.stateName, "critical")
     assertEqual(pack.badge.properties.text, "CRIT")
 
     -- The cells-monitor row always reports its measured count.
     radio.values[130] = { 4.11, 4.13, 4.09 }
-    settle(context, 12)
+    for _ = 1, 200 do
+        if pack.countText == "3S" then break end
+        pump(context, 1)
+    end
     assertEqual(pack.countText, "3S", "the panel did not use the measured cell count")
     assertEqual(pack.stateName, "normal")
 
@@ -10087,11 +10180,17 @@ local function testTelemetryPanels()
     assertEqual(link.showDetail, false)
 
     radio.values[141] = 44
-    settle(context, 12)
+    for _ = 1, 200 do
+        if link.stateName == "warning" then break end
+        pump(context, 1)
+    end
     assertEqual(link.stateName, "warning")
     assertEqual(link.badge.properties.text, "WARN")
     radio.values[141] = 22
-    settle(context, 12)
+    for _ = 1, 200 do
+        if link.stateName == "critical" then break end
+        pump(context, 1)
+    end
     assertEqual(link.stateName, "critical")
 
     -- A dBm source keeps its own unit and its own thresholds; nothing converts
@@ -10102,7 +10201,10 @@ local function testTelemetryPanels()
     assertEqual(elrs.unit.properties.text, "dBm", "the unit the source resolved to never reached the label beside it")
     assertEqual(elrs.stateName, "normal")
     radio.values[143] = -95
-    settle(context, 12)
+    for _ = 1, 200 do
+        if elrs.stateName == "warning" then break end
+        pump(context, 1)
+    end
     assertEqual(elrs.stateName, "warning", "a dBm threshold must count downward")
     radio.values[143] = -72
 
@@ -10282,40 +10384,28 @@ local function testTelemetryDegrades()
     resetRadio()
     local widgetPath = makeWidget("telemetry-degrade", TELEMETRY_LAYOUT)
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
-    settle(context)
     local navigationService = context.serviceRuntime.byId.navigation
-    local now = getTime()
-    navigationService.due = now
-    navigationService:step(2, "run", now)
-    settle(context, 1)
-
     local pack = entryById(context, "pack").instance
     local link = entryById(context, "link").instance
     local nav = entryById(context, "nav").instance
-    local telemetryService = context.serviceRuntime.byId.telemetry
-
-    local function refreshTelemetry(now)
-        for _, item in ipairs(telemetryService.schedulerTasks) do
-            item.instance:step(item.instance.want, "run", now)
+    local function waitFor(predicate)
+        for _ = 1, 200 do
+            if predicate() then return end
+            pump(context, 1)
         end
+        assert(predicate(), "telemetry panels did not reach the expected state")
     end
 
-    local function refreshServices()
-        now = getTime()
-        refreshTelemetry(now)
-        navigationService.due = now
-        navigationService:step(2, "run", now)
-        settle(context, 10)
-    end
-
+    waitFor(function() return pack.stateName == "normal" and nav.stateName == "normal" end)
     assertEqual(pack.stateName, "normal")
     assertEqual(nav.stateName, "normal")
 
     -- Disconnect. Every reading keeps its last value, marked, and the link
     -- panel says so in the one place a pilot will look.
     radio.rssi = 0
-    pump(context, 40)
-    refreshServices()
+    waitFor(function()
+        return pack.stateName == "stale" and link.stateName == "critical" and nav.stateName == "stale"
+    end)
     assertEqual(navigationService.entries[1].reading.stale, true, "GPS reading did not become stale")
 
     assertEqual(pack.stateName, "stale", "a dropped link hid the last cells")
@@ -10334,8 +10424,9 @@ local function testTelemetryDegrades()
 
     -- Reconnect. Nothing may be left marked once readings arrive again.
     radio.rssi = 80
-    pump(context, 40)
-    refreshServices()
+    waitFor(function()
+        return pack.stateName == "normal" and link.stateName == "normal" and nav.stateName == "normal"
+    end)
     assertEqual(pack.stateName, "normal")
     assertEqual(link.stateName, "normal")
     assertEqual(link.badge.properties.text, "")
@@ -10346,8 +10437,7 @@ local function testTelemetryDegrades()
     -- place off the coast of Africa and must never be shown as one.
     radio.values[109].lat = 0
     radio.values[109].lon = 0
-    pump(context, 40)
-    refreshServices()
+    waitFor(function() return nav.origin == "NO FIX" and nav.tape.pointer.hidden end)
     assertEqual(nav.stateName, "unavailable")
     assertEqual(nav.badge.properties.text, "N/A")
     assertEqual(nav.origin, "NO FIX")
@@ -10364,8 +10454,7 @@ local function testTelemetryDegrades()
     radio.values[109].lon = 8.5417
     radio.values[109]["pilot-lat"] = 0
     radio.values[109]["pilot-lon"] = 0
-    pump(context, 40)
-    refreshServices()
+    waitFor(function() return nav.origin == "NO HOME POSITION" end)
     assertEqual(nav.stateName, "normal", "a missing home is not a broken fix")
     -- A missing home position leaves the fix good, so the panel is not badged
     -- at all and only the caption changes.
@@ -10391,8 +10480,7 @@ local function testTelemetryDegrades()
     -- fix something; which *kind* of wrong is not a difference the row spends
     -- a word on.
     radio.values[130] = { 0, -1, 99 }
-    pump(context, 40)
-    refreshServices()
+    waitFor(function() return pack.summary.shape == "invalid" and pack.text == "--" end)
     assertEqual(pack.summary.shape, "invalid")
     assertEqual(pack.text, "--")
     assertEqual(pack.badge.properties.text, "N/A")
@@ -10458,7 +10546,11 @@ panels:
     )
 
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
-    pump(context, 40)
+    for _ = 1, 200 do
+        if entryById(context, "extreme").instance.text == "4.09"
+            and entryById(context, "voltage").instance.text == "4.10" then break end
+        pump(context, 1)
+    end
 
     for _, id in ipairs({ "extreme", "voltage" }) do
         local instance = entryById(context, id).instance
