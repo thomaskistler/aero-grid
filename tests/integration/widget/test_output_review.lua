@@ -27,6 +27,7 @@ end
 
 local resolvingNames = true
 local initialCaptions = true
+local initialVisible = false
 local outputReader = model.getOutput
 model.getOutput = function(index)
     return resolvingNames and { name = "" } or outputReader(index)
@@ -47,8 +48,9 @@ local function pump()
                         equal(row.captionText, "CH" .. index .. (name and ": " .. name or ""))
                     end
                 end
+                if not instance.rowsRoot.hidden then initialVisible = true end
                 assert(
-                    labeled == 0 or labeled == instance.area.count,
+                    instance.rowsRoot.hidden or labeled == instance.area.count,
                     "initial captions must appear together with resolved names"
                 )
             end
@@ -58,6 +60,7 @@ local function pump()
     fixture.assertNoOverlap(context)
 end
 pump()
+assert(initialVisible, "initial captions must become visible")
 initialCaptions = false
 resolvingNames = false
 pump()
