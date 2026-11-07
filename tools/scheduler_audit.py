@@ -86,6 +86,16 @@ def patch_main(source):
     source = source.replace(menu,
         '    if context.aeroMenuModule and AUDIT_SPAN("main:modalMenu", context.aeroMenuModule.handle, '
         'context, widgetEvent, touchState) then\n')
+    waiting = """        local bound = context.dashboardLifecycle.workBound(context, "waitReflow")
+        if bound then
+            updateModalServices(context, bound, "loader")
+        end
+"""
+    source = replace_once(source, waiting,
+        '        AUDIT_SPAN("lifecycle:waitReflow", auditWaitReflow, context)\n', "main.lua")
+    source = replace_once(source, "local function background(context)\n",
+        "local function auditWaitReflow(context)\n" + waiting +
+        "end\n\nlocal function background(context)\n", "main.lua")
     return MAIN_PREFIX + source
 
 

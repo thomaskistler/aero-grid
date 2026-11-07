@@ -191,14 +191,18 @@ class InstructionSnapshotTests(unittest.TestCase):
             "lifecycle:retirePage:panel:metric": ("dashboard-lifecycle", "panel", 120, 200),
             "lifecycle:retirePage:settings": ("dashboard-lifecycle", "settingsAbsent", 120, 200),
             "lifecycle:retirePage:settings:closing": ("dashboard-lifecycle", "settingsDrain", 120, 200),
+            "lifecycle:waitReflow": ("dashboard-lifecycle", "reflowWait", 20, 40),
         }
         bucket = dict(n=10, min=120, max=200, selfMin=20, selfMax=40)
         for label, expected in labels.items():
             rows = snapshot.native_rows("focused", {"stats": {label: {"units": {"1": bucket}}}}, estimates)
-            self.assertEqual(len(rows), 1, label)
+            self.assertEqual(len(rows), 2 if expected[1] == "settingsDrain" else 1, label)
             row = rows[0]
             self.assertEqual((row["name"], row["stage"], row["min"], row["max"]), expected, label)
             self.assertEqual((row["kind"], row["grant"], row["n"]), ("bound", 0, 10))
+            if expected[1] == "settingsDrain":
+                self.assertEqual((rows[1]["stage"], rows[1]["min"], rows[1]["max"]),
+                                 ("settingsDrainOverhead", 20, 40))
         with self.assertRaises(ValueError):
             snapshot.native_rows("focused", {"stats": {"modal:settings:advance:load_read:idle": {
                 "units": {"1": dict(n=10, min=120, max=200, selfMax=40)}}}}, estimates)

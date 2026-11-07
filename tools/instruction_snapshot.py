@@ -388,6 +388,8 @@ def native_bound(label, estimates):
         return "dashboard-loader", "sharedFlightOverhead", True
     if label == "lifecycle:beginReflow":
         return "dashboard-lifecycle", "reflowBegin", False
+    if label == "lifecycle:waitReflow":
+        return "dashboard-lifecycle", "reflowWait", True
     if label == "lifecycle:rebuildPage":
         return "dashboard-lifecycle", "rebuild", False
     if label == "lifecycle:restartLoading":
@@ -484,6 +486,12 @@ def native_rows(scenario, results, estimates=None):
             rows.append(dict(kind=kind, name=name, stage=stage, grant=int(grant) if kind == "task" else 0,
                              n=bucket["n"], min=bucket[minimum], max=bucket[maximum], failures=0,
                              minScenario=scenario, maxScenario=scenario))
+            if kind == "bound" and name == "dashboard-lifecycle" and stage == "settingsDrain":
+                if "selfMin" not in bucket or "selfMax" not in bucket:
+                    raise ValueError(f"native settings drain needs exclusive ranges: {scenario}:{label}")
+                rows.append(dict(kind="bound", name=name, stage="settingsDrainOverhead", grant=0,
+                                 n=bucket["n"], min=bucket["selfMin"], max=bucket["selfMax"], failures=0,
+                                 minScenario=scenario, maxScenario=scenario))
     return rows
 
 
@@ -650,6 +658,7 @@ def profile(audit, args):
     names.extend(name for name in available if name.endswith(("-min", "-max"))
                  and not name.startswith("chart-"))
     names.append("theme-showcase-tasks")
+    names.extend(("theme-resolution-corrections", "shared-flight-loading"))
     # Existing foreground scenarios exercise the actual staged work and its
     # behavioral assertions, rather than measuring workBound getters.
     names.extend((
