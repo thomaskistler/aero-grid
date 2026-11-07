@@ -420,7 +420,8 @@ The internal `schedulerOwned` flag appears when a placement's contract is
 scanned, and clears on retirement, failure or return to legacy ownership.
 Callers must use the owner table, not a missing instance flag, to decide whether
 legacy background work is allowed during the pending scan.
-These adapters do not change production ownership or waive lifecycle gates.
+Production services and built-in panels use scheduler ownership except Output,
+which retains its legacy refresh until staged caption publication is atomic.
 Panels with no periodic work may declare `idle = true` instead of a task.
 The contract rejects combining it with refresh/background callbacks or scheduler
 stages. Idle placements retain ownership/retirement tracking but register no

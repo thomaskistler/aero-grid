@@ -93,7 +93,7 @@ def patch_mode(source, mode):
 
 
 def patch_owners(source, owners):
-    """Recreate pre-migration owners, then enable selected scheduler tasks."""
+    """Recreate pre-migration owners, then enable named migrated tasks."""
     for task_id in re.findall(r'\["((?:panel:[\w-]+|service:flight|service:smart))"\] = "(?:legacy|new)"', source):
         source = re.sub(rf'(\["{re.escape(task_id)}"\] = ")(?:legacy|new)(")', r'\1legacy\2', source)
     for task_id in owners:
