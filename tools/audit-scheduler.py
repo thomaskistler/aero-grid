@@ -529,7 +529,7 @@ def scenarios():
         owners=["panel:metric"], phases=[
             {"name": "settle", "kind": "refresh", "callbacks": 80, "step": 5, "perCall": 1},
             {"name": "retire", "kind": "refresh", "action": "lifecycle-retire",
-             "callbacks": 400, "step": 5, "perCall": 1, "trace": True},
+             "callbacks": 800, "step": 5, "perCall": 1, "trace": True},
             {"name": "retire-check", "kind": "refresh", "action": "check-lifecycle",
              "callbacks": 1, "step": 5, "perCall": 1},
         ])
