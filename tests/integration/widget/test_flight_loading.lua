@@ -271,4 +271,31 @@ for _, parkedStage in ipairs({
     assert(creator.flightLoading == nil and advances > 0)
     assert(#creator.errors == 0 and #hidden.errors == 0 and #observer.errors == 0)
 end
+do
+    fixture.reset()
+    local context = create()
+    local failed = false
+    for _ = 1, 2000 do
+        if context.stage == "flight-register" then
+            local advance = context.flightRegistration.advance
+            context.flightRegistration.advance = function()
+                return true, false, "expected registration rejection"
+            end
+            definition.refresh(context)
+            assert(context.stage == "flight-register-error", "registration errors need a separate publication stage")
+            definition.refresh(context)
+            assert(context.stage ~= "flight-register-error", "error publication must finish in one advance")
+            local found = false
+            for _, message in ipairs(context.errors) do
+                if string.find(message, "expected registration rejection", 1, true) then found = true end
+            end
+            assert(found, "rejected registration must remain visible in the dashboard errors")
+            context.flightRegistration.advance = advance
+            failed = true
+            break
+        end
+        definition.refresh(context)
+    end
+    assert(failed, "initial loading must reach Flight registration")
+end
 print("Flight loading: pre-Armed selection, shared ownership and publication replacement passed")

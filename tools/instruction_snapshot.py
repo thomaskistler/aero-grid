@@ -384,6 +384,8 @@ def native_bound(label, estimates):
         return "main", "modalLocation", False
     if label == "main:modalMenu":
         return "main", "modalMenu", False
+    if label in ("host:head:reset", "host:head:handoff"):
+        return "host", label.split(":")[-1], False
     if label.startswith("load:flight-load-wait:shared:"):
         return "dashboard-loader", "sharedFlightOverhead", True
     if label == "lifecycle:beginReflow":
@@ -461,9 +463,12 @@ def native_rows(scenario, results, estimates=None):
             kind = "task"
         elif label.startswith("callback:"):
             kind, name = "callback", label.split(":")[1]
+            loading = name.endswith("@load")
+            if loading:
+                name = name[:-5]
             if name not in ("create", "update", "refresh", "background"):
                 continue
-            stage = scenario + ":" + ":".join(label.split(":")[2:])
+            stage = scenario + ":" + ("load:" if loading else "") + ":".join(label.split(":")[2:])
         elif label.startswith("scheduler:framework:"):
             kind, name, stage, exclusive = "framework", "scheduler", label[len("scheduler:framework:"):], True
         elif label.startswith("load:theme-resolve:"):
@@ -607,7 +612,7 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
         result["observations"] = merge_observations(native)
         findings = check({"estimates": estimates, "record": record},
                          {"mock": record["observations"]["mock"], "native": result["observations"]},
-                         set(), updating=True)
+                         set(), updating=False)
         errors.extend("candidate: " + finding for finding in findings
                       if not finding.startswith("efficiency:"))
     except (ValueError, TypeError, OSError) as error:
@@ -658,7 +663,8 @@ def profile(audit, args):
     names.extend(name for name in available if name.endswith(("-min", "-max"))
                  and not name.startswith("chart-"))
     names.append("theme-showcase-tasks")
-    names.extend(("theme-resolution-corrections", "shared-flight-loading"))
+    names.extend(("theme-resolution-corrections", "shared-flight-loading", "layout-loading-error",
+                  "flight-registration-error"))
     # Existing foreground scenarios exercise the actual staged work and its
     # behavioral assertions, rather than measuring workBound getters.
     names.extend((

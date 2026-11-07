@@ -739,13 +739,28 @@ local DEFAULT_ADVANCE = 0.4286
 --- fixture carrying two models had one of them contradicting the firmware it
 --- cites. The generous one was the wrap model, which reported labels
 --- wrapping that a radio draws on a single line.
+-- Font metrics are immutable. Retain only the last string at each radio font
+-- height so repeated layout probes do not repeatedly sum mock-only glyphs.
+local lastWidths = {}
+for _, height in pairs(firmware.FONT_HEIGHT) do
+    lastWidths[height] = {}
+end
+
 local function advanceWidth(text, height)
+    local previous = lastWidths[height]
+    if previous and previous.text == text then
+        return previous.width
+    end
     local width = 0
     for index = 1, #text do
         local ratio = ADVANCE[string.sub(text, index, index)] or DEFAULT_ADVANCE
         width = width + ratio * height
     end
-    return math.floor(width + 0.5)
+    width = math.floor(width + 0.5)
+    if previous then
+        previous.text, previous.width = text, width
+    end
+    return width
 end
 
 function support.lcd(options)

@@ -164,6 +164,8 @@ class InstructionSnapshotTests(unittest.TestCase):
         estimates = snapshot.load()["estimates"]
         labels = {
             "host:overhead:steady": ("host-overhead", "steady", 120, 200),
+            "host:head:reset": ("host", "reset", 120, 200),
+            "host:head:handoff": ("host", "handoff", 120, 200),
             "host:overhead:host-reconcile": ("host-overhead", "host-reconcile", 120, 200),
             "scheduler:ready:panel-enroll": ("host", "panelEnroll", 120, 200),
             "scheduler:ready:service-enroll": ("host", "serviceEnroll", 120, 200),
@@ -264,6 +266,12 @@ class InstructionSnapshotTests(unittest.TestCase):
                 self.assertEqual(len([finding for finding in candidate_errors if finding.startswith("memory:")]), 3)
                 self.assertEqual(result["mock"], [])
                 self.assertFalse(list((root / "build/scheduler-audit").glob("snapshot-candidate-*.lua")))
+                increased = copy.deepcopy(native)
+                increased["stats"]["task:service:model:run"]["units"]["1"]["max"] = 701
+                with patch.object(audit, "run", return_value=increased):
+                    candidate_errors, _ = snapshot.validate_candidate(
+                        audit, runner, args, estimates, record, "native", library, None)
+                self.assertTrue(any("regression:" in finding for finding in candidate_errors))
                 with patch.object(snapshot, "validate_candidate", return_value=(
                         ["memory: heap bound exceeded"], {"mock": [], "native": []})):
                     self.assertEqual(snapshot.profile(audit, args), 1)
@@ -285,6 +293,15 @@ class InstructionSnapshotTests(unittest.TestCase):
                 assert(chunk("record").candidateMarker, "candidate was not loaded")
             """, encoding="ascii")
             runner.run_test(suite, snapshot_path=candidate)
+
+    def test_native_loading_callbacks_are_not_omitted_from_safety_checks(self):
+        data, observations, _ = self.data()
+        measured = snapshot.native_rows("dense", {"stats": {
+            "callback:refresh@load": {"units": {"1": {"n": 1, "min": 15001, "max": 15001}}}}})
+        self.assertEqual((measured[0]["name"], measured[0]["stage"]), ("refresh", "dense:load:"))
+        observations["native"] = snapshot.merge_observations(measured)
+        self.assertTrue(any(finding.startswith("safety:") for finding in
+                            snapshot.check(data, observations, set(), updating=True)))
 
     def test_atomic_write_and_radio_safe_roundtrip(self):
         data, _, _ = self.data()

@@ -111,6 +111,22 @@ foreground["lib/flight_registration.lua"] = function(module)
     })
 end
 
+foreground["lib/dashboard_loader.lua"] = function(module)
+    module.new = recorder:wrap(module.new, function(_, ok, results)
+        if not ok then return end
+        local loader = results[2]
+        loader.advanceLoad = recorder:bound(function(context)
+            local stage = context.stage
+            if stage == "flight-load-wait"
+                and loader.workBound(context) ~= costs:bound("dashboard-loader", stage) then return end
+            if stage == "flight-load-notice" or stage == "flight-load-wait"
+                or stage == "flight-register-error" or stage == "load-error" then
+                return bound("dashboard-loader", stage)
+            end
+        end, loader.advanceLoad)
+    end)
+end
+
 local function registerStages(_, ok, _, _, name, declaration)
     if not ok then
         return
@@ -158,6 +174,9 @@ instrument = function(relative, module)
     -- coverage without retaining another adapter in the multi-widget heap.
     if relative == "lib/flight_registration.lua"
         and string.sub(scenario, 1, 15) ~= "tests/unit/lib/" then return end
+    if relative == "lib/dashboard_loader.lua"
+        and scenario ~= "tests/integration/widget/test_flight_loading.lua"
+        and scenario ~= "tests/integration/widget/test_layout_loading_chunks.lua" then return end
     local name = names[module.decl]
     if relative ~= "lib/costs.lua" and relative ~= "lib/services.lua" and relative ~= "main.lua"
         and relative ~= "lib/scheduler.lua"

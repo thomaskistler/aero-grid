@@ -245,6 +245,14 @@ def scenarios():
     result["layout-loading-error"] = dict(result["metric-max"], expected=0,
         layout=invalid_layout, fallbackLayout=invalid_layout,
         expectedError="unsupported layout version", phases=standard_phases())
+    result["flight-registration-error"] = dict(result["metric-max"],
+        expectedError="flight: expected registration rejection",
+        phases=standard_phases() + [
+            {"name": "registration-error", "kind": "refresh", "action": "flight-registration-error",
+             "callbacks": 1, "step": 5, "perCall": 1},
+            {"name": "registration-error-check", "kind": "refresh", "action": "check-flight-registration-error",
+             "callbacks": 1, "step": 5, "perCall": 1},
+        ])
     result["shared-flight-loading"] = dict(result["metric-max"], sharedFlightLoad=True,
         sharedFlightRevision=7, settings=True,
         settingsDocument="version: 1\nmodelFilename: model1.yml\nrevision: 7\narmed: L64\n"

@@ -1415,6 +1415,19 @@ actions = {
             assert(context.root and context.root ~= P.lifecycleRoot, "restart must recreate a discarded root")
         end
     end,
+    ["flight-registration-error"] = function(context)
+        assert(not context.stage and not context.reloadState, "registration-error scenario must start loaded")
+        context.pendingFlightError = "expected registration rejection"
+    end,
+    ["check-flight-registration-error"] = function(context)
+        assert(not context.pendingFlightError, "deferred Flight error was not published")
+        assert(context.errorLabel, "Flight error must be visible")
+        local found = false
+        for _, message in ipairs(context.errors) do
+            if message == config.expectedError then found = true end
+        end
+        assert(found, "Flight error disappeared before the next callback")
+    end,
     ["open-location"] = function(context)
         local entry = assert(context.panels[1])
         assert(entry.module.id == "navigation" and entry.instance.feed.fix)

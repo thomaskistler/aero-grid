@@ -96,6 +96,49 @@ def patch_main(source):
     source = replace_once(source, "local function background(context)\n",
         "local function auditWaitReflow(context)\n" + waiting +
         "end\n\nlocal function background(context)\n", "main.lua")
+    reset = """        local resetOk, resetError = pcall(owner.pollReset, owner, now)
+        if not resetOk then
+            owner:error("reset", resetError)
+        end
+        if scheduling then
+            scheduling:charge("reset")
+        end
+"""
+    source = replace_once(source, reset,
+        '        AUDIT_SPAN("host:head:reset", auditResetHead, owner, scheduling, now)\n', "main.lua")
+    source = replace_once(source, "local function scheduled(context, kind)\n",
+        "local function auditResetHead(owner, scheduling, now)\n" + reset +
+        "end\n\nlocal function scheduled(context, kind)\n", "main.lua")
+    migration = """            local function release(id)
+                return previous and previous.scheduler and previous.scheduler:dueOf(id)
+                    or previous and previous.resetOwners[id] == owner.taskService and previous.resetReleases[id]
+            end
+            local flightDue, smartDue = release("service:flight"), release("service:smart")
+            owner:disableScheduler(current)
+            owner:enableScheduler(context)
+            scheduling.lastActive = now
+            scheduling.brokerDirty = true
+            for id, due in pairs({ ["service:flight"] = flightDue, ["service:smart"] = smartDue }) do
+                scheduling.resetReleases[id], scheduling.resetOwners[id] = due, owner.taskService
+            end
+            current = context
+            scheduling:charge("handoff")
+"""
+    enable = """            owner:enableScheduler(context)
+            scheduling.lastActive = now
+            scheduling:charge("handoff")
+"""
+    source = replace_once(source, migration,
+        '            current = AUDIT_SPAN("host:head:handoff", auditMigrateFlight, '
+        'context, owner, scheduling, now, current, previous)\n', "main.lua")
+    source = replace_once(source, enable,
+        '            AUDIT_SPAN("host:head:handoff", auditEnableFlight, context, owner, scheduling, now)\n',
+        "main.lua")
+    source = replace_once(source, "local function scheduled(context, kind)\n",
+        "local function auditMigrateFlight(context, owner, scheduling, now, current, previous)\n" +
+        migration + "    return current\nend\n\n" +
+        "local function auditEnableFlight(context, owner, scheduling, now)\n" + enable +
+        "end\n\nlocal function scheduled(context, kind)\n", "main.lua")
     return MAIN_PREFIX + source
 
 
