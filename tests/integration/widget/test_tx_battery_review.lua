@@ -4,6 +4,11 @@ local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
 local equal = assert(loadfile(root .. "/tests/support/assertions.lua"))().assertEqual
 local battery = fixture.module("panels/tx-battery.lua")
+local panelHost = fixture.module("lib/panel_host.lua")
+local function completeTask(instance)
+    local task = panelHost.task({ module = battery, instance = instance, interval = 50 })
+    assert(task:step(1, task.stage, getTime()) == 50)
+end
 
 fixture.reset()
 local context = fixture.createLoaded(nil, { Layout = "review-tx-battery", Theme = "modern-dark" })
@@ -96,7 +101,7 @@ end
 local feed, range = tiny.feed, tiny.range
 tiny.settings.packEmpty, tiny.settings.packFull = nil, nil
 tiny.range = { available = false }
-battery.refresh(tiny)
+completeTask(tiny)
 assertGlyph(tiny, false)
 equal(tiny.value.hidden, false, "no calibration must fall back to voltage")
 equal(tiny.unit.hidden, false)
@@ -108,12 +113,12 @@ equal(tiny.value.hidden, false)
 equal(tiny.unit.hidden, false)
 
 tiny.range = range
-battery.refresh(tiny)
+completeTask(tiny)
 assertGlyph(tiny, true)
 equal(tiny.value.hidden, false, "restored calibration must retain the compact reading")
 
 tiny.feed = { available = false }
-battery.refresh(tiny)
+completeTask(tiny)
 assertGlyph(tiny, false)
 equal(tiny.value.hidden, false)
 equal(tiny.unit.hidden, true)
@@ -125,19 +130,19 @@ equal(tiny.value.hidden, false)
 equal(tiny.unit.hidden, true)
 
 tiny.feed = { available = true, value = 7.9, stale = true }
-battery.refresh(tiny)
+completeTask(tiny)
 assertGlyph(tiny, true)
 equal(tiny.value.hidden, false)
 equal(tiny.badge.properties.text, "STALE")
 
 tiny.feed = feed
 tiny.settings.warning, tiny.settings.critical = 8.0, 7.8
-battery.refresh(tiny)
+completeTask(tiny)
 equal(tiny.stateName, "warning")
 equal(tiny.badge.properties.text, "WARN")
 equal(tiny.glyph.shell.properties.color, context.theme.color.amber)
 tiny.settings.critical = 8.0
-battery.refresh(tiny)
+completeTask(tiny)
 equal(tiny.stateName, "critical")
 equal(tiny.badge.properties.text, "CRIT")
 for _, part in ipairs({ tiny.glyph.shell, tiny.glyph.nub, tiny.glyph.fill }) do

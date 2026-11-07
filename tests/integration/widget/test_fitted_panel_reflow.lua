@@ -11,19 +11,27 @@ local function load(relative, ...)
     return fixture.module(relative, ...)
 end
 local sameTree = load("@support/panel_tree.lua")
+local panelHost = fixture.module("lib/panel_host.lua")
 for _, kind in ipairs({ "state", "metric", "link-status" }) do
     local cases = load("@support/reflow_cases.lua")(load, host, kind)
     local checked = 0
     for _, case in ipairs(cases) do
-        local panel, legacy = case.panel, BASELINES and BASELINES[kind] or case.panel
-        local function create(module)
-            local context = module.create(
+        local panel = case.panel
+        local function completeTask(instance)
+            local task = panelHost.task({ module = panel, instance = instance, interval = 20 })
+            for _ = 1, 100 do
+                if task:step(task.want or 1, task.stage, getTime()) ~= 1 then return end
+            end
+            error(case.name .. ": panel task did not finish")
+        end
+        local function create()
+            local context = panel.create(
                 lvgl.box({ x = 0, y = 0, w = 1000, h = 1000 }),
                 case.rect,
                 case.settings,
                 case.dependencies()
             )
-            module.refresh(context)
+            completeTask(context)
             return context
         end
         local function finish(context, rect, done)
@@ -43,11 +51,10 @@ for _, kind in ipairs({ "state", "metric", "link-status" }) do
                 "in-place-resize",
                 "update",
                 "cancelRefresh",
-                "refresh",
                 "reset",
             }) do
                 for stop = 0, 20 do
-                    local staged, synchronous = create(panel), create(legacy)
+                    local staged, synchronous = create(), create()
                     local requested = { x = target.x, y = target.y, w = target.w, h = target.h }
                     local done = panel.reflow(staged, requested, nil, nil, nil, true)
                     for _ = 1, stop do
@@ -80,11 +87,8 @@ for _, kind in ipairs({ "state", "metric", "link-status" }) do
                         end
                     elseif event == "reset" then
                         local scheduler = host.schedulerHost
-                        local owner = scheduler.owners["panel:" .. kind]
-                        scheduler.owners["panel:" .. kind] = "new"
                         local entry = { module = panel, instance = staged, placement = { id = "subject", type = kind } }
                         local message = scheduler:resetPanelRelease(entry, getTime())
-                        scheduler.owners["panel:" .. kind] = owner
                         assert(not message and not entry.failed, message)
                         assert(staged.reflowWork.invalidated)
                     elseif event ~= "complete" then
@@ -100,10 +104,10 @@ for _, kind in ipairs({ "state", "metric", "link-status" }) do
                     end
                     finish(staged, rect, done)
                     assert(panel.reflow(staged, rect, nil, nil, nil, false), "completion is idempotent")
-                    legacy.update(synchronous, rect)
+                    panel.update(synchronous, rect)
                     sameTree(synchronous.panel.root, staged.panel.root, case.name .. "/" .. event)
-                    panel.refresh(staged)
-                    legacy.refresh(synchronous)
+                    completeTask(staged)
+                    completeTask(synchronous)
                     sameTree(synchronous.panel.root, staged.panel.root, case.name .. "/refreshed-" .. event)
                     checked = checked + 1
                 end

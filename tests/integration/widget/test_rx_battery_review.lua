@@ -397,7 +397,16 @@ fixture.pump(live, 40)
 local monitor = fixture.instanceOf(live, "monitor")
 local panel = fixture.module("panels/rx-battery.lua")
 panel.update(monitor, { x = 0, y = 0, w = 238, h = 134 })
-panel.refresh(monitor)
+local panelHost = fixture.module("lib/panel_host.lua")
+local task = panelHost.task({ module = panel, instance = monitor, interval = 20 })
+local completed = false
+for _ = 1, 100 do
+    if task:step(task.want or 1, task.stage, getTime()) ~= 1 then
+        completed = true
+        break
+    end
+end
+assert(completed, "RX battery task did not finish")
 assertions.assertEqual(monitor.deltaText, CHAR_DELTA .. " 0.04v", "delta draws exactly two decimals and lowercase v")
 assertions.assertEqual(monitor.deltaLabel.hidden, false)
 assertions.assertEqual(monitor.area.countShown, true)
