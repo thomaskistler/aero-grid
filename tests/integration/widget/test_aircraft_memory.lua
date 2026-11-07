@@ -10,15 +10,10 @@ radio.fields["VSpd+"] = { id = 151, name = "VSpd+", unit = fixture.firmware.UNIT
 fixture.radioMock.indexFields()
 radio.globalDetails[0].prec = 0
 local context = fixture.createLoaded(nil, { Layout = "Default", Theme = "modern-dark" })
-local originalPanelBounds = context.schedulerHost.panelBounds
-local control = context.serviceRuntime.byId.control
-
 local callbacks = 0
 local function pump(count)
     for _ = 1, count do
         fixture.tick(20)
-        -- Exercise panel updates independently of Default's scheduler admission.
-        control:stepEntries(control.normalEntries, "normal", 6, getTime())
         definition.refresh(context)
         fixture.lvglMock.settle()
         callbacks = callbacks + 1
@@ -62,7 +57,16 @@ local function checkpoint()
     if baselineObjects then
         assert(objects == baselineObjects, "aircraft dashboard accumulated live LVGL objects")
     end
-    return collectgarbage("count"), objects
+    local peak = collectgarbage("count")
+    -- Include in-flight scheduler phases in every checkpoint.
+    for _ = 1, 60 do
+        pump(1)
+        collectgarbage("collect")
+        collectgarbage("collect")
+        peak = math.max(peak, collectgarbage("count"))
+        assert(#fixture.lvglMock.objects == objects, "aircraft dashboard accumulated live LVGL objects")
+    end
+    return peak, objects
 end
 
 local function cycle(number)
@@ -125,7 +129,12 @@ print(
 radio.rssi = 0
 pump(40)
 assert(link.text == "NO LINK")
-context.schedulerHost.panelBounds = originalPanelBounds
+local host = context.schedulerHost
+local finish = host.finish
+host.finish = function(self, kind, used)
+    finish(self, kind, (used or 0) + self.scheduler.CEILING)
+    assert(self.scheduler.lastPlan.ran == 0, "no-room scheduler unexpectedly ran a task")
+end
 local function disconnectedMinute(minute)
     local clockText = clock.text
     for second = 1, 60 do
@@ -134,6 +143,7 @@ local function disconnectedMinute(minute)
     end
     assert(link.text == "NO LINK" and battery.stateName == "stale")
     assert(clock.text == clockText, "no-room scheduler unexpectedly updated the model timer")
+    assert(host.scheduler.lastPlan.ran == 0, "no-room scheduler unexpectedly ran a task")
     fixture.lvglMock.releaseClearedObjects()
     assert(fixture.lvglMock.replacedFontRefCount() == 0, "timer updates replaced firmware font callbacks")
     collectgarbage("collect")
