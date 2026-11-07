@@ -103,7 +103,7 @@ return function(load, panel)
                 if options.boundaries then
                     arm.available, arm.value = index % 13 ~= 0, index % 37 ~= 0
                 end
-                history:advance(now)
+                history.tasks.run:step(history.tasks.run.want, "run", now)
                 for series = 1, #metrics do
                     history:sample({
                         name = "Q" .. series,
