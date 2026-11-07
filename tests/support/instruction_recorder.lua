@@ -151,11 +151,11 @@ function recorder:calibrate()
     end
 end
 
-function recorder:sample(kind, name, stage, grant, cost, ok)
+function recorder:sample(kind, name, stage, grant, cost, ok, scenario)
     assert(math.type(cost) == "integer" and cost >= 0, "invalid instruction observation")
     assert(math.type(grant) == "integer" and grant >= 0, "invalid instruction grant")
     if self.sink then
-        self.sink(kind, name, stage, grant, cost, ok, self.scenario)
+        self.sink(kind, name, stage, grant, cost, ok, scenario or self.scenario)
         return
     end
     local key = kind .. "|" .. name .. "|" .. stage .. "|" .. tostring(grant)
@@ -164,17 +164,17 @@ function recorder:sample(kind, name, stage, grant, cost, ok)
         entry = {
             kind = kind, name = name, stage = stage, grant = grant,
             n = 0, min = cost, max = cost, failures = 0,
-            minScenario = self.scenario, maxScenario = self.scenario,
+            minScenario = scenario or self.scenario, maxScenario = scenario or self.scenario,
         }
         self.samples[key] = entry
     end
     entry.n = entry.n + 1
     entry.failures = entry.failures + (ok == false and 1 or 0)
     if cost < entry.min then
-        entry.min, entry.minScenario = cost, self.scenario
+        entry.min, entry.minScenario = cost, scenario or self.scenario
     end
     if cost > entry.max then
-        entry.max, entry.maxScenario = cost, self.scenario
+        entry.max, entry.maxScenario = cost, scenario or self.scenario
     end
 end
 
@@ -195,9 +195,25 @@ function recorder:task(name, fn)
 end
 
 function recorder:callback(kind, fn)
-    return self:wrap(fn, function(cost, ok)
-        self:sample("callback", kind, self.scenario, 0, cost, ok)
-    end)
+    return self:wrap(fn, {
+        before = function(context)
+            if type(context) ~= "table" then return self.scenario end
+            local phase = context.stage or context.reloadState
+                or context.appRebuild and "app-rebuild"
+                or context.reflowIndex and "reflow"
+                or context.editorUi and "editor"
+                or context.modelSettingsUi and "settings"
+                or context.logViewer and "log"
+                or "steady"
+            if context.pendingPlacement and type(context.pendingPlacement.type) == "string" then
+                phase = phase .. ":" .. context.pendingPlacement.type
+            end
+            return self.scenario .. ":" .. phase
+        end,
+        after = function(cost, _, scenario, ok)
+            self:sample("callback", kind, self.scenario, 0, cost, ok, scenario)
+        end,
+    })
 end
 
 function recorder:observations()

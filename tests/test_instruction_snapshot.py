@@ -181,6 +181,8 @@ class InstructionSnapshotTests(unittest.TestCase):
             "editor:advanceEditor:drawer-open:configure": ("editor-drawer-open", "configure", 120, 200),
             "editor:advanceEditor:layout:visit": ("editor-layout", "visit", 120, 200),
             "editor:advanceEditor:render:6": ("editor-render", "finish", 120, 200),
+            "editor:advanceEditor:build:2": ("main", "editorBuild", 120, 200),
+            "modal:location:handle:idle": ("main", "modalLocation", 120, 200),
             "editor:input:bound:tap": ("editor-input", "tap", 120, 200),
             "modal:log:advance:wrap": ("log-viewer", "wrap", 120, 200),
             "load:theme-publish:commit": ("dashboard-loader", "theme-publish", 120, 200),

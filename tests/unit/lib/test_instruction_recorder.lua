@@ -15,6 +15,12 @@ local function measure(fn, ...)
 end
 
 assert(measure(function() end) == 1, "empty function must include its RETURN instruction")
+do
+    local callback = recorder:callback("refresh", function(context) context.stage = nil end)
+    callback({ stage = "panel-build" })
+    local sample = recorder.samples["callback|refresh|unnamed|0"]
+    assert(sample.maxScenario == "unnamed:panel-build", "callback must retain its entry phase")
+end
 local function work()
     local sum = 0
     for index = 1, 10 do

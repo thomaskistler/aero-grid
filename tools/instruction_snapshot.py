@@ -378,6 +378,14 @@ def native_bound(label, estimates):
         stage = int(label.split(":")[-1])
         if 2 <= stage <= 6:
             return "editor-render", "finish" if stage == 6 else "rows", False
+    if label.startswith("editor:advanceEditor:build:"):
+        return "main", "editorBuild", False
+    if label.startswith("modal:location:handle:"):
+        return "main", "modalLocation", False
+    if label == "main:modalMenu":
+        return "main", "modalMenu", False
+    if label.startswith("load:flight-load-wait:shared:"):
+        return "dashboard-loader", "sharedFlightOverhead", True
     if label == "lifecycle:beginReflow":
         return "dashboard-lifecycle", "reflowBegin", False
     if label == "lifecycle:rebuildPage":
@@ -665,6 +673,8 @@ def profile(audit, args):
                  if name.startswith(("editor-drawer-", "editor-entry-", "editor-write-entry-"))
                  and "chart" not in name)
     names.extend(name for name in available if name.startswith("panel-reflow-") and "chart" not in name)
+    names.extend(name for name in available if name.startswith("editor-drag-move-")
+                 and "chart" not in name and not name.endswith("-quick"))
     checks, native_completed = {}, []
     try:
         library = args.companion / "Contents/Resources/libedgetx-tx16s-simulator.dylib"

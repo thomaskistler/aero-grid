@@ -80,6 +80,12 @@ def patch_main(source):
         '    if AUDIT_SPAN("main:flightJob:" .. (context.pendingFlightError and "error" '
         'or (context.flightPublicationJob or context.flightRegistrationJob) and "registration" or "idle"), '
         'advanceFlightJob, context) then\n')
+    menu = "    if context.aeroMenuModule and context.aeroMenuModule.handle(context, widgetEvent, touchState) then\n"
+    if source.count(menu) != 2:
+        raise RuntimeError("main.lua: expected two modal menu input calls")
+    source = source.replace(menu,
+        '    if context.aeroMenuModule and AUDIT_SPAN("main:modalMenu", context.aeroMenuModule.handle, '
+        'context, widgetEvent, touchState) then\n')
     return MAIN_PREFIX + source
 
 

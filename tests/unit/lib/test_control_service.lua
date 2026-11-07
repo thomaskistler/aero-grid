@@ -52,10 +52,43 @@ local function testBoundedDescription()
     assertions.assertEqual(finished, nil)
 end
 
+local function testCriticalGrantOwnership()
+    for grant = 1, 6 do
+        local reads = {}
+        local service = controlService.new(services.environment({
+            getSwitchIndex = function() error("captured switch indices must be reused") end,
+            getSwitchValue = function(index)
+                reads[#reads + 1] = index
+                return true
+            end,
+        }), services)
+        local views = {}
+        for index = 1, 6 do
+            views[index] = service:switch("condition-" .. index, index, "critical")
+        end
+        local task = service.tasks.critical
+        local delay = task:step(grant, "run", 20)
+        assertions.assertEqual(#reads, grant)
+        assertions.assertEqual(delay, grant < 6 and 1 or 20)
+        for index = 1, 6 do
+            assertions.assertEqual(views[index].available, index <= grant)
+            if index <= grant then assertions.assertEqual(reads[index], index) end
+        end
+        if grant < 6 then
+            task:step(6 - grant, "run", 21)
+            assertions.assertEqual(#reads, 6)
+            for index = 1, 6 do assertions.assertEqual(views[index].available, true) end
+        end
+        assertions.assertEqual(service.criticalRemaining, nil)
+        assertions.assertEqual(service.criticalCursor, 1)
+    end
+end
+
 local function run()
     testTrimNamespaceExists()
     testStandardRangeConstantsExist()
     testBoundedDescription()
+    testCriticalGrantOwnership()
 end
 
 run()

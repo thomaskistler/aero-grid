@@ -89,6 +89,28 @@ foreground["lib/editor_drawer.lua"] = function(module)
     end, module.advance)
 end
 
+foreground["lib/flight_registration.lua"] = function(module)
+    module.begin = recorder:bound(function() return bound("flight-registration", "begin") end, module.begin)
+    module.beginLoad = recorder:bound(function()
+        return bound("flight-registration", "load-begin")
+    end, module.beginLoad)
+    module.advance = recorder:wrap(module.advance, {
+        before = function(job)
+            if job.done then return end
+            local stage = job.stage
+            if stage ~= "load" then return bound("flight-registration", stage) end
+        end,
+        after = function(cost, _, token, ok, results)
+            if token then
+                recorder:sample("bound", token.name, token.stage, 0, cost, ok)
+            end
+            if ok and results[2] == true and results[3] == false then
+                recorder:sample("bound", "flight-registration", "reject", 0, cost, true)
+            end
+        end,
+    })
+end
+
 local function registerStages(_, ok, _, _, name, declaration)
     if not ok then
         return
@@ -132,6 +154,10 @@ instrument = function(relative, module)
     if type(module) ~= "table" or modules[module] then
         return
     end
+    -- Native spans cover widget registration. Direct unit calls add focused
+    -- coverage without retaining another adapter in the multi-widget heap.
+    if relative == "lib/flight_registration.lua"
+        and string.sub(scenario, 1, 15) ~= "tests/unit/lib/" then return end
     local name = names[module.decl]
     if relative ~= "lib/costs.lua" and relative ~= "lib/services.lua" and relative ~= "main.lua"
         and relative ~= "lib/scheduler.lua"
