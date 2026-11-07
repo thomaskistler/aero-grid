@@ -112,7 +112,11 @@ assert(fixture.pumpUntil(diagnostics, function(context)
 end, 400), "diagnostics viewer layout must finish loading")
 assert(#diagnostics.errors == 0, table.concat(diagnostics.errors, "\n"))
 local logEntry = fixture.entryById(diagnostics, "log")
-logEntry.module.refresh(logEntry.instance)
+assert(fixture.pumpUntil(diagnostics, function()
+    local panel = logEntry.instance
+    local text = panel.texts[panel.visibleLines]
+    return text and string.find(text, "event 300", 1, true)
+end, 500), "diagnostics panel must publish the latest event")
 assert(string.find(logEntry.instance.texts[logEntry.instance.visibleLines], "event 300", 1, true))
 
 EVT_TOUCH_FIRST, EVT_TOUCH_SLIDE, EVT_TOUCH_TAP, EVT_TOUCH_BREAK = 9101, 9102, 9103, 9104
