@@ -723,6 +723,14 @@ def scenarios():
              "callbacks": 20, "step": 5},
         ]
         result[f"editor-write-entry-{panel}"] = dict(base, phases=phases)
+    result["editor-save-registration"] = dict(result["editor-drag-resize-sparse"], phases=
+        [dict(phase, far=True) if phase.get("action") == "prepare-editor-slide" else dict(phase)
+         for phase in result["editor-drag-resize-sparse"]["phases"]] + [
+            {"name": "editor-save", "kind": "refresh", "action": "save-editor",
+             "callbacks": 256, "step": 5, "perCall": 1},
+            {"name": "editor-saved", "kind": "refresh", "action": "check-editor-saved",
+             "callbacks": 1, "step": 5, "perCall": 1},
+        ])
     phases = list(result["editor-write-link-status"]["phases"])
     phases[-3] = dict(phases[-3], reject=True)
     result["editor-write-error"] = dict(result["editor-write-link-status"], phases=phases)

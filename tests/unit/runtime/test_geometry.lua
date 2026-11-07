@@ -2337,6 +2337,38 @@ local function testTelemetryContentFitsPanel()
     assert(heightOf(shedNav.value) >= heightOf(MIDSIZE), "navigation shed a row without buying its reading any size")
 end
 
+local function testMockGlyphIterationParity()
+    local function upvalue(fn, expected)
+        for index = 1, 20 do
+            local name, value = debug.getupvalue(fn, index)
+            if name == expected then return value end
+            if not name then break end
+        end
+        error("missing mock font upvalue " .. expected)
+    end
+    local widthOf = upvalue(fixture.lcdMock.sizeText, "advanceWidth")
+    local advances = upvalue(widthOf, "ADVANCE")
+    local default = upvalue(widthOf, "DEFAULT_ADVANCE")
+    local bytes = {}
+    for byte = 0, 255 do bytes[#bytes + 1] = string.char(byte) end
+    local texts = { "12:34", "MODE", "LOW", "HIGH", table.concat(bytes), "line\nbreak" }
+    for flags, height in pairs(firmware.FONT_HEIGHT) do
+        for _, text in ipairs(texts) do
+            local expected = 0
+            for index = 1, #text do
+                expected = expected + (advances[string.sub(text, index, index)] or default) * height
+            end
+            expected = math.floor(expected + 0.5)
+            for _ = 1, 2 do
+                local width, actualHeight = fixture.lcdMock.sizeText(text, flags)
+                assertEqual(width, expected, "mock glyph iteration changed text width")
+                assertEqual(actualHeight, height)
+            end
+        end
+    end
+end
+
+testMockGlyphIterationParity()
 testOriginCaptionFits()
 testRefreshScheduling()
 testMetricDirection()

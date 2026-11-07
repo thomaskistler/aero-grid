@@ -752,10 +752,9 @@ local function advanceWidth(text, height)
         return previous.width
     end
     local width = 0
-    for index = 1, #text do
-        local ratio = ADVANCE[string.sub(text, index, index)] or DEFAULT_ADVANCE
-        width = width + ratio * height
-    end
+    string.gsub(text, ".", function(glyph)
+        width = width + (ADVANCE[glyph] or DEFAULT_ADVANCE) * height
+    end)
     width = math.floor(width + 0.5)
     if previous then
         previous.text, previous.width = text, width

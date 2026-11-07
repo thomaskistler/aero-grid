@@ -1895,6 +1895,27 @@ actions = {
         assert(context.editorUi).handlers.close(false)
         assert(not context.editorUi and not context.editorSession)
     end,
+    ["save-editor"] = function(context)
+        local state = assert(context.editorUi)
+        assert(state.session.dirty and not state.saving, "save scenario needs an edited draft")
+        local placement = state.session.draft.panels[1]
+        P.savedEditorPlacement = {
+            col = placement.col, row = placement.row,
+            colSpan = placement.colSpan, rowSpan = placement.rowSpan,
+        }
+        P.savedEditorPanel = context.panels[1]
+        state.exitCommand = { action = "save" }
+    end,
+    ["check-editor-saved"] = function(context)
+        assert(not context.editorUi and not context.editorSession, "confirmed save must close the editor")
+        assert(not context.flightRegistrationJob and not context.flightPublicationJob
+            and not context.pendingFlightError, "saved layout registration must finish")
+        for key, value in pairs(P.savedEditorPlacement) do
+            assert(context.document.panels[1][key] == value, "saved layout must retain the edited geometry")
+        end
+        assert(context.panels[1] == P.savedEditorPanel, "geometry-only save must adopt the live preview")
+        assert(context.layoutOrigin == "user" and #context.errors == 0, "saved layout must publish successfully")
+    end,
     reflow = function(context)
         local zone = context.zone
         context.zone = { w = zone.w - 8, h = zone.h, xabs = zone.xabs, yabs = zone.yabs }

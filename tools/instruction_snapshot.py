@@ -677,7 +677,7 @@ def profile(audit, args):
         "editor-drawer-large-config", "editor-list-large-states",
         "editor-list-remove-panel", "editor-list-append-error",
         "editor-add-crowded-metric", "editor-list-return", "editor-list-cancel",
-        "editor-write-error", "editor-write-picker-error", "editor-input-keys",
+        "editor-write-error", "editor-write-picker-error", "editor-save-registration", "editor-input-keys",
         "editor-input-tap", "editor-input-add", "editor-input-cancel",
         "editor-drag-move-crowded", "editor-drag-resize-crowded",
         "lifecycle-cancel", "lifecycle-settings-drain", "lifecycle-menu-close",
