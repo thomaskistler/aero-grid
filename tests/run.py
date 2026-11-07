@@ -9,9 +9,21 @@ from lupa.lua53 import LuaRuntime
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def run_test(path: Path, *, instructions=False):
+def run_test(path: Path, *, instructions=False, snapshot_path=None):
     lua = LuaRuntime(unpack_returned_tuples=True)
     lua.execute('debug.setmetatable("", nil)')
+    if snapshot_path is not None:
+        lua.execute("""
+            local candidate = ...
+            local originalLoadfile = loadfile
+            function loadfile(filename, ...)
+                if type(filename) == "string"
+                    and string.match(filename, "WIDGETS/AeroGrid/lib/instruction_snapshot%.lua$") then
+                    filename = candidate
+                end
+                return originalLoadfile(filename, ...)
+            end
+        """, str(snapshot_path))
     logs = lua.execute("""
         local originalPrint = print
         local logs = {}

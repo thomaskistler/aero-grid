@@ -23,6 +23,12 @@ SCHEMA = 1
 CEILING = 15000
 MARGIN = 400
 MIN_SAMPLES = 1
+MEMORY_SUITES = (
+    "tests/integration/widget/test_shared_module_code.lua",
+    "tests/integration/widget/test_aircraft_memory.lua",
+    "tests/integration/widget/test_output_memory.lua",
+)
+MEMORY_SCENARIOS = ("stress", "metric-16", "model-panels")
 
 
 def target(maximum):
@@ -514,6 +520,49 @@ def task_report(path, output=None):
     return 0
 
 
+def validate_candidate(audit, runner, args, estimates, record, executable, library, capture):
+    """Exercise the exact populated chunk without replacing the shipped snapshot."""
+    errors = []
+    result = {"mock": [], "native": [], "observations": {}}
+    directory = ROOT / "build/scheduler-audit"
+    directory.mkdir(parents=True, exist_ok=True)
+    candidate = None
+    try:
+        text = render(estimates, record)
+        with tempfile.NamedTemporaryFile(mode="w", encoding="ascii", suffix=".lua",
+                                         prefix="snapshot-candidate-", dir=directory, delete=False) as file:
+            candidate = Path(file.name)
+            file.write(text)
+        result["bytes"] = len(text.encode("ascii"))
+        for name in MEMORY_SUITES:
+            try:
+                runner.run_test(ROOT / name, snapshot_path=candidate)
+                result["mock"].append(name)
+            except Exception as error:
+                errors.append(f"memory: candidate {name}: {error}")
+        native = []
+        for name in MEMORY_SCENARIOS:
+            try:
+                measured = audit.run(capture, executable, library, name + "-snapshot-candidate",
+                                     audit.scenarios()[name], args.timeout, snapshot_path=candidate)
+                native.extend(native_rows(name, measured, estimates))
+                result["native"].append(name)
+            except Exception as error:
+                errors.append(f"native: candidate {name}: {error}")
+        result["observations"] = merge_observations(native)
+        findings = check({"estimates": estimates, "record": record},
+                         {"mock": record["observations"]["mock"], "native": result["observations"]},
+                         set(), updating=True)
+        errors.extend("candidate: " + finding for finding in findings
+                      if not finding.startswith("efficiency:"))
+    except (ValueError, TypeError, OSError) as error:
+        errors.append(f"snapshot: candidate validation: {error}")
+    finally:
+        if candidate is not None:
+            candidate.unlink()
+    return errors, result
+
+
 def profile(audit, args):
     """Fresh full mock/native profile; incomplete evidence never writes a file."""
     snapshot = load()
@@ -622,10 +671,10 @@ def profile(audit, args):
                            "requiredNative": list(dict.fromkeys(names))}}
     output = ROOT / "build/scheduler-audit/instruction-profile.json"
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(report, indent=2) + "\n", encoding="ascii")
     if warnings:
         print(f"Instruction spread review warnings: {len(warnings)} (all samples retained).")
     if errors:
+        output.write_text(json.dumps(report, indent=2) + "\n", encoding="ascii")
         print(f"Instruction profile failed ({len(errors)} findings); snapshot unchanged. See {output}")
         for error in errors[:20]:
             print(error)
@@ -644,8 +693,22 @@ def profile(audit, args):
                                     "native": {"simulator": args.companion.name, "luaIntegerBits": 32}},
                       provenance={"profile": "full mock/native", "git": audit.subprocess.check_output(
                           ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(), "sourceSha": inputs_sha})
+        record["coverage"]["candidateMock"] = dict(enumerate(MEMORY_SUITES, 1))
+        record["coverage"]["candidateNative"] = dict(enumerate(MEMORY_SCENARIOS, 1))
+        candidate_errors, report["candidate"] = validate_candidate(
+            audit, runner, args, estimates, record, executable, library, capture)
+        errors.extend(candidate_errors)
+        if source_sha() != inputs_sha:
+            errors.append("provenance: measurement inputs changed during candidate validation; refusing replacement")
+        output.write_text(json.dumps(report, indent=2) + "\n", encoding="ascii")
+        if errors:
+            print(f"Snapshot candidate failed ({len(errors)} findings); snapshot unchanged. See {output}")
+            for error in errors[:20]:
+                print(error)
+            return 1
         write(estimates, record, expected_sha=initial_sha)
         print("Instruction snapshot replaced after full profile checks")
     else:
+        output.write_text(json.dumps(report, indent=2) + "\n", encoding="ascii")
         print("Instruction regression profile passed")
     return 0

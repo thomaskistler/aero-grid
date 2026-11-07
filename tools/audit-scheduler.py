@@ -1048,13 +1048,15 @@ def prepare(capture, name, spec, sd):
         shutil.copyfile(SUPPORT_DIR / "native_preparation.lua", audit / "native_preparation.lua")
 
 
-def run(capture, executable, library, name, spec, timeout):
+def run(capture, executable, library, name, spec, timeout, *, snapshot_path=None):
     directory = OUTPUT / name
     if directory.exists():
         shutil.rmtree(directory)
     directory.mkdir(parents=True)
     sd = directory / "sdcard"
     prepare(capture, name, spec, sd)
+    if snapshot_path is not None:
+        shutil.copyfile(snapshot_path, sd / "WIDGETS/AeroGrid/lib/instruction_snapshot.lua")
     command = [str(executable), str(library), str(sd), str(timeout)]
     if name.endswith("-firmware"):
         command.append("passthrough")

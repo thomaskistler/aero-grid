@@ -190,7 +190,7 @@ class InstructionSnapshotTests(unittest.TestCase):
         audit = SimpleNamespace(
             scenarios=Scenarios, build_native=lambda library: "native",
             capture_module=lambda: None,
-            run=lambda *args: copy.deepcopy(native),
+            run=lambda *args, **kwargs: copy.deepcopy(native),
             hook_check_status=lambda *args: (True, "hook agreement"),
             subprocess=SimpleNamespace(check_output=lambda *args, **kwargs: "commit\n"),
         )
@@ -217,9 +217,33 @@ class InstructionSnapshotTests(unittest.TestCase):
                 self.assertEqual(record["observations"]["mock"][key]["min"], 100)
                 snapshot.render(estimates, record)
                 write.reset_mock()
+                with patch.object(runner, "run_test", side_effect=RuntimeError("heap bound exceeded")):
+                    candidate_errors, result = snapshot.validate_candidate(
+                        audit, runner, args, estimates, record, "native", library, None)
+                self.assertEqual(len([finding for finding in candidate_errors if finding.startswith("memory:")]), 3)
+                self.assertEqual(result["mock"], [])
+                self.assertFalse(list((root / "build/scheduler-audit").glob("snapshot-candidate-*.lua")))
+                with patch.object(snapshot, "validate_candidate", return_value=(
+                        ["memory: heap bound exceeded"], {"mock": [], "native": []})):
+                    self.assertEqual(snapshot.profile(audit, args), 1)
+                write.assert_not_called()
                 row["max"] = 15001
                 self.assertEqual(snapshot.profile(audit, args), 1)
                 write.assert_not_called()
+
+    def test_candidate_is_loaded_instead_of_the_shipped_snapshot(self):
+        runner = snapshot._module("snapshot_override_runner", snapshot.ROOT / "tests/run.py")
+        data = snapshot.load()
+        data["record"]["candidateMarker"] = True
+        with tempfile.TemporaryDirectory() as directory:
+            candidate, suite = Path(directory) / "candidate.lua", Path(directory) / "test_candidate.lua"
+            candidate.write_text(snapshot.render(**data), encoding="ascii")
+            suite.write_text("""
+                local root = ...
+                local chunk = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/instruction_snapshot.lua"))()
+                assert(chunk("record").candidateMarker, "candidate was not loaded")
+            """, encoding="ascii")
+            runner.run_test(suite, snapshot_path=candidate)
 
     def test_atomic_write_and_radio_safe_roundtrip(self):
         data, _, _ = self.data()
