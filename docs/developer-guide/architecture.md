@@ -228,8 +228,9 @@ registrations even while a loader replaces the dashboard service registry;
 resync must preserve those releases without also enrolling the dashboard facade.
 Host retirement must call `disableScheduler(oldContext)`
 before activation on a replacement and resynchronize both scheduler registries.
-An active widget can also reclaim an owner that has not reached its scheduler
+An active widget can also reclaim an owner whose scheduler host has been inactive
 for 40 ticks, preserving task deadlines and any pending configuration stage.
+Bounded reconciliation counts as activity even before tasks can run.
 
 `services.flight:state()` is an immutable live view. It exposes model/epoch,
 configuration revision/status, phase (`ground`, `starting`, `active`, `ending`),

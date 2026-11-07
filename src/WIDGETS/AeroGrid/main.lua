@@ -1131,7 +1131,7 @@ pumpFlight = function(context)
         local current = owner:owningContext()
         local previous = current and current.schedulerHost
         -- Allow two Flight intervals before reclaiming a registered but parked host.
-        local parked = not previous or scheduling.scheduler.elapsed(now, previous.lastRun) >= 40
+        local parked = not previous or scheduling.scheduler.elapsed(now, previous.lastActive) >= 40
         if current and current ~= context and (not context.flightFactory.members[current] or parked) then
             local function release(id)
                 return previous and previous.scheduler and previous.scheduler:dueOf(id)
@@ -1140,7 +1140,7 @@ pumpFlight = function(context)
             local flightDue, smartDue = release("service:flight"), release("service:smart")
             owner:disableScheduler(current)
             owner:enableScheduler(context)
-            scheduling.lastRun = now
+            scheduling.lastActive = now
             scheduling.brokerDirty = true
             for id, due in pairs({ ["service:flight"] = flightDue, ["service:smart"] = smartDue }) do
                 scheduling.resetReleases[id], scheduling.resetOwners[id] = due, owner.taskService
@@ -1150,7 +1150,7 @@ pumpFlight = function(context)
         end
         if (current == context or current == nil) and (not owner.schedulerEnabled or current == nil) then
             owner:enableScheduler(context)
-            scheduling.lastRun = now
+            scheduling.lastActive = now
             scheduling:charge("handoff")
         end
     end

@@ -59,7 +59,7 @@ function host.attach(context, options)
         overhead = host.OVERHEAD,
         headCosts = host.HEAD_COSTS,
         head = 0,
-        lastRun = getTime(),
+        lastActive = getTime(),
         panelSetup = 0,
         waiting = {},
         pendingServices = {},
@@ -607,6 +607,9 @@ end
 ---@param kind string
 ---@param used? integer
 function host:finish(kind, used)
+    -- Reconciliation is host progress even when no task can run yet.
+    local now = getTime()
+    self.lastActive = now
     local plan
     local job = self.reconciliation
     -- Reconciled services keep their kind while no possibly stale panel task exists.
@@ -617,9 +620,7 @@ function host:finish(kind, used)
         persistent = broker
     end
     if self.scheduler and (not reconciling or persistent and persistent == self.reconciledBroker) then
-        local now = getTime()
         self.scheduler:run(reconciling and RECONCILE_KIND or kind, now, self.head + self.panelSetup + (used or 0))
-        self.lastRun = now
         plan = self.scheduler.lastPlan.U
     end
     if self.probe then
