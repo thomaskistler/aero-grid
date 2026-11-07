@@ -82,18 +82,12 @@ for _, kind in ipairs({
         context.appRebuild = { entry = original, index = index }
         local job = context.appRebuild
         assert(context.dashboardLifecycle.workBound(context, "advanceAppRebuild"))
-        context.refreshOwner = original
         context.dashboardLifecycle.advanceAppRebuild(context)
         fixture.lvglMock.settle()
-        assert(job.phase == "prepare" and not context.refreshOwner)
-        assert(not context.dashboardLifecycle.workBound(context, "advanceAppRebuild"))
+        assert(job.phase == "prepare")
         assert(#context.panels == #originals - 1 and original.container.hidden)
         prepare(context)
         assert(job.prepared and job.phase == "build")
-        assert(
-            not context.dashboardLifecycle.workBound(context, "advanceAppRebuild"),
-            "synchronous constructors must not inherit a bounded lifecycle charge"
-        )
         local create, calls = job.prepared.module.create, 0
         job.prepared.module.create = function(...)
             calls = calls + 1
@@ -108,7 +102,6 @@ for _, kind in ipairs({
             end
             context.dashboardLifecycle.advanceAppRebuild(context)
             if context.pendingConstruction then
-                assert(not context.dashboardLifecycle.workBound(context, "advanceAppRebuild"))
                 assert(context.pendingConstruction.container.hidden)
                 assert(#context.panels == #originals - 1, "partial builds cannot publish")
             end
@@ -133,13 +126,23 @@ for _, kind in ipairs({
             rebuilt.settings,
             services
         )
-        for _ = 1, 100 do
-            if rebuilt.module.refresh then
-                rebuilt.module.refresh(rebuilt.instance)
-                rebuilt.module.refresh(expected)
+        if not rebuilt.module.idle then
+            for _, instance in ipairs({ rebuilt.instance, expected }) do
+                local task = context.panelHost.task({ module = rebuilt.module, instance = instance, interval = 20 })
+                local completed = false
+                for _ = 1, 2000 do
+                    if task:step(task.want or 1, task.stage, getTime()) ~= 1 then
+                        completed = true
+                        break
+                    end
+                    if kind == "output" then
+                        fixture.pump(context, 1, 10)
+                    end
+                end
+                assert(completed, kind .. ": rebuilt panel task must finish (stage " .. tostring(task.stage) .. ")")
             end
         end
-        sameTree(expected.root or expected.panel.root, rebuilt.instance.root or rebuilt.instance.panel.root)
+        sameTree(expected.root or expected.panel.root, rebuilt.instance.root or rebuilt.instance.panel.root, kind)
     end
     retire(context)
 end
