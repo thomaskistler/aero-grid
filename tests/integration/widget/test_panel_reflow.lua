@@ -93,7 +93,7 @@ for _, dashboard in ipairs({
     fixture.lvglMock.setAppMode(true)
     fixture.lvglMock.setFullScreen(false)
     local context = fixture.createLoaded(nil, { Layout = dashboard, Theme = "modern-dark" })
-    fixture.pump(context, 40)
+    fixture.pump(context, 300)
     equal(#context.errors, 0, dashboard .. ": " .. table.concat(context.errors, "; "))
     for _, size in ipairs({ { 480, 272 }, { 320, 240 }, { 480, 272 } }) do
         for _, fullscreen in ipairs({ true, false }) do
