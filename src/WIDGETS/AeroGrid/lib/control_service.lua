@@ -318,40 +318,12 @@ controlService.markScheduledUpdate = markScheduledUpdate
 ---@param now integer
 ---@return integer delay
 function controlService:stepEntries(entries, kind, grant, now)
-    local total = #entries
-    if total == 0 then
+    if #entries == 0 then
         return INTERVAL
     end
-
-    local cursorKey = kind == "critical" and "criticalCursor" or "normalCursor"
-    local remainingKey = kind == "critical" and "criticalRemaining" or "normalRemaining"
-    local cursor = self[cursorKey]
-    if cursor > total then
-        cursor = 1
-    end
-
-    local remaining = self[remainingKey]
-    if remaining == nil then
-        remaining = math.min(POLL_CAP, total)
-    end
-    local reads = math.min(grant, remaining)
-    for _ = 1, reads do
-        local entry = entries[cursor]
-        cursor = cursor % total + 1
-        entry.read(self, entry, now)
-    end
-
-    self[cursorKey] = cursor
-    remaining = remaining - reads
-    if remaining > 0 then
-        self[remainingKey] = remaining
-        markScheduledUpdate(self, now)
-        return 1
-    end
-
-    self[remainingKey] = nil
+    local more = self.support.poll(self, kind .. "Cursor", kind .. "Remaining", entries, POLL_CAP, grant, self, nil, now)
     markScheduledUpdate(self, now)
-    return INTERVAL
+    return more and 1 or INTERVAL
 end
 
 --- Read a bounded round-robin slice of final channel outputs.
@@ -360,32 +332,22 @@ end
 ---@return integer delay
 function controlService:stepOutputs(grant, now)
     local entries = self.outputEntries
-    local total = #entries
-    if total == 0 then
+    if #entries == 0 then
         return OUTPUT_INTERVAL
     end
-
-    local cursor = self.outputCursor
-    if cursor > total then
-        cursor = 1
-    end
-    local remaining = self.outputRemaining or total
-    local reads = math.min(grant, remaining)
-    for _ = 1, reads do
-        self:readOutputValue(entries[cursor])
-        cursor = cursor % total + 1
-    end
-    self.outputCursor = cursor
-    remaining = remaining - reads
-    if reads > 0 then
-        markScheduledUpdate(self, now)
-    end
-    if remaining > 0 then
-        self.outputRemaining = remaining
-        return 1
-    end
-    self.outputRemaining = nil
-    return OUTPUT_INTERVAL
+    local more = self.support.poll(
+        self,
+        "outputCursor",
+        "outputRemaining",
+        entries,
+        #entries,
+        grant,
+        self,
+        controlService.readOutputValue,
+        now
+    )
+    markScheduledUpdate(self, now)
+    return more and 1 or OUTPUT_INTERVAL
 end
 
 function controlService:readOutput(entry)

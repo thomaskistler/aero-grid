@@ -845,12 +845,12 @@ local function install(context)
         local support = context.servicesModule
         if support and not installed[support] then
             installed[support] = true
-            local original = support.roundRobin
-            support.roundRobin = function(entries, cursor, cap, visit, owner, now)
+            local original = support.poll
+            support.poll = function(owner, cursorKey, remainingKey, entries, cap, grant, target, visit, now)
                 local label = "unit:" .. tostring(owner and owner.id)
-                return original(entries, cursor, cap, function(o, entry, at)
-                    return core(LEAK_WRAP, label, visit, o, entry, at)
-                end, owner, now)
+                return original(owner, cursorKey, remainingKey, entries, cap, grant, target, function(t, entry, at)
+                    return core(LEAK_WRAP, label, visit or entry.read, t, entry, at)
+                end, now)
             end
         end
         for _, instance in ipairs(runtime.order) do

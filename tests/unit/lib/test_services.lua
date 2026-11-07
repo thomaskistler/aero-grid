@@ -69,15 +69,22 @@ end
 
 local function testRoundRobin()
     local state = { visited = {} }
-    local cursor = services.roundRobin({ "a", "b", "c", "d" }, 3, 3, recordVisit, state, 12)
-    assertions.assertEqual(table.concat(state.visited, ","), "c:12,d:12,a:12")
-    assertions.assertEqual(cursor, 2)
+    local pass = { cursor = 3 }
+    local entries = { "a", "b", "c", "d" }
+    assert(services.poll(pass, "cursor", "remaining", entries, 3, 2, state, recordVisit, 12))
+    assertions.assertEqual(table.concat(state.visited, ","), "c:12,d:12")
+    assertions.assertEqual(pass.remaining, 1)
+    assert(not services.poll(pass, "cursor", "remaining", entries, 3, 6, state, recordVisit, 13))
+    assertions.assertEqual(table.concat(state.visited, ","), "c:12,d:12,a:13")
+    assertions.assertEqual(pass.cursor, 2)
+    assertions.assertEqual(pass.remaining, nil)
 
-    state.visited = {}
-    cursor = services.roundRobin({ "a", "b" }, 9, 8, recordVisit, state, 20)
+    state.visited, pass.cursor = {}, 9
+    assert(not services.poll(pass, "cursor", "remaining", { "a", "b" }, 8, 8, state, recordVisit, 20))
     assertions.assertEqual(table.concat(state.visited, ","), "a:20,b:20")
-    assertions.assertEqual(cursor, 1)
-    assertions.assertEqual(services.roundRobin({}, 7, 3, recordVisit, state, 0), 7)
+    assertions.assertEqual(pass.cursor, 1)
+    assert(not services.poll(pass, "cursor", "remaining", {}, 3, 3, state, recordVisit, 0))
+    assertions.assertEqual(pass.cursor, 1)
 end
 
 local function testServiceTaskAdapter()

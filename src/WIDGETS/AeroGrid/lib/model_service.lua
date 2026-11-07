@@ -464,7 +464,7 @@ function modelService:txVoltage()
 end
 
 --- Read up to `grant` subscribed facets, round robin from the cursor. This is the
---- bounded work of one scheduler release. It does what `services.roundRobin` does
+--- bounded work of one scheduler release. It does what `services.poll` does
 --- for a facet list, without its per-facet callback.
 ---@param grant integer
 ---@param now integer

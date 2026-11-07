@@ -487,7 +487,7 @@ function output.update(context, rect, settings)
 end
 
 function output.reflow(context, rect, settings, _, _, begin)
-    if begin or context.reflowWork and context.reflowWork.invalidated then
+    if context.primitives.reflowStart(context, rect, begin) then
         output.cancelRefresh(context)
         beginGeometry(context, rect, settings or context.settings)
         context.reflowWork = { stage = "hide", index = 1 }

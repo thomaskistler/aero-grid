@@ -826,8 +826,7 @@ function navigation.construct(context, rect)
         context.createRect = { x = rect.x, y = rect.y, w = rect.w, h = rect.h }
         context.createStage = "publish"
     elseif stage == "publish" then
-        local previous = context.createRect
-        if previous.x ~= rect.x or previous.y ~= rect.y or previous.w ~= rect.w or previous.h ~= rect.h then
+        if not context.primitives.sameRect(context.createRect, rect) then
             context.createStage = "reflow"
             return false
         end
@@ -1175,9 +1174,7 @@ reflow = function(context, rect, span)
 end
 
 function navigation.update(context, rect, settings, _, span)
-    if context.reflowWork then
-        context.reflowWork = { invalidated = true }
-    end
+    context.primitives.invalidateReflow(context)
     navigation.cancelRefresh(context)
     reflow(context, rect, span)
     local _, drawn = context.primitives.changed(context, navigation.render)
@@ -1185,7 +1182,7 @@ function navigation.update(context, rect, settings, _, span)
 end
 
 function navigation.reflow(context, rect, _, _, span, begin)
-    if begin or context.reflowWork and context.reflowWork.invalidated then
+    if context.primitives.reflowStart(context, rect, begin) then
         navigation.cancelRefresh(context)
         reflow(context, rect, span)
         context.reflowWork = { stage = "render" }

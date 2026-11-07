@@ -192,35 +192,40 @@ function services.addSubscription(owner, entries, entry)
     return entry
 end
 
---- Visit a bounded round-robin slice of a subscription list.
+--- Visit up to `grant` entries of a round-robin pass of at most `cap` entries.
+--- A pass resumes across releases; `owner[cursorKey]` and `owner[remainingKey]`
+--- hold its position. `visit` defaults to each entry's own `read`.
+---@param owner table
+---@param cursorKey string
+---@param remainingKey string
 ---@param entries table[]
----@param cursor integer
 ---@param cap integer
----@param visit fun(owner: table, entry: table, now: integer)
----@param owner table Service instance passed to `visit`.
+---@param grant integer
+---@param target table First argument passed to `visit`.
+---@param visit? fun(target: table, entry: table, now: integer)
 ---@param now integer
----@return integer cursor Next entry to visit.
-function services.roundRobin(entries, cursor, cap, visit, owner, now)
+---@return boolean more True while the pass has entries left.
+function services.poll(owner, cursorKey, remainingKey, entries, cap, grant, target, visit, now)
     local total = #entries
     if total == 0 then
-        return cursor
+        owner[remainingKey] = nil
+        return false
     end
-
+    local cursor = owner[cursorKey]
     if cursor < 1 or cursor > total then
         cursor = 1
     end
-    if cap > total then
-        cap = total
-    end
-
-    for _ = 1, cap do
+    local remaining = owner[remainingKey] or math.min(cap, total)
+    local reads = math.min(grant, remaining)
+    for _ = 1, reads do
         local entry = entries[cursor]
         cursor = cursor % total + 1
-        if entry then
-            visit(owner, entry, now)
-        end
+        ;(visit or entry.read)(target, entry, now)
     end
-    return cursor
+    owner[cursorKey] = cursor
+    remaining = remaining - reads
+    owner[remainingKey] = remaining > 0 and remaining or nil
+    return remaining > 0
 end
 
 --- Report whether any registered service has subscriptions.

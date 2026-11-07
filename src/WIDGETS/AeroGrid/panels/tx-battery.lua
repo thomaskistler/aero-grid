@@ -832,9 +832,7 @@ function txBattery.cancelRefresh(context)
     if context.createStage then
         context.createInvalidated = true
     end
-    if context.reflowWork then
-        context.reflowWork = { invalidated = true }
-    end
+    context.primitives.invalidateReflow(context)
 end
 
 function txBattery.update(context, rect)
@@ -849,7 +847,7 @@ function txBattery.update(context, rect)
 end
 
 function txBattery.reflow(context, rect, _, _, _, begin)
-    if begin or context.reflowWork and context.reflowWork.invalidated then
+    if context.primitives.reflowStart(context, rect, begin) then
         context.reflowWork = { stage = "reading", area = geometry(context, rect) }
         return false
     end
@@ -888,14 +886,7 @@ function txBattery.construct(context, rect)
         placeVisual(context, context.area)
         context.createStage = "publish"
     elseif stage == "publish" then
-        local previous = context.rect
-        if
-            context.createInvalidated
-            or previous.x ~= rect.x
-            or previous.y ~= rect.y
-            or previous.w ~= rect.w
-            or previous.h ~= rect.h
-        then
+        if context.createInvalidated or not context.primitives.sameRect(context.rect, rect) then
             context.createStage = "geometry"
         else
             publishGeometry(context)

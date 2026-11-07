@@ -1073,14 +1073,7 @@ local function createSupporting(context)
 end
 
 local function finishConstruction(context, rect)
-    local previous = context.rect
-    if
-        context.createInvalidated
-        or previous.x ~= rect.x
-        or previous.y ~= rect.y
-        or previous.w ~= rect.w
-        or previous.h ~= rect.h
-    then
+    if context.createInvalidated or not context.primitives.sameRect(context.rect, rect) then
         context.createStage = "reflow"
         return false
     end
@@ -1300,23 +1293,16 @@ function metric.update(context, rect)
     while context.createStage do
         metric.construct(context, rect)
     end
-    if context.reflowWork then
-        context.reflowWork = { invalidated = true }
-    end
+    context.primitives.invalidateReflow(context)
     metric.cancelRefresh(context)
     reflow(context, rect)
     context.refreshGeometry = nil
 end
 
 function metric.reflow(context, rect, _, _, _, begin)
-    local work = context.reflowWork
-    if
-        begin
-        or work
-            and (work.invalidated or work.rect.x ~= rect.x or work.rect.y ~= rect.y or work.rect.w ~= rect.w or work.rect.h ~= rect.h)
-    then
+    local captured = context.primitives.reflowStart(context, rect, begin)
+    if captured then
         metric.cancelRefresh(context)
-        local captured = { x = rect.x, y = rect.y, w = rect.w, h = rect.h }
         context.reflowWork = {
             stage = "geometry",
             rect = captured,
@@ -1324,6 +1310,7 @@ function metric.reflow(context, rect, _, _, _, begin)
         }
         return false
     end
+    local work = context.reflowWork
     if not work then
         return true
     elseif work.stage == "geometry" then

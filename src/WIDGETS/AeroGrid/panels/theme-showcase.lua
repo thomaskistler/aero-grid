@@ -265,9 +265,7 @@ placeCard = function(context, index, rect, area)
 end
 
 function showcase.update(context, rect)
-    if context.reflowWork then
-        context.reflowWork = { invalidated = true }
-    end
+    context.primitives.invalidateReflow(context)
     local area = layout(context, rect)
     for index = 1, #context.cards do
         placeCard(context, index, rect, area)
@@ -275,7 +273,7 @@ function showcase.update(context, rect)
 end
 
 function showcase.reflow(context, rect, _, _, _, begin)
-    if begin or context.reflowWork and context.reflowWork.invalidated then
+    if context.primitives.reflowStart(context, rect, begin) then
         context.reflowWork = { stage = "place", area = layout(context, rect), index = 1 }
         return false
     end

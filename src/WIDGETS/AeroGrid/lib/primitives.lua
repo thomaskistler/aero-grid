@@ -601,6 +601,34 @@ function primitives.resizePanel(panel, rect)
     end
 end
 
+---@param a AeroGridRect
+---@param b AeroGridRect
+---@return boolean
+function primitives.sameRect(a, b)
+    return a.x == b.x and a.y == b.y and a.w == b.w and a.h == b.h
+end
+
+--- Return a copy of `rect` when a staged reflow must (re)start: on its first
+--- step, after invalidation, or when the rect it captured has moved.
+---@param context table Panel context holding `reflowWork`.
+---@param rect AeroGridRect
+---@param begin? boolean
+---@return AeroGridRect? captured
+function primitives.reflowStart(context, rect, begin)
+    local work = context.reflowWork
+    if begin or work and (work.invalidated or work.rect and not primitives.sameRect(work.rect, rect)) then
+        return { x = rect.x, y = rect.y, w = rect.w, h = rect.h }
+    end
+end
+
+--- Make an in-progress staged reflow restart on its next step.
+---@param context table
+function primitives.invalidateReflow(context)
+    if context.reflowWork then
+        context.reflowWork = { invalidated = true }
+    end
+end
+
 --- Resize a panel and reposition its shared header.
 ---@param context table Panel context with panel, label, badge, themeBuilder, and fonts.
 ---@param rect AeroGridRect
