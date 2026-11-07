@@ -1084,6 +1084,9 @@ local function report(context)
     if config.flightModelSwitch then
         gate(P.flightSwitchDone, "parked-owner model-switch loading did not complete")
     end
+    if config.flightOwnerHandoff then
+        gate(P.flightHandoffDone, "parked-owner Flight migration did not complete")
+    end
     gate(not config.expectedError or P.expectedErrorSeen, "expected scenario error was not reported")
     if string.match(config.scenario, "^migration%-tasks%-") then
         local scheduling = context.schedulerHost
@@ -1160,6 +1163,7 @@ local function report(context)
                 hiddenLoaded = P.sharedFlightHidden and not P.sharedFlightHidden.stage,
             },
             flightModelSwitch = config.flightModelSwitch and { done = P.flightSwitchDone == true },
+            flightOwnerHandoff = config.flightOwnerHandoff and { done = P.flightHandoffDone == true },
             stats = labels,
             worst = (function()
                 local rows = {}
@@ -2292,6 +2296,46 @@ local function entry(kind, context, fn, e, t)
             report(context)
             return
         end
+    end
+    if config.flightOwnerHandoff and ready(context) and not P.flightHandoffDone then
+        local owner = assert(context.flightBroker)
+        local target = P.flightHandoffContext
+        if not target then
+            local flight, smart = context.scheduler.byId["service:flight"], context.scheduler.byId["service:smart"]
+            if not flight or not smart then
+                runCallback("background", context, backgroundFn)
+                return
+            end
+            gate(owner:owningContext() == context, "handoff must start with the original canonical owner")
+            P.flightHandoffFacade = owner.facade
+            P.flightHandoffDue = { flight = getTime() + 100000, smart = getTime() + 100020 }
+            flight.due, smart.due = P.flightHandoffDue.flight, P.flightHandoffDue.smart
+            runCallback("create", context, function()
+                P.flightHandoffContext = createFn(
+                    context.zone, { Layout = context.layoutName, Theme = "modern-dark" }, context.path)
+            end)
+            return
+        end
+        install(target)
+        -- Only the second widget advances while its original owner is parked.
+        runCallback("background", target, backgroundFn)
+        if not target.flightBroker then return end
+        gate(target.flightBroker == owner, "handoff cannot create another Flight broker")
+        if owner:owningContext() ~= target then return end
+        local flight, smart = target.scheduler.byId["service:flight"], target.scheduler.byId["service:smart"]
+        if not flight or not smart then return end
+        gate(flight.due == P.flightHandoffDue.flight and smart.due == P.flightHandoffDue.smart,
+            "parked-owner migration must preserve both canonical releases")
+        gate(owner.facade == target.serviceRuntime.byId.flight
+            and not P.flightHandoffFacade.schedulerTasks and P.flightHandoffFacade.count == 0,
+            "migration must transfer the facade without leaving the old one scheduled")
+        -- Reconcile the previous registry while keeping its replacement live.
+        runCallback("background", context, backgroundFn)
+        gate(owner:owningContext() == target, "a live replacement cannot be displaced during reconciliation")
+        if context.scheduler.byId["service:flight"] or context.scheduler.byId["service:smart"] then return end
+        gate(#context.errors == 0 and #target.errors == 0, "handoff must not report widget errors")
+        P.flightHandoffDone = true
+        return
     end
     if config.flightModelSwitch and ready(context) and not P.flightSwitchDone then
         local owner = context.flightBroker

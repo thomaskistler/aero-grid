@@ -49,13 +49,14 @@ def fit(grants):
     targets = {grant: target(maximum) for grant, maximum in grants.items()}
     per_unit = 1
     for grant, budget in targets.items():
-        if type(grant) is not int or grant < 1:
+        if type(grant) is not int or grant < 0:
             raise ValueError(f"invalid fitting grant: {grant!r}")
         if grant > 1:
             growth = budget - targets[1]
             per_unit = max(per_unit, (growth + grant - 2) // (grant - 1))
-    if len(targets) == 1:
-        return {"fixed": 0, "perUnit": max(1, targets[1])}
+    if not any(grant > 1 for grant in targets):
+        fixed = targets.get(0, 0)
+        return {"fixed": fixed, "perUnit": max(1, targets[1] - fixed)}
     fixed = max(0, max(budget - grant * per_unit for grant, budget in targets.items()))
     return {"fixed": fixed, "perUnit": per_unit}
 
@@ -323,8 +324,12 @@ def propose(data, observations, declarations, required):
             maximum = declarations.get(f"{task}|{stage}")
             if maximum is None:
                 raise ValueError(f"cannot fit an undeclared stage: {task}.{stage}")
-            stages[stage] = fit({grant: combined[f"task|{task}|{stage}|{grant}"]
-                                 for grant in range(1, maximum + 1)})
+            grants = {grant: combined[f"task|{task}|{stage}|{grant}"]
+                      for grant in range(1, maximum + 1)}
+            noop = combined.get(f"task|{task}|{stage}|0")
+            if noop is not None:
+                grants[0] = noop
+            stages[stage] = fit(grants)
     for group, bounds in estimates["bounds"].items():
         if group == "scheduler":
             continue
@@ -657,7 +662,7 @@ def profile(audit, args):
             errors.append(f"behavior: {path.relative_to(ROOT)}: {error}")
     available = audit.scenarios()
     names = ["hook-check", "hook-check-firmware", "stress", "metric-16", "model-panels",
-             "flight-smart-tasks", "session-reset"]
+             "flight-smart-tasks", "flight-owner-handoff", "session-reset"]
     names.extend(name for name in available if name.startswith("lifecycle-app"))
     # Panel extrema supply native stages missed by ordinary dashboard releases.
     names.extend(name for name in available if name.endswith(("-min", "-max"))

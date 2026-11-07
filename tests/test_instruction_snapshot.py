@@ -91,6 +91,20 @@ class InstructionSnapshotTests(unittest.TestCase):
         observations["mock"] = {}
         self.assertTrue(any("coverage: missing task" in finding for finding in snapshot.check(data, observations, required)))
 
+    def test_zero_grant_noops_are_retained_and_covered_by_fixed_charge(self):
+        self.assertEqual(snapshot.fit({0: 5, 1: 100}), {"fixed": 10, "perUnit": 100})
+        self.assertEqual(snapshot.fit({0: 120, 1: 270, 2: 450, 3: 630}),
+                         {"fixed": 140, "perUnit": 200})
+        data, observations, required = self.data()
+        noop = self.row(grant=0, min=5, max=5)
+        observations["mock"][snapshot.observation_key(noop)] = noop
+        proposed = snapshot.propose(data, observations, {"test|run": 1}, required)
+        self.assertEqual(proposed["tasks"]["test"]["run"], {"fixed": 10, "perUnit": 210})
+        self.assertEqual(snapshot.check({"estimates": proposed, "record": data["record"]},
+                                        observations, required, updating=True), [])
+        with self.assertRaises(ValueError):
+            snapshot.fit({-1: 5, 1: 100})
+
     def test_any_increase_fails_and_update_does_not_hide_safety(self):
         data, observations, required = self.data()
         row = next(iter(observations["native"].values()))
@@ -287,10 +301,18 @@ class InstructionSnapshotTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             candidate, suite = Path(directory) / "candidate.lua", Path(directory) / "test_candidate.lua"
             candidate.write_text(snapshot.render(**data), encoding="ascii")
+            copied = Path(directory) / "build/test-widget-fixture/lib/instruction_snapshot.lua"
+            copied.parent.mkdir(parents=True)
+            seed = copy.deepcopy(data)
+            seed["record"].pop("candidateMarker")
+            copied.write_text(snapshot.render(**seed), encoding="ascii")
             suite.write_text("""
                 local root = ...
                 local chunk = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/instruction_snapshot.lua"))()
                 assert(chunk("record").candidateMarker, "candidate was not loaded")
+            """ + f"""
+                local copied = assert(loadfile("{copied.as_posix()}"))()
+                assert(copied("record").candidateMarker, "runtime fixture still loaded the copied seed")
             """, encoding="ascii")
             runner.run_test(suite, snapshot_path=candidate)
 

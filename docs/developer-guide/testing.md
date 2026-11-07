@@ -104,6 +104,7 @@ memory limits; their results are included in the diagnostic report.
 stage, and grant table with observed min/max and the current shipped bound.
 Coverage requires a real observation for every non-deferred task/stage/grant;
 there is no repetition quota. Mock and native records remain separate.
+Observed zero-grant no-ops are retained and covered by the fitted fixed charge.
 Instruction spread is reported for review, not treated as a blocker. Cheap and
 no-op executions remain in the observed ranges.
 The scheduler's fixed, per-examination, and per-run charges are conservative

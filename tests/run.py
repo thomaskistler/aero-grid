@@ -18,7 +18,7 @@ def run_test(path: Path, *, instructions=False, snapshot_path=None):
             local originalLoadfile = loadfile
             function loadfile(filename, ...)
                 if type(filename) == "string"
-                    and string.match(filename, "WIDGETS/AeroGrid/lib/instruction_snapshot%.lua$") then
+                    and string.match(filename, "/lib/instruction_snapshot%.lua$") then
                     filename = candidate
                 end
                 return originalLoadfile(filename, ...)

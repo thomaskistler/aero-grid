@@ -923,6 +923,8 @@ def scenarios():
                 {"name": "refresh", "kind": "refresh", "callbacks": 100, "step": 5, "perCall": 20}])
     result["flight-smart-tasks-no-counter"] = dict(result["flight-smart-tasks"], expected=1,
         layout=custom_layout([metric_cell(1, (1, 2, 3))]))
+    result["flight-owner-handoff"] = dict(result["metric-max"], flightOwnerHandoff=True,
+        phases=standard_phases(refreshes=800))
     result["session-reset"] = {
         "recipe": "metric", "expected": 2, "sources": 6, "settings": True, "reset": True,
         "layout": custom_layout([chart_cell("chart-a", 0, 2, (1, 2, 3)),
@@ -1033,6 +1035,7 @@ def prepare(capture, name, spec, sd):
               "deterministicClock": spec.get("deterministicClock", False),
               "sharedFlightLoad": spec.get("sharedFlightLoad", False),
               "flightModelSwitch": spec.get("flightModelSwitch", False),
+              "flightOwnerHandoff": spec.get("flightOwnerHandoff", False),
               "sharedFlightRevision": spec.get("sharedFlightRevision", 0),
               "constructionParity": spec.get("constructionParity", False),
               "fullscreen": spec.get("fullscreen", False),
@@ -1086,6 +1089,11 @@ def run(capture, executable, library, name, spec, timeout, *, snapshot_path=None
     data = json.loads(results.read_text())
     if data.get("errors"):
         raise RuntimeError(f"{name}: widget errors: {data['errors']}")
+    if spec.get("flightOwnerHandoff"):
+        if not data.get("flightOwnerHandoff", {}).get("done"):
+            raise RuntimeError(f"{name}: parked-owner migration was not completed")
+        if data.get("stats", {}).get("host:head:handoff", {}).get("n", 0) < 2:
+            raise RuntimeError(f"{name}: missing migration measurement after initial scheduler enable")
     if spec.get("lifecycleDrain"):
         if not any(label.startswith("lifecycle:retirePage:settings:save_") for label in data.get("stats", {})):
             raise RuntimeError(f"{name}: missing complete active settings-drain atom")
