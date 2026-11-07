@@ -110,6 +110,9 @@ The scheduler's fixed, per-examination, and per-run charges are conservative
 estimates validated jointly against measured planner self-cost. Their individual
 values are not separately measured ranges; an insufficient combined reservation
 blocks the profile.
+Snapshot generation preserves these coefficients unless a measured shortfall
+requires a larger fixed reservation. The per-task coefficients are unchanged;
+the fixed shortfall target uses the same 10% uplift and rounding as other bounds.
 
 **This workflow is still WIP:** the shipped snapshot contains seeded estimates,
 not a validated measured baseline. Chart measurement is deferred; its estimates

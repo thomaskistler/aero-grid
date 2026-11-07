@@ -795,6 +795,7 @@ local function install(context)
             P.settingsStoreBounds[job.stage] = store:saveWorkBound(job)
             return job.stage
         end)
+        wrapField(store, "startLoad", "modal:settings:load:start")
         P.settingsLoadBounds = P.settingsLoadBounds or {}
         wrapField(store, "advanceLoad", function(token, _, job)
             if token then
@@ -858,6 +859,7 @@ local function install(context)
             if token then
                 return "editor:drawer:advance:" .. token
             end
+            if drawer.workBound(state) == nil then return "external-unbounded" end
             if state.drawerOpening then
                 return state.drawerOpening.phase
             elseif state.drawerLayout then

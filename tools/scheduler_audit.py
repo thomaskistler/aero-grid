@@ -73,6 +73,13 @@ def patch_main(source):
     if source.count(restart) != 2:
         raise RuntimeError("main.lua: expected two foreground/background restart calls")
     source = source.replace(restart, '        AUDIT_SPAN("lifecycle:restartLoading", restartLoading, context)\n')
+    flight = "    if advanceFlightJob(context) then\n"
+    if source.count(flight) != 2:
+        raise RuntimeError("main.lua: expected two foreground/background Flight-job calls")
+    source = source.replace(flight,
+        '    if AUDIT_SPAN("main:flightJob:" .. (context.pendingFlightError and "error" '
+        'or (context.flightPublicationJob or context.flightRegistrationJob) and "registration" or "idle"), '
+        'advanceFlightJob, context) then\n')
     return MAIN_PREFIX + source
 
 

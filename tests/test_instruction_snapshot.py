@@ -64,6 +64,8 @@ class InstructionSnapshotTests(unittest.TestCase):
         observations["native"]["framework|scheduler|10:4|0"]["max"] = 1733
         self.assertTrue(any("joint framework charge 1732" in finding
                             for finding in snapshot.check(data, observations, keys, updating=True)))
+        proposed = snapshot.propose(data, observations, {"test|run": 1}, keys)
+        self.assertEqual(proposed["bounds"]["scheduler"], {"fixed": 220, "examine": 64, "run": 224})
 
     def test_measured_incremental_growth_fitting(self):
         # Raw maxima yielding conservative targets 300, 500 and 700.
@@ -167,6 +169,9 @@ class InstructionSnapshotTests(unittest.TestCase):
             "scheduler:ready:service-enroll": ("host", "serviceEnroll", 120, 200),
             "scheduler:ready:panel-only:scan": ("host", "reconcile", 120, 200),
             "modal:settings:load:read": ("settings-store-load", "read", 120, 200),
+            "modal:settings:load:start": ("settings-store-load", "start", 120, 200),
+            "main:flightJob:registration": ("main", "registrationOverhead", 20, 40),
+            "main:flightJob:error": ("main", "flightError", 20, 40),
             "modal:settings:store:serialize": ("settings-store-save", "serialize", 120, 200),
             "modal:settings:advance:load_read:idle": ("settings-ui", "storeOverhead", 20, 40),
             "modal:settings:advance:save_serialize:idle": ("settings-ui", "storeOverhead", 20, 40),
@@ -197,6 +202,7 @@ class InstructionSnapshotTests(unittest.TestCase):
                 "units": {"1": dict(n=10, min=120, max=200, selfMax=40)}}}}, estimates)
         self.assertIsNone(snapshot.native_bound("modal:settings:load:not-a-stage", estimates))
         self.assertIsNone(snapshot.native_bound("scheduler:ready:settled", estimates))
+        self.assertIsNone(snapshot.native_bound("main:flightJob:idle", estimates))
         rows = snapshot.native_rows("focused", {"stats": {
             "scheduler:framework:10:4": {"units": {"1": bucket}}}}, estimates)
         self.assertEqual((rows[0]["kind"], rows[0]["stage"], rows[0]["min"], rows[0]["max"]),

@@ -28,9 +28,9 @@ foreground["lib/model_settings_store.lua"] = function(module)
         store.advanceSave = recorder:bound(function(_, job)
             return bound("settings-store-save", type(job) == "table" and job.stage or nil)
         end, store.advanceSave)
-        store.beginLoad = recorder:bound(function()
+        store.startLoad = recorder:bound(function()
             return bound("settings-store-load", "start")
-        end, store.beginLoad)
+        end, store.startLoad)
     end)
 end
 
@@ -65,6 +65,7 @@ end
 
 foreground["lib/editor_drawer.lua"] = function(module)
     module.advance = recorder:bound(function(_, state)
+        if module.workBound(state) == nil then return end
         local stage
         if state.drawerOpening then
             stage = state.drawerOpening.phase

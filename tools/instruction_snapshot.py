@@ -307,6 +307,15 @@ def propose(data, observations, declarations, required):
     if missing:
         raise ValueError(f"cannot fit incomplete observations: {sorted(missing)}")
     estimates = copy.deepcopy(data["estimates"])
+    framework = estimates["bounds"].get("scheduler")
+    if framework is not None:
+        for rows in observations.values():
+            for row in rows.values():
+                if row["kind"] == "framework" and row["name"] == "scheduler":
+                    examined, ran = map(int, row["stage"].split(":"))
+                    variable = examined * framework["examine"] + ran * framework["run"]
+                    if row["max"] > framework["fixed"] + variable:
+                        framework["fixed"] = max(framework["fixed"], target(row["max"] - variable))
     for task, stages in estimates["tasks"].items():
         if task in data["record"]["deferred"]:
             continue
@@ -358,6 +367,11 @@ def native_bound(label, estimates):
         return "host", "reconcile", False
     if label == "registration:begin":
         return "flight-registration", "begin", False
+    if label.startswith("main:flightJob:"):
+        stage = label[len("main:flightJob:"):]
+        if stage in ("error", "registration"):
+            return "main", "flightError" if stage == "error" else "registrationOverhead", True
+        return None
     if label == "registration:beginLoad":
         return "flight-registration", "load-begin", False
     if label.startswith("editor:advanceEditor:render:"):
@@ -650,6 +664,7 @@ def profile(audit, args):
     names.extend(name for name in available
                  if name.startswith(("editor-drawer-", "editor-entry-", "editor-write-entry-"))
                  and "chart" not in name)
+    names.extend(name for name in available if name.startswith("panel-reflow-") and "chart" not in name)
     checks, native_completed = {}, []
     try:
         library = args.companion / "Contents/Resources/libedgetx-tx16s-simulator.dylib"
@@ -718,6 +733,12 @@ def profile(audit, args):
                                     "native": {"simulator": args.companion.name, "luaIntegerBits": 32}},
                       provenance={"profile": "full mock/native", "git": audit.subprocess.check_output(
                           ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(), "sourceSha": inputs_sha})
+        if "scheduler" in estimates["bounds"]:
+            record["frameworkPolicy"] = {
+                "scheduler": "Conservative coefficients, validated jointly against planner self-cost; "
+                             "only fixed reservation increases to cover a measured shortfall. "
+                             "No independently measured component ranges."
+            }
         record["coverage"]["candidateMock"] = dict(enumerate(MEMORY_SUITES, 1))
         record["coverage"]["candidateNative"] = dict(enumerate(MEMORY_SCENARIOS, 1))
         candidate_errors, report["candidate"] = validate_candidate(
