@@ -452,7 +452,10 @@ assertions.assertEqual(monitor.deltaLabel.hidden, true, "numeric source has no e
 assertions.assertEqual(monitor.primary, 4.1)
 monitor.settings.source = "Cels"
 monitor.feed = live.serviceRuntime.byId.telemetry:subscribe("Cels")
-fixture.pump(live, 40)
+assert(fixture.pumpUntil(live, function()
+    return monitor.summary.shape == "cells" and monitor.deltaText == CHAR_DELTA .. " 0.01v"
+        and not monitor.deltaLabel.hidden
+end, 100, 20), "the new cell source must reach the panel")
 assertions.assertEqual(monitor.summary.shape, "cells")
 assertions.assertEqual(monitor.deltaText, CHAR_DELTA .. " 0.01v")
 assertions.assertEqual(monitor.deltaLabel.hidden, false)

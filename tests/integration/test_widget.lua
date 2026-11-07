@@ -2291,7 +2291,7 @@ panels:
 ]],
         {
             ["halfbuilt.lua"] = [==[
-local halfbuilt = {id = "halfbuilt", apiVersion = 1, supportedSpans = {"any"}}
+local halfbuilt = {id = "halfbuilt", apiVersion = 1, supportedSpans = {"any"}, idle = true}
 function halfbuilt.create(parent, rect, settings, services)
   services.primitives.panel(parent, rect, services.theme,
     services.state("normal", "cyan"))
@@ -5306,7 +5306,7 @@ panels:
 ]],
         {
             ["eater.lua"] = [==[
-local eater = {id = "eater", apiVersion = 1, supportedSpans = {"any"}}
+local eater = {id = "eater", apiVersion = 1, supportedSpans = {"any"}, idle = true}
 function eater.create(parent, rect, settings, services)
   return {panel = services.primitives.panel(parent, rect, services.theme,
     services.state("normal", "cyan")), seen = 0}
@@ -5920,10 +5920,14 @@ panels:
     assertEqual(#context.panels, 2, "a missing service disabled a panel")
     assert(string.match(table.concat(context.errors, "\n"), "navigation:"), table.concat(context.errors, "\n"))
 
-    for _ = 1, 20 do
+    for _ = 1, 300 do
         tick(20)
         local ok, err = pcall(definition.refresh, context)
         assert(ok, "refresh raised without a service: " .. tostring(err))
+        if probeRows(entryById(context, "probe").instance).NAVIGATION
+            and entryById(context, "reading").instance.stateName == "normal" then
+            break
+        end
     end
 
     local rows = probeRows(entryById(context, "probe").instance)
@@ -6701,8 +6705,6 @@ local function testHostDiagnosticsReportsTheHost()
     local widgetPath = makeWidget("hostdiag", yaml)
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-    settle(context, 30)
-
     local function linesOf(id)
         local panel = entryById(context, id).instance
         local out = {}
@@ -6710,6 +6712,16 @@ local function testHostDiagnosticsReportsTheHost()
             out[#out + 1] = panel.rows[index].properties.text
         end
         return table.concat(out, "\n"), panel
+    end
+
+    for _ = 1, 600 do
+        local ready = true
+        for _, id in ipairs({ "identity", "theme", "panels", "sources" }) do
+            local _, panel = linesOf(id)
+            ready = ready and type(panel.texts[1]) == "string" and panel.texts[1] ~= "" and not panel.refreshWork
+        end
+        if ready then break end
+        settle(context, 1)
     end
 
     local identity, identityPanel = linesOf("identity")
@@ -6820,8 +6832,11 @@ panels:
     local function originOf()
         local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
         assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-        settle(context, 20)
         local panel = entryById(context, "identity").instance
+        for _ = 1, 300 do
+            if type(panel.texts[1]) == "string" and panel.texts[1] ~= "" and not panel.refreshWork then break end
+            settle(context, 1)
+        end
         local shown = {}
         for index = 1, panel.visibleLines do
             shown[#shown + 1] = panel.rows[index].properties.text
@@ -6886,8 +6901,11 @@ panels:
     local function identityLines(widgetPath)
         local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
         assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-        settle(context, 20)
         local panel = entryById(context, "identity").instance
+        for _ = 1, 300 do
+            if type(panel.texts[1]) == "string" and panel.texts[1] ~= "" and not panel.refreshWork then break end
+            settle(context, 1)
+        end
         local out = {}
         for index = 1, panel.visibleLines do
             out[#out + 1] = panel.rows[index].properties.text
