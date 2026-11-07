@@ -80,7 +80,7 @@ do
     local first, second = add("first"), add("second")
     run()
     assert(first.instance.runs == 1 and second.instance.runs == 0, "enrollment is bounded to one placement")
-    assert(host.pendingPanels[second] and host.legacy.spent == scheduling.PANEL_ENROLL_COST)
+    assert(host.pendingPanels[second])
     assert(first.instance.schedulerOwned and second.instance.schedulerOwned, "pending placements are already owned")
     run()
     assert(not host.pendingPanels)
@@ -195,16 +195,6 @@ do
 end
 
 do
-    local context, host, add, run = fixture()
-    local first, pending = add("first"), add("pending")
-    run()
-    host.owners["panel:sample"] = "legacy"
-    assert(host:syncPanels(context) == nil)
-    assert(not first.instance.schedulerOwned and not pending.instance.schedulerOwned)
-    assert(not host.pendingPanels and next(host.panelTasks) == nil)
-end
-
-do
     local context, host, add, _, errors = fixture()
     local entry = add("invalid")
     entry.instance = nil
@@ -254,7 +244,6 @@ do
     end
     assert(not host.pendingPanels and host:verify(context) == nil)
     run()
-    assert(host.legacy.spent == 0, "steady callbacks do not retain the setup reservation")
 end
 
 do
@@ -282,9 +271,6 @@ do
     context.panels = { active }
     run()
     assert(not first.instance.schedulerOwned and not last.instance.schedulerOwned)
-    host.owners["panel:sample"] = "legacy"
-    assert(host:syncPanels(context) == nil)
-    assert(not active.instance.schedulerOwned and host.scheduler.count == 0)
 end
 
 do
@@ -297,7 +283,6 @@ do
     run()
     assert(host.scheduler.count == 0 and not host.pendingPanels)
     run()
-    assert(host.panelSetup == 0, "idle checks are charged only when synchronization is needed")
     assert(host:verify(context) == nil)
     for _, entry in ipairs(entries) do
         assert(entry.instance.schedulerOwned)

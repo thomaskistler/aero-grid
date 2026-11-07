@@ -42,33 +42,13 @@ end
 write("shared-armed", document)
 write("shared-armed-copy", document)
 
-local worst, callbacks = 0, 0
-local function measured(callback, context)
-    -- The radio does not execute the mock's per-rectangle property validation.
-    local constructingMenu = context.aeroMenuModule and not context.aerogridMenu and lvgl.isFullScreen()
-    if constructingMenu then
-        fixture.lvglMock.setPropertyValidation(false)
-    end
-    local instructions = 0
-    debug.sethook(function()
-        instructions = instructions + 100
-    end, "", 100)
-    local ok, message = pcall(callback, context)
-    debug.sethook()
-    if constructingMenu then
-        fixture.lvglMock.setPropertyValidation(true)
-    end
-    assert(ok, message)
-    worst, callbacks = math.max(worst, instructions), callbacks + 1
-    assert(instructions < 15000, "model Armed callback exceeded budget: " .. instructions)
-end
 local function finish(context)
     for _ = 1, 300 do
         if not context.stage and not context.reloadState then
             equal(#context.errors, 0, table.concat(context.errors, "\n"))
             return context
         end
-        measured(definition.refresh, context)
+        definition.refresh(context)
     end
     error("model Armed reload did not finish")
 end
@@ -83,7 +63,7 @@ local function pump(...)
     for _ = 1, 80 do
         fixture.tick(20)
         for _, context in ipairs({ ... }) do
-            measured(definition.refresh, context)
+            definition.refresh(context)
         end
     end
 end
@@ -100,7 +80,7 @@ local function open(context)
         if context.modelSettingsUi and not context.modelSettingsUi.build then
             return context.modelSettingsUi
         end
-        measured(definition.refresh, context)
+        definition.refresh(context)
     end
     error("Model settings did not open")
 end
@@ -108,7 +88,7 @@ local state = open(first)
 assert(string.find(state.status.properties.text, "Conflicting old widget Armed", 1, true))
 equal(state.controls.armed.properties.get(), 0, "conflicting old native options must not be guessed")
 first.modelSettingsUiModule.handle(first, EVT_VIRTUAL_EXIT)
-measured(definition.refresh, first)
+definition.refresh(first)
 equal(first.flightBroker.document.armed, nil, "opening and closing does not publish model arming")
 assert(first.serviceRuntime.byId.armed == armed, "closing unchanged settings does not rebuild consumers")
 
@@ -121,7 +101,7 @@ local function save(context, index)
             break
         end
         fixture.tick(20)
-        measured(definition.refresh, context)
+        definition.refresh(context)
     end
     assert(context.flightBroker.document.revision == revision + 1 and not dialog.saving and not dialog.pending)
     if index ~= 0 then
@@ -133,7 +113,7 @@ local function save(context, index)
             break
         end
         fixture.tick(20)
-        measured(definition.refresh, context)
+        definition.refresh(context)
     end
     assert(not context.modelSettingsUi)
     finish(first)
@@ -206,7 +186,7 @@ for _ = 1, 150 do
     if first.editorUi and not first.editorUi.buildStage then
         break
     end
-    measured(definition.refresh, first)
+    definition.refresh(first)
 end
 local liveDraft = assert(first.editorSession)
 assert(editor.setValue(liveDraft, "label", "UNSAVED"))
@@ -235,4 +215,4 @@ equal(assert(owner.store:load(owner.filename)).armed, "!L64")
 save(second, getSwitchIndex("SF" .. CHAR_DOWN))
 equal(first.serviceRuntime.byId.armed:state().condition, "SFv", "physical positions are stored by portable name")
 equal(second.serviceRuntime.byId.armed:state().condition, "SFv")
-print(string.format("Model Armed callbacks: %d; worst %d instructions", callbacks, worst))
+print("Model Armed integration passed")

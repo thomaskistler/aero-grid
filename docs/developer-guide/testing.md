@@ -45,7 +45,7 @@ make check LUA_COMPILER=/absolute/path/to/edgetx-luac
 | YAML, layout validation, geometry, or persistence | `tests/unit/lib/` and `tests/support/assertions.lua`. |
 | Source resolution, freshness, model/control/navigation data | The corresponding service suite in `tests/unit/lib/`. |
 | Panel settings or presentation | `tests/unit/panels/`, then the relevant `tests/integration/widget/test_*_review.lua`. |
-| Host load/reload, failure isolation, scheduling, or callback budgets | `tests/integration/test_widget.lua`. |
+| Host load/reload, failure isolation, or scheduling | `tests/integration/test_widget.lua` and `tests/unit/lib/test_scheduler.lua`. |
 | Editor commands and settings dialogs | `tests/unit/lib/test_editor.lua` and `tests/integration/test_editor_ui.lua`. |
 | Model settings, arming, or session reset | Model-settings unit suites, shared-arming/shared-flight integration suites, and `tests/integration/widget/test_session_reset.lua`. |
 | Installing panels from the editor | `tests/integration/test_panel_installation.lua`. |
@@ -55,8 +55,8 @@ The runtime suite under `tests/unit/runtime/` is split into
 contracts/settings/documentation, palette/state, service behavior, and
 typography/geometry suites. `tests/support/runtime_fixture.lua` preserves the
 minimal constants/LCD surface: these tests deliberately do not install LVGL or
-radio APIs. The full-widget integration suite remains intact so budgeting,
-cross-panel agreement, and deferred cleanup are still exercised together.
+radio APIs. The full-widget integration suite exercises scheduling,
+cross-panel agreement, and deferred cleanup together.
 
 `test_module_composition.lua` checks direct API references, per-instance state,
 and reading/unit reconciliation. `test_service_subscriptions.lua` checks stable
@@ -83,11 +83,10 @@ implementation; making the mock agree with an assumption can hide a real bug.
 
 ## Performance and resource regressions
 
-`tests/integration/test_widget.lua` measures widget callbacks with instruction
-hooks, including dense sixteen-panel layouts, service work, loading, and reflow.
-It fails at **15,000 instructions or more**, reserving headroom against EdgeTX's 20,000-instruction
-callback budget. Read the printed `budget headroom` and `steady state` results
-when changing scheduling or rendering.
+Automated suites check behavior and scheduler admission, not instruction counts.
+Scheduler migration parity and legacy/new scheduler coexistence tests have been removed.
+There is no automated instruction-count regression gate or snapshot workflow yet.
+Native instruction measurement remains available through `tools/audit-scheduler.py`.
 
 The resource suites check reload collectibility, object counts, sustained
 updates, and font callback retention. They cannot measure native LVGL/bitmap
@@ -225,10 +224,9 @@ and is lost when the radio restarts or the widget script unloads.
 The unit and widget-integration `test_diagnostics_log.lua` suites,
 `test_host_diagnostics.lua`, and the Navigation service suite cover
 retention, multi-host activation, hidden-screen capture
-logging, viewer interaction, wrapping, and the strict 15,000-instruction
-callback ceiling. These are mocked checks, not evidence of radio timing or
-native LVGL behavior; reproduce the original symptom on hardware with the
-log enabled to obtain that evidence.
+logging, viewer interaction, and wrapping. These are mocked checks, not evidence
+of radio timing or native LVGL behavior; reproduce the original symptom on
+hardware with the log enabled to obtain that evidence.
 
 The native capture tools already redirect simulator output to
 `build/doc-capture/<panel>/simulator.log` or

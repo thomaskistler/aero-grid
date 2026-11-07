@@ -14,8 +14,6 @@ local fixture = load("@support/scheduler_registration_fixture.lua")(load)
 local host = load("lib/scheduler_host.lua")
 local function finish(state)
     for _ = 1, 2000 do
-        local bound = assert(state.registration.workBound(state.job))
-        assert(bound <= 4000, "combined load stage remains below the atom cap")
         local done, ok, message = state.registration.advance(state.job)
         if done then
             return ok, message

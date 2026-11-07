@@ -173,6 +173,6 @@ check (21).
 
 ## Traces
 
-`tests/fixtures/scheduler-traces/*.txt` hold per-callback native traces for
+`--traces` generates per-callback native traces in `tests/fixtures/scheduler-traces/*.txt` for
 replay: `kind|tick|total|overhead|task=cost/units,...`. They come from
 `metric-16`, `stress`, `flight-smart`, `session-reset` and `chart-full`.

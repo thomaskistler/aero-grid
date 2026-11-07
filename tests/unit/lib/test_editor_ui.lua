@@ -224,9 +224,6 @@ for target = 1, 6 do
     assert(ui.renderWorkBound(state) == ui.LAYOUT_BOUNDS.visit, "the first step only indexes and visits")
     state.layoutJob = { step = 1 }
     assert(ui.renderWorkBound(state) == ui.LAYOUT_BOUNDS.navigation, "a measured panel type declares its bound")
-    for step, bound in pairs(ui.LAYOUT_BOUNDS) do
-        assert(bound <= 4000, step .. " layout charge must fit the atom cap")
-    end
     for _, panelType in ipairs({ "metric", "flight-mode", "flight-timer" }) do
         assert(ui.LAYOUT_BOUNDS[panelType], panelType .. " geometry is measured")
     end

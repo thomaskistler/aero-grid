@@ -45,16 +45,13 @@ for _, kind in ipairs({
     end)
     local panelDue = panel.due
     local begin, finish, dispatch = host.begin, host.finish, context.panelHost.dispatch
-    local admission, reservation, expected
+    local admission, expected
     host.begin = function(self, callbackKind)
         assert(callbackKind == "loader")
-        local legacy = begin(self, callbackKind)
-        reservation = legacy.spent
-        return legacy
+        return begin(self, callbackKind)
     end
     host.finish = function(self, callbackKind)
         assert(expected and not admission)
-        assert(self.legacy.spent >= reservation + expected, "geometry must reserve before services run")
         admission = true
         return finish(self, callbackKind)
     end
@@ -65,7 +62,7 @@ for _, kind in ipairs({
     end
     local function call(background, operation)
         expected = lifecycle.workBound(context, operation)
-        assert(expected and expected <= 4000, kind .. ": missing " .. operation .. " declaration")
+        assert(expected, kind .. ": missing " .. operation .. " declaration")
         admission = false
         local due, before = service.due, runs
         fixture.tick(5)

@@ -16,7 +16,6 @@ for _, item in ipairs(case.cases) do
     local add = state.scheduling.scheduler.add
     function state.scheduling.scheduler:add(spec)
         additions = additions + 1
-        equal(state.scheduling.panelSetup, 2300, "registration is charged before scheduler allocation")
         return add(self, spec)
     end
     equal(task:step(1, "run", now), 1)
@@ -138,7 +137,6 @@ do
     local additions = 0
     function scheduling.scheduler:add(spec)
         additions = additions + 1
-        equal(scheduling.panelSetup, 2300, "bulk admission is charged before allocation")
         return add(self, spec)
     end
     for _ = 1, 160 do
@@ -153,7 +151,5 @@ do
     for _, item in ipairs(telemetry.schedulerTasks) do
         equal(scheduling.scheduler:dueOf(item.id), 17, "pending resets retain their exact release")
     end
-    scheduling:begin("steady")
-    equal(scheduling.legacy.spent, 2300, "admission is reserved before scheduler allocation")
 end
 print("Actual broker registration preserves releases through registry gaps, resets and handoff")

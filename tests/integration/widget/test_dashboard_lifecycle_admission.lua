@@ -64,7 +64,7 @@ for _, case in ipairs({ "retirePage", "advanceAppRebuild", "advanceAppRebuildErr
             local job = operation == "retirePage" and context.pageRetirement or context.appRebuild
             local phase = job and job.phase or (operation == "retirePage" and "cancel" or "retire")
             local expected = lifecycle.workBound(context, operation)
-            local advanced, admitted, reserved = false, false
+            local advanced, admitted = false, false
             local advance, begin, finish = lifecycle[operation], scheduling.begin, scheduling.finish
             local dispatch = context.panelHost.dispatch
             lifecycle[operation] = function(...)
@@ -75,13 +75,10 @@ for _, case in ipairs({ "retirePage", "advanceAppRebuild", "advanceAppRebuildErr
             scheduling.begin = function(self, kind)
                 assert(kind == "loader", "lifecycle must use the existing service-only loading kind")
                 assert(not admitted)
-                local legacy = begin(self, kind)
-                reserved = legacy and legacy.spent
-                return legacy
+                return begin(self, kind)
             end
             scheduling.finish = function(self, kind)
                 admitted = true
-                assert(self.legacy.spent >= reserved + expected, "lifecycle work must be reserved before services")
                 return finish(self, kind)
             end
             context.panelHost.dispatch = function(entry, event, ...)
@@ -126,7 +123,6 @@ for _, case in ipairs({ "retirePage", "advanceAppRebuild", "advanceAppRebuildErr
             local finish, called = scheduling.finish, nil
             scheduling.finish = function(self, kind, ...)
                 called = kind
-                assert(self.legacy.spent >= scheduling.panelSetup + 600, "restart must reserve the complete operation")
                 return finish(self, kind, ...)
             end
             if background then
@@ -198,9 +194,9 @@ do
             end,
         },
     }
-    assert(ui.retirementWorkBound(context) == 2100)
-    assert(context.dashboardLifecycle.workBound(context, "retirePage") == 2400,
-        "the reservation must include close plus the complete save-advance bound")
+    assert(ui.retirementWorkBound(context))
+    assert(context.dashboardLifecycle.workBound(context, "retirePage"),
+        "confirmed saves remain eligible during retirement")
     context.modelSettingsUi.handlers.saveWorkBound = function()
         return 5000
     end

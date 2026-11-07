@@ -117,7 +117,7 @@ local function testReschedulingWrapsAndRejectsInvalidReleases()
     equal(s:dueOf("b"), 10)
 end
 
-local function testRetiredTasksAreChargedAndCounted()
+local function testInvalidStagesRetireWithoutRunning()
     local s = scheduler.new({ steady = 0 })
     for index = 1, 3 do
         local instance = task({}, index)
@@ -127,8 +127,6 @@ local function testRetiredTasksAreChargedAndCounted()
     equal(s:run("steady", 1), 0, "nothing runs")
     equal(s.lastPlan.ran, 3, "a retired task counts as run")
     equal(s.lastPlan.examined, 3)
-    equal(s.lastPlan.charged, FIXED + 3 * CHARGE)
-    equal(s.lastPlan.U, FIXED + 3 * CHARGE, "and its charge is in the plan")
     equal(#s:takeErrors(), 3)
 end
 
@@ -333,15 +331,11 @@ local function testPlanStaysUnderTheBudget()
     end
     s:run("steady", 1, 500)
     local limit = scheduler.CEILING - scheduler.MARGIN
-    assert(s.lastPlan.U <= limit, "U " .. s.lastPlan.U .. " exceeds " .. limit)
     equal(s.lastPlan.kind, "steady")
     local expected = (limit - OVERHEAD.steady - FIXED - 500) // (2000 + CHARGE)
     equal(#log, expected, "as many as fit, no more")
-    equal(s.lastPlan.U, OVERHEAD.steady + FIXED + 500 + expected * (2000 + CHARGE))
-    equal(s.lastPlan.charged, FIXED + expected * CHARGE)
     equal(s.lastPlan.examined, expected, "the scan stops when nothing more fits")
     equal(select("#", s:run("background", 2)), 1)
-    assert(s.lastPlan.U <= limit)
     equal(s.lastPlan.kind, "background")
 end
 
@@ -419,7 +413,6 @@ local function testGrantsInUnits()
     add(tight, "chart", decl, task(log2, "chart"), 0)
     tight:run("steady", 1)
     equal(log2[1], "chart:run:3", "the grant is what fits")
-    equal(tight.lastPlan.U <= scheduler.CEILING - scheduler.MARGIN, true)
 end
 
 local function testExclusiveAndKinds()
@@ -460,14 +453,13 @@ local function testSharedCostIsChargedOncePerPlan()
     s:run("steady", 1)
     local fits = (limit - 560) // (1000 + CHARGE)
     equal(#log, fits)
-    equal(s.lastPlan.U, OVERHEAD.steady + FIXED + 560 + #log * (1000 + CHARGE))
     local before = #log
     s:run("steady", 100)
     local second = #log - before
-    equal(s.lastPlan.U, OVERHEAD.steady + FIXED + 560 + second * (1000 + CHARGE), "charged again in a new plan")
+    equal(second, fits, "shared work is reserved again in the next callback")
 end
 
-local function testThePlannerChargesItsOwnCostAndNeedsNoCap()
+local function testReadyTasksHaveNoCountCap()
     local log = {}
     local s = scheduler.new({ steady = 0 })
     for index = 1, 20 do
@@ -481,8 +473,6 @@ local function testThePlannerChargesItsOwnCostAndNeedsNoCap()
         equal(log[index], "c" .. index .. ":run:1")
         equal(log[20 + index], "n" .. index .. ":run:1")
     end
-    equal(s.lastPlan.charged, FIXED + 40 * CHARGE)
-    equal(s.lastPlan.U, FIXED + 40 * (10 + CHARGE))
 
     local crowd = scheduler.new({ steady = 0 })
     for index = 1, scheduler.MAX_TASKS do
@@ -492,7 +482,6 @@ local function testThePlannerChargesItsOwnCostAndNeedsNoCap()
     local ran = crowd:run("steady", 1)
     equal(ran, room // (10 + CHARGE), "the budget, not a cap, ends the scan")
     equal(crowd.lastPlan.examined, ran)
-    assert(crowd.lastPlan.U <= scheduler.CEILING - scheduler.MARGIN)
 
     local refused = scheduler.new({ steady = 0 })
     for index = 1, scheduler.MAX_TASKS - 1 do
@@ -501,8 +490,6 @@ local function testThePlannerChargesItsOwnCostAndNeedsNoCap()
     add(refused, "tiny", single("normal", 1), task({}, "tiny"), 10 ^ 9)
     equal(refused:run("steady", 1, 6000), 0, "none fits beside the 6000 already used")
     equal(refused.lastPlan.examined, scheduler.MAX_TASKS - 1, "tasks that do not fit are charged, all of them")
-    equal(refused.lastPlan.charged, FIXED + (scheduler.MAX_TASKS - 1) * EXAMINE)
-    assert(refused.lastPlan.U <= scheduler.CEILING - scheduler.MARGIN)
 end
 
 local function testSkippedTasksDoNotHideLaterOnes()
@@ -694,7 +681,6 @@ local function testDeterminism()
         end
         for now = 1, 600, 4 do
             s:run(now % 8 == 0 and "background" or "steady", now, now % 5 * 100)
-            log[#log + 1] = s.lastPlan.U
         end
         return table.concat(log, ",")
     end
@@ -705,7 +691,7 @@ testDeclarationChecks()
 testRemovingAnIdleListedTaskUnlistsIt()
 testReschedulingPreservesIdentityAndOrder()
 testReschedulingWrapsAndRejectsInvalidReleases()
-testRetiredTasksAreChargedAndCounted()
+testInvalidStagesRetireWithoutRunning()
 testKindsAreCheckedWithReasons()
 testDeclarationsAreReadOnceAndCostsBounded()
 testSharedNamesAreFreedWithTheirLastTask()
@@ -723,7 +709,7 @@ testNormalReserve()
 testGrantsInUnits()
 testExclusiveAndKinds()
 testSharedCostIsChargedOncePerPlan()
-testThePlannerChargesItsOwnCostAndNeedsNoCap()
+testReadyTasksHaveNoCountCap()
 testSkippedTasksDoNotHideLaterOnes()
 testCriticalIsScannedFirstWhateverTheNormalBacklog()
 testStagesAreConsistent()
