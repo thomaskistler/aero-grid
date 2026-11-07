@@ -94,12 +94,14 @@ python3 tools/audit-scheduler.py --instruction-report
 
 The first two commands run fresh mock and native measurements. `--instructions` rejects
 any recorded maximum increase; `--snapshot` updates the shipped estimates only
-after the full profile passes behavior, coverage, runtime, safety, and efficiency
+after the full profile passes behavior, coverage, runtime, and safety
 checks. An incomplete or failed profile leaves the snapshot unchanged.
 `--instruction-report` reads the saved measurements and produces a per-task,
 stage, and grant table with observed min/max and the current shipped bound.
 Coverage requires a real observation for every non-deferred task/stage/grant;
 there is no repetition quota. Mock and native records remain separate.
+Instruction spread is reported for review, not treated as a blocker. Cheap and
+no-op executions remain in the observed ranges.
 
 **This workflow is still WIP:** the shipped snapshot contains seeded estimates,
 not a validated measured baseline. Chart measurement is deferred; its estimates

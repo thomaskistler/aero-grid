@@ -495,7 +495,8 @@ def task_report(path, output=None):
         "# Measured task instructions", "",
         "**min/max:** observed instructions across mock and native. "
         "**curr:** the current shipped bound (`fixed + perUnit * grant`), not the latest sample.",
-        "", f"Source: `{path.name}`. Profile findings: **{len(measurement['errors'])}**. "
+        "", f"Source: `{path.name}`. Blocking findings: **{len(measurement['errors'])}**; "
+        f"review warnings: **{len(measurement.get('warnings', []))}**. "
         "This report is not a validated baseline.",
         "", "| Task | Stage | Grant | min | curr (bound) | max | Mock min-max (n) | Native min-max (n) | Status |",
         "| --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- |",
@@ -604,11 +605,16 @@ def profile(audit, args):
     errors.extend(coverage_errors)
     if args.snapshot and not coverage_errors and required <= {
             key for rows in observations.values() for key in rows}:
-        snapshot["estimates"] = propose(snapshot, observations, declarations, required)
-    errors.extend(check(snapshot, observations, required, updating=args.snapshot))
+        try:
+            snapshot["estimates"] = propose(snapshot, observations, declarations, required)
+        except ValueError as error:
+            errors.append("snapshot: " + str(error))
+    findings = check(snapshot, observations, required, updating=args.snapshot)
+    warnings = [finding for finding in findings if finding.startswith("efficiency:")]
+    errors.extend(finding for finding in findings if not finding.startswith("efficiency:"))
     if source_sha() != inputs_sha:
         errors.append("provenance: measurement inputs changed during the profile; refusing replacement")
-    report = {"observations": observations, "errors": errors, "sourceSha": inputs_sha,
+    report = {"observations": observations, "errors": errors, "warnings": warnings, "sourceSha": inputs_sha,
               "requiredObservations": sorted(required),
               "declarations": declarations,
               "coverage": {"mock": completed, "native": native_completed,
@@ -617,6 +623,8 @@ def profile(audit, args):
     output = ROOT / "build/scheduler-audit/instruction-profile.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2) + "\n", encoding="ascii")
+    if warnings:
+        print(f"Instruction spread review warnings: {len(warnings)} (all samples retained).")
     if errors:
         print(f"Instruction profile failed ({len(errors)} findings); snapshot unchanged. See {output}")
         for error in errors[:20]:
@@ -629,7 +637,9 @@ def profile(audit, args):
             for key, row in previous.items():
                 if deferred(snapshot, row):
                     observations[environment].setdefault(key, row)
-        record.update(observations=observations, coverage=report["coverage"],
+        record.update(observations=observations,
+                      coverage={key: dict(enumerate(values, 1)) for key, values in report["coverage"].items()},
+                      warnings={index: finding for index, finding in enumerate(warnings, 1)},
                       environments={"mock": {"lua": "5.3", "runtime": "lupa"},
                                     "native": {"simulator": args.companion.name, "luaIntegerBits": 32}},
                       provenance={"profile": "full mock/native", "git": audit.subprocess.check_output(

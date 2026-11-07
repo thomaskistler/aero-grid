@@ -5,7 +5,9 @@ import hashlib
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import instruction_snapshot as snapshot
@@ -170,6 +172,54 @@ class InstructionSnapshotTests(unittest.TestCase):
             snapshot.native_rows("focused", {"stats": {"modal:settings:advance:load_read:idle": {
                 "units": {"1": dict(n=10, min=120, max=200, selfMax=40)}}}}, estimates)
         self.assertIsNone(snapshot.native_bound("modal:settings:load:not-a-stage", estimates))
+
+    def test_full_profile_retains_spread_as_review_warning_without_blocking_write(self):
+        row = self.row(name="model", n=1, min=100, max=700)
+        key = snapshot.observation_key(row)
+        data = {
+            "estimates": {"tasks": {"model": {"run": {"fixed": 0, "perUnit": 800}}}, "bounds": {}},
+            "record": {"schema": 1, "deferred": {}, "observations": {"mock": {}, "native": {}}},
+        }
+        runner = SimpleNamespace(run_test=lambda *args, **kwargs: ({key: row}, {"model|run": 1}))
+        class Scenarios(dict):
+            def __missing__(self, key):
+                return {}
+        native = {"stats": {"task:service:model:run": {"units": {"1": {
+            "n": 1, "min": 100, "max": 700,
+        }}}}}
+        audit = SimpleNamespace(
+            scenarios=Scenarios, build_native=lambda library: "native",
+            capture_module=lambda: None,
+            run=lambda *args: copy.deepcopy(native),
+            hook_check_status=lambda *args: (True, "hook agreement"),
+            subprocess=SimpleNamespace(check_output=lambda *args, **kwargs: "commit\n"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "tests").mkdir()
+            (root / "tests/test_profile.lua").write_text("return true\n")
+            path = root / "snapshot.lua"
+            path.write_text("seed")
+            companion = root / "Companion.app"
+            library = companion / "Contents/Resources/libedgetx-tx16s-simulator.dylib"
+            library.parent.mkdir(parents=True)
+            library.touch()
+            args = SimpleNamespace(companion=companion, snapshot=True, timeout=120)
+            with patch.object(snapshot, "ROOT", root), patch.object(snapshot, "SNAPSHOT", path), \
+                    patch.object(snapshot, "load", side_effect=lambda: copy.deepcopy(data)), \
+                    patch.object(snapshot, "_module", return_value=runner), \
+                    patch.object(snapshot, "write") as write:
+                self.assertEqual(snapshot.profile(audit, args), 0)
+                write.assert_called_once()
+                estimates, record = write.call_args.args
+                self.assertEqual(estimates["tasks"]["model"]["run"]["perUnit"], 770)
+                self.assertTrue(all(finding.startswith("efficiency:") for finding in record["warnings"].values()))
+                self.assertEqual(record["observations"]["mock"][key]["min"], 100)
+                snapshot.render(estimates, record)
+                write.reset_mock()
+                row["max"] = 15001
+                self.assertEqual(snapshot.profile(audit, args), 1)
+                write.assert_not_called()
 
     def test_atomic_write_and_radio_safe_roundtrip(self):
         data, _, _ = self.data()
