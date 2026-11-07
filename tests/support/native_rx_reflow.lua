@@ -1,6 +1,13 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 return function(host, cases, recorder, sameTree, costOnly)
+    local function settle(panel, instance)
+        local task = host.panelHost.task({ module = panel, instance = instance, interval = 20 })
+        for _ = 1, 200 do
+            if task:step(task.want or 1, task.stage, 0) ~= 1 then return end
+        end
+        error("RX battery task did not finish")
+    end
     local function zoneFor(rect, placement)
         return {
             x = 0,
@@ -62,9 +69,9 @@ return function(host, cases, recorder, sameTree, costOnly)
             if not costOnly then
                 panel.update(state.reference, rect)
                 sameTree(state.reference.panel.root, state.partial.panel.root, case.name .. "/native-reflow-" .. pass)
-                panel.refresh(state.reference)
+                settle(panel, state.reference)
             end
-            panel.refresh(state.partial)
+            settle(panel, state.partial)
             if not costOnly then
                 sameTree(
                     state.reference.panel.root,
@@ -87,7 +94,7 @@ return function(host, cases, recorder, sameTree, costOnly)
         if self.phase == "begin" then
             self.container = lvgl.box(page, { x = 0, y = 0, w = 1000, h = 1000 })
             self.partial = case.panel.create(self.container, case.rect, case.settings, case.dependencies())
-            case.panel.refresh(self.partial)
+            settle(case.panel, self.partial)
             self.phase = "exercise"
         elseif self.phase == "exercise" then
             exercise(self, case)

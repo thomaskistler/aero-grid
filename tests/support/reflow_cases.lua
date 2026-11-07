@@ -4,12 +4,15 @@ return function(load, host, only)
     local panelHost, builder = load("lib/panel_host.lua"), host.themeBuilder
     local cases = {}
     local function settle(case, context)
-        if case.panel.refresh then
-            for _ = 1, case.kind == "chart" and 400 or case.kind == "output" and 100 or 1 do
-                case.panel.refresh(context)
+        if case.panel.idle then return end
+        local task = panelHost.task({ module = case.panel, instance = context, interval = 20 })
+        for _ = 1, 2000 do
+            if task:step(task.want or 1, task.stage, 0) ~= 1 then
+                assert(not context.framePhase, case.name .. ": chart frame must finish without service progress")
+                return
             end
         end
-        assert(not context.framePhase, case.name .. ": chart frame must finish without service progress")
+        error(case.name .. ": panel task did not finish without service progress")
     end
     for _, kind in ipairs({ "metric", "link-status", "tx-battery", "flight-timer" }) do
         if not only or only == kind then
@@ -158,6 +161,7 @@ return function(load, host, only)
                                         describe = describe,
                                     }
                                     services.control = {
+                                        entries = { {} },
                                         output = function(_, channel)
                                             return {
                                                 available = available,
@@ -189,6 +193,10 @@ return function(load, host, only)
                                             }
                                         end,
                                         describe = describe,
+                                        describeStep = function(_, rows, index)
+                                            rows[index] = { label = "Source", text = "Q1" }
+                                            return index + 1
+                                        end,
                                     }
                                     local arm = {
                                         key = "SAv",
@@ -244,7 +252,8 @@ return function(load, host, only)
                                         services.seedHistory = function()
                                             for point = 1, 32 do
                                                 now, arm.updatedAt = point * 10, point * 10
-                                                services.history:advance(now)
+                                                local task = services.history.tasks.run
+                                                task:step(task.want, "run", now)
                                                 for _, metric in ipairs(settings.metrics) do
                                                     services.history:sample({
                                                         name = metric.source,
