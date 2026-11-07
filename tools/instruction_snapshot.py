@@ -146,6 +146,12 @@ def check(snapshot, observations, required, *, updating=False):
                     findings.append(f"runtime: missing foreground/framework estimate for {key}")
                 elif row["max"] > bound:
                     findings.append(f"runtime: {environment}:{key} exceeds its declared bound")
+            elif row["kind"] == "framework" and row["name"] == "scheduler":
+                examined, ran = map(int, row["stage"].split(":"))
+                bounds = estimates["bounds"]["scheduler"]
+                charge = bounds["fixed"] + examined * bounds["examine"] + ran * bounds["run"]
+                if row["max"] > charge:
+                    findings.append(f"runtime: {environment}:{key} exceeds its joint framework charge {charge}")
             elif row["kind"] != "callback":
                 findings.append(f"coverage: unknown observation kind for {key}")
             combined.setdefault(key, []).append(row)
@@ -277,12 +283,16 @@ def required_keys(data, declarations):
                 continue
             required.update(f"task|{task}|{stage}|{grant}" for grant in range(1, maximum + 1))
     for group, bounds in data["estimates"]["bounds"].items():
+        if group == "scheduler":
+            continue
         for name in bounds:
             if name == "chart" and group in ("panel-reflow", "editor-layout"):
                 continue
             required.add(f"bound|{group}|{name}|0")
     for rows in data["record"]["observations"].values():
         required.update(key for key, row in rows.items() if not deferred(data, row))
+    if "scheduler" in data["estimates"]["bounds"]:
+        required.add("framework|scheduler|0:0|0")
     return required, errors
 
 
@@ -307,6 +317,8 @@ def propose(data, observations, declarations, required):
             stages[stage] = fit({grant: combined[f"task|{task}|{stage}|{grant}"]
                                  for grant in range(1, maximum + 1)})
     for group, bounds in estimates["bounds"].items():
+        if group == "scheduler":
+            continue
         for name in bounds:
             if name == "chart" and group in ("panel-reflow", "editor-layout"):
                 continue
@@ -317,6 +329,7 @@ def propose(data, observations, declarations, required):
 def native_bound(label, estimates):
     """Map actual audited operations, not their reservation getters, to bounds."""
     prefixes = (
+        ("host:overhead:", "host-overhead"),
         ("registration:advance:", "flight-registration"),
         ("modal:settings:load:", "settings-store-load"),
         ("modal:settings:store:", "settings-store-save"),
@@ -333,6 +346,16 @@ def native_bound(label, estimates):
             if stage in estimates["bounds"][group]:
                 return group, stage, False
             return None
+    readiness = "scheduler:ready:"
+    if label.startswith(readiness):
+        stage = label[len(readiness):]
+        if stage == "settled":
+            return None
+        if stage == "panel-enroll":
+            return "host", "panelEnroll", False
+        if stage == "service-enroll":
+            return "host", "serviceEnroll", False
+        return "host", "reconcile", False
     if label == "registration:begin":
         return "flight-registration", "begin", False
     if label == "registration:beginLoad":
@@ -417,6 +440,8 @@ def native_rows(scenario, results, estimates=None):
             if name not in ("create", "update", "refresh", "background"):
                 continue
             stage = scenario + ":" + ":".join(label.split(":")[2:])
+        elif label.startswith("scheduler:framework:"):
+            kind, name, stage, exclusive = "framework", "scheduler", label[len("scheduler:framework:"):], True
         elif label.startswith("load:theme-resolve:"):
             kind, name, stage = "bound", "theme-resolution", label.split(":")[-1]
         elif label.startswith("load:") and label.count(":") == 1:

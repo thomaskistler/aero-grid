@@ -112,6 +112,12 @@ local function finish(label, raw, leak)
         label = "unlabelled"
     end
     local units = string.match(label, "^task:") and grants[d] or visits[d]
+    if label == "scheduler:ready:settled" then
+        P.settledReadyCost = cost
+    elseif string.match(label, "^scheduler:finish:") then
+        P.hostFinishCost = own
+        P.hostCallbackKind = string.sub(label, #"scheduler:finish:" + 1)
+    end
     if label == "flight:enableScheduler" then
         local fitted = fit(cost)
         gate(fitted <= 3600, "Flight handoff exceeds its one-time head reservation: " .. fitted)
@@ -580,6 +586,13 @@ local function install(context)
     local scheduling = context.schedulerHost
     if scheduling and not installed[scheduling] then
         installed[scheduling] = true
+        wrapField(scheduling.scheduler, "run", function(token, current)
+            if token then
+                local plan = current.lastPlan
+                return "scheduler:framework:" .. tostring(plan.examined) .. ":" .. tostring(plan.ran)
+            end
+            return true
+        end)
         wrapField(scheduling, "ready", function(token)
             if token then
                 P.readinessBound = math.max(scheduling.panelSetup, scheduling.RECONCILE_COST)
@@ -616,7 +629,8 @@ local function install(context)
                     P.flightAdmission[#P.flightAdmission + 1] = observation
                     P.flightAdmissionPending = nil
                 end
-                return "scheduler:finish:" .. token
+                local job = scheduling.reconciliation
+                return "scheduler:finish:" .. (job and not job.servicesLive and "host-reconcile" or token)
             end
             if config.deterministicClock and not P.firstFlightRelease and scheduling.scheduler then
                 P.flightAdmission = P.flightAdmission or {}
@@ -1979,6 +1993,7 @@ end
 local function runCallback(kind, context, fn, e, t)
     callbackIndex = callbackIndex + 1
     depth, topSum, top, topLabels, callbackLeak = 0, 0, {}, {}, 0
+    P.settledReadyCost, P.hostFinishCost, P.hostCallbackKind = nil, nil, nil
     local surface = callbackSurface(kind, context)
     P.editorInputSeen, P.editorInputAdmission = nil, nil
     P.lifecycleOperation, P.lifecycleAdmissionKind, P.lifecycleServiceOnly = nil, nil, nil
@@ -2084,6 +2099,10 @@ local function runCallback(kind, context, fn, e, t)
     local suffix = P.loaded and "" or "@load"
     if recording then
         record("callback:" .. kind .. suffix, total, overhead, 1)
+        if P.hostCallbackKind then
+            local hostCost = overhead + (P.settledReadyCost or 0) + P.hostFinishCost
+            record("host:overhead:" .. P.hostCallbackKind, hostCost, hostCost, 1)
+        end
         for _, item in ipairs(top) do
             local label, cost = string.match(item, "^(task:service:[^=]+)=(%d+)")
             if label then

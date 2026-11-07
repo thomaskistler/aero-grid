@@ -106,6 +106,10 @@ Coverage requires a real observation for every non-deferred task/stage/grant;
 there is no repetition quota. Mock and native records remain separate.
 Instruction spread is reported for review, not treated as a blocker. Cheap and
 no-op executions remain in the observed ranges.
+The scheduler's fixed, per-examination, and per-run charges are conservative
+estimates validated jointly against measured planner self-cost. Their individual
+values are not separately measured ranges; an insufficient combined reservation
+blocks the profile.
 
 **This workflow is still WIP:** the shipped snapshot contains seeded estimates,
 not a validated measured baseline. Chart measurement is deferred; its estimates

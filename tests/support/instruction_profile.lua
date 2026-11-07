@@ -133,6 +133,7 @@ instrument = function(relative, module)
     end
     local name = names[module.decl]
     if relative ~= "lib/costs.lua" and relative ~= "lib/services.lua" and relative ~= "main.lua"
+        and relative ~= "lib/scheduler.lua"
         and not foreground[relative] and not (name and type(module.step) == "function") then
         return
     end
@@ -156,6 +157,33 @@ instrument = function(relative, module)
                 result.step = recorder:task(taskName, result.step)
             end
         end)
+    elseif relative == "lib/scheduler.lua" then
+        local steps = setmetatable({}, { __mode = "kv" })
+        local ignore = function() end
+        module.add = recorder:wrap(module.add, {
+            before = function(_, task)
+                if type(task) ~= "table" or type(task.instance) ~= "table"
+                    or type(task.instance.step) ~= "function" then return end
+                local fn = task.instance.step
+                local wrapped = steps[fn]
+                if not wrapped then
+                    wrapped = recorder:wrap(fn, ignore)
+                    steps[fn], steps[wrapped] = wrapped, wrapped
+                end
+                task.instance.step = wrapped
+            end,
+            after = ignore,
+        })
+        module.run = recorder:wrap(module.run, {
+            before = function() end,
+            after = function(_, own, _, ok, _, instance)
+                if ok then
+                    local plan = instance.lastPlan
+                    recorder:sample("framework", "scheduler",
+                        tostring(plan.examined) .. ":" .. tostring(plan.ran), 0, own, true)
+                end
+            end,
+        })
     end
     if name and type(module.step) == "function" then
         module.step = recorder:task(name, module.step)

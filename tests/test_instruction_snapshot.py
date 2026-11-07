@@ -46,6 +46,25 @@ class InstructionSnapshotTests(unittest.TestCase):
         self.assertTrue(snapshot.spread(0, 301))
         self.assertFalse(snapshot.spread(0, 300))
 
+    def test_scheduler_estimates_are_preserved_and_validated_jointly(self):
+        data, observations, required = self.data()
+        data["estimates"]["bounds"]["scheduler"] = {"fixed": 196, "examine": 64, "run": 224}
+        for environment in observations:
+            for stage, maximum in (("0:0", 134), ("10:4", 1732)):
+                row = self.row(kind="framework", name="scheduler", stage=stage, grant=0,
+                               min=maximum, max=maximum, n=1)
+                observations[environment][snapshot.observation_key(row)] = row
+        keys, errors = snapshot.required_keys(data, {"test|run": 1})
+        self.assertFalse(errors)
+        self.assertIn("framework|scheduler|0:0|0", keys)
+        self.assertFalse(any(key.startswith("bound|scheduler|") for key in keys))
+        self.assertEqual(snapshot.check(data, observations, keys, updating=True), [])
+        proposed = snapshot.propose(data, observations, {"test|run": 1}, keys)
+        self.assertEqual(proposed["bounds"]["scheduler"], data["estimates"]["bounds"]["scheduler"])
+        observations["native"]["framework|scheduler|10:4|0"]["max"] = 1733
+        self.assertTrue(any("joint framework charge 1732" in finding
+                            for finding in snapshot.check(data, observations, keys, updating=True)))
+
     def test_measured_incremental_growth_fitting(self):
         # Raw maxima yielding conservative targets 300, 500 and 700.
         self.assertEqual(snapshot.fit({1: 270, 2: 450, 3: 630}),
@@ -142,6 +161,11 @@ class InstructionSnapshotTests(unittest.TestCase):
     def test_native_foreground_attribution_keeps_nested_work_separate(self):
         estimates = snapshot.load()["estimates"]
         labels = {
+            "host:overhead:steady": ("host-overhead", "steady", 120, 200),
+            "host:overhead:host-reconcile": ("host-overhead", "host-reconcile", 120, 200),
+            "scheduler:ready:panel-enroll": ("host", "panelEnroll", 120, 200),
+            "scheduler:ready:service-enroll": ("host", "serviceEnroll", 120, 200),
+            "scheduler:ready:panel-only:scan": ("host", "reconcile", 120, 200),
             "modal:settings:load:read": ("settings-store-load", "read", 120, 200),
             "modal:settings:store:serialize": ("settings-store-save", "serialize", 120, 200),
             "modal:settings:advance:load_read:idle": ("settings-ui", "storeOverhead", 20, 40),
@@ -172,6 +196,11 @@ class InstructionSnapshotTests(unittest.TestCase):
             snapshot.native_rows("focused", {"stats": {"modal:settings:advance:load_read:idle": {
                 "units": {"1": dict(n=10, min=120, max=200, selfMax=40)}}}}, estimates)
         self.assertIsNone(snapshot.native_bound("modal:settings:load:not-a-stage", estimates))
+        self.assertIsNone(snapshot.native_bound("scheduler:ready:settled", estimates))
+        rows = snapshot.native_rows("focused", {"stats": {
+            "scheduler:framework:10:4": {"units": {"1": bucket}}}}, estimates)
+        self.assertEqual((rows[0]["kind"], rows[0]["stage"], rows[0]["min"], rows[0]["max"]),
+                         ("framework", "10:4", 20, 40))
 
     def test_full_profile_retains_spread_as_review_warning_without_blocking_write(self):
         row = self.row(name="model", n=1, min=100, max=700)
