@@ -367,7 +367,14 @@ before task execution. Stable callbacks reuse the host's checked registry state;
 they do not allocate a reconciliation snapshot or repeat broker discovery before
 running tasks. Surviving tasks retain their releases; deferred work
 remains due when no room is available. Telemetry and History keep their 10-tick
-policy. Session resets cancel captured frames and release tasks in bounded turns,
+policy. Normal releases overdue by 100 ticks can temporarily run ahead of
+critical work for one bounded step when their release plus that aging delay
+precedes the oldest eligible critical release. At most one release is promoted
+per callback.
+Critical releases retain their age, preventing an aged normal backlog from
+monopolizing admission. Promotion respects callback eligibility, exclusivity and
+the instruction ceiling; it does not change the task's declared class.
+Session resets cancel captured frames and release tasks in bounded turns,
 without also running ordinary work in those reset callbacks. Stable editor
 previews use the same scheduler as the dashboard.
 

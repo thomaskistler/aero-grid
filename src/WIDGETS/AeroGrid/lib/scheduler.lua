@@ -5,7 +5,7 @@
 --- Tasks declare a worst-case cost per stage. Each callback the planner admits
 --- ready tasks against a fixed budget, oldest release first, so the plan never
 --- exceeds the ceiling. The planner charges its own cost to the same budget.
---- Planning never reads `getUsage`. Nothing in the widget calls this library yet.
+--- Planning never reads `getUsage`.
 ---
 --- A task is `{ id, decl, instance, due }`. `decl` is shared by all tasks of a
 --- type:
@@ -40,18 +40,20 @@ local scheduler = {
     CEILING = 15000,
     MARGIN = 400,
     NORMAL_RESERVE = 2000,
+    AGE_TICKS = 100,
     MAX_TASKS = 128,
     MAX_DELAY = 1 << 30,
     -- The planner's own cost, charged against the budget: a callback, a task
     -- examined, a task run or retired. Upper bounds from the instruction counts
     -- of tests/support/scheduler_overhead.lua, which fails if one is exceeded.
-    FIXED_COST = 132,
+    FIXED_COST = 196,
     EXAMINE_COST = 64,
     RUN_COST = 224,
 }
 scheduler.__index = scheduler
 
 local CEILING, MARGIN, NORMAL_RESERVE = scheduler.CEILING, scheduler.MARGIN, scheduler.NORMAL_RESERVE
+local AGE_TICKS = scheduler.AGE_TICKS
 local MAX_TASKS, MAX_DELAY = scheduler.MAX_TASKS, scheduler.MAX_DELAY
 local FIXED_COST, EXAMINE_COST, RUN_COST = scheduler.FIXED_COST, scheduler.EXAMINE_COST, scheduler.RUN_COST
 local STEADY_AND_BACKGROUND = { steady = true, background = true }
@@ -492,13 +494,36 @@ function scheduler:run(kind, now, used)
     local stamp = self.stamp + 1
     self.stamp = stamp
 
-    for class = 1, 2 do
-        local list = lists[class]
-        local limit = room - RESERVE[class]
+    -- Rescue one aged release only when its effective due time precedes
+    -- critical work. Critical releases age too, so neither backlog monopolizes.
+    local criticalDue
+    local oldest = lists[2][1]
+    local aging = oldest and ((oldest.due - tick) & MASK ~ SIGN) - SIGN <= -AGE_TICKS
+    if aging then
+        for index = 1, #lists[1] do
+            local record = lists[1][index]
+            if ((record.due - tick) & MASK ~ SIGN) - SIGN > 0 or room - spent < EXAMINE_COST then
+                break
+            end
+            spent = spent + EXAMINE_COST
+            examinedTotal = examinedTotal + 1
+            if record.meta.kinds[kind] then
+                criticalDue = record.due
+                break
+            end
+        end
+    end
+    for class = aging and 0 or 1, 2 do
+        local list = lists[class == 0 and 2 or class]
+        local limit = room - (RESERVE[class] or 0)
         local examined, taken = 0, 0
         for index = 1, #list do
             local record = list[index]
-            if ((record.due - tick) & MASK ~ SIGN) - SIGN > 0 or limit - spent < smallest then
+            local wait = ((record.due - tick) & MASK ~ SIGN) - SIGN
+            if wait > (class == 0 and -AGE_TICKS or 0) or limit - spent < smallest then
+                break
+            end
+            if class == 0 and criticalDue and ((record.due + AGE_TICKS - criticalDue) & MASK ~ SIGN) - SIGN >= 0 then
                 break
             end
             examined = index
@@ -552,6 +577,9 @@ function scheduler:run(kind, now, used)
                             if meta.s2 then
                                 charged[meta.s2] = stamp
                             end
+                        end
+                        if class == 0 then
+                            break
                         end
                     end
                 end
