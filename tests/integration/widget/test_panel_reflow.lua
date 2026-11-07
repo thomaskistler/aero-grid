@@ -162,6 +162,14 @@ for _, subject in ipairs({
     end
     local panel = fixture.instanceOf(context, subject.id)
     local module = fixture.module("panels/" .. subject.module .. ".lua")
+    local panelHost = fixture.module("lib/panel_host.lua")
+    local function finishTask()
+        local task = panelHost.task({ module = module, instance = panel, interval = 20 })
+        for _ = 1, 100 do
+            if task:step(task.want or 1, task.stage, getTime()) ~= 1 then return end
+        end
+        error(subject.module .. ": panel task did not finish")
+    end
     if subject.module == "model-identity" then
         assert(
             fixture.pumpUntil(context, function()
@@ -174,11 +182,11 @@ for _, subject in ipairs({
     equal(panel[subject.label].hidden, true, subject.module .. ": compact detail is quietly shed")
     for _ = 1, 2 do
         module.update(panel, { x = 0, y = 0, w = 238, h = 134 })
-        module.refresh(panel)
+        finishTask()
         equal(panel[subject.label].hidden, false, subject.module .. ": detail returns when space permits")
         assert(panel[subject.text] ~= "", subject.module .. ": restored detail must be populated")
         module.update(panel, { x = 0, y = 0, w = 117, h = 65 })
-        module.refresh(panel)
+        finishTask()
         equal(panel[subject.label].hidden, true, subject.module .. ": detail is shed again")
         equal(panel.settings[subject.preference], true, subject.module .. ": preference is preserved")
     end
