@@ -98,6 +98,36 @@ do
     assert(not queue:takeErrors())
 end
 
+do
+    local maximum = historyModule.decl.stages.run.maxUnits
+    for grant = 1, maximum do
+        local runtime = support.runtime(support.environment({}))
+        runtime.byId.armed = { state = function(_, name)
+            return { key = name, configured = true, fresh = true, value = true, updatedAt = 100 }
+        end }
+        local history = historyModule.new(runtime.env, support, runtime)
+        local sessions = {}
+        for index = 1, maximum do sessions[index] = history:session(string.format("L%02d", index)) end
+        local task = history.tasks.run
+        local delay = task:step(grant, "run", 100)
+        for index = 1, maximum do
+            equal(sessions[index].recording, index <= grant, "only admitted History sessions advance")
+        end
+        if grant < maximum then
+            equal(delay, 1)
+            equal(history.revision, 0, "partial sessions cannot publish a completed History release")
+            equal(history.sessionCursor, grant + 1)
+            equal(task.want, maximum - grant)
+            equal(task:step(task.want, "run", 100), history.interval)
+        else
+            equal(delay, history.interval)
+        end
+        equal(history.revision, 1, "one full session traversal publishes once")
+        equal(history.sessionTarget, nil)
+        for index = 1, maximum do assert(sessions[index].recording) end
+    end
+end
+
 local function knots(history, feed)
     local result = {}
     for index = feed.first, feed.last do

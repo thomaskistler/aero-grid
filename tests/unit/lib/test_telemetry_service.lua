@@ -186,6 +186,66 @@ local function testSchedulerOwnedTelemetryHasNoLegacyEntryPoint()
     assertions.assertEqual(service.decl.class, "critical")
 end
 
+local function testEveryMaintenanceGrantPreservesAtomicLinkAndBoundedScanning()
+    for total = 1, telemetryService.maintenanceDecl.stages.run.maxUnits do
+        local reads, scans = 0, 0
+        local service = telemetryService.new(services.environment({
+            getRSSI = function() reads = reads + 1; return 42 end,
+            getFieldInfo = function(name) return { id = 1, name = name, unit = 1 } end,
+            model = { getSensor = function(index)
+                scans = scans + 1
+                return { name = "OTHER" .. index, prec = 1 }
+            end },
+        }), services)
+        local link = service:link()
+        for index = 1, total do service:subscribe("S" .. index) end
+        assert(service:resolve(service.entries[total], 100))
+        local task = service.tasks.maintenance
+        assertions.assertEqual(task.want, total)
+        if total > 1 then
+            assertions.assertEqual(task:step(total - 1, "run", 101), 1)
+            assertions.assertEqual(reads, 0, "partial maintenance must not publish the link")
+            assertions.assertEqual(scans, 0, "partial maintenance must not advance a scan")
+            assertions.assertEqual(service.revision, 0)
+        end
+        assertions.assertEqual(task:step(total, "run", 101), service.interval)
+        assertions.assertEqual(reads, 1, "completed maintenance reads the link exactly once")
+        assertions.assertEqual(link.live, true)
+        assertions.assertEqual(scans, telemetryService.SCAN_CAP, "one bounded precision search per release")
+        assertions.assertEqual(service.revision, 2)
+    end
+end
+
+local function testRecordedSourceGrantsKeepAllObserversAtomic()
+    for total = 1, telemetryService.decl.stages.run.maxUnits do
+        local calls = {}
+        local runtime = { byId = { history = { sources = { S = {} } } } }
+        for index = 1, total do runtime.byId.history.sources.S[index] = {} end
+        local service = telemetryService.new(services.environment({
+            getRSSI = function() return 42 end,
+            getFieldInfo = function(name) return { id = 1, name = name, unit = 1 } end,
+            getValue = function() return 12 end,
+        }), services, runtime)
+        local view = service:subscribe("S")
+        for index = 1, total do
+            service:observe({ sample = function(_, reading, at)
+                assert(reading == view and at == 100 and reading.value == 12)
+                calls[#calls + 1] = index
+            end })
+        end
+        local task = service.entries[1].task
+        assertions.assertEqual(task.want, total)
+        if total > 1 then
+            assertions.assertEqual(task:step(total - 1, "run", 100), 1)
+            assertions.assertEqual(#calls, 0, "a partial grant must not publish to any recorder")
+            assertions.assertEqual(view.updatedAt, nil)
+        end
+        assertions.assertEqual(task:step(total, "run", 100), service.entries[1].interval)
+        assertions.assertEqual(#calls, total, "every recorder receives the same completed source poll")
+        for index = 1, total do assertions.assertEqual(calls[index], index) end
+    end
+end
+
 local function run()
     testSubscribeReturnsLiveView()
     testLinkSubscriptionExists()
@@ -195,6 +255,8 @@ local function run()
     testSourceTaskIdsRemainStableAsSubscriptionsGrow()
     testSchedulerPollsEachSourceWithItsObserversAtomically()
     testSchedulerOwnedTelemetryHasNoLegacyEntryPoint()
+    testEveryMaintenanceGrantPreservesAtomicLinkAndBoundedScanning()
+    testRecordedSourceGrantsKeepAllObserversAtomic()
 end
 
 run()

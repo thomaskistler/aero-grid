@@ -8,6 +8,85 @@ recorder.scenario = scenario
 local names, modules = setmetatable({}, { __mode = "k" }), setmetatable({}, { __mode = "k" })
 local declarations = {}
 local instrument
+local foreground = {}
+
+local function bound(name, stage, exclusive)
+    if stage == nil then
+        return
+    end
+    costs:bound(name, stage)
+    return { name = name, stage = stage, exclusive = exclusive }
+end
+
+foreground["lib/model_settings_store.lua"] = function(module)
+    module.new = recorder:wrap(module.new, function(_, ok, results)
+        if not ok then return end
+        local store = results[2]
+        store.advanceLoad = recorder:bound(function(_, job)
+            return bound("settings-store-load", type(job) == "table" and job.stage or nil)
+        end, store.advanceLoad)
+        store.advanceSave = recorder:bound(function(_, job)
+            return bound("settings-store-save", type(job) == "table" and job.stage or nil)
+        end, store.advanceSave)
+        store.beginLoad = recorder:bound(function()
+            return bound("settings-store-load", "start")
+        end, store.beginLoad)
+    end)
+end
+
+foreground["lib/log_viewer.lua"] = function(module)
+    module.advance = recorder:bound(function(context)
+        return bound("log-viewer", context.logViewer and module.stageOf(context.logViewer))
+    end, module.advance)
+    module.handle = recorder:bound(function()
+        return bound("log-viewer", "input")
+    end, module.handle)
+end
+
+foreground["lib/model_settings_ui.lua"] = function(module)
+    module.advance = recorder:bound(function(context)
+        local state = context.modelSettingsUi
+        if not state then return end
+        local stage, name, exclusive = module.stageOf(state), "settings-ui", false
+        if string.sub(stage, 1, 5) == "save_" then
+            stage, exclusive = "storeOverhead", true
+        elseif string.sub(stage, 1, 5) == "load_" then
+            stage = string.sub(stage, 6)
+            if stage == "read" or stage == "parse" or stage == "build" or stage == "previous" then
+                stage, exclusive = "storeOverhead", true
+            else
+                name = "settings-ui-load"
+            end
+        end
+        if string.sub(stage, 1, 8) == "publish_" then stage = "publish" end
+        if stage ~= "pending" then return bound(name, stage, exclusive) end
+    end, module.advance)
+end
+
+foreground["lib/editor_drawer.lua"] = function(module)
+    module.advance = recorder:bound(function(_, state)
+        local stage
+        if state.drawerOpening then
+            stage = state.drawerOpening.phase
+        elseif state.drawerLayout then
+            stage = "layout"
+        elseif state.drawerRefresh then
+            stage = state.drawerRefresh.phase
+        elseif state.drawerBuild then
+            stage = state.drawerBuild <= #state.drawerFields and "build" or "finish"
+        elseif state.drawerPending then
+            local action = state.drawerPending.action
+            if action == "parent" or action == "item" then
+                stage = "navigate"
+            elseif action == "add" then
+                stage = "add-" .. (state.drawerPending.phase or "module")
+            else
+                stage = action
+            end
+        end
+        return bound("editor-drawer", stage)
+    end, module.advance)
+end
 
 local function registerStages(_, ok, _, _, name, declaration)
     if not ok then
@@ -54,7 +133,7 @@ instrument = function(relative, module)
     end
     local name = names[module.decl]
     if relative ~= "lib/costs.lua" and relative ~= "lib/services.lua" and relative ~= "main.lua"
-        and not (name and type(module.step) == "function") then
+        and not foreground[relative] and not (name and type(module.step) == "function") then
         return
     end
     modules[module] = true
@@ -81,6 +160,7 @@ instrument = function(relative, module)
     if name and type(module.step) == "function" then
         module.step = recorder:task(name, module.step)
     end
+    if foreground[relative] then foreground[relative](module) end
     if relative == "main.lua" then
         for _, kind in ipairs({ "create", "update", "refresh", "background" }) do
             assert(type(module[kind]) == "function", "missing widget callback " .. kind)

@@ -78,6 +78,22 @@ assert(recorder.depth == 0 and debug.gethook() == nil, "failed window leaked cou
 observations = recorder:observations()
 assert(observations[1].failures == 1, "failed executions must remain in observations")
 
+child = work
+local childCost = measure(work)
+baseline = measure(parent)
+child = recorder:wrap(work, function() end)
+local observedBound = recorder:bound(function()
+    measure(work)
+    return { name = "test-overhead", stage = "run", exclusive = true }
+end, parent)
+assert(measure(observedBound) == baseline, "bound selection bookkeeping changed the parent count")
+local found
+for _, observation in ipairs(recorder:observations()) do
+    if observation.name == "test-overhead" then found = observation end
+end
+assert(found and found.min == baseline - childCost and found.max == found.min,
+    "exclusive bounds must exclude actual nested work, not count it twice")
+
 debug.sethook(function() end, "", 100)
 ok, message = pcall(module.hookCounter)
 debug.sethook()

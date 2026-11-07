@@ -98,6 +98,8 @@ after the full profile passes behavior, coverage, runtime, safety, and efficienc
 checks. An incomplete or failed profile leaves the snapshot unchanged.
 `--instruction-report` reads the saved measurements and produces a per-task,
 stage, and grant table with observed min/max and the current shipped bound.
+Coverage requires a real observation for every non-deferred task/stage/grant;
+there is no repetition quota. Mock and native records remain separate.
 
 **This workflow is still WIP:** the shipped snapshot contains seeded estimates,
 not a validated measured baseline. Chart measurement is deferred; its estimates

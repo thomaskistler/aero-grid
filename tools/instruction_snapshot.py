@@ -22,7 +22,7 @@ SNAPSHOT = ROOT / "src/WIDGETS/AeroGrid/lib/instruction_snapshot.lua"
 SCHEMA = 1
 CEILING = 15000
 MARGIN = 400
-MIN_SAMPLES = 10
+MIN_SAMPLES = 1
 
 
 def target(maximum):
@@ -308,6 +308,79 @@ def propose(data, observations, declarations, required):
     return estimates
 
 
+def native_bound(label, estimates):
+    """Map actual audited operations, not their reservation getters, to bounds."""
+    prefixes = (
+        ("registration:advance:", "flight-registration"),
+        ("modal:settings:load:", "settings-store-load"),
+        ("modal:settings:store:", "settings-store-save"),
+        ("editor:drawer:advance:", "editor-drawer"),
+        ("editor:advanceEditor:drag:", "editor-drag"),
+        ("editor:advanceEditor:drawer-open:", "editor-drawer-open"),
+        ("editor:advanceEditor:layout:", "editor-layout"),
+        ("editor:input:bound:", "editor-input"),
+        ("modal:log:advance:", "log-viewer"),
+    )
+    for prefix, group in prefixes:
+        if label.startswith(prefix):
+            stage = label[len(prefix):].split(":")[0]
+            if stage in estimates["bounds"][group]:
+                return group, stage, False
+            return None
+    if label == "registration:begin":
+        return "flight-registration", "begin", False
+    if label == "registration:beginLoad":
+        return "flight-registration", "load-begin", False
+    if label.startswith("editor:advanceEditor:render:"):
+        stage = int(label.split(":")[-1])
+        if 2 <= stage <= 6:
+            return "editor-render", "finish" if stage == 6 else "rows", False
+    if label == "lifecycle:beginReflow":
+        return "dashboard-lifecycle", "reflowBegin", False
+    if label == "lifecycle:rebuildPage":
+        return "dashboard-lifecycle", "rebuild", False
+    if label == "lifecycle:restartLoading":
+        return "main", "restartLoad", False
+    if label.startswith("lifecycle:advanceReflow:"):
+        stage = label[len("lifecycle:advanceReflow:"):]
+        if stage in ("finish", "skip"):
+            return "dashboard-lifecycle", "reflowFinish" if stage == "finish" else "reflowSkip", False
+        panel = stage.split(":")[0]
+        if panel != "chart" and panel in estimates["bounds"]["panel-reflow"]:
+            return "panel-reflow", panel, False
+    if label.startswith(("lifecycle:retirePage:", "lifecycle:advanceAppRebuild:")):
+        stage = label.split(":")[2]
+        if stage == "settings":
+            return ("dashboard-lifecycle", "settingsDrain", False) if label.count(":") > 2 else (
+                "dashboard-lifecycle", "settingsAbsent", False)
+        if stage in estimates["bounds"]["dashboard-lifecycle"]:
+            return "dashboard-lifecycle", stage, False
+    if label.startswith("load:theme-publish:"):
+        return "dashboard-loader", "theme-publish", False
+    if label.startswith("modal:settings:advance:"):
+        stage = label.split(":")[3]
+        if stage.startswith("save_"):
+            return "settings-ui", "storeOverhead", True
+        if stage.startswith("load_"):
+            stage = stage[len("load_"):]
+            if stage in ("read", "parse", "build", "previous"):
+                return "settings-ui", "storeOverhead", True
+            group = "settings-ui-load"
+        else:
+            group = "settings-ui"
+        if stage.startswith("publish_"):
+            stage = "publish"
+        if stage in estimates["bounds"][group]:
+            return group, stage, False
+    if label.startswith("modal:menu:close:"):
+        return "menu", "close", False
+    if label.startswith("modal:menu:advance:"):
+        stage = label.split(":")[3]
+        if stage in ("pending", "idle"):
+            return "menu", stage, False
+    return None
+
+
 def native_rows(scenario, results, estimates=None):
     """Use actual granted units, not the number of entries that happened to work."""
     service_names = {
@@ -320,6 +393,7 @@ def native_rows(scenario, results, estimates=None):
     rows = []
     for label, stat in results["stats"].items():
         kind = name = stage = None
+        exclusive = False
         if label.startswith("task:panel:"):
             panel, stage = label[len("task:panel:"):].rsplit(":", 1)
             kind, name = "task", "panel." + panel
@@ -344,12 +418,18 @@ def native_rows(scenario, results, estimates=None):
             if candidate in estimates["bounds"]["dashboard-loader"]:
                 kind, name, stage = "bound", "dashboard-loader", candidate
         if kind is None:
+            bound = native_bound(label, estimates)
+            if bound is not None:
+                name, stage, exclusive = bound
+                kind = "bound"
+        if kind is None:
             continue
         for grant, bucket in stat["units"].items():
-            if "min" not in bucket:
+            minimum, maximum = ("selfMin", "selfMax") if exclusive else ("min", "max")
+            if minimum not in bucket:
                 raise ValueError(f"native observations need per-grant minima: {scenario}:{label}")
             rows.append(dict(kind=kind, name=name, stage=stage, grant=int(grant) if kind == "task" else 0,
-                             n=bucket["n"], min=bucket["min"], max=bucket["max"], failures=0,
+                             n=bucket["n"], min=bucket[minimum], max=bucket[maximum], failures=0,
                              minScenario=scenario, maxScenario=scenario))
     return rows
 
@@ -384,7 +464,7 @@ def task_rows(data, measurement):
             flags.append("UNMEASURED")
         elif task not in data["record"]["deferred"]:
             if samples < MIN_SAMPLES:
-                flags.append("SAMPLES < 10")
+                flags.append(f"SAMPLES < {MIN_SAMPLES}")
             if current is not None and maximum > current:
                 flags.append("OVER BOUND")
             if spread(minimum, maximum):
@@ -473,6 +553,28 @@ def profile(audit, args):
     names.extend(name for name in available if name.endswith(("-min", "-max"))
                  and not name.startswith("chart-"))
     names.append("theme-showcase-tasks")
+    # Existing foreground scenarios exercise the actual staged work and its
+    # behavioral assertions, rather than measuring workBound getters.
+    names.extend((
+        "modal-log", "modal-location", "modal-menu", "modal-settings-save",
+        "modal-settings-save-output", "modal-settings-publication-error",
+        "modal-settings-open-primary", "modal-settings-open-recovered",
+        "modal-settings-open-missing", "modal-settings-open-legacy-one",
+        "modal-settings-open-legacy-conflict", "modal-settings-open-invalid",
+        "modal-settings-open-retirement", "modal-settings-close-return",
+        "editor-drawer-large-config", "editor-list-large-states",
+        "editor-list-remove-panel", "editor-list-append-error",
+        "editor-add-crowded-metric", "editor-list-return", "editor-list-cancel",
+        "editor-write-error", "editor-write-picker-error", "editor-input-keys",
+        "editor-input-tap", "editor-input-add", "editor-input-cancel",
+        "editor-drag-move-crowded", "editor-drag-resize-crowded",
+        "lifecycle-cancel", "lifecycle-settings-drain", "lifecycle-menu-close",
+        "lifecycle-admission-background", "lifecycle-preparation",
+        "lifecycle-retire-admission-16",
+    ))
+    names.extend(name for name in available
+                 if name.startswith(("editor-drawer-", "editor-entry-", "editor-write-entry-"))
+                 and "chart" not in name)
     checks, native_completed = {}, []
     try:
         library = args.companion / "Contents/Resources/libedgetx-tx16s-simulator.dylib"

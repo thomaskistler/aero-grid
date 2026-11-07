@@ -28,9 +28,9 @@ end
 
 function recorder.new(count, pause, sink)
     local self = setmetatable({
-        count = count, pause = pause, depth = 0, children = {},
+        count = count, pause = pause, depth = 0, children = {}, workChildren = {},
         floor = 0, leak = 0, failureLeak = 0, samples = {}, scenario = "unnamed", running = false, sink = sink,
-        tasks = setmetatable({}, { __mode = "k" }),
+        tasks = setmetatable({}, { __mode = "k" }), boundObservers = setmetatable({}, { __mode = "k" }),
     }, recorder)
     self:calibrate()
     return self
@@ -43,8 +43,12 @@ function recorder:window(onCost, fn, ...)
     local running = self.running
     pause(true)
     self.running = false
+    local token
+    if type(onCost) == "table" then
+        token = onCost.before(...)
+    end
     local depth = self.depth + 1
-    self.depth, self.children[depth] = depth, 0
+    self.depth, self.children[depth], self.workChildren[depth] = depth, 0, 0
     local start = count()
     pause(false)
     self.running = true
@@ -59,15 +63,36 @@ function recorder:window(onCost, fn, ...)
         if running then
             local leak = results[1] and self.leak or self.failureLeak
             excluded = leak + self.children[depth]
+            self.workChildren[depth - 1] = self.workChildren[depth - 1] + cost
         end
         self.children[depth - 1] = self.children[depth - 1] + excluded
     end
-    onCost(cost, results[1], results, ...)
+    if type(onCost) == "table" then
+        onCost.after(cost, cost - self.workChildren[depth], token, results[1], results, ...)
+    else
+        onCost(cost, results[1], results, ...)
+    end
     if running then
         pause(false)
         self.running = true
     end
     return results
+end
+
+function recorder:bound(selectBound, fn)
+    local observer = self.boundObservers[selectBound]
+    if not observer then
+        if not self.boundAfter then
+            self.boundAfter = function(cost, own, token, ok)
+                if token then
+                    self:sample("bound", token.name, token.stage, 0, token.exclusive and own or cost, ok)
+                end
+            end
+        end
+        observer = { before = selectBound, after = self.boundAfter }
+        self.boundObservers[selectBound] = observer
+    end
+    return self:wrap(fn, observer)
 end
 
 function recorder:wrap(fn, onCost)

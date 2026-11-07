@@ -8,7 +8,12 @@
 local config = assert(loadScript("/WIDGETS/AeroGrid/audit/config.lua"))()
 local costs = assert(loadScript("/WIDGETS/AeroGrid/audit/costs.lua"))(nil, true)
 local previewTasks = string.match(config.scenario, "^editor%-preview%-.+%-tasks$") ~= nil
-local count, pause
+local count, nativePause
+local counterRunning = true
+local function pause(flag)
+    nativePause(flag)
+    counterRunning = not flag
+end
 local P = { offset = 0 }
 local loaderDeclarations = {}
 local boundedConstructors = {
@@ -57,12 +62,14 @@ local recording = true
 local refreshFn, backgroundFn
 
 local function record(label, cost, own, units, children)
+    assert(cost >= 0 and own >= 0, "invalid native instruction observation: " .. label)
     local entry = stats[label]
     if not entry then
-        entry = { n = 0, sum = 0, max = 0, min = math.huge, selfMax = 0, units = {} }
+        entry = { n = 0, sum = 0, max = 0, min = math.huge, selfMin = math.huge, selfMax = 0, units = {} }
         stats[label] = entry
     end
     entry.n = entry.n + 1
+    entry.selfMin = math.min(entry.selfMin, own)
     entry.sum = entry.sum + cost
     if cost > entry.max then
         entry.max = cost
@@ -76,11 +83,12 @@ local function record(label, cost, own, units, children)
     end
     local bucket = entry.units[units]
     if not bucket then
-        bucket = { n = 0, min = cost, max = 0, selfMax = 0 }
+        bucket = { n = 0, min = cost, max = 0, selfMin = own, selfMax = 0 }
         entry.units[units] = bucket
     end
     bucket.n = bucket.n + 1
     bucket.min = math.min(bucket.min, cost)
+    bucket.selfMin = math.min(bucket.selfMin, own)
     if cost > bucket.max then
         bucket.max = cost
     end
@@ -267,6 +275,11 @@ end
 -- A labelled measurement window. `label` is a string, or a function that is
 -- called before the work (returning a token) and after it (returning the label).
 local function core(leak, label, fn, a, b, c, d, e, f, g, h)
+    -- Label getters and audit setup are not application work. A wrapped call
+    -- made there must stay paused and cannot become a child of the real span.
+    if not counterRunning then
+        return fn(a, b, c, d, e, f, g, h)
+    end
     pause(true)
     depth = depth + 1
     childSum[depth], visits[depth], childList[depth] = 0, 0, {}
@@ -375,6 +388,15 @@ local function calibrate()
     span("calibration:grandparent", grandparent)
     assert(stats["calibration:grandparent"].min == stats["calibration:grandparent"].max,
         "native instruction calibration subtracted descendants twice")
+    local samples = stats["calibration:child"].n
+    span(function(token)
+        child()
+        return token == nil and true or "calibration:bookkeeping"
+    end, parent)
+    assert(stats["calibration:bookkeeping"].min == stats["calibration:parent"].min,
+        "native label bookkeeping changed the parent cost")
+    assert(stats["calibration:child"].n == samples + 1,
+        "native label bookkeeping was recorded as application work")
 end
 
 local function panelLabel(token, entry, event, ...)
@@ -646,6 +668,16 @@ local function install(context)
         loader.advanceLoad = wrap(loadLabel, loader.advanceLoad)
         loader.beginLoad = wrap("load:begin", loader.beginLoad)
     end
+    local registration = context.flightRegistration
+    if registration and not installed[registration] then
+        installed[registration] = true
+        wrapField(registration, "begin", "registration:begin")
+        wrapField(registration, "beginLoad", "registration:beginLoad")
+        wrapField(registration, "advance", function(token, job)
+            return token == nil and (job.done and "done" or job.stage)
+                or "registration:advance:" .. token
+        end)
+    end
     local lifecycle = context.dashboardLifecycle
     if lifecycle and not installed[lifecycle] then
         installed[lifecycle] = true
@@ -778,9 +810,29 @@ local function install(context)
                 return "editor:input:" .. token
             end
             P.editorInputSeen = true
-            local name = tostring(current.editorUi and current.editorUi.mode) .. ":" .. tostring(e)
+            local state, stage = current.editorUi
+            local bound = current.editorUiModule.inputWorkBound(current, e)
+            if bound then
+                if state.drawerOpen then
+                    stage = "cancel"
+                elseif state.mode ~= "menu" then
+                    stage = "modal"
+                else
+                    for event, candidate in pairs({
+                        EVT_VIRTUAL_ENTER = "open", EVT_TOUCH_TAP = "tap",
+                        EVT_VIRTUAL_PREV = "select", EVT_VIRTUAL_NEXT = "select",
+                        EVT_ROT_LEFT = "select", EVT_ROT_RIGHT = "select",
+                        EVT_TOUCH_BREAK = "release", EVT_TOUCH_FIRST = "first", EVT_TOUCH_SLIDE = "slide",
+                    }) do
+                        if _G[event] ~= nil and e == _G[event] then stage = candidate; break end
+                    end
+                end
+                assert(stage, "native editor input has a bound but no identified operation")
+            end
+            local name = stage and "bound:" .. stage
+                or tostring(state and state.mode) .. ":" .. tostring(e)
             P.editorInputBounds = P.editorInputBounds or {}
-            P.editorInputBounds[name] = current.editorUiModule.inputWorkBound(current, e)
+            P.editorInputBounds[name] = bound
             return name
         end)
     end
@@ -1057,6 +1109,7 @@ local function report(context)
             max = entry.max,
             min = entry.min,
             selfMax = entry.selfMax,
+            selfMin = entry.selfMin,
             worstChildren = entry.worstChildren,
             units = units,
         }
@@ -2121,7 +2174,7 @@ end
 -- The counter globals appear when the firmware first starts a callback.
 local function connect()
     if not count and __count then
-        count, pause = __count, __pause
+        count, nativePause = __count, __pause
         calibrate()
     end
     return count ~= nil

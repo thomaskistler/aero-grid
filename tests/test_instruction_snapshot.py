@@ -57,11 +57,16 @@ class InstructionSnapshotTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             snapshot.fit({2: 100})
 
-    def test_ten_samples_combined_not_per_environment(self):
+    def test_one_real_sample_suffices_without_repetition_padding(self):
         data, observations, required = self.data()
+        next(iter(observations["mock"].values()))["n"] = 1
+        observations["native"] = {
+            "callback|refresh|dense|0": self.row(kind="callback", name="refresh", stage="dense", grant=0, n=1)
+        }
+        data["record"]["observations"]["native"] = copy.deepcopy(observations["native"])
         self.assertEqual(snapshot.check(data, observations, required), [])
-        next(iter(observations["native"].values()))["n"] = 4
-        self.assertTrue(any("combined samples" in finding for finding in snapshot.check(data, observations, required)))
+        observations["mock"] = {}
+        self.assertTrue(any("coverage: missing task" in finding for finding in snapshot.check(data, observations, required)))
 
     def test_any_increase_fails_and_update_does_not_hide_safety(self):
         data, observations, required = self.data()
@@ -131,6 +136,40 @@ class InstructionSnapshotTests(unittest.TestCase):
         keys, errors = snapshot.required_keys(data, {"test|run": 1})
         self.assertEqual(errors, [])
         self.assertEqual(keys, required | {callback_key})
+
+    def test_native_foreground_attribution_keeps_nested_work_separate(self):
+        estimates = snapshot.load()["estimates"]
+        labels = {
+            "modal:settings:load:read": ("settings-store-load", "read", 120, 200),
+            "modal:settings:store:serialize": ("settings-store-save", "serialize", 120, 200),
+            "modal:settings:advance:load_read:idle": ("settings-ui", "storeOverhead", 20, 40),
+            "modal:settings:advance:save_serialize:idle": ("settings-ui", "storeOverhead", 20, 40),
+            "modal:settings:advance:load_legacy:idle": ("settings-ui-load", "legacy", 120, 200),
+            "editor:drawer:advance:build:source": ("editor-drawer", "build", 120, 200),
+            "editor:advanceEditor:drag:settings": ("editor-drag", "settings", 120, 200),
+            "editor:advanceEditor:drawer-open:configure": ("editor-drawer-open", "configure", 120, 200),
+            "editor:advanceEditor:layout:visit": ("editor-layout", "visit", 120, 200),
+            "editor:advanceEditor:render:6": ("editor-render", "finish", 120, 200),
+            "editor:input:bound:tap": ("editor-input", "tap", 120, 200),
+            "modal:log:advance:wrap": ("log-viewer", "wrap", 120, 200),
+            "load:theme-publish:commit": ("dashboard-loader", "theme-publish", 120, 200),
+            "registration:advance:arms": ("flight-registration", "arms", 120, 200),
+            "lifecycle:advanceReflow:metric:begin": ("panel-reflow", "metric", 120, 200),
+            "lifecycle:retirePage:panel:metric": ("dashboard-lifecycle", "panel", 120, 200),
+            "lifecycle:retirePage:settings": ("dashboard-lifecycle", "settingsAbsent", 120, 200),
+            "lifecycle:retirePage:settings:closing": ("dashboard-lifecycle", "settingsDrain", 120, 200),
+        }
+        bucket = dict(n=10, min=120, max=200, selfMin=20, selfMax=40)
+        for label, expected in labels.items():
+            rows = snapshot.native_rows("focused", {"stats": {label: {"units": {"1": bucket}}}}, estimates)
+            self.assertEqual(len(rows), 1, label)
+            row = rows[0]
+            self.assertEqual((row["name"], row["stage"], row["min"], row["max"]), expected, label)
+            self.assertEqual((row["kind"], row["grant"], row["n"]), ("bound", 0, 10))
+        with self.assertRaises(ValueError):
+            snapshot.native_rows("focused", {"stats": {"modal:settings:advance:load_read:idle": {
+                "units": {"1": dict(n=10, min=120, max=200, selfMax=40)}}}}, estimates)
+        self.assertIsNone(snapshot.native_bound("modal:settings:load:not-a-stage", estimates))
 
     def test_atomic_write_and_radio_safe_roundtrip(self):
         data, _, _ = self.data()

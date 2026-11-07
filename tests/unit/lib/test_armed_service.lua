@@ -110,3 +110,21 @@ equal(failing.entries[1].state.available, false, "shared adapter runs Armed's in
 equal(failing.entries[1].state.fresh, false)
 equal(arm.available, false)
 equal(arm.fresh, false)
+
+for grant = 1, armedModule.decl.stages.run.maxUnits do
+    for index = 1, 6 do
+        ids[string.format("L%02d", index)], values[index] = index, index % 2 == 0
+    end
+    local _, armed, controls = runtime()
+    local views = {}
+    for index = 1, 6 do views[index] = armed:state(string.format("L%02d", index)) end
+    armed.cursor = 6
+    local before = reads
+    armed.tasks.run:step(grant, "run", now)
+    equal(reads - before, grant, "partial Armed grants read exactly the admitted conditions")
+    equal(#controls.criticalEntries, 0, "all Armed conditions retain exclusive polling ownership")
+    for offset = 0, 5 do
+        local index = (5 + offset) % 6 + 1
+        equal(views[index].available, offset < grant, "cursor wrap preserves unvisited Armed conditions")
+    end
+end
