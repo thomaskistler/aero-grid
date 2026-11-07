@@ -358,7 +358,12 @@ assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assert(context.navigationHomes == homes, "layout/theme reload must preserve capture state")
 square = fixture.instanceOf(context, "detailed")
 custom = instance(2, 2, { w = 238, h = 134 }, { homeMode = "first-arm", armSwitch = "SFv" })
-fixture.pump(context, 20)
+assert(
+    fixture.pumpUntil(context, function()
+        return custom.feed.distance ~= nil
+    end, 100, 20),
+    "restored Navigation subscriptions did not sample a position after reload"
+)
 navigation.refresh(custom)
 assertions.assertEqual(custom.feed.pilotLatitude, 47, "panel recreation must not reset home")
 assert(custom.feed.distance > 100 and custom.feed.distance < 120)

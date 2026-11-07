@@ -161,6 +161,16 @@ local function start(mode, layoutName, probe)
         { Layout = layoutName, Theme = "modern-dark" },
         path
     )
+    if mode == "mixed" then
+        local owners = {}
+        for key, value in pairs(context.schedulerHost.owners) do
+            owners[key] = value
+            if string.sub(key, 1, 6) == "panel:" or key == "service:flight" or key == "service:smart" then
+                owners[key] = "legacy"
+            end
+        end
+        context.schedulerHost.owners = owners
+    end
     local guard = 0
     while context.stage do
         definition.refresh(context)
@@ -254,21 +264,10 @@ do
     end
     listing:close()
     os.remove(listingPath)
-    -- Migrated tasks; every other one is `legacy` until its migration.
     expected["service:control-normal"] = true
     expected["service:control-outputs"] = true
-    local migrated = {
-        ["service:telemetry"] = true,
-        ["service:model"] = true,
-        ["service:control"] = true,
-        ["service:control-normal"] = true,
-        ["service:control-outputs"] = true,
-        ["service:armed"] = true,
-        ["service:navigation"] = true,
-        ["service:history"] = true,
-    }
     for key in pairs(expected) do
-        equal(host.OWNERS[key], migrated[key] and "new" or "legacy", key .. " needs an owner")
+        equal(host.OWNERS[key], key == "panel:output" and "legacy" or "new", key .. " needs an owner")
     end
     for key in pairs(host.OWNERS) do
         assert(expected[key], key .. " is in the owner table but is no service or panel")
@@ -500,7 +499,18 @@ end
 -- legacy loop or scheduler-owned panel background dispatch.
 do
     local definition, context = start("new", "host-light")
-    callbacks(definition, context, 5)
+    local owners = {}
+    for key, value in pairs(context.schedulerHost.owners) do
+        owners[key] = value
+    end
+    owners["panel:metric"] = "legacy"
+    context.schedulerHost.owners, context.panelTasksDirty = owners, true
+    for _ = 1, 1024 do
+        callbacks(definition, context, 1)
+        if not context.schedulerHost then
+            break
+        end
+    end
     equal(context.schedulerHost, nil, "legacy-owned tasks are a load error in new mode")
     assert(logged(context, "is not owned by the scheduler"))
 end

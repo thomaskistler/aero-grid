@@ -187,7 +187,8 @@ class InstrumentationTests(unittest.TestCase):
             self.assertTrue(scheduled["flightTasks"])
             self.assertEqual(scheduled["owners"], owners)
             self.assertEqual({key: value for key, value in scheduled.items()
-                              if key not in ("owners", "flightTasks")}, original)
+                              if key not in ("owners", "flightTasks")},
+                             {key: value for key, value in original.items() if key != "owners"})
 
     def test_matched_flight_smart_clock_cases_keep_identical_inputs(self):
         cases = load_cli().scenarios()
@@ -202,7 +203,8 @@ class InstrumentationTests(unittest.TestCase):
         self.assertTrue(panel_case["deterministicClock"])
         self.assertEqual(panel_case["owners"], [f"panel:{panel}" for panel in PANELS])
         self.assertEqual({key: value for key, value in panel_case.items()
-                          if key not in ("deterministicClock", "owners")}, cases["flight-smart"])
+                          if key not in ("deterministicClock", "owners")},
+                         {key: value for key, value in cases["flight-smart"].items() if key != "owners"})
 
     def test_remaining_reflow_matrices_cover_each_kind_with_separate_cleanup(self):
         cases = load_cli().scenarios()
@@ -271,12 +273,16 @@ class InstrumentationTests(unittest.TestCase):
         self.assertIn('if scheduling and not owner.schedulerEnabled then\n        scheduling:charge("tick")', source)
         self.assertNotIn("patch_flight_tasks", Path(load_cli().__file__).read_text())
 
-    def test_owner_overrides_only_patch_named_legacy_owners(self):
+    def test_owner_overrides_start_from_pre_migration_owners(self):
         source = (audit.WIDGET / "lib/scheduler_host.lua").read_text()
-        self.assertEqual(audit.patch_owners(source, []), source)
+        unchanged = audit.patch_owners(source, [])
+        self.assertIn('["panel:metric"] = "legacy"', unchanged)
+        self.assertIn('["service:flight"] = "legacy"', unchanged)
+        self.assertIn('["service:smart"] = "legacy"', unchanged)
         changed = audit.patch_owners(source, ["panel:metric"])
         self.assertIn('["panel:metric"] = "new"', changed)
         self.assertIn('["service:flight"] = "legacy"', changed)
+        self.assertIn('["service:model"] = "new"', changed)
         with self.assertRaises(RuntimeError):
             audit.patch_owners(source, ["panel:not-installed"])
         with self.assertRaises(ValueError):

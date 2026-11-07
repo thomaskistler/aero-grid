@@ -149,7 +149,7 @@ armed = first.serviceRuntime.byId.armed
 local shared = armed:state()
 equal(shared.condition, "L64")
 equal(shared.origin, "model")
-equal(shared.fresh, false, "shared armed reads may become stale when mixed work leaves no scheduler room")
+equal(shared.fresh, true, "scheduler-owned panels leave room for shared armed reads")
 assert(not first.serviceRuntime.byId.control.failed, "a deferred control read is not a service error")
 assert(armed:state("L01") == shared and armed:state("ch5") == shared)
 assert(fixture.instanceOf(first, "one").session == fixture.instanceOf(first, "two").session)
@@ -171,16 +171,16 @@ equal(shared.value, true)
 equal(second.serviceRuntime.byId.armed:state().value, true, "every instance observes the same model condition")
 equal(
     fixture.instanceOf(first, "capture").feed.homeStatus,
-    "switch-unavailable",
-    "a scheduled navigation read reports the stale Armed state"
+    "captured",
+    "the scheduled Armed read is available while panel owners leave room"
 )
 equal(
     fixture.instanceOf(second, "capture").feed.homeStatus,
-    "switch-unavailable",
-    "both navigation consumers observe the stale Armed state"
+    "captured",
+    "both navigation consumers observe the available Armed state"
 )
-equal(#first.errors, 0, "a stale Armed state is not a navigation service error")
-equal(#second.errors, 0, "a stale Armed state is not a navigation service error")
+equal(#first.errors, 0, "home capture is not a navigation service error")
+equal(#second.errors, 0, "home capture is not a navigation service error")
 
 local session = assert(editor.new(first.document, first.grid, first.layoutValidator, first.panelHost, function(kind)
     return fixture.module("panels/" .. kind .. ".lua")

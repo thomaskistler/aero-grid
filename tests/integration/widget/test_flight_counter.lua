@@ -148,6 +148,7 @@ for _, span in ipairs({ { 1, 1 }, { 2, 1 }, { 2, 2 }, { 4, 2 } }) do
     backgroundUntil(context, function()
         return panel.flight.phase == "ground"
     end)
+    fixture.pump(context, 1)
     equal(recorded(), 0, "completed flights must not access CSV files")
     equal(panel.stateName, "normal")
     equal(panel.panel.background.properties.color, context.theme.color.surface)
@@ -236,7 +237,10 @@ owner:setDocument({
     }),
 })
 backgroundUntil(context, function()
-    return owner.session.smart and owner.session.smart.altitude.fresh and owner.session.smart.speed.fresh
+    return owner.session
+        and owner.session.smart
+        and owner.session.smart.altitude.fresh
+        and owner.session.smart.speed.fresh
 end)
 fixture.radio.values[305], fixture.radio.values[306] = 1024, 0
 backgroundUntil(context, function()

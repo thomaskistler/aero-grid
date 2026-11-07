@@ -93,7 +93,9 @@ def patch_mode(source, mode):
 
 
 def patch_owners(source, owners):
-    """Override only named legacy owners in the isolated native image."""
+    """Recreate pre-migration owners, then enable selected scheduler tasks."""
+    for task_id in re.findall(r'\["((?:panel:[\w-]+|service:flight|service:smart))"\] = "(?:legacy|new)"', source):
+        source = re.sub(rf'(\["{re.escape(task_id)}"\] = ")(?:legacy|new)(")', r'\1legacy\2', source)
     for task_id in owners:
         if not re.fullmatch(r"(?:panel|service):[\w-]+", task_id):
             raise ValueError(f"Invalid scheduler owner: {task_id}")

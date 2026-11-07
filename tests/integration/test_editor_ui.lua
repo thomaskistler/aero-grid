@@ -973,7 +973,10 @@ equal(context.editorSession.draft.panels[2].col, 0, "second panel moves into the
 exitWith("Save")
 settleSave()
 widget.lvglMock.setFullScreen(false)
-widget.pump(context, 40)
+assert(widget.pumpUntil(context, function()
+    return context.panels[1].instance.value.properties.text == "100"
+        and context.panels[2].instance.value.properties.text == "100"
+end, 400), "existing panels paint their telemetry")
 assert(context.reserved, "App return reserves the menu button corner")
 local fresh = widget.createLoaded(
     { x = 0, y = 0, w = 480, h = 272 },
