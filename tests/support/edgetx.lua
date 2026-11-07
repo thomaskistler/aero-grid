@@ -1012,9 +1012,16 @@ function support.lvgl()
     --- palette twice, as 24-bit tokens for arithmetic and as display values for
     --- drawing, and handing an object the former paints a colour belonging to no
     --- theme at all. The radio cannot report that; this can.
-    local propertyKeys = firmware.PROPERTY_KEYS
+    local propertyKeys = {}
     local colorKeys = firmware.COLOR_PROPERTY_KEYS
     local rgbFlag = firmware.RGB_FLAG
+    for kind, accepted in pairs(firmware.PROPERTY_KEYS) do
+        local classified = {}
+        for key in pairs(accepted) do
+            classified[key] = colorKeys[key] and 2 or 1
+        end
+        propertyKeys[kind] = classified
+    end
 
     local function checkProperties(kind, properties)
         local accepted = propertyKeys[kind]
@@ -1023,11 +1030,14 @@ function support.lvgl()
         end
 
         for key, value in pairs(properties) do
-            if not accepted[key] then
-                error(string.format(firmware.INVALID_PROPERTY_FORMAT, tostring(key)) .. " on " .. kind, 0)
-            end
-            if colorKeys[key] and (type(value) ~= "number" or value % 65536 ~= rgbFlag) then
-                error(kind .. "." .. key .. " is not a colour lcd.RGB returned: " .. tostring(value), 0)
+            local class = accepted[key]
+            if class ~= 1 then
+                if not class then
+                    error(string.format(firmware.INVALID_PROPERTY_FORMAT, tostring(key)) .. " on " .. kind, 0)
+                end
+                if type(value) ~= "number" or value % 65536 ~= rgbFlag then
+                    error(kind .. "." .. key .. " is not a colour lcd.RGB returned: " .. tostring(value), 0)
+                end
             end
         end
     end
@@ -1129,7 +1139,9 @@ function support.lvgl()
     end
 
     local function setChecked(object, changes)
-        assertUsable(object)
+        if object.invalid then
+            error(firmware.INVALID_OBJECT_MESSAGE, 0)
+        end
         rawset(object, "writes", object.writes + 1)
         checkProperties(object.kind, changes)
         -- EdgeTX v2.12.4 LvglParamFuncOrValue::parse overwrites the registry
