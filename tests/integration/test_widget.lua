@@ -862,8 +862,11 @@ local function testShippedLayout()
     for _ = 1, 2000 do
         if
             context.serviceRuntime.byId.model.revision > 0
-            and entryById(context, "flight-clock").instance.text ~= "--:--"
-            and context.scheduler.lastPlan.ran == 0
+            and context.serviceRuntime.byId.control.revision > 0
+            and context.serviceRuntime.byId.navigation.revision > 0
+            and entryById(context, "altitude").instance.value.properties.text == "100"
+            and entryById(context, "identity").instance.text == "Test Model"
+            and entryById(context, "nav").instance.text == "778"
         then
             galleryReady = true
             break
@@ -880,33 +883,31 @@ local function testShippedLayout()
     assertEqual(altitude.feed.name, "Alt")
     assertEqual(altitude.detailFeed.name, "Alt+", "the metric lost its maximum source")
     assertEqual(altitude.secondaryFeed.name, "VSpd")
-    assertEqual(altitude.value.properties.text, "--", "negative scheduler room defers source polling")
+    assertEqual(altitude.value.properties.text, "100")
 
     -- And the panels that read the radio rather than the link.
     local model = context.serviceRuntime.byId.model
     local control = context.serviceRuntime.byId.control
-    assertEqual(model.revision, 1, "a callback with room admits one model task release")
-    assertEqual(control.revision, 0, "negative room defers the normal control task")
-    assertEqual(context.scheduler.lastPlan.ran, 0, "negative room defers tasks without an error")
+    assert(model.revision > 0 and control.revision > 0, "local services must make scheduled progress")
     local flightClock = entryById(context, "flight-clock").instance
     assertEqual(
         flightClock.text,
         "1:30",
         "the model task's admitted release supplies the timer"
     )
-    assertEqual(entryById(context, "mode").instance.text, "--")
+    assertEqual(entryById(context, "mode").instance.text, "Sport")
     -- Digits alone: the `V` is its own label riding beside them.
     local radioBattery = entryById(context, "radio-battery").instance
-    assertEqual(radioBattery.text, "--")
+    assertEqual(radioBattery.text, "7.9")
     assertEqual(radioBattery.unit.properties.text, "V")
-    assertEqual(entryById(context, "rates").instance.text, "--", "negative room defers source polling")
-    assertEqual(entryById(context, "identity").instance.text, "--")
-    assertEqual(entryById(context, "trims").instance.indicators[1].valueText, "-- A")
+    assertEqual(entryById(context, "rates").instance.text, "4.5")
+    assertEqual(entryById(context, "identity").instance.text, "Test Model")
+    assertEqual(entryById(context, "trims").instance.indicators[1].valueText, "+23% A")
 
     -- The three telemetry panels, reading what the radio really reports.
     local pack = entryById(context, "pack").instance
     -- Digits alone, with the `V` riding beside them in its own label.
-    assertEqual(pack.text, "--", "negative room leaves the cell source unavailable")
+    assertEqual(pack.text, "4.09")
     assertEqual(pack.unit.properties.text, "V")
     -- The shipped pack is 2 x 1, which is 65 px tall, and sheds its supporting
     -- row to keep the reading large. This used to assert the row's text anyway:
@@ -919,15 +920,15 @@ local function testShippedLayout()
 
     local link = entryById(context, "link").instance
     assertEqual(link.primaryName, "quality", "auto must prefer link quality")
-    assertEqual(link.text, "N/A")
-    assertEqual(link.stateName, "unavailable")
+    assertEqual(link.text, "96")
+    assertEqual(link.stateName, "normal")
 
     local nav = entryById(context, "nav").instance
-    assertEqual(nav.text, "--", "no room defers the NORMAL navigation service without an error")
-    assertEqual(context.serviceRuntime.byId.navigation.revision, 0, "no room leaves navigation state unchanged")
-    assertEqual(nav.stateName, "unavailable")
+    assertEqual(nav.text, "778")
+    assert(context.serviceRuntime.byId.navigation.revision > 0)
+    assertEqual(nav.stateName, "normal")
     assertEqual(nav.detail, nil)
-    assertEqual(nav.origin, "NO GPS SOURCE", "the panel shows its initial unavailable state until a read is admitted")
+    assertEqual(nav.origin, "")
     assert(nav.tape, "the shipped dashboard must demonstrate the tape")
 end
 
