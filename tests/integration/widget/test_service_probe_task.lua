@@ -34,19 +34,24 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                     end,
                 }
                 local rect = { x = 0, y = 0, w = shape[3], h = shape[4] }
-                local function create(module)
-                    module = module or panel
+                local function create()
                     local context =
-                        module.create(lvgl.box({ x = 0, y = 0, w = rect.w, h = rect.h }), rect, settings, services)
+                        panel.create(lvgl.box({ x = 0, y = 0, w = rect.w, h = rect.h }), rect, settings, services)
                     if variant == 3 then
                         context.service = nil
                     elseif variant == 4 then
                         context.subscribeError = true
                     end
-                    module.refresh(context)
                     return context
                 end
-                local legacy, instance = create(), create()
+                local expected, instance = create(), create()
+                local expectedTask = host.task({ module = panel, instance = expected, interval = 50 })
+                local function finishExpected()
+                    for _ = 1, 160 do
+                        if expectedTask:step(expectedTask.want or 1, expectedTask.stage, getTime()) == 50 then return end
+                    end
+                    error("Service Probe comparison did not finish")
+                end
                 local task = host.task({ module = panel, instance = instance, interval = 50 })
                 local function writes()
                     local total = 0
@@ -71,14 +76,14 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                 end
                 for cycle = 1, 8 do
                     change(cycle)
-                    panel.refresh(legacy)
+                    finishExpected()
                     assert(step() == 1)
                     while task.stage == "describe" do
                         assert(step() == 1)
                     end
                     change(99)
                     finish(cycle % 2 + 1)
-                    sameTree(legacy.panel.root, instance.panel.root)
+                    sameTree(expected.panel.root, instance.panel.root)
                     change(cycle)
                     local calls = writes()
                     finish(2)
@@ -87,7 +92,7 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                 end
                 for _, target in ipairs({ "describe", "apply" }) do
                     if target ~= "describe" or name == "control" and variant <= 2 then
-                        for _, action in ipairs({ "cancelRefresh", "refresh", "update" }) do
+                        for _, action in ipairs({ "cancelRefresh", "update" }) do
                             change(1)
                             assert(step() == 1)
                             assert(task.stage == target or task.stage == "describe")
@@ -105,15 +110,15 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                             change(2)
                             if action == "update" then
                                 panel.update(instance, rect)
-                                panel.update(legacy, rect)
+                                panel.update(expected, rect)
                             else
                                 panel[action](instance)
                             end
                             assert(not instance.refreshWork)
                             assert(step() == 1 and task.used == 0 and task.stage == "prepare")
-                            panel.refresh(legacy)
+                            finishExpected()
                             finish(1)
-                            sameTree(legacy.panel.root, instance.panel.root)
+                            sameTree(expected.panel.root, instance.panel.root)
                         end
                     end
                 end

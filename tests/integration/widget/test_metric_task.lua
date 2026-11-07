@@ -40,10 +40,16 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
             local function create()
                 local instance =
                     metric.create(lvgl.box({ x = 0, y = 0, w = rect.w, h = rect.h }), rect, settings, services)
-                metric.refresh(instance)
                 return instance
             end
-            local legacy, instance = create(), create()
+            local expected, instance = create(), create()
+            local expectedTask = panelHost.task({ module = metric, instance = expected, interval = 20 })
+            local function finishExpected()
+                for _ = 1, 20 do
+                    if expectedTask:step(expectedTask.want or 1, expectedTask.stage, getTime()) == 20 then return end
+                end
+                error("metric comparison did not finish")
+            end
             local task = panelHost.task({ module = metric, instance = instance, interval = 20, nextRefresh = 0 })
             local function step()
                 local delay = task:step(1, task.stage, getTime())
@@ -68,7 +74,7 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                     state.unitText = cycle % 2 == 0 and "mAh" or "V"
                     state.available, state.stale = cycle ~= 3, cycle == 5
                 end
-                metric.refresh(legacy)
+                finishExpected()
                 assert(step() == 1 and task.used == 1)
                 local frozen = assert(instance.refreshWork)
                 for _, state in ipairs(states) do
@@ -77,20 +83,20 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                 end
                 finish()
                 assert(not instance.refreshWork and frozen.feed.value ~= states[1].value)
-                sameTree(legacy.panel.root, instance.panel.root)
+                sameTree(expected.panel.root, instance.panel.root)
             end
-            metric.refresh(legacy)
+            finishExpected()
             finish()
-            sameTree(legacy.panel.root, instance.panel.root)
+            sameTree(expected.panel.root, instance.panel.root)
             local writes = instance.value.writes
             assert(step() == 1 and task.stage == "render")
             assert(step() == 20 and instance.value.writes == writes, "a stable frame must not repaint")
 
             for _, target in ipairs({ "geometry", "layout", "render", "apply" }) do
-                for _, action in ipairs({ "cancelRefresh", "refresh" }) do
+                for _, action in ipairs({ "cancelRefresh" }) do
                     states[1].value, states[1].available = 55.25, true
                     states[1].precision = (instance.sampleDigits + 1) % 4
-                    metric.refresh(legacy)
+                    finishExpected()
                     for _ = 1, 5 do
                         if task.stage == target then
                             break
@@ -103,7 +109,7 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                     assert(not instance.refreshWork)
                     assert(step() == 1 and task.used == 0 and task.stage == "prepare")
                     finish()
-                    sameTree(legacy.panel.root, instance.panel.root, action .. " after " .. target)
+                    sameTree(expected.panel.root, instance.panel.root, action .. " after " .. target)
                 end
 
                 for _, state in ipairs(states) do
@@ -111,7 +117,7 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                     state.precision = (instance.sampleDigits + 1) % 4
                     state.unitText = "m"
                 end
-                metric.refresh(legacy)
+                finishExpected()
                 for _ = 1, 5 do
                     if task.stage == target then
                         break
@@ -120,9 +126,9 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                 end
                 assert(task.stage == target and instance.refreshWork)
                 local changed = { x = 0, y = 0, w = rect.w + 20, h = rect.h + 30 }
-                metric.update(legacy, changed)
+                metric.update(expected, changed)
                 metric.update(instance, changed)
-                metric.refresh(legacy)
+                finishExpected()
                 assert(not instance.refreshWork)
                 assert(
                     step() == 1 and task.used == 0 and task.stage == "prepare",
@@ -130,25 +136,11 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                 )
                 finish()
                 sameTree(
-                    legacy.panel.root,
+                    expected.panel.root,
                     instance.panel.root,
                     mode .. "/" .. shape[1] .. "x" .. shape[2] .. "/" .. visual .. "/" .. target
                 )
             end
-
-            states[1].value = 87.5
-            metric.refresh(legacy)
-            for _ = 1, 5 do
-                if task.stage == "apply" then
-                    break
-                end
-                assert(step() == 1)
-            end
-            assert(task.stage == "apply")
-            metric.refresh(instance)
-            sameTree(legacy.panel.root, instance.panel.root)
-            assert(step() == 1 and task.used == 0, "legacy refresh invalidates a captured task frame")
-            finish()
 
             states[1].value = 101
             for _ = 1, 5 do
@@ -158,19 +150,19 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                 assert(step() == 1)
             end
             assert(task.stage == "apply")
-            metric.setValue(legacy, 38, true)
+            metric.setValue(expected, 38, true)
             metric.setValue(instance, 38, true)
-            sameTree(legacy.panel.root, instance.panel.root)
+            sameTree(expected.panel.root, instance.panel.root)
             assert(step() == 1 and task.used == 0, "a forced reading invalidates the captured frame")
-            metric.refresh(legacy)
+            finishExpected()
             finish()
-            sameTree(legacy.panel.root, instance.panel.root)
+            sameTree(expected.panel.root, instance.panel.root)
 
-            instance.feed, legacy.feed = nil, nil
-            metric.refresh(legacy)
+            instance.feed, expected.feed = nil, nil
+            finishExpected()
             assert(metric.step(instance, 1, "prepare") == nil and not instance.refreshWork)
-            sameTree(legacy.panel.root, instance.panel.root)
-            instance.feed, legacy.feed = views.Q1, views.Q1
+            sameTree(expected.panel.root, instance.panel.root)
+            instance.feed, expected.feed = views.Q1, views.Q1
 
             assert(step() == 1 and task.stage == "render")
             local render = metric.render
@@ -187,4 +179,4 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
         end
     end
 end
-print("Metric task: frozen metadata/readings, complete legacy parity, stale plans and stable frames passed")
+print("Metric task: frozen metadata/readings, stale plans and stable frames passed")

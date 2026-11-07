@@ -2,7 +2,6 @@
 
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(root).new()
-local sameTree = assert(loadfile(root .. "/tests/support/panel_tree.lua"))()
 local dashboard = fixture.createLoaded(nil, { Layout = "review-metric", Theme = "modern-dark" })
 local reference = dashboard.panels[1].instance
 local panelHost = fixture.module("lib/panel_host.lua")
@@ -11,9 +10,6 @@ local builder = reference.themeBuilder
 
 for _, id in ipairs({ "flight-counter", "flight-mode", "flight-timer" }) do
     local panel = fixture.module("panels/" .. id .. ".lua")
-    if id ~= "flight-counter" then
-        assert(panel.step == panel.refresh)
-    end
     for _, mode in ipairs({ "modern-dark", "modern-light" }) do
         local theme = builder.build(mode)
         for _, shape in ipairs({
@@ -89,7 +85,7 @@ for _, id in ipairs({ "flight-counter", "flight-mode", "flight-timer" }) do
                 local function create()
                     return panel.create(lvgl.box({ x = 0, y = 0, w = rect.w, h = rect.h }), rect, settings, services)
                 end
-                local legacy, instance = create(), create()
+                local instance = create()
                 local entry = {
                     module = panel,
                     instance = instance,
@@ -98,19 +94,7 @@ for _, id in ipairs({ "flight-counter", "flight-mode", "flight-timer" }) do
                     nextRefresh = now,
                 }
                 local context = { panels = { entry }, panelHost = panelHost }
-                local pending
-                if id == "flight-counter" then
-                    pending = {
-                        module = panel,
-                        instance = create(),
-                        interval = panel.refreshInterval,
-                        placement = { id = "pending" },
-                        nextRefresh = now,
-                    }
-                    context.panels[2] = pending
-                end
                 local scheduling = fixture.module("lib/scheduler_host.lua").attach(context, {
-                    mode = "mixed",
                     load = fixture.module,
                     api = {
                         log = function(_, message)
@@ -118,7 +102,6 @@ for _, id in ipairs({ "flight-counter", "flight-mode", "flight-timer" }) do
                         end,
                     },
                 })
-                scheduling.owners = { ["panel:" .. id] = "new" }
                 for _ = 1, 200 do
                     assert(scheduling:ready(context))
                     if scheduling.panelTasks[entry] then
@@ -126,16 +109,6 @@ for _, id in ipairs({ "flight-counter", "flight-mode", "flight-timer" }) do
                     end
                 end
                 local task = assert(scheduling.panelTasks[entry])
-                assert(instance.schedulerOwned and not legacy.schedulerOwned)
-                if pending then
-                    assert(pending.instance.schedulerOwned and not scheduling.panelTasks[pending])
-                    local calls, writes = clockCalls, pending.instance.value.writes
-                    panel.background(pending.instance)
-                    assert(
-                        clockCalls == calls and pending.instance.value.writes == writes,
-                        "pending owned counters cannot fall back to hidden painting"
-                    )
-                end
                 for cycle = 1, 9 do
                     now = now + panel.refreshInterval
                     state.available, state.name, state.index = cycle ~= 3, cycle == 8 and "" or "MODE" .. cycle, cycle
@@ -143,38 +116,29 @@ for _, id in ipairs({ "flight-counter", "flight-mode", "flight-timer" }) do
                     state.remaining, state.value = 100 - cycle * 12, 100 - cycle * 12
                     state.expired, state.countdown, state.showElapsed = cycle == 9, cycle ~= 6, cycle == 6
                     flight.active = cycle % 2 == 0
-                    if panel.background then
-                        local writes, calls = instance.value.writes, clockCalls
-                        panel.background(instance)
-                        assert(
-                            instance.value.writes == writes and clockCalls == calls,
-                            "owned hidden counters must not refresh"
-                        )
-                    end
-                    panel.refresh(legacy)
                     local calls = clockCalls
                     assert(task:step(1, "run", now) == panel.refreshInterval and task.used == 1)
                     assert(entry.nextRefresh == now + panel.refreshInterval)
                     if id == "flight-counter" then
                         assert(clockCalls == calls, "the scheduler, not a second local throttle, owns counter cadence")
                     end
-                    sameTree(legacy.panel.root, instance.panel.root)
+                    local drawn = {}
+                    panel.render(instance, drawn)
+                    assert(instance.text == drawn.text and instance.stateName == drawn.state)
+                    assert(instance.value.properties.text == drawn.text)
                 end
                 now = now + panel.refreshInterval
-                panel.refresh(legacy)
                 task:step(1, "run", now)
                 local writes = instance.value.writes
                 now = now + panel.refreshInterval
                 assert(task:step(1, "run", now) == panel.refreshInterval)
                 assert(instance.value.writes == writes, "stable readouts must not repaint")
                 local resized = { x = 0, y = 0, w = rect.w + 20, h = rect.h + 30 }
-                panel.update(legacy, resized)
                 panel.update(instance, resized)
-                sameTree(legacy.panel.root, instance.panel.root)
+                assert(instance.panel.root.properties.w == resized.w)
+                assert(instance.panel.root.properties.h == resized.h)
                 if id == "flight-counter" then
                     state.raw, now = 321, now + 20
-                    panel.background(legacy)
-                    assert(legacy.text == "321", "legacy background behavior remains available until ownership changes")
                     local scheduler = fixture.module("lib/scheduler.lua").new({ steady = 1250, background = 1130 })
                     assert(scheduler:add({ id = "counter", decl = panel.decl, instance = task, due = 2147483640 }))
                     scheduler:run("steady", 2147483640, 0)
@@ -183,7 +147,6 @@ for _, id in ipairs({ "flight-counter", "flight-mode", "flight-timer" }) do
                     assert(instance.text == "322", "counter refresh crosses the signed tick wrap")
                     state.raw = 323
                     scheduler:run("background", -2147483616, 0)
-                    panel.background(instance)
                     assert(instance.text == "322", "background neither consumes nor paints a panel release")
                     scheduler:run("steady", -2147483616, 0)
                     assert(instance.text == "323")
@@ -192,4 +155,4 @@ for _, id in ipairs({ "flight-counter", "flight-mode", "flight-timer" }) do
         end
     end
 end
-print("Flight readout tasks: legacy parity, intervals, stable frames, hidden eligibility and counter wrap passed")
+print("Flight readout tasks: readings, intervals, stable frames, hidden eligibility and counter wrap passed")

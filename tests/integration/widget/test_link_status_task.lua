@@ -88,10 +88,16 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                                 settings,
                                 services
                             )
-                            panel.refresh(context)
                             return context
                         end
-                        local legacy, instance = create(), create()
+                        local expected, instance = create(), create()
+                        local expectedTask = host.task({ module = panel, instance = expected, interval = 20 })
+                        local function finishExpected()
+                            for _ = 1, 20 do
+                                if expectedTask:step(expectedTask.want or 1, expectedTask.stage, getTime()) == 20 then return end
+                            end
+                            error("Link Status comparison did not finish")
+                        end
                         local task = host.task({ module = panel, instance = instance, interval = 20 })
                         local function step()
                             local rssi, quality = instance.rssiFeed, instance.qualityFeed
@@ -110,7 +116,7 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                         end
                         for cycle = 1, 8 do
                             stimulus(cycle)
-                            panel.refresh(legacy)
+                            finishExpected()
                             assert(step() == 1)
                             local frozen = assert(instance.refreshWork)
                             for _, state in pairs(states) do
@@ -121,7 +127,7 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                             link.live = not link.live
                             finish()
                             assert(not instance.refreshWork and frozen.feeds.rssiFeed.value ~= states.RSSI.value)
-                            sameTree(legacy.panel.root, instance.panel.root)
+                            sameTree(expected.panel.root, instance.panel.root)
                             stimulus(cycle)
                             local writes = instance.value.writes
                             finish()
@@ -129,10 +135,10 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                         end
 
                         for _, target in ipairs({ "geometry", "layout", "render", "apply" }) do
-                            for _, action in ipairs({ "cancelRefresh", "refresh", "update" }) do
+                            for _, action in ipairs({ "cancelRefresh", "update" }) do
                                 stimulus(2)
                                 link.live = instance.sample.digits == "NO LINK"
-                                panel.refresh(legacy)
+                                finishExpected()
                                 for _ = 1, 5 do
                                     if task.stage == target then
                                         break
@@ -142,16 +148,16 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                                 assert(task.stage == target and instance.refreshWork)
                                 if action == "update" then
                                     local changed = { x = 0, y = 0, w = rect.w + 20, h = rect.h + 30 }
-                                    panel.update(legacy, changed)
+                                    panel.update(expected, changed)
                                     panel.update(instance, changed)
-                                    panel.refresh(legacy)
+                                    finishExpected()
                                 else
                                     panel[action](instance)
                                 end
                                 assert(not instance.refreshWork)
                                 assert(step() == 1 and task.used == 0 and task.stage == "prepare")
                                 finish()
-                                sameTree(legacy.panel.root, instance.panel.root, action .. " after " .. target)
+                                sameTree(expected.panel.root, instance.panel.root, action .. " after " .. target)
                             end
                         end
                         local scheduler = fixture.module("lib/scheduler.lua").new({ steady = 1250, background = 1130 })
@@ -186,4 +192,4 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
         end
     end
 end
-print("Link Status task: frozen readings, loss/recovery geometry, cancellation and complete legacy parity passed")
+print("Link Status task: frozen readings, loss/recovery geometry and cancellation passed")

@@ -4,17 +4,24 @@ local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(root).new()
 local sameTree = assert(loadfile(root .. "/tests/support/panel_tree.lua"))()
 local host = fixture.createLoaded(nil, { Layout = "review-rx-battery", Theme = "modern-dark" })
+local panelHost = fixture.module("lib/panel_host.lua")
 fixture.pump(host, 60)
 local cases =
     assert(loadfile(root .. "/tests/support/construction_cases.lua"))()(fixture.module, host.themeBuilder, "rx-battery")
 local checked = 0
 for _, case in ipairs(cases) do
     local panel = case.panel
-    local legacy = BASELINE or panel
-    local function create(module)
+    local function completeTask(instance)
+        local task = panelHost.task({ module = panel, instance = instance, interval = 20 })
+        for _ = 1, 100 do
+            if task:step(task.want or 1, task.stage, getTime()) ~= 1 then return end
+        end
+        error(case.name .. ": panel task did not finish")
+    end
+    local function create()
         local context =
-            module.create(lvgl.box({ x = 0, y = 0, w = 1000, h = 1000 }), case.rect, case.settings, case.dependencies())
-        module.refresh(context)
+            panel.create(lvgl.box({ x = 0, y = 0, w = 1000, h = 1000 }), case.rect, case.settings, case.dependencies())
+        completeTask(context)
         return context
     end
     local function finish(context, rect, done)
@@ -28,7 +35,7 @@ for _, case in ipairs(cases) do
         assert(done and not context.reflowWork, case.name .. ": reflow must finish")
         assert(panel.reflow(context, rect, nil, nil, nil, false), "completed reflow must be idempotent")
     end
-    local staged, synchronous = create(panel), create(legacy)
+    local staged, synchronous = create(), create()
     local targets = {
         case.rect,
         { x = 1, y = 2, w = case.rect.w + 60, h = case.rect.h + 80 },
@@ -44,10 +51,10 @@ for _, case in ipairs(cases) do
         finish(staged, rect, panel.reflow(staged, rect, nil, nil, nil, true))
         staged.feed = feed
         assert(staged.estimatedCells == estimate, "reflow must not change count estimation")
-        legacy.update(synchronous, rect)
+        panel.update(synchronous, rect)
         sameTree(synchronous.panel.root, staged.panel.root, case.name .. "/completed")
-        panel.refresh(staged)
-        legacy.refresh(synchronous)
+        completeTask(staged)
+        completeTask(synchronous)
         sameTree(synchronous.panel.root, staged.panel.root, case.name .. "/refreshed")
         checked = checked + 1
     end
@@ -59,10 +66,9 @@ for _, case in ipairs(cases) do
             "update",
             "cancelRefresh",
             "resetSession",
-            "refresh",
         }) do
             for stop = 0, 10 do
-                staged, synchronous = create(panel), create(legacy)
+                staged, synchronous = create(), create()
                 local requested = { x = target.x, y = target.y, w = target.w, h = target.h }
                 local done = panel.reflow(staged, requested, nil, nil, nil, true)
                 for _ = 1, stop do
@@ -96,15 +102,15 @@ for _, case in ipairs(cases) do
                 else
                     panel[event](staged, 1000)
                     if event == "resetSession" then
-                        legacy.resetSession(synchronous, 1000)
+                        panel.resetSession(synchronous, 1000)
                     end
                     assert(staged.reflowWork.invalidated, event .. " must invalidate captured geometry")
                 end
                 finish(staged, rect, done)
-                legacy.update(synchronous, rect)
+                panel.update(synchronous, rect)
                 sameTree(synchronous.panel.root, staged.panel.root, case.name .. "/" .. event .. "/" .. stop)
-                panel.refresh(staged)
-                legacy.refresh(synchronous)
+                completeTask(staged)
+                completeTask(synchronous)
                 sameTree(synchronous.panel.root, staged.panel.root, case.name .. "/after-" .. event .. "/" .. stop)
                 checked = checked + 1
             end

@@ -2,7 +2,6 @@
 
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(root).new()
-local sameTree = assert(loadfile(root .. "/tests/support/panel_tree.lua"))()
 local dashboard = fixture.createLoaded(nil, { Layout = "review-metric", Theme = "modern-dark" })
 local reference = dashboard.panels[1].instance
 local host = fixture.module("lib/panel_host.lua")
@@ -19,7 +18,6 @@ end
 
 for _, id in ipairs({ "state", "trim-panel" }) do
     local panel = fixture.module("panels/" .. id .. ".lua")
-    assert(panel.step == panel.refresh)
     for _, mode in ipairs({ "modern-dark", "modern-light" }) do
         local theme = builder.build(mode)
         for _, shape in ipairs({
@@ -77,7 +75,7 @@ for _, id in ipairs({ "state", "trim-panel" }) do
                 local function create()
                     return panel.create(lvgl.box({ x = 0, y = 0, w = rect.w, h = rect.h }), rect, settings, services)
                 end
-                local legacy, instance = create(), create()
+                local instance = create()
                 local entry = { module = panel, instance = instance, interval = panel.refreshInterval }
                 local task = host.task(entry)
                 for cycle = 1, 10 do
@@ -98,23 +96,31 @@ for _, id in ipairs({ "state", "trim-panel" }) do
                         state.raw = state.value * 8
                     end
                     if id == "state" and cycle == 10 then
-                        legacy.feeds[1], instance.feeds[1] = nil, nil
+                        instance.feeds[1] = nil
                     elseif id == "trim-panel" and cycle == 8 then
-                        legacy.indicators[1].feed, instance.indicators[1].feed = nil, nil
+                        instance.indicators[1].feed = nil
                     end
-                    panel.refresh(legacy)
                     local now = cycle * 20
                     assert(task:step(1, "run", now) == 20 and task.used == 1)
                     assert(entry.nextRefresh == now + 20)
-                    sameTree(legacy.panel.root, instance.panel.root)
+                    local drawn = {}
+                    panel.render(instance, drawn)
+                    assert(instance.stateName == drawn.state or id == "state" and instance.stateName == drawn.background)
+                    if id == "state" then
+                        assert(instance.value.properties.text == drawn.text)
+                    elseif instance.showValue then
+                        for index, indicator in ipairs(instance.indicators) do
+                            assert(indicator.value.properties.text == drawn["text" .. index])
+                        end
+                    end
                 end
                 local before = writes(instance.panel.root)
                 task:step(1, "run", 220)
                 assert(writes(instance.panel.root) == before, "stable control frames must not repaint")
                 local resized = { x = 0, y = 0, w = rect.w + 20, h = rect.h + 30 }
-                panel.update(legacy, resized)
                 panel.update(instance, resized)
-                sameTree(legacy.panel.root, instance.panel.root)
+                assert(instance.panel.root.properties.w == resized.w)
+                assert(instance.panel.root.properties.h == resized.h)
                 local scheduler = fixture.module("lib/scheduler.lua").new({ steady = 1250, background = 1130 })
                 assert(scheduler:add({ id = "control-panel", decl = panel.decl, instance = task, due = 240 }))
                 local previous = entry.nextRefresh
@@ -127,4 +133,4 @@ for _, id in ipairs({ "state", "trim-panel" }) do
         end
     end
 end
-print("Control panel tasks: legacy parity, intervals, stable frames, resizing and hidden eligibility passed")
+print("Control panel tasks: readings, intervals, stable frames, resizing and hidden eligibility passed")

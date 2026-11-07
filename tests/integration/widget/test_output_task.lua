@@ -37,13 +37,25 @@ local services = {
 local rect = { x = 0, y = 0, w = 800, h = 1000 }
 local function create()
     local instance = output.create(lvgl.box({ x = 0, y = 0, w = 800, h = 1000 }), rect, settings, services)
-    for _ = 1, 70 do
-        output.refresh(instance)
+    local task = panelHost.task({ module = output, instance = instance, interval = 10 })
+    local done = false
+    for _ = 1, 1000 do
+        if task:step(task.want or 1, task.stage, getTime()) == 10 then
+            done = true
+            break
+        end
     end
-    assert(instance.showRows == 32)
+    assert(done and instance.showRows == 32)
     return instance
 end
-local legacy, instance = create(), create()
+local expectedPanel, instance = create(), create()
+local expectedTask = panelHost.task({ module = output, instance = expectedPanel, interval = 10 })
+local function finishExpected()
+    for _ = 1, 1000 do
+        if expectedTask:step(1, expectedTask.stage, getTime()) == 10 then return end
+    end
+    error("Output comparison task did not finish")
+end
 local entry = { module = output, instance = instance, interval = 10, nextRefresh = getTime() }
 local task = panelHost.task(entry)
 local function step(grant)
@@ -73,7 +85,7 @@ for _, available in ipairs({ true, false, true }) do
         feed.fraction = -index / 32
         feed.trim.fraction = index / 32
     end
-    output.refresh(legacy)
+    finishExpected()
     for slice = 1, 4 do
         assert(step() == 1, "unfinished caption work and capture keep a one-tick release")
         if slice < 4 then
@@ -84,7 +96,7 @@ for _, available in ipairs({ true, false, true }) do
     step()
     assert(task.stage == "apply" and instance.pendingDrawn, "prepare publishes a retained render snapshot")
     local frozen = instance.pendingDrawn
-    local expected = snapshot(legacy)
+    local expected = snapshot(expectedPanel)
     for index = 1, 32 do
         feeds[index].fraction = 1.5
     end
@@ -109,7 +121,7 @@ for _, available in ipairs({ true, false, true }) do
             assert(delay == 10 and task.stage == "prepare")
         end
     end
-    assert(snapshot(instance) == expected, "completed grant-sized application matches the legacy output")
+    assert(snapshot(instance) == expected, "completed application is consistent across grants")
 end
 
 local function finish()
@@ -164,7 +176,7 @@ finish()
 assert(instance.showRows == 32, "one-tick mounting continuations must finish every row")
 
 for _, target in ipairs({ "prepare", "render", "apply", "partial" }) do
-    for _, action in ipairs({ "cancelRefresh", "refresh" }) do
+    for _, action in ipairs({ "cancelRefresh" }) do
         feeds[1].fraction = feeds[1].fraction == 0.75 and -0.75 or 0.75
         assert(step() == 1 and instance.captionWork)
         if target ~= "prepare" then
@@ -184,9 +196,9 @@ for _, target in ipairs({ "prepare", "render", "apply", "partial" }) do
         if target ~= "prepare" then
             assert(step(2) == 1 and task.used == 0 and task.stage == "prepare")
         end
-        output.refresh(legacy)
+        finishExpected()
         finish()
-        assert(snapshot(instance) == snapshot(legacy), action .. " resumes after " .. target)
+        assert(snapshot(instance) == snapshot(expectedPanel), action .. " resumes after " .. target)
     end
 end
 
@@ -196,4 +208,4 @@ instance.stateName, instance.rendered = nil, nil
 finish()
 assert(instance.showRows == 0 and task.used == 1, "an empty panel charges its final presentation unit")
 
-print("Output task row grants and snapshot parity passed")
+print("Output task row grants and snapshot behavior passed")

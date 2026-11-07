@@ -63,7 +63,14 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                             services
                         )
                     end
-                    local legacy, instance = create(), create()
+                    local expected, instance = create(), create()
+                    local expectedTask = host.task({ module = panel, instance = expected, interval = 20 })
+                    local function finishExpected()
+                        for _ = 1, 100 do
+                            if expectedTask:step(expectedTask.want or 1, expectedTask.stage, 100) == 20 then return end
+                        end
+                        error("RX comparison task did not finish")
+                    end
                     local candidates = 0
                     instance.themeBuilder = setmetatable({
                         panel = function(...)
@@ -108,13 +115,13 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                         elseif cycle == 9 then
                             state.raw = nil
                         elseif cycle == 10 then
-                            legacy.feed, instance.feed = nil, nil
+                            expected.feed, instance.feed = nil, nil
                         elseif cycle == 12 then
-                            legacy.feed, instance.feed = support.snapshot(state), support.snapshot(state)
-                            panel.resetSession(legacy, 1100)
+                            expected.feed, instance.feed = support.snapshot(state), support.snapshot(state)
+                            panel.resetSession(expected, 1100)
                             panel.resetSession(instance, 1100)
                         end
-                        panel.refresh(legacy)
+                        finishExpected()
                         local hasFeed = instance.feed ~= nil
                         local delay = step()
                         assert(task.used == 1)
@@ -131,19 +138,19 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                         else
                             assert(delay == 20)
                         end
-                        sameTree(legacy.panel.root, instance.panel.root)
+                        sameTree(expected.panel.root, instance.panel.root)
                     end
                     state.available, state.stale, state.raw = true, false, { 4.0, 4.1 }
-                    panel.refresh(legacy)
+                    finishExpected()
                     finish()
                     local before = writes(instance.panel.root)
                     finish()
                     assert(writes(instance.panel.root) == before, "stable RX frames must not repaint")
-                    sameTree(legacy.panel.root, instance.panel.root)
+                    sameTree(expected.panel.root, instance.panel.root)
                     local resized = { x = 0, y = 0, w = rect.w + 20, h = rect.h + 30 }
-                    panel.update(legacy, resized)
+                    panel.update(expected, resized)
                     panel.update(instance, resized)
-                    sameTree(legacy.panel.root, instance.panel.root)
+                    sameTree(expected.panel.root, instance.panel.root)
                     local scheduler = fixture.module("lib/scheduler.lua").new({ steady = 1250, background = 1130 })
                     assert(scheduler:add({ id = "rx", decl = panel.decl, instance = task, due = 200 }))
                     local before, previous = writes(instance.panel.root), entry.nextRefresh
@@ -154,7 +161,7 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                     finish()
                     if mode == "modern-dark" and visual == "bar" and reading == "cell" and flags == 7 then
                         for _, target in ipairs({ "geometry", "layout", "render", "apply" }) do
-                            for _, action in ipairs({ "resize", "refresh", "reset" }) do
+                            for _, action in ipairs({ "resize", "cancel", "reset" }) do
                                 state.raw = { 4.1 }
                                 local subject = create()
                                 state.raw = {}
@@ -172,8 +179,8 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                                 state.raw = { 4.0, 4.2 }
                                 if action == "resize" then
                                     panel.update(subject, resized)
-                                elseif action == "refresh" then
-                                    panel.refresh(subject)
+                                elseif action == "cancel" then
+                                    panel.cancelRefresh(subject)
                                 else
                                     panel.resetSession(subject, 1300)
                                 end
@@ -185,7 +192,15 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                                 elseif action == "reset" then
                                     panel.resetSession(expected, 1300)
                                 end
-                                panel.refresh(expected)
+                                local comparison = host.task({ module = panel, instance = expected, interval = 20 })
+                                local completed = false
+                                for _ = 1, 100 do
+                                    if comparison:step(comparison.want or 1, comparison.stage, 1400) == 20 then
+                                        completed = true
+                                        break
+                                    end
+                                end
+                                assert(completed, "RX comparison frame did not finish")
                                 local resumed = host.task({ module = panel, instance = subject, interval = 20 })
                                 for attempt = 1, 16 do
                                     local delay = resumed:step(1, resumed.stage, 1400)

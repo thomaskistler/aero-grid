@@ -22,12 +22,11 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
         for _, section in ipairs({ "identity", "theme", "panels", "sources", "log" }) do
             for variant = 1, 4 do
                 local reportHost, change = hostFor(section, variant)
-                local legacyHost, legacyChange = hostFor(section, variant)
+                local expectedHost, expectedChange = hostFor(section, variant)
                 local settings = assert(host.resolveSettings(panel, { section = section }))
                 local rect = { x = 0, y = 0, w = shape[3], h = shape[4] }
-                local function create(report, module)
-                    module = module or panel
-                    local context = module.create(lvgl.box({ x = 0, y = 0, w = rect.w, h = rect.h }), rect, settings, {
+                local function create(report)
+                    return panel.create(lvgl.box({ x = 0, y = 0, w = rect.w, h = rect.h }), rect, settings, {
                         theme = theme,
                         themeBuilder = builder,
                         primitives = reference.primitives,
@@ -37,11 +36,16 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                             return builder.state(theme, state, accent)
                         end,
                     })
-                    module.refresh(context)
-                    return context
                 end
-                local legacy, instance = create(legacyHost), create(reportHost)
+                local expected, instance = create(expectedHost), create(reportHost)
                 local task = host.task({ module = panel, instance = instance, interval = 50 })
+                local expectedTask = host.task({ module = panel, instance = expected, interval = 50 })
+                local function finishExpected()
+                    for _ = 1, 1200 do
+                        if expectedTask:step(expectedTask.want or 1, expectedTask.stage, getTime()) == 50 then return end
+                    end
+                    error("Host Diagnostics comparison did not finish")
+                end
                 local function step(grant)
                     local delay = task:step(grant or 1, task.stage, getTime())
                     assert(task.used >= 0 and task.used <= (grant or 1))
@@ -65,16 +69,16 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                 end
                 local function settle()
                     for _ = 1, 4 do
-                        panel.refresh(legacy)
+                        finishExpected()
                         finish(3)
                     end
-                    sameTree(legacy.panel.root, instance.panel.root)
+                    sameTree(expected.panel.root, instance.panel.root)
                 end
                 settle()
                 for cycle = 1, 8 do
                     change(cycle)
-                    legacyChange(cycle)
-                    panel.refresh(legacy)
+                    expectedChange(cycle)
+                    finishExpected()
                     assert(step() == 1)
                     for _ = 1, 1200 do
                         if task.stage == "apply" then
@@ -85,7 +89,7 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                     assert(task.stage == "apply")
                     change(99)
                     finish(cycle % 3 + 1)
-                    sameTree(legacy.panel.root, instance.panel.root)
+                    sameTree(expected.panel.root, instance.panel.root)
                     change(cycle)
                     settle()
                     local before = writes()
@@ -98,9 +102,9 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                         or (section == "theme" or section == "sources") and variant <= 2
                         or section == "log" and variant ~= 3
                     if target ~= "collect" or collects then
-                        for _, action in ipairs({ "cancelRefresh", "refresh", "update" }) do
+                        for _, action in ipairs({ "cancelRefresh", "update" }) do
                             change(1)
-                            legacyChange(1)
+                            expectedChange(1)
                             assert(step() == 1)
                             for _ = 1, 1200 do
                                 if task.stage == target then
@@ -117,10 +121,10 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                                 assert(step() == 1)
                             end
                             change(2)
-                            legacyChange(2)
+                            expectedChange(2)
                             if action == "update" then
                                 panel.update(instance, rect)
-                                panel.update(legacy, rect)
+                                panel.update(expected, rect)
                             else
                                 panel[action](instance)
                             end

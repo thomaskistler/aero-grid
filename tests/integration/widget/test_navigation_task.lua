@@ -60,10 +60,16 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                 local function create()
                     local context =
                         navigation.create(lvgl.box({ x = 0, y = 0, w = rect.w, h = rect.h }), rect, settings, services)
-                    navigation.refresh(context)
                     return context
                 end
-                local legacy, instance = create(), create()
+                local expected, instance = create(), create()
+                local expectedTask = panelHost.task({ module = navigation, instance = expected, interval = 25 })
+                local function finishExpected()
+                    for _ = 1, 20 do
+                        if expectedTask:step(expectedTask.want or 1, expectedTask.stage, getTime()) == 25 then return end
+                    end
+                    error("navigation comparison did not finish")
+                end
                 local task = panelHost.task({ module = navigation, instance = instance, interval = 25 })
                 local function step()
                     local delay = task:step(1, task.stage, getTime())
@@ -79,14 +85,14 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                     error("navigation task did not finish")
                 end
                 if instance.tape then
-                    for _, context in ipairs({ legacy, instance }) do
+                    for _, context in ipairs({ expected, instance }) do
                         context.tape.width, context.tape.height, context.tape.surface = nil, nil, nil
                         context.tape.pending = true
                     end
-                    navigation.refresh(legacy)
+                    finishExpected()
                     finish()
                     assert(not instance.tape.pending)
-                    sameTree(legacy.panel.root, instance.panel.root)
+                    sameTree(expected.panel.root, instance.panel.root)
                 end
                 for cycle = 1, 10 do
                     state.known, state.fix, state.home = cycle ~= 3, cycle ~= 4, cycle ~= 5
@@ -97,7 +103,7 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                     state.bearing = cycle ~= 4 and cycle ~= 5 and cycle * 53.1 or nil
                     satellites.value = cycle == 7 and 6 or cycle == 8 and 3 or 12
                     satellites.stale = cycle == 9
-                    navigation.refresh(legacy)
+                    finishExpected()
                     local captured = {}
                     for key, value in pairs(state) do
                         captured[key] = value
@@ -110,7 +116,7 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                         satellites.value, satellites.stale = 0, true
                         finish()
                     end
-                    sameTree(legacy.panel.root, instance.panel.root)
+                    sameTree(expected.panel.root, instance.panel.root)
                     for _, key in ipairs({
                         "source",
                         "known",
@@ -129,23 +135,23 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                 end
                 local writes = instance.value.writes
                 assert(step() == 25 and instance.value.writes == writes, "a stable frame must not repaint")
-                legacy.feed, instance.feed = nil, nil
+                expected.feed, instance.feed = nil, nil
                 if instance.tape then
-                    legacy.tape.pending, instance.tape.pending = true, true
+                    expected.tape.pending, instance.tape.pending = true, true
                 end
-                navigation.refresh(legacy)
+                finishExpected()
                 finish()
-                sameTree(legacy.panel.root, instance.panel.root)
-                legacy.feed, instance.feed = view, view
-                navigation.refresh(legacy)
+                sameTree(expected.panel.root, instance.panel.root)
+                expected.feed, instance.feed = view, view
+                finishExpected()
                 finish()
-                sameTree(legacy.panel.root, instance.panel.root)
+                sameTree(expected.panel.root, instance.panel.root)
                 local stages = instance.showTape and { "reading", "tape-frame", "tape" }
                     or instance.tape and { "reading", "tape-frame" }
                     or { "reading" }
                 for _, target in ipairs(stages) do
                     state.distance = state.distance + 12345.6
-                    navigation.refresh(legacy)
+                    finishExpected()
                     for _ = 1, 3 do
                         if task.stage == target then
                             break
@@ -158,10 +164,10 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                     assert(not instance.refreshWork)
                     assert(step() == 1 and task.used == 0 and task.stage == "render")
                     finish()
-                    sameTree(legacy.panel.root, instance.panel.root, "cancelled " .. target)
+                    sameTree(expected.panel.root, instance.panel.root, "cancelled " .. target)
 
                     state.distance = state.distance + 12345.6
-                    navigation.refresh(legacy)
+                    finishExpected()
                     for _ = 1, 3 do
                         if task.stage == target then
                             break
@@ -170,7 +176,7 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                     end
                     assert(task.stage == target and instance.refreshWork)
                     local changed = { x = 0, y = 0, w = rect.w + 20, h = rect.h + 30 }
-                    navigation.update(legacy, changed)
+                    navigation.update(expected, changed)
                     navigation.update(instance, changed)
                     assert(not instance.refreshWork)
                     assert(
@@ -178,17 +184,10 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                         "reflow invalidates a planned stage"
                     )
                     finish()
-                    sameTree(legacy.panel.root, instance.panel.root)
-                    state.distance = state.distance + 12345.6
-                    navigation.refresh(legacy)
-                    assert(step() == 1)
-                    navigation.refresh(instance)
-                    assert(step() == 1 and task.used == 0, "legacy refresh invalidates a captured frame")
-                    finish()
-                    sameTree(legacy.panel.root, instance.panel.root)
+                    sameTree(expected.panel.root, instance.panel.root)
                 end
             end
         end
     end
 end
-print("Navigation task: frozen output, complete legacy parity, stale plans and stable frames passed")
+print("Navigation task: frozen output, stale plans and stable frames passed")

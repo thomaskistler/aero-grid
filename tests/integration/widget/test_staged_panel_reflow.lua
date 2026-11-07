@@ -3,6 +3,7 @@
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(root).new()
 local sameTree = assert(loadfile(root .. "/tests/support/panel_tree.lua"))()
+local panelHost = fixture.module("lib/panel_host.lua")
 for _, kind in ipairs({ "chart", "navigation", "metric", "theme-showcase" }) do
     fixture.reset()
     local host = fixture.createLoaded(
@@ -24,11 +25,12 @@ for _, kind in ipairs({ "chart", "navigation", "metric", "theme-showcase" }) do
         )
     end
     local function settle(context)
-        if module.refresh then
-            for _ = 1, 80 do
-                module.refresh(context)
-            end
+        if module.idle then return end
+        local task = panelHost.task({ module = module, instance = context, interval = 20 })
+        for _ = 1, 2000 do
+            if task:step(task.want or 1, task.stage, getTime()) ~= 1 then return end
         end
+        error(kind .. ": panel task did not finish")
     end
     local function object(context)
         return context.root or context.panel.root
