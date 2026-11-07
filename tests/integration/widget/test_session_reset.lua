@@ -205,6 +205,12 @@ equal(writes, 1)
 equal(model.getGlobalVariable(8, 0), 18)
 assert(not owner.view.active)
 pump(60)
+untilState(function()
+    for _, context in ipairs({ first, second }) do
+        if panel(context, "chart").series[1].feed.count == 0 then return false end
+    end
+    return true
+end)
 equal(sticky, false)
 for index, context in ipairs({ first, second }) do
     local history = context.serviceRuntime.byId.history

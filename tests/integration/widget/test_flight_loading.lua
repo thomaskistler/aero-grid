@@ -253,7 +253,9 @@ for _, parkedStage in ipairs({
             fixture.tick(10)
             definition.background(context)
             assert(advances - before <= 1, "one callback may help at most one owner atom")
-            assert(owner:owningContext() == creator)
+            local current = owner:owningContext()
+            assert(owner.documentLoaded or current == creator, "only the creator owns an unpublished document")
+            assert(current == creator or current == hidden or current == observer, "Flight ownership must stay with a live member")
             assert(not owner.loadError or parkedStage == "damaged")
             assert(not owner.documentLoaded or parkedStage == "damaged"
                 or owner.document.revision == (parkedStage == "missing" and 0 or 7))
