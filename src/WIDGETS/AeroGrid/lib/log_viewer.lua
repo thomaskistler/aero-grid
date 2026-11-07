@@ -2,9 +2,6 @@
 
 local viewer = { RUNTIME_API = 1 }
 
-viewer.WORK_BOUNDS = {
-    snapshot = 400, header = 250, rows = 400, wrap = 700, render = 250, idle = 70, input = 300,
-}
 
 function viewer.stageOf(state)
     return state.buildStage or state.renderIndex and "render" or state.prepareIndex and "wrap" or "idle"
@@ -247,6 +244,12 @@ function viewer.handle(host, event, touch)
         requestRender(state)
     end
     return true
+end
+
+function viewer.bindCosts(costs)
+    viewer.WORK_BOUNDS = costs:group("log-viewer", {
+        "snapshot", "header", "rows", "wrap", "render", "idle", "input"
+    })
 end
 
 return viewer

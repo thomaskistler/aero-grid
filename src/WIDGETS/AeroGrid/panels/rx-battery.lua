@@ -50,11 +50,11 @@ local rxBattery = {
         kinds = { steady = true },
         first = "prepare",
         stages = {
-            prepare = { fixed = 0, perUnit = 1340, maxUnits = 1 },
-            geometry = { fixed = 0, perUnit = 3390, maxUnits = 1 },
-            layout = { fixed = 0, perUnit = 870, maxUnits = 1 },
-            render = { fixed = 0, perUnit = 890, maxUnits = 1 },
-            apply = { fixed = 0, perUnit = 1430, maxUnits = 1 },
+            prepare = { maxUnits = 1 },
+            geometry = { maxUnits = 1 },
+            layout = { maxUnits = 1 },
+            render = { maxUnits = 1 },
+            apply = { maxUnits = 1 },
         },
     },
     settings = {
@@ -1288,6 +1288,6 @@ function rxBattery.construct(context, rect)
     return false
 end
 
-rxBattery.reflowDecl = { callback = rxBattery.reflow, bound = 2260 }
+rxBattery.reflowDecl = { callback = rxBattery.reflow }
 
 return rxBattery

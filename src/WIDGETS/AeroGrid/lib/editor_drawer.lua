@@ -1,12 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 local drawer = { RUNTIME_API = 1 }
-drawer.WORK_BOUNDS = {
-    build = 1700, layout = 500, finish = 200,
-    write = 1100, error = 500, module = 1500, snapshot = 800, summaries = 300, forms = 1850, items = 400,
-    ["add-module"] = 1500, ["add-spans"] = 1000, ["add-cells"] = 600, ["add-place"] = 750, ["add-commit"] = 700, ["add-open"] = 1000,
-    append = 1000, ["remove-item"] = 1000, remove = 500, navigate = 400, back = 400,
-}
 drawer.MEASURED_FORMS = {
     output = true, chart = true, ["flight-counter"] = true, ["flight-mode"] = true,
     ["flight-timer"] = true, ["host-diagnostics"] = true, ["link-status"] = true,
@@ -1172,6 +1166,14 @@ function drawer.advance(context, state)
         state.drawerPending, state.drawerDismiss = state.drawerDismiss, nil
     end
     return true
+end
+
+function drawer.bindCosts(costs)
+    drawer.WORK_BOUNDS = costs:group("editor-drawer", {
+        "build", "layout", "finish", "write", "error", "module", "snapshot", "summaries",
+        "forms", "items", "add-module", "add-spans", "add-cells", "add-place", "add-commit",
+        "add-open", "append", "remove-item", "remove", "navigate", "back"
+    })
 end
 
 return drawer

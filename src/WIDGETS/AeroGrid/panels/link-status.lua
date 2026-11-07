@@ -69,11 +69,11 @@ local linkStatus = {
         kinds = { steady = true },
         first = "prepare",
         stages = {
-            prepare = { fixed = 0, perUnit = 840, maxUnits = 1 },
-            geometry = { fixed = 0, perUnit = 3210, maxUnits = 1 },
-            layout = { fixed = 0, perUnit = 1080, maxUnits = 1 },
-            render = { fixed = 0, perUnit = 1710, maxUnits = 1 },
-            apply = { fixed = 0, perUnit = 1390, maxUnits = 1 },
+            prepare = { maxUnits = 1 },
+            geometry = { maxUnits = 1 },
+            layout = { maxUnits = 1 },
+            render = { maxUnits = 1 },
+            apply = { maxUnits = 1 },
         },
     },
     settings = {
@@ -1423,6 +1423,6 @@ function linkStatus.construct(context, rect)
     return false
 end
 
-linkStatus.reflowDecl = { callback = linkStatus.reflow, bound = 3240 }
+linkStatus.reflowDecl = { callback = linkStatus.reflow }
 
 return linkStatus

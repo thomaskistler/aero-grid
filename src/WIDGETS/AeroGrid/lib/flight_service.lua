@@ -951,11 +951,11 @@ end
 flight.TICK_DECL = {
     class = "normal",
     stages = {
-        run = { fixed = 0, perUnit = 1760, maxUnits = 1 },
-        configure = { fixed = 0, perUnit = 1620, maxUnits = 1 },
+        run = { maxUnits = 1 },
+        configure = { maxUnits = 1 },
     },
 }
-flight.SMART_DECL = { class = "normal", stages = { run = { fixed = 0, perUnit = 2310, maxUnits = 1 } } }
+flight.SMART_DECL = { class = "normal", stages = { run = { maxUnits = 1 } } }
 
 function broker:owningContext()
     return self.context and self.context[1]
@@ -1104,6 +1104,11 @@ function flight.new(env, support, runtime)
         return owner:boundaries(sequence, epoch)
     end
     return facade
+end
+
+function flight.bindCosts(costs)
+    costs:stages("flight", flight.TICK_DECL)
+    costs:stages("flight.smart", flight.SMART_DECL)
 end
 
 return flight

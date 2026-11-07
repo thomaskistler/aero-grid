@@ -37,7 +37,7 @@ local flightTimer = {
     decl = {
         class = "normal",
         kinds = { steady = true },
-        stages = { run = { fixed = 0, perUnit = 1300, maxUnits = 1 } },
+        stages = { run = { maxUnits = 1 } },
     },
     settings = {
         { key = "timer", label = "Model timer", type = "number", default = 0 },
@@ -770,6 +770,6 @@ function flightTimer.construct(context, rect)
     return false
 end
 
-flightTimer.reflowDecl = { callback = flightTimer.reflow, bound = 3970 }
+flightTimer.reflowDecl = { callback = flightTimer.reflow }
 
 return flightTimer

@@ -8,7 +8,8 @@
 -- callback (the native counter does not enforce the callback limit).
 
 local config = assert(loadScript("/WIDGETS/AeroGrid/audit/config.lua"))()
-local scheduler = assert(loadScript("/WIDGETS/AeroGrid/lib/scheduler.lua"))()
+local costs = assert(loadScript("/WIDGETS/AeroGrid/audit/costs.lua"))(nil, true)
+local scheduler = costs:bind("lib/scheduler.lua", assert(loadScript("/WIDGETS/AeroGrid/lib/scheduler.lua"))())
 local overhead = assert(loadScript("/WIDGETS/AeroGrid/audit/scheduler_overhead.lua"))()
 local measure = assert(loadScript("/WIDGETS/AeroGrid/audit/scheduler_measure.lua"))()
 local mixes = assert(loadScript("/WIDGETS/AeroGrid/audit/scheduler_mixes.lua"))()
@@ -71,7 +72,7 @@ local function measureAll()
             function(relative, ...)
                 local path = string.sub(relative, 1, 9) == "@support/" and "audit/" .. string.sub(relative, 10)
                     or relative
-                return assert(loadScript("/WIDGETS/AeroGrid/" .. path))(...)
+                return costs:bind(path, assert(loadScript("/WIDGETS/AeroGrid/" .. path))(...))
             end
         )
         results.cases[case.id] = measure.report(case, __count, __pause, scheduler)

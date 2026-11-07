@@ -3,11 +3,6 @@
 local storeModule = {
     RUNTIME_API = 1,
     VERSION = 1,
-    SAVE_BOUNDS = {
-        read = 650, parse = 1500, build = 850, previous = 850, prepare = 900,
-        serialize = 1900, roundtrip = 1300, roundtrip_build = 850, verify = 850, install = 1200,
-    },
-    LOAD_BOUNDS = { start = 120, read = 670, parse = 1500, build = 850, previous = 850 },
 }
 
 local function copy(value)
@@ -401,6 +396,16 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
         end
     end
     return instance
+end
+
+function storeModule.bindCosts(costs)
+    storeModule.SAVE_BOUNDS = costs:group("settings-store-save", {
+        "read", "parse", "build", "previous", "prepare", "serialize", "roundtrip",
+        "roundtrip_build", "verify", "install"
+    })
+    storeModule.LOAD_BOUNDS = costs:group("settings-store-load", {
+        "start", "read", "parse", "build", "previous"
+    })
 end
 
 return storeModule

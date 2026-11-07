@@ -101,7 +101,7 @@ $(LUA32):
 	@"$@" -e "assert(math.maxinteger == 2147483647 and string.packsize('n') == 4)"
 
 test-lua32: $(LUA32)
-	@for file in $(SCHEDULER_TESTS); do "$(LUA32)" "$$file" "$(CURDIR)" || exit 1; done
+	@for file in $(SCHEDULER_TESTS); do "$(LUA32)" tests/support/lua32.lua "$$file" "$(CURDIR)" || exit 1; done
 
 test-installer:
 	@"$(PYTHON)" -m unittest discover -s tools -p 'test_installer_*.py'

@@ -31,9 +31,9 @@ local probe = {
         kinds = { steady = true },
         first = "prepare",
         stages = {
-            prepare = { fixed = 0, perUnit = 450, maxUnits = 1 },
-            describe = { fixed = 0, perUnit = 310, maxUnits = 1 },
-            apply = { fixed = 280, perUnit = 50, maxUnits = 2 },
+            prepare = { maxUnits = 1 },
+            describe = { maxUnits = 1 },
+            apply = { maxUnits = 2 },
         },
     },
     settings = {
@@ -365,6 +365,6 @@ function probe.update(context, rect)
     context.visibleRows = area.rows
 end
 
-probe.reflowDecl = { callback = probe.update, bound = 1900 }
+probe.reflowDecl = { callback = probe.update }
 
 return probe

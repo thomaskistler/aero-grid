@@ -38,7 +38,7 @@ local txBattery = {
     decl = {
         class = "normal",
         kinds = { steady = true },
-        stages = { run = { fixed = 0, perUnit = 1410, maxUnits = 1 } },
+        stages = { run = { maxUnits = 1 } },
     },
     settings = {
         -- "TX BATTERY" needs ten characters of a header that has about five.
@@ -901,6 +901,6 @@ function txBattery.construct(context, rect)
     return false
 end
 
-txBattery.reflowDecl = { callback = txBattery.reflow, bound = 2300 }
+txBattery.reflowDecl = { callback = txBattery.reflow }
 
 return txBattery

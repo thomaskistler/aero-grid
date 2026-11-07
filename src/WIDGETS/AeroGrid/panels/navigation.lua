@@ -49,10 +49,10 @@ local navigation = {
         first = "render",
         kinds = { steady = true },
         stages = {
-            render = { fixed = 0, perUnit = 790, maxUnits = 1 },
-            reading = { fixed = 0, perUnit = 2740, maxUnits = 1 },
-            ["tape-frame"] = { fixed = 0, perUnit = 3240, maxUnits = 1 },
-            tape = { fixed = 0, perUnit = 2730, maxUnits = 1 },
+            render = { maxUnits = 1 },
+            reading = { maxUnits = 1 },
+            ["tape-frame"] = { maxUnits = 1 },
+            tape = { maxUnits = 1 },
         },
     },
     settings = {
@@ -1220,6 +1220,6 @@ function navigation.reflow(context, rect, _, _, span, begin)
     return false
 end
 
-navigation.reflowDecl = { callback = navigation.reflow, bound = 3470 }
+navigation.reflowDecl = { callback = navigation.reflow }
 
 return navigation

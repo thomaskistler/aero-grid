@@ -28,9 +28,9 @@ output.decl = {
     first = "prepare",
     kinds = { steady = true },
     stages = {
-        prepare = { fixed = 0, perUnit = 1840, maxUnits = 1 },
-        render = { fixed = 0, perUnit = 3300, maxUnits = 1 },
-        apply = { fixed = 460, perUnit = 430, maxUnits = 2 },
+        prepare = { maxUnits = 1 },
+        render = { maxUnits = 1 },
+        apply = { maxUnits = 2 },
     },
 }
 
@@ -550,6 +550,6 @@ function output.reflow(context, rect, settings, _, _, begin)
     return false
 end
 
-output.reflowDecl = { callback = output.reflow, bound = 2230 }
+output.reflowDecl = { callback = output.reflow }
 
 return output

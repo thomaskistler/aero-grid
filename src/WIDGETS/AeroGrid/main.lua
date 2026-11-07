@@ -67,7 +67,6 @@ local WIDGET_PATH = "/WIDGETS/AeroGrid/"
 
 -- The probe is development-only; releases leave it disabled.
 local SCHEDULER_PROBE = false
-local RESTART_LOAD_BOUND = 600
 
 local function directory(path)
     return string.sub(path, -1) == "/" and path or path .. "/"
@@ -297,6 +296,29 @@ local function loadChunk(filename)
     return chunk, loadError
 end
 
+local widgetCosts
+
+--- The instruction estimates, loaded once per Lua state. The snapshot chunk is
+--- not cached, so only its estimate tables stay in memory.
+local function loadCosts(base)
+    if widgetCosts then
+        return widgetCosts
+    end
+    local costsChunk, loadError = loadChunk(joinPath(base, "lib/costs.lua"))
+    local snapshot = costsChunk and loadScript(joinPath(base, "lib/instruction_snapshot.lua"))
+    if not snapshot then
+        return nil, loadError or "lib/instruction_snapshot.lua did not load"
+    end
+    local ok, result = pcall(function()
+        return costsChunk().new(snapshot())
+    end)
+    if not ok then
+        return nil, result
+    end
+    widgetCosts = result
+    return result
+end
+
 --- Load and execute a Lua module while containing compile/runtime failures.
 ---@param base string
 ---@param relative string
@@ -320,8 +342,22 @@ local function loadModule(base, relative, runtimeApi, ...)
     if runtimeApi and rawget(module, "RUNTIME_API") ~= runtimeApi then
         return nil, relative .. ": incompatible runtime API; copy the complete AeroGrid package"
     end
+    local costs, costsError = loadCosts(base)
+    if not costs then
+        return nil, "instruction estimates: " .. tostring(costsError)
+    end
+    local bound, bindError = pcall(costs.bind, costs, relative, module)
+    if not bound then
+        return nil, bindError
+    end
 
     return module
+end
+
+--- One of the widget's own foreground work bounds. Reached only after modules
+--- have loaded, so the estimates exist.
+local function mainBound(context, key)
+    return context.costs:bound("main", key)
 end
 
 local ERROR_LOG_LIMIT = 64
@@ -588,6 +624,7 @@ local function create(zone, widgetOptions, path)
         packageError = "incompatible package contract; copy the complete AeroGrid package"
     end
     context.packageInfo = package
+    context.costs = widgetCosts
     if not package then
         addError(context, "package: " .. tostring(packageError))
     else
@@ -1008,7 +1045,7 @@ end
 
 local function advanceFlightJob(context)
     if context.pendingFlightError then
-        updateModalServices(context, 1500, "loader")
+        updateModalServices(context, mainBound(context, "flightError"), "loader")
         addError(context, "flight: " .. context.pendingFlightError)
         context.pendingFlightError = nil
         showErrors(context)
@@ -1020,7 +1057,7 @@ local function advanceFlightJob(context)
         return false
     end
     local registration = context.flightRegistration
-    updateModalServices(context, registration.workBound(job) + 200, "loader")
+    updateModalServices(context, registration.workBound(job) + mainBound(context, "registrationOverhead"), "loader")
     local done, ok, message = registration.advance(job)
     if done then
         context[field] = nil
@@ -1551,7 +1588,7 @@ local function refresh(context, widgetEvent, touchState)
     end
     if context.aeroMenuModule and context.aeroMenuModule.handle(context, widgetEvent, touchState) then
         context.editorPress = nil
-        updateModalServices(context, 300, "modal-menu")
+        updateModalServices(context, mainBound(context, "modalMenu"), "modal-menu")
         return
     end
     if context.aerogridMenu and context.aerogridMenu.open then
@@ -1631,7 +1668,7 @@ local function refresh(context, widgetEvent, touchState)
     end
 
     if context.reloadState == "rebuild" then
-        updateModalServices(context, RESTART_LOAD_BOUND, "loader")
+        updateModalServices(context, mainBound(context, "restartLoad"), "loader")
         restartLoading(context)
         return
     end
@@ -1714,7 +1751,7 @@ local function refresh(context, widgetEvent, touchState)
         elseif context.editorUi and drawerBound then
             updateModalServices(context, drawerBound, "editor-drawer")
         elseif context.editorUi and (building or preview and preview.workBound) then
-            updateModalServices(context, building and 3000 or preview.workBound, "editor-build")
+            updateModalServices(context, building and mainBound(context, "editorBuild") or preview.workBound, "editor-build")
         end
         return
     end
@@ -1750,7 +1787,7 @@ local function refresh(context, widgetEvent, touchState)
             elseif editorInputBound then
                 updateModalServices(context, editorInputBound, "editor-input")
             elseif wasLocation then
-                updateModalServices(context, 300, "modal-location")
+                updateModalServices(context, mainBound(context, "modalLocation"), "modal-location")
             end
             return
         end
@@ -1858,7 +1895,7 @@ local function background(context)
         advanceLifecycle(context, "retirePage")
         return
     elseif context.reloadState == "rebuild" then
-        updateModalServices(context, RESTART_LOAD_BOUND, "loader")
+        updateModalServices(context, mainBound(context, "restartLoad"), "loader")
         restartLoading(context)
         return
     elseif context.stage then

@@ -43,7 +43,7 @@ local modelIdentity = {
     decl = {
         class = "normal",
         kinds = { steady = true },
-        stages = { run = { fixed = 0, perUnit = 1290, maxUnits = 1 } },
+        stages = { run = { maxUnits = 1 } },
     },
     settings = {
         -- Responsive content, like `navigation`: which arrangement is drawn.
@@ -663,6 +663,6 @@ function modelIdentity.update(context, rect)
     context.showImage = area.showImage
 end
 
-modelIdentity.reflowDecl = { callback = modelIdentity.update, bound = 2730 }
+modelIdentity.reflowDecl = { callback = modelIdentity.update }
 
 return modelIdentity

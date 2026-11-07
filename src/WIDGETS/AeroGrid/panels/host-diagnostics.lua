@@ -58,10 +58,10 @@ local diagnostics = {
         kinds = { steady = true },
         first = "prepare",
         stages = {
-            prepare = { fixed = 0, perUnit = 470, maxUnits = 1 },
-            collect = { fixed = 0, perUnit = 440, maxUnits = 1 },
-            finish = { fixed = 0, perUnit = 400, maxUnits = 1 },
-            apply = { fixed = 340, perUnit = 50, maxUnits = 3 },
+            prepare = { maxUnits = 1 },
+            collect = { maxUnits = 1 },
+            finish = { maxUnits = 1 },
+            apply = { maxUnits = 3 },
         },
     },
     settings = {
@@ -707,6 +707,6 @@ function diagnostics.update(context, rect)
     context.visibleLines = area.lines
 end
 
-diagnostics.reflowDecl = { callback = diagnostics.update, bound = 1800 }
+diagnostics.reflowDecl = { callback = diagnostics.update }
 
 return diagnostics

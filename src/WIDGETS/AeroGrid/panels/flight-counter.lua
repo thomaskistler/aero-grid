@@ -9,7 +9,7 @@ local flightCounter = {
     decl = {
         class = "normal",
         kinds = { steady = true },
-        stages = { run = { fixed = 0, perUnit = 1070, maxUnits = 1 } },
+        stages = { run = { maxUnits = 1 } },
     },
     settings = {
         { key = "label", label = "Label", type = "string", default = "FLT" },
@@ -154,6 +154,6 @@ function flightCounter.update(context, rect)
     context.primitives.centreReading(context, context.themeBuilder, area, area.value, context.text)
 end
 
-flightCounter.reflowDecl = { callback = flightCounter.update, bound = 3730 }
+flightCounter.reflowDecl = { callback = flightCounter.update }
 
 return flightCounter
