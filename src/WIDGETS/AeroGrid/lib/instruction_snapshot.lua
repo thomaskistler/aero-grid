@@ -117,7 +117,6 @@ return function(section)
                     ["rx-battery"] = 2550,
                     ["service-probe"] = 2200,
                     ["state"] = 3750,
-                    ["theme-showcase"] = 2950,
                     ["trim-panel"] = 4000,
                     ["tx-battery"] = 2550,
                     ["visit"] = 1500,

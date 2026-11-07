@@ -844,7 +844,7 @@ function uiModule.bindCosts(costs)
     uiModule.LAYOUT_BOUNDS = costs:group("editor-layout", {
         "visit", "chart", "flight-counter", "flight-mode", "flight-timer", "host-diagnostics",
         "link-status", "metric", "model-identity", "navigation", "output", "rx-battery",
-        "service-probe", "state", "theme-showcase", "trim-panel", "tx-battery"
+        "service-probe", "state", "trim-panel", "tx-battery"
     })
     uiModule.DRAG_BOUNDS = costs:group("editor-drag", {
         "module", "settings", "positions", "rects", "apply"
