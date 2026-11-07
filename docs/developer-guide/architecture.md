@@ -363,7 +363,9 @@ initial captions and readings have all been painted. Construction and reflow
 remain separate from periodic tasks.
 
 Registry and placement changes reconcile incrementally, reserving setup cost
-before task execution. Surviving tasks retain their releases; deferred work
+before task execution. Stable callbacks reuse the host's checked registry state;
+they do not allocate a reconciliation snapshot or repeat broker discovery before
+running tasks. Surviving tasks retain their releases; deferred work
 remains due when no room is available. Telemetry and History keep their 10-tick
 policy. Session resets cancel captured frames and release tasks in bounded turns,
 without also running ordinary work in those reset callbacks. Stable editor
