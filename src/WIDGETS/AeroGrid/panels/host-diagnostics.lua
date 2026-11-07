@@ -53,6 +53,17 @@ local diagnostics = {
     -- Read, not watched. Nothing here changes between frames except a panel
     -- failing or a source binding, and neither is worth a frame.
     refreshInterval = 50,
+    decl = {
+        class = "normal",
+        kinds = { steady = true },
+        first = "prepare",
+        stages = {
+            prepare = { maxUnits = 1 },
+            collect = { maxUnits = 1 },
+            finish = { maxUnits = 1 },
+            apply = { maxUnits = 3 },
+        },
+    },
     settings = {
         -- An empty label is not an absent one: it means derive the heading at
         -- runtime, here from the section being shown.
@@ -201,10 +212,10 @@ end
 --- Which palette was resolved, who asked for it, and what it had to adapt.
 ---@param host table Live host context.
 ---@return string[]
-function diagnostics.theme(host)
+local function themeHeading(host)
     local theme = host.theme
     if type(theme) ~= "table" then
-        return { "no theme" }
+        return
     end
 
     local lines = {
@@ -218,7 +229,14 @@ function diagnostics.theme(host)
     if theme.requested and theme.requested ~= theme.mode then
         lines[#lines + 1] = "fell back from " .. tostring(theme.requested)
     end
+    return lines
+end
 
+function diagnostics.theme(host)
+    local lines = themeHeading(host)
+    if not lines then
+        return { "no theme" }
+    end
     local before = #lines
     for _, notice in ipairs(host.notices or {}) do
         lines[#lines + 1] = tostring(notice.severity) .. ": " .. tostring(notice.text)
@@ -235,22 +253,31 @@ end
 --- One line per panel: what it is, where it sits, whether it lives.
 ---@param host table Live host context.
 ---@return string[]
+local function where(placement)
+    placement = placement or {}
+    return tostring(placement.id)
+        .. " "
+        .. tostring(placement.type)
+        .. " "
+        .. tostring(placement.colSpan or "?")
+        .. "x"
+        .. tostring(placement.rowSpan or "?")
+end
+
+local function panelLine(entry, rejected)
+    return where(entry.placement)
+        .. (
+            rejected and " REJECTED " .. tostring(entry.reason or "")
+            or entry.failed and " FAILED " .. tostring(entry.error or "")
+            or " ok"
+        )
+end
+
 function diagnostics.panels(host)
     local entries = host.panels or {}
     local rejected = host.rejected or {}
     if #entries == 0 and #rejected == 0 then
         return { "no panels" }
-    end
-
-    local function where(placement)
-        placement = placement or {}
-        return tostring(placement.id)
-            .. " "
-            .. tostring(placement.type)
-            .. " "
-            .. tostring(placement.colSpan or "?")
-            .. "x"
-            .. tostring(placement.rowSpan or "?")
     end
 
     -- Failures first, then the rest, because a panel this size sheds its last
@@ -262,16 +289,16 @@ function diagnostics.panels(host)
     -- there is no instance to put there. It is the half of this report that
     -- matters, so the host keeps it separately and it is listed first.
     for _, entry in ipairs(rejected) do
-        failed[#failed + 1] = where(entry.placement) .. " REJECTED " .. tostring(entry.reason or "")
+        failed[#failed + 1] = panelLine(entry, true)
     end
 
     for _, entry in ipairs(entries) do
         if entry.failed then
             -- Built, then raised in a later callback. Otherwise only an error
             -- banner, which may have scrolled before anyone looked.
-            failed[#failed + 1] = where(entry.placement) .. " FAILED " .. tostring(entry.error or "")
+            failed[#failed + 1] = panelLine(entry)
         else
-            healthy[#healthy + 1] = where(entry.placement) .. " ok"
+            healthy[#healthy + 1] = panelLine(entry)
         end
     end
 
@@ -296,6 +323,12 @@ end
 --- `Batt%` against `Bat%`, were an hour each.
 ---@param host table Live host context.
 ---@return string[]
+local function sourceLine(entry)
+    local state = entry.state or {}
+    return state.known and tostring(state.name) .. " #" .. tostring(state.id) .. " " .. tostring(state.state)
+        or tostring(state.name) .. " UNBOUND"
+end
+
 function diagnostics.sources(host)
     local registry = host.serviceRuntime
     local telemetry = registry and registry.byId and registry.byId.telemetry
@@ -313,9 +346,9 @@ function diagnostics.sources(host)
     for _, entry in ipairs(entries) do
         local state = entry.state or {}
         if state.known then
-            bound[#bound + 1] = tostring(state.name) .. " #" .. tostring(state.id) .. " " .. tostring(state.state)
+            bound[#bound + 1] = sourceLine(entry)
         else
-            unbound[#unbound + 1] = tostring(state.name) .. " UNBOUND"
+            unbound[#unbound + 1] = sourceLine(entry)
         end
     end
 
@@ -332,6 +365,12 @@ end
 --- Every section, by name.
 diagnostics.SECTIONS = {
     identity = diagnostics.identity,
+    theme = diagnostics.theme,
+    panels = diagnostics.panels,
+    sources = diagnostics.sources,
+    log = diagnostics.log,
+}
+local STAGED_REPORTERS = {
     theme = diagnostics.theme,
     panels = diagnostics.panels,
     sources = diagnostics.sources,
@@ -457,32 +496,193 @@ function diagnostics.create(parent, rect, settings, services)
     return context
 end
 
---- Repaint only the lines whose text changed.
----@param context table
-function diagnostics.refresh(context)
-    local lines = diagnostics.lines(context.host, context.section, context.visibleLines)
-    local start = context.section == "log" and math.max(1, #lines - context.visibleLines + 1) or 1
-    local changed = 0
+local function applyLine(context, index, text)
+    if text ~= context.texts[index] then
+        context.texts[index] = text
+        context.rows[index]:set({ text = text })
+        return true
+    end
+    return false
+end
 
-    for position = 1, context.visibleLines do
-        local index = context.section == "log" and context.visibleLines - position + 1 or position
-        local text = lines[start + index - 1] or ""
-        if text ~= context.texts[index] then
-            context.texts[index] = text
-            context.rows[index]:set({ text = text })
-            changed = changed + 1
-            -- A history shift changes every row; keep its repaint within the host budget.
-            if context.section == "log" and changed == 3 then
-                break
+function diagnostics.cancelRefresh(context)
+    context.refreshWork = nil
+end
+
+local function prepareReport(context)
+    local host, section = context.host, context.section
+    local work = {
+        stage = "collect",
+        section = section,
+        limit = context.visibleLines,
+        index = 1,
+        lines = {},
+        first = {},
+        second = {},
+        failed = 0,
+    }
+    if
+        type(host) ~= "table"
+        or diagnostics.SECTIONS[section] ~= STAGED_REPORTERS[section]
+        or not STAGED_REPORTERS[section]
+    then
+        work.lines, work.stage = diagnostics.lines(host, section, context.visibleLines), "finish"
+    elseif section == "theme" then
+        work.lines = themeHeading(host)
+        if not work.lines then
+            work.lines, work.stage = { "no theme" }, "finish"
+        else
+            work.entries = host.notices or {}
+            work.last = #work.entries
+            if work.last == 0 then
+                work.lines[#work.lines + 1], work.stage = "no notices", "finish"
+            end
+        end
+    elseif section == "panels" then
+        work.entries, work.rejected = host.panels or {}, host.rejected or {}
+        work.last, work.rejectedLast = #work.entries, #work.rejected
+        work.total, work.mode = work.last + work.rejectedLast, "rejected"
+        if work.total == 0 then
+            work.lines, work.stage = { "no panels" }, "finish"
+        end
+    elseif section == "sources" then
+        local registry = host.serviceRuntime
+        local telemetry = registry and registry.byId and registry.byId.telemetry
+        work.entries = telemetry and telemetry.entries
+        if not telemetry then
+            work.lines, work.stage = { "no telemetry service" }, "finish"
+        elseif type(work.entries) ~= "table" or #work.entries == 0 then
+            work.lines, work.stage = { "no sources subscribed" }, "finish"
+        else
+            work.last, work.total = #work.entries, #work.entries
+        end
+    else
+        work.log = host.diagnosticsLog
+        work.read = {}
+        if not work.log then
+            work.lines, work.stage = { "no shared diagnostics log" }, "finish"
+        end
+    end
+    return work
+end
+
+local function collectReport(work)
+    local section = work.section
+    if section == "theme" then
+        if work.index <= work.last and #work.lines < work.limit then
+            local notice = work.entries[work.index]
+            work.lines[#work.lines + 1] = tostring(notice.severity) .. ": " .. tostring(notice.text)
+            work.index = work.index + 1
+        else
+            work.stage = "finish"
+        end
+        return
+    end
+    if section == "log" then
+        if not work.logEntries then
+            work.logEntries = work.log:readVisibleStep(work.read, work.limit)
+            if work.logEntries and #work.logEntries == 0 then
+                work.lines, work.stage = { "No messages recorded" }, "finish"
+            end
+        elseif work.index <= #work.logEntries then
+            work.lines[#work.lines + 1] = work.log.format(work.logEntries[work.index])
+            work.index = work.index + 1
+        else
+            work.stage = "finish"
+        end
+        return
+    end
+    local rejected = section == "panels" and work.mode == "rejected"
+    local last = rejected and work.rejectedLast or work.last
+    if work.index > last then
+        if rejected then
+            work.mode, work.index = "panels", 1
+        else
+            work.stage = "finish"
+        end
+        return
+    end
+    local entry = (rejected and work.rejected or work.entries)[work.index]
+    local failed = rejected
+        or (section == "panels" and entry.failed or section == "sources" and not (entry.state or {}).known)
+    local bucket = failed and work.first or work.second
+    if failed then
+        work.failed = work.failed + 1
+    end
+    if #bucket < math.max(0, work.limit - 1) then
+        bucket[#bucket + 1] = section == "panels" and panelLine(entry, rejected) or sourceLine(entry)
+    end
+    work.index = work.index + 1
+end
+
+local function finishReport(work)
+    if work.total and work.total > 0 then
+        work.lines = {
+            work.section == "panels" and work.total .. " panels, " .. work.failed .. " failed"
+                or work.total .. " sources, " .. work.failed .. " unbound",
+        }
+        for _, bucket in ipairs({ work.first, work.second }) do
+            for index = 1, math.min(#bucket, math.max(0, work.limit - #work.lines)) do
+                work.lines[#work.lines + 1] = bucket[index]
             end
         end
     end
+    work.start = work.section == "log" and math.max(1, #work.lines - work.limit + 1) or 1
+    work.position, work.changed, work.stage = 1, 0, "apply"
+end
+
+function diagnostics.stageOf(context)
+    local work = context.refreshWork
+    local want = work and work.stage == "apply" and math.min(3, context.visibleLines - work.position + 1) or 1
+    return work and work.stage or "prepare", math.max(1, want)
+end
+
+function diagnostics.step(context, grant, stage)
+    context.used = 0
+    if grant < 1 or stage ~= diagnostics.stageOf(context) then
+        return nil, true
+    end
+    context.used = 1
+    local work = context.refreshWork
+    if stage == "apply" then
+        context.used = 0
+        for position = work.position, math.min(context.visibleLines, work.position + grant - 1) do
+            local index = context.section == "log" and context.visibleLines - position + 1 or position
+            if applyLine(context, index, work.lines[work.start + index - 1] or "") then
+                work.changed = work.changed + 1
+            end
+            context.used, work.position = context.used + 1, position + 1
+            if context.section == "log" and work.changed == 3 then
+                break
+            end
+        end
+        context.used = math.max(1, context.used)
+        if work.position > context.visibleLines or context.section == "log" and work.changed == 3 then
+            context.refreshWork = nil
+            return
+        end
+    else
+        local action = stage == "prepare" and prepareReport or stage == "collect" and collectReport or finishReport
+        local ok, result = pcall(action, stage == "prepare" and context or work)
+        if not ok then
+            context.refreshWork = {
+                stage = "finish",
+                section = context.section,
+                limit = context.visibleLines,
+                lines = { "report failed:", tostring(result) },
+            }
+        elseif stage == "prepare" then
+            context.refreshWork = result
+        end
+    end
+    return nil, true
 end
 
 --- Reposition after a zone change.
 ---@param context table
 ---@param rect AeroGridRect
 function diagnostics.update(context, rect)
+    diagnostics.cancelRefresh(context)
     local primitives = context.primitives
     local area = diagnostics.regionsFor(context.theme, context.themeBuilder, rect, context.fonts)
 
@@ -506,5 +706,7 @@ function diagnostics.update(context, rect)
 
     context.visibleLines = area.lines
 end
+
+diagnostics.reflowDecl = { callback = diagnostics.update }
 
 return diagnostics

@@ -4,6 +4,14 @@
 local armed = { RUNTIME_API = 1 }
 armed.__index = armed
 
+local INTERVAL = 20
+local POLL_CAP = 6
+
+armed.decl = {
+    class = "critical",
+    stages = { run = { maxUnits = POLL_CAP } },
+}
+
 local function valid(name)
     if type(name) ~= "string" then
         return false
@@ -39,9 +47,9 @@ armed.valid = valid
 armed.name = nativeName
 
 function armed.new(env, support, runtime)
-    return setmetatable({
+    local service = setmetatable({
         id = "armed",
-        interval = 20,
+        interval = INTERVAL,
         due = 0,
         count = 0,
         revision = 0,
@@ -51,7 +59,39 @@ function armed.new(env, support, runtime)
         condition = runtime.modelArmed,
         generation = runtime.armGeneration or 0,
         views = {},
+        entries = {},
+        cursor = 1,
+        remaining = nil,
     }, armed)
+    support.task(service, "run", {
+        id = "service:armed",
+        decl = armed.decl,
+        interval = INTERVAL,
+        critical = true,
+        run = armed.step,
+    })
+    return service
+end
+
+function armed:taskFailed()
+    for _, entry in ipairs(self.entries) do
+        entry.state.available, entry.state.fresh = false, false
+    end
+end
+
+--- Read the next bounded batch of arm conditions.
+---@param grant integer
+---@param now integer
+---@return integer delay
+function armed:step(grant, _, now)
+    if #self.entries == 0 then
+        return INTERVAL
+    end
+    local control = self.runtime.byId.control
+    local more = self.support.poll(self, "cursor", "remaining", self.entries, POLL_CAP, grant, control, nil, now)
+    control.markScheduledUpdate(control, now)
+    self.revision = self.revision + 1
+    return more and 1 or INTERVAL
 end
 
 function armed:state(legacy)
@@ -67,7 +107,13 @@ function armed:state(legacy)
     )
     local control = self.runtime.byId.control
     assert(name == "" or control, "Arm switch requires control service")
-    local reading = name ~= "" and control:switch(name) or nil
+    local reading, entry
+    if name ~= "" then
+        reading, entry = control:armSwitch(name)
+        self.entries[#self.entries + 1] = entry
+        self.count = self.count + 1
+        self.tasks.run.want = math.min(POLL_CAP, #self.entries)
+    end
     local metadata = {
         condition = name,
         key = name,
@@ -86,7 +132,7 @@ function armed:state(legacy)
             elseif key == "updatedAt" then
                 return reading and reading.updatedAt or 0
             end
-            local available = reading ~= nil and not control.failed and reading.available == true
+            local available = reading ~= nil and not self.failed and not control.failed and reading.available == true
             if key == "available" then
                 return available
             end
@@ -115,6 +161,10 @@ function armed:state(legacy)
     local view = self.support.snapshot(state)
     self.views[name] = view
     return view
+end
+
+function armed.bindCosts(costs)
+    costs:stages("armed", armed.decl)
 end
 
 return armed

@@ -8,6 +8,9 @@ fixture.reset()
 fixture.radio.fields.GAlt = { id = 106, name = "GAlt", unit = fixture.radio.fields.Alt.unit }
 fixture.radio.fields["GAlt+"] = { id = 108, name = "GAlt+", unit = fixture.radio.fields.Alt.unit }
 local context = fixture.createLoaded(nil, { Layout = "review-metric", Theme = "modern-dark" })
+-- This fixture checks Metric presentation, not saturation from seven legacy
+-- refresh bounds; leave room for the migrated telemetry tasks it reads.
+context.schedulerHost.panelBounds = setmetatable({ metric = 0 }, { __index = context.schedulerHost.panelBounds })
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assertions.assertEqual(#context.panels, 7)
@@ -15,6 +18,21 @@ fixture.assertNoOverlap(context)
 local altitude = fixture.instanceOf(context, "altitude")
 local speed = fixture.instanceOf(context, "speed")
 local voltage = fixture.instanceOf(context, "voltage")
+assert(
+    fixture.pumpUntil(context, function()
+        local unit = fixture.instanceOf(context, "sensor-unit")
+        return altitude.stateName == "normal"
+            and altitude.rangeText == "MAX 180 m"
+            and altitude.secondaryText == "VS 2.5 m/s"
+            and speed.rangeText == "RX 24.0 V"
+            and speed.secondaryText == "ALT 100 m"
+            and unit.unitText == "m/s"
+            and unit.showUnit
+            and not unit.unit.hidden
+            and fixture.instanceOf(context, "compact").text == "4.5"
+    end, 400, 20),
+    "initial Metric readings did not settle"
+)
 assert(altitude.bar)
 assert(speed.radial)
 assertions.assertEqual(speed.settings.source, "VSpd")

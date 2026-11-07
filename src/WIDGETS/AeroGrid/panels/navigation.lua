@@ -34,6 +34,8 @@
 ---@field feed? AeroGridNavigation Navigation subscription.
 ---@field satellites? AeroGridReading Optional satellite-count subscription.
 ---@field stateName string
+---@field refreshWork? table Frozen output and pending refresh stage.
+---@field used? integer Granted units consumed by the last task step.
 
 local navigation = {
     id = "navigation",
@@ -42,6 +44,17 @@ local navigation = {
     -- Telemetry GPS arrives at a few hertz at best, and the navigation service
     -- is itself rate limited because every update costs trigonometry.
     refreshInterval = 25,
+    decl = {
+        class = "normal",
+        first = "render",
+        kinds = { steady = true },
+        stages = {
+            render = { maxUnits = 1 },
+            reading = { maxUnits = 1 },
+            ["tape-frame"] = { maxUnits = 1 },
+            tape = { maxUnits = 1 },
+        },
+    },
     settings = {
         { key = "label", label = "Label", type = "string", default = "NAV" },
         { key = "source", label = "GPS source", type = "string", default = "GPS" },
@@ -536,7 +549,7 @@ function navigation.createTape(parent, context, area)
     return tape
 end
 
-function navigation.setTape(context, bearing, color, status)
+local function prepareTape(context)
     local tape, area = context.tape, context.area
     if not tape then
         return
@@ -578,6 +591,11 @@ function navigation.setTape(context, bearing, color, status)
             rim:set({ x = left, y = index % 2 == 1 and 6 or area.tapeHeight - 2, w = right - left })
         end
     end
+    return true
+end
+
+local function paintTape(context, bearing, color, status)
+    local tape, area = context.tape, context.area
     local valid = type(bearing) == "number" and bearing == bearing and math.abs(bearing) < math.huge
     local centre = math.floor(area.tapeWidth / 2)
     context.primitives.reconcile(tape.pointer, valid, {
@@ -631,13 +649,15 @@ function navigation.setTape(context, bearing, color, status)
     end
 end
 
---- Build the panel's LVGL objects.
----@param parent any
----@param rect AeroGridRect
----@param settings AeroGridNavigationSettings
----@param services table
----@return AeroGridNavigationContext
-function navigation.create(parent, rect, settings, services)
+function navigation.setTape(context, bearing, color, status)
+    if prepareTape(context) then
+        paintTape(context, bearing, color, status)
+    end
+end
+
+local reflow
+
+local function beginNavigation(parent, rect, settings, services)
     local theme = services.theme
     local primitives = services.primitives
     local fonts = services.fonts
@@ -675,7 +695,7 @@ function navigation.create(parent, rect, settings, services)
     end
     if settings.satelliteSource and settings.satelliteSource ~= "" then
         assert(services.telemetry, "navigation satellite count requires telemetry service")
-        context.satellites = services.telemetry:subscribe(settings.satelliteSource)
+        context.satellites = services.telemetry:subscribe(settings.satelliteSource, nil, 25)
     end
 
     -- The widest distance this panel can print, so the font is chosen from
@@ -683,8 +703,8 @@ function navigation.create(parent, rect, settings, services)
     context.sample = { digits = navigation.DIGITS, unit = navigation.UNIT }
 
     local area = navigation.regionsFor(theme, services.themeBuilder, rect, layout, fonts, context.sample)
+    context.area = area
 
-    local panel
     context.panel, context.label, context.badge = primitives.panelWithHeader(
         parent,
         rect,
@@ -695,7 +715,17 @@ function navigation.create(parent, rect, settings, services)
         settings.label,
         services.themeBuilder
     )
-    panel = context.panel
+    context.createServices = services
+    context.createPresentation = presentation
+    context.createStage = "controls"
+    return context
+end
+
+local function createControls(context)
+    local services, settings = context.createServices, context.settings
+    local theme, primitives, fonts = context.theme, context.primitives, context.fonts
+    local area, panel, layout = context.area, context.panel, context.layout
+    local presentation = context.createPresentation
     if context.satellites and settings.showSatellites ~= false then
         context.satelliteHeader = lvgl.box(panel.root, { x = 0, y = 0, w = 1, h = 1 })
         local filename = services.host.path .. "assets/" .. (theme.light and "satellite-light.png" or "satellite.png")
@@ -776,25 +806,54 @@ function navigation.create(parent, rect, settings, services)
             font = fonts.label,
         })
     end
+end
 
-    if layout.showTape then
-        context.tape = navigation.createTape(panel.root, context, area)
+function navigation.construct(context, rect)
+    local stage = context.createStage
+    if stage == "controls" then
+        createControls(context)
+        context.createServices = nil
+        context.createPresentation = nil
+        context.createStage = "tape"
+    elseif stage == "tape" then
+        if context.layout.showTape then
+            context.tape = navigation.createTape(context.panel.root, context, context.area)
+        end
+        context.createStage = "reflow"
+    elseif stage == "reflow" then
+        reflow(context, rect)
+        context.primitives.setFont(context.unit, context.area.unitFont)
+        context.createRect = { x = rect.x, y = rect.y, w = rect.w, h = rect.h }
+        context.createStage = "publish"
+    elseif stage == "publish" then
+        if not context.primitives.sameRect(context.createRect, rect) then
+            context.createStage = "reflow"
+            return false
+        end
+        local _, drawn = context.primitives.changed(context, navigation.render)
+        navigation.apply(context, drawn)
+        context.createStage, context.createRect = nil, nil
+        return true
+    elseif not stage then
+        return true
+    else
+        error("unknown navigation construction stage: " .. tostring(stage))
     end
+    return false
+end
 
-    if not area.showDetail then
-        lvgl.hide(context.detailLabel)
-        lvgl.hide(context.originLabel)
+--- Build synchronously unless the loader requests hidden staged construction.
+---@param parent any
+---@param rect AeroGridRect
+---@param settings AeroGridNavigationSettings
+---@param services table
+---@return AeroGridNavigationContext
+function navigation.create(parent, rect, settings, services)
+    local context = beginNavigation(parent, rect, settings, services)
+    if services.staged ~= true then
+        while not navigation.construct(context, rect) do
+        end
     end
-    if context.coordinatesLabel and not area.showCoordinates then
-        lvgl.hide(context.coordinatesLabel)
-    end
-    -- Recorded after the rows are built, because whether there is a row at all
-    -- is decided by the span and whether it is showing by the box.
-    context.showCoordinates = context.coordinatesLabel ~= nil and area.showCoordinates == true
-    context.showTape = context.tape ~= nil and area.showTape == true
-
-    local _, drawn = primitives.changed(context, navigation.render)
-    navigation.apply(context, drawn)
     return context
 end
 
@@ -874,10 +933,7 @@ function navigation.render(context, out)
     end
 end
 
---- Paint the panel from what `render` collected, and from nothing else.
----@param context AeroGridNavigationContext
----@param drawn table
-function navigation.apply(context, drawn)
+local function applyReading(context, drawn)
     local presentation = context.state(drawn.state, context.settings.accent)
 
     context.stateName = drawn.state
@@ -960,27 +1016,78 @@ function navigation.apply(context, drawn)
             drawn.coordinates
         )
     end
+end
 
+local function applyTape(context, drawn, prepared)
     if context.tape and not context.tape.pending then
+        local presentation = context.state(drawn.state, context.settings.accent)
         local pointerColor = drawn.state == "normal" and context.state("normal", "green").accent or presentation.accent
-        navigation.setTape(context, drawn.bearing, pointerColor, drawn.origin)
+        if prepared then
+            paintTape(context, drawn.bearing, pointerColor, drawn.origin)
+        else
+            navigation.setTape(context, drawn.bearing, pointerColor, drawn.origin)
+        end
     end
 end
 
---- Advance the panel, repainting only when something drawn changed.
+--- Paint the panel from what `render` collected, and from nothing else.
 ---@param context AeroGridNavigationContext
-function navigation.refresh(context)
-    if not context.feed and not (context.tape and context.tape.pending) then
+---@param drawn table
+function navigation.apply(context, drawn)
+    applyReading(context, drawn)
+    applyTape(context, drawn)
+end
+
+function navigation.cancelRefresh(context)
+    if context.reflowWork then
+        context.reflowWork.invalidated = true
+    end
+    if context.refreshWork then
+        context.refreshWork, context.rendered = nil, nil
+    end
+end
+
+function navigation.stageOf(context)
+    return context.refreshWork and context.refreshWork.stage or "render", 1
+end
+
+function navigation.step(context, _, stage)
+    context.used = 0
+    if stage ~= navigation.stageOf(context) then
+        return nil, true
+    end
+    context.used = 1
+    if stage == "render" then
+        if not context.feed and not (context.tape and context.tape.pending) then
+            return
+        end
+        local changed, drawn = context.primitives.changed(context, navigation.render)
+        if not changed and not (context.tape and context.tape.pending) then
+            return
+        end
+        context.refreshWork = { stage = "reading", drawn = drawn }
+    elseif stage == "reading" then
+        applyReading(context, context.refreshWork.drawn)
+        if context.tape then
+            context.tape.pending = nil
+            context.refreshWork.stage = "tape-frame"
+        else
+            context.refreshWork = nil
+            return
+        end
+    elseif stage == "tape-frame" then
+        if prepareTape(context) then
+            context.refreshWork.stage = "tape"
+        else
+            context.refreshWork = nil
+            return
+        end
+    else
+        applyTape(context, context.refreshWork.drawn, true)
+        context.refreshWork = nil
         return
     end
-    local changed, drawn = context.primitives.changed(context, navigation.render)
-    local pending = context.tape and context.tape.pending
-    if pending then
-        context.tape.pending = nil
-    end
-    if changed or pending then
-        navigation.apply(context, drawn)
-    end
+    return nil, true
 end
 
 --- Reposition after a zone change.
@@ -988,7 +1095,7 @@ end
 ---@param rect AeroGridRect
 ---@param settings? AeroGridNavigationSettings
 ---@param span? table Current grid placement, including preview resizes.
-function navigation.update(context, rect, settings, _, span)
+reflow = function(context, rect, span)
     if span then
         context.layout.wide = span.colSpan > span.rowSpan
         context.layout.square = span.colSpan == span.rowSpan
@@ -1064,9 +1171,55 @@ function navigation.update(context, rect, settings, _, span)
             context.coordinates
         )
     end
+end
 
+function navigation.update(context, rect, settings, _, span)
+    context.primitives.invalidateReflow(context)
+    navigation.cancelRefresh(context)
+    reflow(context, rect, span)
     local _, drawn = context.primitives.changed(context, navigation.render)
     navigation.apply(context, drawn)
 end
+
+function navigation.reflow(context, rect, _, _, span, begin)
+    if context.primitives.reflowStart(context, rect, begin) then
+        navigation.cancelRefresh(context)
+        reflow(context, rect, span)
+        context.reflowWork = { stage = "render" }
+        return false
+    end
+    local work = context.reflowWork
+    if not work then
+        return true
+    elseif work.stage == "render" then
+        local _, drawn = context.primitives.changed(context, navigation.render)
+        work.drawn, work.stage = drawn, "reading"
+    elseif work.stage == "reading" then
+        applyReading(context, work.drawn)
+        if context.tape then
+            context.tape.pending = nil
+            work.stage = "tape-frame"
+        else
+            context.reflowWork = nil
+            return true
+        end
+    elseif work.stage == "tape-frame" then
+        if prepareTape(context) then
+            work.stage = "tape"
+        else
+            context.reflowWork = nil
+            return true
+        end
+    elseif work.stage == "tape" then
+        applyTape(context, work.drawn, true)
+        context.reflowWork = nil
+        return true
+    else
+        error("unknown navigation reflow stage: " .. tostring(work.stage))
+    end
+    return false
+end
+
+navigation.reflowDecl = { callback = navigation.reflow }
 
 return navigation

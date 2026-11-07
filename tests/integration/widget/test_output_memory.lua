@@ -38,6 +38,14 @@ local function pump(count)
     assert(#context.errors == 0, table.concat(context.errors, "\n"))
 end
 
+local function waitFor(predicate, message)
+    for _ = 1, 1000 do
+        if predicate() then return end
+        pump(1)
+    end
+    assert(predicate(), message)
+end
+
 local function configure(first, count, names, trims, width)
     output.update(panel, { x = 0, y = 0, w = width, h = 800 }, {
         label = "CHANNEL OUTPUT",
@@ -47,7 +55,9 @@ local function configure(first, count, names, trims, width)
         showNames = names,
         showTrim = trims,
     })
-    pump(180)
+    waitFor(function()
+        return panel.showRows == panel.area.count and not panel.rowsRoot.hidden
+    end, "configured rows never finished mounting")
     assert(panel.showRows == panel.area.count, "configured rows never finished mounting")
     assert(panel.rows[1].feed.index == first - 1, "channel range was not exercised")
 end
@@ -57,6 +67,19 @@ local function checkpoint()
     readable, named, ambiguous, sample = true, true, false, 0
     fixture.radio.values[310] = 0
     configure(1, 32, true, true, 800)
+    waitFor(function()
+        if panel.pendingDrawn or panel.renderReady then return false end
+        for index = 1, 32 do
+            local row = panel.rows[index]
+            local feed = row.feed
+            if feed.raw ~= ((index - 1) * 67) % 3073 - 1536
+                or row.fraction ~= feed.fraction
+                or (feed.trim and feed.trim.available and row.trimFraction ~= feed.trim.fraction) then
+                return false
+            end
+        end
+        return true
+    end, "output rows did not settle to the checkpoint values")
     assert(#panel.rows == 32, "all channel slots must be warmed before measurement")
     assert(panel.rows[1].captionText == "CH1: AIL", "named captions did not recover")
     assert(not panel.rows[1].trim.hidden, "trim associations did not recover")
@@ -67,7 +90,16 @@ local function checkpoint()
     if baselineObjects then
         assert(#fixture.lvglMock.objects == baselineObjects, "output panel accumulated live LVGL objects")
     end
-    return collectgarbage("count"), #fixture.lvglMock.objects
+    local peak, objects = collectgarbage("count"), #fixture.lvglMock.objects
+    -- Include the transient metadata-scan phases in every checkpoint.
+    for _ = 1, 60 do
+        pump(1)
+        collectgarbage("collect")
+        collectgarbage("collect")
+        peak = math.max(peak, collectgarbage("count"))
+        assert(#fixture.lvglMock.objects == objects, "output panel accumulated live LVGL objects")
+    end
+    return peak, objects
 end
 
 local function cycle(number)
@@ -76,15 +108,25 @@ local function cycle(number)
         fixture.radio.values[310] = (step % 9 - 4) * 128
         pump(1)
     end
-    pump(20)
+    waitFor(function()
+        local row = panel.rows[1]
+        return row.feed.raw == sample % 3073 - 1536
+            and row.feed.trim and row.feed.trim.available
+            and row.trimFraction == row.feed.trim.fraction and row.trimFraction ~= 0
+    end, "changing outputs and trims never reached the panel")
     assert(panel.rows[1].feed.raw == sample % 3073 - 1536, "changing outputs never reached the feed")
     assert(panel.rows[1].trimFraction ~= 0, "changing trims never reached the panel")
     readable = false
-    pump(30)
+    waitFor(function()
+        return panel.stateName == "unavailable"
+            and panel.rows[1].fill.hidden and panel.rows[1].fillOrigin.hidden and panel.rows[1].trim.hidden
+    end, "output availability loss was not exercised")
     assert(panel.stateName == "unavailable", "output availability loss was not exercised")
     assert(panel.rows[1].fill.hidden and panel.rows[1].fillOrigin.hidden and panel.rows[1].trim.hidden)
     readable, named, ambiguous = true, false, true
-    pump(180)
+    waitFor(function()
+        return panel.rows[1].captionText == "CH1" and panel.rows[1].trim.hidden
+    end, "ambiguous output associations were not reflected")
     assert(panel.rows[1].captionText == "CH1", "ambiguous inferred names must disappear")
     assert(panel.rows[1].trim.hidden, "ambiguous trim associations must disappear")
     configure(9, 8, false, false, 120)

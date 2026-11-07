@@ -6,6 +6,11 @@ local flightCounter = {
     apiVersion = 1,
     supportedSpans = { "any" },
     refreshInterval = 20,
+    decl = {
+        class = "normal",
+        kinds = { steady = true },
+        stages = { run = { maxUnits = 1 } },
+    },
     settings = {
         { key = "label", label = "Label", type = "string", default = "FLT" },
         {
@@ -132,20 +137,12 @@ function flightCounter.create(parent, rect, settings, services)
     return context
 end
 
-local function tick(context)
-    local now = context.clock()
-    if context.lastTick and now - context.lastTick < flightCounter.refreshInterval then
-        return
-    end
-    context.lastTick = now
+function flightCounter.step(context)
     local changed, drawn = context.primitives.changed(context, flightCounter.render)
     if changed then
         flightCounter.apply(context, drawn)
     end
 end
-
-flightCounter.refresh = tick
-flightCounter.background = tick
 
 function flightCounter.update(context, rect)
     local area = flightCounter.regionsFor(context.theme, context.themeBuilder, rect, context.fonts)
@@ -156,5 +153,7 @@ function flightCounter.update(context, rect)
     context.readingAnchor, context.readingUnitAnchor = nil, nil
     context.primitives.centreReading(context, context.themeBuilder, area, area.value, context.text)
 end
+
+flightCounter.reflowDecl = { callback = flightCounter.update }
 
 return flightCounter

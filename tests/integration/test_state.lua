@@ -121,6 +121,9 @@ local function create(entries, cols, rows, theme)
     file:write(table.concat(lines, "\n") .. "\n")
     file:close()
     local context = fixture.createLoaded(nil, { Layout = "main", Theme = theme or "modern-dark" }, widgetPath)
+    assert(fixture.pumpUntil(context, function(value)
+        return value.serviceRuntime.byId.control.revision > 0
+    end, 400), "state controls must receive an initial scheduled update")
     fixture.pump(context, 20)
     equal(#context.errors, 0, table.concat(context.errors, "; "))
     local instance = assert(fixture.instanceOf(context, "state"))
@@ -171,7 +174,7 @@ fixture.radio.values[305] = -1024
 fixture.pump(context, 20)
 equal(instance.text, "DISARMED")
 local writes = instance.value.writes
-panel.refresh(instance)
+fixture.pump(context, 20)
 equal(instance.value.writes, writes, "unchanged text was repainted")
 
 context, instance = create({ entry("sa", "MODE", "MID"), entry("sb", "RATE", "MID") })

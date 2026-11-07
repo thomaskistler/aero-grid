@@ -22,9 +22,18 @@ for id, position in pairs({
     assertions.assertEqual(entry.placement.colSpan, position[3])
     assertions.assertEqual(entry.placement.rowSpan, position[4])
 end
-local timer = fixture.instanceOf(context, "flight-clock")
+local batteryContext = fixture.createLoaded(nil, { Layout = "review-tx-battery", Theme = "modern-dark" })
+assert(fixture.pumpUntil(batteryContext, function(value)
+    return value.serviceRuntime.byId.model.revision > 0
+end, 400), "local model data must receive an initial scheduled update")
+fixture.pump(batteryContext, 40)
+assertions.assertEqual(fixture.instanceOf(batteryContext, "full").stateName, "normal")
+
+local timerContext = fixture.createLoaded(nil, { Layout = "review-flight-timer", Theme = "modern-dark" })
+fixture.pump(timerContext, 40)
+local timer = fixture.instanceOf(timerContext, "expired-narrow")
 local previous = timer.text
 fixture.radio.timers[0].value = 120
-fixture.pump(context, 40)
-assert(timer.text ~= previous, "timer must advance without receiver telemetry")
-assertions.assertEqual(fixture.instanceOf(context, "transmitter-battery").stateName, "normal")
+assert(fixture.pumpUntil(timerContext, function()
+    return timer.text ~= previous
+end, 200), "timer must advance without receiver telemetry when scheduler capacity is available")

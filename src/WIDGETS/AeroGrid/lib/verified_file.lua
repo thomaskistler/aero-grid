@@ -40,8 +40,11 @@ function verifiedFile.read(filename, fileOps)
     if not handle then
         return nil, openError or ("cannot open: " .. filename)
     end
-    local content = operations.read(handle, size)
+    local ok, content = pcall(operations.read, handle, size)
     operations.close(handle)
+    if not ok then
+        error(content, 0)
+    end
     if type(content) ~= "string" or #content ~= size then
         return nil, "cannot read: " .. filename
     end

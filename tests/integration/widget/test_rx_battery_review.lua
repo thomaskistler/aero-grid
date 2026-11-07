@@ -8,6 +8,10 @@ local fixture = WidgetFixture.new()
 fixture.reset()
 fixture.radio.values[100] = 16.4
 local context = fixture.createLoaded(nil, { Layout = "review-rx-battery", Theme = "modern-dark" })
+assert(fixture.pumpUntil(context, function(value)
+    local pack = fixture.instanceOf(value, "pack")
+    return pack and pack.feed and pack.feed.available
+end, 400), "receiver battery source must receive an initial reading")
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assertions.assertEqual(#context.panels, 7)
@@ -385,11 +389,24 @@ fixture.radio.fields.RxBt = rxField
 fixture.reset()
 fixture.radio.values[100] = 16.4
 local live = fixture.createLoaded(nil, { Layout = "review-rx-battery", Theme = "modern-dark" })
+assert(fixture.pumpUntil(live, function(value)
+    local monitor = fixture.instanceOf(value, "monitor")
+    return monitor and monitor.feed and monitor.feed.available
+end, 400), "cell monitor must receive an initial reading")
 fixture.pump(live, 40)
 local monitor = fixture.instanceOf(live, "monitor")
 local panel = fixture.module("panels/rx-battery.lua")
 panel.update(monitor, { x = 0, y = 0, w = 238, h = 134 })
-panel.refresh(monitor)
+local panelHost = fixture.module("lib/panel_host.lua")
+local task = panelHost.task({ module = panel, instance = monitor, interval = 20 })
+local completed = false
+for _ = 1, 100 do
+    if task:step(task.want or 1, task.stage, getTime()) ~= 1 then
+        completed = true
+        break
+    end
+end
+assert(completed, "RX battery task did not finish")
 assertions.assertEqual(monitor.deltaText, CHAR_DELTA .. " 0.04v", "delta draws exactly two decimals and lowercase v")
 assertions.assertEqual(monitor.deltaLabel.hidden, false)
 assertions.assertEqual(monitor.area.countShown, true)
@@ -435,7 +452,10 @@ assertions.assertEqual(monitor.deltaLabel.hidden, true, "numeric source has no e
 assertions.assertEqual(monitor.primary, 4.1)
 monitor.settings.source = "Cels"
 monitor.feed = live.serviceRuntime.byId.telemetry:subscribe("Cels")
-fixture.pump(live, 40)
+assert(fixture.pumpUntil(live, function()
+    return monitor.summary.shape == "cells" and monitor.deltaText == CHAR_DELTA .. " 0.01v"
+        and not monitor.deltaLabel.hidden
+end, 100, 20), "the new cell source must reach the panel")
 assertions.assertEqual(monitor.summary.shape, "cells")
 assertions.assertEqual(monitor.deltaText, CHAR_DELTA .. " 0.01v")
 assertions.assertEqual(monitor.deltaLabel.hidden, false)

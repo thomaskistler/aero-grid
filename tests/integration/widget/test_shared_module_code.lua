@@ -80,6 +80,9 @@ for path, count in pairs(loads) do
 end
 assert(seven[1].grid ~= seven[2].grid, "instances share module state")
 assert(seven[1].panelHost ~= seven[2].panelHost, "instances share module state")
+assert(seven[1].dashboardLoader ~= seven[2].dashboardLoader, "instances share loader state")
+assert(seven[1].scheduler ~= seven[2].scheduler, "instances share scheduler state")
+assert(seven[1].schedulerHost.registeredTasks ~= seven[2].schedulerHost.registeredTasks, "instances share task registrations")
 assert(seven[1].diagnosticsLog == seven[2].diagnosticsLog, "instances must share the diagnostics log")
 
 local weak = setmetatable({}, { __mode = "v" })

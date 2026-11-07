@@ -4,6 +4,7 @@
 local showcase = {
     id = "theme-showcase",
     apiVersion = 1,
+    idle = true,
     supportedSpans = { "4x4" },
     settings = {},
 }
@@ -27,6 +28,20 @@ local TOKENS = {
 local STATES = { "normal", "active", "warning", "critical", "stale", "unavailable" }
 local ACCENTS = { "cyan", "green", "amber", "orange" }
 
+local function label(context, parent, text, color, font)
+    return context.primitives.label(
+        parent,
+        context.theme,
+        { x = 0, y = 0, w = 1, text = text, color = color, font = font }
+    )
+end
+
+local layout, placeCard
+
+local function sameRect(first, second)
+    return first.x == second.x and first.y == second.y and first.w == second.w and first.h == second.h
+end
+
 function showcase.create(parent, rect, settings, services)
     local theme, p, builder = services.theme, services.primitives, services.themeBuilder
     local context = {
@@ -38,13 +53,31 @@ function showcase.create(parent, rect, settings, services)
         cards = {},
         bars = {},
         labels = {},
+        createServices = services,
+        createStage = "frame",
+        createIndex = 1,
     }
-    local function label(parentObject, text, color, font)
-        return p.label(parentObject, theme, { x = 0, y = 0, w = 1, text = text, color = color, font = font })
+    if not services.staged then
+        while not showcase.construct(context, rect) do
+        end
     end
-    context.title = label(context.root, "THEME: " .. theme.label .. " / SAMPLE DATA", theme.color.text, SMLSIZE)
-    context.palette = p.panel(context.root, { x = 0, y = 0, w = 1, h = 1 }, theme, services.state("normal"))
-    for _, token in ipairs(TOKENS) do
+    return context
+end
+
+function showcase.construct(context, rect)
+    local stage = context.createStage
+    if not stage then
+        return true
+    end
+    local p, theme, services = context.primitives, context.theme, context.createServices
+    local index = context.createIndex
+    if stage == "frame" then
+        context.title =
+            label(context, context.root, "THEME: " .. theme.label .. " / SAMPLE DATA", theme.color.text, SMLSIZE)
+        context.palette = p.panel(context.root, { x = 0, y = 0, w = 1, h = 1 }, theme, services.state("normal"))
+        context.createStage = "swatches"
+    elseif stage == "swatches" then
+        local token = TOKENS[index]
         context.swatches[#context.swatches + 1] = {
             box = lvgl.rectangle(context.palette.root, {
                 x = 0,
@@ -54,27 +87,33 @@ function showcase.create(parent, rect, settings, services)
                 filled = true,
                 color = theme.color[token],
             }),
-            label = label(context.palette.root, token, theme.color.text, TINSIZE),
+            label = label(context, context.palette.root, token, theme.color.text, TINSIZE),
         }
-    end
-    context.typePanel = p.panel(context.root, { x = 0, y = 0, w = 1, h = 1 }, theme, services.state("normal"))
-    for _, token in ipairs({ "text", "textMuted", "textFaint" }) do
-        context.labels[#context.labels + 1] =
-            label(context.typePanel.root, token .. "  123.4", theme.color[token], SMLSIZE)
-    end
-    context.raised = lvgl.rectangle(context.typePanel.root, {
-        x = 0,
-        y = 0,
-        w = 1,
-        h = 1,
-        filled = true,
-        rounded = theme.spacing.radius,
-        color = theme.color.surfaceRaised,
-    })
-    context.raisedLabel = label(context.typePanel.root, "Raised", theme.color.text, TINSIZE)
-    for _, accent in ipairs(ACCENTS) do
+        context.createIndex = index + 1
+        if index == #TOKENS then
+            context.createStage, context.createIndex = "type", 1
+        end
+    elseif stage == "type" then
+        context.typePanel = p.panel(context.root, { x = 0, y = 0, w = 1, h = 1 }, theme, services.state("normal"))
+        for _, token in ipairs({ "text", "textMuted", "textFaint" }) do
+            context.labels[#context.labels + 1] =
+                label(context, context.typePanel.root, token .. "  123.4", theme.color[token], SMLSIZE)
+        end
+        context.raised = lvgl.rectangle(context.typePanel.root, {
+            x = 0,
+            y = 0,
+            w = 1,
+            h = 1,
+            filled = true,
+            rounded = theme.spacing.radius,
+            color = theme.color.surfaceRaised,
+        })
+        context.raisedLabel = label(context, context.typePanel.root, "Raised", theme.color.text, TINSIZE)
+        context.createStage = "bars"
+    elseif stage == "bars" then
+        local accent = ACCENTS[index]
         context.bars[#context.bars + 1] = {
-            label = label(context.typePanel.root, accent, theme.color[accent], TINSIZE),
+            label = label(context, context.typePanel.root, accent, theme.color[accent], TINSIZE),
             bar = p.bar(context.typePanel.root, theme, {
                 x = 0,
                 y = 0,
@@ -84,22 +123,28 @@ function showcase.create(parent, rect, settings, services)
                 marker = 0.8,
             }),
         }
-    end
-    context.dial = p.radial(context.typePanel.root, theme, {
-        x = 0,
-        y = 0,
-        radius = 1,
-        fraction = 0.72,
-        color = theme.color.cyan,
-    })
-    for _, state in ipairs(STATES) do
+        context.createIndex = index + 1
+        if index == #ACCENTS then
+            context.createStage, context.createIndex = "dial", 1
+        end
+    elseif stage == "dial" then
+        context.dial = p.radial(context.typePanel.root, theme, {
+            x = 0,
+            y = 0,
+            radius = 1,
+            fraction = 0.72,
+            color = theme.color.cyan,
+        })
+        context.createStage = "cards"
+    elseif stage == "cards" then
+        local state = STATES[index]
         local presentation = services.state(state)
         local panel = p.panel(context.root, { x = 0, y = 0, w = 1, h = 1 }, theme, presentation)
         context.cards[#context.cards + 1] = {
             state = state,
             presentation = presentation,
             panel = panel,
-            label = label(panel.root, string.upper(state), presentation.label, TINSIZE),
+            label = label(context, panel.root, string.upper(state), presentation.label, TINSIZE),
             value = p.value(panel.root, theme, {
                 x = 0,
                 y = 0,
@@ -124,12 +169,35 @@ function showcase.create(parent, rect, settings, services)
                 color = presentation.accent,
             }),
         }
+        context.createIndex = index + 1
+        if index == #STATES then
+            context.createStage, context.createIndex = "reflow", 1
+        end
+    elseif stage == "reflow" then
+        context.createLayout = layout(context, rect)
+        context.createRect = { x = rect.x, y = rect.y, w = rect.w, h = rect.h }
+        context.createStage, context.createIndex = "place", 1
+    elseif stage == "place" or stage == "publish" then
+        if not sameRect(context.createRect, rect) then
+            context.createStage = "reflow"
+            return false
+        end
+        if stage == "place" then
+            placeCard(context, index, rect, context.createLayout)
+            context.createIndex = index + 1
+            if index == #STATES then
+                context.createStage, context.createIndex = "publish", 1
+            end
+            return false
+        end
+        context.createStage, context.createIndex, context.createServices = nil, nil, nil
+        context.createRect, context.createLayout = nil, nil
+        return true
     end
-    showcase.update(context, rect)
-    return context
+    return false
 end
 
-function showcase.update(context, rect)
+layout = function(context, rect)
     local p, builder, theme = context.primitives, context.builder, context.theme
     local gap, pad = theme.spacing.gutter, theme.spacing.padding
     context.root:set({ x = rect.x, y = rect.y, w = rect.w, h = rect.h })
@@ -174,21 +242,54 @@ function showcase.update(context, rect)
     p.reconcile(context.raisedLabel, raisedFits)
     local cardsTop = top + upperHeight + gap
     local cardHeight = math.floor((rect.h - cardsTop - gap) / 2)
-    for index, card in ipairs(context.cards) do
-        local col, row = (index - 1) % 3, math.floor((index - 1) / 3)
-        local available = rect.w - gap * 2
-        local x = math.floor(col * available / 3) + col * gap
-        local width = math.floor((col + 1) * available / 3) - math.floor(col * available / 3)
-        p.resizePanel(card.panel, { x = x, y = cardsTop + row * (cardHeight + gap), w = width, h = cardHeight })
-        local content = width - pad - theme.spacing.paddingRight
-        local readingFont = cardHeight >= builder.fontHeight(TINSIZE) * 2 + builder.fontHeight(MIDSIZE) + 4 and MIDSIZE
-            or SMLSIZE
-        card.label:set({ x = pad, y = 0, w = content })
-        p.setFont(card.value, readingFont)
-        card.value:set({ x = pad, y = builder.fontHeight(TINSIZE) - 2, w = content })
-        card.badge:set({ x = pad, y = cardHeight - builder.fontHeight(TINSIZE) - 6, w = content })
-        p.placeBar(card.bar, pad, cardHeight - 6, content, card.state == "unavailable" and 0 or 0.72)
+    return { top = cardsTop, height = cardHeight }
+end
+
+placeCard = function(context, index, rect, area)
+    local p, builder, theme = context.primitives, context.builder, context.theme
+    local gap, pad, card = theme.spacing.gutter, theme.spacing.padding, context.cards[index]
+    local cardHeight = area.height
+    local col, row = (index - 1) % 3, math.floor((index - 1) / 3)
+    local available = rect.w - gap * 2
+    local x = math.floor(col * available / 3) + col * gap
+    local width = math.floor((col + 1) * available / 3) - math.floor(col * available / 3)
+    p.resizePanel(card.panel, { x = x, y = area.top + row * (cardHeight + gap), w = width, h = cardHeight })
+    local content = width - pad - theme.spacing.paddingRight
+    local readingFont = cardHeight >= builder.fontHeight(TINSIZE) * 2 + builder.fontHeight(MIDSIZE) + 4 and MIDSIZE
+        or SMLSIZE
+    card.label:set({ x = pad, y = 0, w = content })
+    p.setFont(card.value, readingFont)
+    card.value:set({ x = pad, y = builder.fontHeight(TINSIZE) - 2, w = content })
+    card.badge:set({ x = pad, y = cardHeight - builder.fontHeight(TINSIZE) - 6, w = content })
+    p.placeBar(card.bar, pad, cardHeight - 6, content, card.state == "unavailable" and 0 or 0.72)
+end
+
+function showcase.update(context, rect)
+    context.primitives.invalidateReflow(context)
+    local area = layout(context, rect)
+    for index = 1, #context.cards do
+        placeCard(context, index, rect, area)
     end
 end
+
+function showcase.reflow(context, rect, _, _, _, begin)
+    if context.primitives.reflowStart(context, rect, begin) then
+        context.reflowWork = { stage = "place", area = layout(context, rect), index = 1 }
+        return false
+    end
+    local work = context.reflowWork
+    if not work then
+        return true
+    end
+    placeCard(context, work.index, rect, work.area)
+    work.index = work.index + 1
+    if work.index > #context.cards then
+        context.reflowWork = nil
+        return true
+    end
+    return false
+end
+
+showcase.reflowDecl = { callback = showcase.reflow }
 
 return showcase

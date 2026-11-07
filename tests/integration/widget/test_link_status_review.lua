@@ -24,6 +24,11 @@ assertions.assertEqual(disconnected.link.live, true, "receiver telemetry can est
 assertions.assertEqual(disconnected.readingCache.margin, 36)
 fixture.reset()
 context = fixture.createLoaded(nil, { Layout = "review-link-status", Theme = "modern-dark" })
+assert(fixture.pumpUntil(context, function(value)
+    local link = fixture.instanceOf(value, "detailed")
+    return link and link.qualityFeed and link.qualityFeed.available
+        and link.rssiFeed and link.rssiFeed.available
+end, 400), "link quality and RSSI must receive initial readings")
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assertions.assertEqual(#context.panels, 6)
@@ -117,6 +122,16 @@ context.zone.w, context.zone.h = 320, 240
 fixture.pump(context, 40)
 assertions.assertEqual(wide.text, "NO LINK", "resize must preserve the disconnected headline")
 assert(wide.themeBuilder.measureText(wide.area.value, wide.text) <= wide.area.valueBudget)
+for _, id in ipairs({ "detailed", "wide-quality", "compact" }) do
+    local panel = fixture.instanceOf(context, id)
+    if panel.bar then
+        assertions.assertEqual(
+            panel.bar.fill.properties.w,
+            0,
+            "resize must not resurrect a lost link's retained reading"
+        )
+    end
+end
 fixture.radio.rssi = 75
 context.zone.w, context.zone.h = 480, 272
 fixture.pump(context, 40)

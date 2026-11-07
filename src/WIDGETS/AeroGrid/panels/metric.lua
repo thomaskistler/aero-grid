@@ -37,6 +37,9 @@
 ---@field reading? number Last applied reading.
 ---@field stateName string Current resolved state name.
 ---@field settings AeroGridResolvedMetricSettings
+---@field refreshWork? table Frozen readings and pending refresh stage.
+---@field refreshGeometry? boolean Cancelled metadata changes still need geometry application.
+---@field used? integer Granted units consumed by the last task step.
 
 local metric = {
     id = "metric",
@@ -116,15 +119,46 @@ local metric = {
     },
 }
 
-function metric.validateSettings(settings)
-    local warnings = {}
+local reflow, geometry, applyGeometry
+
+metric.decl = {
+    class = "normal",
+    first = "prepare",
+    kinds = { steady = true },
+    stages = {
+        prepare = { maxUnits = 1 },
+        geometry = { maxUnits = 1 },
+        layout = { maxUnits = 1 },
+        render = { maxUnits = 1 },
+        apply = { maxUnits = 1 },
+    },
+}
+
+function metric.beginSettingsValidation(settings)
     local entries = settings.metrics
+    local work = { entries = entries, warnings = {}, count = 0, phase = "entry" }
     if type(entries) ~= "table" then
-        return { "metrics must contain a contiguous list of up to 3 readings" }
+        work.warnings[1] = "metrics must contain a contiguous list of up to 3 readings"
+        work.phase = "done"
+    else
+        work.iterator, work.state, work.key = pairs(entries)
     end
-    local count = 0
-    for key, entry in pairs(entries) do
-        count = count + 1
+    return work
+end
+
+function metric.advanceSettingsValidation(work)
+    local warnings = work.warnings
+    if work.phase == "entry" then
+        local key, entry = work.iterator(work.state, work.key)
+        work.key = key
+        if key == nil then
+            if work.count > 3 or #work.entries ~= work.count then
+                warnings[#warnings + 1] = "metrics must contain a contiguous list of up to 3 readings"
+            end
+            work.phase = "done"
+            return true
+        end
+        work.count = work.count + 1
         local prefix = "metrics[" .. tostring(key) .. "]"
         if type(key) ~= "number" or key % 1 ~= 0 or key < 1 or key > 3 then
             warnings[#warnings + 1] = prefix .. " must be an index from 1 to 3"
@@ -136,33 +170,43 @@ function metric.validateSettings(settings)
             if entry.source ~= nil and type(entry.source) ~= "string" then
                 warnings[#warnings + 1] = prefix .. ".source must be a string"
             end
-            for field, value in pairs(entry) do
-                if field == "label" or field == "unit" then
-                    if type(value) ~= "string" then
-                        warnings[#warnings + 1] = prefix .. "." .. field .. " must be a string"
-                    end
-                elseif field == "precision" then
-                    if type(value) ~= "number" or value ~= value or value < 0 or value > 3 or value % 1 ~= 0 then
-                        warnings[#warnings + 1] = prefix .. ".precision must be an integer from 0 to 3"
-                    end
-                elseif field == "rangeMin" or field == "rangeMax" or field == "warning" or field == "critical" then
-                    if type(value) ~= "number" or value ~= value or value == math.huge or value == -math.huge then
-                        warnings[#warnings + 1] = prefix .. "." .. field .. " must be a finite number"
-                    end
-                elseif field == "direction" then
-                    if value ~= "auto" and value ~= "rising" and value ~= "falling" then
-                        warnings[#warnings + 1] = prefix .. ".direction must be auto, rising, or falling"
-                    end
-                elseif field ~= "source" then
-                    warnings[#warnings + 1] = prefix .. "." .. tostring(field) .. " is not a reading setting"
-                end
+            work.fields, work.entry, work.field = pairs(entry)
+            work.prefix, work.phase = prefix, "field"
+        end
+    elseif work.phase == "field" then
+        local field, value = work.fields(work.entry, work.field)
+        work.field = field
+        local prefix = work.prefix
+        if field == nil then
+            work.phase = "entry"
+        elseif field == "label" or field == "unit" then
+            if type(value) ~= "string" then
+                warnings[#warnings + 1] = prefix .. "." .. field .. " must be a string"
             end
+        elseif field == "precision" then
+            if type(value) ~= "number" or value ~= value or value < 0 or value > 3 or value % 1 ~= 0 then
+                warnings[#warnings + 1] = prefix .. ".precision must be an integer from 0 to 3"
+            end
+        elseif field == "rangeMin" or field == "rangeMax" or field == "warning" or field == "critical" then
+            if type(value) ~= "number" or value ~= value or value == math.huge or value == -math.huge then
+                warnings[#warnings + 1] = prefix .. "." .. field .. " must be a finite number"
+            end
+        elseif field == "direction" then
+            if value ~= "auto" and value ~= "rising" and value ~= "falling" then
+                warnings[#warnings + 1] = prefix .. ".direction must be auto, rising, or falling"
+            end
+        elseif field ~= "source" then
+            warnings[#warnings + 1] = prefix .. "." .. tostring(field) .. " is not a reading setting"
         end
     end
-    if count > 3 or #entries ~= count then
-        warnings[#warnings + 1] = "metrics must contain a contiguous list of up to 3 readings"
+    return work.phase == "done"
+end
+
+function metric.validateSettings(settings)
+    local work = metric.beginSettingsValidation(settings)
+    while not metric.advanceSettingsValidation(work) do
     end
-    return warnings
+    return work.warnings
 end
 
 --- Whether an entry names a sensor to read.
@@ -530,19 +574,16 @@ function metric.apply(context, drawn)
     end
 end
 
---- Advance the panel, repainting only when something drawn changed.
----@param context AeroGridMetricContext
-function metric.refresh(context)
-    if not context.feed then
-        return
-    end
+local function preparePrecision(context)
     local digits = metric.digitsFor(context)
     if digits ~= context.sampleDigits then
         context.sampleDigits = digits
         context.sample = metric.widestSample(context.settings, digits)
-        metric.update(context, context.rect)
-        context.rendered = nil
+        return true
     end
+end
+
+local function prepareSupporting(context)
     if context.layout.supporting then
         local first = metric.detailText(context)
         local second = context.metrics[3] and metric.secondaryText(context) or nil
@@ -557,14 +598,112 @@ function metric.refresh(context)
             if context.unit then
                 context.unit:set({ text = unit })
             end
-            metric.update(context, context.rect)
-            context.rendered = nil
+            return true
         end
     end
-    local changed, drawn = context.primitives.changed(context, metric.render)
-    if changed then
-        metric.apply(context, drawn)
+end
+
+function metric.cancelRefresh(context)
+    if context.createStage then
+        context.createInvalidated = true
     end
+    if context.reflowWork then
+        context.reflowWork.invalidated = true
+    end
+    if context.refreshWork then
+        local stage = context.refreshWork.stage
+        if stage == "geometry" or stage == "layout" then
+            -- Preparation publishes sizing metadata before geometry is applied.
+            context.refreshGeometry = true
+        end
+        context.refreshWork, context.rendered = nil, nil
+    end
+end
+
+local function snapshot(feed)
+    if feed then
+        return {
+            available = feed.available,
+            value = feed.value,
+            stale = feed.stale,
+            precision = feed.precision,
+            unitText = feed.unitText,
+        }
+    end
+end
+
+local function frozenRefresh(context, fn)
+    local work = context.refreshWork
+    local feed, detail, secondary = context.feed, context.detailFeed, context.secondaryFeed
+    context.feed, context.detailFeed, context.secondaryFeed = work.feed, work.detail, work.secondary
+    local ok, first, second = pcall(fn, context)
+    context.feed, context.detailFeed, context.secondaryFeed = feed, detail, secondary
+    if not ok then
+        error(first, 0)
+    end
+    return first, second
+end
+
+local function prepareTask(context)
+    local precision, supporting = preparePrecision(context), prepareSupporting(context)
+    if precision or supporting or context.refreshGeometry then
+        context.rendered = nil
+        return true
+    end
+end
+
+local function layoutTask(context)
+    applyGeometry(context, context.rect, context.refreshWork.area)
+    context.refreshGeometry = nil
+end
+
+local function geometryTask(context)
+    context.refreshWork.area = geometry(context, context.rect)
+end
+
+local function renderTask(context)
+    return context.primitives.changed(context, metric.render)
+end
+
+function metric.stageOf(context)
+    return context.refreshWork and context.refreshWork.stage or "prepare", 1
+end
+
+function metric.step(context, _, stage)
+    context.used = 0
+    if stage ~= metric.stageOf(context) then
+        return nil, true
+    end
+    context.used = 1
+    if stage == "prepare" then
+        if not context.feed then
+            return
+        end
+        context.refreshWork = {
+            feed = snapshot(context.feed),
+            detail = snapshot(context.detailFeed),
+            secondary = snapshot(context.secondaryFeed),
+        }
+        context.refreshWork.stage = frozenRefresh(context, prepareTask) and "geometry" or "render"
+    elseif stage == "geometry" then
+        frozenRefresh(context, geometryTask)
+        context.refreshWork.stage = "layout"
+    elseif stage == "layout" then
+        frozenRefresh(context, layoutTask)
+        context.refreshWork.stage = "render"
+    elseif stage == "render" then
+        local changed, drawn = frozenRefresh(context, renderTask)
+        if not changed then
+            context.refreshWork = nil
+            return
+        end
+        context.refreshWork.drawn, context.refreshWork.stage = drawn, "apply"
+    else
+        metric.apply(context, context.refreshWork.drawn)
+        context.refreshWork = nil
+        return
+    end
+    return nil, true
 end
 
 --- Convert a reading into a 0..1 fraction of the configured range.
@@ -626,15 +765,16 @@ end
 ---@param layout table
 ---@param fonts table
 ---@param sample? string[] Lossless forms of the reading, longest first.
+---@param frame? table Precomputed shared frame for resumable construction.
 ---@return table
-function metric.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, unit, out)
+function metric.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, unit, out, frame)
     -- The whole arrangement, from the shared builder. A radial is a compact
     -- visual and takes the right slot; a bar spans the panel and is exempt, so
     -- the same panel splits under one setting and not the other.
     local area = themeBuilder.panel(theme, rect, fonts, {
         -- Built through this panel's own builder, which the host may have
         -- wrapped to lay the panel out around the menu button's corner.
-        frame = themeBuilder.frame(theme, rect, fonts),
+        frame = frame or themeBuilder.frame(theme, rect, fonts),
         -- Only the longest form is offered, because a reading carrying a unit is
         -- fitted as a pair and `fitReadingUnit` takes one string. The shorter
         -- forms exist for `primitives.reconcile` to fall back to at draw time,
@@ -685,19 +825,18 @@ function metric.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, uni
     return area
 end
 
---- Build the panel's LVGL objects.
----@param parent any
----@param rect AeroGridRect
----@param config AeroGridMetricSettings
----@param services table Host-provided shared objects.
----@return AeroGridMetricContext
-function metric.create(parent, rect, config, services)
+local function beginMetric(parent, rect, config, services)
     local theme = services.theme
     local primitives = services.primitives
     local fonts = services.fonts
     local span = services.span
     local entries = config.metrics
-    local warnings = metric.validateSettings(config)
+    local proof = services.settingsValidation
+    local warnings = proof
+            and proof.settings == config
+            and proof.validator == metric.validateSettings
+            and proof.warnings
+        or metric.validateSettings(config)
     if #warnings > 0 then
         error(table.concat(warnings, "; "))
     end
@@ -749,34 +888,56 @@ function metric.create(parent, rect, config, services)
     local telemetry = services.telemetry
     if telemetry then
         if hasSource(primary) then
-            context.feed = telemetry:subscribe(primary.source)
+            context.feed = telemetry:subscribe(primary.source, nil, 20)
         end
         if hasSource(entries[2]) then
-            context.detailFeed = telemetry:subscribe(entries[2].source)
+            context.detailFeed = telemetry:subscribe(entries[2].source, nil, 20)
         end
         if hasSource(entries[3]) then
-            context.secondaryFeed = telemetry:subscribe(entries[3].source)
+            context.secondaryFeed = telemetry:subscribe(entries[3].source, nil, 20)
         end
     end
 
-    local sample = metric.widestSample(settings, metric.digitsFor(context))
-    context.unitText = tostring(settings.unit or "")
-    local area = metric.regionsFor(theme, services.themeBuilder, rect, layout, fonts, sample, context.unitText)
-    context.sample = sample
-    context.sampleDigits = metric.digitsFor(context)
+    context.createParent = parent
+    context.createPresentation = presentation
+    context.createStage = "frame"
+    return context
+end
 
-    local panel
+local function prepareFrame(context, rect)
+    context.createInvalidated = nil
+    context.createGeometry = context.themeBuilder.frame(context.theme, rect, context.fonts)
+    context.createRect, context.createStage = rect, "geometry"
+end
+
+local function prepareGeometry(context, rect)
+    context.sample = metric.widestSample(context.settings, metric.digitsFor(context))
+    context.unitText = tostring(context.settings.unit or "")
+    context.sampleDigits = metric.digitsFor(context)
+    context.rect = rect
+    prepareFrame(context, rect)
+end
+
+local function createFrame(context)
+    local theme, primitives, fonts = context.theme, context.primitives, context.fonts
     context.panel, context.label, context.badge = primitives.panelWithHeader(
-        parent,
-        rect,
+        context.createParent,
+        context.rect,
         theme,
-        presentation,
-        area.frame,
+        context.createPresentation,
+        context.area.frame,
         fonts,
-        settings.label,
-        services.themeBuilder
+        context.settings.label,
+        context.themeBuilder
     )
-    panel = context.panel
+    context.createParent = nil
+    context.createStage = "controls"
+end
+
+local function createControls(context)
+    local theme, primitives, fonts = context.theme, context.primitives, context.fonts
+    local layout, settings, area = context.layout, context.settings, context.area
+    local panel, presentation = context.panel, context.createPresentation
 
     context.value = primitives.value(panel.root, theme, {
         x = area.valueX,
@@ -827,7 +988,11 @@ function metric.create(parent, rect, config, services)
             color = presentation.accent,
         })
     end
+end
 
+local function createSupporting(context)
+    local theme, primitives, fonts = context.theme, context.primitives, context.fonts
+    local layout, area, panel = context.layout, context.area, context.panel
     if layout.showRange then
         context.rangeText = metric.detailText(context)
         context.range = primitives.label(panel.root, theme, {
@@ -844,7 +1009,7 @@ function metric.create(parent, rect, config, services)
         primitives.centreLabel(
             context,
             "rangeAnchor",
-            services.themeBuilder,
+            context.themeBuilder,
             context.range,
             area.detailCentre,
             area.detailY,
@@ -866,7 +1031,7 @@ function metric.create(parent, rect, config, services)
         primitives.centreLabel(
             context,
             "secondaryAnchor",
-            services.themeBuilder,
+            context.themeBuilder,
             context.secondary,
             area.rowRightCentre,
             area.rowRightY or area.detailY,
@@ -905,9 +1070,82 @@ function metric.create(parent, rect, config, services)
             lvgl.hide(context.radial.arc)
         end
     end
+end
 
+local function finishConstruction(context, rect)
+    if context.createInvalidated or not context.primitives.sameRect(context.rect, rect) then
+        context.createStage = "reflow"
+        return false
+    end
     if not context.feed then
         metric.setValue(context, nil)
+    end
+    context.createStage = nil
+    return true
+end
+
+function metric.construct(context, rect)
+    local stage = context.createStage
+    if stage == "frame" then
+        prepareGeometry(context, rect)
+    elseif stage == "geometry" then
+        context.area = metric.regionsFor(
+            context.theme,
+            context.themeBuilder,
+            context.createRect,
+            context.layout,
+            context.fonts,
+            context.sample,
+            context.unitText,
+            nil,
+            context.createGeometry
+        )
+        context.createGeometry = nil
+        context.createStage = context.panel and "place" or "header"
+        if not context.panel then
+            context.createRect = nil
+        end
+    elseif stage == "header" then
+        createFrame(context)
+    elseif stage == "controls" then
+        createControls(context)
+        createSupporting(context)
+        context.createPresentation = nil
+        return finishConstruction(context, rect)
+    elseif stage == "reflow" then
+        if
+            not context.unit
+            and (rect.w > context.rect.w or rect.h > context.rect.h)
+            and not context.suppressSensorUnit
+        then
+            context.unitText = context.feed and context.feed.unitText or ""
+        end
+        prepareFrame(context, rect)
+    elseif stage == "place" then
+        applyGeometry(context, context.createRect, context.area)
+        context.createGeometry, context.createRect, context.refreshGeometry = nil, nil, nil
+        context.createStage = "publish"
+    elseif stage == "publish" then
+        return finishConstruction(context, rect)
+    elseif not stage then
+        return true
+    else
+        error("unknown metric construction stage: " .. tostring(stage))
+    end
+    return false
+end
+
+--- Build synchronously unless the loader requests hidden staged construction.
+---@param parent any
+---@param rect AeroGridRect
+---@param config AeroGridMetricSettings
+---@param services table Host-provided shared objects.
+---@return AeroGridMetricContext
+function metric.create(parent, rect, config, services)
+    local context = beginMetric(parent, rect, config, services)
+    if services.staged ~= true then
+        while not metric.construct(context, rect) do
+        end
     end
     return context
 end
@@ -917,6 +1155,7 @@ end
 ---@param value any
 ---@param stale? boolean
 function metric.setValue(context, value, stale)
+    context.refreshWork = nil
     -- Kept as the way a caller forces a reading, and routed through the same
     -- render-and-paint path so it cannot draw something `render` would not.
     context.forced = { value = value, stale = stale == true }
@@ -932,20 +1171,26 @@ end
 --- and objects whose region returned are shown again.
 ---@param context AeroGridMetricContext
 ---@param rect AeroGridRect
-function metric.update(context, rect)
+geometry = function(context, rect, frame)
     if not context.unit and (rect.w > context.rect.w or rect.h > context.rect.h) and not context.suppressSensorUnit then
         context.unitText = context.feed and context.feed.unitText or ""
     end
     local theme = context.theme
-    local area = metric.regionsFor(
+    return metric.regionsFor(
         theme,
         context.themeBuilder,
         rect,
         context.layout,
         context.fonts,
         context.sample,
-        context.unitText
+        context.unitText,
+        nil,
+        frame
     )
+end
+
+applyGeometry = function(context, rect, area)
+    local theme = context.theme
     if not context.unit and area.showUnit and (rect.w > context.rect.w or rect.h > context.rect.h) then
         context.unit = context.primitives.unit(context.panel.root, theme, {
             x = area.valueX,
@@ -959,6 +1204,9 @@ function metric.update(context, rect)
     context.rect = rect
 
     context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
+    if context.unit then
+        context.primitives.setFont(context.unit, area.unitFont)
+    end
     context.primitives.setFont(context.value, area.value)
     context.value:set({
         x = area.pad,
@@ -1036,5 +1284,48 @@ function metric.update(context, rect)
         end
     end
 end
+
+reflow = function(context, rect)
+    applyGeometry(context, rect, geometry(context, rect))
+end
+
+function metric.update(context, rect)
+    while context.createStage do
+        metric.construct(context, rect)
+    end
+    context.primitives.invalidateReflow(context)
+    metric.cancelRefresh(context)
+    reflow(context, rect)
+    context.refreshGeometry = nil
+end
+
+function metric.reflow(context, rect, _, _, _, begin)
+    local captured = context.primitives.reflowStart(context, rect, begin)
+    if captured then
+        metric.cancelRefresh(context)
+        context.reflowWork = {
+            stage = "geometry",
+            rect = captured,
+            frame = context.themeBuilder.frame(context.theme, captured, context.fonts),
+        }
+        return false
+    end
+    local work = context.reflowWork
+    if not work then
+        return true
+    elseif work.stage == "geometry" then
+        work.area = geometry(context, work.rect, work.frame)
+        work.frame, work.stage = nil, "apply"
+    elseif work.stage == "apply" then
+        applyGeometry(context, work.rect, work.area)
+        context.refreshGeometry, context.reflowWork = nil, nil
+        return true
+    else
+        error("unknown metric reflow stage: " .. tostring(work.stage))
+    end
+    return false
+end
+
+metric.reflowDecl = { callback = metric.reflow }
 
 return metric

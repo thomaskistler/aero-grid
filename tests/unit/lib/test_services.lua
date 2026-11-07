@@ -37,12 +37,12 @@ local function testEnvironmentAndRuntime()
         due = 0,
         count = 1,
         revision = 0,
-        update = function() end,
     }
 
     services.register(runtime, service, 0)
-    local updatedId = services.update(runtime, 0)
-    assertions.assertEqual(updatedId, "demo")
+    assertions.assertEqual(runtime.order[1], service)
+    assertions.assertEqual(runtime.byId.demo, service)
+    assertions.assertEqual(service.due, 0)
 end
 
 local function recordVisit(owner, entry, now)
@@ -69,15 +69,76 @@ end
 
 local function testRoundRobin()
     local state = { visited = {} }
-    local cursor = services.roundRobin({ "a", "b", "c", "d" }, 3, 3, recordVisit, state, 12)
-    assertions.assertEqual(table.concat(state.visited, ","), "c:12,d:12,a:12")
-    assertions.assertEqual(cursor, 2)
+    local pass = { cursor = 3 }
+    local entries = { "a", "b", "c", "d" }
+    assert(services.poll(pass, "cursor", "remaining", entries, 3, 2, state, recordVisit, 12))
+    assertions.assertEqual(table.concat(state.visited, ","), "c:12,d:12")
+    assertions.assertEqual(pass.remaining, 1)
+    assert(not services.poll(pass, "cursor", "remaining", entries, 3, 6, state, recordVisit, 13))
+    assertions.assertEqual(table.concat(state.visited, ","), "c:12,d:12,a:13")
+    assertions.assertEqual(pass.cursor, 2)
+    assertions.assertEqual(pass.remaining, nil)
 
-    state.visited = {}
-    cursor = services.roundRobin({ "a", "b" }, 9, 8, recordVisit, state, 20)
+    state.visited, pass.cursor = {}, 9
+    assert(not services.poll(pass, "cursor", "remaining", { "a", "b" }, 8, 8, state, recordVisit, 20))
     assertions.assertEqual(table.concat(state.visited, ","), "a:20,b:20")
-    assertions.assertEqual(cursor, 1)
-    assertions.assertEqual(services.roundRobin({}, 7, 3, recordVisit, state, 0), 7)
+    assertions.assertEqual(pass.cursor, 1)
+    assert(not services.poll(pass, "cursor", "remaining", {}, 3, 3, state, recordVisit, 0))
+    assertions.assertEqual(pass.cursor, 1)
+end
+
+local function testServiceTaskAdapter()
+    local owner = { interval = 20 }
+    local calls, cleaned = 0, 0
+    local elapsed = function(a, b)
+        return a - b
+    end
+    local task = services.task(owner, "run", {
+        id = "service:example",
+        want = 6,
+        run = function(service, grant, stage, now, current)
+            assertions.assertEqual(service, owner)
+            assertions.assertEqual(current, owner.tasks.run)
+            assertions.assertEqual(service.tickElapsed, elapsed)
+            assertions.assertEqual(grant, 2, "the adapter forwards the exact scheduler grant")
+            assertions.assertEqual(stage, "run")
+            assertions.assertEqual(now, 123)
+            calls = calls + 1
+            return 1
+        end,
+    })
+    task.tickElapsed = elapsed
+    assertions.assertEqual(task:step(2, "run", 123), 1, "partial releases retain their retry delay")
+    assertions.assertEqual(calls, 1)
+    assertions.assertEqual(task.want, 6, "the adapter does not recompute demand")
+    assertions.assertEqual(task.interval, nil, "omitted intervals continue to follow the service")
+    assertions.assertEqual(owner.schedulerTasks[1], task.item)
+    assertions.assertEqual(task.item.instance, task)
+    assertions.assertEqual(task.item.id, task.id)
+    assert(not pcall(services.task, owner, "run", {}), "task names must be unique")
+
+    owner.taskFailed = function()
+        cleaned = cleaned + 1
+    end
+    local failing = services.task(owner, "failure", {
+        id = "service:failure",
+        interval = 10,
+        critical = true,
+        run = function()
+            error("radio failure", 0)
+        end,
+    })
+    local ok, message = pcall(failing.step, failing, 1, "run", 124)
+    assertions.assertEqual(ok, false, "errors reach the scheduler for reporting")
+    assertions.assertEqual(message, "radio failure")
+    assertions.assertEqual(owner.failed, true)
+    assertions.assertEqual(cleaned, 1)
+    assertions.assertEqual(failing.interval, 10)
+    assertions.assertEqual(failing.item.critical, true)
+    assertions.assertEqual(task:step(2, "run", 123), 1)
+    assertions.assertEqual(calls, 1, "a sibling cannot do work after its owner fails")
+    assertions.assertEqual(failing:step(1, "run", 125), 1)
+    assertions.assertEqual(cleaned, 1, "cleanup happens once")
 end
 
 local function run()
@@ -85,6 +146,7 @@ local function run()
     testEnvironmentAndRuntime()
     testRoundRobin()
     testSubscriptionOwnership()
+    testServiceTaskAdapter()
 end
 
 run()

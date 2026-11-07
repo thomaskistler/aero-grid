@@ -35,6 +35,11 @@ local txBattery = {
     supportedSpans = { "any" },
     -- A transmitter pack moves over minutes, not frames.
     refreshInterval = 50,
+    decl = {
+        class = "normal",
+        kinds = { steady = true },
+        stages = { run = { maxUnits = 1 } },
+    },
     settings = {
         -- "TX BATTERY" needs ten characters of a header that has about five.
         { key = "label", label = "Label", type = "string", default = "TX" },
@@ -446,13 +451,7 @@ local function createGlyph(context, area)
     lvgl.hide(context.glyph.fill)
 end
 
---- Build the panel's LVGL objects.
----@param parent any
----@param rect AeroGridRect
----@param settings AeroGridTxBatterySettings
----@param services table
----@return AeroGridTxBatteryContext
-function txBattery.create(parent, rect, settings, services)
+local function beginConstruction(parent, rect, settings, services)
     local theme = services.theme
     local primitives = services.primitives
     local fonts = services.fonts
@@ -460,8 +459,6 @@ function txBattery.create(parent, rect, settings, services)
     local layout = txBattery.presentationFor(span.colSpan, span.rowSpan, settings.showPercent)
     layout.visual = settings.visual
     local presentation = services.state("normal", settings.accent)
-    local area = txBattery.regionsFor(theme, services.themeBuilder, primitives, rect, layout, fonts)
-
     local context = {
         theme = theme,
         themeBuilder = services.themeBuilder,
@@ -473,9 +470,7 @@ function txBattery.create(parent, rect, settings, services)
         stateName = "normal",
         text = "--",
         detail = "",
-        -- `render` needs this: the percentage is fitted to the column it lands
-        -- in, which is the glyph's when it sits under one.
-        detailWidth = area.detailWidth,
+        rect = rect,
     }
 
     local modelService = services.model
@@ -487,19 +482,44 @@ function txBattery.create(parent, rect, settings, services)
         context.range = modelService:batteryRange()
     end
 
-    local panel
-    context.panel, context.label, context.badge = primitives.panelWithHeader(
-        parent,
-        rect,
-        theme,
-        presentation,
-        area.frame,
-        fonts,
-        settings.label,
-        services.themeBuilder
-    )
-    panel = context.panel
+    context.createParent, context.createPresentation, context.createStage = parent, presentation, "geometry"
+    return context
+end
 
+local function createGeometry(context, rect)
+    context.createInvalidated = nil
+    context.area = txBattery.regionsFor(
+        context.theme,
+        context.themeBuilder,
+        context.primitives,
+        rect,
+        context.layout,
+        context.fonts
+    )
+    context.rect = rect
+    context.createStage = context.panel and "reading" or "header"
+end
+
+local function createFrame(context)
+    local area = context.area
+    context.detailWidth = area.detailWidth
+    context.panel, context.label, context.badge = context.primitives.panelWithHeader(
+        context.createParent,
+        context.rect,
+        context.theme,
+        context.createPresentation,
+        area.frame,
+        context.fonts,
+        context.settings.label,
+        context.themeBuilder
+    )
+    context.createParent, context.createStage = nil, "controls"
+end
+
+local function createControls(context)
+    local theme, primitives, fonts = context.theme, context.primitives, context.fonts
+    local area, panel, layout = context.area, context.panel, context.layout
+    local presentation, settings = context.createPresentation, context.settings
     context.value, context.unit = primitives.reading(panel.root, theme, area, presentation, txBattery.UNIT)
 
     -- Built only where the layout asked for the estimate: on every other
@@ -557,8 +577,20 @@ function txBattery.create(parent, rect, settings, services)
         lvgl.hide(context.bar.track)
         lvgl.hide(context.bar.fill)
     end
-    local _, drawn = primitives.changed(context, txBattery.render)
-    txBattery.apply(context, drawn)
+end
+
+--- Build synchronously unless the loader requests hidden staged construction.
+---@param parent any
+---@param rect AeroGridRect
+---@param settings AeroGridTxBatterySettings
+---@param services table
+---@return AeroGridTxBatteryContext
+function txBattery.create(parent, rect, settings, services)
+    local context = beginConstruction(parent, rect, settings, services)
+    if services.staged ~= true then
+        while not txBattery.construct(context, rect) do
+        end
+    end
     return context
 end
 
@@ -693,7 +725,7 @@ end
 
 --- Advance the panel, repainting only when something drawn changed.
 ---@param context AeroGridTxBatteryContext
-function txBattery.refresh(context)
+function txBattery.step(context)
     if not context.feed then
         return
     end
@@ -706,8 +738,8 @@ end
 --- Reposition after a zone change.
 ---@param context AeroGridTxBatteryContext
 ---@param rect AeroGridRect
-function txBattery.update(context, rect)
-    local area = txBattery.regionsFor(
+local function geometry(context, rect)
+    return txBattery.regionsFor(
         context.theme,
         context.themeBuilder,
         context.primitives,
@@ -715,7 +747,9 @@ function txBattery.update(context, rect)
         context.layout,
         context.fonts
     )
+end
 
+local function placeReading(context, rect, area)
     context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
     context.primitives.setFont(context.value, area.value)
     context.value:set({
@@ -744,7 +778,9 @@ function txBattery.update(context, rect)
     context.showDetail = area.showDetail
     context.detailWidth = area.detailWidth
     context.area = area
+end
 
+local function placeVisual(context, area)
     local ranged = txBattery.hasRange(context.settings, context.range)
     local fraction = txBattery.fraction(context.settings, context.reading, context.range, context.primitives)
 
@@ -782,11 +818,89 @@ function txBattery.update(context, rect)
     context.glyphShown = glyphShown
     context.showVisual = area.showVisual
     context.detailAnchor = nil
+end
+
+local function publishGeometry(context)
     -- Reconcile text visibility and refit any restored percentage immediately,
     -- even when the voltage has not changed since the previous rectangle.
     context.rendered = nil
     local _, drawn = context.primitives.changed(context, txBattery.render)
     txBattery.apply(context, drawn)
 end
+
+function txBattery.cancelRefresh(context)
+    if context.createStage then
+        context.createInvalidated = true
+    end
+    context.primitives.invalidateReflow(context)
+end
+
+function txBattery.update(context, rect)
+    while context.createStage do
+        txBattery.construct(context, rect)
+    end
+    txBattery.cancelRefresh(context)
+    local area = geometry(context, rect)
+    placeReading(context, rect, area)
+    placeVisual(context, area)
+    publishGeometry(context)
+end
+
+function txBattery.reflow(context, rect, _, _, _, begin)
+    if context.primitives.reflowStart(context, rect, begin) then
+        context.reflowWork = { stage = "reading", area = geometry(context, rect) }
+        return false
+    end
+    local work = context.reflowWork
+    if not work then
+        return true
+    end
+    if work.stage == "reading" then
+        placeReading(context, rect, work.area)
+        work.stage = "visual"
+    elseif work.stage == "visual" then
+        placeVisual(context, work.area)
+        work.stage = "publish"
+    else
+        publishGeometry(context)
+        context.reflowWork = nil
+        return true
+    end
+    return false
+end
+
+function txBattery.construct(context, rect)
+    local stage = context.createStage
+    if stage == "geometry" then
+        createGeometry(context, rect)
+    elseif stage == "header" then
+        createFrame(context)
+    elseif stage == "controls" then
+        createControls(context)
+        context.createStage = "publish"
+    elseif stage == "reading" then
+        placeReading(context, context.rect, context.area)
+        context.primitives.setFont(context.unit, context.area.unitFont)
+        context.createStage = "visual"
+    elseif stage == "visual" then
+        placeVisual(context, context.area)
+        context.createStage = "publish"
+    elseif stage == "publish" then
+        if context.createInvalidated or not context.primitives.sameRect(context.rect, rect) then
+            context.createStage = "geometry"
+        else
+            publishGeometry(context)
+            context.createStage, context.createPresentation = nil, nil
+            return true
+        end
+    elseif not stage then
+        return true
+    else
+        error("unknown tx-battery construction stage: " .. tostring(stage))
+    end
+    return false
+end
+
+txBattery.reflowDecl = { callback = txBattery.reflow }
 
 return txBattery

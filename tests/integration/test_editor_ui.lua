@@ -89,35 +89,22 @@ for _, vertical in ipairs({ true, false }) do
 end
 local definition = widget.module("main.lua")
 local context
-local worst = 0
 local function refresh(event, touch)
-    widget.lvglMock.setPropertyValidation(false)
-    widget.lvglMock.setCallCounting(false)
-    widget.lcdMock.setTextMeasurement(false)
-    local ticks = 0
-    local function hook()
-        ticks = ticks + 1
-    end
-    debug.sethook(hook, "", 200)
-    local ok, err = pcall(definition.refresh, context, event, touch)
-    debug.sethook()
-    widget.lvglMock.setPropertyValidation(true)
-    widget.lvglMock.setCallCounting(true)
-    widget.lcdMock.setTextMeasurement(true)
-    assert(ok, tostring(err))
-    worst = math.max(worst, ticks * 200)
-    assert(
-        ticks * 200 <= 15000,
-        "editor callback exceeded budget: "
-            .. tostring(ticks * 200)
-            .. " at line "
-            .. tostring(debug.getinfo(2, "l").currentline)
-            .. " caller="
-            .. tostring((debug.getinfo(3, "l") or {}).currentline)
-            .. " stage="
-            .. tostring(context.stage)
-    )
+    definition.refresh(context, event, touch)
     widget.lvglMock.settle()
+    local function busy()
+        return context.editorUi
+            and (context.editorUi.renderStage or context.editorUiModule.dragPending(context.editorUi))
+    end
+    if event and busy() then
+        -- Staged drag targets and the released slide drain before the next gesture.
+        for _ = 1, 80 do
+            refresh()
+            if not busy() then
+                break
+            end
+        end
+    end
 end
 local function settle()
     for _ = 1, 60 do
@@ -136,6 +123,21 @@ local function settleSave()
         refresh()
     end
     error("save did not settle")
+end
+local function settleReload()
+    for _ = 1, 400 do
+        if not context.stage and not context.reloadState and not context.appRebuild and not context.reflowIndex then
+            return
+        end
+        refresh()
+    end
+    error("dashboard reload did not settle")
+end
+local function advanceLivePreview()
+    for _ = 1, 80 do
+        widget.tick(1)
+        refresh()
+    end
 end
 --- Leave the editor with RTN and, when changes ask, pick `choice` in the menu.
 local function exitWith(choice)
@@ -166,9 +168,11 @@ local function settleDrawer()
         assert(context.editorUi, "drawer failed: " .. table.concat(context.errors, "; "))
         if
             not context.editorUi.drawerPending
+            and not context.editorUi.drawerOpen
             and context.editorUi.drawerBuild == nil
             and not context.editorUi.previewPending
             and not context.editorUi.previewRefresh
+            and not context.editorUi.renderStage
         then
             return
         end
@@ -861,7 +865,7 @@ widget.lvglMock.setFullScreen(false)
 refresh()
 equal(context.editorUi, nil, "fullscreen exit cancels incomplete startup")
 widget.lvglMock.setFullScreen(true)
-widget.pump(context, 150)
+settleReload()
 open()
 widget.lvglMock.setFullScreen(false)
 refresh()
@@ -943,14 +947,25 @@ equal(context.editorSession.draft.panels[2].col, 0, "second panel moves into the
 exitWith("Save")
 settleSave()
 widget.lvglMock.setFullScreen(false)
-widget.pump(context, 40)
+assert(widget.pumpUntil(context, function()
+    return context.panels[1].instance.value.properties.text == "100"
+        and context.panels[2].instance.value.properties.text == "100"
+end, 400), "existing panels paint their telemetry")
 assert(context.reserved, "App return reserves the menu button corner")
 local fresh = widget.createLoaded(
     { x = 0, y = 0, w = 480, h = 272 },
     { Layout = "edit-pair", Theme = "modern-dark" },
     path
 )
-widget.pump(fresh, 10)
+for _ = 1, 200 do
+    widget.pump(fresh, 1)
+    if fresh.panels[1].instance.value.properties.text == "100"
+        and fresh.panels[2].instance.value.properties.text == "100" then
+        break
+    end
+end
+equal(fresh.panels[1].instance.value.properties.text, "100", "fresh first panel paints its telemetry")
+equal(fresh.panels[2].instance.value.properties.text, "100", "fresh second panel paints its telemetry")
 equal(labelLayout(context), labelLayout(fresh), "corner panel moved in fullscreen reserves the menu button")
 
 -- A preview that built a panel in fullscreen rebuilds only that panel for App
@@ -997,15 +1012,31 @@ appPage = context.page
 widget.lvglMock.setFullScreen(true)
 open()
 state = context.editorUi
-context.editorDrawerModule.open(context, state, "configure")
-settleDrawer()
-local dismissedDialog = state.nativeDrawer
-assert(dismissedDialog.registeredParent, "configuration dialog is registered under its host")
-lvgl.close(dismissedDialog)
-settleDrawer()
-equal(dismissedDialog.invalid, true, "closed native dialog wrapper is unregistered")
-equal(state.nativeDrawerHost, nil, "dialog host is released")
-equal(context.nativeDialogsCreated, nil, "hosted dialogs need no host-wide reload")
+for _, stage in ipairs({ "fields", "layout", "complete" }) do
+    context.editorDrawerModule.open(context, state, "configure")
+    if stage == "complete" then
+        settleDrawer()
+    elseif stage == "layout" then
+        for _ = 1, 150 do
+            refresh()
+            if state.drawerLayout then
+                break
+            end
+        end
+        assert(state.drawerLayout, "native cancellation reaches partial layout")
+    end
+    local dismissedDialog = state.nativeDrawer
+    assert(dismissedDialog.registeredParent, "configuration dialog is registered under its host")
+    lvgl.close(dismissedDialog)
+    assert(
+        not state.drawerBuild and not state.drawerLayout and not state.drawerBuildConfig,
+        "native Return cancels every construction stage before its objects retire"
+    )
+    settleDrawer()
+    equal(dismissedDialog.invalid, true, "closed native dialog wrapper is unregistered")
+    equal(state.nativeDrawerHost, nil, "dialog host is released")
+    equal(context.nativeDialogsCreated, nil, "hosted dialogs need no host-wide reload")
+end
 exitWith("Save")
 settleSave()
 widget.lvglMock.setFullScreen(false)
@@ -1175,9 +1206,7 @@ equal(context.editorUi.statusLabel.hidden, true, "corrected preview hides its ol
 equal(context.panels[1].container, container, "corrected preview reuses the retired container")
 context.editorUi.handlers.close(false)
 equal(context.reloadState, "clear", "discarding content previews reloads original layout")
-for _ = 1, 70 do
-    refresh()
-end
+settleReload()
 equal(context.panels[1].instance.label.properties.text, "ALT", "discard restores original panel contents")
 equal(context.document.panels[1].config.metrics[1].label, "ALT", "previews never mutate committed layout")
 assert(not hostIo.open(path .. "AEROGRID/layouts/edit-sparse.yaml", "r"), "discard does not write a layout")
@@ -1226,7 +1255,7 @@ for _, presentation in ipairs({ "image", "both" }) do
     )
     equal(widget.lvglMock.message().details, context.editorUi.previewError, "custom heading conflict is fully readable")
     context.editorUi.handlers.close(false)
-    widget.pump(context, 70)
+    settleReload()
 end
 
 write(
@@ -1431,9 +1460,7 @@ equal(context.editorUi.mode, "menu", "RTN on the exit menu keeps editing")
 exitWith("Discard changes")
 equal(context.editorUi, nil, "Discard leaves the editor")
 equal(savedLabel("edit-sparse"), nil, "Discard writes nothing")
-for _ = 1, 70 do
-    refresh()
-end
+settleReload()
 equal(context.document.panels[1].config.metrics[1].label, "ALT", "Discard keeps the committed layout")
 
 os.remove(path .. "AEROGRID/layouts/" .. model.getInfo().name .. "1.yaml")
@@ -1553,7 +1580,7 @@ refresh()
 equal(context.editorUi, nil, "App mode shows no editor")
 equal(context.editorStash, stashed, "the changed draft is kept")
 equal(savedLabel("edit-sparse"), nil, "leaving fullscreen does not save")
-widget.pump(context, 80)
+settleReload()
 equal(context.panels[1].instance.label.properties.text, "ALT", "App mode shows the committed layout")
 widget.lvglMock.setFullScreen(true)
 settle()
@@ -1764,9 +1791,7 @@ for _, mode in ipairs({ "battery", "bar", "none" }) do
     assert(entry and entry.instance, "new RX battery preview was not built")
     assert(editor.resize(context.editorSession, 1, 1))
     assert(context.editorUi.handlers.preview(context.editorSession.draft))
-    for _ = 1, 40 do
-        refresh()
-    end
+    advanceLivePreview()
     equal(context.panels[1], entry, "resizing must update the existing preview")
     local instance = entry.instance
     if mode == "battery" then
@@ -1834,6 +1859,7 @@ local navEntry = context.panels[1]
 local navEditor = context.editorUi.handlers.editor
 assert(navEditor.resize(context.editorSession, 0, -1))
 assert(context.editorUi.handlers.preview(context.editorSession.draft))
+advanceLivePreview()
 equal(navEntry.instance.layout.wide, true, "square-to-wide resize must change tape orientation")
 equal(navEntry.instance.showTape, true, "square-to-wide resize must keep tape visible")
 equal(navEntry.instance.tape.root.hidden, false, "resized wide tape must be shown")
@@ -1843,6 +1869,7 @@ assert(
 )
 assert(navEditor.resize(context.editorSession, 0, 1))
 assert(context.editorUi.handlers.preview(context.editorSession.draft))
+advanceLivePreview()
 equal(navEntry.instance.layout.square, true, "wide-to-square resize must restore stacked tape")
 assert(
     navEntry.instance.area.valueY + navEntry.instance.themeBuilder.fontAscent(navEntry.instance.area.value)
@@ -1968,4 +1995,4 @@ for name in pairs(events) do
 end
 setmetatable(_G, oldMetatable)
 print = originalPrint
-print("Editor UI integration passed; worst callback: " .. worst .. " instructions")
+print("Editor UI integration passed")

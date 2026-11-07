@@ -2,27 +2,37 @@
 
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
-local chartModule = fixture.module("panels/chart.lua")
-local function refresh(panel)
-    local interval, unfinished
+local chart = fixture.module("panels/chart.lua")
+local host = fixture.module("lib/panel_host.lua")
+local readingModule = {
+    decl = chart.readingDecl,
+    step = chart.readingStep,
+    stageOf = chart.readingStageOf,
+}
+local function completeFrame(panel)
+    local task = host.task({ module = chart, instance = panel, interval = 20 })
     for _ = 1, 2000 do
-        interval, unfinished = chartModule.refresh(panel)
-        if not unfinished then
-            return interval
+        local delay = task:step(task.want or 1, task.stage, getTime())
+        if delay ~= 1 then
+            return delay
         end
     end
     error("chart frame did not finish")
 end
-local chart = {}
-for key, value in pairs(chartModule) do
-    chart[key] = value
+local function completeReadings(panel)
+    local task = host.task({ module = readingModule, instance = panel, interval = 10 })
+    local delay = task:step(task.want or 1, task.stage, getTime())
+    local changed = delay == 1
+    for _ = 1, 100 do
+        if delay ~= 1 then return changed end
+        delay = task:step(task.want or 1, task.stage, getTime())
+    end
+    error("chart readings did not finish")
 end
-chart.refresh = refresh
-chart.update = function(panel, rect)
-    chartModule.update(panel, rect)
-    refresh(panel)
+local function updatePanel(panel, rect)
+    chart.update(panel, rect)
+    completeFrame(panel)
 end
-local host = fixture.module("lib/panel_host.lua")
 local equal = assert(loadfile(root .. "/tests/support/assertions.lua"))().assertEqual
 
 assert(host.validateModule(chart, "chart"))
@@ -168,6 +178,9 @@ end
 checkDurationCorner(power)
 equal(power.indicator, nil, "charts must not create a recording dot")
 equal(power.series[1].feed.available, false)
+assert(fixture.pumpUntil(context, function()
+    return power.status.properties.text == "WAITING FOR ARM"
+end, 1000), "the disarmed chart must finish initializing")
 equal(power.status.properties.text, "WAITING FOR ARM")
 equal(#power.armMarkers.markerKeys, 0, "no arm boundary may be created before the first recording")
 fixture.radio.values[300] = 1024
@@ -352,7 +365,7 @@ assert(disarmMarker and disarmMarker.active)
 equal(disarmMarker.object.kind, "triangle")
 assert(disarmMarker.object.properties.pts[3][2] > disarmMarker.object.properties.pts[1][2])
 local pausedRevision = power.series[1].feed.plotRevision
-chart.update(power, power.rect)
+updatePanel(power, power.rect)
 assert(
     power.armMarkers.markers[-disarmColumn] == disarmMarker
         or power.backPlot.armMarkers.markers[-disarmColumn] == disarmMarker,
@@ -389,7 +402,7 @@ for _, size in ipairs({ { 320, 240 }, { 800, 480 }, { 480, 272 } }) do
     equal(#context.errors, 0, table.concat(context.errors, "\n"))
     for _, entry in ipairs(context.panels) do
         local panel = entry.instance
-        chart.refresh(panel)
+        completeFrame(panel)
         assert(panel.area.w > 0 and panel.area.h > 0)
         assert(panel.topLegend or panel.area.legendX >= panel.area.x + panel.area.w)
         for _, item in ipairs(panel.series) do
@@ -435,7 +448,9 @@ assert(fixture.lvglMock.replacedFontRefCount() == 0, "chart reflow must reuse fo
 fixture.radio.values[getFieldInfo("RxBt").id] = 6.1
 fixture.radio.values[getFieldInfo("Curr").id] = 2.0
 assert(fixture.pumpUntil(context, function()
-    return power.series[1].value.properties.text == "6.1" and power.series[2].value.properties.text == "2.0"
+    return power.series[1].value.properties.text == "6.1"
+        and power.series[2].value.properties.text == "2.0"
+        and not power.readingWork
 end, 500))
 equal(power.series[1].value.properties.text, "6.1")
 equal(power.series[2].value.properties.text, "2.0")
@@ -445,12 +460,12 @@ alignedReadouts(power)
 
 local reading = power.series[1]
 local originalUnit, originalFeed = reading.settings.unit, reading.feed
-chart.render(power)
-equal(chart.render(power), false, "unchanged readouts must leave the callback budget available for projection")
+completeReadings(power)
+equal(completeReadings(power), false, "unchanged readouts must leave the callback budget available for projection")
 reading.settings.unit = "mAh"
-equal(chart.render(power), true, "unit overrides must invalidate cached readouts even without a telemetry revision")
+equal(completeReadings(power), true, "unit overrides must invalidate cached readouts even without a telemetry revision")
 alignedReadouts(power)
-equal(chart.render(power), false, "the updated unit must be cached after rendering")
+equal(completeReadings(power), false, "the updated unit must be cached after rendering")
 reading.feed = {
     value = originalFeed.value,
     min = originalFeed.min,
@@ -461,15 +476,15 @@ reading.feed = {
 reading.settings.unit = "mAh"
 for _, value in ipairs({ -1234.5, 9.9, 10, 1 }) do
     reading.feed.value = value
-    chart.render(power)
+    completeReadings(power)
     alignedReadouts(power)
 end
 reading.feed.value = nil
-chart.render(power)
+completeReadings(power)
 equal(reading.unit.properties.w, 0, "missing readings must not leave an empty unit column")
 alignedReadouts(power)
 reading.settings.unit, reading.feed = originalUnit, originalFeed
-chart.render(power)
+completeReadings(power)
 alignedReadouts(power)
 
 local function typographyPanel(count, top)
@@ -495,7 +510,7 @@ local feed = single.series[1].feed
 local previousHeight = 0
 local heights = {}
 for _, size in ipairs({ { 232, 64 }, { 232, 132 }, { 472, 132 }, { 472, 264 } }) do
-    chart.update(single, { x = 0, y = 0, w = size[1], h = size[2] })
+    updatePanel(single, { x = 0, y = 0, w = size[1], h = size[2] })
     local builder = single.themeBuilder
     local height = builder.fontHeight(single.legendFont)
     assert(height >= previousHeight, "adding space must not make identical readouts smaller")
@@ -521,8 +536,8 @@ equal(heights[1], single.themeBuilder.fontHeight(SMLSIZE), "short panels must ke
 equal(heights[2], single.themeBuilder.fontHeight(0), "standard panels must not inflate single-metric legends")
 equal(heights[3], heights[2], "spare width alone must not enlarge the legend")
 equal(heights[4], single.themeBuilder.fontHeight(MIDSIZE), "tall panels may use medium text")
-chart.update(single, { x = 0, y = 0, w = 472, h = 132 })
-chart.update(multiple, { x = 0, y = 0, w = 472, h = 132 })
+updatePanel(single, { x = 0, y = 0, w = 472, h = 132 })
+updatePanel(multiple, { x = 0, y = 0, w = 472, h = 132 })
 separatedReadouts(multiple)
 local function metricGap(panel)
     return panel.series[2].name.properties.y
@@ -532,7 +547,7 @@ local function metricGap(panel)
 end
 equal(metricGap(multiple), 8, "roomy small-font legends must prefer two-thirds of an extrema line")
 multiple.settings.label = "Recorded"
-chart.update(multiple, multiple.rect)
+updatePanel(multiple, multiple.rect)
 separatedReadouts(multiple)
 equal(metricGap(multiple), 8, "standard titled charts must retain the preferred gap when it fits")
 equal(
@@ -542,17 +557,17 @@ equal(
 )
 local compact = typographyPanel(2)
 compact.settings.label = "Power"
-chart.update(compact, { x = 0, y = 0, w = 232, h = 64 })
+updatePanel(compact, { x = 0, y = 0, w = 232, h = 64 })
 separatedReadouts(compact)
 assert(compact.showExtrema, "short two-metric charts must retain their extrema")
 equal(compact.series[1].name.properties.y, 2, "short legends must start at the title inset")
 equal(metricGap(compact), 8, "using the title row must free space between compact metric groups")
 local compactTop, compactPlotTop = compact.series[1].name.properties.y, compact.area.y
 compact.settings.label = ""
-chart.update(compact, compact.rect)
+updatePanel(compact, compact.rect)
 equal(compact.series[1].name.properties.y, compactTop, "hiding the title must not move the legend")
 assert(compact.area.y < compactPlotTop, "only the plot must reclaim the title row")
-chart.update(multiple, { x = 0, y = 0, w = 472, h = 264 })
+updatePanel(multiple, { x = 0, y = 0, w = 472, h = 264 })
 separatedReadouts(multiple)
 equal(
     metricGap(multiple),
@@ -560,16 +575,16 @@ equal(
     "preferred spacing must follow the extrema font instead of stretching to fill tall panels"
 )
 multiple.settings.label = nil
-chart.update(multiple, { x = 0, y = 0, w = 472, h = 132 })
+updatePanel(multiple, { x = 0, y = 0, w = 472, h = 132 })
 assert(
     single.themeBuilder.fontHeight(single.legendFont) > multiple.themeBuilder.fontHeight(multiple.legendFont),
     "fewer metrics must allow larger text when height is the limiting factor"
 )
-chart.update(multiple, { x = 0, y = 0, w = 472, h = 100 })
+updatePanel(multiple, { x = 0, y = 0, w = 472, h = 100 })
 equal(multiple.legendFont, SMLSIZE, "keep all extrema instead of increasing the font and hiding them")
 assert(multiple.showExtrema)
 separatedReadouts(multiple)
-chart.update(multiple, { x = 0, y = 0, w = 232, h = 84 })
+updatePanel(multiple, { x = 0, y = 0, w = 232, h = 84 })
 assert(multiple.showExtrema, "extra group spacing must yield before hiding extrema")
 separatedReadouts(multiple)
 equal(
@@ -577,18 +592,21 @@ equal(
     26,
     "tight layouts must shrink the gap instead of dropping information"
 )
-chart.update(single, { x = 0, y = 0, w = 232, h = 64 })
-chart.update(multiple, { x = 0, y = 0, w = 232, h = 64 })
+updatePanel(single, { x = 0, y = 0, w = 232, h = 64 })
+updatePanel(multiple, { x = 0, y = 0, w = 232, h = 64 })
 equal(multiple.legendFont, SMLSIZE, "crowded short panels must keep the readable minimum")
 assert(not multiple.showExtrema, "extrema may hide only when they cannot fit at the minimum font")
 separatedReadouts(multiple)
-chart.update(single, { x = 0, y = 0, w = 472, h = 132 })
+updatePanel(single, { x = 0, y = 0, w = 472, h = 132 })
 local initialFontHeight = single.themeBuilder.fontHeight(single.legendFont)
 local altitudeId = getFieldInfo("Alt").id
 local altitude = fixture.radio.values[altitudeId]
 fixture.radio.values[altitudeId] = 123456789012345678901234
-fixture.pump(context, 60)
-chart.refresh(single)
+assert(fixture.pumpUntil(context, function()
+    return single.series[1].feed.value == fixture.radio.values[altitudeId]
+end, 1500), "the long readout must reach the chart feed")
+completeFrame(single)
+completeFrame(single)
 assert(
     single.themeBuilder.fontHeight(single.legendFont) < initialFontHeight,
     "longer readouts must reduce the font to fit"
@@ -616,7 +634,7 @@ for count = 1, 3 do
         item.feed = { value = 42.3, min = -1.2, max = 68.4, revision = 1 }
     end
     for _, size in ipairs({ { 232, 132 }, { 156, 112 }, { 392, 232 }, { 232, 232 }, { 156, 232 } }) do
-        chart.update(panel, { x = 0, y = 0, w = size[1], h = size[2] })
+        updatePanel(panel, { x = 0, y = 0, w = size[1], h = size[2] })
         assert(panel.topLegend, "square spans must use top legends even on wide radio displays")
         alignedReadouts(panel)
         separatedReadouts(panel)
@@ -667,13 +685,13 @@ for count = 1, 3 do
         end
     end
     if count == 3 then
-        chart.update(panel, { x = 0, y = 0, w = 232, h = 132 })
+        updatePanel(panel, { x = 0, y = 0, w = 232, h = 132 })
         local first, last = panel.series[1], panel.series[count]
         last.feed.value, last.feed.revision = 1234.5, 2
-        assert(chart.render(panel))
+        assert(completeReadings(panel))
         local geometry = panel.geometryVersion
         first.feed.value, first.feed.revision = 123.4, 2
-        assert(chart.render(panel))
+        assert(completeReadings(panel))
         equal(panel.geometryVersion, geometry, "smaller individual growth must not reflow all legends")
         local nameWidth = math.max(0, first.legendW - first.value.properties.w - first.unit.properties.w - 4)
         equal(
@@ -684,17 +702,17 @@ for count = 1, 3 do
         assert(first.name.properties.text ~= first.caption, "this reading must leave too little room for its caption")
         first.feed.value, first.feed.revision = 42.3, 3
         last.feed.value, last.feed.revision = 42.3, 3
-        assert(chart.render(panel))
+        assert(completeReadings(panel))
         equal(first.name.properties.text, first.caption, "shrinking a reading must restore a caption that fits")
         alignedReadouts(panel)
         separatedReadouts(panel)
     end
     local originalReserved = context.reserved
     for _, size in ipairs({ { 232, 132 }, { 156, 112 }, { 392, 232 }, { 232, 232 }, { 156, 232 } }) do
-        chart.update(panel, { x = 0, y = 0, w = size[1], h = size[2] })
+        updatePanel(panel, { x = 0, y = 0, w = size[1], h = size[2] })
         local clearTop, clearPlotTop = panel.series[1].value.properties.y, panel.area.y
         context.reserved = { w = 47, h = 45 }
-        chart.update(panel, panel.rect)
+        updatePanel(panel, panel.rect)
         local reserved = assert(panel.area.frame.reserved)
         equal(panel.series[1].value.properties.y, clearTop, "the logo must not push legends below the header")
         assert(panel.series[1].value.properties.y < reserved.h, "the first legend must use the logo's header row")
@@ -721,7 +739,7 @@ for count = 1, 3 do
     end
     context.reserved = { w = 47, h = 45 }
     panel.settings.label = "Flight"
-    chart.update(panel, { x = 0, y = 0, w = 232, h = 132 })
+    updatePanel(panel, { x = 0, y = 0, w = 232, h = 132 })
     assert(
         panel.series[1].name.properties.y >= panel.title.properties.y + panel.themeBuilder.fontHeight(SMLSIZE),
         "top metric groups must not overlap the optional chart heading"
@@ -732,14 +750,14 @@ for count = 1, 3 do
     panel.series[1].feed.value = -123456.7
     panel.series[1].feed.min = -123456.7
     panel.series[1].feed.revision = 2
-    assert(chart.render(panel))
+    assert(completeReadings(panel))
     equal(panel.area.w, width, "readout growth must never take width away from a top-layout plot")
     alignedReadouts(panel)
     separatedReadouts(panel)
-    equal(chart.render(panel), false, "top readout geometry must converge without repeated reflow")
+    equal(completeReadings(panel), false, "top readout geometry must converge without repeated reflow")
     context.reserved = originalReserved
     panel.span = { colSpan = 4, rowSpan = 2 }
-    chart.update(panel, { x = 0, y = 0, w = 472, h = 132 })
+    updatePanel(panel, { x = 0, y = 0, w = 472, h = 132 })
     assert(not panel.topLegend, "wide spans must restore the existing side legend")
     alignedReadouts(panel)
     separatedReadouts(panel)
@@ -769,7 +787,7 @@ end
 
 local function finishDrawing(panel)
     for _ = 1, 2000 do
-        chart.refresh(panel)
+        completeFrame(panel)
         local item = panel.series[1]
         if
             not panel.pending
@@ -788,7 +806,7 @@ local gridPanel = recordingPanel("minute-grid", "rolling")
 gridPanel.settings.duration = "10m"
 gridPanel.session = { configured = true, available = true, recording = false, elapsed = 65000 }
 for _ = 1, 24 do
-    chart.refresh(gridPanel)
+    completeFrame(gridPanel)
 end
 assert(gridPanel.title.hidden, "empty labels must hide the title instead of deriving one")
 assert(not gridPanel.durationBackground.hidden, "titleless charts need a readable duration annotation")
@@ -827,16 +845,16 @@ end
 checkGrid(gridPanel)
 gridPanel.session.elapsed = 67500
 for _ = 1, 12 do
-    chart.refresh(gridPanel)
+    completeFrame(gridPanel)
 end
 checkGrid(gridPanel)
-chart.update(gridPanel, { x = 0, y = 0, w = 472, h = 264 })
+updatePanel(gridPanel, { x = 0, y = 0, w = 472, h = 264 })
 for _ = 1, 12 do
-    chart.refresh(gridPanel)
+    completeFrame(gridPanel)
 end
 checkGrid(gridPanel)
 gridPanel.settings.label = "Flight"
-chart.update(gridPanel, gridPanel.rect)
+updatePanel(gridPanel, gridPanel.rect)
 assert(not gridPanel.title.hidden)
 checkDurationCorner(gridPanel)
 assert(gridPanel.area.y > gridPanel.area.frame.labelY, "explicit titles must retain a header")
@@ -856,7 +874,7 @@ for _, case in ipairs({
 }) do
     gridPanel.session.elapsed = case[1]
     for _ = 1, 12 do
-        chart.refresh(gridPanel)
+        completeFrame(gridPanel)
     end
     equal(gridPanel.window, case[2], "growing windows must advance by whole minutes only after a boundary is exceeded")
     equal(gridPanel.duration.properties.text, chart.durationText(case[2]))
@@ -864,12 +882,12 @@ for _, case in ipairs({
 end
 gridPanel.settings.duration = "10m"
 gridPanel.session.elapsed = 0
-chart.refresh(gridPanel)
+completeFrame(gridPanel)
 equal(gridPanel.window, 6000, "legacy growing durations must not override the fixed one-minute start")
 checkDurationCorner(gridPanel)
 gridPanel.session.elapsed = 0
 for _ = 1, 12 do
-    chart.refresh(gridPanel)
+    completeFrame(gridPanel)
 end
 for _, line in ipairs(gridPanel.grid) do
     assert(not line.visible and line.object.hidden, "short views must hide obsolete minute lines")
@@ -918,13 +936,13 @@ syntheticSample()
 equal(denseItem.feed.value, 1000)
 equal(denseItem.feed.max, 1000)
 equal(denseItem.feed.plotRevision, frozenRevision)
-chart.refresh(dense)
-chart.update(dense, { x = 0, y = 0, w = 472, h = 264 })
+completeFrame(dense)
+updatePanel(dense, { x = 0, y = 0, w = 472, h = 264 })
 finishDrawing(dense)
 equal(dense.status.properties.text, "HISTORY FULL")
 assert(denseItem.runs[1].line and not denseItem.runs[1].line.hidden, "full history must remain drawable after resize")
 history.failed = true
-chart.refresh(dense)
+completeFrame(dense)
 equal(dense.status.properties.text, "HISTORY N/A", "full status must not mask service failure")
 history.failed = nil
 
@@ -1007,26 +1025,26 @@ end
 equal(lightPower.series[1].color, lightPower.theme.color.chartCyan)
 equal(lightPower.series[2].color, lightPower.theme.color.chartOrange)
 lightPower.settings.timeRange, lightPower.settings.duration = "rolling", "2m"
-chart.update(lightPower, lightPower.rect)
+updatePanel(lightPower, lightPower.rect)
 for _ = 1, 24 do
-    chart.refresh(lightPower)
+    completeFrame(lightPower)
 end
 checkGrid(lightPower)
 equal(lightPower.baseline.properties.color, lightPower.theme.color.chartGrid, "baseline and minute grid must agree")
 
 finishDrawing(dense)
 local originalRanges, rangeUpdates = chart.ranges, 0
-chartModule.ranges = function(panel)
+chart.ranges = function(panel)
     rangeUpdates = rangeUpdates + 1
     originalRanges(panel)
 end
-chart.refresh(dense)
-chart.refresh(dense)
+completeFrame(dense)
+completeFrame(dense)
 equal(rangeUpdates, 0, "unchanged recordings must reuse their vertical ranges")
 denseItem.readingRevision = nil
-chart.refresh(dense)
+completeFrame(dense)
 equal(rangeUpdates, 1, "a changed reading revision must recompute vertical ranges")
-chartModule.ranges = originalRanges
+chart.ranges = originalRanges
 
 local historyService = light.serviceRuntime.byId.history
 local telemetryService = light.serviceRuntime.byId.telemetry
@@ -1052,7 +1070,7 @@ equal(compatible.instance.series[1].feed, lightPower.series[1].feed, "visual edi
 finishDrawing(compatible.instance)
 equal(compatible.instance.status.properties.text, "PREVIEW")
 assert(compatible.instance.series[1].runs[1].line, "a compatible chart preview must still draw recorded history")
-chart.update(compatible.instance, { x = 0, y = 0, w = 472, h = 196 })
+updatePanel(compatible.instance, { x = 0, y = 0, w = 472, h = 196 })
 finishDrawing(compatible.instance)
 assert(not compatible.instance.series[1].runs[1].line.hidden, "resizing a read-only preview preserves its traces")
 local incompatible, incompatibleError = light.dashboardLoader.buildPanel(light, {

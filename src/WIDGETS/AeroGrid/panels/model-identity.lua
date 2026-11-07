@@ -40,6 +40,11 @@ local modelIdentity = {
     -- Model identity changes only when the model changes, which reloads the
     -- widget anyway. Five seconds is already generous.
     refreshInterval = 500,
+    decl = {
+        class = "normal",
+        kinds = { steady = true },
+        stages = { run = { maxUnits = 1 } },
+    },
     settings = {
         -- Responsive content, like `navigation`: which arrangement is drawn.
         {
@@ -578,7 +583,7 @@ end
 
 --- Advance the panel, repainting only when something drawn changed.
 ---@param context AeroGridIdentityContext
-function modelIdentity.refresh(context)
+function modelIdentity.step(context)
     if not context.feed then
         return
     end
@@ -657,5 +662,7 @@ function modelIdentity.update(context, rect)
     context.showLabels = area.showLabels
     context.showImage = area.showImage
 end
+
+modelIdentity.reflowDecl = { callback = modelIdentity.update }
 
 return modelIdentity

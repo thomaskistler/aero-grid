@@ -316,72 +316,82 @@ end
 
 --- Guarantee that a custom palette is structurally visible and legible.
 --- Built-in palettes are exempt because their values are specified directly.
----@param tokens table
----@param notices table[]
-local function enforceLegibility(tokens, notices)
+---@param work table
+local function advanceLegibility(work)
+    local tokens, notices = work.tokens, work.notices
+    local step = work.legibility
     -- Structural separation: panels, elevation, and borders must be visible.
-    if theme.contrast(tokens.canvas, tokens.surface) < MIN_ELEVATION_CONTRAST then
-        tokens.surface = separated(tokens.canvas, MIN_ELEVATION_CONTRAST)
-        theme.notice(notices, "info", "surface was lifted to elevate panels")
-    end
-    tokens.surfaceRaised = separated(tokens.surface, MIN_RAISE_CONTRAST)
-    if theme.contrast(tokens.surface, tokens.border) < 1.25 then
-        tokens.border = separated(tokens.surface, 1.25)
-    end
-    if theme.contrast(tokens.surface, tokens.track) < MIN_TRACK_CONTRAST then
-        tokens.track = separated(tokens.surface, MIN_TRACK_CONTRAST)
-    end
-
-    correctContrast(tokens, "text", tokens.surface, MIN_TEXT_CONTRAST, notices)
-    correctContrast(tokens, "textMuted", tokens.surface, MIN_MUTED_CONTRAST, notices)
-    correctContrast(tokens, "textFaint", tokens.surface, MIN_FAINT_CONTRAST, notices)
-
-    -- Decorative accents may be nudged to stay visible on the panel surface.
-    for _, key in ipairs({ "cyan", "green", "amber", "orange", "blue" }) do
-        correctAccent(tokens, key, tokens.surface, MIN_ACCENT_CONTRAST, notices)
-    end
-
-    -- Critical red is never adjusted: an alarm must look the same on every
-    -- radio. If the surface would swallow it, shift the surface's lightness
-    -- instead, keeping its hue, since surface is a token we may choose.
-    if theme.contrast(tokens.surface, tokens.critical) < MIN_ACCENT_CONTRAST then
-        local replacement = betterContrast(tokens.critical, 0x000000, 0xFFFFFF)
-
-        for _, amount in ipairs({ 0.1, 0.2, 0.3, 0.45, 0.6, 0.75, 0.9 }) do
+    if step == 1 then
+        if theme.contrast(tokens.canvas, tokens.surface) < MIN_ELEVATION_CONTRAST then
+            tokens.surface = separated(tokens.canvas, MIN_ELEVATION_CONTRAST)
+            theme.notice(notices, "info", "surface was lifted to elevate panels")
+        end
+    elseif step == 2 or step == 14 then
+        tokens.surfaceRaised = separated(tokens.surface, MIN_RAISE_CONTRAST)
+    elseif step == 3 or step == 15 then
+        if step == 15 or theme.contrast(tokens.surface, tokens.border) < 1.25 then
+            tokens.border = separated(tokens.surface, 1.25)
+        end
+    elseif step == 4 or step == 16 then
+        if step == 16 or theme.contrast(tokens.surface, tokens.track) < MIN_TRACK_CONTRAST then
+            tokens.track = separated(tokens.surface, MIN_TRACK_CONTRAST)
+        end
+    elseif (step >= 5 and step <= 7) or (step >= 18 and step <= 20) then
+        local index = step >= 18 and step - 17 or step - 4
+        correctContrast(
+            tokens,
+            ({ "text", "textMuted", "textFaint" })[index],
+            tokens.surface,
+            ({ MIN_TEXT_CONTRAST, MIN_MUTED_CONTRAST, MIN_FAINT_CONTRAST })[index],
+            notices
+        )
+    elseif (step >= 8 and step <= 12) or (step >= 21 and step <= 25) then
+        local index = step >= 21 and step - 20 or step - 7
+        correctAccent(
+            tokens,
+            ({ "cyan", "green", "amber", "orange", "blue" })[index],
+            tokens.surface,
+            MIN_ACCENT_CONTRAST,
+            notices
+        )
+    elseif step == 13 then
+        -- Critical red never moves; search one surface lightness per advance.
+        if not work.criticalCandidate then
+            if theme.contrast(tokens.surface, tokens.critical) >= MIN_ACCENT_CONTRAST then
+                work.stage = "chart"
+                return
+            end
+            work.criticalCandidate = betterContrast(tokens.critical, 0x000000, 0xFFFFFF)
+            work.criticalIndex = 1
+            return
+        end
+        local amount = ({ 0.1, 0.2, 0.3, 0.45, 0.6, 0.75, 0.9 })[work.criticalIndex]
+        if amount then
             local darker = theme.shade(tokens.surface, -amount)
             if theme.contrast(darker, tokens.critical) >= MIN_ACCENT_CONTRAST then
-                replacement = darker
-                break
-            end
-            local lighter = theme.shade(tokens.surface, amount)
-            if theme.contrast(lighter, tokens.critical) >= MIN_ACCENT_CONTRAST then
-                replacement = lighter
-                break
+                work.criticalCandidate = darker
+            else
+                local lighter = theme.shade(tokens.surface, amount)
+                if theme.contrast(lighter, tokens.critical) >= MIN_ACCENT_CONTRAST then
+                    work.criticalCandidate = lighter
+                else
+                    work.criticalIndex = work.criticalIndex + 1
+                    return
+                end
             end
         end
-
-        tokens.surface = replacement
+        tokens.surface = work.criticalCandidate
         theme.notice(notices, "info", "surface was shifted to keep critical visible")
-
-        -- The surface moved, so everything measured against it must be rechecked.
-        tokens.surfaceRaised = separated(tokens.surface, MIN_RAISE_CONTRAST)
-        tokens.border = separated(tokens.surface, 1.25)
-        tokens.track = separated(tokens.surface, MIN_TRACK_CONTRAST)
-        -- Elevation included. The shift above answers only to critical red, so it
-        -- can land next to the canvas and leave the panels invisible against the
-        -- screen; the canvas moves rather than the surface, because moving the
-        -- surface back is exactly what this branch just refused to do, and
-        -- nothing but elevation is measured against the canvas.
+    elseif step == 17 then
+        -- Recheck everything measured against the shifted surface.
         if theme.contrast(tokens.canvas, tokens.surface) < MIN_ELEVATION_CONTRAST then
             tokens.canvas = separated(tokens.surface, MIN_ELEVATION_CONTRAST)
             theme.notice(notices, "info", "canvas was moved to keep panels elevated")
         end
-        correctContrast(tokens, "text", tokens.surface, MIN_TEXT_CONTRAST, notices)
-        correctContrast(tokens, "textMuted", tokens.surface, MIN_MUTED_CONTRAST, notices)
-        correctContrast(tokens, "textFaint", tokens.surface, MIN_FAINT_CONTRAST, notices)
-        for _, key in ipairs({ "cyan", "green", "amber", "orange", "blue" }) do
-            correctAccent(tokens, key, tokens.surface, MIN_ACCENT_CONTRAST, notices)
-        end
+    end
+    work.legibility = step + 1
+    if step == 25 then
+        work.stage = "chart"
     end
 end
 
@@ -422,67 +432,78 @@ end
 ---@param preferred? integer Preferred surface, subject to the same contrast guarantees.
 ---@param faintTextUsed? boolean False for states whose panels draw no faint supporting text.
 ---@param separation? number Built-in light theme's softer surface separation.
+---@return table work
+local function beginAlert(tokens, accent, preferred, faintTextUsed, separation)
+    return {
+        surface = tokens.surface,
+        accent = accent,
+        preferred = preferred,
+        faintTextUsed = faintTextUsed,
+        separation = separation,
+        surfaceLum = luminance(tokens.surface),
+        canvasLum = luminance(tokens.canvas),
+        textLum = luminance(tokens.text),
+        mutedLum = luminance(tokens.textMuted),
+        faintLum = luminance(tokens.textFaint),
+        accentLum = luminance(accent),
+        fraction = 1,
+        amount = 1,
+    }
+end
+
+local function ratio(a, b)
+    if a < b then
+        a, b = b, a
+    end
+    return (a + 0.05) / (b + 0.05)
+end
+
+local function legible(work, candidate)
+    local candidateLum = luminance(candidate)
+    return ratio(work.surfaceLum, candidateLum) >= (work.separation or MIN_TINT_SEPARATION)
+        and ratio(work.canvasLum, candidateLum) >= (work.separation or MIN_ELEVATION_CONTRAST)
+        and (work.faintTextUsed == false or ratio(candidateLum, work.faintLum) >= MIN_FAINT_CONTRAST)
+        and ratio(candidateLum, work.accentLum) >= MIN_ACCENT_CONTRAST
+        and ratio(candidateLum, work.mutedLum) >= MIN_MUTED_CONTRAST
+        and ratio(candidateLum, work.textLum) >= MIN_TEXT_CONTRAST
+end
+
+local function advanceAlert(work)
+    if work.preferred then
+        local preferred = work.preferred
+        work.preferred = nil
+        if legible(work, preferred) then
+            return true, preferred
+        end
+        return false
+    end
+    local fraction = ({ 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40 })[work.fraction]
+    if not fraction then
+        return true, nil
+    end
+    local mixed = blend(work.surface, work.accent, fraction)
+    local amount = ({ 0, -0.2, -0.35, -0.5, 0.15 })[work.amount]
+    local candidate = amount == 0 and mixed or theme.shade(mixed, amount)
+    if legible(work, candidate) then
+        return true, candidate
+    end
+    work.amount = work.amount + 1
+    if work.amount > 5 then
+        work.fraction, work.amount = work.fraction + 1, 1
+    end
+    return false
+end
+
+--- Synchronous tint search through the same candidate operations as the resolver.
 ---@return integer? surface Nil when no tint satisfies the guarantees.
 function theme.alertSurface(tokens, accent, preferred, faintTextUsed, separation)
-    local surface = tokens.surface
-
-    -- Each guarantee is a contrast ratio against a colour that does not change
-    -- while the search runs, so their luminances are taken once rather than for
-    -- every candidate. `theme.contrast` recomputes both sides on each call and
-    -- luminance is three floating point powers, so measuring the naive way cost
-    -- over seven hundred of them and put the loader's theme step 1600
-    -- instructions up, on a budget of 20000. Measured, not guessed at.
-    local surfaceLum = luminance(surface)
-    local canvasLum = luminance(tokens.canvas)
-    local textLum = luminance(tokens.text)
-    local mutedLum = luminance(tokens.textMuted)
-    local faintLum = luminance(tokens.textFaint)
-    local accentLum = luminance(accent)
-
-    --- Contrast between two already-measured luminances.
-    local function ratio(a, b)
-        if a < b then
-            a, b = b, a
-        end
-        return (a + 0.05) / (b + 0.05)
-    end
-
-    local function legible(candidateLum)
-        return ratio(surfaceLum, candidateLum) >= (separation or MIN_TINT_SEPARATION)
-            and ratio(canvasLum, candidateLum) >= (separation or MIN_ELEVATION_CONTRAST)
-            and (faintTextUsed == false or ratio(candidateLum, faintLum) >= MIN_FAINT_CONTRAST)
-            and ratio(candidateLum, accentLum) >= MIN_ACCENT_CONTRAST
-            and ratio(candidateLum, mutedLum) >= MIN_MUTED_CONTRAST
-            and ratio(candidateLum, textLum) >= MIN_TEXT_CONTRAST
-    end
-
-    if preferred and legible(luminance(preferred)) then
-        return preferred
-    end
-
-    -- Hue first, then lightness, and both directions of lightness.
-    --
-    -- On a mid-grey custom surface, lightening can erase text contrast.
-    -- Darkening the same mix keeps the hue and opens that gap instead.
-    for _, fraction in ipairs({ 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40 }) do
-        local mixed = blend(surface, accent, fraction)
-
-        for _, amount in ipairs({ 0, -0.2, -0.35, -0.5, 0.15 }) do
-            local candidate = amount == 0 and mixed or theme.shade(mixed, amount)
-            local candidateLum = luminance(candidate)
-
-            -- Cheapest to fail first: a candidate too close to the resting surface
-            -- is the common rejection, and testing it first skips the rest.
-            if legible(candidateLum) then
-                return candidate
-            end
+    local work = beginAlert(tokens, accent, preferred, faintTextUsed, separation)
+    while true do
+        local done, value = advanceAlert(work)
+        if done then
+            return value
         end
     end
-
-    -- Nothing satisfied every guarantee. The panel keeps its resting surface and
-    -- says so through its accent and badge alone, which is worse than a tint and
-    -- better than an illegible one.
-    return nil
 end
 
 --- Validate complete named themes from the shared YAML catalog.
@@ -652,22 +673,10 @@ function theme.setCatalog(document)
     return true
 end
 
---- Convert a 24-bit token table into display values.
---- EdgeTX accepts a single packed argument and returns an RGB565 flag.
----@param tokens table
----@return table
-local function toDisplay(tokens)
-    local colors = {}
-    for key, value in pairs(tokens) do
-        colors[key] = lcd.RGB(value)
-    end
-    return colors
-end
-
---- Resolve one complete named theme.
+--- Capture a private resolution. Cancellation only needs to discard this work.
 ---@param mode? string Theme name selected in widget settings.
----@return AeroGridTheme
-function theme.build(mode)
+---@return table work
+function theme.beginBuild(mode)
     if not catalog.themes["modern-dark"] then
         error("theme catalog is not configured")
     end
@@ -708,71 +717,143 @@ function theme.build(mode)
     for key, value in pairs(definition.colors) do
         tokens[key] = value
     end
-    local accent = definition.accent
-
-    if definition.correctForContrast then
-        enforceLegibility(tokens, notices)
+    local spacing = {}
+    for key, value in pairs(definition.spacing) do
+        spacing[key] = value
     end
-    for key, fallback in pairs(CHART_COLORS) do
+    return {
+        stage = definition.correctForContrast and "legibility" or "chart",
+        legibility = 1,
+        definition = {
+            label = definition.label,
+            accent = definition.accent,
+            light = definition.light,
+            correctForContrast = definition.correctForContrast,
+            warningBg = definition.warningBg,
+            criticalBg = definition.criticalBg,
+            activeBg = definition.activeBg,
+            tintSeparation = definition.tintSeparation,
+        },
+        tokens = tokens,
+        spacing = spacing,
+        mode = mode,
+        requested = requested,
+        warnings = warnings,
+        notices = notices,
+        alertIndex = 1,
+        alertRgb = {},
+        alertColor = {},
+        colors = {},
+    }
+end
+
+local ALERT_NAMES = { "warning", "critical", "active" }
+local ALERT_ACCENTS = { "amber", "critical", "blue" }
+local ALERT_PREFERRED = { "warningBg", "criticalBg", "activeBg" }
+
+--- Advance one bounded operation; only the final advance returns a theme.
+--- The selected definition and all mutable output belong to this resolution.
+---@param work table
+---@return AeroGridTheme? resolved
+function theme.advanceBuild(work)
+    local tokens, definition, notices = work.tokens, work.definition, work.notices
+    if work.stage == "legibility" then
+        advanceLegibility(work)
+    elseif work.stage == "chart" then
+        local key, fallback = next(CHART_COLORS, work.chartKey)
+        if not key then
+            work.stage = "alert"
+            return nil
+        end
         if tokens[key] and key ~= "chartGrid" and definition.correctForContrast then
             correctAccent(tokens, key, tokens.surface, MIN_TEXT_CONTRAST, notices)
         end
         tokens[key] = tokens[key] or tokens[fallback]
-    end
-
-    -- Alert tints come last, after the legibility pass has finished moving the
-    -- surface about. That ordering is load bearing: the pass shifts the surface
-    -- to keep critical red visible and then re-derives everything measured
-    -- against it, so a tint mixed earlier would be mixed from a surface that no
-    -- longer exists.
-    local separation = definition.tintSeparation or (definition.light and 1.08 or nil)
-    local function alertSurface(accentColor, preferred, faintTextUsed)
-        if not definition.correctForContrast and preferred ~= nil then
-            return preferred
+        work.chartKey = key
+    elseif work.stage == "alert" then
+        -- Tints must see the final surface, including the critical correction.
+        local index = work.alertIndex
+        local name = ALERT_NAMES[index]
+        if not name then
+            work.stage = "display"
+            return nil
         end
-        return theme.alertSurface(tokens, accentColor, preferred, faintTextUsed, separation)
+        local done, value
+        if not work.alertWork then
+            local preferred = definition[ALERT_PREFERRED[index]]
+            if not definition.correctForContrast and preferred ~= nil then
+                done, value = true, preferred
+            else
+                local separation = definition.tintSeparation or (definition.light and 1.08 or nil)
+                work.alertWork = beginAlert(tokens, tokens[ALERT_ACCENTS[index]], preferred, index ~= 3, separation)
+                return nil
+            end
+        else
+            done, value = advanceAlert(work.alertWork)
+        end
+        if done then
+            work.alertRgb[name] = value
+            if value then
+                work.alertColor[name] = lcd.RGB(value)
+            else
+                theme.notice(notices, "warning", "no legible " .. name .. " tint; the panel keeps its resting surface")
+            end
+            work.alertWork = nil
+            work.alertIndex = index + 1
+        end
+    elseif work.stage == "display" then
+        local key, value = next(tokens, work.displayKey)
+        if key then
+            work.colors[key] = lcd.RGB(value)
+            work.displayKey = key
+        else
+            work.stage = "finalize"
+        end
+    elseif work.stage == "finalize" then
+        local colors = work.colors
+        work.result = {
+            mode = work.mode,
+            label = definition.label,
+            light = definition.light == true,
+            requested = work.requested,
+            rgb = tokens,
+            color = colors,
+            chartColor = {
+                cyan = colors.chartCyan,
+                green = colors.chartGreen,
+                amber = colors.chartAmber,
+                orange = colors.chartOrange,
+                grid = colors.chartGrid,
+                flightBand = lcd.RGB(definition.light and 0x000000 or 0xFFFFFF),
+            },
+            alertRgb = work.alertRgb,
+            alertColor = work.alertColor,
+            spacing = work.spacing,
+            accent = definition.accent,
+            warnings = work.warnings,
+            notices = notices,
+        }
+        work.stage = "done"
+        return work.result
+    elseif work.stage == "done" then
+        return work.result
+    else
+        error("unknown theme resolution stage " .. tostring(work.stage))
     end
-    local alertRgb = {
-        warning = alertSurface(tokens.amber, definition.warningBg),
-        critical = alertSurface(tokens.critical, definition.criticalBg),
-        active = alertSurface(tokens.blue, definition.activeBg, false),
-    }
-    local alertColor = {}
-    for name, value in pairs(alertRgb) do
-        alertColor[name] = lcd.RGB(value)
-    end
-    for _, name in ipairs({ "warning", "critical", "active" }) do
-        if not alertRgb[name] then
-            theme.notice(notices, "warning", "no legible " .. name .. " tint; the panel keeps its resting surface")
+    return nil
+end
+
+--- Resolve synchronously through exactly the same operations.
+---@param mode? string
+---@return AeroGridTheme
+function theme.build(mode)
+    local work = theme.beginBuild(mode)
+    while true do
+        local resolved = theme.advanceBuild(work)
+        if resolved then
+            return resolved
         end
     end
-
-    local colors = toDisplay(tokens)
-    return {
-        mode = mode,
-        label = definition.label,
-        light = definition.light == true,
-        requested = requested,
-        rgb = tokens,
-        color = colors,
-        chartColor = {
-            cyan = colors.chartCyan,
-            green = colors.chartGreen,
-            amber = colors.chartAmber,
-            orange = colors.chartOrange,
-            grid = colors.chartGrid,
-            flightBand = lcd.RGB(definition.light and 0x000000 or 0xFFFFFF),
-        },
-        -- Kept apart from `color` because these are per state rather than per
-        -- token, and mirrored in 24-bit so contrast arithmetic has values it can
-        -- actually work on.
-        alertRgb = alertRgb,
-        alertColor = alertColor,
-        spacing = definition.spacing,
-        accent = accent,
-        warnings = warnings,
-        notices = notices,
-    }
 end
 
 --- Return the display color for a semantic accent name.

@@ -38,6 +38,37 @@ local function copy(value, seen)
     return result
 end
 
+local function copyReference(job, value)
+    if type(value) ~= "table" then
+        return value
+    end
+    local result = job.seen[value]
+    if not result then
+        result = {}
+        job.seen[value] = result
+        job.stack[#job.stack + 1] = { source = value, target = result }
+    end
+    return result
+end
+
+local function startCopy(value)
+    local job = { seen = {}, stack = {} }
+    return copyReference(job, value), job
+end
+
+local function copyStep(job)
+    local frame = job.stack[#job.stack]
+    if not frame then return false end
+    local key, value = next(frame.source, frame.key)
+    if key == nil then
+        job.stack[#job.stack] = nil
+    else
+        frame.key = key
+        frame.target[copyReference(job, key)] = copyReference(job, value)
+    end
+    return true
+end
+
 local function safeIdentifier(value)
     return type(value) == "string" and string.match(value, "^[%w_-]+$") ~= nil
 end
@@ -147,15 +178,14 @@ end
 ---@param layout table Layout validator.
 ---@param panelHost table Panel contract implementation.
 ---@param loadPanel fun(typeName: string): table?, string?
+---@param staged? boolean Copy the document incrementally before exposing the UI.
 ---@return table? session
 ---@return string? error
-function editor.new(document, grid, layout, panelHost, loadPanel)
+function editor.new(document, grid, layout, panelHost, loadPanel, staged)
     if type(document) ~= "table" or type(document.panels) ~= "table" then
         return nil, "cannot edit an invalid layout"
     end
     local session = {
-        original = copy(document),
-        draft = copy(document),
         grid = grid,
         layout = layout,
         panelHost = panelHost,
@@ -164,7 +194,43 @@ function editor.new(document, grid, layout, panelHost, loadPanel)
         dirty = false,
         errors = {},
     }
+    if staged then
+        local original, job = startCopy(document)
+        session.original = original
+        session.initializing = { job = job, phase = "original" }
+    else
+        session.original, session.draft = copy(document), copy(document)
+    end
     return session
+end
+
+--- Copy at most 16 graph entries/retirements, preserving shared references and cycles.
+function editor.advanceInitialization(session)
+    local pending = session.initializing
+    if not pending then
+        return true
+    end
+    local job = pending.job
+    for _ = 1, 16 do
+        local frame = job.stack[#job.stack]
+        local key, value = next(frame.source, frame.key)
+        if key == nil then
+            job.stack[#job.stack] = nil
+        else
+            frame.key = key
+            frame.target[copyReference(job, key)] = copyReference(job, value)
+        end
+        if #job.stack == 0 then
+            if pending.phase == "original" then
+                session.draft, pending.job = startCopy(session.original)
+                pending.phase = "draft"
+                return false
+            end
+            session.initializing = nil
+            return true
+        end
+    end
+    return false
 end
 
 function editor.clone(value)
@@ -196,26 +262,65 @@ local function getPanelModule(session, typeName)
     return module
 end
 
-local function freePlacement(session, colSpan, rowSpan)
+local function markOccupied(occupied, panel)
+    local col, row = tonumber(panel.col), tonumber(panel.row)
+    local colSpan, rowSpan = tonumber(panel.colSpan), tonumber(panel.rowSpan)
+    if col and row and colSpan and rowSpan then
+        for y = math.max(0, math.floor(row)), math.min(3, math.ceil(row + rowSpan) - 1) do
+            for x = math.max(0, math.floor(col)), math.min(3, math.ceil(col + colSpan) - 1) do
+                occupied[y * 4 + x] = true
+            end
+        end
+    end
+end
+
+local function freePlacement(occupied, colSpan, rowSpan)
     for row = 0, 4 - rowSpan do
         for col = 0, 4 - colSpan do
-            local candidate = {
-                col = col,
-                row = row,
-                colSpan = colSpan,
-                rowSpan = rowSpan,
-            }
-            if not overlapsAny(session.grid, session.draft.panels, candidate) then
-                return candidate
+            local clear = true
+            for y = row, row + rowSpan - 1 do
+                for x = col, col + colSpan - 1 do
+                    if occupied[y * 4 + x] then
+                        clear = false
+                        break
+                    end
+                end
+                if not clear then
+                    break
+                end
+            end
+            if clear then
+                return { col = col, row = row, colSpan = colSpan, rowSpan = rowSpan }
             end
         end
     end
     return nil
 end
 
+-- Grid spans in placement preference order: smallest area, then lowest, then narrowest.
+local SPAN_ORDER = {}
+for width = 1, 4 do
+    for height = 1, 4 do
+        SPAN_ORDER[#SPAN_ORDER + 1] = { width, height }
+    end
+end
+table.sort(SPAN_ORDER, function(first, second)
+    local firstArea, secondArea = first[1] * first[2], second[1] * second[2]
+    if firstArea ~= secondArea then
+        return firstArea < secondArea
+    end
+    if first[2] ~= second[2] then
+        return first[2] < second[2]
+    end
+    return first[1] < second[1]
+end)
+
 local function candidateSpans(module)
-    local result, seen = {}, {}
     local spans = module.supportedSpans
+    if spans == nil then
+        return { { 1, 1 } }
+    end
+    local seen, result = {}, {}
     if type(spans) == "table" then
         for _, span in ipairs(spans) do
             if span == "any" then
@@ -223,28 +328,20 @@ local function candidateSpans(module)
             end
             local width, height
             if type(span) == "string" then
-                width, height = string.match(span, "^(%d+)x(%d+)$")
+                width, height = string.match(span, "^([1-4])x([1-4])$")
             end
             width, height = tonumber(width), tonumber(height)
-            if width and height and not seen[span] then
-                result[#result + 1] = { width, height }
-                seen[span] = true
+            if width and height then
+                seen[width * 8 + height] = true
             end
         end
     end
-    if #result == 0 and spans == nil then
-        result[1] = { 1, 1 }
+    -- Spans outside the 4x4 grid can never be placed, so they need no ordering.
+    for _, span in ipairs(SPAN_ORDER) do
+        if seen[span[1] * 8 + span[2]] then
+            result[#result + 1] = span
+        end
     end
-    table.sort(result, function(first, second)
-        local firstArea, secondArea = first[1] * first[2], second[1] * second[2]
-        if firstArea ~= secondArea then
-            return firstArea < secondArea
-        end
-        if first[2] ~= second[2] then
-            return first[2] < second[2]
-        end
-        return first[1] < second[1]
-    end)
     return result
 end
 
@@ -313,25 +410,45 @@ function editor.sizes(session)
     end
     return sizes
 end
-function editor.add(session, typeName)
+function editor.addModule(session, typeName)
     if not safeIdentifier(typeName) then
-        return false, "invalid panel type"
+        return nil, "invalid panel type"
     end
-    local module, moduleError = getPanelModule(session, typeName)
-    if not module then
-        return false, moduleError
+    return getPanelModule(session, typeName)
+end
+
+function editor.addCandidates(_, module)
+    return { occupied = {}, panel = 1, spans = candidateSpans(module), index = 1 }
+end
+
+--- Marks at most `limit` placements as occupied; true once every placement is marked.
+function editor.advanceOccupancy(job, panels, limit)
+    local last = math.min(#panels, job.panel + (limit or #panels) - 1)
+    for index = job.panel, last do
+        markOccupied(job.occupied, panels[index])
     end
-    local placement
-    for _, span in ipairs(candidateSpans(module)) do
-        placement = freePlacement(session, span[1], span[2])
+    job.panel = last + 1
+    return job.panel > #panels
+end
+
+-- Examines at most `limit` candidate spans; nil means more spans remain.
+function editor.advancePlacement(job, limit)
+    local spans = job.spans
+    local last = math.min(#spans, job.index + (limit or #spans) - 1)
+    for index = job.index, last do
+        local placement = freePlacement(job.occupied, spans[index][1], spans[index][2])
         if placement then
-            break
+            return placement
         end
     end
-    if not placement then
+    job.index = last + 1
+    if job.index > #spans then
         return false, "no free grid cells support this panel"
     end
+    return nil
+end
 
+function editor.commitAdd(session, typeName, module, placement)
     local used = {}
     for _, item in ipairs(session.draft.panels) do
         used[item.id] = true
@@ -361,6 +478,20 @@ function editor.add(session, typeName)
     session.selected = #session.draft.panels
     session.dirty = true
     return true
+end
+
+function editor.add(session, typeName)
+    local module, moduleError = editor.addModule(session, typeName)
+    if not module then
+        return false, moduleError
+    end
+    local candidates = editor.addCandidates(session, module)
+    editor.advanceOccupancy(candidates, session.draft.panels)
+    local placement, placementError = editor.advancePlacement(candidates)
+    if not placement then
+        return false, placementError
+    end
+    return editor.commitAdd(session, typeName, module, placement)
 end
 
 function editor.remove(session, index)
@@ -467,25 +598,164 @@ local function moveTarget(session, placement, index, col, row, bounded)
     return moved, nil, conflict
 end
 
-function editor.movePositions(session)
+--- Start enumerating drag targets for the selected panel. Resize targets
+--- keep the opposite corner fixed.
+function editor.startPositions(session, resize, left, top)
     local placement, index, selectionError = findSelected(session)
     if not placement then
         return nil, selectionError
     end
-    local positions, seen = {}, {}
-    for row = 0, 4 - placement.rowSpan do
-        for col = 0, 4 - placement.colSpan do
-            local moved = moveTarget(session, placement, index, col, row, true)
-            if moved then
-                local key = moved.row * 4 + moved.col
-                if not seen[key] then
-                    seen[key] = true
-                    positions[#positions + 1] = moved
+    return {
+        placement = placement,
+        index = index,
+        resize = resize,
+        left = left,
+        top = top,
+        cursor = 0,
+        positions = {},
+        seen = {},
+        phase = resize and "module" or "positions",
+    }
+end
+
+local COPY_UNITS, VALIDATION_UNITS = 48, 24
+
+local function resolveCopiedSettings(job)
+    local values, knownConfig = {}, {}
+    for _, setting in ipairs(job.module.settings or {}) do
+        if type(setting) == "table" and type(setting.key) == "string" then
+            local value = job.config[setting.key]
+            if value ~= nil then
+                knownConfig[setting.key] = value
+            else
+                value = copy(setting.default)
+            end
+            values[setting.key] = value
+        end
+    end
+    job.settings, job.knownConfig, job.config, job.copy = values, knownConfig, nil, nil
+end
+
+local function stagedValidation(module)
+    return type(module.validateSettings) == "function"
+        and type(module.beginSettingsValidation) == "function"
+        and type(module.advanceSettingsValidation) == "function"
+end
+
+-- Advance one candidate's staged panel validation. Returns true when it
+-- finished; the first warning rejects it as validateSettings would.
+local function advanceValidation(job)
+    local module, work = job.module, job.validation
+    for _ = 1, VALIDATION_UNITS do
+        local ok, done = pcall(module.advanceSettingsValidation, work)
+        local failed = not ok or type(done) ~= "boolean"
+            or type(work.warnings) == "table" and #work.warnings > 0
+        if failed or done then
+            if not failed then
+                job.positions[#job.positions + 1] = job.candidate
+            end
+            job.validation, job.candidate = nil, nil
+            return true
+        end
+    end
+end
+
+local function examineResize(session, job, cursor)
+    local placement = job.placement
+    local width, height = cursor % 4 + 1, cursor // 4 + 1
+    local candidate = {
+        col = job.left and placement.col + placement.colSpan - width or placement.col,
+        row = job.top and placement.row + placement.rowSpan - height or placement.row,
+        colSpan = width,
+        rowSpan = height,
+    }
+    if
+        not session.grid.validatePlacement(candidate, 4, 4)
+        or not supportsSpan(job.module, width, height)
+        or overlapsAny(session.grid, session.draft.panels, candidate, job.index)
+    then
+        return
+    end
+    if not stagedValidation(job.module) then
+        if validatePanelSettings(job.module, job.settings, job.knownConfig, candidate, session.modelArmed) then
+            job.positions[#job.positions + 1] = candidate
+        end
+        return
+    end
+    local ok, work = pcall(job.module.beginSettingsValidation, job.settings, candidate, job.knownConfig,
+        session.modelArmed)
+    if ok and type(work) == "table" then
+        if type(work.warnings) ~= "table" or #work.warnings == 0 then
+            job.validation, job.candidate = work, candidate
+        end
+    end
+    return true
+end
+
+--- Examine at most `limit` of the 16 candidates. Resize enumeration copies
+--- settings and runs staged panel validation in bounded units. Returns the
+--- positions when complete, nil when more remain, or false and an error.
+function editor.advancePositions(session, job, limit)
+    local placement = job.placement
+    if job.phase == "module" then
+        local module, moduleError = getPanelModule(session, placement.type)
+        if not module then
+            return false, moduleError
+        end
+        job.module = module
+        job.config, job.copy = startCopy(placement.config or {})
+        job.phase = "settings"
+        return nil
+    elseif job.phase == "settings" then
+        for _ = 1, COPY_UNITS do
+            if not copyStep(job.copy) then
+                resolveCopiedSettings(job)
+                job.phase = "positions"
+                break
+            end
+        end
+        return nil
+    end
+    if job.validation then
+        advanceValidation(job)
+        return nil
+    end
+    for _ = 1, limit do
+        local cursor = job.cursor
+        if cursor >= 16 then
+            break
+        end
+        job.cursor = cursor + 1
+        if job.resize then
+            if examineResize(session, job, cursor) then
+                -- Staged validation starts in its own step.
+                break
+            end
+        else
+            local col, row = cursor % 4, cursor // 4
+            if col <= 4 - placement.colSpan and row <= 4 - placement.rowSpan then
+                local moved = moveTarget(session, placement, job.index, col, row, true)
+                if moved then
+                    local key = moved.row * 4 + moved.col
+                    if not job.seen[key] then
+                        job.seen[key] = true
+                        job.positions[#job.positions + 1] = moved
+                    end
                 end
             end
         end
     end
-    return positions
+    if job.cursor >= 16 and not job.validation then
+        return job.positions
+    end
+end
+
+function editor.movePositions(session)
+    local job, selectionError = editor.startPositions(session, false)
+    if not job then
+        return nil, selectionError
+    end
+    return editor.advancePositions(session, job, 16)
 end
 
 function editor.move(session, colDelta, rowDelta)
@@ -546,35 +816,39 @@ function editor.resize(session, colDelta, rowDelta, col, row)
 end
 
 function editor.resizePositions(session, left, top)
-    local placement, index, selectionError = findSelected(session)
-    if not placement then
+    local job, selectionError = editor.startPositions(session, true, left, top)
+    if not job then
         return nil, selectionError
     end
-    local module, moduleError = getPanelModule(session, placement.type)
-    if not module then
+    local positions, moduleError
+    repeat
+        positions, moduleError = editor.advancePositions(session, job, 16)
+    until positions ~= nil
+    if positions == false then
         return nil, moduleError
     end
-    local settings, knownConfig = settingsFor(module, placement.config or {})
-    local positions = {}
-    for height = 1, 4 do
-        for width = 1, 4 do
-            local candidate = {
-                col = left and placement.col + placement.colSpan - width or placement.col,
-                row = top and placement.row + placement.rowSpan - height or placement.row,
-                colSpan = width,
-                rowSpan = height,
-            }
-            if
-                session.grid.validatePlacement(candidate, 4, 4)
-                and supportsSpan(module, width, height)
-                and not overlapsAny(session.grid, session.draft.panels, candidate, index)
-                and validatePanelSettings(module, settings, knownConfig, candidate, session.modelArmed)
-            then
-                positions[#positions + 1] = candidate
-            end
-        end
-    end
     return positions
+end
+
+--- Apply a resize target that `advancePositions` already validated for this
+--- placement's settings; geometry is rechecked against the current draft.
+function editor.applyResize(session, candidate)
+    local placement, _, selectionError = findSelected(session)
+    if not placement then
+        return false, selectionError
+    end
+    local valid, placementError = session.grid.validatePlacement(candidate, 4, 4)
+    if not valid then
+        return false, placementError
+    end
+    local conflict = overlapsAny(session.grid, session.draft.panels, candidate, session.selected)
+    if conflict then
+        return false, "overlaps panel " .. conflict.id
+    end
+    placement.col, placement.row = candidate.col, candidate.row
+    placement.colSpan, placement.rowSpan = candidate.colSpan, candidate.rowSpan
+    session.dirty = true
+    return true
 end
 
 function editor.setValue(session, key, value)
@@ -612,9 +886,17 @@ local function entryPath(field)
 end
 
 --- One control per declared field of every entry, whether or not it is set.
-local function entryFields(setting, entries, result, rootKey, prefix)
+local function entryFields(setting, entries, result, rootKey, prefix, selected)
     rootKey, prefix = rootKey or setting.key, prefix or {}
-    for index = 1, #entries do
+    local first, last = 1, #entries
+    if selected then
+        first = selected[#prefix + 1]
+        if type(first) ~= "number" or entries[first] == nil then
+            return
+        end
+        last = first
+    end
+    for index = first, last do
         for _, field in ipairs(setting.fields) do
             local relative = entryPath(field)
             local path = copy(prefix)
@@ -622,33 +904,46 @@ local function entryFields(setting, entries, result, rootKey, prefix)
             for _, key in ipairs(relative) do
                 path[#path + 1] = key
             end
-            result[#result + 1] = {
-                key = rootKey,
-                path = path,
-                label = (setting.label or setting.key) .. "[" .. index .. "]." .. table.concat(relative, "."),
-                entryLabel = field.label,
-                itemLabel = field.itemLabel,
-                -- Shown when the entry omits the field; never the live value,
-                -- which the drawer reads from the draft.
-                value = field.default,
-                type = field.fields and "table-list" or field.type,
-                choices = field.choices,
-                min = field.min,
-                max = field.max,
-                step = field.step,
-                required = field.required,
-                empty = field.empty,
-                within = field.within,
-                minItems = field.minItems,
-                maxItems = field.maxItems,
-            }
+            local include = not selected or #selected == #prefix + 1
+            if include then
+                result[#result + 1] = {
+                    key = rootKey,
+                    path = path,
+                    label = (setting.label or setting.key) .. "[" .. index .. "]." .. table.concat(relative, "."),
+                    entryLabel = field.label,
+                    itemLabel = field.itemLabel,
+                    -- Shown when the entry omits the field; never the live value,
+                    -- which the drawer reads from the draft.
+                    value = field.default,
+                    type = field.fields and "table-list" or field.type,
+                    choices = field.choices,
+                    min = field.min,
+                    max = field.max,
+                    step = field.step,
+                    required = field.required,
+                    empty = field.empty,
+                    within = field.within,
+                    minItems = field.minItems,
+                    maxItems = field.maxItems,
+                }
+            end
             if field.fields then
                 local value = entries[index]
                 for _, key in ipairs(relative) do
                     value = type(value) == "table" and value[key] or nil
                 end
-                result[#result].value = type(value) == "table" and #value or 0
-                entryFields(field, value or {}, result, rootKey, path)
+                if include then
+                    result[#result].value = type(value) == "table" and #value or 0
+                end
+                local descend = not selected or #selected > #path
+                if selected then
+                    for part, key in ipairs(path) do
+                        descend = descend and selected[part] == key
+                    end
+                end
+                if descend then
+                    entryFields(field, value or {}, result, rootKey, path, selected)
+                end
             end
         end
     end
@@ -799,6 +1094,43 @@ function editor.appendItem(session, key, path)
     return true
 end
 
+function editor.startAppendItem(session, key, path)
+    local setting, value, message = tableSetting(session, key, path)
+    if not setting then return nil, message end
+    if #value >= (setting.maxItems or 3) then
+        return nil, key .. " already has the maximum number of entries"
+    end
+    local item, job = startCopy(setting.itemDefault or value[#value] or {})
+    return {
+        session = session, draft = session.draft, selected = session.selected,
+        placement = session.draft.panels[session.selected],
+        target = value, length = #value, item = item, copy = job, key = key, path = path,
+    }
+end
+
+function editor.advanceAppendItem(job)
+    if job.done then return true, job.ok, job.error end
+    local session = job.session
+    local config = job.placement.config
+    local target = type(config) == "table" and config[job.key]
+    for _, key in ipairs(job.path or {}) do
+        target = type(target) == "table" and target[key] or nil
+    end
+    if session.draft ~= job.draft or session.selected ~= job.selected
+        or session.draft.panels[job.selected] ~= job.placement or target ~= job.target or #job.target ~= job.length then
+        job.done, job.ok, job.error = true, false, "table entry changed while adding an item"
+        return true, false, job.error
+    end
+    for _ = 1, 8 do
+        if not copyStep(job.copy) then
+            job.target[job.length + 1], session.dirty = job.item, true
+            job.done, job.ok = true, true
+            return true, true
+        end
+    end
+    return false
+end
+
 function editor.removeItem(session, key, index, path)
     local setting, value, err = tableSetting(session, key, path)
     if not setting or type(value) ~= "table" then
@@ -860,14 +1192,24 @@ function editor.orderFields(fields, entry)
     return fields
 end
 
-function editor.formFields(session)
-    local settings, config, module = editor.settings(session)
+--- Optional selection limits entry expansion to one drawer's key and item path.
+function editor.formFields(session, selection, snapshot)
+    local settings, config, module
+    if snapshot then
+        settings, config, module = snapshot.settings, snapshot.config, snapshot.module
+    else
+        settings, config, module = editor.settings(session)
+    end
     if not settings or type(config) ~= "table" or not module then
         return nil, config
     end
     local fields = {}
     for _, setting in ipairs(settings) do
-        if type(setting) == "table" and type(setting.key) == "string" then
+        if
+            type(setting) == "table"
+            and type(setting.key) == "string"
+            and (not selection or not selection.key or selection.key == setting.key)
+        then
             local value = config[setting.key]
             if setting.section then
                 fields[#fields + 1] = { label = setting.section, type = "section" }
@@ -887,7 +1229,9 @@ function editor.formFields(session)
                     visibleWhen = setting.visibleWhen,
                 }
                 if type(setting.fields) == "table" then
-                    entryFields(setting, value, fields)
+                    if not selection or selection.key then
+                        entryFields(setting, value, fields, nil, nil, selection and selection.path)
+                    end
                 else
                     flattenFields(value, { setting.key }, setting.label or setting.key, fields)
                 end
@@ -917,7 +1261,7 @@ function editor.formFields(session)
                         type = "drawer",
                         action = "group",
                         drawerGroup = group.key,
-                        text = editor.drawerSummary(session, group.key),
+                        text = editor.drawerSummary(session, group.key, config, module, snapshot and snapshot.groups),
                         visibleWhen = { key = "sourceType", value = group.sourceType },
                     }
                 end
@@ -928,8 +1272,13 @@ function editor.formFields(session)
 end
 
 --- Build flat-setting controls for one metadata-defined source drawer.
-function editor.drawerFields(session, groupKey)
-    local settings, config, module = editor.settings(session)
+function editor.drawerFields(session, groupKey, snapshot)
+    local settings, config, module
+    if snapshot then
+        settings, config, module = snapshot.settings, snapshot.config, snapshot.module
+    else
+        settings, config, module = editor.settings(session)
+    end
     if not settings or type(config) ~= "table" or not module then
         return nil, config
     end
@@ -948,9 +1297,9 @@ function editor.drawerFields(session, groupKey)
         byKey[setting.key] = setting
     end
     local fields = {}
-    for _, key in ipairs(group.fields or {}) do
+    for index, key in ipairs(group.fields or {}) do
         local setting = byKey[key]
-        if setting then
+        if setting and (not snapshot or not snapshot.groupIndex or snapshot.groupIndex == index) then
             fields[#fields + 1] = {
                 key = key,
                 label = setting.label or key,
@@ -969,12 +1318,17 @@ function editor.drawerFields(session, groupKey)
 end
 
 --- Short live summary shown on the source-specific drawer row.
-function editor.drawerSummary(session, groupKey)
-    local settings, config, module = editor.settings(session)
-    if not settings or type(config) ~= "table" or not module then
+function editor.drawerSummary(session, groupKey, config, module, groups)
+    if not module then
+        local settings
+        settings, config, module = editor.settings(session)
+        if not settings then return "--" end
+    end
+    if type(config) ~= "table" or not module then
         return "--"
     end
-    for _, group in ipairs(module.drawerGroups or {}) do
+    local candidates = groups and (groups[groupKey] and { groups[groupKey] } or {}) or module.drawerGroups or {}
+    for _, group in ipairs(candidates) do
         if group.key == groupKey then
             local source = tostring(config.source or "--")
             if group.sourceType == "pack" then
@@ -1014,6 +1368,54 @@ function editor.settings(session)
     return fields, config, module
 end
 
+function editor.startSettings(session)
+    local placement, _, selectionError = findSelected(session)
+    if not placement then return nil, selectionError end
+    local module, moduleError = getPanelModule(session, placement.type)
+    if not module then return nil, moduleError end
+    local config, job = startCopy(placement.config or {})
+    return {
+        config = config, copy = job, module = module, index = 1, groups = {}, phase = "settings",
+        settings = {}, byKey = {}, modelArmed = session.modelArmed,
+    }
+end
+
+--- Copy/default/index at most eight graph entries or metadata declarations per turn.
+function editor.advanceSettings(pending)
+    if pending.done then return true, pending.config, pending.module, pending.groups end
+    for _ = 1, 8 do
+        if copyStep(pending.copy) then
+            -- Copying and metadata share the same per-turn grant.
+        elseif pending.phase == "settings" then
+            local setting = (pending.module.settings or {})[pending.index]
+            if not setting then
+                pending.phase, pending.index = "groups", 1
+            else
+                if pending.config[setting.key] == nil then
+                    pending.config[setting.key], pending.copy = startCopy(setting.default)
+                end
+                if not setting.legacyFlight
+                    and (not setting.legacyArm or (pending.modelArmed == nil and pending.config[setting.key] ~= "")) then
+                    pending.settings[#pending.settings + 1] = setting
+                    pending.byKey[setting.key] = setting
+                end
+                pending.index = pending.index + 1
+            end
+        elseif pending.phase == "groups" then
+            local group = (pending.module.drawerGroups or {})[pending.index]
+            if not group then
+                pending.done = true
+                return true, pending.config, pending.module, pending.groups
+            end
+            if group.key ~= nil and pending.groups[group.key] == nil then pending.groups[group.key] = group end
+            pending.index = pending.index + 1
+        else
+            error("invalid settings snapshot phase: " .. tostring(pending.phase))
+        end
+    end
+    return false
+end
+
 function editor.restoreDefault(session, document)
     if type(document) ~= "table" or type(document.panels) ~= "table" then
         return false, "default layout is invalid"
@@ -1025,6 +1427,12 @@ function editor.restoreDefault(session, document)
 end
 
 function editor.cancel(session)
+    if session.initializing or session.cancelled then
+        session.initializing, session.original, session.draft = nil, nil, nil
+        session.cancelled = true
+        session.selected, session.dirty, session.errors = 0, false, {}
+        return true
+    end
     session.draft = copy(session.original)
     session.selected = #session.draft.panels > 0 and 1 or 0
     session.dirty = false

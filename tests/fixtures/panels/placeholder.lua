@@ -16,6 +16,7 @@
 local placeholder = {
     id = "placeholder",
     apiVersion = 1,
+    idle = true,
     supportedSpans = { "any" },
     settings = {
         { key = "label", label = "Label", type = "string", default = "PLACEHOLDER" },

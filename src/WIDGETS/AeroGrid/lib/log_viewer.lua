@@ -2,6 +2,11 @@
 
 local viewer = { RUNTIME_API = 1 }
 
+
+function viewer.stageOf(state)
+    return state.buildStage or state.renderIndex and "render" or state.prepareIndex and "wrap" or "idle"
+end
+
 local function matches(event, name)
     return _G[name] ~= nil and event == _G[name]
 end
@@ -68,22 +73,26 @@ local function move(state, direction)
 end
 
 local function render(state)
-    local index, offset = state.index, state.offset
-    for rowIndex, row in ipairs(state.rows) do
+    local index, offset = state.renderEntry, state.renderOffset
+    for rowIndex = state.renderIndex, math.min(#state.rows, state.renderIndex + 3) do
+        local row = state.rows[rowIndex]
         local lines = state.cache[index]
-        local text = lines[offset] or ""
+        local text = lines and lines[offset] or ""
         row:set({ text = text })
         offset = offset + 1
-        if offset > #lines then
+        if lines and offset > #lines then
             index, offset = index + 1, 1
         end
-        if index > math.max(1, #state.entries) then
-            for nextRow = rowIndex + 1, #state.rows do
-                state.rows[nextRow]:set({ text = "" })
-            end
-            break
-        end
     end
+    state.renderIndex = state.renderIndex + 4
+    state.renderEntry, state.renderOffset = index, offset
+    if state.renderIndex > #state.rows then
+        state.renderIndex = nil
+    end
+end
+
+local function requestRender(state)
+    state.renderIndex, state.renderEntry, state.renderOffset = 1, state.index, state.offset
 end
 
 function viewer.open(host)
@@ -97,14 +106,19 @@ function viewer.open(host)
     overlay:set({ w = width, h = height })
     lvgl.show(overlay)
     local state = {
-        entries = host.diagnosticsLog:read(),
+        snapshot = host.diagnosticsLog:startSnapshot(),
         cache = {},
         rows = {},
         width = width - 16,
         height = height,
         lineHeight = host.themeBuilder.fontHeight(SMLSIZE) + 2,
+        buildStage = "snapshot",
     }
     host.logViewer = state
+end
+
+local function buildHeader(host, state)
+    local width, height, overlay = host.zone.w, host.zone.h, host.logOverlay
     lvgl.rectangle(overlay, {
         x = 0,
         y = 0,
@@ -131,8 +145,13 @@ function viewer.open(host)
             viewer.close(host)
         end,
     })
-    for index = 1, math.max(1, math.floor((height - 40) / state.lineHeight)) do
-        state.rows[index] = host.primitives.label(overlay, host.theme, {
+    state.buildStage = "rows"
+end
+
+local function buildRows(host, state)
+    local count = math.max(1, math.floor((state.height - 40) / state.lineHeight))
+    for index = #state.rows + 1, math.min(count, #state.rows + 4) do
+        state.rows[index] = host.primitives.label(host.logOverlay, host.theme, {
             x = 8,
             y = 36 + (index - 1) * state.lineHeight,
             w = state.width,
@@ -141,15 +160,33 @@ function viewer.open(host)
             color = host.theme.color.text,
         })
     end
-    state.index = math.max(1, #state.entries)
-    state.offset = 1
-    state.prepareIndex, state.preparedLines = state.index, 0
-    state.rows[1]:set({ text = "Loading log..." })
+    if #state.rows == count then
+        state.buildStage = nil
+        state.rows[1]:set({ text = "Loading log..." })
+    end
 end
 
 --- Prepare the initial tail or one newly reached message without blocking input.
 function viewer.advance(host)
     local state = host.logViewer
+    if state.buildStage == "snapshot" then
+        local entries = host.diagnosticsLog:advanceSnapshot(state.snapshot)
+        if entries then
+            state.entries, state.snapshot, state.buildStage = entries, nil, "header"
+            state.index, state.offset = math.max(1, #entries), 1
+            state.prepareIndex, state.preparedLines = state.index, 0
+        end
+        return
+    elseif state.buildStage == "header" then
+        buildHeader(host, state)
+        return
+    elseif state.buildStage == "rows" then
+        buildRows(host, state)
+        return
+    elseif state.renderIndex then
+        render(state)
+        return
+    end
     if not state.prepareIndex then
         return
     end
@@ -161,7 +198,7 @@ function viewer.advance(host)
     if not state.preparedLines then
         state.index, state.offset = index, #lines
         state.prepareIndex = nil
-        render(state)
+        requestRender(state)
         return
     end
     state.preparedLines = state.preparedLines + #lines
@@ -169,7 +206,7 @@ function viewer.advance(host)
         state.index = index
         state.offset = math.max(1, state.preparedLines - #state.rows + 1)
         state.prepareIndex = nil
-        render(state)
+        requestRender(state)
     else
         state.prepareIndex = index - 1
     end
@@ -179,7 +216,7 @@ function viewer.handle(host, event, touch)
     local state = host.logViewer
     if matches(event, "EVT_VIRTUAL_EXIT") or matches(event, "EVT_EXIT_BREAK") then
         viewer.close(host)
-    elseif state.prepareIndex then
+    elseif state.buildStage or state.prepareIndex or state.renderIndex then
         return true
     elseif matches(event, "EVT_TOUCH_FIRST") and touch then
         state.dragY, state.slid = touch.y, false
@@ -191,7 +228,7 @@ function viewer.handle(host, event, touch)
             local direction = delta > 0 and 1 or -1
             move(state, direction)
             state.dragY = touch.y
-            render(state)
+            requestRender(state)
         end
     elseif matches(event, "EVT_TOUCH_TAP") and touch and not state.slid then
         if touch.x >= host.zone.w - 80 and touch.y < 32 then
@@ -201,12 +238,18 @@ function viewer.handle(host, event, touch)
         state.dragY = nil
     elseif matches(event, "EVT_ROT_LEFT") or matches(event, "EVT_VIRTUAL_PREV") then
         move(state, -1)
-        render(state)
+        requestRender(state)
     elseif matches(event, "EVT_ROT_RIGHT") or matches(event, "EVT_VIRTUAL_NEXT") then
         move(state, 1)
-        render(state)
+        requestRender(state)
     end
     return true
+end
+
+function viewer.bindCosts(costs)
+    viewer.WORK_BOUNDS = costs:group("log-viewer", {
+        "snapshot", "header", "rows", "wrap", "render", "idle", "input"
+    })
 end
 
 return viewer

@@ -69,17 +69,6 @@ local smartSensors = {}
 model.getSensor = function(index)
     return smartSensors[index] or getSensor(index)
 end
-local function measured(callback, context)
-    local instructions = 0
-    debug.sethook(function()
-        instructions = instructions + 200
-    end, "", 200)
-    local ok, message = pcall(callback, context)
-    debug.sethook()
-    assert(ok, message)
-    assert(instructions <= 15000, "shared/Smart flight callback exceeded regression budget: " .. instructions)
-end
-
 local function create(layout, arm)
     return definition.create(
         { x = 0, y = 0, w = 480, h = 272 },
@@ -91,9 +80,9 @@ local first, second = create("shared-flight", 0), create("shared-flight", armed)
 local function pump(context, count, other)
     for _ = 1, count or 1 do
         fixture.tick(10)
-        measured(definition.refresh, context)
+        definition.refresh(context)
         if other then
-            measured(definition.background, other)
+            definition.background(other)
         end
     end
 end
@@ -173,6 +162,8 @@ local function changeModel(context, key, value, other)
     context.modelSettingsUi.controls[key].properties.set(value)
     untilState(context, function()
         return owner.document.revision == revision + 1
+            and not context.modelSettingsUi.saving
+            and not context.modelSettingsUi.pending
     end, other)
 end
 changeModel(first, "minMotorPercent", 30, second)

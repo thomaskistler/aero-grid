@@ -31,6 +31,11 @@ local flightMode = {
     -- is radio-local rather than telemetry. Two hertz is responsive enough and
     -- leaves the instruction budget to panels that actually need it.
     refreshInterval = 50,
+    decl = {
+        class = "normal",
+        kinds = { steady = true },
+        stages = { run = { maxUnits = 1 } },
+    },
     settings = {
         -- Four characters, because a single-cell header has room for about five
         -- and "FLIGHT MODE" needs eleven. A layout wanting the long form can say
@@ -303,7 +308,7 @@ end
 
 --- Advance the panel, repainting only when something drawn changed.
 ---@param context AeroGridFlightModeContext
-function flightMode.refresh(context)
+function flightMode.step(context)
     if not context.feed then
         return
     end
@@ -316,10 +321,18 @@ end
 --- Reposition after a zone change.
 ---@param context AeroGridFlightModeContext
 ---@param rect AeroGridRect
-function flightMode.update(context, rect)
-    local area =
-        flightMode.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts, context.widest)
+local function regions(context, rect)
+    return flightMode.regionsFor(
+        context.theme,
+        context.themeBuilder,
+        rect,
+        context.layout,
+        context.fonts,
+        context.widest
+    )
+end
 
+local function applyGeometry(context, rect, area)
     context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
     context.area = area
     context.primitives.setFont(context.value, area.name)
@@ -358,5 +371,32 @@ function flightMode.update(context, rect)
         context.detail
     )
 end
+
+function flightMode.update(context, rect)
+    flightMode.cancelRefresh(context)
+    applyGeometry(context, rect, regions(context, rect))
+end
+
+function flightMode.cancelRefresh(context)
+    context.primitives.invalidateReflow(context)
+end
+
+--- Staged `update`: the regions, then the writes. Nothing drawn changes until
+--- the second step, so a refresh between them still sees one geometry.
+function flightMode.reflow(context, rect, _, _, _, begin)
+    local captured = context.primitives.reflowStart(context, rect, begin)
+    if captured then
+        context.reflowWork = { stage = "place", rect = captured, area = regions(context, captured) }
+        return false
+    end
+    local work = context.reflowWork
+    if work then
+        context.reflowWork = nil
+        applyGeometry(context, work.rect, work.area)
+    end
+    return true
+end
+
+flightMode.reflowDecl = { callback = flightMode.reflow }
 
 return flightMode

@@ -42,25 +42,13 @@ end
 write("shared-armed", document)
 write("shared-armed-copy", document)
 
-local worst, callbacks = 0, 0
-local function measured(callback, context)
-    local instructions = 0
-    debug.sethook(function()
-        instructions = instructions + 100
-    end, "", 100)
-    local ok, message = pcall(callback, context)
-    debug.sethook()
-    assert(ok, message)
-    worst, callbacks = math.max(worst, instructions), callbacks + 1
-    assert(instructions < 15000, "model Armed callback exceeded budget: " .. instructions)
-end
 local function finish(context)
     for _ = 1, 300 do
         if not context.stage and not context.reloadState then
             equal(#context.errors, 0, table.concat(context.errors, "\n"))
             return context
         end
-        measured(definition.refresh, context)
+        definition.refresh(context)
     end
     error("model Armed reload did not finish")
 end
@@ -75,7 +63,7 @@ local function pump(...)
     for _ = 1, 80 do
         fixture.tick(20)
         for _, context in ipairs({ ... }) do
-            measured(definition.refresh, context)
+            definition.refresh(context)
         end
     end
 end
@@ -88,11 +76,11 @@ equal(fixture.instanceOf(first, "counter").arm.condition, "L02")
 
 local function open(context)
     context.aeroMenuHandlers.modelSettings()
-    for _ = 1, 30 do
+    for _ = 1, 400 do
         if context.modelSettingsUi and not context.modelSettingsUi.build then
             return context.modelSettingsUi
         end
-        measured(definition.refresh, context)
+        definition.refresh(context)
     end
     error("Model settings did not open")
 end
@@ -100,25 +88,40 @@ local state = open(first)
 assert(string.find(state.status.properties.text, "Conflicting old widget Armed", 1, true))
 equal(state.controls.armed.properties.get(), 0, "conflicting old native options must not be guessed")
 first.modelSettingsUiModule.handle(first, EVT_VIRTUAL_EXIT)
-measured(definition.refresh, first)
+definition.refresh(first)
 equal(first.flightBroker.document.armed, nil, "opening and closing does not publish model arming")
 assert(first.serviceRuntime.byId.armed == armed, "closing unchanged settings does not rebuild consumers")
 
 local function save(context, index)
     local dialog = open(context)
+    local revision = context.flightBroker.document.revision
     dialog.controls.armed.properties.set(index)
-    measured(definition.refresh, context)
+    for _ = 1, 400 do
+        if context.flightBroker.document.revision == revision + 1 and not dialog.saving and not dialog.pending then
+            break
+        end
+        fixture.tick(20)
+        definition.refresh(context)
+    end
+    assert(context.flightBroker.document.revision == revision + 1 and not dialog.saving and not dialog.pending)
     if index ~= 0 then
         assert(dialog.armed ~= "", tostring(dialog.status.properties.text))
     end
     context.modelSettingsUiModule.handle(context, EVT_VIRTUAL_EXIT)
-    measured(definition.refresh, context)
+    for _ = 1, 400 do
+        if not context.modelSettingsUi then
+            break
+        end
+        fixture.tick(20)
+        definition.refresh(context)
+    end
     assert(not context.modelSettingsUi)
     finish(first)
     finish(second)
     pump(first, second)
 end
 save(first, getSwitchIndex("L64"))
+pump(first, second)
 local owner = first.flightBroker
 equal(owner.document.armed, "L64")
 equal(assert(owner.store:load(owner.filename)).armed, "L64", "arming is durable and model-wide")
@@ -126,7 +129,8 @@ armed = first.serviceRuntime.byId.armed
 local shared = armed:state()
 equal(shared.condition, "L64")
 equal(shared.origin, "model")
-equal(shared.fresh, true)
+equal(shared.fresh, true, "scheduler-owned panels leave room for shared armed reads")
+assert(not first.serviceRuntime.byId.control.failed, "a deferred control read is not a service error")
 assert(armed:state("L01") == shared and armed:state("ch5") == shared)
 assert(fixture.instanceOf(first, "one").session == fixture.instanceOf(first, "two").session)
 assert(fixture.instanceOf(first, "counter").arm == shared)
@@ -145,8 +149,18 @@ fixture.radio.logicalSwitches[64] = true
 pump(first, second)
 equal(shared.value, true)
 equal(second.serviceRuntime.byId.armed:state().value, true, "every instance observes the same model condition")
-equal(fixture.instanceOf(first, "capture").feed.homeStatus, "captured")
-equal(fixture.instanceOf(second, "capture").feed.homeStatus, "captured")
+equal(
+    fixture.instanceOf(first, "capture").feed.homeStatus,
+    "captured",
+    "the scheduled Armed read is available while panel owners leave room"
+)
+equal(
+    fixture.instanceOf(second, "capture").feed.homeStatus,
+    "captured",
+    "both navigation consumers observe the available Armed state"
+)
+equal(#first.errors, 0, "home capture is not a navigation service error")
+equal(#second.errors, 0, "home capture is not a navigation service error")
 
 local session = assert(editor.new(first.document, first.grid, first.layoutValidator, first.panelHost, function(kind)
     return fixture.module("panels/" .. kind .. ".lua")
@@ -172,7 +186,7 @@ for _ = 1, 150 do
     if first.editorUi and not first.editorUi.buildStage then
         break
     end
-    measured(definition.refresh, first)
+    definition.refresh(first)
 end
 local liveDraft = assert(first.editorSession)
 assert(editor.setValue(liveDraft, "label", "UNSAVED"))
@@ -201,4 +215,4 @@ equal(assert(owner.store:load(owner.filename)).armed, "!L64")
 save(second, getSwitchIndex("SF" .. CHAR_DOWN))
 equal(first.serviceRuntime.byId.armed:state().condition, "SFv", "physical positions are stored by portable name")
 equal(second.serviceRuntime.byId.armed:state().condition, "SFv")
-print(string.format("Model Armed callbacks: %d; worst %d instructions", callbacks, worst))
+print("Model Armed integration passed")

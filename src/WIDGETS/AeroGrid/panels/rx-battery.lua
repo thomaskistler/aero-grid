@@ -45,6 +45,18 @@ local rxBattery = {
     -- A pack voltage moves over a flight, not over a frame, and every refresh
     -- walks the cells table. Five hertz is already far more than a pilot reads.
     refreshInterval = 20,
+    decl = {
+        class = "normal",
+        kinds = { steady = true },
+        first = "prepare",
+        stages = {
+            prepare = { maxUnits = 1 },
+            geometry = { maxUnits = 1 },
+            layout = { maxUnits = 1 },
+            render = { maxUnits = 1 },
+            apply = { maxUnits = 1 },
+        },
+    },
     settings = {
         { key = "label", label = "Label", type = "string", default = "PACK" },
         { key = "source", label = "Voltage source", type = "string", default = "Cels" },
@@ -510,14 +522,14 @@ end
 ---@param fonts table
 ---@param sample table Widest digits this panel prints, and its unit.
 ---@return table
-function rxBattery.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, out, primitives)
+local function regionPlan(theme, themeBuilder, rect, layout, fonts, sample, out, primitives)
     local frame = themeBuilder.frame(theme, rect, fonts)
-    local glyphHeight
+    local plan = { theme = theme, builder = themeBuilder, rect = rect, fonts = fonts, sample = sample }
     local compact
     if layout.visual == "battery" then
         compact = function(_, half, ladder)
             local width
-            width, glyphHeight = primitives.batterySize(half, ladder.room)
+            width, plan.glyphHeight = primitives.batterySize(half, ladder.room)
             return width or 0
         end
     end
@@ -547,48 +559,56 @@ function rxBattery.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, 
             requested[#requested + 1] = { key = keys[index], form = form }
         end
     end
-    local area
-    local shown = 0
-    local selected = {}
+    plan.spec, plan.out, plan.requested, plan.selected, plan.shown = spec, out, requested, {}, 0
+    plan.mask = 0
     if layout.visual ~= "battery" and layout.showDetail == true and #requested > 0 then
-        local supporting = {}
         spec.draws.rows = true
-        spec.supporting = supporting
-        -- Highest-priority presence wins. If delta cannot fit at all, a
-        -- shorter secondary may still share the count's remaining space.
-        for mask = 2 ^ #requested - 1, 1, -1 do
-            selected = {}
-            for index, item in ipairs(requested) do
-                if math.floor(mask / 2 ^ (#requested - index)) % 2 == 1 then
-                    selected[#selected + 1] = item
-                end
-            end
-            local items = #selected
-            for index = 1, 3 do
-                supporting[index] = index <= items and selected[index].form or nil
-            end
-            spec.rowItems = items
-            area = themeBuilder.panel(theme, rect, fonts, spec, out)
-            if area.supportingPlacement ~= "hidden" then
-                shown = items
-            end
-            if shown > 0 then
-                break
-            end
-        end
-        if shown == 0 then
-            spec.draws.rows, spec.supporting, spec.rowItems = false, nil, 1
-            area = nil
-        end
+        spec.supporting = {}
+        plan.mask = 2 ^ #requested - 1
     end
-    area = area or themeBuilder.panel(theme, rect, fonts, spec, out)
+    return plan
+end
+
+local function resolveRegion(plan)
+    local spec, requested = plan.spec, plan.requested
+    -- Descending masks preserve count, delta, then pack priority.
+    if plan.mask > 0 then
+        local selected = {}
+        for index, item in ipairs(requested) do
+            if math.floor(plan.mask / 2 ^ (#requested - index)) % 2 == 1 then
+                selected[#selected + 1] = item
+            end
+        end
+        plan.selected = selected
+        for index = 1, 3 do
+            spec.supporting[index] = index <= #selected and selected[index].form or nil
+        end
+        spec.rowItems = #selected
+    else
+        spec.draws.rows, spec.supporting, spec.rowItems = false, nil, 1
+    end
+    plan.area = plan.builder.panel(plan.theme, plan.rect, plan.fonts, spec, plan.out)
+    if plan.mask > 0 then
+        if plan.area.supportingPlacement == "hidden" then
+            plan.mask = plan.mask - 1
+            return false
+        end
+        plan.shown = #plan.selected
+    end
+    return true
+end
+
+local function finishRegion(plan)
+    local area, sample = plan.area, plan.sample
+    local themeBuilder = plan.builder
+    local keys = { "count", "delta", "pack" }
     local prefixes = { "detail", "rowRight", "rowThird" }
     for _, key in ipairs(keys) do
         area[key .. "Shown"] = false
         area[key .. "Slot"] = nil
     end
-    for index = 1, shown do
-        local key = selected[index].key
+    for index = 1, plan.shown do
+        local key = plan.selected[index].key
         local prefix = prefixes[index]
         area[key .. "Shown"] = true
         area[key .. "Slot"] = {
@@ -605,12 +625,25 @@ function rxBattery.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, 
     end
     if area.visualSize then
         area.glyphWidth = area.visualSize
-        area.glyphHeight = glyphHeight
+        area.glyphHeight = plan.glyphHeight
         area.glyphX = themeBuilder.slotX(area.visualCentreX, area.glyphWidth)
         area.glyphY = area.valueY
-            + math.floor(themeBuilder.numberInkCentre(area.value, sample.digits) - glyphHeight / 2 + 0.5)
+            + math.floor(themeBuilder.numberInkCentre(area.value, sample.digits) - plan.glyphHeight / 2 + 0.5)
     end
     return area
+end
+
+function rxBattery.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, out, primitives)
+    local plan = regionPlan(theme, themeBuilder, rect, layout, fonts, sample, out, primitives)
+    while not resolveRegion(plan) do
+    end
+    return finishRegion(plan)
+end
+
+local function supportingForms(context)
+    return rxBattery.measureForm(rxBattery.countVariants(context.summary, context.settings)),
+        rxBattery.measureForm(rxBattery.packVariants(context.summary, context.settings)),
+        rxBattery.measureForm(rxBattery.deltaVariants(context.summary, context.settings))
 end
 
 --- Record the measured forms of what the supporting row has to say.
@@ -623,9 +656,7 @@ function rxBattery.measureSupporting(context)
     end
     rxBattery.gather(context)
     context.gathered = true
-    local count = rxBattery.measureForm(rxBattery.countVariants(context.summary, context.settings))
-    local pack = rxBattery.measureForm(rxBattery.packVariants(context.summary, context.settings))
-    local delta = rxBattery.measureForm(rxBattery.deltaVariants(context.summary, context.settings))
+    local count, pack, delta = supportingForms(context)
     if layout.countForm == count and layout.packForm == pack and layout.deltaForm == delta then
         return false
     end
@@ -644,13 +675,7 @@ local function fitOrDrop(context, variants, width)
     return text
 end
 
---- Build the panel's LVGL objects.
----@param parent any
----@param rect AeroGridRect
----@param settings AeroGridRxBatterySettings
----@param services table
----@return AeroGridRxBatteryContext
-function rxBattery.create(parent, rect, settings, services)
+local function beginConstruction(parent, rect, settings, services)
     local theme = services.theme
     local primitives = services.primitives
     local fonts = services.fonts
@@ -682,7 +707,7 @@ function rxBattery.create(parent, rect, settings, services)
     -- never read.
     local telemetry = services.telemetry
     if telemetry then
-        context.feed = telemetry:subscribe(settings.source)
+        context.feed = telemetry:subscribe(settings.source, nil, 20)
     end
 
     -- The widest number this panel can print, taken from what it reads
@@ -696,25 +721,48 @@ function rxBattery.create(parent, rect, settings, services)
         unit = "V",
     }
     context.sample = sample
+    context.createParent, context.createPresentation, context.createStage = parent, presentation, "geometry"
+    return context
+end
 
+local function createGeometry(context, rect)
+    context.createInvalidated = nil
     rxBattery.measureSupporting(context)
-    local area = rxBattery.regionsFor(theme, services.themeBuilder, rect, layout, fonts, sample, nil, primitives)
+    context.createGeometry = regionPlan(
+        context.theme,
+        context.themeBuilder,
+        rect,
+        context.layout,
+        context.fonts,
+        context.sample,
+        nil,
+        context.primitives
+    )
+    context.rect, context.createStage = rect, "fit"
+end
+
+local function createFrame(context)
+    local area = context.area
     context.showDetail = area.countShown or area.deltaShown or area.packShown
     context.detailWidth = area.detailWidth
 
-    local panel
-    context.panel, context.label, context.badge = primitives.panelWithHeader(
-        parent,
-        rect,
-        theme,
-        presentation,
+    context.panel, context.label, context.badge = context.primitives.panelWithHeader(
+        context.createParent,
+        context.rect,
+        context.theme,
+        context.createPresentation,
         area.frame,
-        fonts,
-        settings.label,
-        services.themeBuilder
+        context.fonts,
+        context.settings.label,
+        context.themeBuilder
     )
-    panel = context.panel
+    context.createParent, context.createStage = nil, "controls"
+end
 
+local function createControls(context)
+    local theme, primitives, fonts = context.theme, context.primitives, context.fonts
+    local area, panel, layout = context.area, context.panel, context.layout
+    local presentation, settings, sample = context.createPresentation, context.settings, context.sample
     -- LVGL userdata cannot report its text; keep it for reading/unit placement.
     context.unitText = sample.unit
     context.value, context.unit = primitives.reading(panel.root, theme, area, presentation, sample.unit)
@@ -762,7 +810,7 @@ function rxBattery.create(parent, rect, settings, services)
             h = area.glyphHeight,
             fraction = 0,
             color = presentation.accent,
-            border = primitives.batteryStroke(services.themeBuilder, area.value, area.glyphWidth),
+            border = primitives.batteryStroke(context.themeBuilder, area.value, area.glyphWidth),
         })
     end
 
@@ -787,13 +835,39 @@ function rxBattery.create(parent, rect, settings, services)
         lvgl.hide(context.bar.track)
         lvgl.hide(context.bar.fill)
     end
+end
 
-    local _, drawn = primitives.changed(context, rxBattery.render)
-    rxBattery.apply(context, drawn)
+--- Build synchronously unless the loader requests hidden staged construction.
+---@param parent any
+---@param rect AeroGridRect
+---@param settings AeroGridRxBatterySettings
+---@param services table
+---@return AeroGridRxBatteryContext
+function rxBattery.create(parent, rect, settings, services)
+    local context = beginConstruction(parent, rect, settings, services)
+    if services.staged ~= true then
+        while not rxBattery.construct(context, rect) do
+        end
+    end
     return context
 end
 
+local function invalidate(context)
+    if context.reflowWork then
+        context.reflowWork = { invalidated = true }
+    end
+    if context.createStage then
+        context.createInvalidated, context.gathered, context.rendered = true, nil, nil
+    end
+    if context.refreshWork then
+        context.refreshWork, context.rendered, context.gathered = nil, nil, nil
+    end
+end
+
+rxBattery.cancelRefresh = invalidate
+
 function rxBattery.resetSession(context, now)
+    invalidate(context)
     context.estimatedCells, context.reestimateOnFresh = nil, true
     context.estimateAfter = now
 end
@@ -963,39 +1037,11 @@ function rxBattery.apply(context, drawn)
     end
 end
 
---- Advance the panel, repainting only when something drawn changed.
----@param context AeroGridRxBatteryContext
-function rxBattery.refresh(context)
-    if not context.feed and not context.lowestFeed then
-        return
-    end
-    -- What the row has to say decides what fits, so a change in its shape
-    -- rearranges the panel before it is painted.
-    local reflowed = rxBattery.measureSupporting(context)
-    if reflowed then
-        rxBattery.update(context, context.rect, nil, true)
-    end
-    local changed, drawn = context.primitives.changed(context, rxBattery.render)
-    if changed or reflowed then
-        rxBattery.apply(context, drawn)
-    end
-end
-
 --- Reposition after a zone change.
 ---@param context AeroGridRxBatteryContext
 ---@param rect AeroGridRect
-function rxBattery.update(context, rect, _, detailsOnly)
+local function applyGeometry(context, rect, area, detailsOnly)
     context.rect = rect
-    local area = rxBattery.regionsFor(
-        context.theme,
-        context.themeBuilder,
-        rect,
-        context.layout,
-        context.fonts,
-        context.sample,
-        nil,
-        context.primitives
-    )
 
     -- A telemetry wording change moves only the content. Rebuilding the
     -- unchanged header wastes the radio's shared callback budget.
@@ -1083,5 +1129,165 @@ function rxBattery.update(context, rect, _, detailsOnly)
         context.glyphShown = shown
     end
 end
+
+function rxBattery.update(context, rect, _, detailsOnly)
+    while context.createStage do
+        rxBattery.construct(context, rect)
+    end
+    invalidate(context)
+    local area = rxBattery.regionsFor(
+        context.theme,
+        context.themeBuilder,
+        rect,
+        context.layout,
+        context.fonts,
+        context.sample,
+        nil,
+        context.primitives
+    )
+    applyGeometry(context, rect, area, detailsOnly)
+end
+
+function rxBattery.reflow(context, rect, _, _, _, begin)
+    local captured = context.primitives.reflowStart(context, rect, begin)
+    if captured then
+        invalidate(context)
+        context.reflowWork = {
+            stage = "fit",
+            rect = captured,
+            geometry = regionPlan(
+                context.theme,
+                context.themeBuilder,
+                captured,
+                context.layout,
+                context.fonts,
+                context.sample,
+                nil,
+                context.primitives
+            ),
+        }
+        return false
+    end
+    local work = context.reflowWork
+    if not work then
+        return true
+    elseif work.stage == "fit" then
+        if resolveRegion(work.geometry) then
+            work.area, work.geometry, work.stage = finishRegion(work.geometry), nil, "place"
+        end
+    elseif work.stage == "place" then
+        applyGeometry(context, work.rect, work.area)
+        context.reflowWork = nil
+        return true
+    else
+        error("unknown rx-battery reflow stage: " .. tostring(work.stage))
+    end
+    return false
+end
+
+function rxBattery.stageOf(context)
+    return context.refreshWork and context.refreshWork.stage or "prepare", 1
+end
+
+function rxBattery.step(context, _, stage)
+    context.used = 0
+    if stage ~= rxBattery.stageOf(context) then
+        return nil, true
+    end
+    context.used = 1
+    if stage == "prepare" then
+        if not context.feed and not context.lowestFeed then
+            return
+        end
+        rxBattery.gather(context)
+        context.gathered = true
+        local work = { stage = "render" }
+        if context.layout.adaptive then
+            local count, pack, delta = supportingForms(context)
+            local layout = context.layout
+            if layout.countForm ~= count or layout.packForm ~= pack or layout.deltaForm ~= delta then
+                local copy = {}
+                for key, value in pairs(layout) do
+                    copy[key] = value
+                end
+                copy.countForm, copy.packForm, copy.deltaForm = count, pack, delta
+                work.layout = copy
+                work.geometry = regionPlan(
+                    context.theme,
+                    context.themeBuilder,
+                    context.rect,
+                    copy,
+                    context.fonts,
+                    context.sample,
+                    nil,
+                    context.primitives
+                )
+                work.stage = "geometry"
+            end
+        end
+        context.refreshWork = work
+    elseif stage == "geometry" then
+        local work = context.refreshWork
+        if resolveRegion(work.geometry) then
+            work.area, work.stage = finishRegion(work.geometry), "layout"
+        end
+    elseif stage == "layout" then
+        local work = context.refreshWork
+        context.layout = work.layout
+        applyGeometry(context, context.rect, work.area, true)
+        work.stage = "render"
+    elseif stage == "render" then
+        local work = context.refreshWork
+        work.changed, work.drawn = context.primitives.changed(context, rxBattery.render)
+        if not work.changed and not work.layout then
+            context.refreshWork = nil
+            return
+        end
+        work.stage = "apply"
+    else
+        rxBattery.apply(context, context.refreshWork.drawn)
+        context.refreshWork = nil
+        return
+    end
+    return nil, true
+end
+
+function rxBattery.construct(context, rect)
+    local stage = context.createStage
+    if stage == "geometry" then
+        createGeometry(context, rect)
+    elseif stage == "fit" then
+        if resolveRegion(context.createGeometry) then
+            context.area = finishRegion(context.createGeometry)
+            context.createGeometry = nil
+            context.createStage = context.panel and "place" or "header"
+        end
+    elseif stage == "header" then
+        createFrame(context)
+    elseif stage == "controls" then
+        createControls(context)
+        context.createStage = "publish"
+    elseif stage == "place" then
+        applyGeometry(context, context.rect, context.area)
+        context.primitives.setFont(context.unit, context.area.unitFont)
+        context.createStage = "publish"
+    elseif stage == "publish" then
+        if context.createInvalidated or not context.primitives.sameRect(context.rect, rect) then
+            context.createStage = "geometry"
+        else
+            local _, drawn = context.primitives.changed(context, rxBattery.render)
+            rxBattery.apply(context, drawn)
+            context.createStage, context.createPresentation = nil, nil
+            return true
+        end
+    elseif not stage then
+        return true
+    else
+        error("unknown rx-battery construction stage: " .. tostring(stage))
+    end
+    return false
+end
+
+rxBattery.reflowDecl = { callback = rxBattery.reflow }
 
 return rxBattery

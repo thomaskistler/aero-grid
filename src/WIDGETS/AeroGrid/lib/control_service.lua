@@ -47,8 +47,24 @@ controlService.__index = controlService
 local INTERVAL = 20
 local OUTPUT_INTERVAL = 10
 
---- Subscriptions refreshed per update, served round robin.
+--- Subscriptions refreshed in bounded round-robin batches.
 local POLL_CAP = 6
+local OUTPUT_CAP = 32
+
+controlService.TASK_DECLARATIONS = {
+    critical = {
+        class = "critical",
+        stages = { run = { maxUnits = POLL_CAP } },
+    },
+    normal = {
+        class = "normal",
+        stages = { run = { maxUnits = POLL_CAP } },
+    },
+    outputs = {
+        class = "normal",
+        stages = { run = { maxUnits = OUTPUT_CAP } },
+    },
+}
 
 --- Ticks between attempts to resolve a source or switch the radio rejects.
 local RESOLVE_RETRY = 500
@@ -74,24 +90,56 @@ local RESX = 1024
 ---@param support table The loaded lib/services.lua module.
 ---@return table
 function controlService.new(env, support)
-    return setmetatable({
+    local service = setmetatable({
         id = "control",
         interval = INTERVAL,
         revision = 0,
         count = 0,
         due = 0,
-        controlsDue = 0,
         env = env,
         support = support,
         entries = {},
-        cursor = 1,
+        criticalEntries = {},
+        criticalCursor = 1,
+        criticalRemaining = nil,
+        normalEntries = {},
+        normalCursor = 1,
+        normalRemaining = nil,
         trims = {},
         outputs = {},
         outputEntries = {},
+        outputCursor = 1,
+        outputRemaining = nil,
         variables = {},
         switches = {},
+        switchEntries = {},
         variableEntries = {},
     }, controlService)
+
+    support.task(service, "critical", {
+        id = "service:control",
+        decl = controlService.TASK_DECLARATIONS.critical,
+        critical = true,
+        run = function(owner, grant, _, now)
+            return owner:stepEntries(owner.criticalEntries, "critical", grant, now)
+        end,
+    })
+    support.task(service, "normal", {
+        id = "service:control-normal",
+        decl = controlService.TASK_DECLARATIONS.normal,
+        run = function(owner, grant, _, now)
+            return owner:stepEntries(owner.normalEntries, "normal", grant, now)
+        end,
+    })
+    support.task(service, "outputs", {
+        id = "service:control-outputs",
+        decl = controlService.TASK_DECLARATIONS.outputs,
+        run = function(owner, grant, _, now)
+            return owner:stepOutputs(grant, now)
+        end,
+    })
+
+    return service
 end
 
 local AXES = { "rud", "ele", "thr", "ail" }
@@ -255,6 +303,53 @@ function controlService:readOutputValue(entry)
     end
 end
 
+local function markScheduledUpdate(service, now)
+    if service.lastScheduledAt ~= now then
+        service.lastScheduledAt = now
+        service.revision = service.revision + 1
+    end
+end
+controlService.markScheduledUpdate = markScheduledUpdate
+
+--- Read the next bounded batch of switch conditions or normal control entries.
+---@param entries table[]
+---@param kind "critical"|"normal"
+---@param grant integer
+---@param now integer
+---@return integer delay
+function controlService:stepEntries(entries, kind, grant, now)
+    if #entries == 0 then
+        return INTERVAL
+    end
+    local more = self.support.poll(self, kind .. "Cursor", kind .. "Remaining", entries, POLL_CAP, grant, self, nil, now)
+    markScheduledUpdate(self, now)
+    return more and 1 or INTERVAL
+end
+
+--- Read a bounded round-robin slice of final channel outputs.
+---@param grant integer
+---@param now integer
+---@return integer delay
+function controlService:stepOutputs(grant, now)
+    local entries = self.outputEntries
+    if #entries == 0 then
+        return OUTPUT_INTERVAL
+    end
+    local more = self.support.poll(
+        self,
+        "outputCursor",
+        "outputRemaining",
+        entries,
+        #entries,
+        grant,
+        self,
+        controlService.readOutputValue,
+        now
+    )
+    markScheduledUpdate(self, now)
+    return more and 1 or OUTPUT_INTERVAL
+end
+
 function controlService:readOutput(entry)
     local state, env = entry.state, self.env
     local mode = env.getFlightMode and env.getFlightMode() or 0
@@ -286,6 +381,7 @@ function controlService:output(index)
         }, controlService.readOutput)
         self.outputs[index] = entry.view
         self.outputEntries[#self.outputEntries + 1] = entry
+        self.tasks.outputs.want = #self.outputEntries
         self.interval = OUTPUT_INTERVAL
     end
     return self.outputs[index]
@@ -332,7 +428,7 @@ end
 
 --- Shared physical-position and logical-switch conditions; unknown is not false.
 ---@param index? integer Validated native SWITCH option ID.
-function controlService:switch(name, index)
+function controlService:switch(name, index, classification)
     assert(self.env.getSwitchIndex and self.env.getSwitchValue, "state panel requires switch APIs")
     if self.switches[name] then
         return self.switches[name]
@@ -344,24 +440,115 @@ function controlService:switch(name, index)
         fresh = false,
         value = false,
         updatedAt = 0,
-    }, controlService.readSwitch)
+    }, controlService.readSwitch, classification)
     if index then
         entry.id, entry.state.known = index, true
     end
     self.switches[name] = entry.view
+    self.switchEntries[name] = entry
     return entry.view
+end
+
+--- Subscribe to a display-only condition; Armed can later claim it as critical.
+---@param name string
+---@param index? integer
+---@return table
+function controlService:displaySwitch(name, index)
+    return self:switch(name, index, "normal")
+end
+
+--- Transfer a shared switch condition to the armed service's critical task.
+---@param name string
+---@param index? integer
+---@return table view
+---@return table entry
+function controlService:armSwitch(name, index)
+    local view = self:switch(name, index)
+    local entry = self.switchEntries[name]
+    if not entry.armed then
+        entry.armed = true
+        for _, group in ipairs({
+            { entries = self.criticalEntries, cursor = "criticalCursor", remaining = "criticalRemaining" },
+            { entries = self.normalEntries, cursor = "normalCursor", remaining = "normalRemaining" },
+        }) do
+            for position = #group.entries, 1, -1 do
+                if group.entries[position] == entry then
+                    table.remove(group.entries, position)
+                    if self[group.cursor] > position then
+                        self[group.cursor] = self[group.cursor] - 1
+                    end
+                    if self[group.cursor] > #group.entries then
+                        self[group.cursor] = 1
+                    end
+                    self[group.remaining] = nil
+                    break
+                end
+            end
+        end
+        self.tasks.critical.want = math.min(POLL_CAP, #self.criticalEntries)
+        self.tasks.normal.want = math.min(POLL_CAP, #self.normalEntries)
+    end
+    return view, entry
+end
+
+--- Prepare a shared Armed reader without scanning its former polling groups.
+function controlService:startArmSwitch(name, index)
+    local view = self:switch(name, index)
+    return { owner = self, view = view, entry = self.switchEntries[name], group = "critical" }
+end
+
+--- Retain the synchronous armSwitch cursor/removal semantics, one examined
+--- subscription per turn. The Armed service subscribes only after completion.
+function controlService:advanceArmSwitch(job)
+    assert(job.owner == self, "Invalid Armed reader claim")
+    local entry = job.entry
+    if job.done or entry.armed then
+        job.done = true
+        return true
+    end
+    local group = job.group
+    local entries, cursor = self[group .. "Entries"], group .. "Cursor"
+    local position = math.min(job.position or #entries, #entries)
+    if position > 0 and entries[position] ~= entry then
+        job.position = position - 1
+        return false
+    elseif position > 0 then
+        table.remove(entries, position)
+        if self[cursor] > position then
+            self[cursor] = self[cursor] - 1
+        end
+        if self[cursor] > #entries then
+            self[cursor] = 1
+        end
+        self[group .. "Remaining"] = nil
+        self.tasks[group].want = math.min(POLL_CAP, #entries)
+    end
+    if group == "critical" then
+        job.group, job.position = "normal", nil
+        return false
+    end
+    entry.armed, job.done = true, true
+    return true
 end
 
 --- Register a subscription and publish its immutable view.
 ---@param state table
 ---@param read fun(self: table, entry: table, now: integer)
 ---@return table entry
-function controlService:add(state, read)
-    return self.support.addSubscription(self, self.entries, {
+function controlService:add(state, read, classification)
+    local entry = self.support.addSubscription(self, self.entries, {
         state = state,
         read = read,
         nextResolve = 0,
     })
+    if read == controlService.readSwitch and classification ~= "normal" then
+        self.criticalEntries[#self.criticalEntries + 1] = entry
+        self.tasks.critical.want = math.min(POLL_CAP, #self.criticalEntries)
+    else
+        self.normalEntries[#self.normalEntries + 1] = entry
+        self.tasks.normal.want = math.min(POLL_CAP, #self.normalEntries)
+    end
+    return entry
 end
 
 --- Read one trim position.
@@ -607,22 +794,6 @@ function controlService:incrementFlightCount()
     return nextCount
 end
 
---- Refresh a bounded slice of the subscriptions.
----@param now integer
-local function readEntry(service, entry, now)
-    entry.read(service, entry, now)
-end
-
-function controlService:update(now)
-    for _, entry in ipairs(self.outputEntries) do
-        self:readOutputValue(entry)
-    end
-    if #self.outputEntries == 0 or now >= self.controlsDue then
-        self.controlsDue = now + INTERVAL
-        self.cursor = self.support.roundRobin(self.entries, self.cursor, POLL_CAP, readEntry, self, now)
-    end
-end
-
 --- Round a signed percentage half away from zero.
 --- Flooring a negative value plus a negative half rounds -23.4 to -24, which
 --- reads as more deflection than the trim actually has.
@@ -636,39 +807,60 @@ local function percentOf(fraction)
     return math.floor(percent + 0.5)
 end
 
+local function describeEntry(self, rows, index, entry)
+    local row = self.support.row
+    local state = entry.state
+    if entry.read == controlService.readOutput then
+        index = row(
+            rows,
+            index,
+            "CH" .. tostring(state.index + 1),
+            state.available and (tostring(percentOf(state.fraction)) .. "%") or "N/A"
+        )
+    elseif state.name and state.fraction ~= nil then
+        local text = state.available and string.format("%d %d%%", state.value, percentOf(state.fraction)) or "N/A"
+        if state.threePosition then
+            text = text .. " 3P"
+        end
+        index = row(rows, index, string.upper(state.name), text)
+    elseif state.index ~= nil then
+        index = row(
+            rows,
+            index,
+            string.upper(state.name),
+            state.available and (tostring(state.value) .. state.unitText) or "N/A"
+        )
+    end
+    return index
+end
+
+--- Describe one subscription, including subscriptions with no diagnostic row.
+---@return integer nextRow
+---@return integer? nextCursor
+function controlService:describeStep(rows, index, cursor)
+    local entry = self.entries[cursor]
+    if not entry then
+        return index
+    end
+    index = describeEntry(self, rows, index, entry)
+    return index, self.entries[cursor + 1] and cursor + 1 or nil
+end
+
 --- Describe the subscribed trims and variables as diagnostic rows.
 ---@param rows table Reusable row array.
 ---@return integer count
 function controlService:describe(rows)
-    local row = self.support.row
     local index = 1
-
     for _, entry in ipairs(self.entries) do
-        local state = entry.state
-        if entry.read == controlService.readOutput then
-            index = row(
-                rows,
-                index,
-                "CH" .. tostring(state.index + 1),
-                state.available and (tostring(percentOf(state.fraction)) .. "%") or "N/A"
-            )
-        elseif state.name and state.fraction ~= nil then
-            local text = state.available and string.format("%d %d%%", state.value, percentOf(state.fraction)) or "N/A"
-            if state.threePosition then
-                text = text .. " 3P"
-            end
-            index = row(rows, index, string.upper(state.name), text)
-        elseif state.index ~= nil then
-            index = row(
-                rows,
-                index,
-                string.upper(state.name),
-                state.available and (tostring(state.value) .. state.unitText) or "N/A"
-            )
-        end
+        index = describeEntry(self, rows, index, entry)
     end
-
     return index - 1
+end
+
+function controlService.bindCosts(costs)
+    for name, decl in pairs(controlService.TASK_DECLARATIONS) do
+        costs:stages("control." .. name, decl)
+    end
 end
 
 return controlService

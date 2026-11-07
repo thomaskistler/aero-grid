@@ -64,6 +64,10 @@ jobs:
       - name: Run checks
         run: make check LUA_COMPILER=luac5.3
 
+      # EdgeTX Lua has 32-bit integers; the suite above runs on 64-bit Lua.
+      - name: Test the scheduler on 32-bit-integer Lua
+        run: make test-lua32
+
       - name: Test release packaging
         run: |
           python3 -m unittest discover -s tools -p 'test_release_*.py'
@@ -79,7 +83,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           version: 2.5.2
-          args: --check src/WIDGETS tests
+          args: --check src/WIDGETS tests tools/scheduler-audit
 
       - name: Build the simulator SD image
         run: make build

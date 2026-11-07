@@ -12,14 +12,18 @@ local function above(value, threshold)
     return value - threshold > ROUNDING * math.max(1, math.abs(value), math.abs(threshold))
 end
 
-local function reliable(reading, now)
+local function reliable(reading, now, window)
     return reading
         and reading.available ~= false
         and reading.fresh == true
         and type(reading.updatedAt) == "number"
         and now >= reading.updatedAt
-        and now - reading.updatedAt <= 100
+        and now - reading.updatedAt <= (window or 100)
 end
+
+-- Smart is polled at 1 Hz; a late poll must not age its readings out between
+-- polls. Receipt evidence is bounded separately by Smart's 120-tick window.
+local SMART_WINDOW = 120
 
 local function smartReference(context, now, armLive, armed)
     if not context.settings.smartDetection then
@@ -42,7 +46,7 @@ local function smartReference(context, now, armLive, armed)
         context.wasArmed, context.altitudeReference = false, nil
         context.altitudeSince, context.speedSince = nil, nil
         local altitude = sensors and sensors.altitude
-        if context.smartAvailable ~= false and reliable(altitude, now) then
+        if context.smartAvailable ~= false and reliable(altitude, now, SMART_WINDOW) then
             -- The arm and sensor pollers are independent. Confirm the sample
             -- against a false-arm observation at or after its receipt evidence.
             if context.referencePendingAt and context.referencePendingAt <= context.arm.updatedAt then
@@ -59,7 +63,7 @@ local function smartReference(context, now, armLive, armed)
         end
     elseif context.wasArmed == false then
         local altitude = sensors and sensors.altitude
-        if context.smartAvailable ~= false and reliable(altitude, now) then
+        if context.smartAvailable ~= false and reliable(altitude, now, SMART_WINDOW) then
             if
                 context.referenceCandidateAt
                 and now >= context.referenceCandidateAt
@@ -92,9 +96,9 @@ local function smartReason(context, now)
     end
     local baro = context.smartAvailable ~= false
         and context.altitudeReference ~= nil
-        and reliable(altitude, now)
+        and reliable(altitude, now, SMART_WINDOW)
         and above(altitude.value, context.altitudeReference + 3)
-    local moving = context.smartAvailable ~= false and reliable(speed, now) and above(speed.value, 4.4704)
+    local moving = context.smartAvailable ~= false and reliable(speed, now, SMART_WINDOW) and above(speed.value, 4.4704)
     context.altitudeSince = baro and (context.altitudeSince or now) or nil
     context.speedSince = moving and (context.speedSince or now) or nil
     if context.altitudeSince and altitude.confirmedAt and altitude.confirmedAt - context.altitudeSince >= 200 then
@@ -110,13 +114,22 @@ function flight.advance(context, now)
         and reliable(context.arm, now)
         and type(context.arm.value) == "boolean"
     local armed = armLive and context.arm.value
+    local stamp = armLive and context.arm.updatedAt or nil
+    if
+        not stamp
+        or context.armObservedAt and (stamp < context.armObservedAt or stamp - context.armObservedAt > 100)
+    then
+        context.disarmedAt, context.groundAt = nil, nil
+    end
+    context.armObservedAt = stamp
     if context.phase == "active" or context.phase == "ending" then
         if not armLive or armed then
             context.disarmedAt, context.phase = nil, "active"
         else
             context.disarmedAt = context.disarmedAt or now
             context.phase = "ending"
-            if now - context.disarmedAt >= context.settings.disarmDuration * 100 then
+            local confirmedAt = context.arm.updatedAt
+            if confirmedAt - context.disarmedAt >= context.settings.disarmDuration * 100 then
                 if context.completed then
                     context:completed(now)
                 end
@@ -153,6 +166,19 @@ function flight.advance(context, now)
     end
     local link = context.link
     local live = link.updatedAt and now >= link.updatedAt and now - link.updatedAt <= 100 and link.live
+    local conditionsAt = armed
+            and motorLive
+            and live
+            and math.min(context.arm.updatedAt, context.motor.updatedAt, link.updatedAt)
+        or nil
+    if
+        not conditionsAt
+        or context.conditionsAt
+            and (conditionsAt < context.conditionsAt or conditionsAt - context.conditionsAt > 100)
+    then
+        context.startedAt = nil
+    end
+    context.conditionsAt = conditionsAt
     if not (armed and motorLive and (motor + 1024) * 100 / 2048 > context.settings.minMotorPercent and live) then
         context.phase, context.startedAt = "ground", nil
         context.altitudeSince, context.speedSince = nil, nil
@@ -162,7 +188,8 @@ function flight.advance(context, now)
         context.startedAt, context.phase = now, "starting"
     end
     local reason = smartReason(context, now)
-    if now - context.startedAt >= context.settings.minFlightDuration * 100 then
+    local confirmedAt = context.conditionsAt
+    if confirmedAt - context.startedAt >= context.settings.minFlightDuration * 100 then
         reason = "standard"
     end
     if reason then
@@ -215,12 +242,26 @@ function broker:reset(filename)
     self.filename, self.epoch = filename, self.epoch + 1
     self.session, self.runtime, self.smartRuntime, self.signature, self.output = nil, nil, nil, nil, nil
     self.document, self.loadError = nil, nil
+    self.loadingOwner = nil
     self.events, self.errors = {}, {}
     self.lastTick, self.readyAfterDisarm = nil, nil
+    self.pendingAttach, self.proposalScan = nil, nil
+    self.publication = nil
+    if self.tasks then
+        for _, task in pairs(self.tasks) do
+            task.stage, task.want = "run", 1
+        end
+        self.failed = nil
+    end
+    if self.facade then
+        self.facade.failed = nil
+    end
+    if self.taskService then
+        self.taskService.failed = nil
+    end
     self.readyAfterDisarmAt = nil
     self.resetCondition, self.resetRuntime, self.resetFeed, self.resetValue, self.resetPolledAt =
         nil, nil, nil, nil, nil
-    self.nextPumpAt = nil
     for key in pairs(self.state) do
         self.state[key] = nil
     end
@@ -232,21 +273,16 @@ function broker:reset(filename)
     self.cachedRevision, self.cachedProposal, self.cachedSignature, self.cachedStatus = nil, nil, nil, nil
 end
 
-function broker:setDocument(document)
-    assert(
-        document.modelFilename == nil or document.modelFilename == self.filename,
-        "Model changed; reopen model settings"
-    )
-    if self.document and self.document.armed ~= document.armed then
-        for host, member in pairs(self.members) do
-            host.navigationHomes = {}
-            if host.modelFilename == nil or host.modelFilename == self.filename then
-                member.pending = true
-                host.modelArmingReload = true
-                host.reloadState = "clear"
-            end
-        end
+local function notifyDocumentMember(self, host, member)
+    host.navigationHomes = {}
+    if host.modelFilename == nil or host.modelFilename == self.filename then
+        member.pending = true
+        host.modelArmingReload = true
+        host.reloadState = "clear"
     end
+end
+
+local function publishDocument(self, document)
     if self.document and (self.document.revision or 0) ~= (document.revision or 0) then
         self.readyAfterDisarm = true
         self.errors.count, self.errors.detection = nil, nil
@@ -260,6 +296,110 @@ function broker:setDocument(document)
     if self.factory then
         self.factory.revision = (self.factory.revision or 0) + 1
     end
+end
+
+function broker:setDocument(document)
+    assert(
+        document.modelFilename == nil or document.modelFilename == self.filename,
+        "Model changed; reopen model settings"
+    )
+    local publication = self.publication
+    if
+        self.document and self.document.armed ~= document.armed
+        or publication and publication.stage == "members" and publication.armedChanged
+    then
+        for host, member in pairs(self.members) do
+            notifyDocumentMember(self, host, member)
+        end
+    end
+    publishDocument(self, document)
+    self.publication = nil
+end
+
+local function publicationError(self, filename)
+    if self.filename ~= filename then
+        return "Model changed; reopen model settings"
+    end
+    local ok, current = pcall(self.identity, self)
+    if not ok then
+        return tostring(current)
+    elseif current ~= filename then
+        return "Model changed; reopen model settings"
+    end
+end
+
+--- The validated document is already persisted and must remain immutable.
+function broker:startPublication(document)
+    if
+        type(document) ~= "table"
+        or type(document.modelFilename) ~= "string"
+        or document.modelFilename == ""
+        or document.modelFilename ~= self.filename
+    then
+        return nil, "Model changed; reopen model settings"
+    elseif self.publication then
+        return nil, "Model settings publication already pending"
+    end
+    local message = publicationError(self, document.modelFilename)
+    if message then
+        return nil, message
+    end
+    local job = {
+        owner = self,
+        document = document,
+        filename = self.filename,
+        stage = "commit",
+        armedChanged = self.document ~= nil and self.document.armed ~= document.armed,
+        seen = {},
+    }
+    self.publication = job
+    return job
+end
+
+local function finishPublication(self, job, ok, message)
+    if self.publication == job then
+        self.publication = nil
+    end
+    job.done, job.ok, job.error = true, ok, message
+    job.cursor, job.seen = nil, nil
+    return true, ok, message
+end
+
+--- Commit once, then notify at most one member per turn. Confirmed saves cannot
+--- be cancelled; a model change stops further publication without rolling back.
+function broker:advancePublication(job)
+    if type(job) ~= "table" or job.owner ~= self then
+        return true, false, "Invalid model settings publication"
+    elseif job.done then
+        return true, job.ok, job.error
+    end
+    local message = publicationError(self, job.filename)
+    if message then
+        return finishPublication(self, job, false, message)
+    elseif self.publication ~= job then
+        return finishPublication(self, job, false, "Model settings publication was replaced")
+    elseif job.stage == "commit" then
+        publishDocument(self, job.document)
+        if not job.armedChanged then
+            return finishPublication(self, job, true)
+        end
+        job.stage = "members"
+        job.revision = self.factory and self.factory.revision
+        return false
+    end
+    local revision = self.factory and self.factory.revision
+    if revision ~= job.revision then
+        job.cursor, job.revision = nil, revision
+    end
+    local host, member = next(self.members, job.cursor)
+    job.cursor = host
+    if not host then
+        return finishPublication(self, job, true)
+    elseif not job.seen[host] then
+        job.seen[host] = true
+        notifyDocumentMember(self, host, member)
+    end
+    return false
 end
 
 function broker:boundary(kind, at, observedAt)
@@ -294,70 +434,101 @@ function broker:boundaries(afterSequence, epoch)
         (epoch ~= nil and epoch ~= self.epoch) or (afterSequence ~= nil and afterSequence < oldest - 1)
 end
 
-function broker:resolveProposals()
-    local selected, signature, pending, conflict
-    local candidates = {}
-    for _, participant in pairs(self.members) do
-        if participant.modelFilename == self.filename then
-            if participant.error then
-                self.state.configurationError = participant.error
-                return nil, nil, "error"
-            elseif participant.pending then
-                pending = true
-            else
-                for _, declaration in ipairs(participant.declarations or {}) do
-                    local settings = self.document and self.document.flight or declaration.settings
-                    local modelArm = self.document and self.document.armed
-                    local armKey = modelArm ~= nil and modelArm or declaration.armKey
-                    if settings and armKey ~= "" then
-                        local key = self.config.key(settings) .. ":" .. armKey
-                        candidates[#candidates + 1] = participant.layoutName
-                            .. "/"
-                            .. declaration.source
-                            .. " ("
-                            .. armKey
-                            .. ")"
-                        if signature and signature ~= key then
-                            conflict = true
-                        end
-
-                        signature, selected =
-                            key, {
-                                settings = settings,
-                                armKey = armKey,
-                                armIndex = modelArm == nil and declaration.armIndex or nil,
-                            }
-                    end
-                end
-            end
-        end
-    end
-    if conflict then
-        table.sort(candidates)
-        self.state.configurationError = "Conflicting flight conditions: "
-            .. table.concat(candidates, ", ")
-            .. ". Choose Armed in Model settings and save one model flight configuration."
-        return nil, nil, "conflict"
-    end
-    self.state.configurationError = nil
-    if pending then
-        return nil, nil, "loading"
-    end
-    return selected, signature, selected and "ready" or "unconfigured"
+local function proposalLabel(participant, declaration, armKey)
+    return participant.layoutName .. "/" .. declaration.source .. " (" .. armKey .. ")"
 end
 
 function broker:proposals(now)
-    if self.factory and self.cachedRevision == self.factory.revision and now < (self.proposalsDue or 0) then
+    local revision = self.factory and self.factory.revision
+    local scan = self.proposalScan
+    if scan and scan.revision ~= revision then
+        scan, self.proposalScan = nil, nil
+    end
+    if not scan and self.cachedRevision == revision and self.cachedStatus and now < (self.proposalsDue or 0) then
         return self.cachedProposal, self.cachedSignature, self.cachedStatus
     end
-    local previous = self.state.configurationError
-    local proposal, signature, status = self:resolveProposals()
-    if previous ~= self.state.configurationError then
-        self.state.diagnosticRevision = (self.state.diagnosticRevision or 0) + 1
+    if not scan then
+        scan = { revision = revision, candidates = {}, index = 1 }
+        self.proposalScan = scan
     end
-    self.cachedProposal, self.cachedSignature, self.cachedStatus = proposal, signature, status
-    self.cachedRevision, self.proposalsDue = self.factory and self.factory.revision, now + 100
-    return proposal, signature, status
+    local done, message
+    if scan.sortAt then
+        local at = scan.sortAt
+        if at > 1 and scan.candidates[at] < scan.candidates[at - 1] then
+            scan.candidates[at], scan.candidates[at - 1] = scan.candidates[at - 1], scan.candidates[at]
+            scan.sortAt = at - 1
+        else
+            scan.sortIndex = scan.sortIndex + 1
+            scan.sortAt = scan.sortIndex <= #scan.candidates and scan.sortIndex or nil
+            if not scan.sortAt then
+                scan.message, scan.messageAt = "Conflicting flight conditions: ", 1
+            end
+        end
+    elseif scan.message then
+        local at = scan.messageAt
+        scan.message = scan.message .. (at > 1 and ", " or "") .. scan.candidates[at]
+        scan.messageAt = at + 1
+        if at == #scan.candidates then
+            message = scan.message .. ". Choose Armed in Model settings and save one model flight configuration."
+            scan.status, done = "conflict", true
+        end
+    elseif scan.participant then
+        local participant = scan.participant
+        local declaration = (participant.declarations or {})[scan.index]
+        if not declaration then
+            scan.participant = nil
+        else
+            scan.index = scan.index + 1
+            local settings = self.document and self.document.flight or declaration.settings
+            local modelArm = self.document and self.document.armed
+            local armKey = modelArm ~= nil and modelArm or declaration.armKey
+            if settings and armKey ~= "" then
+                local key = self.config.key(settings) .. ":" .. armKey
+                scan.candidates[#scan.candidates + 1] = proposalLabel(participant, declaration, armKey)
+                scan.conflict = scan.conflict or scan.signature ~= nil and scan.signature ~= key
+                scan.signature, scan.selected =
+                    key, {
+                        settings = settings,
+                        armKey = armKey,
+                        armIndex = modelArm == nil and declaration.armIndex or nil,
+                    }
+            end
+        end
+    else
+        local member, participant = next(self.members, scan.member)
+        scan.member = member
+        if not member then
+            if scan.conflict then
+                scan.sortIndex, scan.sortAt = 2, 2
+            else
+                scan.status, done = scan.pending and "loading" or scan.selected and "ready" or "unconfigured", true
+            end
+        elseif participant.modelFilename == self.filename then
+            if participant.error then
+                message, scan.status, done = participant.error, "error", true
+            elseif participant.pending then
+                scan.pending = true
+            else
+                scan.participant, scan.index = participant, 1
+            end
+        end
+    end
+    if done then
+        local previous = self.state.configurationError
+        self.state.configurationError = message
+        if previous ~= message then
+            self.state.diagnosticRevision = (self.state.diagnosticRevision or 0) + 1
+        end
+        self.cachedStatus, self.cachedRevision, self.proposalsDue = scan.status, revision, now + 100
+        self.cachedProposal = scan.status == "ready" and scan.selected or nil
+        self.cachedSignature = scan.status == "ready" and scan.signature or nil
+        self.proposalScan = nil
+        return self.cachedProposal, self.cachedSignature, self.cachedStatus
+    end
+    if self.cachedRevision == revision and self.cachedStatus then
+        return self.cachedProposal, self.cachedSignature, self.cachedStatus
+    end
+    return nil, nil, "loading"
 end
 
 function broker:validateOutput(name, armKey, resetCondition)
@@ -410,6 +581,8 @@ function broker:resetSession(now)
             "referenceCandidateAt",
             "referencePending",
             "referencePendingAt",
+            "armObservedAt",
+            "conditionsAt",
         }) do
             session[key] = nil
         end
@@ -428,6 +601,19 @@ function broker:resetSession(now)
     if self.factory then
         self.factory.revision = (self.factory.revision or 0) + 1
     end
+end
+
+--- Private pollers reuse the same bounded task steps inside the broker's
+--- reserved work, rather than maintaining separate service update methods.
+local function pollTask(instance, task, now)
+    if instance.failed or task.want < 1 or task.due and now < task.due then
+        return
+    end
+    local ok, delay = pcall(task.step, task, task.want, task.stage or "run", now)
+    if not ok then
+        error(instance.id .. ": " .. tostring(delay), 0)
+    end
+    task.due = now + delay
 end
 
 --- The reset input has its own poller, including when flight detection is dormant.
@@ -455,11 +641,8 @@ function broker:pollReset(now)
         self.resetFeed = control:switch(condition)
         self.resetRuntime = runtime
     end
-    local id, message = self.support.update(self.resetRuntime, now)
-    if message then
-        self.resetValue = nil
-        error(tostring(id) .. ": " .. message)
-    end
+    local control = self.resetRuntime.byId.control
+    pollTask(control, control.tasks.critical, now)
     local feed = self.resetFeed
     if self.resetRuntime.byId.control.failed or not reliable(feed, now) then
         self.resetValue = nil
@@ -625,12 +808,8 @@ function broker:tick(now, filename)
         end
     end
     if not active and not self.output and proposal and not self.loadError and signature ~= self.signature then
-        local ok, message = pcall(self.attach, self, proposal, signature, now)
-        if not ok then
-            self:error("detection", message)
-            self.state.status = "error"
-            return
-        end
+        self.pendingAttach = { proposal = proposal, signature = signature, epoch = self.epoch }
+        return
     end
     local session = self.session
     if not session then
@@ -639,14 +818,16 @@ function broker:tick(now, filename)
         end
         return
     end
-    local id, message = self.support.update(self.runtime, now)
-    if message then
-        self:error("detection", tostring(id) .. ": " .. message)
-    end
-    if self.smartRuntime then
-        id, message = self.support.update(self.smartRuntime, now)
-        if message then
-            self:error("detection", tostring(id) .. ": " .. message)
+    for _, instance in ipairs(self.runtime.order) do
+        if not instance.failed then
+            local ok, message = pcall(function()
+                for _, item in ipairs(instance.schedulerTasks) do
+                    pollTask(instance, item.instance, now)
+                end
+            end)
+            if not ok then
+                self:error("detection", message)
+            end
         end
     end
     session.controlAvailable = not self.runtime.byId.control.failed
@@ -655,16 +836,6 @@ function broker:tick(now, filename)
     if self.lastTick and now >= self.lastTick and now - self.lastTick < 20 then
         self:flushOutput(now)
         return
-    end
-    if self.lastTick and (now < self.lastTick or now - self.lastTick > 100) then
-        session.groundAt = nil
-        session.altitudeSince, session.speedSince, session.wasArmed = nil, nil, nil
-        session.altitudeReference = nil
-        if session.phase == "starting" then
-            session.phase, session.startedAt = "ground", nil
-        elseif session.phase == "ending" then
-            session.phase, session.disarmedAt = "active", nil
-        end
     end
     self.lastTick = now
     active = session.phase == "active" or session.phase == "ending"
@@ -709,7 +880,11 @@ function broker:tick(now, filename)
         and session.arm.value == false
     then
         session.groundAt = session.groundAt or now
-        if not session.outputInitialized and now - session.groundAt >= session.settings.disarmDuration * 100 then
+        local confirmedAt = session.arm.updatedAt
+        if
+            not session.outputInitialized
+            and confirmedAt - session.groundAt >= session.settings.disarmDuration * 100
+        then
             session.outputInitialized = true
             self.output = { name = session.settings.flightSwitch, armKey = session.armKey, desired = false }
         end
@@ -731,6 +906,165 @@ function broker:tick(now, filename)
     self.state.revision = self.state.revision + 1
 end
 
+local function tickTask(owner, _, stage, now, task)
+    if stage == "configure" then
+        local pending = owner.pendingAttach
+        owner.pendingAttach = nil
+        if pending and pending.epoch == owner.epoch then
+            local proposal, signature = owner:proposals(now)
+            if proposal and signature == pending.signature and not owner.loadError then
+                local ok, message = pcall(owner.attach, owner, proposal, signature, now)
+                if not ok then
+                    owner:error("detection", message)
+                    owner.state.status = "error"
+                end
+            end
+        end
+        task.stage = "run"
+        return 20
+    end
+    owner:tick(now)
+    task.stage = owner.pendingAttach and "configure" or "run"
+    return 20
+end
+
+local function smartTask(owner, _, _, now)
+    local runtime = owner.smartRuntime
+    if runtime then
+        local instance = runtime.byId.smart
+        if not instance.failed then
+            if instance.polledAt and now >= instance.polledAt and now - instance.polledAt < 100 then
+                return 100
+            end
+            local ok, message = pcall(instance.update, instance, now)
+            if ok then
+                instance.revision = instance.revision + 1
+            else
+                instance.failed = true
+                owner:error("detection", "smart: " .. tostring(message))
+            end
+        end
+    end
+    return 100
+end
+
+flight.TICK_DECL = {
+    class = "normal",
+    stages = {
+        run = { maxUnits = 1 },
+        configure = { maxUnits = 1 },
+    },
+}
+flight.SMART_DECL = { class = "normal", stages = { run = { maxUnits = 1 } } }
+
+function broker:owningContext()
+    return self.context and self.context[1]
+end
+
+function broker:loadingContext()
+    return self.loadingOwner and self.loadingOwner[1] or self:owningContext()
+end
+
+--- A new-model member may initialize settings without moving scheduler releases.
+function broker:claimLoadingContext(host)
+    local current = self:loadingContext()
+    assert(
+        host.flightFactory and host.flightFactory.broker == self and self.members[host],
+        "Flight settings initialization requires a registered member"
+    )
+    if
+        not self.documentLoaded
+        and host.modelFilename == self.filename
+        and current
+        and current ~= host
+        and current.modelFilename ~= self.filename
+    then
+        self.loadingOwner = setmetatable({ host }, { __mode = "v" })
+    end
+end
+
+--- Loader enrollment must not depend on the dashboard's replaceable registry.
+function broker:schedulerService(host)
+    if host and self.schedulerEnabled and host == self:owningContext() then
+        if self.failed then
+            self.taskService.failed = true
+        end
+        return self.taskService
+    end
+end
+
+function broker:taskFailed()
+    self:error("detection", "Flight scheduler task failed; see host task error")
+end
+
+--- Activation belongs to the broker's creator, after all callback eligibility gates.
+function broker:enableScheduler(host)
+    local current = self:owningContext()
+    assert(
+        host == current or current == nil and host.flightFactory and host.flightFactory.broker == self,
+        "only the Flight broker's owning context can schedule it"
+    )
+    if self.schedulerEnabled and host == current then
+        return
+    end
+    assert(
+        not self.failed and not (self.taskService and self.taskService.failed),
+        "reset the model before reactivating a failed Flight scheduler"
+    )
+    local facade = host.serviceRuntime and host.serviceRuntime.byId.flight
+    assert(facade and facade.broker == self, "owning Flight facade is required")
+    self.context = setmetatable({ host }, { __mode = "v" })
+    if self.facade and self.facade ~= facade then
+        self.facade.schedulerTasks, self.facade.tasks, self.facade.count = nil, nil, 0
+    end
+    self.facade = facade
+    self.schedulerEnabled = true
+    if not self.tasks then
+        self.support.task(
+            self,
+            "run",
+            { id = "service:flight", decl = flight.TICK_DECL, run = tickTask, want = 1, interval = 20 }
+        )
+        self.support.task(
+            self,
+            "smart",
+            { id = "service:smart", decl = flight.SMART_DECL, run = smartTask, want = 1, interval = 100 }
+        )
+    end
+    for _, task in pairs(self.tasks) do
+        task.stage, task.want = task.stage or "run", 1
+    end
+    self.taskService = self.taskService
+        or {
+            id = "flight",
+            interval = 20,
+            broker = self,
+            tasks = self.tasks,
+            schedulerTasks = self.schedulerTasks,
+        }
+    self.taskService.count = 1
+    facade.schedulerTasks, facade.tasks, facade.count = self.schedulerTasks, self.tasks, 1
+end
+
+--- Remove the old releases before transferring the broker to another live host.
+function broker:disableScheduler(host)
+    assert(host == self:owningContext(), "only the Flight broker's owning context can release it")
+    local scheduler = host.schedulerHost and host.schedulerHost.scheduler
+    for _, task in pairs(self.tasks or {}) do
+        task.want = 0
+        if scheduler then
+            scheduler:remove(task.id)
+        end
+    end
+    if self.facade then
+        self.facade.schedulerTasks, self.facade.tasks, self.facade.count = nil, nil, 0
+    end
+    if self.taskService then
+        self.taskService.count = 0
+    end
+    self.context, self.facade, self.schedulerEnabled = nil, nil, nil
+end
+
 function flight.new(env, support, runtime)
     if not runtime.host or not runtime.host.flightFactory then
         local view = support.snapshot({ phase = "ground", active = false, status = "unconfigured" })
@@ -748,11 +1082,21 @@ function flight.new(env, support, runtime)
     local host, factory = runtime.host, runtime.host.flightFactory
     if not factory.broker then
         factory.broker = flight.newBroker(env, support, runtime.modules, host.flightConfig, factory.members)
+        factory.broker.context = setmetatable({ host }, { __mode = "v" })
     end
     local owner = factory.broker
     owner.factory = factory
     host.flightBroker = owner
     local facade = { id = "flight", count = 0, interval = 20, due = 0, revision = 0, broker = owner }
+    if owner:owningContext() == host then
+        if owner.facade then
+            owner.facade.schedulerTasks, owner.facade.tasks, owner.facade.count = nil, nil, 0
+        end
+        owner.facade = facade
+        if owner.schedulerEnabled then
+            facade.schedulerTasks, facade.tasks, facade.count = owner.schedulerTasks, owner.tasks, 1
+        end
+    end
     function facade:state()
         return owner.view
     end
@@ -760,6 +1104,11 @@ function flight.new(env, support, runtime)
         return owner:boundaries(sequence, epoch)
     end
     return facade
+end
+
+function flight.bindCosts(costs)
+    costs:stages("flight", flight.TICK_DECL)
+    costs:stages("flight.smart", flight.SMART_DECL)
 end
 
 return flight

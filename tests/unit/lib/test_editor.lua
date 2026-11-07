@@ -10,6 +10,7 @@ local modules = {
     sample = {
         id = "sample",
         apiVersion = 1,
+        idle = true,
         supportedSpans = { "1x1", "2x1", "1x2" },
         settings = {
             { key = "label", type = "string", default = "SAMPLE" },
@@ -192,6 +193,8 @@ local function testAddSpanDeclarations()
         { spans = { "any", "2x2" }, size = 1 },
         { size = 1 },
         { spans = {} },
+        { spans = { "0x9", "1x9", "01x1", "1x01" } },
+        { spans = { "0x9", "2x2" }, size = 2 },
     }) do
         local module = editor.clone(modules.sample)
         module.supportedSpans = case.spans
@@ -368,6 +371,7 @@ local function testDeclaredEntryFieldsAreAlwaysOffered()
     modules.listed = {
         id = "listed",
         apiVersion = 1,
+        idle = true,
         supportedSpans = { "1x1" },
         settings = {
             {
@@ -825,6 +829,111 @@ local function testOptionalNumbersCanBeCleared()
     end
 end
 
+local function testStagedInitialization()
+    local input = document()
+    input.alias = input.panels[1].config
+    input.alias.self, input.alias[input.alias] = input.alias, input.alias
+    input.future = {}
+    local node = input.future
+    for index = 1, 128 do
+        node.child = { index = index }
+        node = node.child
+    end
+    local session = assert(editor.new(input, grid, layout, panelHost, loadPanel, true))
+    assert(session.initializing and session.draft == nil and not session.dirty)
+    local steps = 0
+    while session.initializing do
+        steps = steps + 1
+        assert(steps < 1000)
+        local done = editor.advanceInitialization(session)
+        assert(done == (session.initializing == nil))
+    end
+    assert(steps > 16, "large documents must yield between bounded traversals")
+    for _, result in ipairs({ session.original, session.draft }) do
+        assert(result ~= input and result.panels ~= input.panels)
+        assert(result.alias == result.panels[1].config and result.alias ~= input.alias)
+        assert(result.alias.self == result.alias and result.alias[result.alias] == result.alias)
+        assert(result.panels[1].config.label == "First")
+        local child = result.future
+        for index = 1, 128 do
+            child = child.child
+            assert(child.index == index)
+        end
+    end
+    assert(session.original.alias ~= session.draft.alias)
+    session.draft.alias.label = "changed"
+    assert(session.original.alias.label == "First" and input.alias.label == "First")
+
+    for _, phase in ipairs({ "original", "draft" }) do
+        local partial = assert(editor.new(input, grid, layout, panelHost, loadPanel, true))
+        while partial.initializing.phase ~= phase do
+            assert(not editor.advanceInitialization(partial))
+        end
+        assert(editor.cancel(partial) and editor.cancel(partial))
+        assert(partial.cancelled and partial.initializing == nil)
+        assert(partial.original == nil and partial.draft == nil and not partial.dirty)
+        assert(editor.advanceInitialization(partial) and partial.draft == nil)
+    end
+end
+
+local function testDrawerScopedFields()
+    local function equal(a, b)
+        assert(type(a) == type(b), "scoped fields preserve metadata types")
+        if type(a) ~= "table" then
+            assert(a == b, "scoped fields preserve metadata values")
+            return
+        end
+        for key, value in pairs(a) do equal(value, b[key]) end
+        for key in pairs(b) do assert(a[key] ~= nil, "scoped fields preserve every metadata key") end
+    end
+    local function visibleFields(fields, selection)
+        local result = {}
+        for _, field in ipairs(fields) do
+            local matches = not selection.key or field.key == selection.key
+            for index, part in ipairs(selection.path) do
+                matches = matches and field.path ~= nil and field.path[index] == part
+            end
+            for index = #selection.path + 1, #(field.path or {}) do
+                if type(field.path[index]) == "number" then matches = false end
+            end
+            if matches and (selection.key or not field.path or field.type == "table-list") then
+                result[#result + 1] = field
+            end
+        end
+        return result
+    end
+    for _, entry in ipairs(editor.CATALOG) do
+        modules[entry.type] = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/" .. entry.type .. ".lua"))()
+        local input = document()
+        input.panels[1].type, input.panels[1].config = entry.type, {}
+        local session = newSession(input)
+        local all = assert(editor.formFields(session))
+        local selections = { { path = {} } }
+        for _, field in ipairs(all) do
+            local last
+            for index, part in ipairs(field.path or {}) do
+                if type(part) == "number" then last = index end
+            end
+            if last then
+                local path = {}
+                for index = 1, last do path[index] = field.path[index] end
+                selections[#selections + 1] = { key = field.key, path = path }
+            end
+        end
+        for _, selection in ipairs(selections) do
+            local scoped = assert(editor.formFields(session, selection))
+            equal(visibleFields(scoped, selection), visibleFields(all, selection))
+            if not selection.key then
+                for _, field in ipairs(scoped) do
+                    assert(not field.path, "root drawers do not generate unrelated entry controls")
+                end
+            end
+        end
+    end
+end
+
+testDrawerScopedFields()
+testStagedInitialization()
 testAllPanelDrawersStartWithLabel()
 testCatalogAlphabeticalOrder()
 testNestedStateLists()

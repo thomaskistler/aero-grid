@@ -62,4 +62,92 @@ end
 collectgarbage("collect")
 assert(log:limit() == 0, "the shared registry must not keep removed widget hosts alive")
 assert(module.new().count == 0, "restarting the widget script starts an empty log")
+do
+    local bounded = module.new()
+    local owners = {}
+    for index = 1, 16 do
+        local owner = { layoutName = "Host" .. index, panels = {} }
+        for position = 1, 16 do
+            owner.panels[position] = panel(256)
+        end
+        bounded:register(owner)
+        owners[index] = owner
+    end
+    for index = 1, 300 do
+        bounded:append(owners[1], "nav", "event " .. index, index)
+    end
+    for _, owner in ipairs(owners) do
+        for _, entry in ipairs(owner.panels) do
+            entry.settings.maxEntries = 1
+        end
+    end
+    local work, snapshot = {}, nil
+    for _ = 1, 1000 do
+        local count = bounded.count
+        snapshot = bounded:readVisibleStep(work, 12)
+        assert(bounded.count >= count - 1, "one turn may evict at most one entry")
+        if snapshot then
+            break
+        end
+    end
+    assert(snapshot and #snapshot == 1 and snapshot[1].text == "event 300")
+    assert(bounded.count == 1 and #bounded:read() == 1)
+    bounded:append(owners[1], "nav", "newest", 400)
+    assert(snapshot[1].text == "event 300", "captured entries remain immutable after eviction")
+    for _, limit in ipairs({ 0, 1, 12 }) do
+        local current = {}
+        for _ = 1, 1000 do
+            local result = bounded:readVisibleStep(current, limit)
+            if result then
+                assert(#result == math.min(limit, bounded.count))
+                break
+            end
+        end
+    end
+    assert(not pcall(bounded.readVisibleStep, bounded, {}, 13))
+    for _, owner in ipairs(owners) do
+        owner.panels = {}
+    end
+    local current = {}
+    for _ = 1, 1000 do
+        local result = bounded:readVisibleStep(current, 12)
+        if result then
+            assert(#result == 1, "disabled logging retains history just like synchronous read")
+            break
+        end
+    end
+end
 print("Shared diagnostics log tests passed")
+do
+    local source = module.new()
+    local owner = { panels = { panel(256) } }
+    source:register(owner)
+    for index = 1, 300 do
+        source:append(owner, "log", "event " .. index, index)
+    end
+    local work = source:startSnapshot()
+    source:append(owner, "log", "after snapshot", 301)
+    local result
+    for _ = 1, 100 do
+        local before = #work.entries
+        result = source:advanceSnapshot(work)
+        assert(#work.entries - before <= 16, "snapshot copies at most sixteen entries")
+        if result then break end
+    end
+    assert(result and #result == 256 and result[1].text == "event 45"
+        and result[256].text == "event 300", "snapshot survives ring wrap and concurrent appends")
+    owner.panels[1].settings.maxEntries = 1
+    work = source:startSnapshot()
+    for _ = 1, 100 do
+        result = source:advanceSnapshot(work)
+        if result then break end
+    end
+    assert(result and #result == 1 and result[1].text == "after snapshot")
+    owner.panels = {}
+    work = source:startSnapshot()
+    for _ = 1, 100 do
+        result = source:advanceSnapshot(work)
+        if result then break end
+    end
+    assert(result and #result == 256, "disabled logging retains the frozen history")
+end

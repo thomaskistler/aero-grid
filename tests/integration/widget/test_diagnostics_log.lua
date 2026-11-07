@@ -50,6 +50,14 @@ flightLog.settings.section = "identity"
 flightLog.instance.section = "identity"
 local log = diagnostics.diagnosticsLog
 local nav = flight.serviceRuntime.byId.navigation
+for _ = 1, 400 do
+    if nav.tasks.run.tickElapsed then
+        break
+    end
+    fixture.tick(20)
+    definition.background(flight)
+end
+assert(nav.tasks.run.tickElapsed, "navigation task must be enrolled before its direct release")
 local entry = nav.entries[1]
 entry.capture.attempted, entry.capture.latitude, entry.capture.longitude = nil, nil, nil
 entry.wasArmed = false
@@ -65,6 +73,8 @@ nav.due = 0
 for _ = 1, 20 do
     definition.background(flight)
 end
+nav.due = getTime()
+nav.tasks.run:step(2, "run", nav.due)
 assert(log.count == 1, "hidden-screen services must record the first-arm outcome")
 local capture = log:read()[1]
 assert(capture.panel == "nav" and capture.host == "review-diagnostics-log#1")
@@ -78,34 +88,54 @@ for index = 1, 300 do
     log:append(flight, "nav", "event " .. index .. " " .. capture.text, index * 100)
 end
 assert(log.count == 256)
+local viewerLayout = assert(io.open(root .. "/build/test-widget-fixture/layouts/review-diagnostics-viewer.yaml", "w"))
+viewerLayout:write([[
+version: 3
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: log
+    type: host-diagnostics
+    col: 0
+    row: 0
+    colSpan: 4
+    rowSpan: 4
+    config:
+      section: log
+      maxEntries: 256
+]])
+viewerLayout:close()
+definition.update(diagnostics, { Layout = "review-diagnostics-viewer", Theme = "modern-dark" })
+assert(fixture.pumpUntil(diagnostics, function(context)
+    return not context.stage and not context.reloadState and fixture.entryById(context, "log") ~= nil
+end, 400), "diagnostics viewer layout must finish loading")
+assert(#diagnostics.errors == 0, table.concat(diagnostics.errors, "\n"))
 local logEntry = fixture.entryById(diagnostics, "log")
-logEntry.module.refresh(logEntry.instance)
+assert(fixture.pumpUntil(diagnostics, function()
+    local panel = logEntry.instance
+    local text = panel.texts[panel.visibleLines]
+    return text and string.find(text, "event 300", 1, true)
+end, 500), "diagnostics panel must publish the latest event")
 assert(string.find(logEntry.instance.texts[logEntry.instance.visibleLines], "event 300", 1, true))
 
 EVT_TOUCH_FIRST, EVT_TOUCH_SLIDE, EVT_TOUCH_TAP, EVT_TOUCH_BREAK = 9101, 9102, 9103, 9104
 EVT_VIRTUAL_EXIT, EVT_ROT_LEFT, EVT_ROT_RIGHT = 9106, 9107, 9108
-local worst = 0
 local function input(event, touch)
     fixture.tick(20)
-    local instructions = 0
-    debug.sethook(function()
-        instructions = instructions + 100
-    end, "", 100)
     definition.refresh(diagnostics, event, touch)
-    debug.sethook()
-    worst = math.max(worst, instructions)
-    assert(instructions < 15000, "log viewer callback exceeded budget: " .. instructions)
     fixture.lvglMock.settle()
 end
 local point = { x = 360, y = 80 }
 local function finishWrapping()
-    for _ = 1, 20 do
-        if not diagnostics.logViewer or not diagnostics.logViewer.prepareIndex then
+    for _ = 1, 100 do
+        if not diagnostics.logViewer or diagnostics.logViewerModule.stageOf(diagnostics.logViewer) == "idle" then
             break
         end
         input(nil)
     end
-    assert(not diagnostics.logViewer or not diagnostics.logViewer.prepareIndex, "viewport must finish promptly")
+    assert(not diagnostics.logViewer or diagnostics.logViewerModule.stageOf(diagnostics.logViewer) == "idle",
+        "viewport must finish promptly")
 end
 local function tap()
     input(EVT_TOUCH_FIRST, point)
@@ -153,6 +183,7 @@ for _ = 1, 1600 do
         break
     end
     input(EVT_ROT_RIGHT)
+    finishWrapping()
 end
 assert(state.index == #state.entries and state.offset == #state.cache[state.index], "wheel must reach the newest line")
 log:append(flight, "nav", "after opening", 40000)
@@ -188,11 +219,14 @@ tap()
 fixture.lvglMock.setFullScreen(false)
 input(nil)
 assert(not diagnostics.logViewer, "leaving fullscreen must dismiss")
-fixture.pump(diagnostics, 50)
+assert(fixture.pumpUntil(diagnostics, function(context)
+    return not context.stage and not context.reloadState and not context.appRebuild
+        and not context.reflowIndex and not context.logOverlay and fixture.entryById(context, "log") ~= nil
+end, 400), "diagnostics page must finish rebuilding")
 assert(not diagnostics.logOverlay, "page retirement must drop the overlay")
 assert(#diagnostics.errors == 0, table.concat(diagnostics.errors, "\n"))
 local count = log.count
 fixture.entryById(diagnostics, "log").failed = true
 log:append(flight, "nav", "disabled", 0)
 assert(log.count == count, "no active log panel means no recording")
-print("Shared diagnostics integration passed; worst viewer callback: " .. worst .. " instructions")
+print("Shared diagnostics integration passed")

@@ -12,7 +12,13 @@ function module.new(dependencies)
     local loadModule = dependencies.loadModule
     local isFullScreen = dependencies.isFullScreen
     local buildPanel = dependencies.buildPanel
+    local preparePanel = dependencies.preparePanel
+    local advanceConstruction = dependencies.advanceConstruction
     local updateEmptyHint = dependencies.updateEmptyHint
+
+    local function flightPending(context)
+        return context.flightRegistrationJob or context.flightPublicationJob or context.pendingFlightError
+    end
 
     local function previewLayout(context, document)
         local placements = {}
@@ -61,6 +67,117 @@ function module.new(dependencies)
             end
         end
         return true
+    end
+
+    local PENDING_PLACEMENT = { col = -1, row = -1, colSpan = 0, rowSpan = 0 }
+
+    local function layoutDispatch(entry, placement)
+        if entry.failed or not placement or placement.type ~= entry.placement.type then
+            return false
+        end
+        local previous = entry.editorPlacement or entry.placement
+        return previous.col ~= placement.col
+            or previous.row ~= placement.row
+            or previous.colSpan ~= placement.colSpan
+            or previous.rowSpan ~= placement.rowSpan
+    end
+
+    local function layoutVisit(entry, placement)
+        local visible = placement ~= nil and placement.type == entry.placement.type
+        if entry.editorVisible ~= visible then
+            local visibility = visible and lvgl.show or lvgl.hide
+            visibility(entry.container)
+            entry.editorVisible = visible
+        end
+    end
+
+    --- Start staged preview geometry: one step visits a run of unchanged panels
+    --- or advances one changed panel's update or staged reflow.
+    local function startLayout(_, document)
+        return { document = document, index = 1 }
+    end
+
+    --- Name the next layout step: "visit", a panel type, or nil when complete.
+    local function layoutStep(context, job)
+        if job.entry then
+            return job.entry.placement.type
+        end
+        if not job.placements then
+            return "visit"
+        end
+        local entry = context.panels[job.index]
+        if not entry then
+            return job.index == 1 and "visit" or nil
+        end
+        local placement = job.placements[entry.placement.id]
+        return layoutDispatch(entry, placement) and entry.placement.type or "visit"
+    end
+
+    ---@return boolean done
+    ---@return string? error
+    local function advanceLayout(context, job)
+        local indexed = job.placements == nil
+        if indexed then
+            job.placements = {}
+            for _, placement in ipairs(job.document.panels) do
+                job.placements[placement.id] = placement
+            end
+        end
+        local entry = job.entry or context.panels[job.index]
+        if not entry then
+            return true
+        end
+        local placement = job.placements[entry.placement.id]
+        local dispatch = job.entry or layoutDispatch(entry, placement)
+        if indexed and dispatch then
+            return false
+        end
+        if not dispatch then
+            repeat
+                layoutVisit(entry, placement)
+                job.index = job.index + 1
+                entry = context.panels[job.index]
+                placement = entry and job.placements[entry.placement.id]
+            until not entry or layoutDispatch(entry, placement)
+            return entry == nil
+        end
+        local rect, rectError = context.grid.rect(context.zone, placement, 4, 4, 4)
+        if not rect then
+            return true, rectError
+        end
+        local begin = job.entry ~= entry
+        if begin then
+            layoutVisit(entry, placement)
+            entry.container:set({ x = rect.x, y = rect.y, w = rect.w, h = rect.h })
+        end
+        local staged = type(rawget(entry.module, "reflow")) == "function"
+        local ok, updateError, done = context.panelHost.dispatch(
+            entry,
+            staged and "reflow" or "update",
+            { x = 0, y = 0, w = rect.w, h = rect.h },
+            entry.settings,
+            nil,
+            placement,
+            begin
+        )
+        if not ok then
+            job.entry = nil
+            return true, entry.placement.id .. ": preview: " .. tostring(updateError)
+        end
+        if staged and not done then
+            -- A partly reflowed panel never matches a placement until it completes.
+            entry.editorPlacement, job.entry = PENDING_PLACEMENT, entry
+            return false
+        end
+        job.entry = nil
+        entry.editorPlacement = {
+            col = placement.col,
+            row = placement.row,
+            colSpan = placement.colSpan,
+            rowSpan = placement.rowSpan,
+        }
+        job.index = job.index + 1
+        return context.panels[job.index] == nil
     end
 
     local function restorePreview(context)
@@ -190,7 +307,9 @@ function module.new(dependencies)
                 context.flightSources[#context.flightSources + 1] = placement
             end
         end
-        if context.configureFlight then
+        if context.beginFlightRegistration then
+            context.beginFlightRegistration(context)
+        elseif context.configureFlight then
             context.configureFlight(context)
         end
         return true
@@ -221,6 +340,8 @@ function module.new(dependencies)
     end
 
     local function advancePanelPreview(context, job)
+        -- Only measured copy/construct phases admit services alongside preview work.
+        job.workBound = nil
         local action = job.actions[job.index]
         if not action then
             return true
@@ -241,6 +362,7 @@ function module.new(dependencies)
                 for index, current in ipairs(context.panels) do
                     if current == entry then
                         table.remove(context.panels, index)
+                        context.panelTasksDirty = true
                         break
                     end
                 end
@@ -251,10 +373,58 @@ function module.new(dependencies)
             end
             return false
         end
+        if not action.preparedPlacement then
+            action.copy = action.copy
+                or assert(
+                    context.editorModule.new(
+                        { panels = { action.placement } },
+                        context.grid,
+                        context.layoutValidator,
+                        context.panelHost,
+                        nil,
+                        true
+                    )
+                )
+            if context.editorModule.advanceInitialization(action.copy) then
+                action.preparedPlacement = action.copy.draft.panels[1]
+                action.copy = nil
+            end
+            job.workBound = 4000
+            return false
+        end
+        if not action.prepared then
+            local prepared, preparationError = preparePanel(context, action.preparedPlacement, true)
+            if not prepared then
+                return true, action.placement.id .. ": preview: " .. tostring(preparationError)
+            end
+            action.prepared = prepared
+            return false
+        end
         local pool = context.editorPreviewContainers or {}
+        if action.constructing then
+            assert(context.pendingConstruction and context.pendingConstruction.placement == action.preparedPlacement)
+            local done, _, constructionError, failedContainer = advanceConstruction(context, true)
+            job.workBound = 4000
+            if not done then
+                return false
+            end
+            action.constructing = nil
+            job.index = job.index + 1
+            if constructionError then
+                context.editorPreviewContainers = pool
+                pool[#pool + 1] = failedContainer
+                return true, action.placement.id .. ": preview: " .. tostring(constructionError)
+            end
+            return false
+        end
         local container = table.remove(pool)
-        local placement = context.editorModule.clone(action.placement)
-        local entry, buildError, failedContainer = buildPanel(context, placement, container, true)
+        local placement = action.preparedPlacement
+        local entry, buildError, failedContainer = buildPanel(context, placement, container, true, action.prepared)
+        if context.pendingConstruction then
+            action.constructing = true
+            job.workBound = 4000
+            return false
+        end
         job.index = job.index + 1
         if not entry then
             if failedContainer or container then
@@ -270,6 +440,7 @@ function module.new(dependencies)
     ---@param context AeroGridContext
     ---@return boolean opened
     local function openEditor(context)
+        if flightPending(context) then return false end
         if not isFullScreen() or context.stage or context.reloadState or not context.document then
             return false
         end
@@ -328,7 +499,8 @@ function module.new(dependencies)
                 context.grid,
                 context.layoutValidator,
                 context.panelHost,
-                loadPanel
+                loadPanel,
+                true
             )
         end
         if not created or not session then
@@ -341,8 +513,9 @@ function module.new(dependencies)
         session.modelArmed = context.modelArmed
         local handlers = {
             editor = context.editorModule,
+            blocked = function() return flightPending(context) end,
             logError = function(operation, message)
-                local placement = session.draft.panels[session.selected]
+                local placement = session.draft and session.draft.panels[session.selected]
                 logError(
                     context,
                     "editor "
@@ -355,6 +528,15 @@ function module.new(dependencies)
             resumed = resumed ~= nil,
             preview = function(document)
                 return previewLayout(context, document)
+            end,
+            startLayout = function(document)
+                return startLayout(context, document)
+            end,
+            layoutStep = function(job)
+                return layoutStep(context, job)
+            end,
+            advanceLayout = function(job)
+                return advanceLayout(context, job)
             end,
             startPreview = function(document)
                 return startPanelPreview(context, document)
@@ -455,6 +637,7 @@ function module.new(dependencies)
 
     --- Advance editor setup or saving without discarding a failed save's draft.
     local function advanceEditor(context)
+        if flightPending(context) then return false end
         local saving = context.editorUi.saving ~= nil
         local advanced, advanceError = pcall(context.editorUiModule.advance, context)
         if not advanced then

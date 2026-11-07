@@ -306,6 +306,58 @@ local function testNavigationMigration()
     end
 end
 
+local function testHeaderChunks()
+    local document = { version = 3, grid = { columns = 4, rows = 4 }, session = { armSource = "SA^" } }
+    for index = 1, 128 do
+        document["metadata_" .. index] = { { label = "retained", value = index } }
+    end
+    for _, budget in ipairs({ 1, 2, 8 }) do
+        local expected, expectedErrors, expectedVersion = layout.validateHeader(document)
+        local pending, actual, errors, version, turns
+        turns = 0
+        repeat
+            pending, actual, errors, version = layout.validateHeaderChunk(document, pending, budget)
+            turns = turns + 1
+            assert(turns < 140)
+            if pending then
+                local copied = 0
+                for _ in pairs(pending.result) do
+                    copied = copied + 1
+                end
+                assert(copied <= turns * budget, "header copying must respect its field grant")
+            end
+        until not pending
+        assertions.assertEqual(yaml.serialize(actual), yaml.serialize(expected))
+        assertions.assertEqual(yaml.serialize(errors), yaml.serialize(expectedErrors))
+        assertions.assertEqual(version, expectedVersion)
+        actual.version = layout.VERSION
+        expected = assert(layout.finalizeHeader(actual))
+        local source = actual
+        repeat
+            pending, actual, errors = layout.finalizeHeaderChunk(source, pending, budget)
+        until not pending
+        assertions.assertEqual(#errors, 0)
+        assertions.assertEqual(yaml.serialize(actual), yaml.serialize(expected))
+        assert(actual.metadata_128 == document.metadata_128, "unknown header values retain their identity")
+    end
+    for _, documentValue in ipairs({ false, 42, {}, { version = 999 } }) do
+        local expected, expectedErrors = layout.validateHeader(documentValue)
+        local pending, actual, errors
+        repeat
+            pending, actual, errors = layout.validateHeaderChunk(documentValue, pending, 1)
+        until not pending
+        assertions.assertEqual(actual, expected)
+        assertions.assertEqual(yaml.serialize(errors), yaml.serialize(expectedErrors))
+    end
+    for _, budget in ipairs({ 0, -1, 1.5, "1" }) do
+        local pending, actual, errors = layout.validateHeaderChunk(document, nil, budget)
+        assert(not pending and not actual and #errors == 1)
+    end
+    local work = assert(layout.validateHeaderChunk(document, nil, 1))
+    local pending, actual, errors = layout.validateHeaderChunk({}, work, 1)
+    assert(not pending and not actual and string.find(errors[1], "changed", 1, true))
+end
+
 local function run()
     local panel = { type = "flight-counter", config = { announcements = true, history = true, motorSource = "ch7" } }
     layout.normalizePanel(panel)
@@ -320,6 +372,7 @@ local function run()
     testAdjacentMigrationSteps()
     testUnsupportedFutureVersion()
     testNavigationMigration()
+    testHeaderChunks()
 end
 
 run()

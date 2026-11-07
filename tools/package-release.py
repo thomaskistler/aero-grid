@@ -28,6 +28,8 @@ ASSETS = {
     "satellite-light.svg",
 }
 THEMES = {"modern-dark.yml", "modern-light.yml"}
+# Releases disable the development-only probe.
+SCHEDULER_SETTINGS = ("local SCHEDULER_PROBE = false",)
 
 
 def version(source):
@@ -75,6 +77,10 @@ def package(source, output, developer_build=None):
         files.append((path, relative))
     if not (source / "main.lua").is_file():
         raise ValueError("Missing widget main.lua")
+    main = (source / "main.lua").read_text()
+    for setting in SCHEDULER_SETTINGS:
+        if setting not in main:
+            raise ValueError(f"A release must keep the shipped scheduler setting in main.lua: {setting}")
     output.mkdir(parents=True, exist_ok=True)
     archive = output / ("AeroGrid-dev.zip" if developer_build else f"AeroGrid-{release}.zip")
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:

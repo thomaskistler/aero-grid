@@ -2,6 +2,120 @@
 
 local module = { RUNTIME_API = 1 }
 
+local loadBounds, resolutionBounds, sharedFlightOverhead
+
+local sharedFlightStages = {
+    ["flight-identity"] = true,
+    ["flight-store-module"] = true,
+    ["flight-store-writer"] = true,
+    ["flight-store-armed"] = true,
+    ["flight-store-create"] = true,
+    ["flight-load-begin"] = true,
+    ["flight-load"] = true,
+}
+
+local function sharedFlightContext(context)
+    local work = context.flightLoading
+    local owner = work and work.owner
+    local current = owner and owner:loadingContext()
+    if
+        owner
+        and not owner.documentLoaded
+        and current
+        and current ~= context
+        and current.flightFactory == context.flightFactory
+        and context.flightFactory.broker == owner
+        and context.flightFactory.members[current]
+        and context.flightFactory.members[context]
+        and current.modelFilename == context.modelFilename
+        and not current.reloadState
+        and not current.pageRetirement
+        and current.flightLoading
+        and current.flightLoading.owner == owner
+        and (current.stage == "flight-identity" or current.flightLoading.epoch == owner.epoch)
+        and sharedFlightStages[current.stage]
+    then
+        return current
+    end
+end
+
+-- Returns the owner and the waiter's reservation only when the owner's atom is proven and fits.
+local function sharedFlightHelp(context)
+    local current = sharedFlightContext(context)
+    if current then
+        local bound = current.dashboardLoader.workBound(current)
+        if type(bound) == "number" and bound >= 0 and bound + sharedFlightOverhead <= 4000 then
+            return current, bound + sharedFlightOverhead
+        end
+        return nil, false
+    end
+end
+
+local function workBound(context)
+    if context.stage == "flight-load-wait" then
+        local current, bound = sharedFlightHelp(context)
+        if current then
+            return bound
+        elseif bound == false then
+            return nil
+        end
+    end
+    if context.stage == "theme-resolve" then
+        return context.themeBuildWork and resolutionBounds[context.themeBuildWork.stage]
+    end
+    if context.stage == "flight-load" or context.stage == "flight-register" then
+        return context.flightRegistration.workBound(context.flightLoading.job) + 200
+    end
+    return loadBounds[context.stage]
+end
+
+--- Advance to the next layout candidate after a read or parse failure.
+local function recoverLayout(context, reason)
+    local candidates = context.loadCandidates
+    if type(candidates) ~= "table" then
+        return false
+    end
+    local index = context.loadCandidateIndex or 0
+    local nextIndex = index + 1
+    local candidate = candidates[nextIndex]
+    if not candidate then
+        return false
+    end
+    context.recoveryCandidate = {
+        candidate = candidate,
+        index = nextIndex,
+        reason = context.recoveryReason or reason,
+    }
+    context.recoveryReason = context.recoveryCandidate.reason
+    context.reloadState = "clear"
+    return true
+end
+
+--- The rectangle one placement occupies inside the host zone.
+local function panelRect(context, placement)
+    return context.grid.rect(context.zone, placement, 4, 4, 4)
+end
+
+local function beginPreparation(context, placement, preview)
+    return {
+        placement = placement,
+        preview = preview,
+        page = context.page,
+        panels = context.panels,
+        phase = "module",
+    }
+end
+
+local function publishPanel(context, entry)
+    local interval = context.panelHost.refreshInterval(entry.module)
+    entry.interval = interval
+    entry.nextRefresh = getTime() + context.panelHost.phaseOffset(interval, #context.panels + 1)
+    context.panels[#context.panels + 1] = entry
+    context.panelTasksDirty = true
+    lvgl.show(entry.container)
+    return entry
+end
+
 --- Bind host operations once; callbacks retain their original work limits.
 ---@param dependencies table
 ---@return table
@@ -11,44 +125,7 @@ function module.new(dependencies)
     local showErrors = dependencies.showErrors
     local loadModule = dependencies.loadModule
     local isFullScreen = dependencies.isFullScreen
-    local readThemeDefinition = dependencies.readThemeDefinition
-
-    --- Advance to the next layout candidate after a read or parse failure.
-    ---@param context AeroGridContext
-    ---@param reason string
-    ---@return boolean recovered
-    local function recoverLayout(context, reason)
-        local candidates = context.loadCandidates
-        if type(candidates) ~= "table" then
-            return false
-        end
-
-        local index = context.loadCandidateIndex or 0
-        local nextIndex = index + 1
-        local candidate = candidates[nextIndex]
-        if not candidate then
-            return false
-        end
-
-        context.recoveryCandidate = {
-            candidate = candidate,
-            index = nextIndex,
-            reason = context.recoveryReason or reason,
-        }
-        context.recoveryReason = context.recoveryCandidate.reason
-        context.reloadState = "clear"
-        return true
-    end
-
-    --- The rectangle one placement occupies inside the host zone.
-    --- Both building and reflow go through this, so the two cannot drift apart.
-    ---@param context AeroGridContext
-    ---@param placement table
-    ---@return AeroGridRect? rect
-    ---@return string? error
-    local function panelRect(context, placement)
-        return context.grid.rect(context.zone, placement, 4, 4, 4)
-    end
+    local readThemeSource = dependencies.readThemeSource
 
     --- The part of one placement's own rectangle the menu button covers.
     ---
@@ -145,65 +222,128 @@ function module.new(dependencies)
         }
     end
 
-    --- Load, validate, and instantiate every panel in the selected layout.
-    --- Instantiate one validated placement.
-    ---@param context AeroGridContext
-    ---@param placement table
-    local function buildPanel(context, placement, container, preview)
+    local function rejectPanel(context, placement, preview, reason)
+        if not preview then
+            addError(context, placement.id .. ": " .. tostring(reason))
+            context.rejected[#context.rejected + 1] = {
+                placement = placement,
+                reason = tostring(reason),
+            }
+        end
+        return nil, tostring(reason)
+    end
+
+    local function rejectPreparation(context, work, reason)
+        work.done = true
+        work.prepared, work.error = rejectPanel(context, work.placement, work.preview, reason)
+        return true, work.prepared, work.error
+    end
+
+    local function advancePreparation(context, work)
+        if
+            work.page ~= context.page
+            or work.panels ~= context.panels
+            or context.reloadState
+            or context.pageRetirement
+        then
+            work.done, work.cancelled, work.prepared, work.error = true, true, nil, nil
+            return true
+        end
+        if work.done then
+            return true, work.prepared, work.error
+        end
+        local placement, preview = work.placement, work.preview
         local host = context.panelHost
-
-        --- Record a placement that will not be built, and why.
-        ---
-        --- A panel that never constructs leaves nothing behind but an error in
-        --- a banner that may have scrolled, and it is absent from `panels`
-        --- because there is no instance to put there. So the reason is kept where
-        --- it is known. Without this the diagnostics view could report every panel
-        --- that works and no panel that does not, which is the wrong half.
-        local function reject(reason)
-            if not preview then
-                addError(context, placement.id .. ": " .. tostring(reason))
-                context.rejected[#context.rejected + 1] = {
-                    placement = placement,
-                    reason = tostring(reason),
-                }
+        if work.phase == "module" then
+            local panel, panelError = loadModule(context.path, "panels/" .. placement.type .. ".lua")
+            if not panel then
+                return rejectPreparation(context, work, panelError)
             end
-            return nil, tostring(reason)
+            local valid, contractError = host.validateModule(panel, placement.type)
+            if not valid then
+                return rejectPreparation(context, work, contractError)
+            end
+            work.module = panel
+            work.span = host.beginSpanCheck(panel, placement.colSpan, placement.rowSpan)
+            work.phase = "span"
+        elseif work.phase == "span" then
+            for _ = 1, 8 do
+                if host.advanceSpanCheck(work.span) then
+                    if not work.span.supported then
+                        return rejectPreparation(
+                            context,
+                            work,
+                            "panel does not support span " .. host.spanName(placement.colSpan, placement.rowSpan)
+                        )
+                    end
+                    work.phase = "rect"
+                    break
+                end
+            end
+        elseif work.phase == "rect" then
+            local rect, rectError = panelRect(context, placement)
+            if not rect then
+                return rejectPreparation(context, work, rectError)
+            end
+            work.rect = rect
+            work.resolution = host.beginSettings(
+                work.module,
+                placement.config,
+                { colSpan = placement.colSpan, rowSpan = placement.rowSpan },
+                context.modelArmed
+            )
+            work.phase = "settings"
+        elseif work.phase == "settings" then
+            if host.advanceSettings(work.resolution) then
+                work.phase, work.warning = "warnings", 1
+            end
+        elseif work.phase == "warnings" then
+            local warnings = work.resolution.warnings
+            if preview and #warnings > 0 then
+                return rejectPreparation(context, work, table.concat(warnings, "; "))
+            end
+            local warning = warnings[work.warning]
+            if warning ~= nil then
+                addError(context, placement.id .. ": " .. warning)
+                work.warning = work.warning + 1
+            else
+                work.prepared = {
+                    module = work.module,
+                    settings = work.resolution.settings,
+                    rect = work.rect,
+                    settingsValidation = work.resolution.proof,
+                }
+                work.done = true
+                return true, work.prepared
+            end
         end
+        return false
+    end
 
-        local panel, panelError = loadModule(context.path, "panels/" .. placement.type .. ".lua")
-        local contractValid, contractError
+    local function preparePanel(context, placement, preview)
+        local work = beginPreparation(context, placement, preview)
+        while not advancePreparation(context, work) do
+        end
+        return work.prepared, work.error
+    end
 
-        if panel then
-            contractValid, contractError = host.validateModule(panel, placement.type)
+    --- Synchronous callers prepare immediately; staged loading retains that work
+    --- for a separate construction callback.
+    local function buildPanel(context, placement, container, preview, prepared)
+        local preparation, message = prepared, nil
+        if not preparation then
+            preparation, message = preparePanel(context, placement, preview)
+            if not preparation then
+                return nil, message
+            end
+        else
+            local rect, rectError = panelRect(context, placement)
+            if not rect then
+                return rejectPanel(context, placement, preview, rectError)
+            end
+            preparation.rect = rect
         end
-
-        if not panel then
-            return reject(panelError)
-        end
-        if not contractValid then
-            return reject(contractError)
-        end
-        if not host.supportsSpan(panel, placement.colSpan, placement.rowSpan) then
-            return reject("panel does not support span " .. host.spanName(placement.colSpan, placement.rowSpan))
-        end
-
-        local rect, rectError = panelRect(context, placement)
-        if not rect then
-            return reject(rectError)
-        end
-
-        local settings, warnings = host.resolveSettings(
-            panel,
-            placement.config,
-            { colSpan = placement.colSpan, rowSpan = placement.rowSpan },
-            context.modelArmed
-        )
-        if preview and #warnings > 0 then
-            return reject(table.concat(warnings, "; "))
-        end
-        for _, warning in ipairs(warnings) do
-            addError(context, placement.id .. ": " .. warning)
-        end
+        local panel, settings, rect = preparation.module, preparation.settings, preparation.rect
 
         -- Each panel draws inside its own container, so it cannot reach the
         -- dashboard root or paint over a neighbour. The container is deliberately
@@ -227,13 +367,17 @@ function module.new(dependencies)
         end
 
         local services = buildServices(context, placement)
+        services.settingsValidation = preparation.settingsValidation
         services.preview = preview == true
+        services.staged = prepared ~= nil and type(rawget(panel, "construct")) == "function"
+        if services.staged then
+            lvgl.hide(container)
+        end
         local ok, instance =
             pcall(panel.create, container, { x = 0, y = 0, w = rect.w, h = rect.h }, settings, services)
 
         if ok then
-            local interval = host.refreshInterval(panel)
-            context.panels[#context.panels + 1] = {
+            local entry = {
                 placement = placement,
                 module = panel,
                 instance = instance,
@@ -241,60 +385,295 @@ function module.new(dependencies)
                 container = container,
                 -- Boxes built in fullscreen stay touchable in App mode.
                 builtFullscreen = isFullScreen() or nil,
-                interval = interval,
-                -- Stagger panels that share an interval so they do not all fall
-                -- due on the same frame.
-                nextRefresh = getTime() + host.phaseOffset(interval, #context.panels + 1),
             }
-            return context.panels[#context.panels]
+            if services.staged then
+                context.pendingConstruction = entry
+                return
+            end
+            return publishPanel(context, entry)
         else
             -- Discard whatever the failed panel managed to build.
             container:clear()
             lvgl.hide(container)
-            local _, message = reject(instance)
+            local _, message = rejectPanel(context, placement, preview, instance)
             return nil, message, container
         end
     end
 
-    --- Lines tokenized per widget callback.
-    local TOKENIZE_LINES = 24
+    local function advanceConstruction(context, preview)
+        local entry = assert(context.pendingConstruction, "pending panel construction is missing")
+        local rect, message = panelRect(context, entry.placement)
+        local ok, done = false, message
+        if rect then
+            entry.container:set({ x = rect.x, y = rect.y, w = rect.w, h = rect.h })
+            ok, done = pcall(entry.module.construct, entry.instance, { x = 0, y = 0, w = rect.w, h = rect.h })
+            if ok and type(done) ~= "boolean" then
+                ok, done = false, "construct must return a boolean"
+            end
+        end
+        if not ok then
+            entry.container:clear()
+            lvgl.hide(entry.container)
+            context.pendingConstruction = nil
+            local _, reason = rejectPanel(context, entry.placement, preview, done)
+            return true, nil, reason, entry.container
+        elseif done then
+            context.pendingConstruction = nil
+            return true, publishPanel(context, entry)
+        end
+        return false
+    end
 
-    --- Advance the staged loader by exactly one step.
-    --- EdgeTX allows roughly 20000 VM instructions per widget callback, and a
-    --- whole dashboard costs far more than that, so loading is spread over
-    --- consecutive calls. Every stage is bounded by a fixed amount of work rather
-    --- than by the size of the layout: the file is tokenized a fixed number of
-    --- lines at a time, and each panel is parsed, validated, and built in its
-    --- own callback. A layout that fills the grid therefore costs more callbacks,
-    --- never a larger callback.
+    --- Lines tokenized per widget callback.
+    local TOKENIZE_LINES = 8
+    local THEME_CHUNK = 8
+
+    local function nextTheme(context, definition)
+        if definition then
+            context.themeDefinitions[#context.themeDefinitions + 1] = definition
+        end
+        context.themeWork = nil
+        context.themeReadIndex = context.themeReadIndex + 1
+        context.stage = context.themeReadIndex > #context.themeNames and "theme-validate" or "theme-read"
+    end
+
+    local function releaseFlightWork(context)
+        local work = context.flightLoading
+        if work and work.job and work.job.stage == "publish" and not work.job.done then
+            context.flightPublicationJob = work.job
+        end
+        context.flightLoading = nil
+    end
+
+    local function queueFailure(context, errors)
+        releaseFlightWork(context)
+        context.loadFailure = { errors = errors, index = 1 }
+        context.stage = "load-error"
+        context.tokens, context.source = nil, nil
+        context.loadCandidates, context.loadCandidateIndex = nil, nil
+        context.pendingPanel, context.pendingPlacement, context.pendingItem = nil, nil, nil
+        context.themeNames, context.themeDefinitions, context.themeWork = nil, nil, nil
+        context.themeBuildWork, context.themePublication = nil, nil
+        context.headerWork, context.commentWork = nil, nil
+        return true
+    end
+
+    --- Advance one bounded load stage, including separate error publication.
     ---@param context AeroGridContext
     ---@return boolean busy True while more work remains.
     local function advanceLoad(context)
         local stage = context.stage
+        if not stage then
+            return false
+        end
 
         --- Abandon the load, reporting why.
         local function fail(message)
             if
                 stage ~= "services"
-                and stage ~= "theme-read"
-                and stage ~= "theme-validate"
+                and string.sub(stage, 1, 6) ~= "theme-"
                 and recoverLayout(context, tostring(message))
             then
                 return true
             end
-            addError(context, context.recoveryReason or message)
+            return queueFailure(context, { context.recoveryReason or message })
+        end
+
+        if stage == "load-error" then
+            local failure = context.loadFailure
+            local message = failure.errors[failure.index]
+            if message then
+                addError(context, message)
+                failure.index = failure.index + 1
+                return true
+            end
             local member = context.flightFactory and context.flightFactory.members[context]
             if member then
                 member.pending, member.error =
                     false, "Flight configuration unavailable: repair layout " .. context.layoutName
                 context.flightFactory.revision = (context.flightFactory.revision or 0) + 1
             end
-            context.stage = nil
-            context.tokens = nil
-            context.source = nil
-            context.loadCandidates = nil
-            context.loadCandidateIndex = nil
-            context.themeNames, context.themeDefinitions = nil, nil
+            context.stage, context.loadFailure = nil, nil
+            showErrors(context)
+            return false
+        end
+
+        if string.sub(stage, 1, 7) == "flight-" then
+            local broker = context.flightBroker
+            local loading = context.flightLoading
+            if
+                stage ~= "flight-identity"
+                and broker
+                and (
+                    broker.filename and broker.filename ~= context.modelFilename
+                    or loading and loading.epoch and loading.epoch ~= broker.epoch
+                )
+            then
+                context.reloadState = "clear"
+                return true
+            end
+            if stage == "flight-identity" then
+                local work = context.flightLoading
+                local owner = work.owner
+                local ok, filename = pcall(owner.identity, owner)
+                if not ok then
+                    return fail("flight: " .. tostring(filename))
+                elseif filename ~= context.modelFilename then
+                    context.reloadState = "clear"
+                    return true
+                end
+                if owner.filename ~= filename then
+                    owner:reset(filename)
+                end
+                owner:claimLoadingContext(context)
+                work.epoch = owner.epoch
+                if owner.documentLoaded then
+                    context.flightLoading, context.stage = nil, "services"
+                elseif owner:loadingContext() ~= context then
+                    context.stage = "flight-load-wait"
+                else
+                    context.stage = owner.store and "flight-load-begin" or "flight-store-module"
+                end
+                return true
+            end
+
+            if stage == "flight-load-wait" then
+                local owner = context.flightLoading.owner
+                if owner.documentLoaded then
+                    context.flightLoading, context.stage = nil, "services"
+                elseif owner:loadingContext() == context then
+                    context.stage = owner.store and "flight-load-begin" or "flight-store-module"
+                else
+                    local current = sharedFlightHelp(context)
+                    if current then
+                        -- Help the existing owner's reserved job; never transfer its scheduler ownership.
+                        current.dashboardLoader.advanceLoad(current)
+                    end
+                end
+                return true
+            end
+
+            if stage == "flight-store-module" or stage == "flight-store-writer" or stage == "flight-store-armed" then
+                local work = context.flightLoading
+                local key = stage == "flight-store-module" and "store"
+                    or stage == "flight-store-writer" and "verifiedFile"
+                    or "armedConfig"
+                local filename = key == "store" and "model_settings_store"
+                    or key == "verifiedFile" and "verified_file"
+                    or "armed_service"
+                local loaded, message
+                if key == "armedConfig" and work.owner.modules.armed then
+                    loaded = work.owner.modules.armed
+                else
+                    loaded, message =
+                        loadModule(context.path, "lib/" .. filename .. ".lua", context.packageInfo.runtimeApi)
+                end
+                if not loaded then
+                    work.owner.loadError, work.owner.documentLoaded = tostring(message), true
+                    context.flightLoading, context.stage = nil, "services"
+                    return true
+                end
+                work[key] = loaded
+                if key == "armedConfig" then
+                    context.serviceRuntime.modules.armed = loaded
+                end
+                context.stage = key == "store" and "flight-store-writer"
+                    or key == "verifiedFile" and "flight-store-armed"
+                    or "flight-store-create"
+                return true
+            end
+
+            if stage == "flight-store-create" then
+                local work = context.flightLoading
+                local owner = work.owner
+                local ok, store = pcall(work.store.new, context.path, context.yaml, {
+                    verifiedFile = work.verifiedFile,
+                    flightConfig = context.flightConfig,
+                    armedConfig = work.armedConfig,
+                    modelFilename = function()
+                        return owner:identity()
+                    end,
+                })
+                if not ok then
+                    owner.loadError, owner.documentLoaded = tostring(store), true
+                    context.flightLoading, context.stage = nil, "services"
+                else
+                    owner.store = store
+                    work.store, work.verifiedFile, work.armedConfig = nil, nil, nil
+                    context.stage = "flight-load-begin"
+                end
+                return true
+            end
+
+            if stage == "flight-load-begin" or stage == "flight-register-begin" then
+                local registration = context.flightRegistration
+                local work = context.flightLoading or {}
+                context.flightLoading = work
+                local job, message
+                if stage == "flight-load-begin" then
+                    job, message = registration.beginLoad(context, work.owner.store)
+                else
+                    job, message = registration.begin(context)
+                end
+                if not job then
+                    work.error, context.stage = message, "flight-register-error"
+                else
+                    work.job = job
+                    context.stage = stage == "flight-load-begin" and "flight-load" or "flight-register"
+                end
+                return true
+            end
+
+            if stage == "flight-load" or stage == "flight-register" then
+                local work = context.flightLoading
+                local done, ok, message = context.flightRegistration.advance(work.job)
+                if not done then
+                    return true
+                end
+                if stage == "flight-register" then
+                    work.error = not ok and message or nil
+                    context.stage = ok and "load-finish" or "flight-register-error"
+                else
+                    local owner = work.owner
+                    if not ok then
+                        if owner.filename ~= context.modelFilename then
+                            context.reloadState = "clear"
+                        elseif not owner.documentLoaded then
+                            owner.loadError, owner.documentLoaded = message, true
+                        end
+                    end
+                    context.flightLoadInfo = work.job.loadInfo
+                    context.stage = context.flightLoadInfo and context.flightLoadInfo.recovered and "flight-load-notice"
+                        or "services"
+                    context.flightLoading = nil
+                end
+                return true
+            end
+
+            if stage == "flight-load-notice" then
+                addNotice(context, "warning", "Recovered previous model settings; review and save Model settings.")
+                context.stage = "services"
+                return true
+            end
+
+            if stage == "flight-register-error" then
+                local message = context.flightLoading.error
+                local member = context.flightFactory.members[context]
+                member.pending, member.error = false, message
+                context.flightFactory.revision = (context.flightFactory.revision or 0) + 1
+                addError(context, "flight: " .. tostring(message))
+                context.stage = "load-finish"
+                return true
+            end
+            return fail("unknown Flight loading stage: " .. tostring(stage))
+        end
+
+        if stage == "load-finish" then
+            context.flightLoading, context.stage = nil, nil
+            if context.recoveryReason then
+                addNotice(context, "warning", "layout recovered after: " .. context.recoveryReason)
+                context.recoveryReason = nil
+            end
             showErrors(context)
             return false
         end
@@ -303,16 +682,61 @@ function module.new(dependencies)
             local names = context.themeNames
             local index = context.themeReadIndex
             local name = names[index]
-            local definition, readError = readThemeDefinition(context.path, name, context.yaml)
-            if not definition and readError ~= "theme file is missing: " .. name .. ".yml" then
-                return fail("themes: " .. tostring(readError))
+            local source, filename = readThemeSource(context.path, name)
+            if not source then
+                if filename ~= "theme file is missing: " .. name .. ".yml" then
+                    return fail("themes: " .. tostring(filename))
+                end
+                nextTheme(context)
+                return true
             end
-            if definition then
-                context.themeDefinitions[#context.themeDefinitions + 1] = definition
+            context.themeWork = {
+                name = name,
+                filename = filename,
+                source = source,
+                tokens = {},
+                position = 1,
+                line = 1,
+            }
+            context.stage = "theme-tokenize"
+            return true
+        end
+
+        if stage == "theme-tokenize" then
+            local work = context.themeWork
+            local position, line, tokenError, commentWork = context.yaml.tokenizeChunk(
+                work.source,
+                work.position,
+                work.line,
+                THEME_CHUNK,
+                work.tokens,
+                128,
+                work.commentWork
+            )
+            if tokenError then
+                return fail("themes: " .. work.filename .. ": " .. tokenError)
             end
-            context.themeReadIndex = index + 1
-            if index == #names then
-                context.stage = "theme-validate"
+            work.position, work.line, work.commentWork = position, line, commentWork
+            if not position then
+                work.source = nil
+                context.stage = "theme-parse"
+            end
+            return true
+        end
+
+        if stage == "theme-parse" then
+            local work = context.themeWork
+            local pending, definition, parseError =
+                context.yaml.buildMappingChunk(work.tokens, work.mapping, THEME_CHUNK)
+            if parseError then
+                return fail("themes: " .. work.filename .. ": " .. parseError)
+            end
+            work.mapping = pending
+            if not pending then
+                if definition.name ~= work.name then
+                    return fail("themes: " .. work.filename .. ": theme name must match the filename")
+                end
+                nextTheme(context, definition)
             end
             return true
         end
@@ -390,12 +814,14 @@ function module.new(dependencies)
         end
 
         if stage == "tokenize" then
-            local position, line, tokenError = context.yaml.tokenizeChunk(
+            local position, line, tokenError, commentWork = context.yaml.tokenizeChunk(
                 context.source,
                 context.readPosition,
                 context.readLine,
                 TOKENIZE_LINES,
-                context.tokens
+                context.tokens,
+                128,
+                context.commentWork
             )
 
             if tokenError then
@@ -403,6 +829,7 @@ function module.new(dependencies)
             end
 
             context.readLine = line
+            context.commentWork = commentWork
             if position then
                 context.readPosition = position
                 return true
@@ -418,64 +845,74 @@ function module.new(dependencies)
             if not tokens then
                 return fail("layout tokens are missing")
             end
-            -- Split the panel sequence out so the document itself stays small.
-            local header, panelsIndex, panelsIndent = {}, nil, nil
-            local index = 1
-
-            while index <= #tokens do
-                local token = tokens[index]
-                if token.indent == 0 and string.match(token.content, "^panels:") then
-                    panelsIndex = index + 1
-                    index = index + 1
-                    -- Skip the sequence body; it is parsed one entry at a time later.
-                    while index <= #tokens and tokens[index].indent > 0 do
-                        panelsIndent = panelsIndent or tokens[index].indent
-                        index = index + 1
+            local work = context.headerWork or { tokens = {}, index = 1 }
+            context.headerWork = work
+            for _ = 1, 32 do
+                local token = tokens[work.index]
+                if not token then
+                    if not work.panelsIndex then
+                        return fail("panels must be a sequence")
                     end
-                else
-                    header[#header + 1] = token
-                    index = index + 1
+                    context.stage = "header-parse"
+                    return true
                 end
+                if token.indent == 0 and string.match(token.content, "^panels:") then
+                    work.panelsIndex, work.skipping = work.index + 1, true
+                elseif work.skipping and token.indent > 0 then
+                    work.panelsIndent = work.panelsIndent or token.indent
+                else
+                    work.skipping = false
+                    work.tokens[#work.tokens + 1] = token
+                end
+                work.index = work.index + 1
             end
+            return true
+        end
 
-            if not panelsIndex then
-                return fail("panels must be a sequence")
-            end
-
-            local document, buildError = context.yaml.build(header)
-            if not document then
+        if stage == "header-parse" then
+            local work = context.headerWork
+            local pending, document, buildError = context.yaml.buildChunk(work.tokens, work.parsing, 8)
+            if buildError then
                 return fail(buildError)
             end
+            work.parsing = pending
+            if not pending then
+                work.document, work.tokens = document, nil
+                context.stage = "header-validate"
+            end
+            return true
+        end
 
-            local validated, headerErrors, sourceVersion = context.layoutValidator.validateHeader(document)
+        if stage == "header-validate" then
+            local work = context.headerWork
+            local pending, validated, headerErrors, sourceVersion =
+                context.layoutValidator.validateHeaderChunk(work.document, work.validation, 8)
+            work.validation = pending
+            if pending then
+                return true
+            end
             if not validated or #(headerErrors or {}) > 0 then
                 local reason = table.concat(headerErrors or { "unsupported layout header" }, "; ")
                 if recoverLayout(context, reason) then
                     return true
                 end
-                if context.recoveryReason then
-                    addError(context, context.recoveryReason)
-                else
-                    for _, headerError in ipairs(headerErrors or {}) do
-                        addError(context, headerError)
-                    end
-                end
-                context.stage = nil
-                context.tokens = nil
-                context.loadCandidates = nil
-                context.loadCandidateIndex = nil
-                showErrors(context)
-                return false
+                return queueFailure(
+                    context,
+                    context.recoveryReason and { context.recoveryReason }
+                        or headerErrors
+                        or { "unsupported layout header" }
+                )
             end
 
             context.document = validated
             context.layoutSourceVersion = sourceVersion
             context.layoutMigrationVersion = sourceVersion
-            context.itemIndex = panelsIndex
-            context.itemIndent = panelsIndent or 2
+            context.itemIndex = work.panelsIndex
+            context.itemIndent = work.panelsIndent or 2
             context.itemNumber = 0
             context.identifiers = {}
             context.serviceIndex = 0
+            context.headerWork = nil
             context.stage = sourceVersion < context.layoutValidator.VERSION and "header-migrate" or "header-finalize"
             return true
         end
@@ -493,7 +930,12 @@ function module.new(dependencies)
         end
 
         if stage == "header-finalize" then
-            local validated, headerErrors = context.layoutValidator.finalizeHeader(context.document)
+            local pending, validated, headerErrors =
+                context.layoutValidator.finalizeHeaderChunk(context.document, context.headerWork, 8)
+            context.headerWork = pending
+            if pending then
+                return true
+            end
             if not validated or #(headerErrors or {}) > 0 then
                 local reason = table.concat(headerErrors or { "unsupported layout header" }, "; ")
                 if recoverLayout(context, reason) then
@@ -514,30 +956,76 @@ function module.new(dependencies)
                 return false
             end
 
-            context.themeSource = "option"
-            context.theme = context.themeBuilder.build(context.themeMode)
-            for _, warning in ipairs(context.theme.warnings) do
-                addError(context, "theme: " .. warning)
-            end
-            for _, notice in ipairs(context.theme.notices) do
-                addNotice(context, notice.severity, "theme: " .. notice.text)
-            end
-            context.canvas:set({ color = context.theme.color.canvas })
-
             context.session = validated.session or {}
             context.document = validated
-            if context.layoutSourceVersion < context.layoutValidator.VERSION then
-                addNotice(
-                    context,
-                    "warning",
-                    "Layout version "
-                        .. tostring(context.layoutSourceVersion)
-                        .. " was migrated in memory; use Save to write version "
-                        .. tostring(context.layoutValidator.VERSION)
-                        .. "."
-                )
+            context.stage = "theme-resolve-begin"
+            return true
+        end
+
+        if stage == "theme-resolve-begin" then
+            context.themeBuildWork = context.themeBuilder.beginBuild(context.themeMode)
+            context.stage = "theme-resolve"
+            return true
+        end
+
+        if stage == "theme-resolve" then
+            local work = context.themeBuildWork
+            local phase = work.stage
+            local limit = phase == "display" and 8
+                or phase == "alert" and 4
+                or phase == "chart" and not work.definition.correctForContrast and 6
+                or 1
+            for _ = 1, limit do
+                local resolved = context.themeBuilder.advanceBuild(work)
+                if resolved then
+                    context.themePublication = { theme = resolved, phase = "warnings", index = 1 }
+                    context.themeBuildWork = nil
+                    context.stage = "theme-publish"
+                    break
+                elseif work.stage ~= phase then
+                    break
+                end
             end
-            context.stage = "services"
+            return true
+        end
+
+        if stage == "theme-publish" then
+            local work = context.themePublication
+            if work.phase == "warnings" then
+                local warning = work.theme.warnings[work.index]
+                if warning then
+                    addError(context, "theme: " .. warning)
+                    work.index = work.index + 1
+                else
+                    work.phase, work.index = "notices", 1
+                end
+            elseif work.phase == "notices" then
+                local notice = work.theme.notices[work.index]
+                if notice then
+                    addNotice(context, notice.severity, "theme: " .. notice.text)
+                    work.index = work.index + 1
+                else
+                    work.phase = "commit"
+                end
+            elseif work.phase == "commit" then
+                if context.layoutSourceVersion < context.layoutValidator.VERSION then
+                    addNotice(
+                        context,
+                        "warning",
+                        "Layout version "
+                            .. tostring(context.layoutSourceVersion)
+                            .. " was migrated in memory; use Save to write version "
+                            .. tostring(context.layoutValidator.VERSION)
+                            .. "."
+                    )
+                end
+                context.theme, context.themeSource = work.theme, "option"
+                context.canvas:set({ color = context.theme.color.canvas })
+                context.themePublication = nil
+                context.stage = "services"
+            else
+                return fail("unknown theme publication phase: " .. tostring(work.phase))
+            end
             return true
         end
 
@@ -581,7 +1069,11 @@ function module.new(dependencies)
 
             context.serviceIndex = index + 1
 
-            local module, moduleError = loadModule(context.path, definition.file, context.packageInfo.runtimeApi)
+            local module = context.serviceRuntime.modules[definition.id]
+            local moduleError
+            if not module then
+                module, moduleError = loadModule(context.path, definition.file, context.packageInfo.runtimeApi)
+            end
             local constructor = module and rawget(module, "new") or nil
             if type(constructor) == "function" then
                 local runtime = context.serviceRuntime
@@ -604,6 +1096,10 @@ function module.new(dependencies)
                 local ok, instance = pcall(constructor, runtime.env, context.servicesModule, runtime)
                 if ok and type(instance) == "table" then
                     context.servicesModule.register(runtime, instance, getTime())
+                    if definition.id == "flight" and instance.broker and context.flightRegistration then
+                        context.flightLoading = { owner = instance.broker }
+                        context.stage = "flight-identity"
+                    end
                 else
                     addError(context, definition.id .. ": " .. tostring(instance))
                 end
@@ -624,28 +1120,52 @@ function module.new(dependencies)
             local token = index and tokens[index] or nil
             if not index or not token or token.indent < context.itemIndent then
                 context.tokens = nil
-                context.stage = nil
+                context.stage = context.flightRegistration and "flight-register-begin" or "load-finish"
                 context.loadCandidates = nil
                 context.loadCandidateIndex = nil
-                if context.configureFlight then
-                    context.configureFlight(context)
-                end
-                if context.recoveryReason then
-                    addNotice(context, "warning", "layout recovered after: " .. context.recoveryReason)
-                    context.recoveryReason = nil
-                end
-                showErrors(context)
-                return false
+                return true
             end
 
-            local placement, nextIndex, itemError = context.yaml.itemAt(tokens, index, context.itemIndent)
+            if not string.match(token.content, "^%-") then
+                return fail("line " .. token.line .. ": expected a sequence entry")
+            end
+            context.pendingItem = { first = index, index = index, tokens = {} }
+            context.stage = "panel-tokens"
+            return true
+        end
+
+        if stage == "panel-tokens" then
+            local work = context.pendingItem
+            for _ = 1, 32 do
+                local token = context.tokens[work.index]
+                if not token or work.index > work.first and token.indent <= context.itemIndent then
+                    context.stage = "panel-parse"
+                    return true
+                end
+                work.tokens[#work.tokens + 1] = {
+                    content = token.content,
+                    line = token.line,
+                    indent = token.indent - context.itemIndent,
+                }
+                work.index = work.index + 1
+            end
+            return true
+        end
+
+        if stage == "panel-parse" then
+            local work = context.pendingItem
+            local pending, entries, itemError = context.yaml.buildChunk(work.tokens, work.parsing, 8)
             if itemError then
                 return fail(itemError)
             end
-
-            context.itemIndex = nextIndex
+            work.parsing = pending
+            if pending then
+                return true
+            end
+            context.itemIndex = work.index
             context.itemNumber = context.itemNumber + 1
-            context.pendingPlacement = placement
+            context.pendingPlacement = entries[1]
+            context.pendingItem = nil
             context.panelMigrationVersion = context.layoutSourceVersion
             context.stage = context.panelMigrationVersion < context.layoutValidator.VERSION and "panel-migrate"
                 or "panel-validate"
@@ -683,7 +1203,7 @@ function module.new(dependencies)
             if valid then
                 context.identifiers[placement.id] = true
                 context.document.panels[#context.document.panels + 1] = placement
-                context.stage = "panel-build"
+                context.stage = "panel-prepare"
                 return true
             else
                 addError(context, panelError)
@@ -694,10 +1214,44 @@ function module.new(dependencies)
             return true
         end
 
+        if stage == "panel-prepare" then
+            local work = context.panelPreparation
+            if not work or work.placement ~= context.pendingPlacement then
+                work = beginPreparation(context, context.pendingPlacement)
+                context.panelPreparation = work
+            end
+            local done, prepared = advancePreparation(context, work)
+            if not done then
+                return true
+            end
+            context.panelPreparation, context.pendingPanel = nil, prepared
+            if prepared then
+                context.stage = "panel-build"
+            else
+                context.pendingPlacement, context.panelMigrationVersion = nil, nil
+                context.stage = "panels"
+            end
+            return true
+        end
+
         if stage == "panel-build" then
-            buildPanel(context, context.pendingPlacement)
+            buildPanel(context, context.pendingPlacement, nil, nil, context.pendingPanel)
+            context.pendingPanel = nil
+            if context.pendingConstruction then
+                context.stage = "panel-construct"
+                return true
+            end
             context.pendingPlacement = nil
             context.panelMigrationVersion = nil
+            context.stage = "panels"
+            return true
+        end
+
+        if stage == "panel-construct" then
+            if not advanceConstruction(context, false) then
+                return true
+            end
+            context.pendingConstruction, context.pendingPlacement, context.panelMigrationVersion = nil, nil, nil
             context.stage = "panels"
             return true
         end
@@ -708,6 +1262,13 @@ function module.new(dependencies)
     --- Begin a staged load, discarding anything already on screen.
     ---@param context AeroGridContext
     local function beginLoad(context)
+        releaseFlightWork(context)
+        context.flightRegistrationJob, context.flightLoadInfo = nil, nil
+        if context.pendingConstruction then
+            context.pendingConstruction.container:clear()
+            lvgl.hide(context.pendingConstruction.container)
+            context.pendingConstruction = nil
+        end
         if context.flightFactory then
             local member = context.flightFactory.members[context]
             if member then
@@ -716,17 +1277,21 @@ function module.new(dependencies)
             end
         end
         context.panels = {}
-        context.refreshOwner = nil
         context.rejected = {}
         context.errors = {}
         context.notices = {}
         context.errorLabel = nil
         context.tokens = nil
         context.source = nil
+        context.commentWork, context.headerWork = nil, nil
+        context.pendingItem = nil
+        context.loadFailure = nil
         context.document = nil
         context.layoutSourceVersion = nil
         context.layoutMigrationVersion = nil
         context.pendingPlacement = nil
+        context.pendingPanel = nil
+        context.panelPreparation = nil
         context.panelMigrationVersion = nil
         context.identifiers = nil
         context.itemIndex = nil
@@ -744,6 +1309,8 @@ function module.new(dependencies)
         end
         context.themeDefinitions = {}
         context.themeReadIndex = 1
+        context.themeWork = nil
+        context.themeBuildWork, context.themePublication = nil, nil
         context.stage = "theme-read"
     end
 
@@ -753,9 +1320,30 @@ function module.new(dependencies)
         reservedFor = reservedFor,
         buildServices = buildServices,
         buildPanel = buildPanel,
+        preparePanel = preparePanel,
+        beginPreparation = beginPreparation,
+        advancePreparation = advancePreparation,
+        advanceConstruction = advanceConstruction,
         advanceLoad = advanceLoad,
+        workBound = workBound,
         beginLoad = beginLoad,
     }
+end
+
+function module.bindCosts(costs)
+    loadBounds = costs:group("dashboard-loader", {
+        "theme-read", "theme-tokenize", "theme-parse", "theme-validate", "theme-resolve-begin",
+        "theme-publish", "read", "tokenize", "header", "header-parse", "header-migrate",
+        "header-validate", "header-finalize", "panel-tokens", "panel-parse", "panel-migrate",
+        "panels", "services", "load-error", "flight-identity", "flight-store-module",
+        "flight-store-writer", "flight-store-armed", "flight-store-create",
+        "flight-load-begin", "flight-load-wait", "flight-load-notice", "flight-register-begin",
+        "flight-register-error", "load-finish"
+    })
+    resolutionBounds = costs:group("theme-resolution", {
+        "legibility", "chart", "alert", "display", "finalize"
+    })
+    sharedFlightOverhead = costs:bound("dashboard-loader", "sharedFlightOverhead")
 end
 
 return module

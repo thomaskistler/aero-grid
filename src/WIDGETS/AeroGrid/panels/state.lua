@@ -5,6 +5,11 @@ local statePanel = {
     apiVersion = 1,
     supportedSpans = { "any" },
     refreshInterval = 20,
+    decl = {
+        class = "normal",
+        kinds = { steady = true },
+        stages = { run = { maxUnits = 1 } },
+    },
     settings = {
         {
             key = "entries",
@@ -74,59 +79,92 @@ local function list(value)
     return count >= 1 and count <= 3 and #value == count
 end
 
-function statePanel.validateSettings(settings)
-    local warnings = {}
+function statePanel.beginSettingsValidation(settings)
     local entries = settings.entries
+    local work = { entries = entries, warnings = {}, phase = "entry", index = 1 }
     if not list(entries) then
-        return { "entries must contain a contiguous list of 1 to 3 entries" }
+        work.warnings[1] = "entries must contain a contiguous list of 1 to 3 entries"
+        work.phase = "done"
     end
-    for key, entry in ipairs(entries) do
-        local prefix = "entries[" .. key .. "]"
+    return work
+end
+
+function statePanel.advanceSettingsValidation(work)
+    local warnings = work.warnings
+    if work.phase == "entry" then
+        local entry = work.entries[work.index]
+        if entry == nil then
+            work.phase = "done"
+            return true
+        end
+        local prefix = "entries[" .. work.index .. "]"
+        work.index = work.index + 1
         if type(entry) ~= "table" then
             warnings[#warnings + 1] = prefix .. " must be a mapping"
         else
             if not singleLine(entry.label) then
                 warnings[#warnings + 1] = prefix .. ".label must be a nonempty single-line string"
             end
-            for field in pairs(entry) do
+            work.iterator, work.state, work.key = pairs(entry)
+            work.entry, work.prefix, work.phase = entry, prefix, "field"
+        end
+    elseif work.phase == "field" or work.phase == "condition-field" then
+        local field = work.iterator(work.state, work.key)
+        work.key = field
+        if work.phase == "field" then
+            if field ~= nil then
                 if field ~= "label" and field ~= "states" then
-                    warnings[#warnings + 1] = prefix .. "." .. tostring(field) .. " is not a state setting"
+                    warnings[#warnings + 1] = work.prefix .. "." .. tostring(field) .. " is not a state setting"
                 end
-            end
-            if not list(entry.states) then
-                warnings[#warnings + 1] = prefix .. ".states must contain a contiguous list of 1 to 3 conditions"
+            elseif not list(work.entry.states) then
+                warnings[#warnings + 1] = work.prefix .. ".states must contain a contiguous list of 1 to 3 conditions"
+                work.phase = "entry"
             else
-                for index, condition in ipairs(entry.states) do
-                    local path = prefix .. ".states[" .. index .. "]"
-                    if type(condition) ~= "table" then
-                        warnings[#warnings + 1] = path .. " must be a mapping"
-                    else
-                        if not singleLine(condition.text) then
-                            warnings[#warnings + 1] = path .. ".text must be a nonempty single-line string"
-                        end
-                        local switch = condition.switch
-                        if
-                            type(switch) ~= "string"
-                            or not (string.match(switch, "^S[A-Z][%^v%-]$") or string.match(switch, "^L%d%d$"))
-                        then
-                            warnings[#warnings + 1] = path
-                                .. ".switch must name a position such as SF^ or a logical switch such as L01"
-                        end
-                        local bg = condition.background
-                        if bg ~= nil and bg ~= "normal" and bg ~= "active" and bg ~= "warning" and bg ~= "critical" then
-                            warnings[#warnings + 1] = path .. ".background must be normal, active, warning, or critical"
-                        end
-                        for field in pairs(condition) do
-                            if field ~= "switch" and field ~= "text" and field ~= "background" then
-                                warnings[#warnings + 1] = path .. "." .. tostring(field) .. " is not a state setting"
-                            end
-                        end
-                    end
-                end
+                work.condition, work.phase = 1, "condition"
             end
+        elseif field == nil then
+            work.phase = "condition"
+        elseif field ~= "switch" and field ~= "text" and field ~= "background" then
+            warnings[#warnings + 1] = work.path .. "." .. tostring(field) .. " is not a state setting"
+        end
+    elseif work.phase == "condition" then
+        local condition = work.entry.states[work.condition]
+        if condition == nil then
+            work.phase = "entry"
+            return false
+        end
+        local path = work.prefix .. ".states[" .. work.condition .. "]"
+        work.condition = work.condition + 1
+        if type(condition) ~= "table" then
+            warnings[#warnings + 1] = path .. " must be a mapping"
+        else
+            if not singleLine(condition.text) then
+                warnings[#warnings + 1] = path .. ".text must be a nonempty single-line string"
+            end
+            local switch = condition.switch
+            if
+                type(switch) ~= "string"
+                or not (string.match(switch, "^S[A-Z][%^v%-]$") or string.match(switch, "^L%d%d$"))
+            then
+                warnings[#warnings + 1] = path
+                    .. ".switch must name a position such as SF^ or a logical switch such as L01"
+            end
+            local bg = condition.background
+            if bg ~= nil and bg ~= "normal" and bg ~= "active" and bg ~= "warning" and bg ~= "critical" then
+                warnings[#warnings + 1] = path .. ".background must be normal, active, warning, or critical"
+            end
+            work.iterator, work.state, work.key = pairs(condition)
+            work.path, work.phase = path, "condition-field"
         end
     end
-    return warnings
+    return work.phase == "done"
+end
+
+function statePanel.validateSettings(settings)
+    local work = statePanel.beginSettingsValidation(settings)
+    while not statePanel.advanceSettingsValidation(work) do
+    end
+    return work.warnings
 end
 
 function statePanel.reading(entry, feeds)
@@ -156,7 +194,7 @@ local function widest(builder, font, entry, supporting)
     return sample
 end
 
-function statePanel.regionsFor(context, rect)
+local function regionSpec(context, rect)
     local builder, fonts = context.themeBuilder, context.fonts
     local entries = context.settings.entries
     local supporting = entries[2] and { widest(builder, fonts.label, entries[2], true) } or nil
@@ -164,13 +202,20 @@ function statePanel.regionsFor(context, rect)
         supporting[2] = widest(builder, fonts.label, entries[3], true)
     end
     local sample = widest(builder, fonts.primary, entries[1])
-    local spec = {
+    return {
         frame = builder.frame(context.theme, rect, fonts),
         forms = { sample },
         draws = { rows = supporting ~= nil, visual = false },
         rowItems = entries[3] and 2 or 1,
         supporting = supporting,
-    }
+    },
+        sample
+end
+
+function statePanel.regionsFor(context, rect)
+    local builder, fonts = context.themeBuilder, context.fonts
+    local entries = context.settings.entries
+    local spec, sample = regionSpec(context, rect)
     local area
     -- Proportional glyph widths can change order between fonts. Re-measure at
     -- the chosen font rather than treating character count as a width.
@@ -266,7 +311,12 @@ function statePanel.apply(context, drawn)
 end
 
 function statePanel.create(parent, rect, settings, services)
-    local warnings = statePanel.validateSettings(settings)
+    local proof = services.settingsValidation
+    local warnings = proof
+            and proof.settings == settings
+            and proof.validator == statePanel.validateSettings
+            and proof.warnings
+        or statePanel.validateSettings(settings)
     if #warnings > 0 then
         error(table.concat(warnings, "; "))
     end
@@ -284,7 +334,7 @@ function statePanel.create(parent, rect, settings, services)
         context.feeds[index] = {}
         if services.control then
             for conditionIndex, condition in ipairs(entry.states) do
-                context.feeds[index][conditionIndex] = services.control:switch(condition.switch)
+                context.feeds[index][conditionIndex] = services.control:displaySwitch(condition.switch)
             end
         end
     end
@@ -329,16 +379,20 @@ function statePanel.create(parent, rect, settings, services)
     return context
 end
 
-function statePanel.refresh(context)
+function statePanel.cancelRefresh(context)
+    context.primitives.invalidateReflow(context)
+end
+
+function statePanel.step(context)
+    statePanel.cancelRefresh(context)
     local changed, drawn = context.primitives.changed(context, statePanel.render)
     if changed then
         statePanel.apply(context, drawn)
     end
 end
 
-function statePanel.update(context, rect)
+local function applyGeometry(context, rect, area)
     local primitives = context.primitives
-    local area = statePanel.regionsFor(context, rect)
     local previous = context.area
     context.area = area
     primitives.resizeHeader(context, rect, area.frame, context.settings.entries[1].label)
@@ -353,7 +407,58 @@ function statePanel.update(context, rect)
         context["anchor" .. index] = nil
     end
     context.rendered = nil
-    statePanel.refresh(context)
+    statePanel.step(context)
 end
+
+function statePanel.update(context, rect)
+    statePanel.cancelRefresh(context)
+    applyGeometry(context, rect, statePanel.regionsFor(context, rect))
+end
+
+function statePanel.reflow(context, rect, _, _, _, begin)
+    local captured = context.primitives.reflowStart(context, rect, begin)
+    if captured then
+        local spec = regionSpec(context, captured)
+        context.reflowWork = { rect = captured, spec = spec, iteration = 0, stage = "fit" }
+        return false
+    end
+    local work = context.reflowWork
+    if not work then
+        return true
+    elseif work.stage == "fit" then
+        local builder = context.themeBuilder
+        work.area = builder.panel(context.theme, work.rect, context.fonts, work.spec, {})
+        work.sample = widest(builder, work.area.value, context.settings.entries[1])
+        work.iteration = work.iteration + 1
+        if
+            builder.measureText(work.area.value, work.sample)
+                <= builder.measureText(work.area.value, work.spec.forms[1])
+            or work.iteration >= #builder.READING_FONTS + 1
+        then
+            work.stage = "check"
+        else
+            work.spec.forms[1] = work.sample
+        end
+    elseif work.stage == "check" then
+        work.area.primaryFits = context.themeBuilder.measureText(work.area.value, work.sample) <= work.area.valueBudget
+        if work.area.primaryFits then
+            work.stage = "apply"
+        else
+            work.spec.forms[1], work.stage = "NO FIT", "fallback"
+        end
+    elseif work.stage == "fallback" then
+        work.area = context.themeBuilder.panel(context.theme, work.rect, context.fonts, work.spec, {})
+        work.area.primaryFits, work.stage = false, "apply"
+    elseif work.stage == "apply" then
+        applyGeometry(context, work.rect, work.area)
+        context.reflowWork = nil
+        return true
+    else
+        error("unknown state reflow stage: " .. tostring(work.stage))
+    end
+    return false
+end
+
+statePanel.reflowDecl = { callback = statePanel.reflow }
 
 return statePanel

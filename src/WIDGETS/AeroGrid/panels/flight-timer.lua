@@ -34,6 +34,11 @@ local flightTimer = {
     -- A clock advances once a second, so anything faster is wasted work charged
     -- to the same instruction budget as every other panel on the dashboard.
     refreshInterval = 100,
+    decl = {
+        class = "normal",
+        kinds = { steady = true },
+        stages = { run = { maxUnits = 1 } },
+    },
     settings = {
         { key = "timer", label = "Model timer", type = "number", default = 0 },
         -- An empty label is not an absent one: it means derive the heading at
@@ -380,21 +385,13 @@ function flightTimer.regionsFor(theme, themeBuilder, rect, layout, fonts, out)
     return area
 end
 
---- Build the panel's LVGL objects.
----@param parent any
----@param rect AeroGridRect
----@param settings AeroGridTimerSettings
----@param services table
----@return AeroGridTimerContext
-function flightTimer.create(parent, rect, settings, services)
+local function beginConstruction(parent, rect, settings, services)
     local theme = services.theme
     local primitives = services.primitives
     local fonts = services.fonts
     local span = services.span
     local layout = flightTimer.presentationFor(span.colSpan, span.rowSpan)
     local presentation = services.state("normal", settings.accent)
-    local area = flightTimer.regionsFor(theme, services.themeBuilder, rect, layout, fonts)
-
     local context = {
         theme = theme,
         themeBuilder = services.themeBuilder,
@@ -406,6 +403,7 @@ function flightTimer.create(parent, rect, settings, services)
         stateName = "normal",
         text = "--:--",
         detail = "",
+        rect = rect,
     }
 
     -- Subscribing in create is what tells the model service that this timer is
@@ -421,22 +419,32 @@ function flightTimer.create(parent, rect, settings, services)
     -- a number, so there is nothing to fall back to when the service is
     -- absent.
     context.formatTime = flightTimer.formatClock
+    context.createParent, context.createPresentation, context.createStage = parent, presentation, "geometry"
+    return context
+end
 
+local function createGeometry(context, rect)
+    context.createInvalidated = nil
+    context.area = flightTimer.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts)
+    context.rect = rect
+    context.createStage = context.panel and "place" or "header"
+end
+
+local function createFrame(context)
+    local area = context.area
     -- The timer's configured name is the most useful label there is, so it wins
     -- unless the layout states one. It is only known once the service has read
     -- the timer, which is why refresh revisits it.
-    local panel
-    context.panel, context.label, context.badge = primitives.panelWithHeader(
-        parent,
-        rect,
-        theme,
-        presentation,
+    context.panel, context.label, context.badge = context.primitives.panelWithHeader(
+        context.createParent,
+        context.rect,
+        context.theme,
+        context.createPresentation,
         area.frame,
-        fonts,
+        context.fonts,
         flightTimer.labelText(context),
-        services.themeBuilder
+        context.themeBuilder
     )
-    panel = context.panel
     -- The heading is refitted whenever it changes, so the column it has to
     -- fit is kept beside it.
     context.frame = area.frame
@@ -444,7 +452,13 @@ function flightTimer.create(parent, rect, settings, services)
     -- where that slot is. This panel had no reason to remember its regions
     -- while everything it drew started at the padding.
     context.area = area
+    context.createParent, context.createStage = nil, "controls"
+end
 
+local function createControls(context)
+    local theme, primitives, fonts = context.theme, context.primitives, context.fonts
+    local area, panel, layout = context.area, context.panel, context.layout
+    local presentation = context.createPresentation
     context.value = primitives.value(panel.root, theme, {
         x = area.valueX,
         y = area.valueY,
@@ -485,9 +499,20 @@ function flightTimer.create(parent, rect, settings, services)
         lvgl.hide(context.bar.track)
         lvgl.hide(context.bar.fill)
     end
+end
 
-    local _, drawn = primitives.changed(context, flightTimer.render)
-    flightTimer.apply(context, drawn)
+--- Build synchronously unless the loader requests hidden staged construction.
+---@param parent any
+---@param rect AeroGridRect
+---@param settings AeroGridTimerSettings
+---@param services table
+---@return AeroGridTimerContext
+function flightTimer.create(parent, rect, settings, services)
+    local context = beginConstruction(parent, rect, settings, services)
+    if services.staged ~= true then
+        while not flightTimer.construct(context, rect) do
+        end
+    end
     return context
 end
 
@@ -607,10 +632,7 @@ end
 
 --- Advance the panel, repainting only when something drawn changed.
 ---@param context AeroGridTimerContext
-function flightTimer.refresh(context)
-    if not context.feed then
-        return
-    end
+function flightTimer.step(context)
     local changed, drawn = context.primitives.changed(context, flightTimer.render)
     if changed then
         flightTimer.apply(context, drawn)
@@ -620,12 +642,8 @@ end
 --- Reposition after a zone change, shedding or restoring optional rows.
 ---@param context AeroGridTimerContext
 ---@param rect AeroGridRect
-function flightTimer.update(context, rect)
-    -- Into the table this panel already owns, rather than a fresh one per
-    -- reflow: see `theme.panel`.
-    local area =
-        flightTimer.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts, context.area)
-
+local function applyGeometry(context, rect, area)
+    context.rect = rect
     -- The heading is the model's timer name rather than the setting, so the
     -- refit is given what the panel currently shows.
     context.primitives.resizeHeader(context, rect, area.frame, context.labelValue)
@@ -680,5 +698,78 @@ function flightTimer.update(context, rect)
     context.showDetail = area.showDetail
     context.showVisual = showVisual
 end
+
+local function regions(context, rect)
+    return flightTimer.regionsFor(
+        context.theme,
+        context.themeBuilder,
+        rect,
+        context.layout,
+        context.fonts,
+        context.area
+    )
+end
+
+function flightTimer.update(context, rect)
+    while context.createStage do
+        flightTimer.construct(context, rect)
+    end
+    flightTimer.cancelRefresh(context)
+    applyGeometry(context, rect, regions(context, rect))
+end
+
+function flightTimer.cancelRefresh(context)
+    if context.createStage then
+        context.createInvalidated = true
+    end
+    context.primitives.invalidateReflow(context)
+end
+
+--- Staged `update`: the regions, then the writes. Nothing drawn changes until
+--- the second step, so a refresh between them still sees one geometry.
+function flightTimer.reflow(context, rect, _, _, _, begin)
+    local captured = context.primitives.reflowStart(context, rect, begin)
+    if captured then
+        context.reflowWork = { stage = "place", rect = captured, area = regions(context, captured) }
+        return false
+    end
+    local work = context.reflowWork
+    if work then
+        context.reflowWork = nil
+        applyGeometry(context, work.rect, work.area)
+    end
+    return true
+end
+
+function flightTimer.construct(context, rect)
+    local stage = context.createStage
+    if stage == "geometry" then
+        createGeometry(context, rect)
+    elseif stage == "header" then
+        createFrame(context)
+    elseif stage == "controls" then
+        createControls(context)
+        context.createStage = "publish"
+    elseif stage == "place" then
+        applyGeometry(context, context.rect, context.area)
+        context.createStage = "publish"
+    elseif stage == "publish" then
+        if context.createInvalidated or not context.primitives.sameRect(context.rect, rect) then
+            context.createStage = "geometry"
+        else
+            local _, drawn = context.primitives.changed(context, flightTimer.render)
+            flightTimer.apply(context, drawn)
+            context.createStage, context.createPresentation = nil, nil
+            return true
+        end
+    elseif not stage then
+        return true
+    else
+        error("unknown flight-timer construction stage: " .. tostring(stage))
+    end
+    return false
+end
+
+flightTimer.reflowDecl = { callback = flightTimer.reflow }
 
 return flightTimer

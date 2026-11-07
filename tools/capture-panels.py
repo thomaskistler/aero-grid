@@ -125,9 +125,12 @@ view: 0
     loader = widget / "lib/dashboard_loader.lua"
     loader_source = loader.read_text()
     if recipe.get("brighten_supporting_text", False):
-        theme_setup = "        context.theme = context.themeBuilder.build(context.themeMode)"
-        if loader_source.count(theme_setup) != 1:
+        anchors = ("        context.theme = context.themeBuilder.build(context.themeMode)",
+                   '                context.theme, context.themeSource = work.theme, "option"')
+        matches = [anchor for anchor in anchors if loader_source.count(anchor) == 1]
+        if len(matches) != 1:
             raise RuntimeError("Theme setup changed; update capture instrumentation explicitly.")
+        theme_setup = matches[0]
         loader_source = loader_source.replace(theme_setup, theme_setup + """
         context.theme.rgb.textFaint = context.theme.rgb.textMuted
         context.theme.color.textFaint = context.theme.color.textMuted

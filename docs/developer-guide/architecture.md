@@ -16,7 +16,7 @@ EdgeTX widgets.
 | `tests/fixtures/layouts/development/` | Simulator and review layouts used by tests and disposable SD images. |
 | `src/WIDGETS/AeroGrid/assets/` | Runtime editor icon and its license. |
 | `tests/unit/` | Focused module and panel tests. |
-| `tests/integration/` | Host, editor, dashboard, budget, and resource tests using mocked EdgeTX. |
+| `tests/integration/` | Host, editor, dashboard, and resource tests using mocked EdgeTX. |
 | `tests/support/` | Assertions, firmware-aware EdgeTX/LVGL mocks, and widget/layout fixture helpers. |
 | `tests/fixtures/` | Deterministic simulator SD card, test-only panels, and test layouts. |
 | `tools/` | Release packaging, native screenshots, capture recipes, and Python tooling tests. |
@@ -61,6 +61,10 @@ Host coordination has three boundaries:
 Their `new` functions bind host operations once per widget. They do not capture
 another widget's context or introduce per-refresh forwarding wrappers. `main.lua`
 decides which operation advances; loading and cleanup keep their explicit stages.
+Runtime theme YAML tokenization and mapping construction also advance separately;
+widget registration still reads only theme-picker metadata synchronously.
+Theme resolution retains private work until colors and notices are complete;
+replacement loads discard unfinished resolution and publication.
 Page retirement and replacement run in separate callbacks so deferred cleanup
 cannot invalidate objects belonging to the replacement page.
 
@@ -78,7 +82,11 @@ or any transition is missing.
 
 Runtime loading validates the header, applies at most one header transition per
 loader callback, then parses each panel and applies at most one panel transition
-per callback before validating and building that panel. Staged Save follows the
+per callback before validating and building that panel. Header and panel parsing
+and header copying use bounded grants, retaining unknown header metadata.
+Measured loader stages reserve their work before admitting service-only tasks;
+terminal errors publish separately from parsing.
+Staged Save follows the
 same bounded progression, keeping header migration, each panel migration,
 validation, and persistence in separate callbacks. The synchronous whole-layout
 helpers are for tests and tools, not runtime callback paths. Loading changes
@@ -203,12 +211,26 @@ subscriptions require a post-save rebuild.
 ## Shared flight tracking
 
 The factory-scoped broker in `flight_service.lua` owns a separate non-UI
-Control/Telemetry runtime and optional Smart sensor poller. Any live widget callback can pump it. Dashboard
+Control/Telemetry runtime and optional Smart sensor poller. Dashboard
 registrations are weakly held; rebuilds mark proposals pending before replacing
 them. Unanimous effective arm/configuration proposals are required, not the
 first caller's settings. Saved model Armed overrides every declaration. A qualified session
 pins its arm, detector settings, and output until completion, including output
 cleanup when proposals change or conflict. Counter panels only render state.
+
+The owning widget schedules Flight and Smart, with demand independent of
+panel subscriptions. Flight keeps
+its 20-tick cadence; Smart releases at least 100 ticks apart. Delayed runs retain
+the arming reference, but expired/missing receipt evidence breaks detection
+holds. Shared proposal validation advances one item per release.
+`schedulerService(owningContext)` supplies stable broker
+registrations even while a loader replaces the dashboard service registry;
+resync must preserve those releases without also enrolling the dashboard facade.
+Host retirement must call `disableScheduler(oldContext)`
+before activation on a replacement and resynchronize both scheduler registries.
+An active widget can also reclaim an owner whose scheduler host has been inactive
+for 40 ticks, preserving task deadlines and any pending configuration stage.
+Bounded reconciliation counts as activity even before tasks can run.
 
 `services.flight:state()` is an immutable live view. It exposes model/epoch,
 configuration revision/status, phase (`ground`, `starting`, `active`, `ending`),
@@ -244,14 +266,8 @@ Receipt age remains bounded evidence, not an exact timestamp or instant
 stopped-stream detector. Callbacks too infrequent to observe fresh flags
 conservatively fall back to standard detection.
 
-The Smart poller is due every 100ms. Ordinary chart callbacks continue on
-Smart polling callbacks: the host reduces that callback's dashboard telemetry
-batch from eight sources to four, reserving room for Smart's four sensor
-categories. Both pollers retain round-robin progress; Smart does not skip
-whole chart callbacks. Selected metadata is compared directly rather than
-rebuilding identity strings on every poll. Expensive loading/editor work
-still gets separate, per-widget fair slices, and pending input takes priority.
-Discovery uses numeric `telemN` sources and custom
+Smart runs at most once per second and shares the instruction budget with
+dashboard work. Discovery uses numeric `telemN` sources and custom
 sensor metadata from `model.getSensor`, never names or units alone. Supported
 single-module families are CRSF (including ELRS) and native FrSky S.Port;
 unknown/MULTI or multiple active modules fall back rather than guessing.
@@ -267,11 +283,11 @@ Altitude references require an observed disarmed-to-armed transition using
 a recent sample explicitly witnessed while disarmed, or fresh evidence at
 that transition. Merely current late readings never rebase an armed session.
 Motor interruptions preserve the reference but reset holds; unknown arm resets
-holds without inventing disarm. Metadata changes and scheduling gaps invalidate
-the reference conservatively. Fixed shortcuts are strictly above +3 m or
-10 mph for at least 200 ticks, allowing only precision-scaled conversion
+holds without inventing disarm. Metadata changes invalidate the reference.
+Fixed shortcuts are
+strictly above +3 m or 10 mph for at least 200 ticks, allowing only precision-scaled conversion
 roundoff (including float32 firmware). `smartStatus` explains fallback in the native Model settings dialog;
-confirmed field changes persist and update live detection immediately.
+confirmed field changes publish to live detection after verified persistence.
 
 Model settings use their own schema/revision and losslessly encoded model
 filename under `/AEROGRID/models/`. Saves verify model identity and revision
@@ -306,15 +322,159 @@ Use `panels/flight-mode.lua` as a small working example and
 | `id`, `apiVersion`, `supportedSpans` | Identify the module, check compatibility, and advertise valid grid sizes. |
 | `settings` | Typed fields, defaults, bounds, and choices used by validation and the editor. |
 | `refreshInterval` | Desired foreground interval in 10 ms ticks; work still shares the host budget. |
-| `refreshCost` | Whole-number share of the six host refresh slots (default 1). Chart uses all six so dense layouts cannot batch expensive redraws into one callback. |
 | `create(parent, rect, settings, services)` | Build LVGL objects, subscribe to data, and return private instance state. |
-| `refresh(context)` | Optional callback to update existing objects from snapshots. May return a whole-number interval of 1–6000 ticks; nil preserves the current interval. A second result of `true` reserves subsequent turns among panels of the same type until the update completes; other panel types and services continue running. |
+| `construct(context, rect)` | Optional bounded construction step. When `services.staged` is true, `create` returns partial state and the loader calls this once per callback until it returns `true`; return `false` while unfinished. |
+| `decl`, `step(context, grant, stage, now)` | Declare bounded periodic work and execute the granted units. A whole-number result of 1–6000 ticks changes the interval; nil preserves it. A second result of `true` requests another bounded turn. |
+| `stageOf(context)` | Optional current stage and requested unit count for staged tasks. |
+| `idle = true` | Declare no periodic work instead of a task. |
 | `update(context, rect, settings, detailsOnly, placement)` | Optional geometry/configuration update. Host reflows and editor resizes pass the current grid placement as the fifth argument, leaving the internal `detailsOnly` argument unset. |
-| `background(context)` | Optional work when the dashboard is not visible. |
+| `reflow(context, rect, settings, services, placement, begin)` | Optional staged geometry update, preferred over `update` during host resizing. `begin=true` starts or restarts; each later call advances once, returning `true` only when complete. It must not poll data sources; bounded capture/painting of cached subscriptions may finish the resized presentation. |
+| `cancelRefresh(context)` | Optional cancellation of captured task work, used when resetting a session. |
 | `resetSession(context, now)` | Optional session-data reset without rebuilding the panel. A second result of `true` requests another bounded reset turn. |
 | `event(context, event)` | Optional event handling; return true when consumed. |
 | `destroy(context)` | Optional cleanup of panel-owned references. |
 | `validateSettings(settings, span, config)` | Optional cross-field and span-dependent validation. |
+
+Staged construction keeps its container hidden and its instance outside the live
+panel registry until completion. Each step receives current container-local
+geometry and must handle resizing while unfinished. Exceptions or non-boolean
+results reject the placement and clear its container. Reload or page retirement
+discards partial state, so partial construction must not leave external resources
+outside its container and shared service subscriptions. Without `services.staged`,
+`create` must still return a complete instance. Editor preview rebuilding now
+uses the same prepared/staged construction path as loading when `construct` is
+available; direct synchronous callers still omit `services.staged`.
+Navigation splits shell/subscriptions, controls, tape allocation, reflow and
+publication. A resize before publication returns it to reflow, including the
+unit font even when no reading has arrived yet.
+Metric separates validation/subscriptions, fitted frame creation, and controls
+with publication. Pending geometry changes use separate reflow/publication
+steps; ordinary construction does not add an empty publication callback.
+
+Dashboard services and panels use the scheduler; there is no legacy
+refresh/update loop or execution-mode switch. Panels must provide `decl` and
+`step`, or declare `idle = true`. Idle panels cannot also declare periodic work.
+Task declarations control foreground/background eligibility and bounded grants.
+Invalid contracts are reported rather than run through a fallback.
+
+Staged panels capture readings before yielding and invalidate unfinished work
+when geometry or session state changes. Charts retain bounded projection,
+painting and atomic plot publication. Output keeps its rows hidden until the
+initial captions and readings have all been painted. Construction and reflow
+remain separate from periodic tasks.
+
+Registry and placement changes reconcile incrementally, reserving setup cost
+before task execution. Stable callbacks reuse the host's checked registry state;
+they do not allocate a reconciliation snapshot or repeat broker discovery before
+running tasks. Surviving tasks retain their releases; deferred work
+remains due when no room is available. Telemetry and History keep their 10-tick
+policy. Normal releases overdue by 100 ticks can temporarily run ahead of
+critical work for one bounded step when their release plus that aging delay
+precedes the oldest eligible critical release. At most one release is promoted
+per callback.
+Critical releases retain their age, preventing an aged normal backlog from
+monopolizing admission. Promotion respects callback eligibility, exclusivity and
+the instruction ceiling; it does not change the task's declared class.
+Session resets cancel captured frames and release tasks in bounded turns,
+without also running ordinary work in those reset callbacks. Stable editor
+previews use the same scheduler as the dashboard.
+
+An enabled owning Flight broker supplies a stable scheduler registration source
+across dashboard reloads. Host resynchronization preserves its releases and
+deadlines while retiring replaced dashboard services; Flight facades do not
+register duplicate tasks. Same-owner model/session resets retain release times.
+Explicit cross-host handoff removes the old registrations while preserving
+pending deadlines and task stages.
+
+Model settings can publish an already-persisted, immutable document through
+`broker:startPublication(document)` and `advancePublication(job)`. The first
+advance commits settings atomically; later turns notify at most one member.
+Confirmed saves are not cancellable. Model changes and identity failures stop
+further publication explicitly; ordinary session resets do not cancel it.
+Existing synchronous `setDocument` callers retain their behavior.
+
+Modal service eligibility is explicit in `scheduler_host.SERVICE_KINDS`;
+only steady-eligible service declarations inherit these kinds, never panels.
+The host charges completed modal work before planning services. Log viewing
+freezes the bounded ring at entry, then stages demand checks, snapshot copying,
+row construction, wrapping and painting. Model settings descriptions wrap one
+word per advance, separately from headings and controls. Confirmed edits disable
+further input while store reads, bounded YAML tokenization/building, validation,
+serialization and atomic installation advance separately. Return/fullscreen
+loss waits for confirmed work; errors remain visible, and committed revisions
+survive publication failure. Broker publication commits once, then notifies at
+most one member per advance. Measured publication, error reporting and confirmed
+closing admit services in foreground and background callbacks; hidden panels
+remain excluded.
+
+Model registration can use `store:startLoad(filename)` and
+`store:advanceLoad(job)` to share the bounded settings reader without writing.
+An advance returns `false` while pending, then `true, document, info` or
+`true, nil, error`. `store:loadWorkBound(job)` supplies its current stage charge.
+Recovery/missing metadata matches synchronous `load`; pending jobs reject model
+identity changes, while completed results remain idempotent.
+No handle remains open between advances, so an abandoned reader needs no cancel
+operation.
+Flight loading uses `flight_registration.beginLoad(context, store)` before
+constructing dashboard Armed, then `begin(context)` for staged declaration
+registration. Both use `advance(job) -> done, ok, error` and `workBound(job)`.
+Retained arms, sources and shared-reader claims advance one item per turn;
+member declarations publish atomically. Same-model reloads reuse cached model
+documents and retain canonical broker releases, including on configuration
+errors. The synchronous `configure` API remains available for direct callers.
+The loader pauses after Flight construction to initialize and load the owning
+broker; other dashboards wait for that document before constructing Armed.
+After a model switch, a current-model member may become the document initializer
+without moving canonical scheduler ownership or releases. Pending loads bind to
+the broker epoch, so replaced loads cannot publish even after switching back.
+Started model publication survives replacement loading, while unfinished
+declaration work is discarded. Runtime loading never falls back to a
+synchronous settings read or registration tail.
+Opening Model settings uses this reader, scans at most one legacy Armed
+selection per turn, then publishes the fresh disk document before building
+controls. `build` stays truthy throughout loading, so readiness checks and
+programmatic edits cannot bypass disabled controls. Return/fullscreen loss can
+cancel before publication; an active publication drains before closing.
+Menu and location overlays also use service-only callbacks: hidden panels do
+not refresh behind them. Menu action handlers consume their callback separately
+from popup construction and input; unmeasured action handlers do not inherit
+service eligibility.
+Ordinary editor painting uses four-slot advances and a separate final
+publication callback. New input preempts unfinished painting instead of being
+dropped. These stages admit services under `editor-render`; geometry
+synchronization and higher-priority save/preview commands keep their own gates.
+Settings drawers construct one control and lay out at most four rows per
+advance. Ordinary selection and modal input admit services under `editor-input`.
+Enter/tap queues a separately bounded `editor-drawer` opening; Return can cancel
+before construction. Opening snapshots settings in bounded grants and expands
+one metadata declaration per advance before constructing controls; settings
+preparation runs as its own step.
+List rows and condition summaries expand one item per turn, including oversized
+lists opened for repair. Native text getters return the staged summary.
+Only measured catalog schemas receive these bounds; custom schemas, generic
+recursive fields and compatibility groups retain separate admission gates.
+Compatible saved-layout adoption starts bounded Flight registration when the
+host exposes `beginFlightRegistration`. Editor entry, preview work and native
+drawer edits pause while registration/publication or its pending error drains;
+queued work resumes afterward. Native window retirement is still recorded.
+Drawer scalar writes and validation feedback stage their settings snapshot,
+four-row visibility layout and cached group summaries separately. Snapshot
+copying/defaulting/indexing advances at most eight entries per turn. Controls
+stay disabled until refresh completes; closing drops pending UI work without
+undoing an applied edit.
+List append copies at most eight graph entries per turn before committing once.
+List removal, panel removal and item/parent/Return navigation admit services;
+reopening runs separately, keeping controls disabled until construction finishes.
+Return during queued reopening follows that drawer's parent/back route.
+Native Return during append retains the edit and queues navigation after its
+commit. Panel Add prepares the module, then places against an occupancy mask in
+bounded steps before committing and opening its drawer; a layout change during
+Add cancels it. Drag enumerates targets in bounded steps after touch-down;
+resize copies settings and runs staged panel validation per candidate. Slides
+record the latest point and the cached target is applied in a later step;
+release applies a pending slide before further input. Preview geometry
+synchronizes one changed panel's update or reflow stage per step; unchanged
+panels are visited together.
 
 Put the module at `panels/<type>.lua` and reference that type in a layout.
 Regular panels declare `supportedSpans = { "any" }` and adapt their contents to
@@ -362,6 +522,18 @@ present them; `editor_controller.lua` coordinates them with the live dashboard.
 `layout_store.lua` handles saving, backups, and user-versus-shipped
 resolution; `layout_registry.lua` maintains name-to-choice positions.
 Keep these boundaries intact when changing save behavior.
+Production editor entry requests staged session copies: each advance visits at
+most 16 graph entries/retirements, preserving independent original/draft copies,
+shared references and cycles. The editor stays hidden and rejects input until
+copying and batched UI construction complete. These callbacks reserve their
+construction work before running services under the service-only `editor-build`
+kind; hidden panel tasks are not eligible. The ordinary `editor.new` API remains
+synchronous unless its optional staged argument is set.
+Preview replacement separates retirement, bounded placement cloning, settings
+preparation and construction. Bounded cloning/construction reserve their work
+before admitting services. Partial previews share the loader's hidden enrollment,
+strict boolean result checking and page-retirement cancellation; preview failures
+stay in the editor rather than rejecting the committed layout.
 Panel settings drawers, including entry subdrawers, put **Label** first when
 declared, preserving the declaration order of all remaining controls.
 
@@ -377,8 +549,8 @@ EdgeTX limits a widget callback to **20,000 Lua VM instructions**. Creation,
 parsing, panel building, reload, and reflow are staged across callbacks.
 Services have bounded subscription updates, and panel work is capped and
 phase-staggered. Do not replace this with one synchronous "simpler" loader.
-The [budget tests](testing.md#performance-and-resource-regressions) require
-strictly less than 75% of the callback allowance.
+Automated tests do not currently enforce instruction counts; use the native
+audit tooling when measuring callback costs.
 
 Avoid object churn and retained callbacks. Shared labels install a persistent
 font callback; change its backing state through `primitives.setFont` rather

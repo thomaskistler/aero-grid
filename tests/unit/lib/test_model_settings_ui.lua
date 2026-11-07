@@ -76,9 +76,10 @@ local function fixture(width)
         end,
     })
     assert(state.nextY == 4 and state.smartStatus.hidden)
-    for _ = 1, 12 do
+    for _ = 1, 200 do
         ui.advance(c)
         mock.settle()
+        if not state.build then break end
     end
     assert(not state.build and not state.save and not state.cancel, "no draft-form buttons")
     assert(state.smartStatus.properties.y > state.controls.flightSwitch.parent.properties.y)
@@ -276,8 +277,32 @@ do
     local c, state, control = fixture()
     state.controls.motorReversed.properties.set(1)
     control.filename = "other.yml"
+    assert(ui.workBound(c) == ui.WORK_BOUNDS.closing, "model changes use their measured retirement bound")
     ui.advance(c)
     assert(not c.modelSettingsUi and control.attempts == 0 and control.closed == 1)
+end
+
+for _, stage in ipairs({ "heading", "wrap", "field", "finish" }) do
+    local c, old, _, document = fixture(320)
+    local state = ui.open(c, document(), old.handlers)
+    for _ = 1, 200 do
+        if ui.stageOf(state) == stage then break end
+        ui.advance(c)
+    end
+
+    assert(ui.stageOf(state) == stage and ui.workBound(c) == ui.WORK_BOUNDS[stage])
+    if stage == "wrap" then
+        local sizeText, calls = lcd.sizeText, 0
+        lcd.sizeText = function(...)
+            calls = calls + 1
+            return sizeText(...)
+        end
+        ui.advance(c)
+        lcd.sizeText = sizeText
+        assert(calls <= 1, "a wrapping callback measures at most one candidate")
+    end
+    ui.close(c)
+    assert(not state.description and not ui.advance(c), "cancelled description work must never resume")
 end
 
 do
@@ -289,4 +314,152 @@ do
     mock.settle()
     assert(not c.modelSettingsUi and document().flight.motorReversed)
     assert(control.published == 1 and control.closed == 1, "Back preserves a queued confirmed change")
+end
+
+local function asyncFixture()
+    local c, state, control, document = fixture()
+    local files, operations = assert(loadfile(root .. "/tests/support/memory_files.lua"))()()
+    local yaml = assert(loadfile(base .. "/lib/yaml.lua"))()
+    local storeModule = assert(loadfile(base .. "/lib/model_settings_store.lua"))()
+    local store = storeModule.new("/WIDGETS/AeroGrid/", yaml, {
+        modelFilename = function() return control.filename end,
+        flightConfig = config, armedConfig = armedConfig,
+        verifiedFile = assert(loadfile(base .. "/lib/verified_file.lua"))(),
+    }, operations)
+    local path = assert(storeModule.path("/WIDGETS/AeroGrid/", control.filename))
+    local initial = document()
+    files[path] = assert(yaml.serialize({
+        version = 1, revision = initial.revision, modelFilename = initial.modelFilename, flight = initial.flight,
+    }))
+    state.handlers.startSave = function(values, revision, filename, armed, sessionReset)
+        return store:startSave(filename, revision, values, armed, sessionReset)
+    end
+    state.handlers.advanceSave = function(job) return store:advanceSave(job) end
+    state.handlers.saveWorkBound = function(job) return store:saveWorkBound(job) end
+    state.handlers.startPublication = function(saved)
+        control.starts = (control.starts or 0) + 1
+        assert(saved.revision == 8 and saved.flight.motorReversed)
+        return { document = saved, steps = 0 }
+    end
+    state.handlers.advancePublication = function(job)
+        control.steps = (control.steps or 0) + 1
+        if control.filename ~= job.document.modelFilename then
+            return true, false, "Model changed during publication"
+        end
+        job.steps = job.steps + 1
+        if job.steps < 3 then return false end
+        control.published = control.published + 1
+        return true, true
+    end
+    return c, state, control, operations, function() return store:load("plane.yml") end
+end
+
+for _, phase in ipairs({ "command", "store", "publish-start", "publish" }) do
+    local c, state, control, _, persisted = asyncFixture()
+    state.controls.motorReversed.properties.set(1)
+    assert(ui.workBound(c) == ui.WORK_BOUNDS.command)
+    for _ = 1, 50 do
+        if phase == "command" or state.saving and state.saving.phase == phase then break end
+        ui.advance(c)
+    end
+    if phase ~= "command" then
+        assert(state.saving and state.saving.phase == phase)
+        assert(not state.controls.motorReversed.properties.active(), "pending save/publication disables further edits")
+        state.controls.minFlightDuration.properties.set(600)
+        assert(not state.pending, "pending saves reject another queued edit")
+    end
+    if phase == "publish-start" or phase == "publish" then
+        assert(ui.workBound(c) == ui.WORK_BOUNDS[phase], "publication has its own measured enclosing bound")
+        assert(state.revision == 8 and persisted().revision == 8, "disk commit precedes publication")
+    end
+    state.dialog.properties.close()
+    for _ = 1, 60 do
+        if not c.modelSettingsUi then break end
+        ui.advance(c)
+    end
+    assert(not c.modelSettingsUi and control.closed == 1, "Return waits for a confirmed save to finish")
+    assert(control.starts == 1 and control.steps == 3 and control.published == 1)
+    assert(persisted().flight.motorReversed and persisted().revision == 8)
+end
+
+do
+    local c, state, control, _, persisted = asyncFixture()
+    state.controls.motorReversed.properties.set(1)
+    ui.advance(c)
+    assert(ui.close(c) == false and c.modelSettingsUi == state, "explicit close waits for confirmed work")
+    local ok = pcall(ui.open, c, { revision = 8 }, {})
+    assert(not ok and c.modelSettingsUi == state, "replacement cannot orphan a save")
+    for _ = 1, 60 do
+        if not c.modelSettingsUi then break end
+        ui.advance(c)
+    end
+    assert(not c.modelSettingsUi and control.published == 1 and persisted().revision == 8)
+end
+
+for _, hook in ipairs({ "startSave", "advanceSave", "startPublication", "advancePublication" }) do
+    local c, state, control, _, persisted = asyncFixture()
+    state.handlers[hook] = function() error("injected " .. hook .. " failure") end
+    state.controls.motorReversed.properties.set(1)
+    ui.advance(c)
+    for _ = 1, 60 do
+        if not state.saving then break end
+        ui.advance(c)
+    end
+    local installed = hook == "startPublication" or hook == "advancePublication"
+    assert(not state.saving and control.errors == 1 and control.published == 0)
+    assert(state.revision == (installed and 8 or 7) and persisted().revision == state.revision)
+    assert(string.find(state.status.properties.text, "injected", 1, true))
+    ui.close(c)
+end
+
+for _, phase in ipairs({ "store", "publish-start", "publish" }) do
+    local c, state, control, _, persisted = asyncFixture()
+    state.handlers.fullscreen = function() return not control.hidden end
+    state.controls.motorReversed.properties.set(1)
+    ui.advance(c)
+    for _ = 1, 50 do
+        if state.saving.phase == phase then break end
+        ui.advance(c)
+    end
+    assert(state.saving.phase == phase)
+    control.hidden = true
+    for _ = 1, 60 do
+        if not c.modelSettingsUi then break end
+        ui.advance(c)
+    end
+    assert(not c.modelSettingsUi and control.closed == 1 and control.published == 1)
+    assert(persisted().revision == 8, "fullscreen loss cannot cancel an already confirmed save")
+end
+
+do
+    local c, state, control, operations, persisted = asyncFixture()
+    operations.inject("rename")
+    state.controls.motorReversed.properties.set(1)
+    ui.advance(c)
+    for _ = 1, 60 do
+        if not state.saving then break end
+        ui.advance(c)
+    end
+    assert(not state.saving and control.errors == 1 and not control.starts)
+    assert(state.revision == 7 and not persisted().flight.motorReversed, "failed persistence cannot publish")
+    assert(type(state.status.properties.text) == "string" and state.status.properties.text ~= "")
+    ui.close(c)
+end
+
+do
+    local c, state, control, _, persisted = asyncFixture()
+    state.controls.motorReversed.properties.set(1)
+    ui.advance(c)
+    for _ = 1, 50 do
+        if state.saving.phase == "publish" then break end
+        ui.advance(c)
+    end
+    assert(state.saving.phase == "publish")
+    control.filename = "other.yml"
+    for _ = 1, 10 do
+        if not c.modelSettingsUi then break end
+        ui.advance(c)
+    end
+    assert(not c.modelSettingsUi and control.steps == 1 and control.errors == 1)
+    assert(control.published == 0 and persisted().revision == 8, "model changes retain valid old-model disk data")
 end

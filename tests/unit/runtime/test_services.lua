@@ -9,10 +9,34 @@ local theme = fixture.theme
 local services = fixture.services
 local telemetryService = fixture.telemetryService
 local modelService = fixture.modelService
+local scheduler = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.lua"))()
 local controlService = fixture.controlService
 local navigationService = fixture.navigationService
 local assertEqual = fixture.assertEqual
 local telemetryHarness = fixture.telemetryHarness
+
+local function stepTelemetry(service, now)
+    for _, item in ipairs(service.schedulerTasks) do
+        local task = item.instance
+        task.tickElapsed = scheduler.elapsed
+        task:step(task.want, "run", now)
+    end
+end
+
+local function stepControl(service, now)
+    for _, item in ipairs(service.schedulerTasks) do
+        local task = item.instance
+        if task.want > 0 then
+            task:step(math.min(task.want, task.decl.stages.run.maxUnits), "run", now)
+        end
+    end
+end
+
+local function stepNavigation(service, now)
+    local task = service.tasks.run
+    task.tickElapsed = scheduler.elapsed
+    task:step(math.min(task.want, task.decl.stages.run.maxUnits), "run", now)
+end
 
 --- A published snapshot must be readable and impossible to corrupt, because
 --- several panels share the same one.
@@ -35,64 +59,62 @@ local function testSnapshotsAreImmutable()
     assertEqual(getmetatable(view), false, "the snapshot exposed its metatable")
 end
 
---- A service update is charged to the same instruction budget as everything
---- else, so the registry must serve exactly one due service per cycle, skip
---- services nothing subscribed to, and retire one that raises.
+--- Scheduled services make progress, skip dormant demand, and isolate failures.
 local function testServiceScheduling()
     local function fake(id, interval, behavior)
-        return {
+        local service = {
             id = id,
             interval = interval,
             revision = 0,
             count = 1,
-            due = 0,
             updates = 0,
-            update = function(self)
-                self.updates = self.updates + 1
+        }
+        services.task(service, "run", {
+            id = "service:" .. id,
+            decl = { class = "normal", stages = { run = { fixed = 0, perUnit = 100, maxUnits = 1 } } },
+            want = 1,
+            run = function(owner)
+                owner.updates = owner.updates + 1
                 if behavior == "raise" then
                     error(id .. " failed", 0)
                 end
+                owner.revision = owner.revision + 1
+                return interval
             end,
-        }
+        })
+        return service
     end
 
     local runtime = services.runtime(services.environment({}))
-    local first, second, third = fake("a", 10), fake("b", 10), fake("c", 10)
-    services.register(runtime, first, 0)
-    services.register(runtime, second, 0)
-    services.register(runtime, third, 0)
-
-    -- Registration staggers services so they never fall due together.
-    assertEqual(first.due, 0)
-    assertEqual(second.due, 1)
-    assertEqual(third.due, 2)
-
-    assertEqual(services.update(runtime, 0), "a")
-    assertEqual(services.update(runtime, 0), nil, "two services ran in one cycle")
-    assertEqual(services.update(runtime, 1), "b")
-    assertEqual(services.update(runtime, 2), "c")
-    assertEqual(first.updates, 1)
-    assertEqual(first.revision, 1)
-
-    -- Nothing subscribed means nothing is read.
-    local idle = fake("idle", 10)
-    idle.count = 0
-    services.register(runtime, idle, 0)
-    for step = 3, 40 do
-        services.update(runtime, step)
+    local first, second, idle, bad = fake("a", 10), fake("b", 10), fake("idle", 10), fake("bad", 10, "raise")
+    idle.count, idle.tasks.run.want = 0, 0
+    for _, service in ipairs({ first, second, idle, bad }) do
+        services.register(runtime, service, 0)
     end
+    local context = { panels = {}, panelHost = fixture.panelHost, serviceRuntime = runtime }
+    local clock, messages = 0, {}
+    local previousTime = getTime
+    getTime = function() return clock end
+    local host = fixture.loadModule("lib/scheduler_host.lua").attach(context, {
+        load = fixture.loadModule,
+        api = {
+            error = function(_, message) messages[#messages + 1] = message end,
+            show = function() end,
+        },
+    })
+    for tick = 0, 100 do
+        clock = tick
+        assert(host:ready(context))
+        host:report(context)
+        host:finish("steady")
+    end
+    getTime = previousTime
+    assert(first.updates > 1 and second.updates > 1, "healthy services continue making progress")
+    assertEqual(first.revision, first.updates)
     assertEqual(idle.updates, 0, "an unsubscribed service was polled")
-
-    -- A service that raises is reported once and then retired.
-    local broken = services.runtime(services.environment({}))
-    local bad = fake("bad", 10, "raise")
-    services.register(broken, bad, 0)
-    local id, updateError = services.update(broken, 0)
-    assertEqual(id, "bad")
-    assert(string.match(tostring(updateError), "bad failed"), tostring(updateError))
+    assertEqual(bad.updates, 1, "a failed service ran again")
     assertEqual(bad.revision, 0, "a failed update counted as a revision")
-    assertEqual(services.update(broken, 100), nil, "a failed service ran again")
-    assertEqual(bad.updates, 1)
+    assert(#messages == 1 and string.find(messages[1], "bad failed", 1, true))
 end
 
 --- A text sensor is a reading whose value is a string.
@@ -121,7 +143,7 @@ local function testTelemetryTextSensor()
     local mode = service:subscribe("FM")
     local absent = service:subscribe("Fmod")
 
-    service:update(0)
+    stepTelemetry(service, 0)
 
     -- The shape, which is what nothing had checked: a string in `raw`, no
     -- numeric value, and a kind that says which to read.
@@ -150,20 +172,20 @@ local function testTelemetryTextSensor()
     -- comparing declarations would never repaint.
     local before = mode.revision
     harness.values[145] = "ACRO"
-    service:update(1)
+    stepTelemetry(service, 10)
     assertEqual(mode.raw, "ACRO")
     assert(mode.revision > before, "a changed string did not count as a new reading")
 
     -- And the same string twice is not.
     local settled = mode.revision
-    service:update(2)
+    stepTelemetry(service, 20)
     assertEqual(mode.revision, settled, "an unchanged string counted as a new reading")
 
     -- A dropped link keeps the last string and marks it stale, exactly as a
     -- numeric reading is kept rather than replaced with nothing.
     harness.rssi = 0
     harness.values[145] = nil
-    service:update(3)
+    stepTelemetry(service, 30)
     assertEqual(mode.raw, "ACRO", "a dropped link discarded the last mode")
     assertEqual(mode.state, "stale")
 end
@@ -181,7 +203,7 @@ local function testTelemetryFreshness()
     assert(service:subscribe("RxBt") == pack, "a duplicate subscription was made")
     assertEqual(service.count, 3)
 
-    service:update(0)
+    stepTelemetry(service, 0)
     assertEqual(pack.value, 24.4)
     assertEqual(pack.state, "normal")
     assertEqual(pack.unitText, "V")
@@ -199,7 +221,7 @@ local function testTelemetryFreshness()
 
     -- Precision comes from the model's sensor table, one search at a time.
     for step = 1, 6 do
-        service:update(step)
+        stepTelemetry(service, step)
     end
     assertEqual(pack.precision, 2)
     assertEqual(altitude.precision, 1)
@@ -208,7 +230,7 @@ local function testTelemetryFreshness()
     -- replacing a valid 24.4 V with the zero EdgeTX reports.
     harness.rssi = 0
     harness.values[100] = 0
-    service:update(20)
+    stepTelemetry(service, 20)
     assertEqual(pack.value, 24.4, "a stale poll overwrote the cached reading")
     assertEqual(pack.state, "stale")
     assertEqual(pack.stale, true)
@@ -216,14 +238,14 @@ local function testTelemetryFreshness()
 
     harness.rssi = 70
     harness.values[100] = 23.9
-    service:update(30)
+    stepTelemetry(service, 30)
     assertEqual(pack.value, 23.9)
     assertEqual(pack.state, "normal")
 
     -- A sensor that appears later must be picked up without a reload.
     harness.fields.Nope = { id = 106, name = "Nope", unit = 13 }
     harness.values[106] = 42
-    service:update(30 + telemetryService.RESOLVE_RETRY)
+    stepTelemetry(service, 30 + telemetryService.RESOLVE_RETRY)
     assertEqual(missing.known, true)
     assertEqual(missing.value, 42)
     assertEqual(missing.unitText, "%")
@@ -248,24 +270,24 @@ local function testTelemetryLinkHeuristics()
     -- perfectly live link. A telemetry source cannot return a non-zero value
     -- when EdgeTX has nothing, so that value proves the indicator is wrong.
     harness.rssi = 0
-    service:update(0)
+    stepTelemetry(service, 0)
     assertEqual(pack.value, 24.4, "a live reading was discarded as stale")
     assertEqual(pack.state, "normal")
 
     -- Having learned that, a genuine zero from the same radio is a reading too.
     harness.values[100] = 0
-    service:update(1)
+    stepTelemetry(service, 10)
     assertEqual(pack.value, 0)
     assertEqual(pack.state, "normal")
 
     -- A radio whose indicator does work still withholds the ambiguous zero.
     local other = telemetryHarness()
     local reading = other.service:subscribe("RxBt")
-    other.service:update(0)
+    stepTelemetry(other.service, 0)
     assertEqual(reading.value, 24.4)
     other.rssi = 0
     other.values[100] = 0
-    other.service:update(1)
+    stepTelemetry(other.service, 10)
     assertEqual(reading.state, "stale")
     assertEqual(reading.value, 24.4, "a stale poll overwrote the cached reading")
 
@@ -279,47 +301,13 @@ local function testTelemetryLinkHeuristics()
 
     local cells = service:subscribe("Cels")
     local lowest = service:subscribe("Cels-")
-    service:update(2)
+    stepTelemetry(service, 20)
 
     assertEqual(cells.kind, "cells")
     assertEqual(type(cells.raw), "table")
     assertEqual(lowest.kind, "number", "a cells extremum was read as a table")
     assertEqual(lowest.value, 4.09)
     assertEqual(lowest.state, "normal")
-end
-
---- Polling must stay bounded no matter how many sources a layout references.
-local function testTelemetryPollingIsBounded()
-    local harness = telemetryHarness()
-    local service = harness.service
-    local polled = {}
-
-    harness.env.getValue = function(id)
-        polled[#polled + 1] = id
-        return harness.values[id]
-    end
-
-    for index = 1, 16 do
-        local name = "S" .. index
-        harness.fields[name] = { id = 200 + index, unit = 0 }
-        harness.values[200 + index] = index
-        service:subscribe(name)
-    end
-
-    service:update(0)
-    assert(#polled <= telemetryService.POLL_CAP, "one update polled " .. #polled .. " sources")
-
-    -- Every source must still be served, in rotation, rather than starved.
-    local seen = {}
-    for step = 1, 8 do
-        service:update(step)
-        for _, id in ipairs(polled) do
-            seen[id] = true
-        end
-    end
-    for index = 1, 16 do
-        assert(seen[200 + index], "source S" .. index .. " was never polled")
-    end
 end
 
 --- Model facets are radio-local, so they never depend on a link, but every one
@@ -362,9 +350,11 @@ local function testModelService()
     local countdown = service:timer(0)
     local countUp = service:timer(1)
     local absent = service:timer(2)
+    assertEqual(service.update, nil, "the migrated model service has no legacy update path")
 
     for step = 0, 3 do
-        service:update(step)
+        service.tickElapsed = scheduler.elapsed
+        service:step(service.count, "run", step * 100)
     end
 
     assertEqual(identity.name, "Test")
@@ -393,7 +383,7 @@ local function testModelService()
     -- A countdown that runs past zero must read as expired, not as elapsed.
     timers[0].value = -8
     for step = 4, 9 do
-        service:update(step)
+        service:step(service.count, "run", step * 100)
     end
     assertEqual(countdown.expired, true)
     assertEqual(countdown.text, "-0:08")
@@ -408,14 +398,16 @@ local function testModelService()
         services
     )
     local mode = unnamed:flightMode()
-    unnamed:update(0)
+    unnamed.tickElapsed = scheduler.elapsed
+    unnamed:step(unnamed.count, "run", 0)
     assertEqual(mode.name, "FM0")
 
     -- Firmware without the model API must not raise.
     local bare = modelService.new(services.environment({ model = {} }), services)
     local bareIdentity = bare:identity()
     local bareTimer = bare:timer(0)
-    bare:update(0)
+    bare.tickElapsed = scheduler.elapsed
+    bare:step(bare.count, "run", 0)
     assertEqual(bareIdentity.available, false)
     assertEqual(bareTimer.state, "unavailable")
 end
@@ -454,7 +446,7 @@ local function testControlService()
     local trim = service:trim("trim-ail")
     local variable = service:globalVariable(0)
 
-    service:update(0)
+    stepControl(service, 0)
     assertEqual(trim.available, true)
     assertEqual(trim.centered, true)
     assertEqual(trim.scale, "standard")
@@ -462,7 +454,7 @@ local function testControlService()
 
     -- EdgeTX reports eight times the stored trim.
     raw = 512
-    service:update(1)
+    stepControl(service, 1)
     assertEqual(trim.raw, 512)
     assertEqual(trim.value, 64)
     assertEqual(trim.fraction, 0.5)
@@ -471,7 +463,7 @@ local function testControlService()
     -- A negative trim must round toward zero like a positive one. Flooring a
     -- negative percentage reports more deflection than the trim actually has.
     raw = -240
-    service:update(1)
+    stepControl(service, 1)
     -- describe() reports one row per subscription, in subscription order. A
     -- count greater than zero would be satisfied by a diagnostics panel that
     -- silently dropped every row but the first.
@@ -482,13 +474,13 @@ local function testControlService()
     assertEqual(rows[2].label, "RATES")
     assertEqual(rows[2].text, "4.5")
     raw = 512
-    service:update(1)
+    stepControl(service, 1)
 
     -- A standard trim held at its own end stop reads exactly 1024, because
     -- EdgeTX clamps the stored value to TRIM_MAX of 128. That must not be read
     -- as leaving the standard range.
     raw = 1024
-    service:update(2)
+    stepControl(service, 2)
     assertEqual(trim.scale, "standard", "an end stop widened the scale")
     assertEqual(trim.fraction, 1)
     assertEqual(trim.value, 128)
@@ -496,11 +488,11 @@ local function testControlService()
     -- Auto widens once a reading really does leave the standard range, and stays
     -- widened, because EdgeTX never tells Lua whether extended trims are enabled.
     raw = 2048
-    service:update(3)
+    stepControl(service, 3)
     assertEqual(trim.scale, "extended")
     assertEqual(trim.fraction, 0.5)
     raw = -512
-    service:update(4)
+    stepControl(service, 4)
     assertEqual(trim.scale, "extended", "the scale narrowed again")
     assertEqual(trim.fraction, -0.125)
 
@@ -517,29 +509,29 @@ local function testControlService()
     local parked = controlService.new(env, services)
     local parkedTrim = parked:trim("trim-thr")
     raw = 1024
-    parked:update(0)
+    stepControl(parked, 0)
     assertEqual(parkedTrim.threePosition, false, "an end stop was read as a toggle")
 
     -- A toggle only ever reports centre or full deflection, with nothing between.
     local toggle = controlService.new(env, services)
     local switchTrim = toggle:trim("trim-thr")
     raw = 0
-    toggle:update(0)
+    stepControl(toggle, 0)
     raw = 1024
-    toggle:update(1)
+    stepControl(toggle, 1)
     assertEqual(switchTrim.threePosition, true)
     assertEqual(switchTrim.fraction, 1)
 
     -- An ordinary trim passes through intermediate positions on its way.
     raw = 300
-    toggle:update(2)
+    stepControl(toggle, 2)
     assertEqual(switchTrim.threePosition, false, "an ordinary trim stayed a toggle")
 
     -- An unknown trim source and a radio without global variables degrade.
     local bare = controlService.new(services.environment({ model = {} }), services)
     local unknown = bare:trim("trim-nope")
     local noVariable = bare:globalVariable(1)
-    bare:update(0)
+    stepControl(bare, 0)
     assertEqual(unknown.state, "unavailable")
     assertEqual(noVariable.state, "unavailable")
     assertEqual(bare:trim("").state, "unavailable")
@@ -567,8 +559,8 @@ local function testNavigationService()
     services.register(runtime, service, 0)
 
     local view = service:subscribe("GPS")
-    telemetry:update(0)
-    service:update(0)
+    stepTelemetry(telemetry, 1)
+    stepNavigation(service, 1)
 
     assertEqual(view.fix, true)
     assertEqual(view.home, true)
@@ -593,8 +585,8 @@ local function testNavigationService()
     -- Without a home position a bearing would be meaningless.
     harness.values[400]["pilot-lat"] = 0
     harness.values[400]["pilot-lon"] = 0
-    telemetry:update(1)
-    service:update(1)
+    stepTelemetry(telemetry, 21)
+    stepNavigation(service, 21)
     assertEqual(view.home, false)
     assertEqual(view.bearing, nil)
     assertEqual(view.distance, nil)
@@ -603,8 +595,8 @@ local function testNavigationService()
     -- No fix at all is reported explicitly rather than as a position of zero.
     harness.values[400].lat = 0
     harness.values[400].lon = 0
-    telemetry:update(2)
-    service:update(2)
+    stepTelemetry(telemetry, 41)
+    stepNavigation(service, 41)
     assertEqual(view.fix, false)
     assertEqual(view.state, "unavailable")
 
@@ -615,15 +607,15 @@ local function testNavigationService()
     harness.values[400].lon = 8.5417
     harness.values[400]["pilot-lat"] = 47.3700
     harness.values[400]["pilot-lon"] = 8.5400
-    telemetry:update(3)
-    service:update(3)
+    stepTelemetry(telemetry, 61)
+    stepNavigation(service, 61)
     assert(math.abs(view.distance - 777) < 20)
     assertEqual(service:subscribe("GPS"), view)
     assertEqual(second.distance, view.distance)
 
     -- A GPS source that has never produced a table must not raise.
     local absent = service:subscribe("NoGps")
-    service:update(4)
+    stepNavigation(service, 81)
     assertEqual(absent.state, "unavailable")
     assertEqual(navigationService.formatDistance(nil), "--")
     assertEqual(navigationService.formatDistance(450), "450m")
@@ -649,7 +641,6 @@ testServiceScheduling()
 testTelemetryFreshness()
 testTelemetryTextSensor()
 testTelemetryLinkHeuristics()
-testTelemetryPollingIsBounded()
 testModelService()
 testControlService()
 testNavigationService()

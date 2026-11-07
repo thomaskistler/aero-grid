@@ -64,6 +64,18 @@ local linkStatus = {
     -- is still a number on a screen: five hertz is indistinguishable from fifty
     -- and costs a tenth as much of the shared instruction budget.
     refreshInterval = 20,
+    decl = {
+        class = "normal",
+        kinds = { steady = true },
+        first = "prepare",
+        stages = {
+            prepare = { maxUnits = 1 },
+            geometry = { maxUnits = 1 },
+            layout = { maxUnits = 1 },
+            render = { maxUnits = 1 },
+            apply = { maxUnits = 1 },
+        },
+    },
     settings = {
         { key = "label", label = "Label", type = "string", default = "LINK" },
         { key = "rssiSource", label = "RSSI source", type = "string", default = "RSSI" },
@@ -697,7 +709,7 @@ end
 ---@param fonts table
 ---@param sample table Widest value text and unit this panel can render.
 ---@return table
-function linkStatus.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, out)
+function linkStatus.regionsFor(theme, themeBuilder, rect, layout, fonts, sample, out, frame)
     -- The whole arrangement, from the shared builder. This panel's only
     -- visualization is a bar, which spans the panel by design and is exempt
     -- from the slot rule, so the reading never splits and centres across the
@@ -705,7 +717,7 @@ function linkStatus.regionsFor(theme, themeBuilder, rect, layout, fonts, sample,
     local area = themeBuilder.panel(theme, rect, fonts, {
         -- Built through this panel's own builder, which the host may have
         -- wrapped to lay the panel out around the menu button's corner.
-        frame = themeBuilder.frame(theme, rect, fonts),
+        frame = frame or themeBuilder.frame(theme, rect, fonts),
         forms = { sample.digits },
         unit = sample.unit,
         draws = {
@@ -739,13 +751,7 @@ function linkStatus.regionsFor(theme, themeBuilder, rect, layout, fonts, sample,
     return area
 end
 
---- Build the panel's LVGL objects.
----@param parent any
----@param rect AeroGridRect
----@param settings AeroGridLinkSettings
----@param services table
----@return AeroGridLinkContext
-function linkStatus.create(parent, rect, settings, services)
+local function beginConstruction(parent, rect, settings, services)
     local theme = services.theme
     local primitives = services.primitives
     local fonts = services.fonts
@@ -787,16 +793,16 @@ function linkStatus.create(parent, rect, settings, services)
         -- other is supporting detail, and a panel that subscribed lazily would
         -- have nothing to show the moment the protocol turned out to differ.
         if type(settings.rssiSource) == "string" and settings.rssiSource ~= "" then
-            context.rssiFeed = telemetry:subscribe(settings.rssiSource)
+            context.rssiFeed = telemetry:subscribe(settings.rssiSource, nil, 20)
         end
         if type(settings.qualitySource) == "string" and settings.qualitySource ~= "" then
-            context.qualityFeed = telemetry:subscribe(settings.qualitySource)
+            context.qualityFeed = telemetry:subscribe(settings.qualitySource, nil, 20)
         end
         for _, name in ipairs({ "mode", "snr", "power" }) do
             local source = settings[name .. "Source"]
             if type(source) == "string" and source ~= "" then
                 local receiverEvidence = settings.protocol ~= "elrs4" or name == "snr"
-                context[name .. "Feed"] = telemetry:subscribe(source, receiverEvidence)
+                context[name .. "Feed"] = telemetry:subscribe(source, receiverEvidence, 20)
             end
         end
         context.link = telemetry:link()
@@ -810,9 +816,9 @@ function linkStatus.create(parent, rect, settings, services)
     if telemetry and settings.extrema == "source" then
         local named = settings.extremaSource
         if type(named) == "string" and named ~= "" then
-            context.minimumFeed = telemetry:subscribe(named)
+            context.minimumFeed = telemetry:subscribe(named, nil, 20)
         elseif type(leading) == "string" and leading ~= "" then
-            context.minimumFeed = telemetry:subscribe(leading .. "-")
+            context.minimumFeed = telemetry:subscribe(leading .. "-", nil, 20)
         end
     end
 
@@ -824,7 +830,20 @@ function linkStatus.create(parent, rect, settings, services)
     context.sample = { digits = "-100", unit = "dBm" }
     context.rect = rect
 
-    local area = linkStatus.regionsFor(theme, services.themeBuilder, rect, layout, fonts, context.sample)
+    context.createParent, context.createPresentation, context.createStage = parent, presentation, "geometry"
+    return context
+end
+
+local function createGeometry(context, rect)
+    context.createInvalidated = nil
+    local area =
+        linkStatus.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts, context.sample)
+    context.area, context.rect = area, rect
+    context.createStage = context.panel and "place" or "header"
+end
+
+local function createFrame(context)
+    local area = context.area
     context.detailWidth = area.detailWidth
     context.rowRightWidth = area.rowRightWidth
     context.showDetail = area.showDetail
@@ -838,19 +857,23 @@ function linkStatus.create(parent, rect, settings, services)
     context.unitText = ""
     context.area = area
 
-    local panel
-    context.panel, context.label, context.badge = primitives.panelWithHeader(
-        parent,
-        rect,
-        theme,
-        presentation,
+    context.panel, context.label, context.badge = context.primitives.panelWithHeader(
+        context.createParent,
+        context.rect,
+        context.theme,
+        context.createPresentation,
         area.frame,
-        fonts,
-        settings.label,
-        services.themeBuilder
+        context.fonts,
+        context.settings.label,
+        context.themeBuilder
     )
-    panel = context.panel
+    context.createParent, context.createStage = nil, "controls"
+end
 
+local function createControls(context)
+    local theme, primitives, fonts = context.theme, context.primitives, context.fonts
+    local area, panel, layout = context.area, context.panel, context.layout
+    local presentation, settings = context.createPresentation, context.settings
     context.value, context.unit = primitives.reading(panel.root, theme, area, presentation, "")
 
     context.detailLabel = primitives.label(panel.root, theme, {
@@ -913,9 +936,20 @@ function linkStatus.create(parent, rect, settings, services)
         lvgl.hide(context.bar.track)
         lvgl.hide(context.bar.fill)
     end
+end
 
-    local _, drawn = primitives.changed(context, linkStatus.render)
-    linkStatus.apply(context, drawn)
+--- Build synchronously unless the loader requests hidden staged construction.
+---@param parent any
+---@param rect AeroGridRect
+---@param settings AeroGridLinkSettings
+---@param services table
+---@return AeroGridLinkContext
+function linkStatus.create(parent, rect, settings, services)
+    local context = beginConstruction(parent, rect, settings, services)
+    if services.staged ~= true then
+        while not linkStatus.construct(context, rect) do
+        end
+    end
     return context
 end
 
@@ -1099,35 +1133,18 @@ function linkStatus.apply(context, drawn)
     end
 end
 
---- Advance the panel, repainting only when something drawn changed.
----@param context AeroGridLinkContext
-function linkStatus.refresh(context)
-    if not context.rssiFeed and not context.qualityFeed then
-        return
+function linkStatus.cancelRefresh(context)
+    if context.createStage then
+        context.createInvalidated = true
     end
-    local reading = linkStatus.read(context)
-    local noLink = reading.linkDown and reading.available
-    local digits = noLink and "NO LINK" or "-100"
-    if context.sample.digits ~= digits then
-        context.sample.digits = digits
-        context.sample.unit = noLink and "" or "dBm"
-        linkStatus.update(context, context.rect)
-        context.rendered = nil
-    end
-    local changed, drawn = context.primitives.changed(context, linkStatus.render)
-    if changed then
-        linkStatus.apply(context, drawn)
+    context.primitives.invalidateReflow(context)
+    if context.refreshWork then
+        context.refreshWork, context.rendered = nil, nil
     end
 end
 
---- Reposition after a zone change.
----@param context AeroGridLinkContext
----@param rect AeroGridRect
-function linkStatus.update(context, rect)
+local function applyGeometry(context, rect, area)
     context.rect = rect
-    local area =
-        linkStatus.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts, context.sample)
-
     context.primitives.resizeHeader(context, rect, area.frame, context.settings.label)
     context.primitives.setFont(context.value, area.value)
     context.value:set({
@@ -1222,10 +1239,190 @@ function linkStatus.update(context, rect)
         area.pad,
         area.barY,
         area.content,
-        linkStatus.fraction(context.settings, context.reading, context.primitives),
+        (context.text == "NO LINK" or context.stateName == "unavailable") and 0
+            or linkStatus.fraction(context.settings, context.reading, context.primitives),
         area.showVisual == context.showVisual
     )
     context.showVisual = area.showVisual
 end
+
+local FEEDS = { "rssiFeed", "qualityFeed", "modeFeed", "snrFeed", "powerFeed", "minimumFeed", "link" }
+
+local function snapshot(feed)
+    if feed then
+        return {
+            name = feed.name,
+            known = feed.known,
+            available = feed.available,
+            stale = feed.stale,
+            value = feed.value,
+            precision = feed.precision,
+            unitText = feed.unitText,
+            live = feed.live,
+            indicator = feed.indicator,
+            rssi = feed.rssi,
+        }
+    end
+end
+
+local function frozen(context, fn)
+    local original, feeds = {}, context.refreshWork.feeds
+    for _, key in ipairs(FEEDS) do
+        original[key], context[key] = context[key], feeds[key]
+    end
+    local ok, first, second = pcall(fn, context)
+    for _, key in ipairs(FEEDS) do
+        context[key] = original[key]
+    end
+    if not ok then
+        error(first, 0)
+    end
+    return first, second
+end
+
+local function prepareTask(context)
+    local reading = linkStatus.read(context)
+    local noLink = reading.linkDown and reading.available
+    local sample = { digits = noLink and "NO LINK" or "-100", unit = noLink and "" or "dBm" }
+    local work = context.refreshWork
+    work.sample = sample
+    work.stage = context.sample.digits ~= sample.digits and "geometry" or "render"
+end
+
+local function renderTask(context)
+    return context.primitives.changed(context, linkStatus.render)
+end
+
+function linkStatus.stageOf(context)
+    return context.refreshWork and context.refreshWork.stage or "prepare", 1
+end
+
+function linkStatus.step(context, _, stage)
+    context.used = 0
+    if stage ~= linkStatus.stageOf(context) then
+        return nil, true
+    end
+    context.used = 1
+    if stage == "prepare" then
+        if not context.rssiFeed and not context.qualityFeed then
+            return
+        end
+        local feeds = {}
+        for _, key in ipairs(FEEDS) do
+            feeds[key] = snapshot(context[key])
+        end
+        context.refreshWork = { feeds = feeds }
+        frozen(context, prepareTask)
+    elseif stage == "geometry" then
+        local work = context.refreshWork
+        work.area = linkStatus.regionsFor(
+            context.theme,
+            context.themeBuilder,
+            context.rect,
+            context.layout,
+            context.fonts,
+            work.sample
+        )
+        work.stage = "layout"
+    elseif stage == "layout" then
+        local work = context.refreshWork
+        context.sample = work.sample
+        applyGeometry(context, context.rect, work.area)
+        work.stage = "render"
+    elseif stage == "render" then
+        local changed, drawn = frozen(context, renderTask)
+        if not changed then
+            context.refreshWork = nil
+            return
+        end
+        context.refreshWork.drawn, context.refreshWork.stage = drawn, "apply"
+    else
+        linkStatus.apply(context, context.refreshWork.drawn)
+        context.refreshWork = nil
+        return
+    end
+    return nil, true
+end
+
+--- Reposition after a zone change.
+---@param context AeroGridLinkContext
+---@param rect AeroGridRect
+function linkStatus.update(context, rect)
+    while context.createStage do
+        linkStatus.construct(context, rect)
+    end
+    linkStatus.cancelRefresh(context)
+    local area =
+        linkStatus.regionsFor(context.theme, context.themeBuilder, rect, context.layout, context.fonts, context.sample)
+    applyGeometry(context, rect, area)
+end
+
+function linkStatus.reflow(context, rect, _, _, _, begin)
+    local captured = context.primitives.reflowStart(context, rect, begin)
+    if captured then
+        linkStatus.cancelRefresh(context)
+        context.reflowWork = {
+            stage = "geometry",
+            rect = captured,
+            frame = context.themeBuilder.frame(context.theme, captured, context.fonts),
+        }
+        return false
+    end
+    local work = context.reflowWork
+    if not work then
+        return true
+    elseif work.stage == "geometry" then
+        work.area = linkStatus.regionsFor(
+            context.theme,
+            context.themeBuilder,
+            work.rect,
+            context.layout,
+            context.fonts,
+            context.sample,
+            nil,
+            work.frame
+        )
+        work.frame, work.stage = nil, "apply"
+    elseif work.stage == "apply" then
+        applyGeometry(context, work.rect, work.area)
+        context.reflowWork = nil
+        return true
+    else
+        error("unknown link-status reflow stage: " .. tostring(work.stage))
+    end
+    return false
+end
+
+function linkStatus.construct(context, rect)
+    local stage = context.createStage
+    if stage == "geometry" then
+        createGeometry(context, rect)
+    elseif stage == "header" then
+        createFrame(context)
+    elseif stage == "controls" then
+        createControls(context)
+        context.createStage = "publish"
+    elseif stage == "place" then
+        applyGeometry(context, context.rect, context.area)
+        context.primitives.setFont(context.unit, context.area.unitFont)
+        context.createStage = "publish"
+    elseif stage == "publish" then
+        if context.createInvalidated or not context.primitives.sameRect(context.rect, rect) then
+            context.createStage = "geometry"
+        else
+            local _, drawn = context.primitives.changed(context, linkStatus.render)
+            linkStatus.apply(context, drawn)
+            context.createStage, context.createPresentation = nil, nil
+            return true
+        end
+    elseif not stage then
+        return true
+    else
+        error("unknown link-status construction stage: " .. tostring(stage))
+    end
+    return false
+end
+
+linkStatus.reflowDecl = { callback = linkStatus.reflow }
 
 return linkStatus

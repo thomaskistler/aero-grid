@@ -36,9 +36,19 @@ end
 services.history = fake
 local settings = { armSwitch = "L01", metrics = { { source = "V" }, { source = "A" }, { source = "Alt" } } }
 local panel = chart.create(host.page, { x = 0, y = 0, w = 238, h = 65 }, settings, services)
+local panelHost = fixture.module("lib/panel_host.lua")
+local tasks = setmetatable({}, { __mode = "k" })
+local function stepChart(instance)
+    local task = tasks[instance]
+    if not task then
+        task = panelHost.task({ module = chart, instance = instance, interval = 20 })
+        tasks[instance] = task
+    end
+    return task:step(task.want or 1, task.stage, 0) == 1
+end
 local function settle()
     for _ = 1, 150 do
-        chart.refresh(panel)
+        stepChart(panel)
     end
 end
 settle()
@@ -121,7 +131,7 @@ intervals[128] = { 2500, 3500, true, true }
 settle()
 assert(not panel.flightBands[64].hidden)
 session.flightLast, session.flightRevision = 0, session.flightRevision + 1
-chart.refresh(panel)
+stepChart(panel)
 session.flightRevision = session.flightRevision + 1
 settle()
 assert(
@@ -150,14 +160,14 @@ services.history = setmetatable({
 })
 local preview = chart.create(host.page, { x = 0, y = 0, w = 238, h = 65 }, settings, services)
 for _ = 1, 10 do
-    chart.refresh(preview)
+    stepChart(preview)
 end
 equal(preview.status.properties.text, "PREVIEW: NO DATA")
 equal(preview.history, readOnly)
 equal(preview.session.elapsed, 0)
 services.history = nil
 local unavailablePreview = chart.create(host.page, { x = 0, y = 0, w = 238, h = 65 }, settings, services)
-chart.refresh(unavailablePreview)
+for _ = 1, 20 do stepChart(unavailablePreview) end
 equal(unavailablePreview.status.properties.text, "HISTORY N/A", "a preview must not mask a missing history service")
 
 local lightHost = fixture.createLoaded(nil, { Layout = "Empty", Theme = "modern-light" })
@@ -167,7 +177,7 @@ session.flightFirst, session.flightLast, session.flightRevision = 1, 2, session.
 intervals[2] = { 500, 4000, true, true }
 local light = chart.create(lightHost.page, { x = 0, y = 0, w = 238, h = 65 }, settings, lightServices)
 for _ = 1, 150 do
-    chart.refresh(light)
+    stepChart(light)
 end
 local lightBand = light.flightBands[2].properties
 equal(lightBand.color, lcd.RGB(0x000000), "light themes darken the panel background without an accent tint")
@@ -234,15 +244,15 @@ function history:recordingBreak() end
 services.preview, services.history = false, history
 local consistent = chart.create(host.page, { x = 0, y = 0, w = 472, h = 196 }, settings, services)
 local previous = consistent.plotRoot
-local _, unfinished = chart.refresh(consistent)
+local unfinished = stepChart(consistent)
 assert(unfinished and consistent.plotRoot.hidden and not previous.hidden)
 local captured = consistent.series[1].tailAt
 local committed = false
-for step = 1, 200 do
+for step = 1, 2000 do
     live.elapsed = live.elapsed + 10
     samples[#samples + 1] = { live.elapsed, step % 17 }
     feed.last, feed.revision, feed.plotRevision = #samples, feed.revision + 1, feed.plotRevision + 1
-    _, unfinished = chart.refresh(consistent)
+    unfinished = stepChart(consistent)
     if not unfinished then
         committed = true
         break
@@ -264,8 +274,8 @@ assert(arm.markers[arm.markerKeys[1]].active)
 equal(arm.markers[arm.markerKeys[1]].object.properties.dashGap, nil)
 feed.stale, feed.revision = true, feed.revision + 1
 live.elapsed = live.elapsed + 1000
-for _ = 1, 200 do
-    local _, pending = chart.refresh(consistent)
+for _ = 1, 2000 do
+    local pending = stepChart(consistent)
     if not pending then
         break
     end
@@ -278,8 +288,8 @@ equal(
 )
 
 local function finishFrame(target)
-    for _ = 1, 200 do
-        local _, pending = chart.refresh(target)
+    for _ = 1, 2000 do
+        local pending = stepChart(target)
         if not pending then
             return
         end
@@ -562,28 +572,3 @@ do
     equal(pausedPanel.axis.gap, 0, "an unusably narrow plot must not divide by zero or create zero-width glyphs")
     equal(#activeSeams(pausedPanel), 0)
 end
-
-local scheduler = fixture.createLoaded(nil, { Layout = "Empty", Theme = "modern-dark" })
-local turns = {}
-local function scheduled(id, kind)
-    return {
-        placement = { id = id, type = kind },
-        instance = {},
-        interval = 1,
-        module = {
-            id = kind,
-            refresh = function()
-                turns[id] = (turns[id] or 0) + 1
-                return 1, kind == "chart" and turns[id] < 3
-            end,
-        },
-    }
-end
-scheduler.panels = { scheduled("first", "chart"), scheduled("second", "chart"), scheduled("reading", "metric") }
-fixture.pump(scheduler, 2)
-equal(turns.first, 2)
-equal(turns.second, nil, "another chart must wait for the current chart's complete frame")
-equal(turns.reading, 2, "staged charts must not starve ordinary panels")
-fixture.pump(scheduler, 1)
-equal(turns.first, 3)
-equal(turns.second, 1, "the next chart starts once the preceding frame is complete")

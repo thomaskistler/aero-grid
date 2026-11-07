@@ -64,12 +64,14 @@ end
 untilState(settled)
 local owner = assert(first.flightBroker)
 assert(owner == second.flightBroker)
+local owningContext = owner:owningContext()
 owner:setDocument({
     revision = 1,
     modelFilename = owner.filename,
     sessionReset = "L03",
 })
 pump(20)
+equal(owner:owningContext(), owningContext, "active reconciliation must not trigger a Flight handoff")
 assert(not owner.session, "legacy chart arming must not require a flight detector")
 fixture.radio.logicalSwitches[64] = true
 fixture.radio.values[fixture.radio.fields.Alt.id] = 10

@@ -5,7 +5,6 @@ local chart = {
     apiVersion = 1,
     supportedSpans = { "2x1", "3x1", "4x1", "2x2", "3x2", "4x2", "3x3", "4x3", "4x4" },
     refreshInterval = 20,
-    refreshCost = 6,
     settings = {
         { key = "label", label = "Label", type = "string", default = "" },
         { key = "armSwitch", label = "Arm switch position", type = "string", default = "", legacyArm = true },
@@ -89,7 +88,7 @@ local chart = {
 local DURATIONS = { ["30s"] = 30, ["1m"] = 60, ["2m"] = 120, ["5m"] = 300, ["10m"] = 600 }
 local COLORS = { "cyan", "orange", "green" }
 local LEGEND_FONTS = { MIDSIZE, 0, SMLSIZE }
-local PROJECTION_CAP = 7
+local POINT_RETIRE_CAP = 128
 local BREAK_WIDTH = 24
 local textCache = setmetatable({}, { __mode = "k" })
 
@@ -104,7 +103,7 @@ local function finite(value)
     return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
 end
 
-function chart.validateSettings(settings, _, _, modelArmed)
+function chart.beginSettingsValidation(settings, _, _, modelArmed)
     local warnings = {}
     local arm = settings.armSwitch
     if
@@ -115,49 +114,83 @@ function chart.validateSettings(settings, _, _, modelArmed)
     then
         warnings[#warnings + 1] = "armSwitch must be blank, a physical switch position, or a logical switch"
     end
+    local work = { settings = settings, warnings = warnings, count = 0, phase = "entry" }
     if type(settings.metrics) ~= "table" then
-        return { "metrics must contain a contiguous list of up to 3 sources" }
+        work.warnings = { "metrics must contain a contiguous list of up to 3 sources" }
+        work.phase = "done"
+    else
+        work.iterator, work.state, work.key = pairs(settings.metrics)
     end
-    local count, sharedMin, sharedMax = 0, nil, nil
-    for key, entry in pairs(settings.metrics) do
-        count = count + 1
+    return work
+end
+
+function chart.advanceSettingsValidation(work)
+    local settings, warnings = work.settings, work.warnings
+    if work.phase == "entry" then
+        local key, entry = work.iterator(work.state, work.key)
+        work.key = key
+        if key == nil then
+            if work.count > 3 or #settings.metrics ~= work.count then
+                warnings[#warnings + 1] = "metrics must contain a contiguous list of up to 3 sources"
+            end
+            if
+                settings.scaling ~= "independent"
+                and work.sharedMin
+                and work.sharedMax
+                and work.sharedMin >= work.sharedMax
+            then
+                warnings[#warnings + 1] = "shared rangeMax must be greater than shared rangeMin"
+            end
+            work.phase = "done"
+            return true
+        end
+        work.count = work.count + 1
         local prefix = "metrics[" .. tostring(key) .. "]"
         if type(key) ~= "number" or key % 1 ~= 0 or key < 1 or key > 3 or type(entry) ~= "table" then
             warnings[#warnings + 1] = prefix .. " must be a source mapping at an index from 1 to 3"
         else
-            for field, value in pairs(entry) do
-                local valid
-                if field == "source" or field == "label" or field == "unit" then
-                    valid = type(value) == "string"
-                elseif field == "precision" then
-                    valid = finite(value) and value >= 0 and value <= 3 and value % 1 == 0
-                elseif field == "rangeMin" or field == "rangeMax" then
-                    valid = finite(value)
-                elseif field == "accent" then
-                    valid = value == "cyan" or value == "green" or value == "orange" or value == "amber"
-                end
-                if not valid then
-                    warnings[#warnings + 1] = prefix .. "." .. tostring(field) .. " is invalid"
-                end
+            work.fields, work.entry, work.field = pairs(entry)
+            work.value, work.prefix, work.phase = entry, prefix, "field"
+        end
+    elseif work.phase == "field" then
+        local field, value = work.fields(work.entry, work.field)
+        work.field = field
+        if field ~= nil then
+            local valid
+            if field == "source" or field == "label" or field == "unit" then
+                valid = type(value) == "string"
+            elseif field == "precision" then
+                valid = finite(value) and value >= 0 and value <= 3 and value % 1 == 0
+            elseif field == "rangeMin" or field == "rangeMax" then
+                valid = finite(value)
+            elseif field == "accent" then
+                valid = value == "cyan" or value == "green" or value == "orange" or value == "amber"
             end
+            if not valid then
+                warnings[#warnings + 1] = work.prefix .. "." .. tostring(field) .. " is invalid"
+            end
+        else
+            local entry, prefix = work.value, work.prefix
             if finite(entry.rangeMin) and finite(entry.rangeMax) and entry.rangeMin >= entry.rangeMax then
                 warnings[#warnings + 1] = prefix .. ".rangeMax must be greater than rangeMin"
             end
             if finite(entry.rangeMin) then
-                sharedMin = sharedMin and math.min(sharedMin, entry.rangeMin) or entry.rangeMin
+                work.sharedMin = work.sharedMin and math.min(work.sharedMin, entry.rangeMin) or entry.rangeMin
             end
             if finite(entry.rangeMax) then
-                sharedMax = sharedMax and math.max(sharedMax, entry.rangeMax) or entry.rangeMax
+                work.sharedMax = work.sharedMax and math.max(work.sharedMax, entry.rangeMax) or entry.rangeMax
             end
+            work.phase = "entry"
         end
     end
-    if count > 3 or #settings.metrics ~= count then
-        warnings[#warnings + 1] = "metrics must contain a contiguous list of up to 3 sources"
+    return work.phase == "done"
+end
+
+function chart.validateSettings(settings, span, config, modelArmed)
+    local work = chart.beginSettingsValidation(settings, span, config, modelArmed)
+    while not chart.advanceSettingsValidation(work) do
     end
-    if settings.scaling ~= "independent" and sharedMin and sharedMax and sharedMin >= sharedMax then
-        warnings[#warnings + 1] = "shared rangeMax must be greater than shared rangeMin"
-    end
-    return warnings
+    return work.warnings
 end
 
 local function caption(entry)
@@ -230,7 +263,7 @@ local function timeX(context, at, before)
     return context.area.x + math.floor((at - context.start) / context.window * context.area.w + 0.5)
 end
 
-local function prepareAxis(context)
+local function prepareAxis(context, limit)
     local session, area = context.session, context.area
     local window = timeWindow(context.settings, session.elapsed)
     local start = context.settings.timeRange == "rolling" and math.max(0, session.elapsed - window) or 0
@@ -251,7 +284,7 @@ local function prepareAxis(context)
     end
     -- Keep room for recorded data when fixed-width breaks crowd the axis.
     local capacity = math.max(1, area.w // (BREAK_WIDTH * 2))
-    for _ = 1, 32 do
+    for _ = 1, limit or 32 do
         if work.index < (session.resumeFirst or 1) or not context.history.recordingBreak then
             work.done = true
             break
@@ -311,7 +344,7 @@ function chart.gridInterval(window, pixels)
     end
 end
 
-local function updateGrid(context)
+local function updateGrid(context, limit)
     local area, start, window = context.area, context.start, context.window
     if context.gridLayoutVersion ~= context.version then
         context.gridStep = chart.gridInterval(window, area.w)
@@ -320,7 +353,7 @@ local function updateGrid(context)
         context.gridLayoutVersion = context.version
     end
     -- Fill a fixed pool gradually, behind the traces, and limit native changes.
-    for _ = 1, #context.grid < GRID_CAP and 1 or 3 do
+    for _ = 1, limit or (#context.grid < GRID_CAP and 1 or 3) do
         local index = context.gridCursor
         local line = context.grid[index]
         if not line then
@@ -494,7 +527,7 @@ local function markBoundary(context, item, pass, at, armed)
     end
 end
 
-local function updateSessionMarkers(context, item, first, last, revision, readBoundary)
+local function updateSessionMarkers(context, item, first, last, revision, readBoundary, limit)
     local session, service = context.session, context.history
     if not service or not readBoundary then
         return true
@@ -517,9 +550,9 @@ local function updateSessionMarkers(context, item, first, last, revision, readBo
         item.markerIndex, item.markerPhase = 1, "hide"
     end
     local pass = item.job
-    for _ = 1, 64 do
+    for _ = 1, limit or 64 do
         if pass.index > (last or 0) then
-            if applyMarkers(context, item) then
+            if applyMarkers(context, item, limit) then
                 item.drawnRevision, item.drawnVersion = revision, context.version
                 item.drawnResumeRevision = session.resumeRevision
                 item.marked = pass.marked
@@ -662,7 +695,7 @@ local function legendWidth(context, font, showExtrema)
     return width
 end
 
-function chart.geometry(context, rect)
+local function startGeometry(context, rect)
     local builder = context.themeBuilder
     local fonts = { label = SMLSIZE, badge = TINSIZE }
     local frame = builder.frame(context.theme, rect, fonts)
@@ -695,28 +728,59 @@ function chart.geometry(context, rect)
     end
     local fontLimit =
         math.max(builder.fontHeight(SMLSIZE), math.floor(rect.h / (context.topLegend and 6 or math.max(6, count * 3))))
-    local font, required
-    -- Readout growth can step down the font; resizing restarts the ladder.
-    for index = count == 0 and #LEGEND_FONTS or context.legendIndex or 1, #LEGEND_FONTS do
-        local candidate = LEGEND_FONTS[index]
-        local rowHeight = builder.fontHeight(candidate)
-            + (showExtrema and builder.fontAscent(extremaFont(candidate)) or 0)
-        local groups = context.topLegend and 1 or count
-        if
-            builder.fontHeight(candidate) <= fontLimit
-                and groups * rowHeight + (context.topLegend and 12 or 0) <= available
-            or candidate == SMLSIZE
-        then
-            local width = legendWidth(context, candidate, showExtrema)
-            if candidate == context.legendFont then
-                width = math.max(width, context.legendWidth or 0)
-            end
-            if width <= (context.topLegend and cellWidth or math.floor(content / 2)) or candidate == SMLSIZE then
-                font, required, context.legendIndex = candidate, width, index
-                break
-            end
+    return {
+        frame = frame,
+        content = content,
+        count = count,
+        gap = gap,
+        first = first,
+        top = top,
+        legendX = legendX,
+        legendContent = legendContent,
+        cellWidth = cellWidth,
+        available = available,
+        showExtrema = showExtrema,
+        fontLimit = fontLimit,
+        index = count == 0 and #LEGEND_FONTS or context.legendIndex or 1,
+    }
+end
+
+local function selectLegendFont(context, work)
+    local builder = context.themeBuilder
+    local index = work.index
+    local candidate = LEGEND_FONTS[index]
+    local rowHeight = builder.fontHeight(candidate)
+        + (work.showExtrema and builder.fontAscent(extremaFont(candidate)) or 0)
+    local groups = context.topLegend and 1 or work.count
+    if
+        builder.fontHeight(candidate) <= work.fontLimit
+            and groups * rowHeight + (context.topLegend and 12 or 0) <= work.available
+        or candidate == SMLSIZE
+    then
+        local width = legendWidth(context, candidate, work.showExtrema)
+        if candidate == context.legendFont then
+            width = math.max(width, context.legendWidth or 0)
+        end
+        if width <= (context.topLegend and work.cellWidth or math.floor(work.content / 2)) or candidate == SMLSIZE then
+            work.font, work.required, context.legendIndex = candidate, width, index
+            return true
         end
     end
+    work.index = index + 1
+    return false
+end
+
+local function layoutGeometry(context, rect, work)
+    if not work then
+        work = startGeometry(context, rect)
+        while not selectLegendFont(context, work) do
+        end
+    end
+    local builder = context.themeBuilder
+    local frame, content, count, gap = work.frame, work.content, work.count, work.gap
+    local first, top, available = work.first, work.top, work.available
+    local legendX, legendContent, cellWidth = work.legendX, work.legendContent, work.cellWidth
+    local showExtrema, font, required = work.showExtrema, work.font, work.required
     context.legendFont, context.legendWidth = font, required
     context.extremaFont = extremaFont(font)
     local legend = math.min(required, context.topLegend and cellWidth or math.max(24, content - 28))
@@ -764,50 +828,77 @@ function chart.geometry(context, rect)
     if context.topLegend then
         context.legendBaseline = count > 0 and top - gap or 0
     end
-    for index, item in ipairs(context.series) do
-        item.legendX, item.legendW, item.legendAlignment = nil, nil, nil
-        local y = first + (index - 1) * step
-        local itemNameWidth = nameWidth
-        if context.topLegend then
-            local alignment = count == 1 and 1 or (index - 1) / (count - 1)
-            item.legendAlignment = alignment
-            item.legendW = legend
-            item.legendX = legendX + math.floor((legendContent - legend) * alignment)
-            y = first
-            local value = math.min(builder.measureText(font, item.valueText or "--"), legend)
-            local unit = math.min(builder.measureText(font, item.unitText or ""), math.max(0, legend - value))
-            itemNameWidth = math.max(0, legend - value - unit - 4)
-        end
-        local name = builder.fitHeading(item.caption, itemNameWidth, font, font)
-        context.primitives.setFont(item.name, font)
-        context.primitives.setFont(item.value, font)
-        context.primitives.setFont(item.unit, font)
-        context.primitives.setFont(item.extrema, context.extremaFont)
-        context.primitives.setFont(item.maximum, context.extremaFont)
-        item.nameText, item.nameBudget = name, itemNameWidth
-        item.name:set({ text = name })
-        positionReading(context, item, y)
-        positionExtrema(context, item, y + lineHeight)
-        if showExtrema then
-            lvgl.show(item.extrema)
-            lvgl.show(item.maximum)
-            lvgl.show(item.minSymbol)
-            lvgl.show(item.maxSymbol)
-        else
-            lvgl.hide(item.extrema)
-            lvgl.hide(item.maximum)
-            lvgl.hide(item.minSymbol)
-            lvgl.hide(item.maxSymbol)
-        end
-        if itemNameWidth < 8 then
-            lvgl.hide(item.name)
-        else
-            lvgl.show(item.name)
-        end
+    return {
+        first = first,
+        step = step,
+        nameWidth = nameWidth,
+        legend = legend,
+        legendX = legendX,
+        legendContent = legendContent,
+        lineHeight = lineHeight,
+    }
+end
+
+local function positionLegend(context, index, item, layout)
+    local builder, font = context.themeBuilder, context.legendFont
+    local count, showExtrema = #context.series, context.showExtrema
+    local legend, legendX = layout.legend, layout.legendX
+    item.legendX, item.legendW, item.legendAlignment = nil, nil, nil
+    local y = layout.first + (index - 1) * layout.step
+    local itemNameWidth = layout.nameWidth
+    if context.topLegend then
+        local alignment = count == 1 and 1 or (index - 1) / (count - 1)
+        item.legendAlignment = alignment
+        item.legendW = legend
+        item.legendX = legendX + math.floor((layout.legendContent - legend) * alignment)
+        y = layout.first
+        local value = math.min(builder.measureText(font, item.valueText or "--"), legend)
+        local unit = math.min(builder.measureText(font, item.unitText or ""), math.max(0, legend - value))
+        itemNameWidth = math.max(0, legend - value - unit - 4)
     end
+    local name = builder.fitHeading(item.caption, itemNameWidth, font, font)
+    context.primitives.setFont(item.name, font)
+    context.primitives.setFont(item.value, font)
+    context.primitives.setFont(item.unit, font)
+    context.primitives.setFont(item.extrema, context.extremaFont)
+    context.primitives.setFont(item.maximum, context.extremaFont)
+    item.nameText, item.nameBudget = name, itemNameWidth
+    item.name:set({ text = name })
+    positionReading(context, item, y)
+    positionExtrema(context, item, y + layout.lineHeight)
+    if showExtrema then
+        lvgl.show(item.extrema)
+        lvgl.show(item.maximum)
+        lvgl.show(item.minSymbol)
+        lvgl.show(item.maxSymbol)
+    else
+        lvgl.hide(item.extrema)
+        lvgl.hide(item.maximum)
+        lvgl.hide(item.minSymbol)
+        lvgl.hide(item.maxSymbol)
+    end
+
+    if itemNameWidth < 8 then
+        lvgl.hide(item.name)
+    else
+        lvgl.show(item.name)
+    end
+end
+
+local function finishGeometry(context)
     context.version = context.version + 1
     context.geometryVersion = (context.geometryVersion or 0) + 1
     updateHeader(context)
+end
+
+function chart.geometry(context, rect)
+    context.readingWork = nil
+    context.taskPhase = nil
+    local layout = layoutGeometry(context, rect)
+    for index, item in ipairs(context.series) do
+        positionLegend(context, index, item, layout)
+    end
+    finishGeometry(context)
 end
 
 local function normalRange(low, high)
@@ -942,9 +1033,6 @@ local function finishRun(run)
         local second = run.pool[2] or {}
         second[1], second[2] = first[1], first[2]
         run.pool[2], run.pts[2], run.size = second, second, 2
-    end
-    for index = #run.pts, run.size + 1, -1 do
-        run.pts[index] = nil
     end
 end
 
@@ -1132,10 +1220,10 @@ local function showMarker(marker)
     marker.active = true
 end
 
-applyMarkers = function(context, item)
+applyMarkers = function(context, item, limit)
     local job = item.job
     local changes = 0
-    for _ = 1, 16 do
+    for _ = 1, limit or 16 do
         local keys = item.markerPhase == "hide" and item.markerKeys or job.markerColumns
         local key = keys[item.markerIndex]
         if not key then
@@ -1270,50 +1358,50 @@ end
 
 local function applyRuns(context, item)
     local limit = math.max(item.runCount, #item.runs)
-    local changes = 0
-    for _ = 1, 16 do
-        local index = item.applyIndex
-        if index > limit then
-            return applyMarkers(context, item)
+    local index = item.applyIndex
+    if index > limit then
+        return applyMarkers(context, item, 1)
+    end
+    local run = item.runs[index]
+    if index <= item.runCount then
+        local last = #run.pts
+        for point = last, math.max(run.size + 1, last - POINT_RETIRE_CAP + 1), -1 do
+            run.pts[point] = nil
         end
-        local run = item.runs[index]
-        if index <= item.runCount and run.size >= 2 and run.dotted then
-            if not applyConnector(context, item, run) then
-                return false
-            end
-            changes = changes + 1
-        elseif index <= item.runCount and run.size >= 2 then
-            if run.connector then
-                lvgl.hide(run.connector)
-            end
-            if run.line then
-                run.changes.pts, run.changes.color = run.pts, item.color
-                run.line:set(run.changes)
-                if not run.visible then
-                    lvgl.show(run.line)
-                end
-            else
-                run.line = lvgl.line(context.plotRoot, { pts = run.pts, color = item.color, thickness = 1 })
-            end
-            run.visible = true
-            changes = changes + 1
-        else
-            if run.connector then
-                lvgl.hide(run.connector)
-            end
-            if run.line and run.visible then
-                lvgl.hide(run.line)
-                run.visible = false
-                changes = changes + 1
-            end
-        end
-        item.applyIndex = index + 1
-        if changes == 4 then
-            break
+        if #run.pts > run.size then
+            return false
         end
     end
+    if index <= item.runCount and run.size >= 2 and run.dotted then
+        if not applyConnector(context, item, run) then
+            return false
+        end
+    elseif index <= item.runCount and run.size >= 2 then
+        if run.connector then
+            lvgl.hide(run.connector)
+        end
+        if run.line then
+            run.changes.pts, run.changes.color = run.pts, item.color
+            run.line:set(run.changes)
+            if not run.visible then
+                lvgl.show(run.line)
+            end
+        else
+            run.line = lvgl.line(context.plotRoot, { pts = run.pts, color = item.color, thickness = 1 })
+        end
+        run.visible = true
+    else
+        if run.connector then
+            lvgl.hide(run.connector)
+        end
+        if run.line and run.visible then
+            lvgl.hide(run.line)
+            run.visible = false
+        end
+    end
+    item.applyIndex = index + 1
     if item.applyIndex > limit then
-        return applyMarkers(context, item)
+        return applyMarkers(context, item, 1)
     end
     return false
 end
@@ -1323,7 +1411,7 @@ function chart.intervalFor(window, pixels, sources)
     return math.max(5, math.floor(perPixel / math.max(1, sources)))
 end
 
-function chart.render(context)
+local function readingsChanged(context)
     local changed = context.readingGeometry ~= context.geometryVersion
     for _, item in ipairs(context.series) do
         local feed = item.feed
@@ -1338,39 +1426,38 @@ function chart.render(context)
             break
         end
     end
-    if not changed then
-        return false
+    return changed
+end
+
+local function renderReading(context, item, feed)
+    item.readingRevision = feed and feed.revision
+    item.readingUnit, item.readingPrecision = item.settings.unit, item.settings.precision
+    local precision = item.settings.precision or feed and feed.precision or 0
+    local unit = item.settings.unit
+    if unit == nil then
+        unit = feed and feed.unitText or ""
     end
-    local builder = context.themeBuilder
+    local value = chart.format(feed and feed.value, precision)
+    item.valueText, item.unitText = value, value ~= "--" and unit or ""
+    item.readout = value .. item.unitText
+    local minimumText = chart.format(feed and feed.min, precision)
+    local maximumText = chart.format(feed and feed.max, precision)
+    if item.minimumText ~= minimumText or item.maximumText ~= maximumText then
+        item.extremaDirty = true
+    end
+    item.minimumText, item.maximumText = minimumText, maximumText
+    local color = feed and feed.stale and context.theme.color.textFaint or context.theme.color.text
+    text(item.value, value, color)
+    text(item.unit, item.unitText, color)
+    if context.showExtrema then
+        text(item.extrema, minimumText, context.theme.color.textFaint)
+        text(item.maximum, maximumText, context.theme.color.textFaint)
+    end
+    return context.showExtrema and extremaWidth(context, item, context.extremaFont) or 0
+end
+
+local function readingGeometryWidth(context, width)
     local font = context.legendFont
-    local width = 64
-    for _, item in ipairs(context.series) do
-        local feed = item.feed
-        item.readingRevision = feed and feed.revision
-        item.readingUnit, item.readingPrecision = item.settings.unit, item.settings.precision
-        local precision = item.settings.precision or feed and feed.precision or 0
-        local unit = item.settings.unit
-        if unit == nil then
-            unit = feed and feed.unitText or ""
-        end
-        local value = chart.format(feed and feed.value, precision)
-        item.valueText, item.unitText = value, value ~= "--" and unit or ""
-        item.readout = value .. item.unitText
-        local minimumText = chart.format(feed and feed.min, precision)
-        local maximumText = chart.format(feed and feed.max, precision)
-        if item.minimumText ~= minimumText or item.maximumText ~= maximumText then
-            item.extremaDirty = true
-        end
-        item.minimumText, item.maximumText = minimumText, maximumText
-        width = math.max(width, context.showExtrema and extremaWidth(context, item, context.extremaFont) or 0)
-        local color = feed and feed.stale and context.theme.color.textFaint or context.theme.color.text
-        text(item.value, value, color)
-        text(item.unit, item.unitText, color)
-        if context.showExtrema then
-            text(item.extrema, minimumText, context.theme.color.textFaint)
-            text(item.maximum, maximumText, context.theme.color.textFaint)
-        end
-    end
     local valueWidth, unitWidth, nameWidth, rowWidth = readingWidths(context, font)
     width = math.max(width, context.topLegend and rowWidth or valueWidth + unitWidth + nameWidth + 4)
     if
@@ -1378,22 +1465,170 @@ function chart.render(context)
         or valueWidth > context.requiredValueWidth
         or unitWidth > context.requiredUnitWidth
     then
-        context.legendWidth = math.max(width, context.legendWidth or 0)
-        chart.geometry(context, context.rect)
+        return math.max(width, context.legendWidth or 0)
     end
-    for _, item in ipairs(context.series) do
-        positionReading(context, item, item.valueY)
-        if context.showExtrema and item.extremaDirty then
-            positionExtrema(context, item, item.extremaY)
+end
+
+-- Shared bounds include the enclosing frame's frozen-feed binding.
+chart.readingDecl = {
+    class = "normal",
+    exclusive = true,
+    first = "readings",
+    kinds = { steady = true },
+    stages = {
+        readings = { maxUnits = 1 },
+        measure = { maxUnits = 1 },
+        layout = { maxUnits = 1 },
+        font = { maxUnits = 1 },
+        position = { maxUnits = 1 },
+    },
+}
+
+function chart.readingStageOf(context)
+    return context.readingWork and context.readingWork.stage or "readings", 1
+end
+
+function chart.readingStep(context, _, stage)
+    context.used = 0
+    if stage ~= chart.readingStageOf(context) then
+        return nil, true
+    end
+    local work = context.readingWork
+    if not work then
+        context.used = 1
+        if not readingsChanged(context) then
+            return
+        end
+        work = { stage = "readings", index = 1, width = 64, feeds = {} }
+        for index, item in ipairs(context.series) do
+            local feed = item.feed
+            work.feeds[index] = feed
+                    and {
+                        revision = feed.revision,
+                        value = feed.value,
+                        min = feed.min,
+                        max = feed.max,
+                        stale = feed.stale,
+                        precision = feed.precision,
+                        unitText = feed.unitText,
+                    }
+                or false
+        end
+        context.readingWork = work
+    end
+    context.used = 1
+    if stage == "readings" then
+        local item = context.series[work.index]
+        if item then
+            work.width = math.max(work.width, renderReading(context, item, work.feeds[work.index] or nil))
+        end
+        work.index = work.index + 1
+        if work.index > #context.series then
+            work.stage = "measure"
+        end
+    elseif stage == "measure" then
+        local width = readingGeometryWidth(context, work.width)
+        work.stage, work.index = width and "layout" or "position", 1
+        if width then
+            context.legendWidth = width
+        end
+    elseif stage == "layout" then
+        if not work.geometry then
+            work.geometry = startGeometry(context, context.rect)
+            work.stage = "font"
+        else
+            work.layout = layoutGeometry(context, context.rect, work.geometry)
+            work.stage = "position"
+        end
+    elseif stage == "font" then
+        if selectLegendFont(context, work.geometry) then
+            work.stage = "layout"
+        end
+    else
+        local item = context.series[work.index]
+        if item then
+            if work.layout then
+                positionLegend(context, work.index, item, work.layout)
+            else
+                positionReading(context, item, item.valueY)
+                if context.showExtrema and item.extremaDirty then
+                    positionExtrema(context, item, item.extremaY)
+                end
+            end
+        end
+        work.index = work.index + 1
+        if work.index > #context.series then
+            if work.layout then
+                finishGeometry(context)
+            end
+            context.readingGeometry = context.geometryVersion
+            context.readingWork = nil
+            return
         end
     end
-    context.readingGeometry = context.geometryVersion
-    return true
+    return nil, true
+end
+
+chart.traceDecl = {
+    class = "normal",
+    exclusive = true,
+    first = "trace",
+    kinds = { steady = true },
+    stages = {
+        trace = { maxUnits = 1 },
+        project = { maxUnits = 2 },
+        apply = { maxUnits = 1 },
+    },
+}
+
+function chart.traceStageOf(context)
+    if context.pending then
+        return context.pending.job.projecting and "project" or "apply", context.pending.job.projecting and 2 or 1
+    end
+    return "trace", 1
+end
+
+function chart.traceStep(context, grant, stage)
+    context.used = 0
+    if stage ~= chart.traceStageOf(context) then
+        return nil, true
+    end
+    context.used = 1
+    if stage == "trace" then
+        for offset = 0, #context.series - 1 do
+            local index = (context.cursor + offset - 1) % #context.series + 1
+            local item = context.series[index]
+            if
+                item.feed
+                and (
+                    item.drawnVersion ~= context.version
+                    or item.drawnRevision ~= item.feed.plotRevision
+                    or item.drawnLow ~= item.low
+                    or item.drawnHigh ~= item.high
+                )
+            then
+                prepare(context, item)
+                context.pending = item
+                context.cursor = index % #context.series + 1
+                return nil, true
+            end
+        end
+    elseif stage == "project" then
+        project(context, context.pending, grant)
+        context.used = grant
+        if not context.frameExpired then
+            return nil, true
+        end
+    else
+        if applyRuns(context, context.pending) then
+            context.pending = nil
+        end
+        return nil, true
+    end
 end
 
 local function refreshPlot(context, creating)
     local session = context.session
-    local hasFlights = not creating and (session.flightLast or 0) > 0
     local elapsed = session and session.elapsed or 0
     local window = timeWindow(context.settings, elapsed)
     local start = context.settings.timeRange == "rolling" and math.max(0, elapsed - window) or 0
@@ -1402,27 +1637,14 @@ local function refreshPlot(context, creating)
         context.window, context.start, context.pixelStart = window, start, pixelStart
         context.version = context.version + 1
     end
-    local version = context.version
-    -- Stable readings also keep their ranges, leaving room for more projection.
-    -- Reserve the next non-overlay callback for projection after updating live
-    -- readings, so a continuous telemetry stream cannot starve the traces.
-    local readingsChanged = not context.projectionTurn and chart.render(context)
-    context.projectionTurn = false
-    local projectionCap = readingsChanged and PROJECTION_CAP or 8
-    if
-        hasFlights
-        and (context.history.sampledAt == context.clock() or context.history.boundaryAt == context.clock())
-    then
-        projectionCap = math.min(projectionCap, 9)
-    end
-    local reflowed = version ~= context.version
+    local readingsChanged = context.taskReadingsChanged
     if context.axis and context.axis.geometryVersion ~= context.geometryVersion then
         context.framePhase, context.pending = "axis", nil
         return 5
     end
     updateHeader(context)
     if not creating then
-        updateGrid(context)
+        updateGrid(context, 1)
     end
     local status = ""
     local full = false
@@ -1452,54 +1674,17 @@ local function refreshPlot(context, creating)
     end
     text(context.status, status, context.theme.color.textFaint)
     if status ~= "" and status ~= "HISTORY FULL" and status ~= "PREVIEW" and status ~= "PREVIEW: NO DATA" then
+        context.taskBlocked = true
         if readingsChanged then
             context.rangesReady = false
         end
         return 20
     end
+    context.taskBlocked = false
     if readingsChanged or not context.rangesReady then
         chart.ranges(context)
         context.rangesReady = true
     end
-    if reflowed or readingsChanged and hasFlights then
-        context.projectionTurn = true
-        return 5
-    end
-    if context.pending then
-        local item = context.pending
-        if item.job.geometryVersion ~= context.geometryVersion then
-            prepare(context, item)
-        end
-        if item.job.projecting then
-            project(context, item, projectionCap)
-            return 5
-        end
-        if applyRuns(context, item) then
-            context.pending = nil
-        end
-        return 5
-    end
-    for offset = 0, #context.series - 1 do
-        local index = (context.cursor + offset - 1) % #context.series + 1
-        local item = context.series[index]
-        if
-            item.feed
-            and (
-                item.drawnVersion ~= context.version
-                or item.drawnRevision ~= item.feed.plotRevision
-                or item.drawnLow ~= item.low
-                or item.drawnHigh ~= item.high
-            )
-        then
-            prepare(context, item)
-            project(context, item, projectionCap)
-            context.pending = item
-
-            context.cursor = index % #context.series + 1
-            break
-        end
-    end
-    return context.pending and 5 or chart.intervalFor(window, context.area.w, #context.series)
 end
 
 local PLOT_FIELDS = {
@@ -1640,6 +1825,11 @@ end
 
 --- Retain both plot buffers and retire old traces in bounded batches.
 function chart.resetSession(context)
+    if context.reflowWork then
+        context.reflowWork.invalidated = true
+    end
+    context.readingWork = nil
+    context.taskPhase = nil
     local reset = context.resetWork
     if not reset then
         if context.framePhase then
@@ -1649,7 +1839,7 @@ function chart.resetSession(context)
             end
         end
         context.framePhase, context.frameSession, context.frameExpired = nil, nil, nil
-        context.pending, context.axisWork, context.projectionTurn, context.rangesReady = nil, nil, nil, false
+        context.pending, context.axisWork, context.rangesReady = nil, nil, false
         reset = { groups = {}, group = 1, index = 1 }
         context.resetWork = reset
         local function markers(pool)
@@ -1709,10 +1899,23 @@ function chart.resetSession(context)
     return nil, true
 end
 
-function chart.refresh(context, creating)
-    if creating or not context.history or context.history.failed then
-        return refreshPlot(context, true)
+local function rollbackFrame(context)
+    exchange(context, context.backPlot, PLOT_FIELDS)
+    for index, item in ipairs(context.series) do
+        exchange(item, context.backPlot.series[index], SERIES_FIELDS)
     end
+    context.frameExpired, context.framePhase, context.frameSession, context.pending = nil, nil, nil, nil
+end
+
+local function publishFrame(context)
+    lvgl.hide(context.displayRoot)
+    lvgl.show(context.plotRoot)
+    context.framePhase = nil
+    context.frameGeometry = context.geometryVersion
+    return chart.intervalFor(context.window, context.area.w, #context.series)
+end
+
+local function advanceFrame(context, quota)
     if not context.framePhase then
         if not needsFrame(context) then
             return chart.intervalFor(context.window, context.area.w, #context.series)
@@ -1762,25 +1965,9 @@ function chart.refresh(context, creating)
     end
     local done = false
     if context.framePhase == "axis" then
-        if prepareAxis(context) then
+        if prepareAxis(context, quota) then
             context.framePhase = "traces"
         end
-    elseif context.framePhase == "traces" then
-        refreshPlot(context)
-        done = not context.pending and context.gridVersion == context.version
-        for _, item in ipairs(context.series) do
-            if item.feed and item.feed.available then
-                done = done
-                    and item.drawnVersion == context.version
-                    and item.drawnRevision == item.feed.plotRevision
-                    and item.drawnLow == item.low
-                    and item.drawnHigh == item.high
-            end
-        end
-        if done then
-            context.framePhase = "flights"
-        end
-        done = false
     elseif context.framePhase == "flights" then
         if not updateFlights(context) then
             context.framePhase = "resumes"
@@ -1792,7 +1979,8 @@ function chart.refresh(context, creating)
             context.session.armFirst,
             context.session.armLast,
             context.session.armRevision,
-            context.history.armBoundary
+            context.history.armBoundary,
+            quota
         )
     else
         if
@@ -1802,7 +1990,8 @@ function chart.refresh(context, creating)
                 context.session.resumeFirst,
                 context.session.resumeLast,
                 context.session.resumeRevision,
-                context.history.recordingBreak
+                context.history.recordingBreak,
+                quota
             )
         then
             context.framePhase = "arms"
@@ -1813,57 +2002,168 @@ function chart.refresh(context, creating)
         item.feed = item.liveFeed
     end
     if context.frameExpired then
-        exchange(context, context.backPlot, PLOT_FIELDS)
-        for index, item in ipairs(context.series) do
-            exchange(item, context.backPlot.series[index], SERIES_FIELDS)
-        end
-        context.frameExpired, context.framePhase, context.frameSession, context.pending = nil, nil, nil, nil
+        rollbackFrame(context)
         return 1, true
     end
     if done then
-        lvgl.hide(context.displayRoot)
-        lvgl.show(context.plotRoot)
-        context.framePhase = nil
-        context.frameGeometry = context.geometryVersion
-        return chart.intervalFor(context.window, context.area.w, #context.series)
+        context.framePhase = "publish"
     end
     return 1, true
 end
 
-function chart.create(parent, rect, settings, services)
-    local warnings = chart.validateSettings(settings, nil, nil, services.host and services.host.modelArmed)
-    assert(#warnings == 0, table.concat(warnings, "; "))
-    local context = {
-        theme = services.theme,
-        themeBuilder = services.themeBuilder,
-        primitives = services.primitives,
-        settings = settings,
-        history = services.history and (services.preview and services.history:preview() or services.history),
-        preview = services.preview == true,
-        clock = services.clock or getTime,
-        series = {},
-        version = 0,
-        cursor = 1,
-        rect = rect,
-        span = services.span,
-        area = {},
-        grid = {},
-        gridCursor = 1,
-        flightKeys = {},
-    }
-    local presentation = services.state("normal", settings.accent or "cyan")
-    context.panel = context.primitives.panel(parent, rect, context.theme, presentation)
-    context.plotHost = lvgl.box(context.panel.root, { x = 0, y = 0, w = rect.w, h = rect.h })
-    context.plotRoot = lvgl.box(context.plotHost, { x = 0, y = 0, w = rect.w, h = rect.h })
-    context.flightRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
-    context.gapRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
-    context.gridRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
-    context.session = context.history and context.history:session(settings.armSwitch)
-        or { elapsed = 0, configured = false, available = false, recording = false }
-    if context.preview then
-        context.previewMissing = context.session.previewMissing
+chart.decl = {
+    class = "normal",
+    exclusive = true,
+    first = "frame",
+    kinds = { steady = true },
+    stages = {
+        frame = { maxUnits = 1 },
+        axis = { maxUnits = 8 },
+        plot = { maxUnits = 1 },
+        flights = { maxUnits = 1 },
+        resumes = { maxUnits = 1 },
+        arms = { maxUnits = 1 },
+        publish = { maxUnits = 1 },
+        readings = chart.readingDecl.stages.readings,
+        measure = chart.readingDecl.stages.measure,
+        layout = chart.readingDecl.stages.layout,
+        font = chart.readingDecl.stages.font,
+        position = chart.readingDecl.stages.position,
+        trace = chart.traceDecl.stages.trace,
+        project = chart.traceDecl.stages.project,
+        apply = chart.traceDecl.stages.apply,
+    },
+}
+
+function chart.stageOf(context)
+    if context.taskPhase == "readings" then
+        return chart.readingStageOf(context)
+    elseif context.taskPhase == "trace" then
+        return chart.traceStageOf(context)
     end
-    for index, entry in ipairs(settings.metrics) do
+    return context.taskPhase or "frame", context.taskPhase == "axis" and 8 or 1
+end
+
+local function frozenTask(context, fn, ...)
+    if not context.taskFrame then
+        return fn(context, ...)
+    end
+    context.session = context.frameSession
+    for _, item in ipairs(context.series) do
+        item.feed = item.snapshot
+    end
+    local result, unfinished = fn(context, ...)
+    context.session = context.liveSession
+    for _, item in ipairs(context.series) do
+        item.feed = item.liveFeed
+    end
+    return result, unfinished
+end
+
+local function taskReadings(context, grant, stage)
+    if not context.readingWork then
+        context.taskReadingsChanged = readingsChanged(context)
+    end
+    return chart.readingStep(context, grant, stage)
+end
+
+function chart.step(context, grant, stage)
+    context.used = 0
+    if stage ~= chart.stageOf(context) then
+        return nil, true
+    end
+    context.used = 1
+    if stage == "frame" then
+        if context.history and not context.history.failed and not context.framePhase then
+            local interval = advanceFrame(context)
+            if not context.framePhase then
+                return interval
+            end
+        end
+        context.taskFrame = context.framePhase ~= nil
+        if context.taskFrame then
+            if context.pending then
+                context.pending.drawnVersion = nil
+            end
+            context.pending, context.axisWork, context.framePhase = nil, nil, "axis"
+            context.armMarkers.job, context.resumeMarkers.job = nil, nil
+        end
+        context.taskPhase = "readings"
+    elseif context.taskPhase == "readings" then
+        frozenTask(context, taskReadings, grant, stage)
+        if not context.readingWork then
+            context.taskPhase = context.taskFrame and "axis" or "plot"
+        end
+    elseif stage == "axis" then
+        advanceFrame(context, grant)
+        context.used = grant
+        if context.framePhase == "traces" then
+            context.taskPhase = "plot"
+        end
+    elseif stage == "plot" then
+        frozenTask(context, refreshPlot, not context.taskFrame)
+        context.taskReadingsChanged = nil
+        if not context.taskFrame then
+            context.taskPhase = nil
+            return 20
+        elseif context.framePhase == "axis" then
+            context.taskPhase = "axis"
+        elseif context.gridVersion == context.version then
+            if context.taskBlocked then
+                for _, item in ipairs(context.series) do
+                    if item.snapshot and item.snapshot.available then
+                        return 20
+                    end
+                end
+                context.taskPhase, context.framePhase = "flights", "flights"
+            else
+                context.taskPhase = "trace"
+            end
+        end
+    elseif context.taskPhase == "trace" then
+        local _, unfinished = frozenTask(context, chart.traceStep, grant, stage)
+        if context.frameExpired then
+            rollbackFrame(context)
+            context.taskPhase = nil
+        elseif not unfinished then
+            context.taskPhase, context.framePhase = "flights", "flights"
+        end
+    elseif stage == "publish" then
+        context.taskPhase = nil
+        return publishFrame(context)
+    else
+        advanceFrame(context, grant)
+        context.taskPhase = context.framePhase
+    end
+    return nil, true
+end
+
+local function resizeShell(context, rect)
+    context.rect = rect
+    context.legendFont, context.legendIndex, context.legendWidth = nil, nil, nil
+    context.primitives.resizePanel(context.panel, rect)
+    context.plotHost:set({ w = rect.w, h = rect.h })
+    context.plotRoot:set({ w = rect.w, h = rect.h })
+    context.flightRoot:set({ w = rect.w, h = rect.h })
+    context.gapRoot:set({ w = rect.w, h = rect.h })
+    context.gridRoot:set({ w = rect.w, h = rect.h })
+end
+
+function chart.construct(context, rect)
+    if rect and (context.rect.w ~= rect.w or context.rect.h ~= rect.h) then
+        resizeShell(context, rect)
+        if context.createGeometry then
+            context.createGeometry, context.createLayout, context.createStage = nil, nil, "layout"
+        end
+    end
+    local stage = context.createStage
+    if not stage then
+        return true
+    end
+    if stage == "series" then
+        local index = context.createIndex
+        local settings = context.settings
+        local entry = settings.metrics[index]
         local color = context.theme.chartColor[entry.accent or COLORS[index]]
         local item = {
             settings = entry,
@@ -1900,46 +2200,158 @@ function chart.create(parent, rect, settings, services)
             color = context.theme.color.textFaint,
         })
         context.series[index] = item
+        context.createIndex = index + 1
+        if index == #settings.metrics then
+            context.createStage = "controls"
+        end
+    elseif stage == "controls" then
+        context.durationBackground = lvgl.rectangle(context.panel.root, {
+            x = 0,
+            y = 0,
+            w = 1,
+            h = 1,
+            color = context.theme.color.surface,
+            filled = true,
+        })
+        context.title, context.duration, context.status = label(context), label(context), label(context)
+        context.baseline =
+            lvgl.hline(context.plotRoot, { x = 0, y = 0, w = 1, h = 1, color = context.theme.chartColor.grid })
+        context.window, context.start, context.pixelStart = timeWindow(context.settings, 0), 0, 0
+        context.createStage = "layout"
+    elseif stage == "layout" then
+        if not context.createGeometry then
+            context.createGeometry = startGeometry(context, context.rect)
+            context.createStage = "font"
+        else
+            context.createLayout = layoutGeometry(context, context.rect, context.createGeometry)
+            context.createIndex, context.createStage = 1, "position"
+        end
+    elseif stage == "font" then
+        if selectLegendFont(context, context.createGeometry) then
+            context.createStage = "layout"
+        end
+    else
+        local item = context.series[context.createIndex]
+        if item then
+            positionLegend(context, context.createIndex, item, context.createLayout)
+        end
+        context.createIndex = context.createIndex + 1
+        if context.createIndex > #context.series then
+            finishGeometry(context)
+            text(
+                context.status,
+                not context.history and "HISTORY N/A"
+                    or context.preview and (context.previewMissing and "PREVIEW: NO DATA" or "PREVIEW")
+                    or not context.session.configured and "SET ARM SOURCE"
+                    or "",
+                context.theme.color.textFaint
+            )
+            context.createStage, context.createIndex, context.createGeometry, context.createLayout = nil, nil, nil, nil
+            return true
+        end
     end
-    context.durationBackground = lvgl.rectangle(context.panel.root, {
-        x = 0,
-        y = 0,
-        w = 1,
-        h = 1,
-        color = context.theme.color.surface,
-        filled = true,
-    })
-    context.title, context.duration, context.status = label(context), label(context), label(context)
-    context.baseline =
-        lvgl.hline(context.plotRoot, { x = 0, y = 0, w = 1, h = 1, color = context.theme.chartColor.grid })
-    context.window, context.start, context.pixelStart = timeWindow(settings, 0), 0, 0
-    chart.geometry(context, rect)
-    text(
-        context.status,
-        not context.history and "HISTORY N/A"
-            or context.preview and (context.previewMissing and "PREVIEW: NO DATA" or "PREVIEW")
-            or not context.session.configured and "SET ARM SOURCE"
-            or "",
-        context.theme.color.textFaint
-    )
+    return false
+end
+
+function chart.create(parent, rect, settings, services)
+    local proof = services.settingsValidation
+    local warnings = proof
+            and proof.settings == settings
+            and proof.validator == chart.validateSettings
+            and proof.warnings
+        or chart.validateSettings(settings, nil, nil, services.host and services.host.modelArmed)
+    assert(#warnings == 0, table.concat(warnings, "; "))
+    local context = {
+        theme = services.theme,
+        themeBuilder = services.themeBuilder,
+        primitives = services.primitives,
+        settings = settings,
+        history = services.history and (services.preview and services.history:preview() or services.history),
+        preview = services.preview == true,
+        clock = services.clock or getTime,
+        series = {},
+        version = 0,
+        cursor = 1,
+        rect = rect,
+        span = services.span,
+        area = {},
+        grid = {},
+        gridCursor = 1,
+        flightKeys = {},
+        createStage = #settings.metrics > 0 and "series" or "controls",
+        createIndex = 1,
+    }
+    local presentation = services.state("normal", settings.accent or "cyan")
+    context.panel = context.primitives.panel(parent, rect, context.theme, presentation)
+    context.plotHost = lvgl.box(context.panel.root, { x = 0, y = 0, w = rect.w, h = rect.h })
+    context.plotRoot = lvgl.box(context.plotHost, { x = 0, y = 0, w = rect.w, h = rect.h })
+    context.flightRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
+    context.gapRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
+    context.gridRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
+    context.session = context.history and context.history:session(settings.armSwitch)
+        or { elapsed = 0, configured = false, available = false, recording = false }
+    if context.preview then
+        context.previewMissing = context.session.previewMissing
+    end
+    if not services.staged then
+        while not chart.construct(context) do
+        end
+    end
     return context
 end
 
 function chart.update(context, rect)
-    context.rect = rect
-    context.legendFont, context.legendIndex, context.legendWidth = nil, nil, nil
-    context.primitives.resizePanel(context.panel, rect)
-    context.plotHost:set({ w = rect.w, h = rect.h })
-    context.plotRoot:set({ w = rect.w, h = rect.h })
-    context.flightRoot:set({ w = rect.w, h = rect.h })
-    context.gapRoot:set({ w = rect.w, h = rect.h })
-    context.gridRoot:set({ w = rect.w, h = rect.h })
-    chart.geometry(context, rect)
-    if context.framePhase then
-        context.framePhase, context.pending, context.axisWork = "axis", nil, nil
-        context.armMarkers.job, context.resumeMarkers.job = nil, nil
+    if context.reflowWork then
+        context.reflowWork = { invalidated = true }
     end
-    chart.refresh(context)
+    if context.framePhase then
+        rollbackFrame(context)
+    end
+    context.taskPhase, context.readingWork, context.taskFrame = nil, nil, nil
+    resizeShell(context, rect)
+    chart.geometry(context, rect)
 end
+
+function chart.reflow(context, rect, _, _, _, begin)
+    if begin or context.reflowWork and context.reflowWork.invalidated then
+        resizeShell(context, rect)
+        context.readingWork, context.taskPhase = nil, nil
+        context.reflowWork = { stage = "font", index = 1, geometry = startGeometry(context, rect) }
+        return false
+    end
+    local work = context.reflowWork
+    if not work then
+        return true
+    elseif work.stage == "font" then
+        if selectLegendFont(context, work.geometry) then
+            work.stage = "layout"
+        end
+    elseif work.stage == "layout" then
+        work.layout = layoutGeometry(context, rect, work.geometry)
+        work.stage = "position"
+    elseif work.stage == "position" then
+        local item = context.series[work.index]
+        if item then
+            positionLegend(context, work.index, item, work.layout)
+        end
+        work.index = work.index + 1
+        if work.index > #context.series then
+            work.stage = "finish"
+        end
+    elseif work.stage == "finish" then
+        finishGeometry(context)
+        if context.framePhase then
+            context.framePhase, context.pending, context.axisWork = "axis", nil, nil
+            context.armMarkers.job, context.resumeMarkers.job = nil, nil
+        end
+        context.reflowWork = nil
+        return true
+    else
+        error("unknown chart reflow stage: " .. tostring(work.stage))
+    end
+    return false
+end
+
+chart.reflowDecl = { callback = chart.reflow }
 
 return chart

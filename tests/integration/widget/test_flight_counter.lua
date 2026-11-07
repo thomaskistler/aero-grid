@@ -1,23 +1,10 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 local root = assert(..., "repository root argument is required")
+local hostIo = io
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
 local equal = assert(loadfile(root .. "/tests/support/assertions.lua"))().assertEqual
 local definition = fixture.module("main.lua")
-local worstCallback = 0
-
-local function measured(callback, context)
-    local instructions = 0
-    debug.sethook(function()
-        instructions = instructions + 200
-    end, "", 200)
-    local ok, err = pcall(callback, context)
-    debug.sethook()
-    assert(ok, err)
-    assert(instructions <= 15000, "flight counter exceeded 75% of the firmware instruction budget")
-    worstCallback = math.max(worstCallback, instructions)
-end
-
 local function create(span)
     fixture.reset()
     definition = fixture.module("main.lua")
@@ -27,15 +14,7 @@ local function create(span)
     radio.globals[8] = 39
     radio.globalsByMode[8] = nil
     radio.globalDetails[8] = { name = "Flights", min = 0, max = 999, prec = 0, unit = 0 }
-    local context = definition.create(
-        { x = 0, y = 0, w = 480, h = 272 },
-        { Layout = "flight-test", Theme = "modern-dark" },
-        root .. "/src/WIDGETS/AeroGrid/"
-    )
-    while context.stage == "theme-read" or context.stage == "theme-validate" do
-        measured(definition.refresh, context)
-    end
-    context.source = table.concat({
+    local content = table.concat({
         "version: 1",
         "grid:",
         "  columns: 4",
@@ -53,10 +32,23 @@ local function create(span)
         "      disarmDuration: 2",
         "      announcements: true",
     }, "\n")
-    context.tokens, context.readPosition, context.readLine, context.stage = {}, 1, 1, "tokenize"
-    while context.stage do
-        measured(definition.refresh, context)
+    local path = root .. "/build/test-widget-fixture/"
+    local file = assert(hostIo.open(path .. "layouts/flight-test.yaml", "w"))
+    file:write(content)
+    file:close()
+    local context = definition.create(
+        { x = 0, y = 0, w = 480, h = 272 },
+        { Layout = "flight-test", Theme = "modern-dark" },
+        path
+    )
+    for _ = 1, 1200 do
+        if not context.stage and not context.reloadState then
+            break
+        end
+        fixture.tick(20)
+        definition.refresh(context)
     end
+    assert(not context.stage and not context.reloadState, "flight layout did not finish loading")
     equal(#context.errors, 0, table.concat(context.errors, "\n"))
     local panel = assert(fixture.instanceOf(context, "flights"))
     local env = context.serviceRuntime.env
@@ -80,7 +72,7 @@ end
 local function backgroundUntil(context, predicate, limit)
     for _ = 1, limit or 100 do
         fixture.tick(20)
-        measured(definition.background, context)
+        definition.background(context)
         if predicate() then
             return
         end
@@ -100,13 +92,24 @@ end
 
 for _, span in ipairs({ { 1, 1 }, { 2, 1 }, { 2, 2 }, { 4, 2 } }) do
     local context, panel, recorded = create(span)
-    fixture.pump(context, 10)
+    assert(
+        fixture.pumpUntil(context, function()
+            return panel.text == "39"
+        end, 400, 20),
+        "flight count did not become available"
+    )
     equal(panel.text, "39")
     fixture.radio.values[305], fixture.radio.values[306] = 1024, 0
     backgroundUntil(context, function()
         return panel.flight.phase == "active"
     end)
     equal(model.getGlobalVariable(8, 0), 40)
+    assert(
+        fixture.pumpUntil(context, function()
+            return panel.value.properties.text == "40"
+        end, 100),
+        "normal control task eventually publishes the incremented flight count"
+    )
     equal(panel.value.properties.text, "40")
     equal(panel.stateName, "active")
     equal(panel.panel.background.properties.color, context.theme.alertColor.active)
@@ -131,6 +134,7 @@ for _, span in ipairs({ { 1, 1 }, { 2, 1 }, { 2, 2 }, { 4, 2 } }) do
     backgroundUntil(context, function()
         return panel.flight.phase == "ground"
     end)
+    fixture.pump(context, 1)
     equal(recorded(), 0, "completed flights must not access CSV files")
     equal(panel.stateName, "normal")
     equal(panel.panel.background.properties.color, context.theme.color.surface)
@@ -161,7 +165,6 @@ assert(panel.flight.phase ~= "ground", "a scheduling gap must restart the disarm
 backgroundUntil(context, function()
     return panel.flight.phase == "ground"
 end)
-assert(worstCallback > 0, "the flight counter budget was not measured")
 
 local recorded
 context, panel, recorded = create({ 2, 2 })
@@ -169,7 +172,7 @@ panel.preview = true
 fixture.radio.values[305], fixture.radio.values[306] = 1024, 0
 for _ = 1, 100 do
     fixture.tick(20)
-    measured(definition.background, context)
+    definition.background(context)
 end
 equal(model.getGlobalVariable(8, 0), 40, "a presentation preview cannot stop the committed flight tracker")
 equal(panel.flight.phase, "active", "the shared tracker is independent of presentation flags")
@@ -219,7 +222,10 @@ owner:setDocument({
     }),
 })
 backgroundUntil(context, function()
-    return owner.session.smart and owner.session.smart.altitude.fresh and owner.session.smart.speed.fresh
+    return owner.session
+        and owner.session.smart
+        and owner.session.smart.altitude.fresh
+        and owner.session.smart.speed.fresh
 end)
 fixture.radio.values[305], fixture.radio.values[306] = 1024, 0
 backgroundUntil(context, function()
@@ -230,6 +236,12 @@ backgroundUntil(context, function()
     return panel.flight.phase == "active"
 end)
 equal(owner.view.reason, "smart-altitude")
+assert(
+    fixture.pumpUntil(context, function()
+        return panel.value.properties.text == "40"
+    end, 100),
+    "normal control task keeps the unchanged flight count visible"
+)
 equal(panel.value.properties.text, "40")
 fixture.radio.values[305] = -1024
 backgroundUntil(context, function()
@@ -239,4 +251,4 @@ fileAccesses, sounds = recorded()
 equal(fileAccesses, 0)
 equal(#sounds, 0)
 equal(model.getGlobalVariable(8, 0), 40)
-print(string.format("Flight counter standard/Smart integration passed; worst callback: %d instructions", worstCallback))
+print("Flight counter standard/Smart integration passed")

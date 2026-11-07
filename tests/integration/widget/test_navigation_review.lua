@@ -1,13 +1,44 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 local root = (... and ... ~= "" and ...) or "."
+local hostIo = io
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local WidgetFixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))()
 local fixture = WidgetFixture.new()
 fixture.reset()
+local serviceLayoutPath = root .. "/build/test-widget-fixture/layouts/review-navigation-service.yaml"
+local function writeServiceLayout()
+    local file = assert(hostIo.open(serviceLayoutPath, "w"))
+    file:write([[
+version: 2
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: detailed
+    type: navigation
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 3
+    config:
+      label: DETAILED
+      presentation: detailed
+      bearingFormat: quadrant
+]])
+    file:close()
+end
 local context = fixture.createLoaded(nil, { Layout = "review-navigation", Theme = "modern-dark" })
 fixture.pump(context, 40)
+assert(
+    fixture.pumpUntil(context, function()
+        return context.schedulerHost.scheduler.byId["service:navigation"] ~= nil
+    end, 400, 20),
+    "navigation service registration did not settle"
+)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+assert(context.schedulerHost.scheduler.byId["service:navigation"], "navigation service must be scheduler-owned")
+assertions.assertEqual(context.serviceRuntime.byId.navigation.update, nil)
 assertions.assertEqual(context.document.version, 5)
 assertions.assertEqual(#context.panels, 6)
 fixture.assertNoOverlap(context)
@@ -30,6 +61,14 @@ for _, panel in ipairs(context.document.panels) do
 end
 
 local navigation = fixture.module("panels/navigation.lua")
+local panelHost = fixture.module("lib/panel_host.lua")
+local function completeTask(instance)
+    local task = panelHost.task({ module = navigation, instance = instance, interval = 20 })
+    for _ = 1, 100 do
+        if task:step(task.want or 1, task.stage, getTime()) ~= 1 then return end
+    end
+    error("navigation task did not finish")
+end
 local theme = square.themeBuilder
 local catalog = assert(loadfile(root .. "/tests/support/theme_catalog.lua"))()(root, fixture.module("lib/yaml.lua"))
 assert(theme.setCatalog(catalog))
@@ -80,7 +119,7 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
         assertions.assertEqual(tape.rims[7].properties.color, lcd.RGB(theme.shade(surface, isLight and -0.18 or 0.48)))
     end
 end
-local function instance(cols, rows, rect, settings)
+local function instance(cols, rows, rect, settings, staged)
     local host = fixture.module("lib/panel_host.lua")
     local resolved, errors = host.resolveSettings(navigation, settings or { showTape = true })
     assertions.assertEqual(#errors, 0)
@@ -94,7 +133,49 @@ local function instance(cols, rows, rect, settings)
         navigation = square.service,
         telemetry = context.serviceRuntime.byId.telemetry,
         host = context,
+        staged = staged,
     })
+end
+
+local sameTree = assert(loadfile(root .. "/tests/support/panel_tree.lua"))()
+
+for _, shape in ipairs({ { 1, 1, 90, 50 }, { 4, 1, 480, 65 }, { 4, 4, 480, 272 } }) do
+    for flags = 0, 3 do
+        local rect = { x = 0, y = 0, w = shape[3], h = shape[4] }
+        local settings = { showTape = flags % 2 == 1, showCoordinates = flags >= 2 }
+        local synchronous = instance(shape[1], shape[2], rect, settings)
+        for _, resizeAt in ipairs({ "controls", "tape", "reflow", "publish" }) do
+            local partial = instance(shape[1], shape[2], rect, settings, true)
+            assert(partial.createStage == "controls")
+            local resized, done = false, false
+            local currentRect = rect
+            for _ = 1, 8 do
+                if partial.createStage == resizeAt then
+                    currentRect = { x = 2, y = 1, w = rect.w + 20, h = rect.h + 30 }
+                    resized = true
+                end
+                done = navigation.construct(partial, currentRect)
+                assert(type(done) == "boolean")
+                if done then
+                    break
+                end
+            end
+            assert(resized and done and not partial.createStage and not partial.createRect)
+            assert(not partial.createServices and not partial.createPresentation)
+            assert(navigation.construct(partial, currentRect), "completed construction is idempotent")
+            local expected = instance(shape[1], shape[2], currentRect, settings)
+            sameTree(expected.panel.root, partial.panel.root)
+        end
+        local partial = instance(shape[1], shape[2], rect, settings, true)
+        for _ = 1, 4 do
+            navigation.construct(partial, rect)
+        end
+        assert(not partial.createStage)
+        sameTree(synchronous.panel.root, partial.panel.root)
+        completeTask(synchronous)
+        completeTask(partial)
+        sameTree(synchronous.panel.root, partial.panel.root)
+    end
 end
 
 for _, case in ipairs({
@@ -215,6 +296,18 @@ for _, case in ipairs({
     end
 end
 
+writeServiceLayout()
+context = fixture.createLoaded(nil, { Layout = "review-navigation-service", Theme = "modern-dark" })
+fixture.pump(context, 22)
+square = fixture.instanceOf(context, "detailed")
+detailed = square
+assert(
+    fixture.pumpUntil(context, function()
+        return detailed.feed.fix and detailed.feed.home and detailed.bearing ~= ""
+    end, 400, 20),
+    "initial Navigation position did not settle"
+)
+
 local bearingOnly = instance(2, 2, { w = 238, h = 134 }, { bearingFormat = "quadrant" })
 assert(bearingOnly.showDetail)
 assertions.assertEqual(bearingOnly.tape, nil)
@@ -244,7 +337,7 @@ fixture.radio.values[109] = { lat = 47, lon = 8, delay = 28 }
 fixture.radio.values[305] = -1024
 local custom = instance(2, 2, { w = 238, h = 134 }, { homeMode = "first-arm", armSwitch = "SFv", showTape = true })
 fixture.pump(context, 20)
-navigation.refresh(custom)
+completeTask(custom)
 assertions.assertEqual(custom.feed.homeStatus, "waiting")
 assertions.assertEqual(custom.text, "--")
 fixture.radio.values[305] = 1024
@@ -253,7 +346,7 @@ for _ = 1, 20 do
     fixture.tick(20)
     definition.background(context)
 end
-navigation.refresh(custom)
+completeTask(custom)
 assertions.assertEqual(custom.feed.homeStatus, "captured", "background updates must capture home")
 assertions.assertEqual(custom.text, "0")
 fixture.radio.values[109].lat = 47.001
@@ -261,28 +354,33 @@ fixture.radio.values[305] = -1024
 fixture.pump(context, 20)
 fixture.radio.values[305] = 1024
 fixture.pump(context, 20)
-navigation.refresh(custom)
+completeTask(custom)
 assertions.assertEqual(custom.feed.pilotLatitude, 47)
 assert(custom.feed.distance > 100 and custom.feed.distance < 120)
 
 local homes = context.navigationHomes
-definition.update(context, { Layout = "review-navigation", Theme = "modern-light" })
+definition.update(context, { Layout = "review-navigation-service", Theme = "modern-light" })
 fixture.pump(context, 120)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assert(context.navigationHomes == homes, "layout/theme reload must preserve capture state")
-square = fixture.instanceOf(context, "compass")
+square = fixture.instanceOf(context, "detailed")
 custom = instance(2, 2, { w = 238, h = 134 }, { homeMode = "first-arm", armSwitch = "SFv" })
-fixture.pump(context, 20)
-navigation.refresh(custom)
+assert(
+    fixture.pumpUntil(context, function()
+        return custom.feed.distance ~= nil
+    end, 100, 20),
+    "restored Navigation subscriptions did not sample a position after reload"
+)
+completeTask(custom)
 assertions.assertEqual(custom.feed.pilotLatitude, 47, "panel recreation must not reset home")
 assert(custom.feed.distance > 100 and custom.feed.distance < 120)
 
 fixture.radio.modelFilename = "another-model.yml"
-definition.update(context, { Layout = "review-navigation", Theme = "modern-dark" })
+definition.update(context, { Layout = "review-navigation-service", Theme = "modern-dark" })
 fixture.pump(context, 120)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assert(context.navigationHomes ~= homes, "a different model must not inherit home")
-square = fixture.instanceOf(context, "compass")
+square = fixture.instanceOf(context, "detailed")
 custom = instance(2, 2, { w = 238, h = 134 }, { homeMode = "first-arm", armSwitch = "SFv" })
 fixture.pump(context, 20)
 assertions.assertEqual(custom.feed.home, false, "starting armed in a new model must not capture")
@@ -298,8 +396,15 @@ for _, shape in ipairs({ { 1, 2, 117, 134 }, { 2, 1, 238, 65 }, { 2, 2, 238, 134
         { w = shape[3], h = shape[4] },
         { satelliteSource = "Sats", showTape = true }
     )
-    fixture.pump(context, 20)
-    navigation.refresh(satellitePanel)
+    assert(
+        fixture.pumpUntil(context, function()
+            return satellitePanel.feed.fix
+                and satellitePanel.satellites.available
+                and not satellitePanel.satellites.stale
+        end, 400, 20),
+        "satellite and position readings did not settle"
+    )
+    completeTask(satellitePanel)
     assertions.assertEqual(satellitePanel.stateName, "normal")
     assert(satellitePanel.showSatellites, "satellite count must fit standard span " .. shape[1] .. "x" .. shape[2])
     assertions.assertEqual(satellitePanel.satelliteLabel.properties.text, "12")
@@ -315,7 +420,7 @@ for _, shape in ipairs({ { 1, 2, 117, 134 }, { 2, 1, 238, 65 }, { 2, 2, 238, 134
     }) do
         fixture.radio.values[122] = sample[1]
         fixture.pump(context, 20)
-        navigation.refresh(satellitePanel)
+        completeTask(satellitePanel)
         assertions.assertEqual(satellitePanel.stateName, sample[2])
         if satellitePanel.showSatellites then
             assertions.assertEqual(satellitePanel.satelliteLabel.properties.text, tostring(sample[1]))
@@ -346,7 +451,7 @@ for _, sample in ipairs({
 }) do
     fixture.radio.values[122] = sample[1]
     fixture.pump(context, 20)
-    navigation.refresh(hidden)
+    completeTask(hidden)
     assertions.assertEqual(hidden.stateName, sample[2], "satellite alerts must remain active with the indicator off")
     navigation.update(hidden, { w = 60, h = 40 })
     navigation.update(hidden, { w = 238, h = 134 })
@@ -359,16 +464,23 @@ assertions.assertEqual(noSatelliteSource.satelliteHeader, nil)
 assertions.assertEqual(noSatelliteSource.satellites, nil)
 local missing = instance(2, 2, { w = 238, h = 134 }, { satelliteSource = "MissingSats" })
 fixture.pump(context, 20)
-navigation.refresh(missing)
+completeTask(missing)
 assertions.assertEqual(missing.stateName, "unavailable")
 assertions.assertEqual(missing.satelliteLabel.properties.text, "--")
 fixture.radio.values[109], fixture.radio.values[122], fixture.radio.rssi = 0, 0, 0
 fixture.pump(context, 20)
 local stale = instance(2, 2, { w = 238, h = 134 }, { satelliteSource = "Sats" })
-navigation.refresh(stale)
+assert(
+    fixture.pumpUntil(context, function()
+        return stale.satellites.stale and stale.feed.state == "stale"
+    end, 400, 20),
+    "stale Navigation data did not settle"
+)
+completeTask(stale)
 assertions.assertEqual(stale.stateName, "stale")
 assertions.assertEqual(stale.satelliteLabel.properties.text, "12")
-navigation.refresh(hidden)
+completeTask(hidden)
 assertions.assertEqual(hidden.stateName, "stale", "hidden satellite telemetry must still report staleness")
 fixture.radio.values[109] = {}
+os.remove(serviceLayoutPath)
 fixture.reset()

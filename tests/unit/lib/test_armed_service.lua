@@ -39,9 +39,12 @@ assert(first ~= second, "unsaved model Armed must preserve distinct legacy switc
 assert(service:state("SFv") == first)
 assert(control:switch("SFv") == control.switches.SFv)
 equal(control.count, 2, "conditions are polled once, including State subscriptions")
+equal(service.tasks.run.want, 2, "the Armed task owns each unique arm condition")
+equal(control.tasks.critical.want, 0, "claimed arm conditions are removed from Control's task")
+equal(#control.criticalEntries, 0, "a shared switch is transferred rather than double-polled")
 equal(first.origin, "legacy")
 equal(first.generation, 7)
-control:update(now)
+service.tasks.run:step(2, "run", now)
 equal(reads, 2)
 equal(first.value, false)
 equal(first.fresh, true, "disarmed is a reliable reading")
@@ -55,15 +58,15 @@ equal(first.available, true)
 equal(first.fresh, false, "expired samples cannot remain fresh")
 assert(first.revision > initialRevision, "freshness changes advance the published revision")
 equal(first.status, "unavailable")
-control:update(now)
+service.tasks.run:step(2, "run", now)
 equal(first.fresh, true)
 values[1] = nil
 now = 120
-control:update(now)
+service.tasks.run:step(2, "run", now)
 equal(first.available, false)
 equal(first.fresh, false, "missing input is not a disarm event")
 values[1] = true
-control:update(now)
+service.tasks.run:step(2, "run", now)
 equal(first.value, true)
 control.failed = true
 equal(first.fresh, false)
@@ -90,3 +93,38 @@ local navigation = layout.migratePanel({ type = "navigation", config = { armSwit
 equal(navigation.config.homeMode, "first-arm")
 local edge = layout.migratePanel({ type = "navigation", config = {} }, 3)
 equal(edge.config.homeMode, "edgetx")
+
+local _, failing = runtime()
+local arm = failing:state("SFv")
+local task = failing.tasks.run
+task:step(1, "run", now)
+equal(arm.available, true)
+failing.entries[1].read = function()
+    error("arm input failed", 0)
+end
+local ok, failure = pcall(task.step, task, 1, "run", now + 20)
+equal(ok, false)
+equal(failure, "arm input failed")
+equal(failing.failed, true)
+equal(failing.entries[1].state.available, false, "shared adapter runs Armed's invalidation hook")
+equal(failing.entries[1].state.fresh, false)
+equal(arm.available, false)
+equal(arm.fresh, false)
+
+for grant = 1, armedModule.decl.stages.run.maxUnits do
+    for index = 1, 6 do
+        ids[string.format("L%02d", index)], values[index] = index, index % 2 == 0
+    end
+    local _, armed, controls = runtime()
+    local views = {}
+    for index = 1, 6 do views[index] = armed:state(string.format("L%02d", index)) end
+    armed.cursor = 6
+    local before = reads
+    armed.tasks.run:step(grant, "run", now)
+    equal(reads - before, grant, "partial Armed grants read exactly the admitted conditions")
+    equal(#controls.criticalEntries, 0, "all Armed conditions retain exclusive polling ownership")
+    for offset = 0, 5 do
+        local index = (5 + offset) % 6 + 1
+        equal(views[index].available, offset < grant, "cursor wrap preserves unvisited Armed conditions")
+    end
+end

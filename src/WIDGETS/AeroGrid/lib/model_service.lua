@@ -39,12 +39,20 @@
 local modelService = { RUNTIME_API = 1 }
 modelService.__index = modelService
 
---- Ticks of 10ms between updates. Timers advance once a second, so this is
---- already far faster than anything the model can actually change.
-local INTERVAL = 20
+--- Read each model facet at most once a second.
+local INTERVAL = 100
 
 --- Facets refreshed per update, served round robin.
 local FACET_CAP = 4
+
+--- The task the new scheduler runs (plans/scheduler-framework.md, section 2): one
+--- stage, one unit per facet. Measured natively at 141, 246, 351 and 412
+--- instructions for 1 to 4 facets (tests/fixtures/scheduler-cases/model.lua), fitted
+--- as 36 + 105 per facet and declared by the margin rule for the normal class.
+modelService.decl = {
+    class = "normal",
+    stages = { run = { maxUnits = FACET_CAP } },
+}
 
 --- Ticks between model identity reads. Identity changes only when the model
 --- changes, which reloads the widget anyway, so it is polled rarely.
@@ -61,7 +69,7 @@ local TX_VOLTAGE_SOURCE = "tx-voltage"
 ---@param support table The loaded lib/services.lua module.
 ---@return table
 function modelService.new(env, support)
-    return setmetatable({
+    local service = setmetatable({
         id = "model",
         interval = INTERVAL,
         revision = 0,
@@ -73,6 +81,12 @@ function modelService.new(env, support)
         cursor = 1,
         timers = {},
     }, modelService)
+    support.task(service, "run", {
+        id = "service:model",
+        decl = modelService.decl,
+        run = modelService.step,
+    })
+    return service
 end
 
 --- Register a facet and publish its immutable view.
@@ -81,6 +95,7 @@ end
 ---@return table view
 function modelService:add(state, read)
     local facet = self.support.addSubscription(self, self.facets, { state = state, read = read })
+    self.tasks.run.want = self.count
     return facet.view
 end
 
@@ -448,15 +463,44 @@ function modelService:txVoltage()
     return self.txVoltageView
 end
 
---- Refresh a bounded slice of the subscribed facets.
+--- Read up to `grant` subscribed facets, round robin from the cursor. This is the
+--- bounded work of one scheduler release. It does what `services.poll` does
+--- for a facet list, without its per-facet callback.
+---@param grant integer
 ---@param now integer
-local function readFacet(service, facet, now)
-    facet.read(service, facet.state, now)
+function modelService:read(grant, now)
+    local facets = self.facets
+    local total = #facets
+    local cursor = self.cursor
+    if cursor > total then
+        cursor = 1
+    end
+    if grant > total then
+        grant = total
+    end
+    for _ = 1, grant do
+        local facet = facets[cursor]
+        cursor = cursor % total + 1
+        facet.read(self, facet.state, now)
+    end
+    self.cursor = cursor
 end
 
-function modelService:update(now)
-    local facets = self.facets
-    self.cursor = self.support.roundRobin(facets, self.cursor, FACET_CAP, readFacet, self, now)
+--- The scheduler's release. It advances the shared due time and revision, and
+--- uses the scheduler's wrap-safe tick helper.
+--- Returns the delay to the next release.
+---@param grant integer
+---@param now integer
+---@return integer delay
+function modelService:step(grant, _, now)
+    local wait = self.tickElapsed(self.due, now)
+    if wait > 0 then
+        return wait
+    end
+    self.due = now + self.interval
+    self:read(grant, now)
+    self.revision = self.revision + 1
+    return self.interval
 end
 
 --- Describe the subscribed model facets as diagnostic rows.
@@ -489,6 +533,10 @@ function modelService:describe(rows)
     end
 
     return index - 1
+end
+
+function modelService.bindCosts(costs)
+    costs:stages("model", modelService.decl)
 end
 
 return modelService

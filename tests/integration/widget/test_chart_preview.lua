@@ -20,7 +20,11 @@ local controls = context.serviceRuntime.byId.control
 local telemetryCount, controlCount = telemetry.count, controls.count
 
 local function preview(edit)
-    context.editorController.openEditor(context)
+    -- A saved layout re-registers Flight sources before the editor may reopen.
+    assert(fixture.pumpUntil(context, function()
+        return not context.flightRegistrationJob
+    end, 100))
+    assert(context.editorController.openEditor(context))
     assert(fixture.pumpUntil(context, function()
         return context.editorUi and not context.editorUi.buildStage
     end, 300))
@@ -54,8 +58,9 @@ end)
 local compatible = fixture.instanceOf(context, "power")
 assert(compatible.preview and not compatible.previewMissing)
 equal(compatible.series[1].feed, feed)
-fixture.pump(context, 100)
-assert(compatible.series[1].runs[1].line, "compatible visual edits retain the recorded plot in the editor")
+assert(fixture.pumpUntil(context, function()
+    return compatible.series[1].runs[1] and compatible.series[1].runs[1].line
+end, 1000), "compatible visual edits retain the recorded plot in the editor")
 equal(history.count, subscriptions)
 equal(telemetry.count, telemetryCount)
 equal(controls.count, controlCount)

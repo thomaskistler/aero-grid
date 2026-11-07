@@ -9,9 +9,21 @@ from lupa.lua53 import LuaRuntime
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def run_test(path: Path) -> None:
+def run_test(path: Path, *, instructions=False, snapshot_path=None):
     lua = LuaRuntime(unpack_returned_tuples=True)
     lua.execute('debug.setmetatable("", nil)')
+    if snapshot_path is not None:
+        lua.execute("""
+            local candidate = ...
+            local originalLoadfile = loadfile
+            function loadfile(filename, ...)
+                if type(filename) == "string"
+                    and string.match(filename, "WIDGETS/AeroGrid/lib/instruction_snapshot%.lua$") then
+                    filename = candidate
+                end
+                return originalLoadfile(filename, ...)
+            end
+        """, str(snapshot_path))
     logs = lua.execute("""
         local originalPrint = print
         local logs = {}
@@ -31,6 +43,41 @@ def run_test(path: Path) -> None:
         end
         return logs
     """)
+    recorder = declarations = None
+    if instructions:
+        rows = {}
+        declared = {}
+        def declare(name, stage, maximum):
+            key = name + "|" + stage
+            declared[key] = max(declared.get(key, 0), maximum)
+        def sample(kind, name, stage, grant, cost, ok, scenario):
+            key = (kind, name, stage, grant)
+            row = rows.get(key)
+            if row is None:
+                row = dict(kind=kind, name=name, stage=stage, grant=grant, n=0,
+                           min=cost, max=cost, failures=0,
+                           minScenario=scenario, maxScenario=scenario)
+                rows[key] = row
+            row["n"] += 1
+            row["failures"] += int(ok is False)
+            if cost < row["min"]:
+                row["min"], row["minScenario"] = cost, scenario
+            if cost > row["max"]:
+                row["max"], row["maxScenario"] = cost, scenario
+        costs = lua.execute("""
+            local root = ...
+            local base = root .. "/src/WIDGETS/AeroGrid/lib/"
+            return assert(loadfile(base .. "costs.lua"))().new(
+                assert(loadfile(base .. "instruction_snapshot.lua"))())
+        """, str(ROOT))
+        recorder, declarations = lua.execute(
+            (ROOT / "tests/support/instruction_profile.lua").read_text(encoding="ascii"),
+            str(ROOT), costs, path.relative_to(ROOT).as_posix(), sample, declare,
+        )
+    else:
+        lua.execute(
+            (ROOT / "tests/support/costs.lua").read_text(encoding="ascii"), str(ROOT)
+        )
     try:
         lua.execute(path.read_text(encoding="ascii"), str(ROOT))
     except Exception:
@@ -40,6 +87,8 @@ def run_test(path: Path) -> None:
             for index in range(1, len(logs) + 1):
                 print(logs[index], file=sys.stderr)
         raise
+    if instructions:
+        return rows, declared
 
 
 def main() -> None:

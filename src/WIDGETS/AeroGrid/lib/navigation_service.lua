@@ -38,6 +38,11 @@ local POLL_CAP = 2
 --- Mean earth radius in metres, used for the great-circle distance.
 local EARTH_RADIUS = 6371000
 
+navigationService.decl = {
+    class = "normal",
+    stages = { run = { maxUnits = POLL_CAP } },
+}
+
 --- Coordinates closer than this to the null island are treated as no fix.
 --- EdgeTX reports zero for both axes before a sensor has produced a position.
 local NULL_EPSILON = 0.0000005
@@ -80,7 +85,7 @@ end
 function navigationService.new(env, support, runtime)
     local homes = runtime.navigationHomes or {}
     runtime.navigationHomes = homes
-    return setmetatable({
+    local service = setmetatable({
         id = "navigation",
         interval = INTERVAL,
         revision = 0,
@@ -91,9 +96,16 @@ function navigationService.new(env, support, runtime)
         runtime = runtime,
         entries = {},
         cursor = 1,
+        remaining = nil,
         sources = {},
         homes = homes,
     }, navigationService)
+    support.task(service, "run", {
+        id = "service:navigation",
+        decl = navigationService.decl,
+        run = navigationService.step,
+    })
+    return service
 end
 
 function navigationService:logCapture(entry, outcome, now)
@@ -399,18 +411,37 @@ function navigationService:subscribe(name, armSwitch, homeMode)
     end
 
     self.support.addSubscription(self, self.entries, entry)
+    self.tasks.run.want = self.count
     self.sources[key] = entry.view
     return entry.view
 end
 
---- Refresh a bounded slice of the subscriptions.
+--- Read the next bounded batch, continuing a partial release on the next tick.
+---@param grant integer
 ---@param now integer
-local function pollEntry(service, entry, now)
-    service:poll(entry, now)
+---@return integer delay
+function navigationService:read(grant, now)
+    if #self.entries == 0 then
+        return INTERVAL
+    end
+    local more = self.support.poll(self, "cursor", "remaining", self.entries, POLL_CAP, grant, self, self.poll, now)
+    return more and 1 or INTERVAL
 end
 
-function navigationService:update(now)
-    self.cursor = self.support.roundRobin(self.entries, self.cursor, POLL_CAP, pollEntry, self, now)
+--- Scheduler release for the navigation subscriptions.
+---@param grant integer
+---@param _ string
+---@param now integer
+---@return integer delay
+function navigationService:step(grant, _, now)
+    local wait = self.tickElapsed(self.due, now)
+    if wait > 0 then
+        return wait
+    end
+    local delay = self:read(grant, now)
+    self.due = now + delay
+    self.revision = self.revision + 1
+    return delay
 end
 
 function navigationService:resetSession(_, index)
@@ -508,6 +539,10 @@ function navigationService:describe(rows, view)
     index = row(rows, index, "BRG", view.bearing and string.format("%.0f deg", view.bearing) or "-")
 
     return index - 1
+end
+
+function navigationService.bindCosts(costs)
+    costs:stages("navigation", navigationService.decl)
 end
 
 return navigationService

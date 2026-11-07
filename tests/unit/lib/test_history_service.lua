@@ -48,9 +48,14 @@ local function harness(options, configured)
         if otherArm ~= nil then
             values[2] = otherArm
         end
-        control:update(now)
-        telemetry:update(now)
-        history:update(now)
+        local armed = runtime.byId.armed.tasks.run
+        if armed.want > 0 then armed:step(armed.want, "run", now) end
+        for _, item in ipairs(telemetry.schedulerTasks) do
+            local task = item.instance
+            task:step(task.want, "run", now)
+        end
+        local task = history.tasks.run
+        task:step(task.want, "run", now)
     end
     return history, session, feed, poll, telemetry, control
 end
@@ -64,9 +69,63 @@ local function recorder(options)
         arm.updatedAt = at
         reading.value, reading.updatedAt = value, at
         history:sample(reading, at)
-        history:update(at)
+        local task = history.tasks.run
+        task:step(task.want, "run", at)
     end
     return history, feed, sample, reading, session
+end
+
+do
+    local history, _, _, _, telemetry = harness()
+    local scheduler = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.lua"))()
+    local queue = scheduler.new({ steady = 0 })
+    local samples, releases = {}, {}
+    telemetry:observe({ sample = function(_, _, now) samples[#samples + 1] = now end })
+    for _, service in ipairs({ telemetry, history }) do
+        for _, item in ipairs(service.schedulerTasks) do
+            local task = item.instance
+            task.tickElapsed = scheduler.elapsed
+            assert(queue:add({ id = item.id, decl = task.decl, instance = task, due = 0 }))
+        end
+    end
+    for now = 0, 30 do
+        local revision = history.revision
+        queue:run("steady", now, 0)
+        if history.revision ~= revision then releases[#releases + 1] = now end
+    end
+    equal(table.concat(samples, ","), "0,10,20,30", "Telemetry polls at ten-tick releases")
+    equal(table.concat(releases, ","), "0,10,20,30", "History advances at ten-tick releases")
+    assert(not queue:takeErrors())
+end
+
+do
+    local maximum = historyModule.decl.stages.run.maxUnits
+    for grant = 1, maximum do
+        local runtime = support.runtime(support.environment({}))
+        runtime.byId.armed = { state = function(_, name)
+            return { key = name, configured = true, fresh = true, value = true, updatedAt = 100 }
+        end }
+        local history = historyModule.new(runtime.env, support, runtime)
+        local sessions = {}
+        for index = 1, maximum do sessions[index] = history:session(string.format("L%02d", index)) end
+        local task = history.tasks.run
+        local delay = task:step(grant, "run", 100)
+        for index = 1, maximum do
+            equal(sessions[index].recording, index <= grant, "only admitted History sessions advance")
+        end
+        if grant < maximum then
+            equal(delay, 1)
+            equal(history.revision, 0, "partial sessions cannot publish a completed History release")
+            equal(history.sessionCursor, grant + 1)
+            equal(task.want, maximum - grant)
+            equal(task:step(task.want, "run", 100), history.interval)
+        else
+            equal(delay, history.interval)
+        end
+        equal(history.revision, 1, "one full session traversal publishes once")
+        equal(history.sessionTarget, nil)
+        for index = 1, maximum do assert(sessions[index].recording) end
+    end
 end
 
 local function knots(history, feed)
@@ -171,8 +230,8 @@ equal(
     history:subscribe("V", { armSwitch = "L01", precision = 1 })
 )
 assert(
-    history:subscribe("V", { armSwitch = "L01", precision = 2 })
-        ~= history:subscribe("V", { armSwitch = "L01", precision = 1 })
+    history:subscribe("W", { armSwitch = "L01", precision = 2 })
+        ~= history:subscribe("W", { armSwitch = "L01", precision = 1 })
 )
 assert(not pcall(function()
     feed.value = 42
@@ -227,7 +286,7 @@ independentPoll(600, 1, 40, 1)
 equal(unconfigured.configured, false, "a blank panel must not inherit another panel's arm switch")
 equal(unconfiguredFeed.available, false)
 local unknownSession = independent:session("L03")
-local unknownFeed = independent:subscribe("V", { armSwitch = "L03" })
+local unknownFeed = independent:subscribe("W", { armSwitch = "L03" })
 independentPoll(700, nil, 45, 1)
 equal(firstSession.available, false, "an unavailable switch must not be treated as a known disarm condition")
 equal(firstSession.recording, false)
@@ -249,6 +308,23 @@ equal(
     independent:recordingBreak(firstSession, firstSession.resumeLast),
     unavailableElapsed,
     "recovering an unavailable arm source also leaves a recording seam"
+)
+
+local capped = harness()
+local capOk, capError = pcall(function()
+    for index = 0, historyModule.SOURCE_CAP - 1 do
+        capped:subscribe("V", {
+            armSwitch = "L01",
+            timeRange = "rolling",
+            windowSeconds = 30 + index % 6 * 30,
+            precision = index // 6,
+        })
+    end
+    capped:subscribe("V", { armSwitch = "L01", timeRange = "rolling", windowSeconds = 210, precision = 3 })
+end)
+assert(
+    not capOk and string.match(capError, "at most 24 recordings"),
+    "the per-source recorder cap is enforced after all supported recordings"
 )
 
 local bounded, boundedSession, boundedFeed, boundedPoll = harness({ timeRange = "rolling", windowSeconds = 30 })
@@ -477,7 +553,8 @@ failureTelemetry:observe({
 failurePoll(0, 1, 12)
 equal(failureTelemetry.failed, nil, "an observer failure must not retire telemetry")
 failures.failure = "history observer failed"
-local ok, message = pcall(failures.update, failures, 10)
+local failedTask = failures.tasks.run
+local ok, message = pcall(failedTask.step, failedTask, failedTask.want, "run", 10)
 assert(not ok and string.find(message, "history observer failed", 1, true))
 
 local resetHistory, resetFeed, resetSample, _, resetView = recorder({ smoothing = "strong" })

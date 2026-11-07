@@ -61,6 +61,7 @@ local function fixture(cadence)
                     local age = radio.now - packetAt
                     local value = type(sample.value) == "function" and sample.value(packetAt) or sample.value
                     if radio.now == sample.unavailableAt then
+                        sample.unavailableReads = (sample.unavailableReads or 0) + 1
                         return value, false, false
                     end
                     if type(value) == "table" then
@@ -142,11 +143,21 @@ local function fixture(cadence)
         }
     end
     owner.members[first], owner.members[second] = participant("L01"), participant("L01")
+    owner.factory = { broker = owner, revision = 1 }
+    first.flightFactory = owner.factory
+    first.serviceRuntime = { byId = { flight = { broker = owner } } }
+    owner:enableScheduler(first)
+    local scheduler = load("lib/scheduler.lua").new({ steady = 0 })
+    for _, item in ipairs(owner.schedulerTasks) do
+        local task = item.instance
+        task.tickElapsed = scheduler.elapsed
+        assert(scheduler:add({ id = item.id, decl = task.decl, instance = task, due = 0 }))
+    end
     local function step(count)
         for _ = 1, count or 1 do
             radio.now = radio.now + (cadence or 20)
-            owner:tick(radio.now)
-            owner:tick(radio.now)
+            scheduler:run("steady", radio.now, 0)
+            assert(not scheduler:takeErrors())
         end
     end
     return owner, radio, step, first, second, participant
@@ -195,6 +206,7 @@ do
     assert(owner.output and not owner.output.desired, "a full output queue must retain the release request")
     radio.full = false
     owner.members[first].pending, owner.members[second].pending = false, false
+    owner.factory.revision = owner.factory.revision + 1
     pump(20)
     equal(owner.epoch, epoch + 1, "holding reset cannot repeatedly clear data")
     equal(radio.sticky, false, "the dedicated flight output is released with retry")
@@ -218,6 +230,11 @@ end
 
 do
     local owner, radio, step = fixture()
+    for _ = 1, 50 do
+        if owner.session then break end
+        step()
+    end
+    assert(owner.session, "Flight task must configure before testing a reset")
     radio.arms[1] = true
     step(2)
     equal(owner.session.phase, "starting")
@@ -243,6 +260,7 @@ assert(not pcall(function()
 end))
 owner.members[first] = nil
 owner.members[second] = participant("L02")
+owner.factory.revision = owner.factory.revision + 1
 step(5)
 equal(owner.view.status, "ready", "a pending configuration does not replace the pinned flight")
 equal(owner.view.active, true)
@@ -266,17 +284,23 @@ assert(boundaries[2].at < boundaries[2].observedAt)
 
 owner, radio, step, first, second, participant = fixture()
 owner.members[second] = participant("L02")
+owner.factory.revision = owner.factory.revision + 1
 radio.arms[1], radio.arms[2] = true, true
 step(20)
 equal(owner.view.status, "conflict")
 equal(radio.writes, 0)
 equal(#radio.commands, 0, "cold conflicts cannot commandeer an output")
 owner.members[second] = participant("L01")
+owner.factory.revision = owner.factory.revision + 1
 step(3)
 equal(radio.writes, 0, "conflict time is not qualification time")
-step(15)
+for _ = 1, 40 do
+    if radio.writes == 1 then break end
+    step()
+end
 equal(radio.writes, 1)
 owner.members[second] = participant("L02")
+owner.factory.revision = owner.factory.revision + 1
 radio.full = true
 radio.arms[1] = false
 step(15)
@@ -319,17 +343,26 @@ equal(radio.writes, 1, "old-model work cannot increment in a new model")
 owner, radio, step, first, second, participant = fixture()
 local dead = {}
 owner.members[dead] = participant("L02")
-step()
+owner.factory.revision = owner.factory.revision + 1
+for _ = 1, 50 do
+    if owner.view.status == "conflict" then break end
+    step()
+end
 equal(owner.view.status, "conflict")
 dead = nil
 collectgarbage("collect")
-step()
+for _ = 1, 50 do
+    if owner.view.status == "ready" then break end
+    step()
+end
 equal(owner.view.status, "ready", "dead participants must not retain configuration conflicts")
 owner.members[first].pending = true
+owner.factory.revision = owner.factory.revision + 1
 radio.arms[1] = true
 step(15)
 equal(radio.writes, 0, "a rebuild declaration must resolve before new qualification")
 owner.members[first].pending = false
+owner.factory.revision = owner.factory.revision + 1
 step(15)
 equal(radio.writes, 1)
 
@@ -374,6 +407,7 @@ radio.full = true
 step(15)
 assert(owner.output and not owner.output.flightId)
 owner.members[second] = participant("L02")
+owner.factory.revision = owner.factory.revision + 1
 radio.full = false
 step(10)
 equal(#radio.commands, 0, "idle initialization cannot acquire an output during a conflict")
@@ -381,7 +415,10 @@ equal(owner.output, nil)
 equal(owner.view.outputError, nil, "a canceled idle write is no longer waiting for queue capacity")
 
 owner, radio, step = fixture()
-step(3)
+for _ = 1, 50 do
+    if owner.session and owner.session.groundAt then break end
+    step()
+end
 assert(owner.session.groundAt)
 radio.now = radio.now + 200
 owner:tick(radio.now)
@@ -429,7 +466,10 @@ local settings = config.resolve({
     flightSwitch = "L20",
 })
 owner:setDocument({ revision = 2, flight = settings })
-step(45)
+for _ = 1, 150 do
+    if owner.session and owner.session.smart and owner.session.smart.altitude.value ~= nil then break end
+    step()
+end
 equal(owner.session.smart.altitude.value, 0, "received zero is a trustworthy altitude, not missing data")
 radio.arms[1] = true
 step(4)
@@ -477,23 +517,23 @@ local function timedStream(path, period, freshTicks, stopped, firstAt)
             value = value,
             period = period,
             freshTicks = freshTicks,
-            stoppedAt = stop,
-            firstAt = firstAt,
+            stoppedAt = stop and stop + 1000,
+            firstAt = firstAt and firstAt + 1000,
         }
     end
     if path == "altitude" then
         sensor(12, 9, 0, 9, function(at)
-            return at >= 600 and 4 or 0
+            return at >= 1600 and 4 or 0
         end, stopped and 700)
     else
         sensor(37, 2, 0, 40, { lat = 1, lon = 2 }, stopped == "gps" and 700)
         sensor(49, 2, 2, 8, function(at)
-            return at >= 600 and 11 or 0
+            return at >= 1600 and 11 or 0
         end, stopped == "speed" and 700)
         sensor(59, 2, 5, 0, 8, stopped == "satellites" and 700)
     end
     broker:setDocument({ revision = 2, flight = settings })
-    advance(100)
+    advance(300)
     state.arms[1] = true
     return broker, state, advance
 end
@@ -510,7 +550,7 @@ for _, path in ipairs({ "altitude", "speed" }) do
             end
             equal(state.writes, 1, path .. " must qualify with a healthy " .. period * 10 .. "ms stream")
             equal(broker.view.reason, "smart-" .. path)
-            assert(broker.view.qualifiedAt >= 800 and broker.view.qualifiedAt <= 1000)
+            assert(broker.view.qualifiedAt >= 1800 and broker.view.qualifiedAt <= 2000)
             if path == "altitude" then
                 equal(broker.session.altitudeReference, 0, "a recent witnessed disarmed sample is a valid reference")
             end
@@ -532,10 +572,10 @@ for _, stopped in ipairs({ "altitude", "speed", "gps", "satellites" }) do
     local path = stopped == "altitude" and "altitude" or "speed"
     local broker, state, advance = timedStream(path, 100, 32, stopped)
     advance(62)
-    equal(state.now, 810)
+    equal(state.now, 1810)
     equal(state.writes, 0, "a current cached " .. stopped .. " value cannot finish the two-second hold")
     advance(38)
-    equal(state.now, 1000)
+    equal(state.now, 2000)
     equal(state.writes, 0)
     equal(broker.session.smart[path].fresh, false, "stopped data must expire before the firmware's old flag")
     advance(550)
@@ -546,32 +586,45 @@ end
 do
     local broker, state, advance = timedStream("altitude", 100, 16)
     state.samples[113].value = function(at)
-        return at >= 500 and 4 or 0
+        return at >= 1500 and 4 or 0
     end
-    advance(8)
+    state.samples[113].freshTicks = 1
+    for _ = 1, 24 do
+        advance()
+        if broker.session.smart.altitude.sampleFresh == false then break end
+    end
     equal(broker.session.altitudeReference, 0, "prefer the witnessed pre-arm sample over a later new reading")
     assert(broker.session.smart.altitude.sampleFresh == false, "arming need not align with the firmware fresh window")
 end
 
 do
     local broker, state, advance = timedStream("altitude", 50, 32)
-    state.samples[113].unavailableAt = 715
+    state.samples[113].unavailableAt = 1705
     advance(60)
-    equal(state.now, 800)
+    equal(state.now, 1800)
     equal(state.writes, 0)
-    advance(40)
+    equal(state.samples[113].unavailableReads, 1, "the invalid sample must actually be observed")
+    for _ = 1, 100 do
+        advance()
+        if state.writes > 0 then break end
+    end
     equal(state.writes, 1)
-    assert(broker.view.qualifiedAt >= 925, "an invalid poll between detector ticks must restart the hold")
+    assert(broker.view.qualifiedAt >= 1925, "an invalid poll between detector ticks must restart the hold")
 end
 
 do
     local broker, state, advance = timedStream("altitude", 100, 32, "altitude")
     advance(100)
     state.samples[113].stoppedAt = nil
+    local recoveredAt = state.now
     advance(39)
     equal(state.writes, 0, "recovery must start a new full two-second hold")
-    advance(4)
+    for _ = 1, 45 do
+        advance()
+        if state.writes > 0 then break end
+    end
     equal(state.writes, 1)
+    assert(broker.view.qualifiedAt >= recoveredAt + 200)
     equal(broker.view.reason, "smart-altitude")
 end
 

@@ -2,6 +2,7 @@
 import hashlib
 import importlib.util
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 import zipfile
@@ -69,6 +70,21 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(release.package(source, Path(directory)).read_bytes(), first)
             checksum = archive.with_name(archive.name + ".sha256").read_text().split()[0]
             self.assertEqual(checksum, hashlib.sha256(first).hexdigest())
+
+    def test_release_requires_probe_disabled(self):
+        source = release.ROOT / "src/WIDGETS/AeroGrid"
+        for old, new in (
+            ("local SCHEDULER_PROBE = false", "local SCHEDULER_PROBE = true"),
+        ):
+            with self.subTest(setting=new), tempfile.TemporaryDirectory() as directory:
+                copy = Path(directory) / "AeroGrid"
+                shutil.copytree(source, copy)
+                main = copy / "main.lua"
+                text = main.read_text()
+                self.assertIn(old, text)
+                main.write_text(text.replace(old, new))
+                with self.assertRaisesRegex(ValueError, "shipped scheduler setting"):
+                    release.package(copy, Path(directory) / "out")
 
     def test_version_validation(self):
         with tempfile.TemporaryDirectory() as directory:
