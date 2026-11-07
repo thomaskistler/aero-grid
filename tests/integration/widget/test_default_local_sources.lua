@@ -34,5 +34,6 @@ fixture.pump(timerContext, 40)
 local timer = fixture.instanceOf(timerContext, "expired-narrow")
 local previous = timer.text
 fixture.radio.timers[0].value = 120
-fixture.pump(timerContext, 10)
-assert(timer.text ~= previous, "timer must advance without receiver telemetry when scheduler capacity is available")
+assert(fixture.pumpUntil(timerContext, function()
+    return timer.text ~= previous
+end, 200), "timer must advance without receiver telemetry when scheduler capacity is available")

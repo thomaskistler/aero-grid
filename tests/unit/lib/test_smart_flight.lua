@@ -52,6 +52,13 @@ local function fixture(family)
     return service, view, sensor, samples, step, radio, sensors, env
 end
 
+local function hold(step, from, to, altitude, speed)
+    for at = from + 100, to - 1, 100 do
+        step(at, altitude, speed)
+    end
+    step(to, altitude, speed)
+end
+
 do
     local _, view, sensor, samples, step = fixture()
     sensor(31, 9, 0, 9, 0)
@@ -237,7 +244,7 @@ local function detectorFixture(options, engine)
             end,
         },
     }
-    local function step(at, altitude, speed)
+    local function step(at, altitude, speed, continuity)
         for _, reading in ipairs({ context.arm, context.motor, context.link }) do
             reading.updatedAt = at
         end
@@ -250,6 +257,7 @@ local function detectorFixture(options, engine)
                 updatedAt = at,
                 evidenceAt = at,
                 confirmedAt = at,
+                continuity = continuity,
             }
         end
         (engine or detector).advance(context, at)
@@ -265,10 +273,10 @@ do
     c.arm.value = true
     step(20, 0)
     step(40, 3)
-    step(240, 3)
+    hold(step, 40, 240, 3)
     equal(c.phase, "starting", "exactly +3m does not qualify")
     step(260, 3.01)
-    step(459, 3.01)
+    hold(step, 260, 459, 3.01)
     equal(c.phase, "starting", "199 ticks is not two seconds")
     step(460, 3.01)
     equal(c.phase, "active")
@@ -278,13 +286,24 @@ end
 
 do
     local c, step = detectorFixture()
+    step(0, 0)
+    c.arm.value = true
+    step(20, 0)
+    step(40, 4)
+    step(141, 4, nil, 1)
+    equal(c.phase, "starting", "a source continuity change cannot qualify the flight")
+    equal(c.altitudeSince, 141, "new source continuity must start a fresh hold")
+end
+
+do
+    local c, step = detectorFixture()
     c.arm.value = true
     step(0, 100, 4.4704)
-    step(200, 104, 4.4704)
+    hold(step, 0, 200, 104, 4.4704)
     equal(c.altitudeReference, nil, "startup while armed cannot fabricate an arming reference")
     equal(c.phase, "starting", "exactly 10mph does not qualify")
     step(220, 104, 4.4705)
-    step(419, 104, 4.4705)
+    hold(step, 220, 419, 104, 4.4705)
     equal(c.phase, "starting")
     step(420, 104, 4.4705)
     equal(c.reason, "smart-speed", "speed is an OR path without any altitude reference")
@@ -296,10 +315,10 @@ do
     c.arm.value = true
     step(20)
     step(40, 100)
-    step(240, 104)
+    hold(step, 40, 240, 104)
     equal(c.altitudeReference, nil, "late in-flight altitude never becomes a baseline")
     equal(c.phase, "starting")
-    step(3020)
+    hold(step, 240, 3020)
     equal(c.reason, "standard", "missing/late altitude never gates standard qualification")
 end
 
@@ -315,7 +334,7 @@ do
     equal(c.altitudeReference, 20, "motor interruptions preserve the arming reference")
     c.motor.value = 0
     step(160, 24)
-    step(359, 24)
+    hold(step, 160, 359, 24)
     equal(c.phase, "starting")
     step(360, 24)
     equal(c.reason, "smart-altitude")
@@ -349,7 +368,7 @@ for _, failure in ipairs({ "stale", "unavailable", "age", "unknown-arm", "link",
     end
     c.arm.fresh, c.link.live, c.motor.value = true, true, 0
     step(120, 4, 5)
-    step(319, 4, 5)
+    hold(step, 120, 319, 4, 5)
     if failure ~= "generation" then
         equal(c.phase, "starting", failure .. " must require a new full two-second hold")
     end
@@ -361,9 +380,9 @@ do
     c.arm.value = true
     step(20, 0, 5)
     step(40, 4, 5)
-    step(240, 4, 5)
+    hold(step, 40, 240, 4, 5)
     equal(c.phase, "starting", "Smart remains opt-in")
-    step(3020, 4, 5)
+    hold(step, 240, 3020, 4, 5)
     equal(c.reason, "standard")
 end
 
@@ -373,7 +392,7 @@ do
     c.arm.value = true
     step(20, 0)
     step(40, 4)
-    step(240, 4)
+    hold(step, 40, 240, 4)
     equal(c.phase, "active")
     c.arm.value = false
     step(260, 100)
@@ -382,7 +401,7 @@ do
     c.arm.value = true
     step(380, 100)
     equal(c.altitudeReference, 100, "immediate rearm after confirmed completion must use a new reference")
-    step(580, 100)
+    hold(step, 380, 580, 100)
     equal(c.phase, "starting", "completed flight altitude cannot trigger the next flight")
 end
 
@@ -404,10 +423,10 @@ do
     c.arm.value = true
     step(20, baseline)
     step(40, exactRise, exactSpeed)
-    step(240, exactRise, exactSpeed)
+    hold(step, 40, 240, exactRise, exactSpeed)
     equal(c.phase, "starting", "float32 conversion noise at +3m/10mph must not qualify")
     step(260, exactRise + 0.01, exactSpeed + 0.01)
-    step(460, exactRise + 0.01, exactSpeed + 0.01)
+    hold(step, 260, 460, exactRise + 0.01, exactSpeed + 0.01)
     equal(c.phase, "active")
 end
 
@@ -419,7 +438,7 @@ do
     local exactFeet = (3 / 0.3048) * 0.3048
     local exactKph = 16.09344 * (1 / 3.6)
     step(40, exactFeet, exactKph)
-    step(240, exactFeet, exactKph)
+    hold(step, 40, 240, exactFeet, exactKph)
     equal(c.phase, "starting", "conversion roundoff must not turn exact physical thresholds into shortcuts")
     step(260, 3.001, 4.471)
     step(360, 3.001, 4.471)
@@ -443,7 +462,7 @@ do
     c.arm.fresh = true
     step(200, 15)
     equal(c.altitudeReference, 10, "recovery must not rebase late in flight")
-    step(399, 15)
+    hold(step, 200, 399, 15)
     equal(c.phase, "starting")
     step(400, 15)
     equal(c.reason, "smart-altitude")
@@ -458,6 +477,6 @@ do
     c.smart.altitude.fresh = false
     step(140)
     equal(c.startedAt, 20, "sensor loss does not reset the independent standard timer")
-    step(3020)
+    hold(step, 140, 3020)
     equal(c.reason, "standard")
 end

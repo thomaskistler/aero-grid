@@ -2,14 +2,12 @@
 
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(root).new()
-local sameTree = assert(loadfile(root .. "/tests/support/panel_tree.lua"))()
 local dashboard = fixture.createLoaded(nil, { Layout = "review-metric", Theme = "modern-dark" })
 local reference = dashboard.panels[1].instance
 local panel = fixture.module("panels/tx-battery.lua")
 local host = fixture.module("lib/panel_host.lua")
 local support = fixture.module("lib/services.lua")
 local builder = reference.themeBuilder
-assert(panel.step == panel.refresh)
 
 local function writes(node)
     local count = node.writes
@@ -65,7 +63,7 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                             services
                         )
                     end
-                    local legacy, instance = create(), create()
+                    local instance = create()
                     local entry = { module = panel, instance = instance, interval = panel.refreshInterval }
                     local task = host.task(entry)
                     for cycle = 1, 12 do
@@ -74,25 +72,37 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
                         range.available = cycle ~= 7
                         range.empty, range.full = 6.4, cycle == 9 and 6.4 or 8.4
                         if cycle == 10 then
-                            legacy.range, instance.range = nil, nil
+                            instance.range = nil
                         elseif cycle == 11 then
-                            legacy.range, instance.range = support.snapshot(range), support.snapshot(range)
+                            instance.range = support.snapshot(range)
                         elseif cycle == 12 then
-                            legacy.feed, instance.feed = nil, nil
+                            instance.feed = nil
                         end
-                        panel.refresh(legacy)
+                        local previousText, previousState, previousReading =
+                            instance.text, instance.stateName, instance.reading
                         local now = cycle * 50
                         assert(task:step(1, "run", now) == 50 and task.used == 1)
                         assert(entry.nextRefresh == now + 50)
-                        sameTree(legacy.panel.root, instance.panel.root)
+                        if instance.feed then
+                            local value = reading.available and reading.value or nil
+                            assert(instance.text == panel.reading(value))
+                            assert(instance.reading == value)
+                            assert(instance.stateName == panel.resolveState(settings, value, reading.stale))
+                            if instance.detailLabel and instance.showDetail then
+                                assert(instance.detailLabel.properties.text == instance.detail)
+                            end
+                        else
+                            assert(instance.text == previousText and instance.stateName == previousState)
+                            assert(instance.reading == previousReading)
+                        end
                         local before = writes(instance.panel.root)
                         task:step(1, "run", now)
                         assert(writes(instance.panel.root) == before, "stable TX battery frames must not repaint")
                     end
                     local resized = { x = 0, y = 0, w = rect.w + 20, h = rect.h + 30 }
-                    panel.update(legacy, resized)
                     panel.update(instance, resized)
-                    sameTree(legacy.panel.root, instance.panel.root)
+                    assert(instance.panel.root.properties.w == resized.w)
+                    assert(instance.panel.root.properties.h == resized.h)
                     local scheduler = fixture.module("lib/scheduler.lua").new({ steady = 1250, background = 1130 })
                     assert(scheduler:add({ id = "tx", decl = panel.decl, instance = task, due = 700 }))
                     local previous, before = entry.nextRefresh, writes(instance.panel.root)
@@ -105,4 +115,4 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
         end
     end
 end
-print("TX battery task: legacy parity, range transitions, stable frames, resizing and hidden eligibility passed")
+print("TX battery task: range transitions, stable frames, resizing and hidden eligibility passed")
