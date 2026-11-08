@@ -43,6 +43,11 @@ local function fit(cost)
     return ((11 * cost + 99) // 100) * 10
 end
 
+local function charge(cost)
+    if config.instructionProfile then return cost end
+    return fit(cost)
+end
+
 local function gate(condition, message)
     if not condition then
         gateErrors[message] = true
@@ -140,8 +145,8 @@ local function finish(label, raw, leak)
         loadBound = costs:bound("dashboard-loader", "theme-publish")
     end
     if loadBound then
-        local fitted = fit(cost)
-        gate(fitted <= loadBound, label .. " exceeds its bounded loading charge: " .. cost .. " -> " .. fitted)
+        local measured = charge(cost)
+        gate(measured <= loadBound, label .. " exceeds its bounded loading charge: " .. cost .. " -> " .. measured)
     end
     local boundedReflow = string.match(label, "^lifecycle:advanceReflow:")
     if label == "lifecycle:advanceReflow" or boundedReflow then
@@ -168,7 +173,7 @@ local function finish(label, raw, leak)
             or label == "lifecycle:rebuildPage" and 200
             or string.match(label, "^load:flight%-load%-wait:shared:") and loaderDeclarations[label]
             or P.lifecycleBounds and P.lifecycleBounds[label]
-        gate(not bound or fitted <= bound, label .. " exceeds its declared lifecycle charge: " .. fitted)
+        gate(not bound or charge(cost) <= bound, label .. " exceeds its declared lifecycle charge: " .. charge(cost))
     end
     if previewTasks and string.sub(label, 1, 11) == "task:panel:" then
         gate(cost <= 4000, label .. " exceeds the preview atom cap: " .. cost)
@@ -177,7 +182,7 @@ local function finish(label, raw, leak)
         gate(cost <= 4000, label .. " exceeds the modal atom cap: " .. cost)
         local stage = string.match(label, "^modal:log:advance:(.+)$")
         local bound = stage and P.logBounds and P.logBounds[stage]
-        gate(not bound or fit(cost) <= bound, label .. " exceeds its declared modal charge: " .. cost .. " -> " .. fit(cost))
+        gate(not bound or charge(cost) <= bound, label .. " exceeds its declared modal charge: " .. cost .. " -> " .. charge(cost))
     end
     if string.sub(label, 1, 5) == "unit:" and depth >= 1 then
         visits[depth] = visits[depth] + 1
@@ -202,20 +207,20 @@ local function finish(label, raw, leak)
             record("scheduler:ready", cost, own, units > 0 and units or 1, children)
             local fitted = fit(cost)
             gate(fitted <= 4000, "host readiness exceeds its fitted atom cap: " .. cost .. " -> " .. fitted)
-            gate(fitted <= P.readinessBound, "host readiness exceeds its work charge: " .. cost .. " -> " .. fitted)
+            gate(charge(cost) <= P.readinessBound, "host readiness exceeds its work charge: " .. cost .. " -> " .. charge(cost))
             local job = P.readinessHost and P.readinessHost.reconciliation
             if string.match(label, "^scheduler:ready:panel%-only:") or label == "scheduler:ready:begin" and job and job.panelOnly then
                 local panelLabel = label == "scheduler:ready:begin" and "scheduler:ready:panel-only:begin" or label
                 record(panelLabel, cost, own, units > 0 and units or 1, children)
-                gate(fitted <= P.readinessHost.RECONCILE_COST,
-                    panelLabel .. " exceeds its fitted reconciliation charge: " .. fitted)
+                gate(charge(cost) <= P.readinessHost.RECONCILE_COST,
+                    panelLabel .. " exceeds its reconciliation charge: " .. charge(cost))
             end
         end
         if string.match(label, "^editor:input:") then
             gate(cost <= 4000, label .. " exceeds the editor input atom cap: " .. cost)
             local bound = P.editorInputBounds and P.editorInputBounds[string.sub(label, #"editor:input:" + 1)]
             if bound then
-                gate(fit(cost) <= bound, label .. " exceeds the editor input charge: " .. cost .. " -> " .. fit(cost))
+                gate(charge(cost) <= bound, label .. " exceeds the editor input charge: " .. cost .. " -> " .. charge(cost))
             end
         end
         if boundedReflow then
@@ -225,26 +230,26 @@ local function finish(label, raw, leak)
         local opening = string.match(label, "^editor:advanceEditor:drawer%-open:(%a+)$")
         if opening then
             gate(cost <= 4000, label .. " exceeds the drawer-open atom cap: " .. cost)
-            gate(fit(cost) <= P.editorOpenBounds[opening], label .. " exceeds the drawer-open charge: " .. cost .. " -> " .. fit(cost))
+            gate(charge(cost) <= P.editorOpenBounds[opening], label .. " exceeds the drawer-open charge: " .. cost .. " -> " .. charge(cost))
         end
         local dragStage = string.match(label, "^editor:advanceEditor:drag:(%a+)$")
         if dragStage and P.editorDragBounds then
             gate(cost <= 4000, label .. " exceeds the drag atom cap: " .. cost)
-            gate(fit(cost) <= P.editorDragBounds[dragStage], label .. " exceeds the drag charge: " .. cost .. " -> " .. fit(cost))
+            gate(charge(cost) <= P.editorDragBounds[dragStage], label .. " exceeds the drag charge: " .. cost .. " -> " .. charge(cost))
         end
         local layoutStep = string.match(label, "^editor:advanceEditor:layout:([%w_%-]+)$")
         if layoutStep then
             gate(fit(cost) <= 4000, label .. " exceeds the fitted layout atom cap: " .. cost .. " -> " .. fit(cost))
             local bound = P.editorLayoutBounds and P.editorLayoutBounds[layoutStep]
             if bound then
-                gate(fit(cost) <= bound, label .. " exceeds the layout charge: " .. cost .. " -> " .. fit(cost))
+                gate(charge(cost) <= bound, label .. " exceeds the layout charge: " .. cost .. " -> " .. charge(cost))
             end
         end
         if stage and stage >= 2 and P.editorRenderBounds then
             gate(cost <= 4000, label .. " exceeds the editor paint atom cap: " .. cost)
             gate(
-                fit(cost) <= P.editorRenderBounds[stage == 6 and "finish" or "rows"],
-                label .. " exceeds the editor paint charge: " .. cost .. " -> " .. fit(cost)
+                charge(cost) <= P.editorRenderBounds[stage == 6 and "finish" or "rows"],
+                label .. " exceeds the editor paint charge: " .. cost .. " -> " .. charge(cost)
             )
         end
         local drawerStage = string.match(label, "^editor:drawer:advance:([%w_%-]+)")
@@ -254,22 +259,22 @@ local function finish(label, raw, leak)
         local drawerBound = drawerStage and P.editorDrawerBounds and P.editorDrawerBounds[drawerStage]
         if drawerBound then
             gate(cost <= 4000, label .. " exceeds the drawer atom cap: " .. cost)
-            gate(fit(cost) <= drawerBound, label .. " exceeds the drawer work charge: " .. cost .. " -> " .. fit(cost))
+            gate(charge(cost) <= drawerBound, label .. " exceeds the drawer work charge: " .. cost .. " -> " .. charge(cost))
         end
         local settingsStage = string.match(label, "^modal:settings:advance:([%w_%-]+)")
         local settingsBound = settingsStage and P.settingsBounds and P.settingsBounds[settingsStage]
         if settingsBound then
-            gate(fit(cost) <= settingsBound, label .. " exceeds the settings work charge: " .. cost .. " -> " .. fit(cost))
+            gate(charge(cost) <= settingsBound, label .. " exceeds the settings work charge: " .. cost .. " -> " .. charge(cost))
         end
         local saveStage = string.match(label, "^modal:settings:store:([%w_]+)")
         local saveBound = saveStage and P.settingsStoreBounds and P.settingsStoreBounds[saveStage]
         if saveBound then
-            gate(fit(cost) <= saveBound, label .. " exceeds the settings store charge: " .. cost .. " -> " .. fit(cost))
+            gate(charge(cost) <= saveBound, label .. " exceeds the settings store charge: " .. cost .. " -> " .. charge(cost))
         end
         local loadStage = string.match(label, "^modal:settings:load:([%w_]+)")
         local loadBound = loadStage and P.settingsLoadBounds and P.settingsLoadBounds[loadStage]
         if loadBound then
-            gate(cost <= 4000 and fit(cost) <= loadBound, label .. " exceeds the settings reader charge: " .. cost .. " -> " .. fit(cost))
+            gate(cost <= 4000 and charge(cost) <= loadBound, label .. " exceeds the settings reader charge: " .. cost .. " -> " .. charge(cost))
         end
         local editorPrefix = "editor:advanceEditor:"
         if string.sub(label, 1, #editorPrefix) == editorPrefix then

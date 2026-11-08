@@ -620,7 +620,8 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
         for name in CANDIDATE_SCENARIOS:
             try:
                 measured = audit.run(capture, executable, library, name,
-                                     audit.scenarios()[name], args.timeout, snapshot_path=candidate,
+                                     dict(audit.scenarios()[name], instructionProfile=True), args.timeout,
+                                     snapshot_path=candidate,
                                      output_name=name + "-snapshot-candidate")
                 native.extend(native_rows(name, measured, estimates))
                 result["native"].append(name)
@@ -715,7 +716,8 @@ def profile(audit, args):
         executable, capture = audit.build_native(library), audit.capture_module()
         for name in dict.fromkeys(names):
             try:
-                results = audit.run(capture, executable, library, name, available[name], args.timeout)
+                results = audit.run(capture, executable, library, name,
+                                    dict(available[name], instructionProfile=True), args.timeout)
                 if name.startswith("hook-check"):
                     checks[name] = results
                 else:

@@ -1048,6 +1048,7 @@ def prepare(capture, name, spec, sd):
               "flightOwnerHandoff": spec.get("flightOwnerHandoff", False),
               "sharedFlightRevision": spec.get("sharedFlightRevision", 0),
               "constructionParity": spec.get("constructionParity", False),
+              "instructionProfile": spec.get("instructionProfile", False),
               "fullscreen": spec.get("fullscreen", False),
               "baseInputs": bool(inputs), "swing": 0.4,
               "toggleSwitches": spec.get("toggleSwitches", spec["recipe"] == "state"),
@@ -1285,7 +1286,8 @@ def main():
     history_runs = []
     status = 0
     for name in names:
-        data = run(capture, executable, library, name, available[name], args.timeout,
+        spec = dict(available[name], instructionProfile=True) if args.candidate else available[name]
+        data = run(capture, executable, library, name, spec, args.timeout,
                    snapshot_path=args.candidate,
                    output_name=name + "-snapshot-candidate" if args.candidate else None)
         if args.history_parity:

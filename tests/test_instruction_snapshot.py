@@ -339,6 +339,23 @@ class InstructionSnapshotTests(unittest.TestCase):
              ("recovery", 40, 20), ("check-recovery", 1, 20)],
         )
 
+    def test_native_profile_charges_observed_cost_without_applying_margin_twice(self):
+        source = (snapshot.ROOT / "tools/scheduler-audit/probe.lua").read_text(encoding="ascii")
+        functions = source.split("local function fit(cost)\n", 1)[1].split("\nlocal function gate(", 1)[0]
+        lua = snapshot.LuaRuntime(unpack_returned_tuples=True)
+        charge = lua.execute(
+            "local config = ...\nlocal function fit(cost)\n" + functions + "\nreturn charge",
+            lua.table_from({"instructionProfile": True}),
+        )
+        self.assertEqual(charge(1223), 1223)
+        self.assertLessEqual(charge(1223), 1340)
+        self.assertGreater(charge(1341), 1340)
+        legacy = lua.execute(
+            "local config = ...\nlocal function fit(cost)\n" + functions + "\nreturn charge",
+            lua.table_from({"instructionProfile": False}),
+        )
+        self.assertEqual(legacy(1223), 1350)
+
     def test_selected_mock_suite_uses_exact_candidate(self):
         runner = snapshot._module("snapshot_cli_runner", snapshot.ROOT / "tests/run.py")
         suite = snapshot.ROOT / "tests/unit/lib/test_scheduler.lua"
@@ -367,6 +384,7 @@ class InstructionSnapshotTests(unittest.TestCase):
                     patch.object(audit, "run", return_value={"stats": {}, "panels": 9}) as run:
                 self.assertEqual(audit.main(), 0)
             self.assertEqual(run.call_args.args[3], "aircraft-link-recovery")
+            self.assertTrue(run.call_args.args[4]["instructionProfile"])
             self.assertEqual(run.call_args.kwargs["snapshot_path"], candidate)
             self.assertEqual(run.call_args.kwargs["output_name"], "aircraft-link-recovery-snapshot-candidate")
 
