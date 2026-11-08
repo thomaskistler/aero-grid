@@ -1050,7 +1050,8 @@ end
 function broker:disableScheduler(host)
     assert(host == self:owningContext(), "only the Flight broker's owning context can release it")
     local scheduler = host.schedulerHost and host.schedulerHost.scheduler
-    for _, task in pairs(self.tasks or {}) do
+    for _, item in ipairs(self.schedulerTasks or {}) do
+        local task = item.instance
         task.want = 0
         if scheduler then
             scheduler:remove(task.id)

@@ -109,6 +109,29 @@ owner:setDocument(document)
 untilState(settled)
 pump(80)
 invoke(definition.refresh, second)
+-- Exercise transfer when Flight is at the back of a full normal queue.
+local current = assert(owner:owningContext())
+local target = current == first and second or first
+local scheduler = current.schedulerHost.scheduler
+assert(scheduler.byId["service:flight"] and scheduler.byId["service:smart"])
+local filler = {
+    class = "normal", kinds = { background = true },
+    stages = { run = { fixed = 0, perUnit = 100, maxUnits = 1 } },
+}
+local index = 0
+while scheduler.count < 128 do
+    index = index + 1
+    assert(scheduler:add({
+        id = "handoff-witness:" .. index, decl = filler, due = 0,
+        instance = { step = function() return 100 end },
+    }))
+end
+fixture.tick(50)
+invoke(definition.refresh, target)
+assert(owner:owningContext() == target, "parked Flight owner must transfer with a full queue")
+assert(not scheduler.byId["service:flight"] and not scheduler.byId["service:smart"])
+for count = 1, index do assert(scheduler:remove("handoff-witness:" .. count)) end
+assert(#target.errors == 0, table.concat(target.errors, "; "))
 local function panel(context, id)
     return assert(fixture.instanceOf(context, id), id)
 end

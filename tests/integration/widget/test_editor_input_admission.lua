@@ -21,9 +21,13 @@ getSourceIndex = function(name)
     local info = getFieldInfo(name)
     return info and info.id
 end
+local sourceNames = {}
+for _, info in pairs(fixture.radio.fields) do
+    assert(sourceNames[info.id] == nil or sourceNames[info.id] == info.name, "duplicate mock source id")
+    sourceNames[info.id] = info.name
+end
 getSourceName = function(index)
-    local info = getFieldInfo(index)
-    return info and info.name
+    return sourceNames[index]
 end
 EVT_ROT_RIGHT, EVT_ROT_LEFT, EVT_VIRTUAL_NEXT, EVT_VIRTUAL_PREV = 9201, 9202, 9203, 9204
 EVT_TOUCH_BREAK, EVT_VIRTUAL_ENTER, EVT_TOUCH_TAP = 9205, 9206, 9207
