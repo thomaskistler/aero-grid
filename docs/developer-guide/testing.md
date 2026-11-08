@@ -129,7 +129,8 @@ the fixed shortfall target uses the same 10% uplift and rounding as other bounds
 **This workflow is still WIP:** the shipped snapshot contains seeded estimates,
 not a validated measured baseline. Chart measurement is deferred; its estimates
 remain unchanged, and its deferred suites still run without instrumentation
-against both the current snapshot and the candidate. Neither targeted measurements
+against both the current snapshot and the candidate; failures are reported but
+do not block this iteration. Neither targeted measurements
 nor a seeded snapshot establish release readiness.
 
 The resource suites check reload collectibility, object counts, sustained
