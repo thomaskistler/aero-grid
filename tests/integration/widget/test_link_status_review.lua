@@ -135,6 +135,9 @@ end
 fixture.radio.rssi = 75
 context.zone.w, context.zone.h = 480, 272
 fixture.pump(context, 40)
+assert(fixture.pumpUntil(context, function()
+    return wide.text == "70"
+end, 100), "reconnection must eventually restore measured LQ after resize")
 assertions.assertEqual(wide.text, "70", "reconnection must restore measured LQ")
 assertions.assertEqual(wide.area.value, liveFont, "reconnection must restore the numeric font")
 assertions.assertEqual(wide.unitDrawn, true)

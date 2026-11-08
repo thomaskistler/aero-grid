@@ -57,12 +57,19 @@ for _, kind in ipairs({
     end
     context.panelHost.dispatch = function(entry, event, ...)
         assert(event == "reflow" or event == "update", "geometry cannot dispatch hidden live panel work")
-        assert(admission, "the enclosing reflow atom must be reserved before mutation")
+        assert(admission == (expected ~= nil),
+            "services may run only when the enclosing reflow atom is reserved")
         return dispatch(entry, event, ...)
     end
     local function call(background, operation)
         expected = lifecycle.workBound(context, operation)
-        assert(expected, kind .. ": missing " .. operation .. " declaration")
+        if not expected then
+            local entry = context.panels[context.reflowIndex]
+            local declaration = entry and entry.module.reflowDecl
+            assert((operation == "advanceReflow" or operation == "waitReflow")
+                and declaration and declaration.bound > 4000,
+                kind .. ": missing " .. operation .. " declaration")
+        end
         admission = false
         local due, before = service.due, runs
         fixture.tick(5)
@@ -72,7 +79,10 @@ for _, kind in ipairs({
             definition.refresh(context)
         end
         fixture.lvglMock.settle()
-        assert(admission, kind .. ": no service admission for " .. operation)
+        assert(admission == (expected ~= nil), kind .. ": incorrect service admission for " .. operation)
+        if not expected then
+            assert(service.due == due and runs == before, "unbounded reflow must not admit services")
+        end
         if host.scheduler.elapsed(getTime(), due) < 0 then
             assert(service.due == due and runs == before, "future release must stay pending")
         elseif runs > before then
