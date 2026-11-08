@@ -143,6 +143,8 @@ function controlService.new(env, support)
 end
 
 local AXES = { "rud", "ele", "thr", "ail" }
+local TRIMS = { "trim-rud", "trim-ele", "trim-thr", "trim-ail" }
+local TRIM_INDEX = { ["trim-rud"] = 1, ["trim-ele"] = 2, ["trim-thr"] = 3, ["trim-ail"] = 4 }
 
 local function finite(value)
     return type(value) == "number" and value == value and math.abs(value) < math.huge
@@ -201,7 +203,19 @@ function controlService:scanOutputMetadata(entry)
         return
     end
     local scan = entry.scan
-    if not scan then
+    -- A direct first mix is common across many outputs. Keep that suspended
+    -- state compact; input and multi-line scans retain their ordinary table.
+    if type(scan) == "string" then
+        local flags = string.byte(scan, 1)
+        scan = {
+            mixLine = 1,
+            name = #scan > 1 and string.sub(scan, 2) or nil,
+            trim = TRIMS[flags & 7],
+            ambiguous = flags & 8 ~= 0 or nil,
+            nameAmbiguous = flags & 16 ~= 0 or nil,
+        }
+        entry.scan = scan
+    elseif not scan then
         scan = { mixLine = 0 }
         entry.scan = scan
     end
@@ -288,6 +302,11 @@ function controlService:scanOutputMetadata(entry)
         scan.inputNamed, scan.inputCarriesTrim = mixName ~= nil, line.carryTrim == false
     elseif input and not mixName then
         scan.nameAmbiguous = true
+    end
+    if scan.mixLine == 1 and not scan.input then
+        local trim = TRIM_INDEX[scan.trim] or 0
+        local flags = trim | (scan.ambiguous and 8 or 0) | (scan.nameAmbiguous and 16 or 0)
+        entry.scan = string.char(flags) .. (scan.name or "")
     end
 end
 

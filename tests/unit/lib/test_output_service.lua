@@ -215,6 +215,33 @@ equal(feed.name, "", "disabled mixes do not contribute names")
 switch = true
 mixes[1].carryTrim = false
 
+do
+    local probe = control.new(env, support)
+    local entry = probe:add({ index = 0, nameReady = false }, control.readOutput)
+    outputName = ""
+    mixes[1] = { source = 1, carryTrim = false, weight = 100, name = "A\0B" }
+    mixes[2] = nil
+    probe:readOutput(entry)
+    assert(type(entry.scan) == "string", "direct first-mix scans must use compact suspended state")
+    probe:readOutput(entry)
+    equal(entry.state.name, "A\0B", "compact scans preserve embedded zero bytes in names")
+    equal(entry.state.trim.name, "trim-ail")
+
+    mixes[2] = { source = 2, carryTrim = false, weight = 100 }
+    probe:readOutput(entry)
+    probe:readOutput(entry)
+    probe:readOutput(entry)
+    equal(entry.state.name, "", "compact scans must retain name ambiguity")
+    equal(entry.state.trim, nil, "compact scans must retain trim ambiguity")
+
+    mixes[2].multiplex = 2
+    probe:readOutput(entry)
+    probe:readOutput(entry)
+    probe:readOutput(entry)
+    equal(entry.state.name, "ele", "replace mixes must discard compact scan state")
+    equal(entry.state.trim.name, "trim-ele")
+end
+
 -- Long model configurations must remain bounded, including nested input scans.
 for index = 1, 64 do
     mixes[index] = { source = 3, carryTrim = false, weight = 100 }
