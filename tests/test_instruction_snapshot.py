@@ -301,7 +301,54 @@ class InstructionSnapshotTests(unittest.TestCase):
                 self.assertTrue(all(finding.startswith("efficiency:") for finding in record["warnings"].values()))
                 self.assertEqual(record["observations"]["mock"][key]["min"], 100)
                 snapshot.render(estimates, record)
+                baseline_estimates, baseline_record = copy.deepcopy(estimates), copy.deepcopy(record)
                 write.reset_mock()
+                higher = dict(row, max=750)
+                candidate_result = {
+                    "instrumentedMock": ["tests/test_profile.lua"],
+                    "native": list(snapshot.CANDIDATE_SCENARIOS),
+                    "observations": {"mock": {key: higher}, "native": {key: higher}},
+                }
+                with patch.object(snapshot, "validate_candidate", side_effect=[
+                        (["candidate: regression: mock sample grew",
+                          "candidate: runtime: mock sample exceeds bound"], candidate_result),
+                        ([], candidate_result),
+                ]) as validate:
+                    self.assertEqual(snapshot.profile(audit, args), 0)
+                    self.assertEqual(validate.call_count, 2)
+                    estimates, record = write.call_args.args
+                    self.assertEqual(estimates["tasks"]["model"]["run"]["perUnit"], 830)
+                    self.assertEqual(record["observations"]["mock"][key]["max"], 750)
+                    report = json.loads((root / "build/scheduler-audit/instruction-profile.json").read_text())
+                    self.assertEqual(len(report["candidateAttempts"]), 2)
+                    self.assertIn("regression:", report["candidateAttempts"][0]["errors"][0])
+                write.reset_mock()
+                with patch.object(snapshot, "validate_candidate", return_value=(
+                        ["candidate: regression: mock sample grew"], candidate_result)) as validate:
+                    self.assertEqual(snapshot.profile(audit, args), 1)
+                    self.assertEqual(validate.call_count, snapshot.MAX_CANDIDATE_PASSES)
+                    report = json.loads((root / "build/scheduler-audit/instruction-profile.json").read_text())
+                    self.assertTrue(any("did not converge" in error for error in report["errors"]))
+                write.assert_not_called()
+                with patch.object(snapshot, "validate_candidate", return_value=(
+                        ["candidate: regression: mock sample grew", "behavior: failed"], candidate_result)) as validate:
+                    self.assertEqual(snapshot.profile(audit, args), 1)
+                    self.assertEqual(validate.call_count, 1)
+                write.assert_not_called()
+                incomplete = dict(candidate_result, native=[])
+                with patch.object(snapshot, "validate_candidate", return_value=(
+                        ["candidate: regression: mock sample grew"], incomplete)) as validate:
+                    self.assertEqual(snapshot.profile(audit, args), 1)
+                    self.assertEqual(validate.call_count, 1)
+                write.assert_not_called()
+                unsafe = dict(row, max=15001)
+                unsafe_result = dict(candidate_result, observations={"mock": {key: unsafe}, "native": {key: higher}})
+                with patch.object(snapshot, "validate_candidate", return_value=(
+                        ["candidate: regression: mock sample grew"], unsafe_result)) as validate:
+                    self.assertEqual(snapshot.profile(audit, args), 1)
+                    self.assertEqual(validate.call_count, 1)
+                write.assert_not_called()
+                estimates, record = baseline_estimates, baseline_record
                 def fail_chart(path, **kwargs):
                     if path.relative_to(root).as_posix() in snapshot.DEFERRED_SUITES:
                         raise RuntimeError("chart did not draw")

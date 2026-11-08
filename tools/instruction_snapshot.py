@@ -23,6 +23,7 @@ SCHEMA = 1
 CEILING = 15000
 MARGIN = 400
 MIN_SAMPLES = 1
+MAX_CANDIDATE_PASSES = 4
 MEMORY_SUITES = (
     "tests/integration/widget/test_shared_module_code.lua",
     "tests/integration/widget/test_aircraft_memory.lua",
@@ -344,6 +345,22 @@ def propose(data, observations, declarations, required):
     return estimates
 
 
+def refit_candidate(snapshot, observations, candidate, declarations, required):
+    """Retain completed candidate observations before fitting another artifact."""
+    union = {}
+    for environment in ("mock", "native"):
+        union[environment] = merge_observations(
+            list(observations[environment].values()) + list(candidate[environment].values())
+        )
+    estimates = propose(snapshot, union, declarations, required)
+    revised = {"estimates": estimates, "record": snapshot["record"]}
+    findings = check(revised, union, required, updating=True)
+    errors = [finding for finding in findings if not finding.startswith("efficiency:")]
+    if errors:
+        raise ValueError("; ".join(errors))
+    return estimates, union
+
+
 def native_bound(label, estimates):
     """Map actual audited operations, not their reservation getters, to bounds."""
     prefixes = (
@@ -652,6 +669,7 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
         findings = check({"estimates": estimates, "record": record},
                          result["observations"],
                          set(), updating=False, require_previous=False)
+        result["warnings"] = [finding for finding in findings if finding.startswith("efficiency:")]
         errors.extend("candidate: " + finding for finding in findings
                       if not finding.startswith("efficiency:"))
     except (ValueError, TypeError, OSError) as error:
@@ -825,16 +843,52 @@ def profile(audit, args):
         record["coverage"]["candidateInstrumentedMock"] = dict(
             enumerate((path.relative_to(ROOT).as_posix() for path in suites), 1))
         record["coverage"]["candidateNative"] = dict(enumerate(CANDIDATE_SCENARIOS, 1))
-        candidate_errors, report["candidate"] = validate_candidate(
-            audit, runner, args, estimates, record, executable, library, capture, suites)
-        candidate_chart_failures = report["candidate"].get("chartFailures", [])
-        if candidate_chart_failures:
-            print(f"Deferred candidate Chart behavior failures: {len(candidate_chart_failures)}.")
-            for failure in candidate_chart_failures:
-                print(failure)
-        errors.extend(candidate_errors)
-        if source_sha() != inputs_sha:
-            errors.append("provenance: measurement inputs changed during candidate validation; refusing replacement")
+        report["candidateAttempts"] = []
+        for attempt in range(1, MAX_CANDIDATE_PASSES + 1):
+            candidate_errors, candidate_result = validate_candidate(
+                audit, runner, args, estimates, record, executable, library, capture, suites)
+            report["candidate"] = candidate_result
+            report["candidateAttempts"].append({"errors": candidate_errors, "result": candidate_result})
+            candidate_chart_failures = candidate_result.get("chartFailures", [])
+            if candidate_chart_failures:
+                print(f"Deferred candidate Chart behavior failures: {len(candidate_chart_failures)}.")
+                for failure in candidate_chart_failures:
+                    print(failure)
+            if source_sha() != inputs_sha:
+                errors.extend(candidate_errors)
+                errors.append("provenance: measurement inputs changed during candidate validation; refusing replacement")
+                break
+            if not candidate_errors:
+                break
+            repairable = all(error.startswith(("candidate: regression:", "candidate: runtime:"))
+                             for error in candidate_errors)
+            regression = any(error.startswith("candidate: regression:") for error in candidate_errors)
+            complete = (
+                len(candidate_result.get("instrumentedMock", [])) == len(suites)
+                and len(candidate_result.get("native", [])) == len(CANDIDATE_SCENARIOS)
+                and all(candidate_result.get("observations", {}).get(env) for env in ("mock", "native"))
+            )
+            if not repairable or not regression or not complete or attempt == MAX_CANDIDATE_PASSES:
+                errors.extend(candidate_errors)
+                if repairable and regression and complete and attempt == MAX_CANDIDATE_PASSES:
+                    errors.append("snapshot: candidate observations did not converge; refusing replacement")
+                break
+            try:
+                estimates, observations = refit_candidate(
+                    snapshot, observations, candidate_result["observations"], declarations, required)
+            except ValueError as error:
+                errors.extend(candidate_errors)
+                errors.append("snapshot: candidate refit: " + str(error))
+                break
+            snapshot["estimates"] = estimates
+            record["observations"] = observations
+            warnings = [finding for finding in check(snapshot, observations, required, updating=True)
+                        if finding.startswith("efficiency:")]
+            record["warnings"] = dict(enumerate(warnings, 1))
+            report["warnings"] = warnings
+            output.write_text(json.dumps(report, indent=2) + "\n", encoding="ascii")
+            print(f"Candidate observations changed; validating refitted candidate "
+                  f"({attempt + 1}/{MAX_CANDIDATE_PASSES}).")
         output.write_text(json.dumps(report, indent=2) + "\n", encoding="ascii")
         if errors:
             print(f"Snapshot candidate failed ({len(errors)} findings); snapshot unchanged. See {output}")
