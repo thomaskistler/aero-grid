@@ -32,17 +32,20 @@ local function harness(options, configured)
         model = {},
     })
     local runtime = support.runtime(env)
-    local telemetry = telemetryModule.new(env, support)
+    local telemetry = telemetryModule.new(env, support, runtime)
     local control = controlModule.new(env, support)
     runtime.byId.telemetry = telemetry
     runtime.byId.control = control
     runtime.byId.armed = armedModule.new(env, support, runtime)
     local history = historyModule.new(env, support, runtime)
+    runtime.byId.history = history
     local armSwitch = configured ~= false and "L01" or ""
     local session = history:session(armSwitch)
     options = options or {}
     options.armSwitch = armSwitch
     local feed = history:subscribe("V", options)
+    assert(string.find(telemetry.names.V.task.id, "service:telemetry:source:recorded%-one:"))
+    assert(telemetry.names.V.task.want == 1, "one History recording needs one telemetry grant")
     local function poll(now, arm, value, otherArm)
         values[1], values[100] = arm, value
         if otherArm ~= nil then
@@ -159,7 +162,7 @@ local function accuracy(history, feed, samples, epsilon)
     return worst
 end
 
-local history, session, feed, poll = harness()
+local history, session, feed, poll, telemetry = harness()
 poll(0, 0, 12)
 equal(feed.available, false, "disarmed readings must not enter the recording")
 poll(100, 1, 12)
@@ -225,10 +228,13 @@ assert(
     history:subscribe("V", { armSwitch = "L01", precision = 0 }) ~= feed,
     "Sensor and explicit precision subscriptions differ"
 )
+assert(string.find(telemetry.names.V.task.id, "service:telemetry:source:recorded:"))
+equal(telemetry.names.V.task.want, 2, "two distinct History recordings share one atomic source poll")
 equal(
     history:subscribe("V", { armSwitch = "L01", precision = 1 }),
     history:subscribe("V", { armSwitch = "L01", precision = 1 })
 )
+equal(telemetry.names.V.task.want, 3, "a duplicate recording must not increase the source grant")
 assert(
     history:subscribe("W", { armSwitch = "L01", precision = 2 })
         ~= history:subscribe("W", { armSwitch = "L01", precision = 1 })
