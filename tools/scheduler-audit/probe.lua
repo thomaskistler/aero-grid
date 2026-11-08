@@ -2408,7 +2408,7 @@ local function entry(kind, context, fn, e, t)
             }, { __index = model })
             owner.env.getInfo = model.getInfo
             P.flightSwitchOwner = owner:owningContext()
-            runCallback("action:model-switch-create", context, function()
+            runCallback("create", context, function()
                 P.flightSwitchContext =
                     createFn(context.zone, { Layout = context.layoutName, Theme = "modern-dark" }, context.path)
             end)
@@ -2421,7 +2421,7 @@ local function entry(kind, context, fn, e, t)
             return
         elseif not P.flightSwitchObserver then
             gate(owner:loadingContext() == initializer, "new-model member did not claim document initialization")
-            runCallback("action:model-switch-observer", context, function()
+            runCallback("create", context, function()
                 P.flightSwitchObserver =
                     createFn(context.zone, { Layout = context.layoutName, Theme = "modern-dark" }, context.path)
             end)
@@ -2455,7 +2455,7 @@ local function entry(kind, context, fn, e, t)
             if not P.sharedFlightHidden then
                 gate(context.stage == "flight-identity" and not owner.documentLoaded and not owner.store,
                     "shared loading must park the creator before store initialization")
-                runCallback("action:shared-flight-create", context, function()
+                runCallback("create", context, function()
                     P.sharedFlightHidden = createFn(
                         context.zone, { Layout = context.layoutName, Theme = "modern-dark" }, context.path
                     )

@@ -64,6 +64,15 @@ def check_action_coverage(name, actions, stats):
                 raise RuntimeError(f"{name}: missing separately measured refresh callbacks for {action}")
 
 
+def check_create_coverage(name, spec, stats):
+    additional = 2 if spec.get("flightModelSwitch") else int(
+        bool(spec.get("flightOwnerHandoff") or spec.get("sharedFlightLoad")))
+    if additional:
+        measured = sum(stats.get(label, {}).get("n", 0) for label in ("callback:create", "callback:create@load"))
+        if measured < 1 + additional:
+            raise RuntimeError(f"{name}: missing separately measured create callbacks")
+
+
 def capture_module():
     spec = importlib.util.spec_from_file_location("capture", TOOLS / "capture-panels.py")
     module = importlib.util.module_from_spec(spec)
@@ -1169,6 +1178,7 @@ def run(capture, executable, library, name, spec, timeout, *, snapshot_path=None
                     raise RuntimeError(f"{name}: missing complete reflow measurement for {prefix + stage}")
     actions = [phase["action"] for phase in spec["phases"] if phase.get("action")]
     check_action_coverage(name, actions, data.get("stats", {}))
+    check_create_coverage(name, spec, data.get("stats", {}))
     (directory / "results.json").write_text(json.dumps(data, indent=1) + "\n")
     return data
 

@@ -477,6 +477,22 @@ class InstructionSnapshotTests(unittest.TestCase):
         self.assertTrue(any(finding.startswith("safety:") for finding in
                             snapshot.check(data, observations, set(), updating=True)))
 
+    def test_native_lifecycle_create_callbacks_require_coverage(self):
+        audit = snapshot._module("audit_scheduler_creates", snapshot.ROOT / "tools/audit-scheduler.py")
+        for flag, required in (("sharedFlightLoad", 2), ("flightOwnerHandoff", 2), ("flightModelSwitch", 3)):
+            with self.subTest(flag=flag):
+                stats = {"callback:create": {"n": 1}, "callback:create@load": {"n": required - 1}}
+                audit.check_create_coverage("lifecycle", {flag: True}, stats)
+                stats["callback:create@load"]["n"] -= 1
+                with self.assertRaisesRegex(RuntimeError, "missing separately measured create callbacks"):
+                    audit.check_create_coverage("lifecycle", {flag: True}, stats)
+        bucket = dict(n=1, min=500, max=15001, selfMin=100, selfMax=200)
+        rows = snapshot.native_rows("shared", {"stats": {
+            "callback:create@load": {"units": {"1": bucket}},
+        }})
+        self.assertEqual((rows[0]["kind"], rows[0]["name"], rows[0]["stage"], rows[0]["max"]),
+                         ("callback", "create", "shared:load:", 15001))
+
     def test_atomic_write_and_radio_safe_roundtrip(self):
         data, _, _ = self.data()
         data["record"]["provenance"] = {'quoted"key': "first\nsecond"}
