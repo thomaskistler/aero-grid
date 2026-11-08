@@ -289,13 +289,16 @@ class InstructionSnapshotTests(unittest.TestCase):
                     if path.relative_to(root).as_posix() in snapshot.DEFERRED_SUITES:
                         raise RuntimeError("chart did not draw")
                     return {key: row}, {"model|run": 1}
-                with patch.object(runner, "run_test", side_effect=fail_chart):
+                with patch.object(runner, "run_test", side_effect=fail_chart), \
+                        patch.object(audit, "run", wraps=audit.run) as runs:
                     self.assertEqual(snapshot.profile(audit, args), 1)
+                    runs.assert_not_called()
                     report = (root / "build/scheduler-audit/instruction-profile-preflight.json").read_text()
                     self.assertIn("chart did not draw", report)
                     candidate_errors, result = snapshot.validate_candidate(
                         audit, runner, args, estimates, record, "native", library, None,
                         [root / "tests/test_profile.lua"])
+                    runs.assert_not_called()
                 self.assertEqual(len([finding for finding in candidate_errors
                                       if finding.startswith("behavior: candidate")]),
                                  len(snapshot.DEFERRED_SUITES))
