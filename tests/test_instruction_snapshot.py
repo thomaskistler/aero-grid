@@ -506,7 +506,7 @@ class InstructionSnapshotTests(unittest.TestCase):
     def test_instrumented_failure_retains_samples_and_declarations(self):
         runner = snapshot._module("failed_snapshot_runner", snapshot.ROOT / "tests/run.py")
         source = snapshot.ROOT / "tests/unit/lib/test_navigation_service.lua"
-        with tempfile.TemporaryDirectory(dir=snapshot.ROOT / "tests") as directory:
+        with tempfile.TemporaryDirectory(dir=snapshot.ROOT) as directory:
             suite = Path(directory) / "test_failure.lua"
             suite.write_text(source.read_text(encoding="ascii") + '\nerror("deliberate failure")\n',
                              encoding="ascii")
