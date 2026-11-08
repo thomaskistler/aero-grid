@@ -348,6 +348,22 @@ class InstructionSnapshotTests(unittest.TestCase):
                     self.assertEqual(snapshot.profile(audit, args), 1)
                     self.assertEqual(validate.call_count, 1)
                 write.assert_not_called()
+                def actual_candidate_observations(path, **kwargs):
+                    if not kwargs.get("instructions"):
+                        return None
+                    measured = higher if kwargs.get("snapshot_path") else row
+                    return {key: measured}, {"model|run": 1}
+                with patch.object(runner, "run_test", side_effect=actual_candidate_observations):
+                    self.assertEqual(snapshot.profile(audit, args), 0)
+                    report = json.loads((root / "build/scheduler-audit/instruction-profile.json").read_text())
+                    self.assertEqual(len(report["candidateAttempts"]), 2)
+                    self.assertTrue(any("regression:" in error for error in report["candidateAttempts"][0]["errors"]))
+                    self.assertEqual(report["candidateAttempts"][1]["errors"], [])
+                    estimates, record = write.call_args.args
+                    artifact = root / report["candidate"]["artifact"]
+                    self.assertEqual(artifact.read_text(encoding="ascii"), snapshot.render(estimates, record))
+                    self.assertEqual(record["observations"]["mock"][key]["max"], 750)
+                write.reset_mock()
                 estimates, record = baseline_estimates, baseline_record
                 def fail_chart(path, **kwargs):
                     if path.relative_to(root).as_posix() in snapshot.DEFERRED_SUITES:
