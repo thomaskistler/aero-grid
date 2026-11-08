@@ -118,7 +118,7 @@ return function(section)
                     ["state"] = 2500,
                     ["trim-panel"] = 6500,
                     ["tx-battery"] = 2500,
-                    ["visit"] = 500,
+                    ["visit"] = 1500,
                 },
                 ["editor-render"] = {
                     ["finish"] = 2000,
@@ -188,11 +188,11 @@ return function(section)
                     ["flight-timer"] = 2500,
                     ["host-diagnostics"] = 5000,
                     ["link-status"] = 3000,
-                    ["metric"] = 2000,
+                    ["metric"] = 3500,
                     ["model-identity"] = 4000,
                     ["navigation"] = 6000,
                     ["output"] = 3500,
-                    ["rx-battery"] = 2500,
+                    ["rx-battery"] = 3000,
                     ["service-probe"] = 3500,
                     ["state"] = 2000,
                     ["theme-showcase"] = 2000,
@@ -444,7 +444,7 @@ return function(section)
                     },
                     ["prepare"] = {
                         ["fixed"] = 0,
-                        ["perUnit"] = 774,
+                        ["perUnit"] = 777,
                         ["quantum"] = 500,
                     },
                     ["render"] = {
@@ -461,7 +461,7 @@ return function(section)
                     },
                     ["geometry"] = {
                         ["fixed"] = 0,
-                        ["perUnit"] = 2071,
+                        ["perUnit"] = 3633,
                         ["quantum"] = 500,
                     },
                     ["layout"] = {
@@ -534,12 +534,12 @@ return function(section)
                     },
                     ["geometry"] = {
                         ["fixed"] = 0,
-                        ["perUnit"] = 1658,
+                        ["perUnit"] = 2992,
                         ["quantum"] = 500,
                     },
                     ["layout"] = {
                         ["fixed"] = 0,
-                        ["perUnit"] = 659,
+                        ["perUnit"] = 715,
                         ["quantum"] = 500,
                     },
                     ["prepare"] = {
@@ -601,7 +601,7 @@ return function(section)
                 ["telemetry.plain"] = {
                     ["run"] = {
                         ["fixed"] = 0,
-                        ["perUnit"] = 344,
+                        ["perUnit"] = 434,
                         ["quantum"] = 500,
                     },
                 },
