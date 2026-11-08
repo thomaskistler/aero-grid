@@ -97,9 +97,19 @@ any recorded maximum increase; `--snapshot` updates the shipped estimates only
 after the full profile passes behavior, coverage, runtime, and safety
 checks. An incomplete or failed profile leaves the snapshot unchanged.
 Before replacement, the populated candidate runs the existing shared-module,
-Aircraft, and Output memory checks and native stress, metric-16, and model-panels
-scenarios without changing the shipped file. These checks retain the existing
-memory limits; their results are included in the diagnostic report.
+Aircraft, and Output memory checks and native stress, metric-16, model-panels,
+and Aircraft link-recovery scenarios without changing the shipped file. These
+checks retain the existing memory limits; their results are included in the
+diagnostic report.
+For focused debugging without replacing the snapshot:
+
+```sh
+python3 tests/run.py --snapshot path/to/candidate.lua tests/integration/widget/test_aircraft_memory.lua
+python3 tests/run.py --snapshot path/to/candidate.lua tests/integration/widget/test_output_memory.lua
+python3 tools/audit-scheduler.py --candidate path/to/candidate.lua aircraft-link-recovery
+```
+
+These focused checks do not replace the full profile.
 `--instruction-report` reads the saved measurements and produces a per-task,
 stage, and grant table with observed min/max and the current shipped bound.
 Coverage requires a real observation for every non-deferred task/stage/grant;

@@ -88,4 +88,16 @@ if config.toggleSwitches then
     end
 end
 
+if string.match(config.scenario, "^aircraft%-link%-recovery") then
+    for _, name in ipairs({ "getValue", "getRSSI", "getSourceValue" }) do
+        local reader = env[name]
+        if reader then
+            env[name] = function(...)
+                if _G.AUDIT_LINK_OFF then return 0 end
+                return reader(...)
+            end
+        end
+    end
+end
+
 return env

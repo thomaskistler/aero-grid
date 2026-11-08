@@ -28,7 +28,7 @@ MEMORY_SUITES = (
     "tests/integration/widget/test_aircraft_memory.lua",
     "tests/integration/widget/test_output_memory.lua",
 )
-MEMORY_SCENARIOS = ("stress", "metric-16", "model-panels")
+CANDIDATE_SCENARIOS = ("stress", "metric-16", "model-panels", "aircraft-link-recovery")
 
 
 def target(maximum):
@@ -606,10 +606,11 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
             except Exception as error:
                 errors.append(f"memory: candidate {name}: {error}")
         native = []
-        for name in MEMORY_SCENARIOS:
+        for name in CANDIDATE_SCENARIOS:
             try:
-                measured = audit.run(capture, executable, library, name + "-snapshot-candidate",
-                                     audit.scenarios()[name], args.timeout, snapshot_path=candidate)
+                measured = audit.run(capture, executable, library, name,
+                                     audit.scenarios()[name], args.timeout, snapshot_path=candidate,
+                                     output_name=name + "-snapshot-candidate")
                 native.extend(native_rows(name, measured, estimates))
                 result["native"].append(name)
             except Exception as error:
@@ -662,7 +663,7 @@ def profile(audit, args):
             errors.append(f"behavior: {path.relative_to(ROOT)}: {error}")
     available = audit.scenarios()
     names = ["hook-check", "hook-check-firmware", "stress", "metric-16", "model-panels",
-             "flight-smart-tasks", "flight-owner-handoff", "session-reset"]
+             "flight-smart-tasks", "flight-owner-handoff", "session-reset", "aircraft-link-recovery"]
     names.extend(name for name in available if name.startswith("lifecycle-app"))
     # Panel extrema supply native stages missed by ordinary dashboard releases.
     names.extend(name for name in available if name.endswith(("-min", "-max"))
@@ -770,7 +771,7 @@ def profile(audit, args):
                              "No independently measured component ranges."
             }
         record["coverage"]["candidateMock"] = dict(enumerate(MEMORY_SUITES, 1))
-        record["coverage"]["candidateNative"] = dict(enumerate(MEMORY_SCENARIOS, 1))
+        record["coverage"]["candidateNative"] = dict(enumerate(CANDIDATE_SCENARIOS, 1))
         candidate_errors, report["candidate"] = validate_candidate(
             audit, runner, args, estimates, record, executable, library, capture)
         errors.extend(candidate_errors)

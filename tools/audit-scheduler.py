@@ -203,6 +203,16 @@ def scenarios():
         "recipe": "metric", "layout": (WIDGET / "layouts/Default.yaml").read_text(),
         "expected": 9, "settings": True, "toggleSwitches": True, "phases": standard_phases(),
     }
+    result["aircraft-link-recovery"] = dict(result["default-gallery"], deterministicClock=True,
+        sources=["RxBt", "RQly", "1RSS", "RFMD", "Alt", "Alt+", "VSpd+"], phases=[
+            {"name": "warm", "kind": "refresh", "callbacks": 200, "step": 20, "perCall": 1},
+            {"name": "loss", "kind": "refresh", "action": "link-off", "callbacks": 40, "step": 20, "perCall": 1},
+            {"name": "check-loss", "kind": "refresh", "action": "check-link-loss",
+             "callbacks": 1, "step": 20, "perCall": 1},
+            {"name": "recovery", "kind": "refresh", "action": "link-on", "callbacks": 40, "step": 20, "perCall": 1},
+            {"name": "check-recovery", "kind": "refresh", "action": "check-link-recovery",
+             "callbacks": 1, "step": 20, "perCall": 1},
+        ])
     for name, base in (("editor-preview-metric", result["metric-16"]),
                        ("editor-preview-chart", result["chart-max"])):
         result[name] = dict(base, fullscreen=True, phases=[
@@ -1067,8 +1077,8 @@ def prepare(capture, name, spec, sd):
         shutil.copyfile(SUPPORT_DIR / "native_preparation.lua", audit / "native_preparation.lua")
 
 
-def run(capture, executable, library, name, spec, timeout, *, snapshot_path=None):
-    directory = OUTPUT / name
+def run(capture, executable, library, name, spec, timeout, *, snapshot_path=None, output_name=None):
+    directory = OUTPUT / (output_name or name)
     if directory.exists():
         shutil.rmtree(directory)
     directory.mkdir(parents=True)
@@ -1195,6 +1205,7 @@ def main():
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--instructions", action="store_true", help="Run the full instruction regression profile")
     parser.add_argument("--snapshot", action="store_true", help="Run the full profile and atomically update instruction estimates")
+    parser.add_argument("--candidate", type=Path, help="Run selected native scenarios with this candidate snapshot")
     parser.add_argument("--instruction-report", nargs="?", const=OUTPUT / "instruction-profile.json", type=Path,
                         help="Show measured min/current-bound/max per task, stage and grant as Markdown and CSV")
     parser.add_argument("--list", action="store_true")
@@ -1207,6 +1218,12 @@ def main():
                         help="Compare two deterministic-clock captures' valid History samples and gaps")
     parser.add_argument("--companion", type=Path, default=COMPANION)
     args = parser.parse_args()
+    if args.candidate is not None:
+        if (args.instructions or args.snapshot or args.all or args.list or args.framework is not None
+                or args.report or args.instruction_report is not None or not args.scenario):
+            parser.error("--candidate requires explicit native scenarios and cannot run a full profile or report")
+        if not args.candidate.is_file():
+            parser.error(f"Candidate snapshot not found: {args.candidate}")
     if args.instruction_report is not None:
         if args.instructions or args.snapshot or args.scenario or args.all or args.list or args.framework is not None or args.report:
             parser.error("--instruction-report reads saved measurements and cannot be combined with execution options")
@@ -1268,7 +1285,9 @@ def main():
     history_runs = []
     status = 0
     for name in names:
-        data = run(capture, executable, library, name, available[name], args.timeout)
+        data = run(capture, executable, library, name, available[name], args.timeout,
+                   snapshot_path=args.candidate,
+                   output_name=name + "-snapshot-candidate" if args.candidate else None)
         if args.history_parity:
             history_runs.append(data)
         if "loops" in available[name]:

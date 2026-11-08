@@ -1948,6 +1948,25 @@ actions = {
     end,
 }
 
+local function linkPanel(context)
+    for _, entry in ipairs(context.panels) do
+        if entry.placement.id == "link" then return entry.instance end
+    end
+    error("missing link panel")
+end
+
+actions["link-off"] = function() _G.AUDIT_LINK_OFF = true end
+actions["link-on"] = function() _G.AUDIT_LINK_OFF = false end
+actions["check-link-loss"] = function(context)
+    local link = linkPanel(context)
+    assert(link.text == "NO LINK", "not disconnected: " .. tostring(link.text))
+end
+actions["check-link-recovery"] = function(context)
+    local link = linkPanel(context)
+    assert(link.text ~= "NO LINK" and link.stateName == "normal",
+        "not recovered: " .. tostring(link.text) .. "/" .. tostring(link.stateName))
+end
+
 for name, action in pairs(actions) do
     actions[name] = function(context, ...)
         local ok, message = pcall(action, context, ...)

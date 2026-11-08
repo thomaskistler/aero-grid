@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
 from pathlib import Path
+import argparse
 import sys
 
 from lupa.lua53 import LuaRuntime
@@ -92,10 +93,27 @@ def run_test(path: Path, *, instructions=False, snapshot_path=None):
 
 
 def main() -> None:
-    for test_path in sorted((ROOT / "tests").rglob("test_*.lua")):
-        if "support" in test_path.relative_to(ROOT).parts:
-            continue
-        run_test(test_path)
+    parser = argparse.ArgumentParser(description="Run Lua suites in fresh mock runtimes.")
+    parser.add_argument("suites", nargs="*", type=Path, help="Lua test files; omit to run all suites")
+    parser.add_argument("--snapshot", type=Path, help="Use this candidate snapshot without replacing the shipped file")
+    args = parser.parse_args()
+    snapshot = args.snapshot.resolve() if args.snapshot else None
+    if snapshot is not None and not snapshot.is_file():
+        parser.error(f"Snapshot file not found: {snapshot}")
+    if args.suites:
+        suites = []
+        for path in args.suites:
+            path = path.resolve()
+            if not path.is_relative_to(ROOT / "tests") or not path.name.startswith("test_") \
+                    or path.suffix != ".lua" or not path.is_file() \
+                    or "support" in path.relative_to(ROOT / "tests").parts:
+                parser.error(f"Not a Lua test suite beneath tests/: {path}")
+            suites.append(path)
+    else:
+        suites = [path for path in sorted((ROOT / "tests").rglob("test_*.lua"))
+                  if "support" not in path.relative_to(ROOT).parts]
+    for path in suites:
+        run_test(path, snapshot_path=snapshot)
 
 
 if __name__ == "__main__":

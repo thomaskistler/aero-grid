@@ -266,7 +266,11 @@ class InstructionSnapshotTests(unittest.TestCase):
                     patch.object(snapshot, "load", side_effect=lambda: copy.deepcopy(data)), \
                     patch.object(snapshot, "_module", return_value=runner), \
                     patch.object(snapshot, "write") as write:
-                self.assertEqual(snapshot.profile(audit, args), 0)
+                with patch.object(audit, "run", wraps=audit.run) as runs:
+                    self.assertEqual(snapshot.profile(audit, args), 0)
+                names = [call.kwargs.get("output_name") or call.args[3] for call in runs.call_args_list]
+                self.assertIn("aircraft-link-recovery", names)
+                self.assertIn("aircraft-link-recovery-snapshot-candidate", names)
                 write.assert_called_once()
                 estimates, record = write.call_args.args
                 self.assertEqual(estimates["tasks"]["model"]["run"]["perUnit"], 770)
@@ -286,6 +290,15 @@ class InstructionSnapshotTests(unittest.TestCase):
                     candidate_errors, _ = snapshot.validate_candidate(
                         audit, runner, args, estimates, record, "native", library, None)
                 self.assertTrue(any("regression:" in finding for finding in candidate_errors))
+                def fail_recovery(*args, **kwargs):
+                    if kwargs.get("output_name") == "aircraft-link-recovery-snapshot-candidate":
+                        raise RuntimeError("link did not recover")
+                    return copy.deepcopy(native)
+                with patch.object(audit, "run", side_effect=fail_recovery):
+                    self.assertEqual(snapshot.profile(audit, args), 1)
+                    report = (root / "build/scheduler-audit/instruction-profile.json").read_text()
+                    self.assertIn("link did not recover", report)
+                write.assert_not_called()
                 with patch.object(snapshot, "validate_candidate", return_value=(
                         ["memory: heap bound exceeded"], {"mock": [], "native": []})):
                     self.assertEqual(snapshot.profile(audit, args), 1)
@@ -293,6 +306,49 @@ class InstructionSnapshotTests(unittest.TestCase):
                 row["max"] = 15001
                 self.assertEqual(snapshot.profile(audit, args), 1)
                 write.assert_not_called()
+
+    def test_native_aircraft_recovery_scenario_preserves_deadline(self):
+        audit = snapshot._module("audit_scheduler_scenario", snapshot.ROOT / "tools/audit-scheduler.py")
+        scenario = audit.scenarios()["aircraft-link-recovery"]
+        self.assertEqual(scenario["expected"], 9)
+        self.assertTrue(scenario["deterministicClock"])
+        self.assertEqual(scenario["sources"], ["RxBt", "RQly", "1RSS", "RFMD", "Alt", "Alt+", "VSpd+"])
+        self.assertEqual(
+            [(phase["name"], phase["callbacks"], phase["step"]) for phase in scenario["phases"]],
+            [("warm", 200, 20), ("loss", 40, 20), ("check-loss", 1, 20),
+             ("recovery", 40, 20), ("check-recovery", 1, 20)],
+        )
+
+    def test_selected_mock_suite_uses_exact_candidate(self):
+        runner = snapshot._module("snapshot_cli_runner", snapshot.ROOT / "tests/run.py")
+        suite = snapshot.ROOT / "tests/unit/lib/test_scheduler.lua"
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "candidate.lua"
+            candidate.write_text("return true\n", encoding="ascii")
+            with patch.object(sys, "argv", ["run.py", "--snapshot", str(candidate), str(suite)]), \
+                    patch.object(runner, "run_test") as run:
+                runner.main()
+            run.assert_called_once_with(suite, snapshot_path=candidate.resolve())
+
+    def test_selected_native_candidate_preserves_scenario_identity(self):
+        audit = snapshot._module("audit_scheduler_cli", snapshot.ROOT / "tools/audit-scheduler.py")
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "candidate.lua"
+            candidate.write_text("return true\n", encoding="ascii")
+            companion = Path(directory) / "Companion.app"
+            library = companion / "Contents/Resources/libedgetx-tx16s-simulator.dylib"
+            library.parent.mkdir(parents=True)
+            library.touch()
+            args = ["audit-scheduler.py", "--candidate", str(candidate),
+                    "--companion", str(companion), "aircraft-link-recovery"]
+            with patch.object(sys, "argv", args), patch.object(audit.platform, "system", return_value="Darwin"), \
+                    patch.object(audit, "build_native", return_value="native"), \
+                    patch.object(audit, "capture_module", return_value=None), \
+                    patch.object(audit, "run", return_value={"stats": {}, "panels": 9}) as run:
+                self.assertEqual(audit.main(), 0)
+            self.assertEqual(run.call_args.args[3], "aircraft-link-recovery")
+            self.assertEqual(run.call_args.kwargs["snapshot_path"], candidate)
+            self.assertEqual(run.call_args.kwargs["output_name"], "aircraft-link-recovery-snapshot-candidate")
 
     def test_candidate_is_loaded_instead_of_the_shipped_snapshot(self):
         runner = snapshot._module("snapshot_override_runner", snapshot.ROOT / "tests/run.py")
