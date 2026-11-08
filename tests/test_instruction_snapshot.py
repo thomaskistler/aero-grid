@@ -101,6 +101,18 @@ class InstructionSnapshotTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             snapshot.framework_rows(measurement)
 
+    def test_native_task_witness_keeps_exact_range_and_sample_count(self):
+        measurement = {"cases": {"panel:flight-timer": {
+            "samples": {"run": [{"n": 450, "min": 297, "max": 1134}]},
+        }}}
+        row, = snapshot.framework_task_rows(measurement)
+        self.assertEqual(snapshot.observation_key(row), "task|panel.flight-timer|run|1")
+        self.assertEqual((row["n"], row["min"], row["max"]), (450, 297, 1134))
+        self.assertEqual(row["maxScenario"], "framework:flight-timer-panel")
+        measurement["cases"]["panel:flight-timer"]["samples"] = {}
+        with self.assertRaises(ValueError):
+            snapshot.framework_task_rows(measurement)
+
     def test_exact_candidate_checks_native_framework_against_its_own_reservation(self):
         data, _, _ = self.data()
         data["estimates"]["bounds"]["scheduler"] = {"fixed": 500, "examine": 64, "run": 224}
@@ -113,7 +125,7 @@ class InstructionSnapshotTests(unittest.TestCase):
         def run_framework(*args, **kwargs):
             called.append(kwargs["snapshot_path"])
             return measurement
-        audit = SimpleNamespace(run_framework=run_framework, scenarios=lambda: {"stress": {}},
+        audit = SimpleNamespace(CASE_DIR=Path("cases"), run_framework=run_framework, scenarios=lambda: {"stress": {}},
                                 run=lambda *args, **kwargs: {"luaMemory": {}})
         runner = SimpleNamespace(run_test=lambda *args, **kwargs: None)
         with tempfile.TemporaryDirectory() as directory:
@@ -121,6 +133,7 @@ class InstructionSnapshotTests(unittest.TestCase):
                  patch.object(snapshot, "MEMORY_SUITES", ("tests/shared.lua",)), \
                  patch.object(snapshot, "DEFERRED_SUITES", set()), \
                  patch.object(snapshot, "CANDIDATE_SCENARIOS", ()), \
+                 patch.object(snapshot, "framework_task_rows", return_value=[]), \
                  patch.object(snapshot.subprocess, "run", return_value=SimpleNamespace(stdout="passed")):
                 errors, result = snapshot.validate_candidate(
                     audit, runner, SimpleNamespace(timeout=10), data["estimates"], data["record"],
@@ -394,6 +407,7 @@ class InstructionSnapshotTests(unittest.TestCase):
             measured = dict(row, max=301 if kwargs.get("snapshot_path") else 201)
             return {key: measured}, {"test|run": 1}
         audit = SimpleNamespace(
+            CASE_DIR=Path("cases"),
             scenarios=lambda: {name: {} for name in ("hook-check", "hook-check-firmware", "focused", "stress")},
             build_native=lambda library: "native", capture_module=lambda: None,
             run=lambda *args, **kwargs: {"luaMemory": {"peakBytes": 1234}},
@@ -425,6 +439,7 @@ class InstructionSnapshotTests(unittest.TestCase):
                     patch.object(snapshot, "CANDIDATE_SCENARIOS", ("focused",)), \
                     patch.object(snapshot, "NATIVE_SCENARIOS", ("hook-check", "hook-check-firmware", "focused")), \
                     patch.object(snapshot, "framework_rows", return_value=[]), \
+                    patch.object(snapshot, "framework_task_rows", return_value=[]), \
                     patch.object(snapshot, "native_rows", return_value=[row]), \
                     patch.object(snapshot.subprocess, "run", return_value=SimpleNamespace(stdout="passed")), \
                     patch.object(snapshot, "write") as write:

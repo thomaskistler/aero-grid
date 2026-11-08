@@ -438,6 +438,16 @@ function overhead.measure(scheduler, count, pause, mixes)
     return { K = K, rows = rows, heap = { tasks = scheduler.MAX_TASKS, kib = collectgarbage("count") - before } }
 end
 
+function overhead.measurePaths(scheduler, count, pause, paths)
+    local K = window(count, pause, function() end, nil, nil, nil, nil)
+    local rows = {}
+    paths(scheduler, function(s, used, examined, ran)
+        local measured = window(count, pause, s.run, s, "steady", 0, used) - K
+        rows[#rows + 1] = row("rounded path " .. examined .. ":" .. ran, s, measured)
+    end)
+    return rows
+end
+
 --- The check that replaces a fixed go/no-go figure: every measured callback
 --- took no more than the planner charged for it. It also reports what the
 --- measurements show per part: `fixed` (an idle callback), `examine` (per task

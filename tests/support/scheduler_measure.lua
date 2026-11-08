@@ -51,19 +51,29 @@ function measure.run(case, count, pause)
         return last - first
     end
     local probe = window(noop, nil, 0, "", 0)
-    local worst = {}
+    local worst, samples = {}, {}
     for _, item in ipairs(case.cases) do
         for seed = 1, measure.SEEDS do
             local instance, now = item.setup(seed)
             local cost = window(instance.step, instance, item.grant, item.stage, now or seed) - probe
             local grants = worst[item.stage] or {}
             worst[item.stage] = grants
+            local observations = samples[item.stage] or {}
+            samples[item.stage] = observations
+            local observation = observations[item.grant]
+            if not observation then
+                observation = { n = 0, min = cost, max = cost }
+                observations[item.grant] = observation
+            end
+            observation.n = observation.n + 1
+            observation.min = math.min(observation.min, cost)
+            observation.max = math.max(observation.max, cost)
             if cost > (grants[item.grant] or -1) then
                 grants[item.grant] = cost
             end
         end
     end
-    return worst
+    return worst, samples
 end
 
 --- Fit `fixed + g * perUnit` over the measured grants so that it holds at every
@@ -192,9 +202,10 @@ end
 --- Measure a case: `{ worst, proposed, findings }`, and `planner` when the
 --- scheduler library is given.
 function measure.report(case, count, pause, scheduler)
-    local worst = measure.run(case, count, pause)
+    local worst, samples = measure.run(case, count, pause)
     return {
         worst = worst,
+        samples = samples,
         proposed = measure.propose(case, worst),
         findings = measure.check(case.decl, worst),
         planner = scheduler and measure.planner(case, scheduler, count, pause) or nil,

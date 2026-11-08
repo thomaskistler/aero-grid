@@ -171,6 +171,25 @@ def framework_rows(measurement):
     ]
 
 
+def framework_task_rows(measurement):
+    case = measurement["cases"]["panel:flight-timer"]
+    stages = case["samples"]
+    observations = []
+    for stage, grants in stages.items():
+        pairs = enumerate(grants, 1) if isinstance(grants, list) else (
+            (int(grant), sample) for grant, sample in grants.items()
+        )
+        for grant, sample in pairs:
+            if sample is not None:
+                observations.append(dict(kind="task", name="panel.flight-timer", stage=stage, grant=grant,
+                                         n=sample["n"], min=sample["min"], max=sample["max"], failures=0,
+                                         minScenario="framework:flight-timer-panel",
+                                         maxScenario="framework:flight-timer-panel"))
+    if not observations:
+        raise ValueError("native framework audit lacks flight-timer task samples")
+    return observations
+
+
 def check(snapshot, observations, required, *, updating=False, require_previous=True):
     """Independent regression, runtime, safety, coverage and spread findings.
 
@@ -770,10 +789,12 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
             result["observations"]["native"] = merge_observations(native)
             checkpoint()
         try:
-            measured = audit.run_framework(capture, executable, library, [], args.timeout,
+            measured = audit.run_framework(capture, executable, library,
+                                           [audit.CASE_DIR / "flight-timer-panel.lua"], args.timeout,
                                            snapshot_path=candidate, output_name="framework-snapshot-candidate")
             result["nativeMeasurements"]["framework"] = measured
             native.extend(framework_rows(measured))
+            native.extend(framework_task_rows(measured))
             result["native"].append("framework")
         except Exception as error:
             errors.append(f"native: candidate framework: {error}")
@@ -917,10 +938,12 @@ def _profile(audit, args):
             checkpoint()
             print(f"Native sample completed: {name}", flush=True)
         try:
-            measured = audit.run_framework(capture, executable, library, [], args.timeout,
+            measured = audit.run_framework(capture, executable, library,
+                                           [audit.CASE_DIR / "flight-timer-panel.lua"], args.timeout,
                                            output_name="framework-instruction-profile")
             native_measurements["framework"] = measured
             native.extend(framework_rows(measured))
+            native.extend(framework_task_rows(measured))
             native_completed.append("framework")
         except Exception as error:
             errors.append(f"native: framework: {error}")

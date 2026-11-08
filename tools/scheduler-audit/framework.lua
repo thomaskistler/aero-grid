@@ -13,6 +13,7 @@ local scheduler = costs:bind("lib/scheduler.lua", assert(loadScript("/WIDGETS/Ae
 local overhead = assert(loadScript("/WIDGETS/AeroGrid/audit/scheduler_overhead.lua"))()
 local measure = assert(loadScript("/WIDGETS/AeroGrid/audit/scheduler_measure.lua"))()
 local mixes = assert(loadScript("/WIDGETS/AeroGrid/audit/scheduler_mixes.lua"))()
+local paths = assert(loadScript("/WIDGETS/AeroGrid/audit/scheduler_path_witness.lua"))()
 
 local finished = false
 
@@ -60,6 +61,9 @@ end
 
 local function measureAll()
     local results = { overhead = overhead.measure(scheduler, __count, __pause, mixes), cases = {} }
+    for _, item in ipairs(overhead.measurePaths(scheduler, __count, __pause, paths)) do
+        results.overhead.rows[#results.overhead.rows + 1] = item
+    end
     results.verdict = overhead.verdict(results.overhead)
     results.charges = {
         fixed = scheduler.FIXED_COST,

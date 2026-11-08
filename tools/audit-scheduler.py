@@ -1216,7 +1216,7 @@ def prepare_framework(capture, sd, cases):
     shutil.copyfile(WIDGET / "panels/chart.lua", widget / "panels/chart.lua")
     shutil.copyfile(PROBE_DIR / "framework.lua", audit / "framework.lua")
     shutil.copyfile(SUPPORT_DIR / "costs.lua", audit / "costs.lua")
-    for name in ("scheduler_overhead.lua", "scheduler_measure.lua", "scheduler_mixes.lua",
+    for name in ("scheduler_overhead.lua", "scheduler_measure.lua", "scheduler_mixes.lua", "scheduler_path_witness.lua",
                  "scheduler_panel_api.lua", "scheduler_chart_fixture.lua", "scheduler_flight_readout.lua",
                  "scheduler_probe_fixture.lua", "scheduler_diagnostics_fixture.lua", "scheduler_flight_fixture.lua",
                  "theme_resolution_fixture.lua", "scheduler_registration_fixture.lua", "memory_files.lua",

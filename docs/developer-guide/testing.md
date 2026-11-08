@@ -141,7 +141,8 @@ values are not separately measured ranges; an insufficient combined reservation
 blocks the profile. Native checks include a 128-task shared-cost scan using
 rounded stage reservations, both when fitting and against the candidate. Mock
 planner witnesses exercise different examined/run combinations with real
-shared-cost skips and reinsertions; callback observations remain recorded.
+shared-cost skips and reinsertions in both environments; callback observations
+remain recorded. A native flight-timer witness supplements the live scenarios.
 Snapshot generation preserves the variable coefficients; the fixed reservation
 is rounded to 500 and increased when a measured shortfall requires it. The
 shortfall target uses the same 10% uplift and rounding as other bounds.
