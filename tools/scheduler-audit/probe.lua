@@ -1969,8 +1969,14 @@ actions["check-link-loss"] = function(context)
 end
 actions["check-link-recovery"] = function(context)
     local link = linkPanel(context)
-    assert(link.text ~= "NO LINK" and link.stateName == "normal",
-        "not recovered: " .. tostring(link.text) .. "/" .. tostring(link.stateName))
+    if link.text == "NO LINK" or link.stateName ~= "normal" then
+        local feed = link.qualityFeed
+        local work = link.refreshWork
+        error("not recovered: " .. tostring(link.text) .. "/" .. tostring(link.stateName)
+            .. " feed=" .. tostring(feed and feed.state)
+            .. " link=" .. tostring(link.link and link.link.live)
+            .. " work=" .. tostring(work and work.stage))
+    end
 end
 
 for name, action in pairs(actions) do
