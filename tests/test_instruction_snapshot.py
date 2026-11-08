@@ -261,10 +261,15 @@ class InstructionSnapshotTests(unittest.TestCase):
         native = {"stats": {"task:service:model:run": {"units": {"1": {
             "n": 1, "min": 100, "max": 700,
         }}}}}
+        def fake_native(*args, **kwargs):
+            measured = copy.deepcopy(native)
+            if kwargs.get("memory"):
+                measured["luaMemory"] = {"peakBytes": 1234}
+            return measured
         audit = SimpleNamespace(
             scenarios=Scenarios, build_native=lambda library: "native",
             capture_module=lambda: None,
-            run=lambda *args, **kwargs: copy.deepcopy(native),
+            run=fake_native,
             hook_check_status=lambda *args: (True, "hook agreement"),
             subprocess=SimpleNamespace(check_output=lambda *args, **kwargs: "commit\n"),
         )
@@ -282,6 +287,7 @@ class InstructionSnapshotTests(unittest.TestCase):
             with patch.object(snapshot, "ROOT", root), patch.object(snapshot, "SNAPSHOT", path), \
                     patch.object(snapshot, "load", side_effect=lambda: copy.deepcopy(data)), \
                     patch.object(snapshot, "_module", return_value=runner), \
+                    patch.object(snapshot.subprocess, "run", return_value=SimpleNamespace(stdout="passed")), \
                     patch.object(snapshot, "write") as write:
                 with patch.object(audit, "run", wraps=audit.run) as runs, \
                         patch.object(runner, "run_test", wraps=runner.run_test) as mock_runs:
@@ -396,6 +402,17 @@ class InstructionSnapshotTests(unittest.TestCase):
                 artifact = root / result["artifact"]
                 self.assertTrue(artifact.is_file())
                 self.assertEqual(hashlib.sha256(artifact.read_bytes()).hexdigest(), result["sha256"])
+                with patch.object(snapshot.subprocess, "run", side_effect=FileNotFoundError("missing Lua32")):
+                    candidate_errors, _ = snapshot.validate_candidate(
+                        audit, runner, args, estimates, record, "native", library, None,
+                        [root / "tests/test_profile.lua"])
+                self.assertTrue(any("Lua32 shared-module" in finding for finding in candidate_errors))
+                with patch.object(audit, "run", return_value=native):
+                    candidate_errors, _ = snapshot.validate_candidate(
+                        audit, runner, args, estimates, record, "native", library, None,
+                        [root / "tests/test_profile.lua"])
+                self.assertTrue(any("native Lua allocator measurement is missing" in finding
+                                    for finding in candidate_errors))
                 increased = copy.deepcopy(native)
                 increased["stats"]["task:service:model:run"]["units"]["1"]["max"] = 701
                 with patch.object(audit, "run", return_value=increased):
@@ -475,6 +492,18 @@ class InstructionSnapshotTests(unittest.TestCase):
              ("recovery", 40, 20), ("check-recovery", 1, 20)],
         )
 
+    def test_native_heap_requires_verified_peak_below_firmware_limit(self):
+        audit = snapshot._module("audit_heap", snapshot.ROOT / "tools/audit-scheduler.py")
+        valid = "AEROGRID_LUA_HEAP initial=100 peak=200 final=0 calls=10 checks=2"
+        self.assertEqual(audit.native_heap(valid)["peakBytes"], 200)
+        for log in ("", "AEROGRID_LUA_HEAP initial=200 peak=100 final=0 calls=10 checks=2",
+                    valid + "\n" + valid,
+                    "AEROGRID_LUA_HEAP initial=100 peak=200 final=201 calls=10 checks=2",
+                    "AEROGRID_LUA_HEAP initial=100 peak=200 final=0 calls=10 checks=0",
+                    f"AEROGRID_LUA_HEAP initial=100 peak={audit.LUA_MEM_MAX} final=0 calls=10 checks=2"):
+            with self.assertRaises(RuntimeError):
+                audit.native_heap(log)
+
     def test_native_profile_charges_observed_cost_without_applying_margin_twice(self):
         source = (snapshot.ROOT / "tools/scheduler-audit/probe.lua").read_text(encoding="ascii")
         functions = source.split("local function fit(cost)\n", 1)[1].split("\nlocal function gate(", 1)[0]
@@ -516,6 +545,31 @@ class InstructionSnapshotTests(unittest.TestCase):
             self.assertTrue(any(row["name"] == "navigation" and row["n"] > 0
                                 for row in caught.exception.rows.values()))
             self.assertEqual(caught.exception.declarations["navigation|run"], 2)
+
+    @unittest.skipUnless((snapshot.ROOT / "build/lua32/lua").is_file(), "Lua32 is not built")
+    def test_lua32_candidate_intercepts_source_and_copied_fixture(self):
+        data = snapshot.load()
+        data["record"]["candidateMarker"] = True
+        with tempfile.TemporaryDirectory(dir=snapshot.ROOT) as directory:
+            path = Path(directory)
+            candidate = path / "candidate.lua"
+            candidate.write_text(snapshot.render(**data), encoding="ascii")
+            copied = path / "fixture/WIDGETS/AeroGrid/lib/instruction_snapshot.lua"
+            copied.parent.mkdir(parents=True)
+            copied.write_text("error('copied seed was used')\n", encoding="ascii")
+            suite = path / "test_candidate.lua"
+            suite.write_text(f"""
+                local root = ...
+                local source = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/instruction_snapshot.lua"))()
+                assert(source("record").candidateMarker)
+                local fixture = assert(loadfile({json.dumps(str(copied))}))()
+                assert(fixture("record").candidateMarker)
+            """, encoding="ascii")
+            snapshot.subprocess.run(
+                [str(snapshot.ROOT / "build/lua32/lua"), str(snapshot.ROOT / "tests/support/lua32.lua"),
+                 str(suite), str(snapshot.ROOT), str(candidate)],
+                check=True, capture_output=True, text=True,
+            )
 
     def test_selected_native_candidate_preserves_scenario_identity(self):
         audit = snapshot._module("audit_scheduler_cli", snapshot.ROOT / "tools/audit-scheduler.py")

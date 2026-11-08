@@ -103,6 +103,8 @@ checks retain the existing memory limits; their results are included in the
 diagnostic report. The candidate also runs the measurement-profile mock suites
 again to check its actual instruction observations. The report identifies the
 exact candidate file by path and SHA-256, including when validation fails.
+Candidate validation checks peak native Lua heap and the shared-module guard
+under 32-bit Lua; run `make test-lua32` first to build that interpreter.
 If a complete candidate run observes higher maxima, snapshot generation retains
 those samples, refits, and validates the resulting candidate again. It stops
 without replacement on behavioral or safety failures, incomplete evidence, or

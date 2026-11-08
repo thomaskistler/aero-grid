@@ -13,6 +13,7 @@ import copy
 import csv
 import json
 import os
+import subprocess
 import tempfile
 
 from lupa.lua53 import LuaRuntime, lua_type
@@ -633,6 +634,17 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
                 result["mock"].append(name)
             except Exception as error:
                 errors.append(f"memory: candidate {name}: {error}")
+        try:
+            lua32 = subprocess.run(
+                [str(ROOT / "build/lua32/lua"), str(ROOT / "tests/support/lua32.lua"),
+                 str(ROOT / MEMORY_SUITES[0]), str(ROOT), str(candidate)],
+                cwd=ROOT, text=True, capture_output=True, timeout=args.timeout, check=True,
+            )
+            result["lua32Memory"] = lua32.stdout.strip()
+        except (OSError, subprocess.SubprocessError) as error:
+            details = getattr(error, "stderr", None) or getattr(error, "stdout", None)
+            errors.append(f"memory: candidate Lua32 shared-module: {error}"
+                          + (f"\n{details}" if details else ""))
         for name in sorted(DEFERRED_SUITES):
             try:
                 runner.run_test(ROOT / name, snapshot_path=candidate)
@@ -660,7 +672,11 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
                 measured = audit.run(capture, executable, library, name,
                                      dict(audit.scenarios()[name], instructionProfile=True), args.timeout,
                                      snapshot_path=candidate,
-                                     output_name=name + "-snapshot-candidate")
+                                     output_name=name + "-snapshot-candidate", memory=name == "stress")
+                if name == "stress":
+                    if "luaMemory" not in measured:
+                        raise RuntimeError("native Lua allocator measurement is missing")
+                    result["nativeMemory"] = measured["luaMemory"]
                 native.extend(native_rows(name, measured, estimates))
                 result["native"].append(name)
             except Exception as error:
@@ -839,6 +855,8 @@ def profile(audit, args):
                              "No independently measured component ranges."
             }
         record["coverage"]["candidateMock"] = dict(enumerate(MEMORY_SUITES, 1))
+        record["coverage"]["candidateLua32Memory"] = {1: MEMORY_SUITES[0]}
+        record["coverage"]["candidateNativeMemory"] = {1: "stress"}
         record["coverage"]["candidateChartBehavior"] = dict(enumerate(sorted(DEFERRED_SUITES), 1))
         record["coverage"]["candidateInstrumentedMock"] = dict(
             enumerate((path.relative_to(ROOT).as_posix() for path in suites), 1))

@@ -20,6 +20,7 @@
 
 typedef void lua_State;
 typedef void (*Hook)(lua_State*, void*);
+typedef void* (*Allocator)(void*, void*, size_t, size_t);
 
 static volatile uint64_t counter = 0;
 static volatile bool paused = false;
@@ -28,6 +29,50 @@ static void (*lua_pushcclosure_)(lua_State*, int (*)(lua_State*), int);
 static void (*lua_setglobal_)(lua_State*, const char*);
 static void (*lua_pushinteger_)(lua_State*, long long);
 static int (*lua_toboolean_)(lua_State*, int);
+static Allocator (*lua_getallocf_)(lua_State*, void**);
+static void (*lua_setallocf_)(lua_State*, Allocator, void*);
+static int (*lua_gc_)(lua_State*, int, int);
+static bool memoryMode = false;
+static Allocator previousAllocator = nullptr;
+static void* previousAllocatorData = nullptr;
+static int64_t heapBytes = 0, peakBytes = 0, initialBytes = 0;
+static uint64_t allocationCalls = 0, heapChecks = 0;
+
+static void* trackedAlloc(void*, void* ptr, size_t oldSize, size_t newSize) {
+    void* result = previousAllocator(previousAllocatorData, ptr, oldSize, newSize);
+    if (newSize == 0 || result != nullptr) {
+        // For a new allocation Lua passes a type tag, not an old byte size.
+        heapBytes += static_cast<int64_t>(newSize) - static_cast<int64_t>(ptr ? oldSize : 0);
+        if (heapBytes > peakBytes) peakBytes = heapBytes;
+    }
+    ++allocationCalls;
+    return result;
+}
+
+static void trackMemory(lua_State* L) {
+    void* data = nullptr;
+    Allocator current = lua_getallocf_(L, &data);
+    const int LUA_GCCOUNT = 3, LUA_GCCOUNTB = 4;
+    int64_t actual = static_cast<int64_t>(lua_gc_(L, LUA_GCCOUNT, 0)) * 1024
+                     + lua_gc_(L, LUA_GCCOUNTB, 0);
+    if (current == trackedAlloc) {
+        if (actual != heapBytes) {
+            std::fprintf(stderr, "Lua allocator mismatch: tracked=%lld actual=%lld\n",
+                         static_cast<long long>(heapBytes), static_cast<long long>(actual));
+            std::abort();
+        }
+        ++heapChecks;
+        return;
+    }
+    if (previousAllocator != nullptr) {
+        std::fprintf(stderr, "Multiple independent Lua allocators; memory measurement invalid\n");
+        std::abort();
+    }
+    previousAllocator = current;
+    previousAllocatorData = data;
+    heapBytes = peakBytes = initialBytes = actual;
+    lua_setallocf_(L, trackedAlloc, nullptr);
+}
 
 static void countHook(lua_State*, void*) {
     if (!paused) counter = counter + 1;
@@ -44,6 +89,7 @@ static int setPause(lua_State* L) {
 }
 
 static void instrumented(lua_State* L, int) {
+    if (memoryMode) trackMemory(L);
     const int LUA_MASKCOUNT = 8;
     paused = false;
     lua_sethook_(L, countHook, LUA_MASKCOUNT, 1);
@@ -60,8 +106,9 @@ template<typename T> static T symbol(void* library, const char* name) {
 }
 
 int main(int argc, char** argv) {
-    if (argc < 3 || argc > 6) {
-        std::fprintf(stderr, "Usage: audit-native LIBRARY ISOLATED_SD [TIMEOUT_SECONDS] [passthrough] [fullscreen]\n");
+    if (argc < 3 || argc > 7) {
+        std::fprintf(stderr, "Usage: audit-native LIBRARY ISOLATED_SD [TIMEOUT_SECONDS] "
+                             "[passthrough] [fullscreen] [memory]\n");
         return 2;
     }
     int timeout = argc >= 4 ? std::atoi(argv[3]) : 120;
@@ -69,6 +116,7 @@ int main(int argc, char** argv) {
     for (int index = 4; index < argc; ++index) {
         if (std::strcmp(argv[index], "passthrough") == 0) passthrough = true;
         else if (std::strcmp(argv[index], "fullscreen") == 0) fullscreen = true;
+        else if (std::strcmp(argv[index], "memory") == 0) memoryMode = true;
         else {
             std::fprintf(stderr, "Unknown audit mode: %s\n", argv[index]);
             return 2;
@@ -87,6 +135,12 @@ int main(int argc, char** argv) {
     lua_setglobal_ = symbol<decltype(lua_setglobal_)>(library, "lua_setglobal");
     lua_pushinteger_ = symbol<decltype(lua_pushinteger_)>(library, "lua_pushinteger");
     lua_toboolean_ = symbol<decltype(lua_toboolean_)>(library, "lua_toboolean");
+    if (memoryMode) {
+        lua_getallocf_ = symbol<decltype(lua_getallocf_)>(library, "lua_getallocf");
+        lua_setallocf_ = symbol<decltype(lua_setallocf_)>(library, "lua_setallocf");
+        lua_gc_ = symbol<decltype(lua_gc_)>(library, "lua_gc");
+        if (passthrough || !lua_getallocf_ || !lua_setallocf_ || !lua_gc_) return 1;
+    }
     auto target = symbol<uint8_t*>(library, "_Z23luaSetInstructionsLimitP9lua_Statei");
     // LVGL waits for the host to acknowledge each display flush.
     auto flush = symbol<void (*)()>(library, "lcdFlushed");
@@ -133,6 +187,17 @@ int main(int argc, char** argv) {
         }
     }
     stop();
+    if (memoryMode) {
+        if (previousAllocator == nullptr || allocationCalls == 0 || heapChecks == 0
+            || peakBytes < initialBytes || heapBytes < 0) {
+            std::fprintf(stderr, "Lua memory measurement invalid\n");
+            return 1;
+        }
+        std::fprintf(stderr, "AEROGRID_LUA_HEAP initial=%lld peak=%lld final=%lld calls=%llu checks=%llu\n",
+                     static_cast<long long>(initialBytes), static_cast<long long>(peakBytes),
+                     static_cast<long long>(heapBytes), static_cast<unsigned long long>(allocationCalls),
+                     static_cast<unsigned long long>(heapChecks));
+    }
     if (!finished) {
         std::fprintf(stderr, "Timed out waiting for the audit to finish\n");
         return 1;

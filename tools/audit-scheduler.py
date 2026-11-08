@@ -26,6 +26,7 @@ from capture_recipes import PANELS, RECIPE_DIR, fixture_inputs, load_recipe  # n
 OUTPUT = ROOT / "build/scheduler-audit"
 COMPANION = Path("/Applications/EdgeTX Companion 2.12.app")
 TRACE_DIR = ROOT / "tests/fixtures/scheduler-traces"
+LUA_MEM_MAX = 6 * 1024 * 1024
 MODEL_SETTINGS = "version: 1\nmodelFilename: model1.yml\nrevision: 1\narmed: SAv\n"
 REFLOW_STAGES = {
     "metric": ("begin", "geometry", "apply"),
@@ -1106,7 +1107,24 @@ def prepare(capture, name, spec, sd):
         shutil.copyfile(SUPPORT_DIR / "native_preparation.lua", audit / "native_preparation.lua")
 
 
-def run(capture, executable, library, name, spec, timeout, *, snapshot_path=None, output_name=None):
+def native_heap(log):
+    matches = re.findall(
+        r"^AEROGRID_LUA_HEAP initial=(\d+) peak=(\d+) final=(\d+) calls=(\d+) checks=(\d+)$",
+        log, re.MULTILINE,
+    )
+    if len(matches) != 1:
+        raise RuntimeError("native Lua allocator measurement is missing or ambiguous")
+    initial, peak, final, calls, checks = map(int, matches[0])
+    if peak < initial or final > peak or calls == 0 or checks == 0:
+        raise RuntimeError("native Lua allocator measurement is invalid")
+    if peak >= LUA_MEM_MAX:
+        raise RuntimeError(f"native Lua heap peak {peak} reaches or exceeds the {LUA_MEM_MAX}-byte limit")
+    return {"initialBytes": initial, "peakBytes": peak, "finalBytes": final,
+            "allocationCalls": calls, "heapChecks": checks}
+
+
+def run(capture, executable, library, name, spec, timeout, *, snapshot_path=None, output_name=None,
+        memory=False):
     directory = OUTPUT / (output_name or name)
     if directory.exists():
         shutil.rmtree(directory)
@@ -1120,12 +1138,16 @@ def run(capture, executable, library, name, spec, timeout, *, snapshot_path=None
         command.append("passthrough")
     if spec.get("fullscreen"):
         command.append("fullscreen")
+    if memory:
+        command.append("memory")
     with (directory / "simulator.log").open("w") as log:
         result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=timeout + 30)
     results = sd / "audit-results.json"
     if result.returncode != 0 or not results.exists():
         raise RuntimeError(f"{name}: native run failed ({result.returncode}); inspect {directory / 'simulator.log'}")
     data = json.loads(results.read_text())
+    if memory:
+        data["luaMemory"] = native_heap((directory / "simulator.log").read_text(errors="replace"))
     if data.get("errors"):
         raise RuntimeError(f"{name}: widget errors: {data['errors']}")
     if spec.get("flightOwnerHandoff"):
