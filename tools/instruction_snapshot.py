@@ -37,6 +37,10 @@ MEMORY_SUITES = (
 )
 CANDIDATE_SCENARIOS = ("stress-clock", "aircraft-link-recovery")
 NATIVE_SCENARIOS = ("hook-check", "hook-check-firmware") + CANDIDATE_SCENARIOS
+DISCOVERY_VARIANCE_SUITES = (
+    "tests/unit/lib/test_scheduler_readiness.lua",
+    "tests/integration/widget/test_editor_list_admission.lua",
+)
 MOCK_SUITES = tuple(
     f"tests/unit/lib/test_{name}.lua" for name in (
         "instruction_samples", "instruction_framework_paths", "scheduler_readiness",
@@ -173,21 +177,22 @@ def framework_rows(measurement):
 
 
 def framework_task_rows(measurement):
-    case = measurement["cases"]["panel:flight-timer"]
-    stages = case["samples"]
     observations = []
-    for stage, grants in stages.items():
-        pairs = enumerate(grants, 1) if isinstance(grants, list) else (
-            (int(grant), sample) for grant, sample in grants.items()
-        )
-        for grant, sample in pairs:
-            if sample is not None:
-                observations.append(dict(kind="task", name="panel.flight-timer", stage=stage, grant=grant,
-                                         n=sample["n"], min=sample["min"], max=sample["max"], failures=0,
-                                         minScenario="framework:flight-timer-panel",
-                                         maxScenario="framework:flight-timer-panel"))
-    if not observations:
-        raise ValueError("native framework audit lacks flight-timer task samples")
+    for panel in ("flight-timer", "link-status"):
+        before = len(observations)
+        stages = measurement["cases"]["panel:" + panel]["samples"]
+        for stage, grants in stages.items():
+            pairs = enumerate(grants, 1) if isinstance(grants, list) else (
+                (int(grant), sample) for grant, sample in grants.items()
+            )
+            for grant, sample in pairs:
+                if sample is not None:
+                    observations.append(dict(kind="task", name="panel." + panel, stage=stage, grant=grant,
+                                             n=sample["n"], min=sample["min"], max=sample["max"], failures=0,
+                                             minScenario="framework:" + panel + "-panel",
+                                             maxScenario="framework:" + panel + "-panel"))
+        if len(observations) == before:
+            raise ValueError("native framework audit lacks " + panel + " task samples")
     return observations
 
 
@@ -771,6 +776,25 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
                 errors.append(f"behavior: candidate {path.relative_to(ROOT)}: {error}")
             result["observations"]["mock"] = merge_observations(mock)
             checkpoint()
+        if discovery:
+            for name in DISCOVERY_VARIANCE_SUITES:
+                path = ROOT / name
+                if path not in suites:
+                    continue
+                for _ in range(3):
+                    try:
+                        rows, _ = runner.run_test(path, instructions=True, snapshot_path=candidate,
+                                                  work_samples=result["workSamples"])
+                        for value in rows.values():
+                            row = _python(value)
+                            row["expectedFailures"] = row["failures"]
+                            mock.append(row)
+                    except Exception as error:
+                        for value in getattr(error, "rows", {}).values():
+                            mock.append(_python(value))
+                        errors.append(f"behavior: candidate discovery variance {name}: {error}")
+                    result["observations"]["mock"] = merge_observations(mock)
+                    checkpoint()
         native = []
         for name in CANDIDATE_SCENARIOS:
             try:
@@ -791,8 +815,10 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
             checkpoint()
         try:
             measured = audit.run_framework(capture, executable, library,
-                                           [audit.CASE_DIR / "flight-timer-panel.lua"], args.timeout,
-                                           snapshot_path=candidate, output_name="framework-snapshot-candidate")
+                                           [audit.CASE_DIR / "flight-timer-panel.lua",
+                                            audit.CASE_DIR / "link-status-panel.lua"], args.timeout,
+                                           snapshot_path=candidate, output_name="framework-snapshot-candidate",
+                                           focused=True)
             result["nativeMeasurements"]["framework"] = measured
             native.extend(framework_rows(measured))
             native.extend(framework_task_rows(measured))
@@ -940,8 +966,9 @@ def _profile(audit, args):
             print(f"Native sample completed: {name}", flush=True)
         try:
             measured = audit.run_framework(capture, executable, library,
-                                           [audit.CASE_DIR / "flight-timer-panel.lua"], args.timeout,
-                                           output_name="framework-instruction-profile")
+                                           [audit.CASE_DIR / "flight-timer-panel.lua",
+                                            audit.CASE_DIR / "link-status-panel.lua"], args.timeout,
+                                           output_name="framework-instruction-profile", focused=True)
             native_measurements["framework"] = measured
             native.extend(framework_rows(measured))
             native.extend(framework_task_rows(measured))

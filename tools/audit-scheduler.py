@@ -1206,7 +1206,7 @@ def run(capture, executable, library, name, spec, timeout, *, snapshot_path=None
     return data
 
 
-def prepare_framework(capture, sd, cases):
+def prepare_framework(capture, sd, cases, *, focused=False):
     """An isolated image whose widget only runs the framework measurements."""
     prepare(capture, "framework", {"recipe": "metric", "placements": {"subject": (0, 0, 1, 1)}, "expected": 1,
                                    "baseInputs": True, "phases": []}, sd)
@@ -1225,16 +1225,18 @@ def prepare_framework(capture, sd, cases):
     (audit / "cases").mkdir()
     for case in cases:
         shutil.copyfile(case, audit / "cases" / case.name)
-    (audit / "config.lua").write_text("return " + lua_literal({"cases": [case.stem for case in cases]}) + "\n")
+    (audit / "config.lua").write_text("return " + lua_literal(
+        {"cases": [case.stem for case in cases], "focused": focused}) + "\n")
 
 
-def run_framework(capture, executable, library, cases, timeout, *, snapshot_path=None, output_name="framework"):
+def run_framework(capture, executable, library, cases, timeout, *, snapshot_path=None, output_name="framework",
+                  focused=False):
     directory = OUTPUT / output_name
     if directory.exists():
         shutil.rmtree(directory)
     directory.mkdir(parents=True)
     sd = directory / "sdcard"
-    prepare_framework(capture, sd, cases)
+    prepare_framework(capture, sd, cases, focused=focused)
     if snapshot_path is not None:
         shutil.copyfile(snapshot_path, sd / "WIDGETS/AeroGrid/lib/instruction_snapshot.lua")
     with (directory / "simulator.log").open("w") as log:

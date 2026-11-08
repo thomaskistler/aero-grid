@@ -104,11 +104,12 @@ class InstructionSnapshotTests(unittest.TestCase):
     def test_native_task_witness_keeps_exact_range_and_sample_count(self):
         measurement = {"cases": {"panel:flight-timer": {
             "samples": {"run": [{"n": 450, "min": 297, "max": 1134}]},
-        }}}
-        row, = snapshot.framework_task_rows(measurement)
+        }, "panel:link-status": {"samples": {"render": [{"n": 5, "min": 500, "max": 900}]}}}}
+        row, link = snapshot.framework_task_rows(measurement)
         self.assertEqual(snapshot.observation_key(row), "task|panel.flight-timer|run|1")
         self.assertEqual((row["n"], row["min"], row["max"]), (450, 297, 1134))
         self.assertEqual(row["maxScenario"], "framework:flight-timer-panel")
+        self.assertEqual(snapshot.observation_key(link), "task|panel.link-status|render|1")
         measurement["cases"]["panel:flight-timer"]["samples"] = {}
         with self.assertRaises(ValueError):
             snapshot.framework_task_rows(measurement)

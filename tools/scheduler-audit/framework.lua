@@ -79,6 +79,28 @@ local function measureAll()
                 return costs:bind(path, assert(loadScript("/WIDGETS/AeroGrid/" .. path))(...))
             end
         )
+        if config.focused and name == "link-status-panel" then
+            local groups, selected = {}, {}
+            for _, item in ipairs(case.cases) do
+                local key = item.stage .. ":" .. item.grant
+                local group = groups[key] or {}
+                groups[key] = group
+                group[#group + 1] = item
+            end
+            local keys = {}
+            for key in pairs(groups) do keys[#keys + 1] = key end
+            table.sort(keys)
+            for _, key in ipairs(keys) do
+                local group = groups[key]
+                local seen = {}
+                for _, index in ipairs({ 1, (#group + 1) // 2, #group }) do
+                    if not seen[index] then
+                        selected[#selected + 1], seen[index] = group[index], true
+                    end
+                end
+            end
+            case.cases = selected
+        end
         results.cases[case.id] = measure.report(case, __count, __pause, scheduler)
     end
     return results
