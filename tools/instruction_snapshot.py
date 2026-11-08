@@ -158,6 +158,19 @@ def merge_observations(rows):
     return merged
 
 
+def framework_rows(measurement):
+    rows = measurement["overhead"]["rows"]
+    if not any(row["tasks"] == 128 and row["examined"] >= 120
+               and "rounded stages skipped for shared cost" in row["name"] for row in rows):
+        raise ValueError("native framework audit lacks the rounded 128-task shared-cost scan")
+    return [
+        dict(kind="framework", name="scheduler", stage=f'{row["examined"]}:{row["ran"]}',
+             grant=0, n=1, min=row["measured"], max=row["measured"], failures=0,
+             minScenario="framework:" + row["name"], maxScenario="framework:" + row["name"])
+        for row in rows
+    ]
+
+
 def check(snapshot, observations, required, *, updating=False, require_previous=True):
     """Independent regression, runtime, safety, coverage and spread findings.
 
@@ -756,6 +769,15 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
                 errors.append(f"native: candidate {name}: {error}")
             result["observations"]["native"] = merge_observations(native)
             checkpoint()
+        try:
+            measured = audit.run_framework(capture, executable, library, [], args.timeout,
+                                           snapshot_path=candidate, output_name="framework-snapshot-candidate")
+            result["nativeMeasurements"]["framework"] = measured
+            native.extend(framework_rows(measured))
+            result["native"].append("framework")
+        except Exception as error:
+            errors.append(f"native: candidate framework: {error}")
+        checkpoint()
         if not discovery:
             try:
                 measured = audit.run(capture, executable, library, "stress",
@@ -894,6 +916,15 @@ def _profile(audit, args):
                 errors.append(f"native: {name}: {error}")
             checkpoint()
             print(f"Native sample completed: {name}", flush=True)
+        try:
+            measured = audit.run_framework(capture, executable, library, [], args.timeout,
+                                           output_name="framework-instruction-profile")
+            native_measurements["framework"] = measured
+            native.extend(framework_rows(measured))
+            native_completed.append("framework")
+        except Exception as error:
+            errors.append(f"native: framework: {error}")
+        checkpoint()
         if len(checks) != 2:
             errors.append("safety: both native hook checks must complete")
         else:
@@ -924,7 +955,7 @@ def _profile(audit, args):
               "coverage": {"mock": completed, "chartBehavior": chart_behavior, "native": native_completed,
                            "requiredMock": [path.relative_to(ROOT).as_posix() for path in suites],
                            "requiredChartBehavior": sorted(DEFERRED_SUITES),
-                           "requiredNative": list(dict.fromkeys(names))}}
+                           "requiredNative": list(dict.fromkeys(names)) + ["framework"]}}
     if warnings:
         print(f"Instruction spread review warnings: {len(warnings)} (all samples retained).")
     if errors:
@@ -967,7 +998,7 @@ def _profile(audit, args):
         record["coverage"]["candidateChartBehavior"] = dict(enumerate(sorted(DEFERRED_SUITES), 1))
         record["coverage"]["candidateInstrumentedMock"] = dict(
             enumerate((path.relative_to(ROOT).as_posix() for path in suites), 1))
-        record["coverage"]["candidateNative"] = dict(enumerate(CANDIDATE_SCENARIOS, 1))
+        record["coverage"]["candidateNative"] = dict(enumerate((*CANDIDATE_SCENARIOS, "framework"), 1))
         digest = hashlib.sha256(render(estimates, record).encode("ascii")).hexdigest()
         report["pendingCandidateProgress"] = f"build/scheduler-audit/candidate-progress-{digest}.json"
         save_report(output, report)

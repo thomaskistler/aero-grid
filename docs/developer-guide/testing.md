@@ -111,8 +111,8 @@ again to check its actual instruction observations. The report identifies the
 exact candidate file by path and SHA-256, including when validation fails.
 Candidate validation checks peak native Lua heap and the shared-module guard
 under 32-bit Lua; run `make test-lua32` first to build that interpreter.
-After fitting once, one deterministic discovery pass retains observations made
-with the new estimates. It does not refit. The final populated artifact then
+After fitting once, a discovery pass retains observations made with the new
+estimates. It does not refit. The final populated artifact then
 passes strict candidate validation before atomic replacement; further growth or
 any safety, coverage, or behavioral failure prevents publication.
 For focused debugging without replacing the snapshot:
@@ -138,7 +138,8 @@ no-op executions remain in the observed ranges.
 The scheduler's fixed, per-examination, and per-run charges are conservative
 estimates validated jointly against measured planner self-cost. Their individual
 values are not separately measured ranges; an insufficient combined reservation
-blocks the profile.
+blocks the profile. Native checks include a 128-task shared-cost scan using
+rounded stage reservations, both when fitting and against the candidate.
 Snapshot generation preserves the variable coefficients; the fixed reservation
 is rounded to 500 and increased when a measured shortfall requires it. The
 shortfall target uses the same 10% uplift and rounding as other bounds.

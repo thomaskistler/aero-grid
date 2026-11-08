@@ -1228,13 +1228,15 @@ def prepare_framework(capture, sd, cases):
     (audit / "config.lua").write_text("return " + lua_literal({"cases": [case.stem for case in cases]}) + "\n")
 
 
-def run_framework(capture, executable, library, cases, timeout):
-    directory = OUTPUT / "framework"
+def run_framework(capture, executable, library, cases, timeout, *, snapshot_path=None, output_name="framework"):
+    directory = OUTPUT / output_name
     if directory.exists():
         shutil.rmtree(directory)
     directory.mkdir(parents=True)
     sd = directory / "sdcard"
     prepare_framework(capture, sd, cases)
+    if snapshot_path is not None:
+        shutil.copyfile(snapshot_path, sd / "WIDGETS/AeroGrid/lib/instruction_snapshot.lua")
     with (directory / "simulator.log").open("w") as log:
         result = subprocess.run([str(executable), str(library), str(sd), str(timeout)], stdout=log,
                                 stderr=subprocess.STDOUT, timeout=timeout + 30)

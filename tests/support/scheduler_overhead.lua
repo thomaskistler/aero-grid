@@ -70,9 +70,6 @@ local function withTiny(s)
     return s
 end
 
--- A task this large fits an empty callback but not the room left by `crowded`.
-local BIG = 13500
-
 -- The `used` that leaves room for `n` examinations and the stop rule, and no more.
 local function crowded(scheduler, n)
     local charge = scheduler.EXAMINE_COST + scheduler.RUN_COST
@@ -82,6 +79,10 @@ end
 -- Each scenario builds a scheduler and names the callback kind and `used`.
 local function scenarios(scheduler, n)
     local list = {}
+    -- Leave room for two shared costs even with candidate framework estimates.
+    local BIG = scheduler.CEILING - scheduler.MARGIN - scheduler.FIXED_COST
+        - scheduler.EXAMINE_COST - scheduler.RUN_COST - 200
+    assert(BIG > 0, "framework reservation leaves no room for an audit task")
     local function add(name, build)
         list[#list + 1] = { name = name, build = build }
     end
@@ -186,6 +187,20 @@ local function scenarios(scheduler, n)
                 crowded(scheduler, n)
         end)
     end
+    add("rounded stages skipped for shared cost, last one runs", function()
+        return withTiny(fill(new(), n - 1, function(index)
+            if index == n - 1 then
+                return declaration("normal", 10), stub(100000)
+            end
+            local decl = declaration("normal", 10, { shared = {
+                ["rounded-a" .. index] = 6000, ["rounded-b" .. index] = 6000,
+            } })
+            decl.stages.run.quantum = 500
+            return decl, stub(1)
+        end, n)),
+            "steady",
+            crowded(scheduler, n)
+    end)
     add("stages, shared costs and want", function()
         local stages = {
             run = { fixed = 100, perUnit = 40, maxUnits = 9 },

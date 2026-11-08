@@ -68,6 +68,53 @@ class InstructionSnapshotTests(unittest.TestCase):
         proposed = snapshot.propose(data, observations, {"test|run": 1}, keys)
         self.assertEqual(proposed["bounds"]["scheduler"], {"fixed": 500, "examine": 64, "run": 224})
 
+    def test_native_framework_worst_case_is_required_and_fitted(self):
+        data, observations, required = self.data()
+        data["estimates"]["bounds"]["scheduler"] = {"fixed": 196, "examine": 64, "run": 224}
+        measurement = {"overhead": {"rows": [
+            {"name": "rounded stages skipped for shared cost, last one runs (128 tasks)",
+             "tasks": 128, "examined": 127, "ran": 1, "measured": 9569},
+        ]}}
+        rows = snapshot.framework_rows(measurement)
+        observations["native"].update(snapshot.merge_observations(rows))
+        proposed = snapshot.propose(data, observations, {"test|run": 1}, required)
+        self.assertEqual(proposed["bounds"]["scheduler"]["fixed"], 1500)
+        self.assertTrue(any("joint framework charge" in finding
+                            for finding in snapshot.check(data, observations, required, updating=True)))
+        self.assertFalse(any("joint framework charge" in finding for finding in snapshot.check(
+            {"estimates": proposed, "record": data["record"]}, observations, required, updating=True)))
+        with self.assertRaises(ValueError):
+            snapshot.framework_rows({"overhead": {"rows": []}})
+
+    def test_exact_candidate_checks_native_framework_against_its_own_reservation(self):
+        data, _, _ = self.data()
+        data["estimates"]["bounds"]["scheduler"] = {"fixed": 500, "examine": 64, "run": 224}
+        data["record"]["requiredObservations"] = {}
+        measurement = {"overhead": {"rows": [
+            {"name": "rounded stages skipped for shared cost, last one runs (128 tasks)",
+             "tasks": 128, "examined": 127, "ran": 1, "measured": 9569},
+        ]}}
+        called = []
+        def run_framework(*args, **kwargs):
+            called.append(kwargs["snapshot_path"])
+            return measurement
+        audit = SimpleNamespace(run_framework=run_framework, scenarios=lambda: {"stress": {}},
+                                run=lambda *args, **kwargs: {"luaMemory": {}})
+        runner = SimpleNamespace(run_test=lambda *args, **kwargs: None)
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(snapshot, "ROOT", Path(directory)), \
+                 patch.object(snapshot, "MEMORY_SUITES", ("tests/shared.lua",)), \
+                 patch.object(snapshot, "DEFERRED_SUITES", set()), \
+                 patch.object(snapshot, "CANDIDATE_SCENARIOS", ()), \
+                 patch.object(snapshot.subprocess, "run", return_value=SimpleNamespace(stdout="passed")):
+                errors, result = snapshot.validate_candidate(
+                    audit, runner, SimpleNamespace(timeout=10), data["estimates"], data["record"],
+                    "native", "library", None, [])
+        self.assertEqual(len(called), 1)
+        self.assertEqual(called[0].name, Path(result["artifact"]).name)
+        self.assertTrue(any("joint framework charge" in error for error in errors))
+        self.assertEqual(result["observations"]["native"]["framework|scheduler|127:1|0"]["max"], 9569)
+
     def test_measured_incremental_growth_fitting(self):
         self.assertEqual(snapshot.fit({1: 270, 2: 450, 3: 630}),
                          {"fixed": 99, "perUnit": 198, "quantum": 500})
@@ -335,6 +382,10 @@ class InstructionSnapshotTests(unittest.TestCase):
             scenarios=lambda: {name: {} for name in ("hook-check", "hook-check-firmware", "focused", "stress")},
             build_native=lambda library: "native", capture_module=lambda: None,
             run=lambda *args, **kwargs: {"luaMemory": {"peakBytes": 1234}},
+            run_framework=lambda *args, **kwargs: {"overhead": {"rows": [
+                {"name": "rounded stages skipped for shared cost, last one runs (128 tasks)",
+                 "tasks": 128, "examined": 127, "ran": 1, "measured": 500},
+            ]}},
             hook_check_status=lambda *args: (True, "agreement"),
             subprocess=SimpleNamespace(check_output=lambda *args, **kwargs: "commit\n"),
         )
@@ -358,6 +409,7 @@ class InstructionSnapshotTests(unittest.TestCase):
                     patch.object(snapshot, "DEFERRED_SUITES", {"tests/chart.lua"}), \
                     patch.object(snapshot, "CANDIDATE_SCENARIOS", ("focused",)), \
                     patch.object(snapshot, "NATIVE_SCENARIOS", ("hook-check", "hook-check-firmware", "focused")), \
+                    patch.object(snapshot, "framework_rows", return_value=[]), \
                     patch.object(snapshot, "native_rows", return_value=[row]), \
                     patch.object(snapshot.subprocess, "run", return_value=SimpleNamespace(stdout="passed")), \
                     patch.object(snapshot, "write") as write:
