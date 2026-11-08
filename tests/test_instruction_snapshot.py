@@ -445,6 +445,33 @@ class InstructionSnapshotTests(unittest.TestCase):
         self.assertTrue(any(finding.startswith("safety:") for finding in
                             snapshot.check(data, observations, set(), updating=True)))
 
+    def test_native_action_refreshes_are_separate_safety_observations(self):
+        audit = snapshot._module("audit_scheduler_actions", snapshot.ROOT / "tools/audit-scheduler.py")
+        actions = ["open-location", "open-location", "close-location", "check-log"]
+        counts = {
+            "callback:action:open-location": {"n": 2},
+            "callback:action:close-location": {"n": 1},
+            "callback:action:check-log": {"n": 1},
+            "callback:refresh:action:open-location": {"n": 4},
+            "callback:refresh:action:close-location": {"n": 1},
+        }
+        audit.check_action_coverage("modal", actions, counts)
+        counts["callback:refresh:action:open-location"]["n"] = 3
+        with self.assertRaisesRegex(RuntimeError, "missing separately measured refresh callbacks"):
+            audit.check_action_coverage("modal", actions, counts)
+        bucket = dict(n=4, min=1400, max=15001, selfMin=300, selfMax=500)
+        rows = snapshot.native_rows("modal", {"stats": {
+            "callback:refresh:action:open-location": {"units": {"1": bucket}},
+            "callback:action:open-location": {"units": {"1": bucket}},
+        }})
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]["kind"], rows[0]["name"], rows[0]["stage"], rows[0]["max"]),
+                         ("callback", "refresh", "modal:action:open-location", 15001))
+        data, observations, _ = self.data()
+        observations["native"] = snapshot.merge_observations(rows)
+        self.assertTrue(any(finding.startswith("safety:") for finding in
+                            snapshot.check(data, observations, set(), updating=True)))
+
     def test_atomic_write_and_radio_safe_roundtrip(self):
         data, _, _ = self.data()
         data["record"]["provenance"] = {'quoted"key': "first\nsecond"}

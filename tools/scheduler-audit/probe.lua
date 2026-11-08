@@ -64,7 +64,7 @@ local calibrating, calibrationRaw = false, 0
 local installed, wrappedKeys = setmetatable({}, { __mode = "k" }), setmetatable({}, { __mode = "k" })
 local finished = false
 local recording = true
-local refreshFn, backgroundFn
+local refreshFn, backgroundFn, actionRefresh
 
 local function record(label, cost, own, units, children)
     assert(cost >= 0 and own >= 0, "invalid native instruction observation: " .. label)
@@ -1442,26 +1442,26 @@ actions = {
         assert(entry.module.id == "navigation" and entry.instance.feed.fix)
         local rect = context.dashboardLoader.panelRect(context, entry.placement)
         local point = { x = rect.x + rect.w / 2, y = rect.y + rect.h / 2 }
-        refreshFn(context, EVT_TOUCH_FIRST, point)
-        refreshFn(context, EVT_TOUCH_TAP, point)
+        actionRefresh(context, EVT_TOUCH_FIRST, point)
+        actionRefresh(context, EVT_TOUCH_TAP, point)
         assert(context.locationDetails and context.locationDetails.code)
     end,
     ["close-location"] = function(context)
-        refreshFn(context, EVT_VIRTUAL_EXIT)
+        actionRefresh(context, EVT_VIRTUAL_EXIT)
         assert(not context.locationDetails)
     end,
     ["open-menu"] = function(context)
-        refreshFn(context, EVT_TOUCH_FIRST, { x = 10, y = 10 })
-        refreshFn(context, EVT_TOUCH_TAP, { x = 10, y = 10 })
+        actionRefresh(context, EVT_TOUCH_FIRST, { x = 10, y = 10 })
+        actionRefresh(context, EVT_TOUCH_TAP, { x = 10, y = 10 })
     end,
     ["check-menu"] = function(context)
         assert(context.aerogridMenu.open and context.aerogridMenu.screen)
     end,
     ["select-menu"] = function(context)
-        refreshFn(context, EVT_ROT_RIGHT)
+        actionRefresh(context, EVT_ROT_RIGHT)
     end,
     ["close-menu"] = function(context)
-        refreshFn(context, EVT_VIRTUAL_EXIT)
+        actionRefresh(context, EVT_VIRTUAL_EXIT)
     end,
     ["open-log"] = function(context)
         local point
@@ -1472,8 +1472,8 @@ actions = {
             end
         end
         assert(point)
-        refreshFn(context, EVT_TOUCH_FIRST, point)
-        refreshFn(context, EVT_TOUCH_TAP, point)
+        actionRefresh(context, EVT_TOUCH_FIRST, point)
+        actionRefresh(context, EVT_TOUCH_TAP, point)
         assert(context.logViewer, "native modal scenario must open log")
     end,
     ["check-log"] = function(context)
@@ -1482,10 +1482,10 @@ actions = {
         assert(#state.entries == 256 and #state.rows > 0)
     end,
     ["scroll-log"] = function(context)
-        refreshFn(context, EVT_ROT_LEFT)
+        actionRefresh(context, EVT_ROT_LEFT)
     end,
     ["close-log"] = function(context)
-        refreshFn(context, EVT_VIRTUAL_EXIT)
+        actionRefresh(context, EVT_VIRTUAL_EXIT)
         assert(not context.logViewer)
     end,
     ["open-settings"] = function(context)
@@ -1629,7 +1629,7 @@ actions = {
         )
     end,
     ["close-settings"] = function(context)
-        refreshFn(context, EVT_VIRTUAL_EXIT)
+        actionRefresh(context, EVT_VIRTUAL_EXIT)
         assert(not context.modelSettingsUi)
     end,
     ["open-editor"] = function(context)
@@ -1642,14 +1642,14 @@ actions = {
         )
     end,
     ["select-editor"] = function(context)
-        refreshFn(context, EVT_ROT_RIGHT)
+        actionRefresh(context, EVT_ROT_RIGHT)
         assert(context.editorUi.renderStage, "ordinary editor input must queue bounded rendering")
     end,
     ["check-render"] = function(context)
         assert(context.editorUi and not context.editorUi.renderStage, "editor rendering must complete")
     end,
     ["open-drawer"] = function(context)
-        refreshFn(context, EVT_VIRTUAL_ENTER)
+        actionRefresh(context, EVT_VIRTUAL_ENTER)
         assert(context.editorUi and (context.editorUi.drawerOpen or context.editorUi.drawerBuild))
     end,
     ["prepare-editor-tap"] = function(context)
@@ -2164,7 +2164,8 @@ local function runCallback(kind, context, fn, e, t)
     local suffix = P.loaded and "" or "@load"
     if recording then
         record("callback:" .. kind .. suffix, total, overhead, 1)
-        if P.hostCallbackKind then
+        -- Synthetic actions may combine setup and multiple firmware callbacks.
+        if P.hostCallbackKind and (kind == "refresh" or kind == "background") then
             local hostCost = overhead + (P.settledReadyCost or 0) + P.hostFinishCost
             record("host:overhead:" .. P.hostCallbackKind, hostCost, hostCost, 1)
         end
@@ -2202,8 +2203,25 @@ local function runCallback(kind, context, fn, e, t)
             string.format("%s|%d|%d|%d|%s", kind, getTime(), total, overhead, table.concat(top, ","))
     end
     pause(false)
-    return total
+    return total, overhead
 end
+
+actionRefresh = function(context, event, touch)
+    assert(P.actionName, "action refresh needs a measured action")
+    local total, overhead = runCallback("refresh", context, refreshFn, event, touch)
+    pause(true)
+    record("callback:refresh:action:" .. P.actionName, total, overhead, 1)
+    P.actionTotal = P.actionTotal + total
+    P.actionRefreshes = P.actionRefreshes + 1
+    pause(false)
+end
+
+local refreshActions = {
+    ["open-location"] = 2, ["close-location"] = 1,
+    ["open-menu"] = 2, ["select-menu"] = 1, ["close-menu"] = 1,
+    ["open-log"] = 2, ["scroll-log"] = 1, ["close-log"] = 1,
+    ["close-settings"] = 1, ["select-editor"] = 1, ["open-drawer"] = 1,
+}
 
 local function advance(context)
     local phase = config.phases[phaseIndex]
@@ -2487,7 +2505,19 @@ local function entry(kind, context, fn, e, t)
     end
     if phase.action and not phase.started then
         phase.started = true
-        runCallback("action:" .. phase.action, context, assert(actions[phase.action], "unknown native action"))
+        local action = assert(actions[phase.action], "unknown native action")
+        if refreshActions[phase.action] then
+            P.actionName, P.actionTotal, P.actionRefreshes = phase.action, 0, 0
+            action(context)
+            assert(P.actionRefreshes == refreshActions[phase.action], "native action missed a measured refresh")
+            pause(true)
+            -- This diagnostic sum is not a single firmware callback.
+            record("callback:action:" .. phase.action, P.actionTotal, P.actionTotal, 1)
+            P.actionName, P.actionTotal, P.actionRefreshes = nil, nil, nil
+            pause(false)
+        else
+            runCallback("action:" .. phase.action, context, action)
+        end
         return
     end
     recording = phase.record ~= false

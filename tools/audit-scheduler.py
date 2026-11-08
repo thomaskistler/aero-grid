@@ -45,6 +45,24 @@ REFLOW_STAGES = {
     "service-probe": ("update",),
 }
 
+ACTION_REFRESH_COUNTS = {
+    "open-location": 2, "close-location": 1,
+    "open-menu": 2, "select-menu": 1, "close-menu": 1,
+    "open-log": 2, "scroll-log": 1, "close-log": 1,
+    "close-settings": 1, "select-editor": 1, "open-drawer": 1,
+}
+
+
+def check_action_coverage(name, actions, stats):
+    for action in set(actions):
+        samples = stats.get(f"callback:action:{action}", {}).get("n", 0)
+        if samples != actions.count(action):
+            raise RuntimeError(f"{name}: missing timed action callbacks for {action}")
+        if action in ACTION_REFRESH_COUNTS:
+            refreshes = stats.get(f"callback:refresh:action:{action}", {}).get("n", 0)
+            if refreshes != actions.count(action) * ACTION_REFRESH_COUNTS[action]:
+                raise RuntimeError(f"{name}: missing separately measured refresh callbacks for {action}")
+
 
 def capture_module():
     spec = importlib.util.spec_from_file_location("capture", TOOLS / "capture-panels.py")
@@ -1150,10 +1168,7 @@ def run(capture, executable, library, name, spec, timeout, *, snapshot_path=None
                 if not data.get("stats", {}).get(prefix + stage, {}).get("n"):
                     raise RuntimeError(f"{name}: missing complete reflow measurement for {prefix + stage}")
     actions = [phase["action"] for phase in spec["phases"] if phase.get("action")]
-    for action in set(actions):
-        samples = data.get("stats", {}).get(f"callback:action:{action}", {}).get("n", 0)
-        if samples != actions.count(action):
-            raise RuntimeError(f"{name}: missing timed action callbacks for {action}")
+    check_action_coverage(name, actions, data.get("stats", {}))
     (directory / "results.json").write_text(json.dumps(data, indent=1) + "\n")
     return data
 
