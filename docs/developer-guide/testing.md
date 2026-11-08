@@ -111,8 +111,8 @@ again to check its actual instruction observations. The report identifies the
 exact candidate file by path and SHA-256, including when validation fails.
 Candidate validation checks peak native Lua heap and the shared-module guard
 under 32-bit Lua; run `make test-lua32` first to build that interpreter.
-After fitting once, a discovery pass retains observations made with the new
-estimates. It does not refit. The final populated artifact then
+After initial fitting, a discovery pass retains observations made with the new
+estimates. One bounded refit includes those observations. The final populated artifact then
 passes strict candidate validation before atomic replacement; further growth or
 any safety, coverage, or behavioral failure prevents publication.
 For focused debugging without replacing the snapshot:

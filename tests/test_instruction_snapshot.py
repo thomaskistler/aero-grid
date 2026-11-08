@@ -40,6 +40,21 @@ class InstructionSnapshotTests(unittest.TestCase):
         self.assertEqual(snapshot.target(100), 500)
         self.assertEqual(snapshot.target(455), 1000)
 
+    def test_candidate_rejects_discovery_observations_without_full_uplift(self):
+        data, observations, required = self.data()
+        data["estimates"]["tasks"]["test"]["run"] = {"fixed": 0, "perUnit": 1350, "quantum": 500}
+        for rows in observations.values():
+            rows["task|test|run|1"]["max"] = 1368
+        self.assertFalse(any(f.startswith("uplift:") for f in snapshot.check(
+            data, observations, required, updating=True)))
+        self.assertTrue(any(f.startswith("uplift:") for f in snapshot.check(
+            data, observations, required, updating=True, require_uplift=True)))
+        proposed = snapshot.propose(data, observations, {"test|run": 1}, required)
+        self.assertEqual(snapshot.task_cost(proposed["tasks"]["test"]["run"], 1), 2000)
+        self.assertFalse(any(f.startswith("uplift:") for f in snapshot.check(
+            {"estimates": proposed, "record": data["record"]}, observations, required,
+            updating=True, require_uplift=True)))
+
     def test_strict_spread_thresholds(self):
         self.assertFalse(snapshot.spread(400, 700))  # difference == 300
         self.assertFalse(snapshot.spread(800, 1200))  # ratio == 1.5
@@ -447,7 +462,7 @@ class InstructionSnapshotTests(unittest.TestCase):
                 self.assertEqual(snapshot._profile(audit, args), 0)
                 write.assert_called_once()
                 estimates, record = write.call_args.args
-                self.assertEqual(estimates["tasks"]["test"]["run"], {"fixed": 0, "perUnit": 222, "quantum": 500})
+                self.assertEqual(estimates["tasks"]["test"]["run"], {"fixed": 0, "perUnit": 332, "quantum": 500})
                 self.assertEqual(record["observations"]["mock"][key]["max"], 301)
                 self.assertEqual(record["observations"]["native"][key]["max"], 201)
                 self.assertEqual(record["observations"]["mock"][key]["n"], 2)

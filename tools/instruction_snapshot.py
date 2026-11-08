@@ -196,7 +196,7 @@ def framework_task_rows(measurement):
     return observations
 
 
-def check(snapshot, observations, required, *, updating=False, require_previous=True):
+def check(snapshot, observations, required, *, updating=False, require_previous=True, require_uplift=False):
     """Independent regression, runtime, safety, coverage and spread findings.
 
     `required` is an explicit set of observation keys, including every legal
@@ -240,6 +240,8 @@ def check(snapshot, observations, required, *, updating=False, require_previous=
                     charge = task_cost(stage, row["grant"])
                     if row["max"] > charge:
                         findings.append(f"runtime: {environment}:{key} exceeds its declared bound")
+                    if require_uplift and row["max"] <= CEILING and charge < target(row["max"]):
+                        findings.append(f"uplift: {environment}:{key} exceeds its 10% rounded estimate")
                     if task_cost(stage, 1) > CEILING - MARGIN:
                         findings.append(f"safety: {key} cannot fit beneath the ceiling and margin")
                     if row["name"] in INDIVISIBLE_GRANT_TASKS and charge > CEILING - MARGIN:
@@ -251,6 +253,8 @@ def check(snapshot, observations, required, *, updating=False, require_previous=
                     findings.append(f"runtime: missing foreground/framework estimate for {key}")
                 elif row["max"] > bound:
                     findings.append(f"runtime: {environment}:{key} exceeds its declared bound")
+                if bound is not None and require_uplift and row["max"] <= CEILING and bound < target(row["max"]):
+                    findings.append(f"uplift: {environment}:{key} exceeds its 10% rounded estimate")
             elif row["kind"] == "framework" and row["name"] == "scheduler":
                 examined, ran = map(int, row["stage"].split(":"))
                 bounds = estimates["bounds"]["scheduler"]
@@ -840,7 +844,7 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
         findings = check({"estimates": estimates, "record": record},
                          result["observations"],
                          set(record.get("requiredObservations", {}).values()),
-                         updating=discovery, require_previous=False)
+                         updating=discovery, require_previous=False, require_uplift=not discovery)
         result["warnings"] = [finding for finding in findings if finding.startswith("efficiency:")]
         errors.extend("candidate: " + finding for finding in findings
                       if not finding.startswith("efficiency:"))
@@ -1067,6 +1071,16 @@ def _profile(audit, args):
                 + list(discovery_result["observations"][environment].values()))
         record["observations"] = observations
         report["observations"] = observations
+        try:
+            snapshot["estimates"] = estimates = propose(snapshot, observations, declarations, required)
+            findings = check(snapshot, observations, required, updating=True, require_uplift=True)
+            errors.extend(finding for finding in findings if not finding.startswith("efficiency:"))
+        except ValueError as error:
+            errors.append("snapshot: discovery refit: " + str(error))
+        if errors:
+            save_report(output, report)
+            print(f"Candidate discovery refit failed; snapshot unchanged. See {output}")
+            return 1
         digest = hashlib.sha256(render(estimates, record).encode("ascii")).hexdigest()
         report["pendingCandidateProgress"] = f"build/scheduler-audit/candidate-progress-{digest}.json"
         save_report(output, report)
