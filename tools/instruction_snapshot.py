@@ -29,7 +29,7 @@ MEMORY_SUITES = (
     "tests/integration/widget/test_aircraft_memory.lua",
     "tests/integration/widget/test_output_memory.lua",
 )
-CANDIDATE_SCENARIOS = ("stress", "metric-16", "model-panels", "aircraft-link-recovery")
+CANDIDATE_SCENARIOS = ("stress", "stress-clock", "metric-16", "model-panels", "aircraft-link-recovery")
 
 
 def target(maximum):
@@ -727,7 +727,7 @@ def profile(audit, args):
                 declarations[key] = max(declarations.get(key, 0), maximum)
             errors.append(f"behavior: {path.relative_to(ROOT)}: {error}")
     available = audit.scenarios()
-    names = ["hook-check", "hook-check-firmware", "stress", "metric-16", "model-panels",
+    names = ["hook-check", "hook-check-firmware", "stress", "stress-clock", "metric-16", "model-panels",
              "flight-smart-tasks", "flight-owner-handoff", "session-reset", "aircraft-link-recovery"]
     names.extend(name for name in available if name.startswith("lifecycle-app"))
     # Panel extrema supply native stages missed by ordinary dashboard releases.

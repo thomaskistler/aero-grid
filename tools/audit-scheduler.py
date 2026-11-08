@@ -215,6 +215,7 @@ def scenarios():
         "recipe": "metric", "layout": custom_layout(cells), "expected": 10, "sources": 30, "settings": True,
         "phases": standard_phases(),
     }
+    result["stress-clock"] = dict(result["stress"], deterministicClock=True)
     # Every panel that reads the model service: identity, flight mode, a timer, and
     # TX voltage with battery range (five facets, one more than an update reads).
     model_cells = [("model-identity", 0, 0, 2, 2), ("flight-mode", 2, 0, 2, 1), ("flight-timer", 2, 1, 2, 1),

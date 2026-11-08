@@ -289,6 +289,8 @@ class InstructionSnapshotTests(unittest.TestCase):
                 names = [call.kwargs.get("output_name") or call.args[3] for call in runs.call_args_list]
                 self.assertIn("aircraft-link-recovery", names)
                 self.assertIn("aircraft-link-recovery-snapshot-candidate", names)
+                self.assertIn("stress-clock", names)
+                self.assertIn("stress-clock-snapshot-candidate", names)
                 recorded_chart = [
                     call for call in mock_runs.call_args_list
                     if call.args[0].relative_to(root).as_posix() in snapshot.DEFERRED_SUITES
@@ -460,6 +462,9 @@ class InstructionSnapshotTests(unittest.TestCase):
 
     def test_native_aircraft_recovery_scenario_preserves_deadline(self):
         audit = snapshot._module("audit_scheduler_scenario", snapshot.ROOT / "tools/audit-scheduler.py")
+        stress = audit.scenarios()["stress-clock"]
+        self.assertTrue(stress["deterministicClock"])
+        self.assertEqual(stress["phases"], audit.scenarios()["stress"]["phases"])
         scenario = audit.scenarios()["aircraft-link-recovery"]
         self.assertEqual(scenario["expected"], 9)
         self.assertTrue(scenario["deterministicClock"])

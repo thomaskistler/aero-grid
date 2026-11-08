@@ -97,7 +97,7 @@ any recorded maximum increase; `--snapshot` updates the shipped estimates only
 after the full profile passes behavior, coverage, runtime, and safety
 checks. An incomplete or failed profile leaves the snapshot unchanged.
 Before replacement, the populated candidate runs the existing shared-module,
-Aircraft, and Output memory checks and native stress, metric-16, model-panels,
+Aircraft, and Output memory checks and native real-time and deterministic stress, metric-16, model-panels,
 and Aircraft link-recovery scenarios without changing the shipped file. These
 checks retain the existing memory limits; their results are included in the
 diagnostic report. The candidate also runs the measurement-profile mock suites
