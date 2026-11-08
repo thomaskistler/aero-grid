@@ -126,7 +126,11 @@ function measure.check(decl, worst)
     for name, grants in pairs(worst) do
         local stage = decl.stages[name]
         for grant, cost in pairs(grants) do
-            local ratio = cost / (stage.fixed + grant * stage.perUnit)
+            local budget = stage.fixed + grant * stage.perUnit
+            if stage.quantum then
+                budget = ((budget + stage.quantum - 1) // stage.quantum) * stage.quantum
+            end
+            local ratio = cost / budget
             local level = (ratio > 1 and "exceeds")
                 or (ratio > measure.WARN_HIGH and "high")
                 or (ratio < measure.WARN_LOW and "loose")

@@ -1,10 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
-"""Read and write src/WIDGETS/AeroGrid/lib/instruction_snapshot.lua.
-
-The snapshot is one Lua chunk returning `function(section)`. The widget asks
-only for "estimates"; the "record" section (observations, provenance and
-coverage) is built only by the measurement tools.
-"""
+"""Maintain radio estimates and their developer-only measurement baseline."""
 
 from pathlib import Path
 import hashlib
@@ -23,6 +18,7 @@ from lupa.lua53 import LuaRuntime, lua_type
 
 ROOT = Path(__file__).resolve().parents[1]
 SNAPSHOT = ROOT / "src/WIDGETS/AeroGrid/lib/instruction_snapshot.lua"
+BASELINE = ROOT / "tests/fixtures/instruction_baseline.json"
 SCHEMA = 1
 CEILING = 15000
 MARGIN = 400
@@ -40,6 +36,7 @@ NATIVE_SCENARIOS = ("hook-check", "hook-check-firmware") + CANDIDATE_SCENARIOS
 DISCOVERY_VARIANCE_SUITES = (
     "tests/unit/lib/test_scheduler_readiness.lua",
     "tests/integration/widget/test_editor_list_admission.lua",
+    "tests/integration/widget/test_session_reset.lua",
 )
 MOCK_SUITES = tuple(
     f"tests/unit/lib/test_{name}.lua" for name in (
@@ -165,6 +162,14 @@ def merge_observations(rows):
 
 def framework_rows(measurement):
     rows = measurement["overhead"]["rows"]
+    required = (
+        "failing steps (128 tasks)",
+        "unknown stage (128 tasks)",
+        "all retired (unknown stage) (128 tasks)",
+    )
+    missing = [name for name in required if not any(row["name"] == name for row in rows)]
+    if missing:
+        raise ValueError(f"native framework audit lacks planner scenarios: {', '.join(missing)}")
     if not any(row["tasks"] == 128 and row["examined"] >= 120 and row["ran"] == 1
                and "rounded stages skipped for shared cost" in row["name"] for row in rows):
         raise ValueError("native framework audit lacks the rounded 128-task shared-cost scan")
@@ -178,21 +183,32 @@ def framework_rows(measurement):
 
 def framework_task_rows(measurement):
     observations = []
-    for panel in ("flight-timer", "link-status"):
+    for case_name, task_name, minimum_grants in (
+        ("panel:flight-timer", "panel.flight-timer", (1,)),
+        ("panel:link-status", "panel.link-status", ()),
+        ("service:model", "model", (1, 2)),
+        ("service:control-normal", "control.normal", (1,)),
+    ):
         before = len(observations)
-        stages = measurement["cases"]["panel:" + panel]["samples"]
+        case = measurement.get("cases", {}).get(case_name)
+        if case is None:
+            raise ValueError("native framework audit lacks " + case_name + " task samples")
+        stages = case["samples"]
         for stage, grants in stages.items():
             pairs = enumerate(grants, 1) if isinstance(grants, list) else (
                 (int(grant), sample) for grant, sample in grants.items()
             )
             for grant, sample in pairs:
                 if sample is not None:
-                    observations.append(dict(kind="task", name="panel." + panel, stage=stage, grant=grant,
+                    observations.append(dict(kind="task", name=task_name, stage=stage, grant=grant,
                                              n=sample["n"], min=sample["min"], max=sample["max"], failures=0,
-                                             minScenario="framework:" + panel + "-panel",
-                                             maxScenario="framework:" + panel + "-panel"))
+                                             minScenario="framework:" + case_name,
+                                             maxScenario="framework:" + case_name))
         if len(observations) == before:
-            raise ValueError("native framework audit lacks " + panel + " task samples")
+            raise ValueError("native framework audit lacks " + case_name + " task samples")
+        for grant in minimum_grants:
+            if not any(row["stage"] == "run" and row["grant"] == grant for row in observations[before:]):
+                raise ValueError(f"native framework audit lacks {case_name} grant {grant}")
     return observations
 
 
@@ -214,7 +230,7 @@ def check(snapshot, observations, required, *, updating=False, require_previous=
             continue
         if require_previous:
             for key, row in previous.get(environment, {}).items():
-                if not deferred(snapshot, row) and key not in rows:
+                if row["kind"] != "framework" and not deferred(snapshot, row) and key not in rows:
                     findings.append(f"coverage: missing previously recorded {environment}:{key}")
         for key, row in rows.items():
             if key != observation_key(row):
@@ -283,14 +299,37 @@ def _python(value):
     return value
 
 
-def load(path=SNAPSHOT):
-    """Both sections of a snapshot as plain Python data."""
+def load_estimates(path):
     lua = LuaRuntime(unpack_returned_tuples=True)
     chunk = lua.eval("loadfile")(str(path))
     if chunk is None:
         raise ValueError(f"cannot load {path}")
-    snapshot = chunk()
-    return {"estimates": _python(snapshot("estimates")), "record": _python(snapshot("record"))}
+    return _python(chunk()("estimates"))
+
+
+def load(path=SNAPSHOT, baseline_path=BASELINE):
+    """Load runtime estimates and the matching developer regression baseline."""
+    baseline = json.loads(baseline_path.read_text(encoding="ascii"))
+    if baseline.get("schema") != SCHEMA or set(baseline.get("maxima", {})) != {"mock", "native"}:
+        raise ValueError("invalid instruction regression baseline")
+    if baseline["estimatesSha256"] != hashlib.sha256(path.read_bytes()).hexdigest():
+        raise ValueError("instruction estimates do not match the regression baseline")
+    estimates = load_estimates(path)
+    observations = {}
+    for environment, rows in baseline["maxima"].items():
+        observations[environment] = {}
+        for key, maximum in rows.items():
+            kind, name, stage, grant = key.split("|")
+            if type(maximum) is not int or maximum < 0:
+                raise ValueError(f"invalid recorded maximum for {environment}:{key}")
+            observations[environment][key] = {
+                "kind": kind, "name": name, "stage": stage, "grant": int(grant), "max": maximum,
+            }
+    return {"estimates": estimates, "record": {
+        "deferred": baseline["deferred"],
+        "requiredObservations": dict(enumerate(baseline["requiredObservations"], 1)),
+        "observations": observations,
+    }}
 
 
 def _key(key):
@@ -323,7 +362,7 @@ def _order(key):
 
 
 def render(estimates, record):
-    """The snapshot file text, with deterministic ordering."""
+    """Render the radio's estimates without developer-only observations."""
     for task, stages in estimates["tasks"].items():
         for stage, estimate in stages.items():
             if set(estimate) not in ({"fixed", "perUnit"}, {"fixed", "perUnit", "quantum"}):
@@ -335,36 +374,64 @@ def render(estimates, record):
     return (
         "-- SPDX-License-Identifier: GPL-2.0-only\n\n"
         "-- GENERATED by tools/instruction_snapshot.py. Do not edit by hand.\n"
-        "-- Instruction estimates read by lib/costs.lua; \"record\" holds the\n"
-        "-- observations they were derived from.\n\n"
+        "-- Instruction estimates read by lib/costs.lua.\n\n"
         "return function(section)\n"
         '    if section == "estimates" then\n'
         f"        return {_value(estimates, 2)}\n"
         "    end\n"
-        f"    return {_value(record, 1)}\n"
+        '    error("unknown instruction snapshot section: " .. tostring(section))\n'
         "end\n"
     )
 
 
-def write(estimates, record, path=SNAPSHOT, *, expected_sha, deadline=None):
-    """Replace atomically without overwriting a known concurrent edit."""
+def render_baseline(record, estimates_sha):
+    """Keep only the exact prior maxima needed by strict regression checks."""
+    baseline = {
+        "schema": SCHEMA,
+        "estimatesSha256": estimates_sha,
+        "deferred": record["deferred"],
+        "requiredObservations": sorted(record.get("requiredObservations", {}).values()),
+        "maxima": {
+            environment: {key: row["max"] for key, row in sorted(rows.items())}
+            for environment, rows in sorted(record["observations"].items())
+        },
+    }
+    return json.dumps(baseline, indent=2, sort_keys=True) + "\n"
+
+
+def write(estimates, record, path=SNAPSHOT, *, expected_sha, deadline=None,
+          baseline_path=BASELINE, expected_baseline_sha=None):
+    """Publish a matching pair; an interrupted publication fails closed on load."""
     text = render(estimates, record)
-    temporary = None
+    baseline = render_baseline(record, hashlib.sha256(text.encode("ascii")).hexdigest())
+    temporary = []
+    old_baseline = baseline_path.read_bytes()
+    if expected_baseline_sha is None:
+        expected_baseline_sha = hashlib.sha256(old_baseline).hexdigest()
     try:
-        with tempfile.NamedTemporaryFile(mode="w", encoding="ascii", dir=path.parent,
-                                         prefix=path.name + ".", suffix=".tmp", delete=False) as file:
-            temporary = Path(file.name)
-            file.write(text)
-            file.flush()
-            os.fsync(file.fileno())
+        for destination, content in ((path, text), (baseline_path, baseline),
+                                     (baseline_path, old_baseline.decode("ascii"))):
+            with tempfile.NamedTemporaryFile(mode="w", encoding="ascii", dir=destination.parent,
+                                             prefix=destination.name + ".", suffix=".tmp", delete=False) as file:
+                temporary.append(Path(file.name))
+                file.write(content)
+                file.flush()
+                os.fsync(file.fileno())
         if hashlib.sha256(path.read_bytes()).hexdigest() != expected_sha:
             raise RuntimeError("instruction snapshot changed during measurement; refusing replacement")
+        if hashlib.sha256(baseline_path.read_bytes()).hexdigest() != expected_baseline_sha:
+            raise RuntimeError("instruction baseline changed during measurement; refusing replacement")
         if deadline is not None and time.monotonic() >= deadline:
             raise RuntimeError("time: five-minute deadline expired; refusing replacement")
-        temporary.replace(path)
+        temporary[1].replace(baseline_path)
+        try:
+            temporary[0].replace(path)
+        except OSError:
+            temporary[2].replace(baseline_path)
+            raise
     finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+        for path in temporary:
+            path.unlink(missing_ok=True)
 
 
 DEFERRED_SUITES = {
@@ -402,13 +469,14 @@ def required_keys(data, declarations):
                 continue
             required.add(f"bound|{group}|{name}|0")
     for rows in data["record"]["observations"].values():
-        required.update(key for key, row in rows.items() if not deferred(data, row))
+        required.update(key for key, row in rows.items()
+                        if row["kind"] != "framework" and not deferred(data, row))
     if "scheduler" in data["estimates"]["bounds"]:
         required.add("framework|scheduler|0:0|0")
     return required, errors
 
 
-def propose(data, observations, declarations, required):
+def propose(data, observations, declarations, required, *, previous=None):
     """No absent observation may change an estimate or disappear from the record."""
     combined = {}
     for rows in observations.values():
@@ -418,6 +486,9 @@ def propose(data, observations, declarations, required):
     missing = required - combined.keys()
     if missing:
         raise ValueError(f"cannot fit incomplete observations: {sorted(missing)}")
+    for rows in (previous or {}).values():
+        for key, row in rows.items():
+            combined[key] = max(combined.get(key, 0), row["max"])
     estimates = copy.deepcopy(data["estimates"])
     framework = estimates["bounds"].get("scheduler")
     if framework is not None:
@@ -819,8 +890,9 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
             checkpoint()
         try:
             measured = audit.run_framework(capture, executable, library,
-                                           [audit.CASE_DIR / "flight-timer-panel.lua",
-                                            audit.CASE_DIR / "link-status-panel.lua"], args.timeout,
+                                           [audit.CASE_DIR / (name + ".lua") for name in
+                                            ("flight-timer-panel", "link-status-panel", "model", "control-normal")],
+                                           args.timeout,
                                            snapshot_path=candidate, output_name="framework-snapshot-candidate",
                                            focused=True)
             result["nativeMeasurements"]["framework"] = measured
@@ -844,7 +916,7 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
         findings = check({"estimates": estimates, "record": record},
                          result["observations"],
                          set(record.get("requiredObservations", {}).values()),
-                         updating=discovery, require_previous=False, require_uplift=not discovery)
+                         updating=discovery, require_previous=not discovery, require_uplift=not discovery)
         result["warnings"] = [finding for finding in findings if finding.startswith("efficiency:")]
         errors.extend("candidate: " + finding for finding in findings
                       if not finding.startswith("efficiency:"))
@@ -893,12 +965,14 @@ def profile(audit, args):
 def _profile(audit, args):
     """Fresh focused mock/native profile; incomplete evidence never writes a file."""
     snapshot = load()
+    previous_observations = copy.deepcopy(snapshot["record"]["observations"])
     initial_sha = hashlib.sha256(SNAPSHOT.read_bytes()).hexdigest()
+    initial_baseline_sha = hashlib.sha256(BASELINE.read_bytes()).hexdigest()
     def source_sha():
         digest = hashlib.sha256()
         for directory in ("src", "tests", "tools"):
             for path in sorted((ROOT / directory).rglob("*")):
-                if path.is_file() and path.suffix in (".lua", ".py", ".cpp", ".yaml", ".yml", ".txt"):
+                if path.is_file() and path.suffix in (".lua", ".py", ".cpp", ".yaml", ".yml", ".txt", ".json"):
                     digest.update(path.relative_to(ROOT).as_posix().encode("ascii"))
                     digest.update(path.read_bytes())
         return digest.hexdigest()
@@ -970,8 +1044,9 @@ def _profile(audit, args):
             print(f"Native sample completed: {name}", flush=True)
         try:
             measured = audit.run_framework(capture, executable, library,
-                                           [audit.CASE_DIR / "flight-timer-panel.lua",
-                                            audit.CASE_DIR / "link-status-panel.lua"], args.timeout,
+                                           [audit.CASE_DIR / (name + ".lua") for name in
+                                            ("flight-timer-panel", "link-status-panel", "model", "control-normal")],
+                                           args.timeout,
                                            output_name="framework-instruction-profile", focused=True)
             native_measurements["framework"] = measured
             native.extend(framework_rows(measured))
@@ -994,7 +1069,8 @@ def _profile(audit, args):
     if args.snapshot and not coverage_errors and required <= {
             key for rows in observations.values() for key in rows}:
         try:
-            snapshot["estimates"] = propose(snapshot, observations, declarations, required)
+            snapshot["estimates"] = propose(snapshot, observations, declarations, required,
+                                            previous=previous_observations)
         except ValueError as error:
             errors.append("snapshot: " + str(error))
     findings = check(snapshot, observations, required, updating=args.snapshot)
@@ -1026,10 +1102,6 @@ def _profile(audit, args):
         evidence_path.write_bytes(evidence)
         estimates = snapshot["estimates"]
         record = snapshot["record"]
-        for environment, previous in record["observations"].items():
-            for key, row in previous.items():
-                if deferred(snapshot, row):
-                    observations[environment].setdefault(key, row)
         record.update(observations=observations,
                       requiredObservations=dict(enumerate(sorted(required), 1)),
                       coverage={key: dict(enumerate(values, 1)) for key, values in report["coverage"].items()},
@@ -1054,6 +1126,7 @@ def _profile(audit, args):
         record["coverage"]["candidateInstrumentedMock"] = dict(
             enumerate((path.relative_to(ROOT).as_posix() for path in suites), 1))
         record["coverage"]["candidateNative"] = dict(enumerate((*CANDIDATE_SCENARIOS, "framework"), 1))
+        report["snapshotRecord"] = record
         digest = hashlib.sha256(render(estimates, record).encode("ascii")).hexdigest()
         report["pendingCandidateProgress"] = f"build/scheduler-audit/candidate-progress-{digest}.json"
         save_report(output, report)
@@ -1072,7 +1145,8 @@ def _profile(audit, args):
         record["observations"] = observations
         report["observations"] = observations
         try:
-            snapshot["estimates"] = estimates = propose(snapshot, observations, declarations, required)
+            snapshot["estimates"] = estimates = propose(snapshot, observations, declarations, required,
+                                                        previous=previous_observations)
             findings = check(snapshot, observations, required, updating=True, require_uplift=True)
             errors.extend(finding for finding in findings if not finding.startswith("efficiency:"))
         except ValueError as error:
@@ -1101,7 +1175,13 @@ def _profile(audit, args):
         try:
             if candidate_result["sha256"] != hashlib.sha256(render(estimates, record).encode("ascii")).hexdigest():
                 raise RuntimeError("candidate content changed after validation; refusing replacement")
-            write(estimates, record, expected_sha=initial_sha, deadline=args.profile_deadline - 1)
+            for environment, previous in previous_observations.items():
+                for key, row in previous.items():
+                    current = record["observations"][environment].get(key)
+                    if current is None or row["max"] > current["max"]:
+                        record["observations"][environment][key] = row
+            write(estimates, record, expected_sha=initial_sha, expected_baseline_sha=initial_baseline_sha,
+                  deadline=args.profile_deadline - 1)
         except (OSError, RuntimeError) as error:
             errors.append("publication: " + str(error))
             save_report(output, report)

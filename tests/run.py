@@ -55,8 +55,8 @@ def run_test(path: Path, *, instructions=False, snapshot_path=None, work_samples
     if instructions:
         sys.path.insert(0, str(ROOT / "tools"))
         import scheduler_audit
-        from instruction_snapshot import native_bound, load as load_snapshot
-        estimates = load_snapshot(snapshot_path)["estimates"] if snapshot_path else load_snapshot()["estimates"]
+        from instruction_snapshot import native_bound, load as load_snapshot, load_estimates
+        estimates = load_estimates(snapshot_path) if snapshot_path else load_snapshot()["estimates"]
         def span_bound(label):
             result = native_bound(label, estimates)
             if result is None:

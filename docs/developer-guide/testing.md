@@ -97,7 +97,8 @@ python3 tools/audit-scheduler.py --instruction-report
 ```
 
 The first two commands run fresh mock and native measurements. `--instructions` rejects
-any recorded maximum increase; `--snapshot` updates the shipped estimates only
+any recorded maximum increase; `--snapshot` updates the shipped estimates and
+the compact regression fixture in `tests/fixtures/instruction_baseline.json` only
 after the focused profile passes behavior, coverage, runtime, and safety
 checks. The profile is designed to finish, including candidate validation,
 within five minutes; a deadline is only a fail-closed backstop, not a way to
@@ -113,8 +114,10 @@ Candidate validation checks peak native Lua heap and the shared-module guard
 under 32-bit Lua; run `make test-lua32` first to build that interpreter.
 After initial fitting, a discovery pass retains observations made with the new
 estimates. One bounded refit includes those observations. The final populated artifact then
-passes strict candidate validation before atomic replacement; further growth or
-any safety, coverage, or behavioral failure prevents publication.
+passes strict candidate validation before replacement; further growth or
+any safety, coverage, or behavioral failure prevents publication. The fixture
+stores exact mock and native maxima and identifies the matching estimates;
+full measurement reports are written under `build/scheduler-audit/`.
 For focused debugging without replacing the snapshot:
 
 ```sh
@@ -131,8 +134,9 @@ there is no repetition quota. Mock and native records remain separate.
 Observed zero-grant no-ops are retained and covered by the fitted fixed charge.
 Estimates use the higher mock/native maximum, add 10%, and round each stage's
 total for its grant upward to a multiple of 500; per-unit coefficients are not
-rounded to 500. Observed extrema and sample counts remain exact. Diagnostic
-evidence retains sampled work/progress and native action/deadline results.
+rounded to 500. Observed extrema and sample counts remain exact in the
+diagnostic reports, which also retain sampled work/progress and native
+action/deadline results.
 Instruction spread is reported for review, not treated as a blocker. Cheap and
 no-op executions remain in the observed ranges.
 The scheduler's fixed, per-examination, and per-run charges are conservative
@@ -143,16 +147,18 @@ rounded stage reservations, both when fitting and against the candidate. Mock
 planner witnesses exercise different examined/run combinations with real
 shared-cost skips and reinsertions in both environments; callback observations
 remain recorded. A native flight-timer witness supplements the live scenarios.
+Native model and control witnesses cover smaller grants that live workloads may
+not produce. Planner scenario coverage is checked by scenario, not by requiring
+the same examined/run counts after estimates change; any historical bucket
+observed again is still checked against its exact recorded maximum.
 Snapshot generation preserves the variable coefficients; the fixed reservation
 is rounded to 500 and increased when a measured shortfall requires it. The
 shortfall target uses the same 10% uplift and rounding as other bounds.
 
-**This workflow is still WIP:** the shipped snapshot contains seeded estimates,
-not a validated measured baseline. Chart measurement is deferred; its estimates
+**This workflow is still WIP.** Chart measurement is deferred; its estimates
 remain unchanged, and its deferred suites still run without instrumentation
 against both the current snapshot and the candidate; failures are reported but
-do not block this iteration. Neither targeted measurements
-nor a seeded snapshot establish release readiness.
+do not block this iteration. Targeted measurements do not establish release readiness.
 
 The resource suites check reload collectibility, object counts, sustained
 updates, and font callback retention. They cannot measure native LVGL/bitmap

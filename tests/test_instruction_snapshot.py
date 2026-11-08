@@ -15,6 +15,12 @@ import instruction_snapshot as snapshot
 
 
 class InstructionSnapshotTests(unittest.TestCase):
+    def planner_scenarios(self):
+        return [
+            {"name": name + " (128 tasks)", "tasks": 128, "examined": 4, "ran": 4, "measured": 200}
+            for name in ("failing steps", "unknown stage", "all retired (unknown stage)")
+        ]
+
     def row(self, **changes):
         row = dict(kind="task", name="test", stage="run", grant=1, n=5,
                    min=100, max=200, failures=0, minScenario="cheap", maxScenario="work")
@@ -86,7 +92,7 @@ class InstructionSnapshotTests(unittest.TestCase):
     def test_native_framework_worst_case_is_required_and_fitted(self):
         data, observations, required = self.data()
         data["estimates"]["bounds"]["scheduler"] = {"fixed": 196, "examine": 64, "run": 224}
-        measurement = {"overhead": {"rows": [
+        measurement = {"overhead": {"rows": self.planner_scenarios() + [
             {"name": "rounded stages skipped for shared cost, last one runs (128 tasks)",
              "tasks": 128, "examined": 127, "ran": 1, "measured": 9569},
         ]}}
@@ -102,7 +108,7 @@ class InstructionSnapshotTests(unittest.TestCase):
             snapshot.framework_rows({"overhead": {"rows": []}})
 
     def test_framework_buckets_retain_distinct_real_planner_paths(self):
-        measurement = {"overhead": {"rows": [
+        measurement = {"overhead": {"rows": self.planner_scenarios() + [
             {"name": "exclusive after the first (128 tasks)", "tasks": 128,
              "examined": 127, "ran": 1, "measured": 4424},
             {"name": "rounded stages skipped for shared cost, last one runs (128 tasks)", "tasks": 128,
@@ -112,18 +118,23 @@ class InstructionSnapshotTests(unittest.TestCase):
         self.assertEqual((row["min"], row["max"], row["n"]), (4424, 9569, 2))
         self.assertIn("exclusive after the first", row["minScenario"])
         self.assertIn("rounded stages skipped", row["maxScenario"])
-        measurement["overhead"]["rows"][1]["ran"] = 0
+        measurement["overhead"]["rows"][-1]["ran"] = 0
         with self.assertRaises(ValueError):
             snapshot.framework_rows(measurement)
 
     def test_native_task_witness_keeps_exact_range_and_sample_count(self):
+        sample = {"n": 1, "min": 100, "max": 120}
         measurement = {"cases": {"panel:flight-timer": {
             "samples": {"run": [{"n": 450, "min": 297, "max": 1134}]},
-        }, "panel:link-status": {"samples": {"render": [{"n": 5, "min": 500, "max": 900}]}}}}
-        row, link = snapshot.framework_task_rows(measurement)
+        }, "panel:link-status": {"samples": {"render": [{"n": 5, "min": 500, "max": 900}]}},
+            "service:model": {"samples": {"run": [sample, sample]}},
+            "service:control-normal": {"samples": {"run": [sample]}}}}
+        row, link, *other = snapshot.framework_task_rows(measurement)
         self.assertEqual(snapshot.observation_key(row), "task|panel.flight-timer|run|1")
         self.assertEqual((row["n"], row["min"], row["max"]), (450, 297, 1134))
-        self.assertEqual(row["maxScenario"], "framework:flight-timer-panel")
+        self.assertEqual(row["maxScenario"], "framework:panel:flight-timer")
+        self.assertEqual([snapshot.observation_key(item) for item in other],
+                         ["task|model|run|1", "task|model|run|2", "task|control.normal|run|1"])
         self.assertEqual(snapshot.observation_key(link), "task|panel.link-status|render|1")
         measurement["cases"]["panel:flight-timer"]["samples"] = {}
         with self.assertRaises(ValueError):
@@ -133,7 +144,7 @@ class InstructionSnapshotTests(unittest.TestCase):
         data, _, _ = self.data()
         data["estimates"]["bounds"]["scheduler"] = {"fixed": 500, "examine": 64, "run": 224}
         data["record"]["requiredObservations"] = {}
-        measurement = {"overhead": {"rows": [
+        measurement = {"overhead": {"rows": self.planner_scenarios() + [
             {"name": "rounded stages skipped for shared cost, last one runs (128 tasks)",
              "tasks": 128, "examined": 127, "ran": 1, "measured": 9569},
         ]}}
@@ -295,6 +306,20 @@ class InstructionSnapshotTests(unittest.TestCase):
         self.assertFalse(any("missing previously recorded" in finding
                              for finding in snapshot.check(data, observations, set(), updating=True)))
 
+    def test_historical_planner_bucket_is_not_required_but_is_still_strict(self):
+        data, observations, required = self.data()
+        data["estimates"]["bounds"]["scheduler"] = {"fixed": 1500, "examine": 64, "run": 224}
+        old = self.row(kind="framework", name="scheduler", stage="48:48", grant=0, min=400, max=500)
+        key = snapshot.observation_key(old)
+        data["record"]["observations"]["native"][key] = old
+        keys, errors = snapshot.required_keys(data, {"test|run": 1})
+        self.assertEqual(errors, [])
+        self.assertNotIn(key, keys)
+        self.assertFalse(any(key in finding for finding in snapshot.check(data, observations, keys)))
+        observations["native"][key] = dict(old, max=501)
+        self.assertTrue(any(f"regression: native:{key} grew from 500 to 501" == finding
+                            for finding in snapshot.check(data, observations, keys)))
+
     def test_expected_errors_remain_observations(self):
         data, observations, required = self.data()
         row = next(iter(observations["mock"].values()))
@@ -311,6 +336,19 @@ class InstructionSnapshotTests(unittest.TestCase):
         self.assertEqual(data["estimates"]["tasks"]["test"]["run"]["perUnit"], 220)
         with self.assertRaises(ValueError):
             snapshot.propose(data, observations, {"test|run": 1}, required | {"task|test|run|2"})
+        previous = copy.deepcopy(observations)
+        next(iter(previous["mock"].values()))["max"] = 330
+        retained = snapshot.propose(data, observations, {"test|run": 1}, required, previous=previous)
+        self.assertEqual(retained["tasks"]["test"]["run"]["perUnit"], 363)
+
+    def test_native_audit_respects_stage_quantum(self):
+        lua = snapshot.LuaRuntime(unpack_returned_tuples=True)
+        measure = lua.eval("loadfile")(str(snapshot.ROOT / "tests/support/scheduler_measure.lua"))()
+        decl = lua.eval('{ stages = { run = { fixed = 60, perUnit = 165, quantum = 500 } } }')
+        worst = lua.eval('{ run = { [2] = 499 } }')
+        self.assertFalse(any(row["level"] == "exceeds" for row in measure.check(decl, worst).values()))
+        worst["run"][2] = 501
+        self.assertTrue(any(row["level"] == "exceeds" for row in measure.check(decl, worst).values()))
 
     def test_task_table_shows_min_current_bound_max_and_missing_grants(self):
         data, observations, required = self.data()
@@ -411,6 +449,11 @@ class InstructionSnapshotTests(unittest.TestCase):
     def test_focused_profile_retains_discovery_and_validates_exact_final_artifact(self):
         data, _, _ = self.data()
         data["record"]["observations"] = {"mock": {}, "native": {}}
+        data["record"]["deferred"]["panel.chart"] = "measurement deferred"
+        deferred_key = "task|panel.chart|run|1"
+        data["record"]["observations"]["mock"][deferred_key] = {
+            "kind": "task", "name": "panel.chart", "stage": "run", "grant": 1, "max": 123,
+        }
         row = self.row(n=1, min=101, max=201)
         key = snapshot.observation_key(row)
         calls = []
@@ -466,7 +509,11 @@ class InstructionSnapshotTests(unittest.TestCase):
                 self.assertEqual(record["observations"]["mock"][key]["max"], 301)
                 self.assertEqual(record["observations"]["native"][key]["max"], 201)
                 self.assertEqual(record["observations"]["mock"][key]["n"], 2)
+                self.assertEqual(record["observations"]["mock"][deferred_key]["max"], 123)
                 report = json.loads((root / "build/scheduler-audit/instruction-profile.json").read_text())
+                self.assertEqual(report["snapshotRecord"]["observations"]["mock"][key]["min"], 101)
+                self.assertEqual(report["snapshotRecord"]["observations"]["mock"][key]["max"], 301)
+                self.assertEqual(report["snapshotRecord"]["observations"]["mock"][key]["n"], 2)
                 artifact = root / report["candidate"]["artifact"]
                 self.assertEqual(artifact.read_text(), snapshot.render(estimates, record))
                 self.assertEqual(hashlib.sha256(artifact.read_bytes()).hexdigest(), report["candidate"]["sha256"])
@@ -521,12 +568,15 @@ class InstructionSnapshotTests(unittest.TestCase):
         data, _, _ = self.data()
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "snapshot.lua"
+            baseline = Path(directory) / "baseline.json"
             path.write_text("original")
+            baseline.write_text("original baseline")
             sha = hashlib.sha256(path.read_bytes()).hexdigest()
             with self.assertRaisesRegex(RuntimeError, "deadline expired"):
-                snapshot.write(**data, path=path, expected_sha=sha, deadline=0)
+                snapshot.write(**data, path=path, baseline_path=baseline, expected_sha=sha, deadline=0)
             self.assertEqual(path.read_text(), "original")
-            self.assertEqual(list(path.parent.iterdir()), [path])
+            self.assertEqual(baseline.read_text(), "original baseline")
+            self.assertEqual(set(path.parent.iterdir()), {path, baseline})
 
     def test_menu_mask_cost_is_retained_separately_from_loader_overhead(self):
         runner = snapshot._module("menu_mask_runner", snapshot.ROOT / "tests/run.py")
@@ -598,7 +648,7 @@ class InstructionSnapshotTests(unittest.TestCase):
     @unittest.skipUnless((snapshot.ROOT / "build/lua32/lua").is_file(), "Lua32 is not built")
     def test_lua32_candidate_intercepts_source_and_copied_fixture(self):
         data = snapshot.load()
-        data["record"]["candidateMarker"] = True
+        data["estimates"]["candidateMarker"] = True
         with tempfile.TemporaryDirectory(dir=snapshot.ROOT) as directory:
             path = Path(directory)
             candidate = path / "candidate.lua"
@@ -610,9 +660,9 @@ class InstructionSnapshotTests(unittest.TestCase):
             suite.write_text(f"""
                 local root = ...
                 local source = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/instruction_snapshot.lua"))()
-                assert(source("record").candidateMarker)
+                assert(source("estimates").candidateMarker)
                 local fixture = assert(loadfile({json.dumps(str(copied))}))()
-                assert(fixture("record").candidateMarker)
+                assert(fixture("estimates").candidateMarker)
             """, encoding="ascii")
             snapshot.subprocess.run(
                 [str(snapshot.ROOT / "build/lua32/lua"), str(snapshot.ROOT / "tests/support/lua32.lua"),
@@ -644,22 +694,22 @@ class InstructionSnapshotTests(unittest.TestCase):
     def test_candidate_is_loaded_instead_of_the_shipped_snapshot(self):
         runner = snapshot._module("snapshot_override_runner", snapshot.ROOT / "tests/run.py")
         data = snapshot.load()
-        data["record"]["candidateMarker"] = True
+        data["estimates"]["candidateMarker"] = True
         with tempfile.TemporaryDirectory() as directory:
             candidate, suite = Path(directory) / "candidate.lua", Path(directory) / "test_candidate.lua"
             candidate.write_text(snapshot.render(**data), encoding="ascii")
             copied = Path(directory) / "build/test-widget-fixture/lib/instruction_snapshot.lua"
             copied.parent.mkdir(parents=True)
             seed = copy.deepcopy(data)
-            seed["record"].pop("candidateMarker")
+            seed["estimates"].pop("candidateMarker")
             copied.write_text(snapshot.render(**seed), encoding="ascii")
             suite.write_text("""
                 local root = ...
                 local chunk = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/instruction_snapshot.lua"))()
-                assert(chunk("record").candidateMarker, "candidate was not loaded")
+                assert(chunk("estimates").candidateMarker, "candidate was not loaded")
             """ + f"""
                 local copied = assert(loadfile("{copied.as_posix()}"))()
-                assert(copied("record").candidateMarker, "runtime fixture still loaded the copied seed")
+                assert(copied("estimates").candidateMarker, "runtime fixture still loaded the copied seed")
             """, encoding="ascii")
             runner.run_test(suite, snapshot_path=candidate)
 
@@ -722,19 +772,48 @@ class InstructionSnapshotTests(unittest.TestCase):
 
     def test_atomic_write_and_radio_safe_roundtrip(self):
         data, _, _ = self.data()
-        data["record"]["provenance"] = {'quoted"key': "first\nsecond"}
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "snapshot.lua"
+            baseline = Path(directory) / "baseline.json"
             path.write_text("original")
+            baseline.write_text("original baseline")
             sha = hashlib.sha256(path.read_bytes()).hexdigest()
-            snapshot.write(**data, path=path, expected_sha=sha)
-            self.assertEqual(snapshot.load(path), data)
+            snapshot.write(**data, path=path, baseline_path=baseline, expected_sha=sha)
+            loaded = snapshot.load(path, baseline)
+            self.assertEqual(loaded["estimates"], data["estimates"])
+            self.assertEqual(loaded["record"]["deferred"], data["record"]["deferred"])
+            for environment, rows in data["record"]["observations"].items():
+                self.assertEqual({key: row["max"] for key, row in rows.items()},
+                                 {key: row["max"] for key, row in loaded["record"]["observations"][environment].items()})
             before = path.read_bytes()
+            baseline_before = baseline.read_bytes()
             with self.assertRaises(RuntimeError):
-                snapshot.write(**data, path=path, expected_sha=sha)
+                snapshot.write(**data, path=path, baseline_path=baseline, expected_sha=sha)
             self.assertEqual(path.read_bytes(), before)
-            self.assertEqual(len(list(Path(directory).iterdir())), 1)
-            data["record"]["overflow"] = 2147483648
+            self.assertEqual(baseline.read_bytes(), baseline_before)
+            self.assertEqual(len(list(Path(directory).iterdir())), 2)
+            path.write_text("changed")
+            with self.assertRaisesRegex(ValueError, "do not match"):
+                snapshot.load(path, baseline)
+            path.write_bytes(before)
+            changed_sha = hashlib.sha256(path.read_bytes()).hexdigest()
+            with self.assertRaisesRegex(RuntimeError, "baseline changed"):
+                snapshot.write(**data, path=path, baseline_path=baseline, expected_sha=changed_sha,
+                               expected_baseline_sha="stale")
+            self.assertEqual(path.read_bytes(), before)
+            self.assertEqual(baseline.read_bytes(), baseline_before)
+            replace = Path.replace
+            def fail_snapshot_replace(source, destination):
+                if Path(destination) == path:
+                    raise OSError("snapshot replacement failed")
+                return replace(source, destination)
+            with patch.object(Path, "replace", autospec=True, side_effect=fail_snapshot_replace), \
+                    self.assertRaisesRegex(OSError, "snapshot replacement failed"):
+                snapshot.write(**data, path=path, baseline_path=baseline, expected_sha=changed_sha)
+            self.assertEqual(path.read_bytes(), before)
+            self.assertEqual(baseline.read_bytes(), baseline_before)
+            self.assertEqual(set(path.parent.iterdir()), {path, baseline})
+            data["estimates"]["overflow"] = 2147483648
             with self.assertRaises(ValueError):
                 snapshot.render(**data)
             self.assertEqual(path.read_bytes(), before)
