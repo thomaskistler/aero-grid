@@ -133,6 +133,22 @@ class InstructionSnapshotTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             snapshot.merge_observations([self.row(n=0)])
 
+    def test_previously_observed_environment_cannot_disappear(self):
+        data, observations, required = self.data()
+        key = next(iter(observations["native"]))
+        observations["native"].pop(key)
+        other = self.row(kind="callback", name="refresh", stage="other", grant=0)
+        observations["native"][snapshot.observation_key(other)] = other
+        for updating in (False, True):
+            findings = snapshot.check(data, observations, required, updating=updating)
+            self.assertTrue(any(f"coverage: missing previously recorded native:{key}" == finding
+                                for finding in findings))
+        self.assertFalse(any("missing previously recorded" in finding
+                             for finding in snapshot.check(data, observations, required, require_previous=False)))
+        data["record"]["deferred"]["test"] = "deferred"
+        self.assertFalse(any("missing previously recorded" in finding
+                             for finding in snapshot.check(data, observations, set(), updating=True)))
+
     def test_expected_errors_remain_observations(self):
         data, observations, required = self.data()
         row = next(iter(observations["mock"].values()))

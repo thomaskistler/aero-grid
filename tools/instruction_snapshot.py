@@ -101,7 +101,7 @@ def merge_observations(rows):
     return merged
 
 
-def check(snapshot, observations, required, *, updating=False):
+def check(snapshot, observations, required, *, updating=False, require_previous=True):
     """Independent regression, runtime, safety, coverage and spread findings.
 
     `required` is an explicit set of observation keys, including every legal
@@ -117,6 +117,10 @@ def check(snapshot, observations, required, *, updating=False):
         if environment not in ("mock", "native"):
             findings.append(f"coverage: unknown environment {environment}")
             continue
+        if require_previous:
+            for key, row in previous.get(environment, {}).items():
+                if not deferred(snapshot, row) and key not in rows:
+                    findings.append(f"coverage: missing previously recorded {environment}:{key}")
         for key, row in rows.items():
             if key != observation_key(row):
                 raise ValueError(f"observation key mismatch: {key}")
@@ -638,7 +642,7 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
         result["observations"] = {"mock": merge_observations(mock), "native": merge_observations(native)}
         findings = check({"estimates": estimates, "record": record},
                          result["observations"],
-                         set(), updating=False)
+                         set(), updating=False, require_previous=False)
         errors.extend("candidate: " + finding for finding in findings
                       if not finding.startswith("efficiency:"))
     except (ValueError, TypeError, OSError) as error:
