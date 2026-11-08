@@ -280,7 +280,8 @@ class InstructionSnapshotTests(unittest.TestCase):
                 write.reset_mock()
                 with patch.object(runner, "run_test", side_effect=RuntimeError("heap bound exceeded")):
                     candidate_errors, result = snapshot.validate_candidate(
-                        audit, runner, args, estimates, record, "native", library, None)
+                        audit, runner, args, estimates, record, "native", library, None,
+                        [root / "tests/test_profile.lua"])
                 self.assertEqual(len([finding for finding in candidate_errors if finding.startswith("memory:")]), 3)
                 self.assertEqual(result["mock"], [])
                 self.assertFalse(list((root / "build/scheduler-audit").glob("snapshot-candidate-*.lua")))
@@ -288,8 +289,27 @@ class InstructionSnapshotTests(unittest.TestCase):
                 increased["stats"]["task:service:model:run"]["units"]["1"]["max"] = 701
                 with patch.object(audit, "run", return_value=increased):
                     candidate_errors, _ = snapshot.validate_candidate(
-                        audit, runner, args, estimates, record, "native", library, None)
+                        audit, runner, args, estimates, record, "native", library, None,
+                        [root / "tests/test_profile.lua"])
                 self.assertTrue(any("regression:" in finding for finding in candidate_errors))
+                increased_mock = dict(row, max=701)
+                def mock_regression(*args, **kwargs):
+                    if kwargs.get("instructions"):
+                        return {key: increased_mock}, {"model|run": 1}
+                    return None
+                with patch.object(runner, "run_test", side_effect=mock_regression):
+                    candidate_errors, candidate_result = snapshot.validate_candidate(
+                        audit, runner, args, estimates, record, "native", library, None,
+                        [root / "tests/test_profile.lua"])
+                self.assertTrue(any("regression: mock:" in finding for finding in candidate_errors))
+                self.assertEqual(candidate_result["observations"]["mock"][key]["max"], 701)
+                increased_mock["max"] = 15001
+                with patch.object(runner, "run_test", side_effect=mock_regression):
+                    candidate_errors, _ = snapshot.validate_candidate(
+                        audit, runner, args, estimates, record, "native", library, None,
+                        [root / "tests/test_profile.lua"])
+                self.assertTrue(any("safety: mock:" in finding for finding in candidate_errors))
+                self.assertTrue(any("runtime: mock:" in finding for finding in candidate_errors))
                 def fail_recovery(*args, **kwargs):
                     if kwargs.get("output_name") == "aircraft-link-recovery-snapshot-candidate":
                         raise RuntimeError("link did not recover")

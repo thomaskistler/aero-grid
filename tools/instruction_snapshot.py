@@ -585,10 +585,10 @@ def task_report(path, output=None):
     return 0
 
 
-def validate_candidate(audit, runner, args, estimates, record, executable, library, capture):
+def validate_candidate(audit, runner, args, estimates, record, executable, library, capture, suites):
     """Exercise the exact populated chunk without replacing the shipped snapshot."""
     errors = []
-    result = {"mock": [], "native": [], "observations": {}}
+    result = {"mock": [], "instrumentedMock": [], "native": [], "observations": {}}
     directory = ROOT / "build/scheduler-audit"
     directory.mkdir(parents=True, exist_ok=True)
     candidate = None
@@ -605,6 +605,17 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
                 result["mock"].append(name)
             except Exception as error:
                 errors.append(f"memory: candidate {name}: {error}")
+        mock = []
+        for path in suites:
+            try:
+                rows, _ = runner.run_test(path, instructions=True, snapshot_path=candidate)
+                for value in rows.values():
+                    row = _python(value)
+                    row["expectedFailures"] = row["failures"]
+                    mock.append(row)
+                result["instrumentedMock"].append(path.relative_to(ROOT).as_posix())
+            except Exception as error:
+                errors.append(f"behavior: candidate {path.relative_to(ROOT)}: {error}")
         native = []
         for name in CANDIDATE_SCENARIOS:
             try:
@@ -615,9 +626,9 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
                 result["native"].append(name)
             except Exception as error:
                 errors.append(f"native: candidate {name}: {error}")
-        result["observations"] = merge_observations(native)
+        result["observations"] = {"mock": merge_observations(mock), "native": merge_observations(native)}
         findings = check({"estimates": estimates, "record": record},
-                         {"mock": record["observations"]["mock"], "native": result["observations"]},
+                         result["observations"],
                          set(), updating=False)
         errors.extend("candidate: " + finding for finding in findings
                       if not finding.startswith("efficiency:"))
@@ -771,9 +782,11 @@ def profile(audit, args):
                              "No independently measured component ranges."
             }
         record["coverage"]["candidateMock"] = dict(enumerate(MEMORY_SUITES, 1))
+        record["coverage"]["candidateInstrumentedMock"] = dict(
+            enumerate((path.relative_to(ROOT).as_posix() for path in suites), 1))
         record["coverage"]["candidateNative"] = dict(enumerate(CANDIDATE_SCENARIOS, 1))
         candidate_errors, report["candidate"] = validate_candidate(
-            audit, runner, args, estimates, record, executable, library, capture)
+            audit, runner, args, estimates, record, executable, library, capture, suites)
         errors.extend(candidate_errors)
         if source_sha() != inputs_sha:
             errors.append("provenance: measurement inputs changed during candidate validation; refusing replacement")

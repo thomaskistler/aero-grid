@@ -100,7 +100,8 @@ Before replacement, the populated candidate runs the existing shared-module,
 Aircraft, and Output memory checks and native stress, metric-16, model-panels,
 and Aircraft link-recovery scenarios without changing the shipped file. These
 checks retain the existing memory limits; their results are included in the
-diagnostic report.
+diagnostic report. The candidate also runs the measurement-profile mock suites
+again to check its actual instruction observations.
 For focused debugging without replacing the snapshot:
 
 ```sh
