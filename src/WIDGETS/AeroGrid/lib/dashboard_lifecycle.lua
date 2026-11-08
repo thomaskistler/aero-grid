@@ -417,7 +417,8 @@ function module.new(dependencies)
             if settingsUi and settingsUi.RUNTIME_API == 1 and type(settingsUi.retirementWorkBound) == "function" then
                 local bound = settingsUi.retirementWorkBound(context)
                 local completeBound = bound and bound + module.WORK_BOUNDS.settingsDrainOverhead
-                if completeBound and completeBound <= module.WORK_BOUNDS.settingsDrain then
+                -- The whole-drain observation is not a cap on composed stage bounds.
+                if completeBound and completeBound <= 4000 then
                     return completeBound
                 end
             end

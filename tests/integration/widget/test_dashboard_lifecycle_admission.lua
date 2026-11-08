@@ -183,20 +183,25 @@ end
 do
     local context = loaded()
     local ui = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/model_settings_ui.lua"))()
+    local store = fixture.module("lib/model_settings_store.lua")
     context.modelSettingsUiModule = ui
     context.pageRetirement = { phase = "settings" }
+    local saveBound = store.SAVE_BOUNDS.install
     context.modelSettingsUi = {
         saving = { phase = "store", job = { stage = "serialize" } },
         handlers = {
             advanceSave = function() end,
             saveWorkBound = function()
-                return 1900
+                return saveBound
             end,
         },
     }
     assert(ui.retirementWorkBound(context))
-    assert(context.dashboardLifecycle.workBound(context, "retirePage"),
-        "confirmed saves remain eligible during retirement")
+    local composed = saveBound + ui.STORE_OVERHEAD + context.dashboardLifecycle.WORK_BOUNDS.settingsDrainOverhead
+    assert(
+        context.dashboardLifecycle.workBound(context, "retirePage") == (composed <= 4000 and composed or nil),
+        "confirmed saves use the composed reservation within the lifecycle atom cap"
+    )
     context.modelSettingsUi.handlers.saveWorkBound = function()
         return 5000
     end

@@ -217,7 +217,10 @@ for _, parkedStage in ipairs({
         assert(current ~= creator, "an unproven owner atom must not be helped without reservation")
         return proof(current)
     end
-    for _, value in ipairs({ "nil", 3701, 3800, "unmeasured" }) do
+    unproven = 0
+    local overhead = assert(hidden.dashboardLoader.workBound(hidden))
+    local fitting = 4000 - overhead
+    for _, value in ipairs({ "nil", fitting + 1, 4000, "unmeasured" }) do
         unproven = value
         assert(hidden.dashboardLoader.workBound(hidden) == nil, tostring(value))
         local plan = hidden.scheduler.lastPlan
@@ -230,7 +233,7 @@ for _, parkedStage in ipairs({
         assert(plan.kind ~= "loader", "no services may be admitted under an unproven bound")
         plan.kind = kind
     end
-    unproven = 3700
+    unproven = fitting
     assert(hidden.dashboardLoader.workBound(hidden), "a fitting owner atom is eligible")
     unproven = nil
     creator.dashboardLoader.workBound, creator.dashboardLoader.advanceLoad = ownerBound, proof

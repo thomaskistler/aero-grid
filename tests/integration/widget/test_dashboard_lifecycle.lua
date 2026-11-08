@@ -235,15 +235,27 @@ context.dashboardLifecycle.retirePage(context)
 assert(context.pageRetirement.phase == "settings")
 local settingsBound = context.dashboardLifecycle.workBound(context, "retirePage")
 assert(settingsBound and settingsBound > context.modelSettingsUiModule.workBound(context))
-assert(settingsBound <= context.dashboardLifecycle.WORK_BOUNDS.settingsDrain)
+assert(settingsBound <= 4000)
+local sawInstall = false
 for _ = 1, 1000 do
     if not context.modelSettingsUi then
         break
+    end
+    if state.saving and state.saving.phase == "store" then
+        local storeBound = state.handlers.saveWorkBound(state.saving.job)
+        local expected = storeBound + context.modelSettingsUiModule.STORE_OVERHEAD
+            + context.dashboardLifecycle.WORK_BOUNDS.settingsDrainOverhead
+        assert(
+            context.dashboardLifecycle.workBound(context, "retirePage") == (expected <= 4000 and expected or nil),
+            "each save stage must reserve its composed bound when it fits"
+        )
+        sawInstall = sawInstall or state.saving.job.stage == "install"
     end
     context.dashboardLifecycle.retirePage(context)
     assert(not page.cleared and #context.panels == count, "confirmed save drains before any native destruction")
     fixture.lvglMock.settle()
 end
+assert(sawInstall, "confirmed save must exercise installation during retirement")
 assert(not context.modelSettingsUi and context.flightBroker.document.revision == revision + 1)
 assert(context.flightBroker.document.flight.motorReversed == state.values.motorReversed)
 retire(context)
