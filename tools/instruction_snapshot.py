@@ -596,14 +596,20 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
               "instrumentedMock": [], "native": [], "observations": {}}
     directory = ROOT / "build/scheduler-audit"
     directory.mkdir(parents=True, exist_ok=True)
-    candidate = None
+    candidate = temporary = None
     try:
         text = render(estimates, record)
+        digest = hashlib.sha256(text.encode("ascii")).hexdigest()
         with tempfile.NamedTemporaryFile(mode="w", encoding="ascii", suffix=".lua",
                                          prefix="snapshot-candidate-", dir=directory, delete=False) as file:
-            candidate = Path(file.name)
+            temporary = Path(file.name)
             file.write(text)
+        candidate = directory / f"instruction-candidate-{digest}.lua"
+        os.replace(temporary, candidate)
+        temporary = None
         result["bytes"] = len(text.encode("ascii"))
+        result["sha256"] = digest
+        result["artifact"] = candidate.relative_to(ROOT).as_posix()
         for name in MEMORY_SUITES:
             try:
                 runner.run_test(ROOT / name, snapshot_path=candidate)
@@ -628,6 +634,8 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
                     mock.append(row)
                 result["instrumentedMock"].append(path.relative_to(ROOT).as_posix())
             except Exception as error:
+                for value in getattr(error, "rows", {}).values():
+                    mock.append(_python(value))
                 errors.append(f"behavior: candidate {path.relative_to(ROOT)}: {error}")
         native = []
         for name in CANDIDATE_SCENARIOS:
@@ -649,8 +657,8 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
     except (ValueError, TypeError, OSError) as error:
         errors.append(f"snapshot: candidate validation: {error}")
     finally:
-        if candidate is not None:
-            candidate.unlink()
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
     return errors, result
 
 
@@ -695,6 +703,10 @@ def profile(audit, args):
                 declarations[key] = max(declarations.get(key, 0), maximum)
             completed.append(path.relative_to(ROOT).as_posix())
         except Exception as error:
+            for value in getattr(error, "rows", {}).values():
+                mock.append(_python(value))
+            for key, maximum in getattr(error, "declarations", {}).items():
+                declarations[key] = max(declarations.get(key, 0), maximum)
             errors.append(f"behavior: {path.relative_to(ROOT)}: {error}")
     available = audit.scenarios()
     names = ["hook-check", "hook-check-firmware", "stress", "metric-16", "model-panels",

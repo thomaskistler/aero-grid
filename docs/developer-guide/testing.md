@@ -101,7 +101,8 @@ Aircraft, and Output memory checks and native stress, metric-16, model-panels,
 and Aircraft link-recovery scenarios without changing the shipped file. These
 checks retain the existing memory limits; their results are included in the
 diagnostic report. The candidate also runs the measurement-profile mock suites
-again to check its actual instruction observations.
+again to check its actual instruction observations. The report identifies the
+exact candidate file by path and SHA-256, including when validation fails.
 For focused debugging without replacing the snapshot:
 
 ```sh

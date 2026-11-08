@@ -2,6 +2,7 @@
 
 import copy
 import hashlib
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -327,6 +328,9 @@ class InstructionSnapshotTests(unittest.TestCase):
                 self.assertEqual(len([finding for finding in candidate_errors if finding.startswith("memory:")]), 3)
                 self.assertEqual(result["mock"], [])
                 self.assertFalse(list((root / "build/scheduler-audit").glob("snapshot-candidate-*.lua")))
+                artifact = root / result["artifact"]
+                self.assertTrue(artifact.is_file())
+                self.assertEqual(hashlib.sha256(artifact.read_bytes()).hexdigest(), result["sha256"])
                 increased = copy.deepcopy(native)
                 increased["stats"]["task:service:model:run"]["units"]["1"]["max"] = 701
                 with patch.object(audit, "run", return_value=increased):
@@ -345,6 +349,28 @@ class InstructionSnapshotTests(unittest.TestCase):
                         [root / "tests/test_profile.lua"])
                 self.assertTrue(any("regression: mock:" in finding for finding in candidate_errors))
                 self.assertEqual(candidate_result["observations"]["mock"][key]["max"], 701)
+                partial = dict(row, max=725)
+                error = RuntimeError("suite failed after recording work")
+                error.rows = {key: partial}
+                error.declarations = {"model|run": 1}
+                def fail_instrumented(*args, **kwargs):
+                    if kwargs.get("instructions"):
+                        raise error
+                    return None
+                with patch.object(runner, "run_test", side_effect=fail_instrumented):
+                    candidate_errors, candidate_result = snapshot.validate_candidate(
+                        audit, runner, args, estimates, record, "native", library, None,
+                        [root / "tests/test_profile.lua"])
+                    self.assertTrue(any("suite failed after recording work" in finding
+                                        for finding in candidate_errors))
+                    self.assertEqual(candidate_result["observations"]["mock"][key]["max"], 725)
+                    self.assertEqual(candidate_result["instrumentedMock"], [])
+                    self.assertEqual(snapshot.profile(audit, args), 1)
+                    report = json.loads((root / "build/scheduler-audit/instruction-profile.json").read_text())
+                    self.assertEqual(report["observations"]["mock"][key]["max"], 725)
+                    self.assertEqual(report["declarations"]["model|run"], 1)
+                    self.assertEqual(report["coverage"]["mock"], [])
+                write.assert_not_called()
                 increased_mock["max"] = 15001
                 with patch.object(runner, "run_test", side_effect=mock_regression):
                     candidate_errors, _ = snapshot.validate_candidate(
@@ -408,6 +434,20 @@ class InstructionSnapshotTests(unittest.TestCase):
                     patch.object(runner, "run_test") as run:
                 runner.main()
             run.assert_called_once_with(suite, snapshot_path=candidate.resolve())
+
+    def test_instrumented_failure_retains_samples_and_declarations(self):
+        runner = snapshot._module("failed_snapshot_runner", snapshot.ROOT / "tests/run.py")
+        source = snapshot.ROOT / "tests/unit/lib/test_navigation_service.lua"
+        with tempfile.TemporaryDirectory(dir=snapshot.ROOT / "tests") as directory:
+            suite = Path(directory) / "test_failure.lua"
+            suite.write_text(source.read_text(encoding="ascii") + '\nerror("deliberate failure")\n',
+                             encoding="ascii")
+            with self.assertRaises(runner.InstrumentedSuiteError) as caught:
+                runner.run_test(suite, instructions=True)
+            self.assertIn("deliberate failure", str(caught.exception))
+            self.assertTrue(any(row["name"] == "navigation" and row["n"] > 0
+                                for row in caught.exception.rows.values()))
+            self.assertEqual(caught.exception.declarations["navigation|run"], 2)
 
     def test_selected_native_candidate_preserves_scenario_identity(self):
         audit = snapshot._module("audit_scheduler_cli", snapshot.ROOT / "tools/audit-scheduler.py")

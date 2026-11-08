@@ -10,6 +10,13 @@ from lupa.lua53 import LuaRuntime
 ROOT = Path(__file__).resolve().parents[1]
 
 
+class InstrumentedSuiteError(RuntimeError):
+    def __init__(self, error, rows, declarations):
+        super().__init__(str(error))
+        self.rows = rows
+        self.declarations = declarations
+
+
 def run_test(path: Path, *, instructions=False, snapshot_path=None):
     lua = LuaRuntime(unpack_returned_tuples=True)
     lua.execute('debug.setmetatable("", nil)')
@@ -81,12 +88,14 @@ def run_test(path: Path, *, instructions=False, snapshot_path=None):
         )
     try:
         lua.execute(path.read_text(encoding="ascii"), str(ROOT))
-    except Exception:
+    except Exception as error:
         print(f"Failed Lua suite: {path}", file=sys.stderr)
         if len(logs):
             print("Captured AeroGrid logs:", file=sys.stderr)
             for index in range(1, len(logs) + 1):
                 print(logs[index], file=sys.stderr)
+        if instructions:
+            raise InstrumentedSuiteError(error, rows, declared) from error
         raise
     if instructions:
         return rows, declared

@@ -7,6 +7,7 @@ local edgetx = assert(loadfile(root .. "/tests/support/edgetx.lua"))()
 local services = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/services.lua"))()
 local navigationService = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/navigation_service.lua"))()
 local armedService = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/armed_service.lua"))()
+local diagnosticsLog = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/diagnostics_log.lua"))()
 local GPS_DELAY_TICKS = edgetx.firmware.GPS_DELAY_TICKS
 
 local function stepNavigation(service, now)
@@ -117,6 +118,41 @@ local function testFirstArmHome()
     local _, fresh, _, _, freshUpdate = captureFixture()
     freshUpdate(0, false)
     assertions.assertEqual(fresh.home, false, "new sessions must not inherit home")
+end
+
+local function testSingleGrantCaptureWithDiagnostics()
+    local service, view, reading, arm, update = captureFixture()
+    local edge = service:subscribe("GPS")
+    local log = diagnosticsLog.new()
+    local host = {
+        layoutName = "navigation",
+        diagnosticsLog = log,
+        panels = {
+            { placement = { id = "home", type = "navigation" }, instance = { feed = view } },
+            { placement = { id = "edge", type = "navigation" }, instance = { feed = edge } },
+            {
+                placement = { id = "log", type = "host-diagnostics" },
+                settings = { section = "log" },
+                instance = {},
+            },
+        },
+    }
+    log:register(host)
+    service.runtime.host = host
+    update(0, false)
+    arm.value, arm.updatedAt, reading.updatedAt = true, 20, 20
+    local armed = service.runtime.byId.armed.tasks.run
+    armed:step(armed.want, "run", 20)
+    service.tasks.run:step(1, "run", 20)
+    assertions.assertEqual(view.homeStatus, "captured")
+    assertions.assertEqual(view.pilotLatitude, 47)
+    assertions.assertEqual(view.pilotLongitude, 8)
+    local entries = log:read()
+    assertions.assertEqual(#entries, 1)
+    assertions.assertEqual(entries[1].panel, "home")
+    assert(string.find(entries[1].text, "Home capture GPS=GPS: captured", 1, true))
+    service.tasks.run:step(1, "run", 21)
+    assertions.assertEqual(edge.pilotLatitude, 46)
 end
 
 local function testInvalidFirstArmRetriesOnNextTransition()
@@ -451,6 +487,7 @@ local function run()
     testPositionChecksAndDistance()
     testServiceCreatesRuntime()
     testFirstArmHome()
+    testSingleGrantCaptureWithDiagnostics()
     testInvalidFirstArmRetriesOnNextTransition()
     testArmObservationAndFreshness()
     testCaptureDiagnostics()
