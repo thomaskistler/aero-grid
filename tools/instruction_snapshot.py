@@ -588,7 +588,7 @@ def task_report(path, output=None):
 def validate_candidate(audit, runner, args, estimates, record, executable, library, capture, suites):
     """Exercise the exact populated chunk without replacing the shipped snapshot."""
     errors = []
-    result = {"mock": [], "instrumentedMock": [], "native": [], "observations": {}}
+    result = {"mock": [], "chartBehavior": [], "instrumentedMock": [], "native": [], "observations": {}}
     directory = ROOT / "build/scheduler-audit"
     directory.mkdir(parents=True, exist_ok=True)
     candidate = None
@@ -605,6 +605,12 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
                 result["mock"].append(name)
             except Exception as error:
                 errors.append(f"memory: candidate {name}: {error}")
+        for name in sorted(DEFERRED_SUITES):
+            try:
+                runner.run_test(ROOT / name, snapshot_path=candidate)
+                result["chartBehavior"].append(name)
+            except Exception as error:
+                errors.append(f"behavior: candidate {name}: {error}")
         mock = []
         for path in suites:
             try:
@@ -659,7 +665,7 @@ def profile(audit, args):
     suites = [path for path in sorted((ROOT / "tests").rglob("test_*.lua"))
               if "support" not in path.relative_to(ROOT).parts
               and path.relative_to(ROOT).as_posix() not in DEFERRED_SUITES]
-    completed = []
+    completed, chart_behavior = [], []
     for path in suites:
         try:
             rows, declared = runner.run_test(path, instructions=True)
@@ -673,6 +679,12 @@ def profile(audit, args):
             completed.append(path.relative_to(ROOT).as_posix())
         except Exception as error:
             errors.append(f"behavior: {path.relative_to(ROOT)}: {error}")
+    for name in sorted(DEFERRED_SUITES):
+        try:
+            runner.run_test(ROOT / name)
+            chart_behavior.append(name)
+        except Exception as error:
+            errors.append(f"behavior: {name}: {error}")
     available = audit.scenarios()
     names = ["hook-check", "hook-check-firmware", "stress", "metric-16", "model-panels",
              "flight-smart-tasks", "flight-owner-handoff", "session-reset", "aircraft-link-recovery"]
@@ -750,8 +762,9 @@ def profile(audit, args):
     report = {"observations": observations, "errors": errors, "warnings": warnings, "sourceSha": inputs_sha,
               "requiredObservations": sorted(required),
               "declarations": declarations,
-              "coverage": {"mock": completed, "native": native_completed,
+              "coverage": {"mock": completed, "chartBehavior": chart_behavior, "native": native_completed,
                            "requiredMock": [path.relative_to(ROOT).as_posix() for path in suites],
+                           "requiredChartBehavior": sorted(DEFERRED_SUITES),
                            "requiredNative": list(dict.fromkeys(names))}}
     output = ROOT / "build/scheduler-audit/instruction-profile.json"
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -784,6 +797,7 @@ def profile(audit, args):
                              "No independently measured component ranges."
             }
         record["coverage"]["candidateMock"] = dict(enumerate(MEMORY_SUITES, 1))
+        record["coverage"]["candidateChartBehavior"] = dict(enumerate(sorted(DEFERRED_SUITES), 1))
         record["coverage"]["candidateInstrumentedMock"] = dict(
             enumerate((path.relative_to(ROOT).as_posix() for path in suites), 1))
         record["coverage"]["candidateNative"] = dict(enumerate(CANDIDATE_SCENARIOS, 1))

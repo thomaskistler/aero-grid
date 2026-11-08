@@ -266,11 +266,18 @@ class InstructionSnapshotTests(unittest.TestCase):
                     patch.object(snapshot, "load", side_effect=lambda: copy.deepcopy(data)), \
                     patch.object(snapshot, "_module", return_value=runner), \
                     patch.object(snapshot, "write") as write:
-                with patch.object(audit, "run", wraps=audit.run) as runs:
+                with patch.object(audit, "run", wraps=audit.run) as runs, \
+                        patch.object(runner, "run_test", wraps=runner.run_test) as mock_runs:
                     self.assertEqual(snapshot.profile(audit, args), 0)
                 names = [call.kwargs.get("output_name") or call.args[3] for call in runs.call_args_list]
                 self.assertIn("aircraft-link-recovery", names)
                 self.assertIn("aircraft-link-recovery-snapshot-candidate", names)
+                recorded_chart = [
+                    call for call in mock_runs.call_args_list
+                    if call.args[0].relative_to(root).as_posix() in snapshot.DEFERRED_SUITES
+                ]
+                self.assertEqual(len(recorded_chart), 2 * len(snapshot.DEFERRED_SUITES))
+                self.assertTrue(all(not call.kwargs.get("instructions") for call in recorded_chart))
                 write.assert_called_once()
                 estimates, record = write.call_args.args
                 self.assertEqual(estimates["tasks"]["model"]["run"]["perUnit"], 770)
@@ -278,6 +285,22 @@ class InstructionSnapshotTests(unittest.TestCase):
                 self.assertEqual(record["observations"]["mock"][key]["min"], 100)
                 snapshot.render(estimates, record)
                 write.reset_mock()
+                def fail_chart(path, **kwargs):
+                    if path.relative_to(root).as_posix() in snapshot.DEFERRED_SUITES:
+                        raise RuntimeError("chart did not draw")
+                    return {key: row}, {"model|run": 1}
+                with patch.object(runner, "run_test", side_effect=fail_chart):
+                    self.assertEqual(snapshot.profile(audit, args), 1)
+                    report = (root / "build/scheduler-audit/instruction-profile.json").read_text()
+                    self.assertIn("chart did not draw", report)
+                    candidate_errors, result = snapshot.validate_candidate(
+                        audit, runner, args, estimates, record, "native", library, None,
+                        [root / "tests/test_profile.lua"])
+                self.assertEqual(len([finding for finding in candidate_errors
+                                      if finding.startswith("behavior: candidate")]),
+                                 len(snapshot.DEFERRED_SUITES))
+                self.assertEqual(result["chartBehavior"], [])
+                write.assert_not_called()
                 with patch.object(runner, "run_test", side_effect=RuntimeError("heap bound exceeded")):
                     candidate_errors, result = snapshot.validate_candidate(
                         audit, runner, args, estimates, record, "native", library, None,
