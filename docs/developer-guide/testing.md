@@ -58,6 +58,10 @@ minimal constants/LCD surface: these tests deliberately do not install LVGL or
 radio APIs. The full-widget integration suite exercises scheduling,
 cross-panel agreement, and deferred cleanup together.
 
+Reflow geometry covers legal spans and visual variants; interruption checks
+exercise stage boundaries independently rather than multiplying every
+interruption by the complete geometry matrix.
+
 `test_module_composition.lua` checks direct API references, per-instance state,
 and reading/unit reconciliation. `test_service_subscriptions.lua` checks stable
 subscription identity across domain services. `test_runtime_modules.lua` checks
@@ -94,10 +98,12 @@ python3 tools/audit-scheduler.py --instruction-report
 
 The first two commands run fresh mock and native measurements. `--instructions` rejects
 any recorded maximum increase; `--snapshot` updates the shipped estimates only
-after the full profile passes behavior, coverage, runtime, and safety
-checks. An incomplete or failed profile leaves the snapshot unchanged.
+after the focused profile passes behavior, coverage, runtime, and safety
+checks. The profile is designed to finish, including candidate validation,
+within five minutes; a deadline is only a fail-closed backstop, not a way to
+truncate tests. An incomplete or failed profile leaves the snapshot unchanged.
 Before replacement, the populated candidate runs the existing shared-module,
-Aircraft, and Output memory checks and native real-time and deterministic stress, metric-16, model-panels,
+Aircraft, and Output memory checks and native real-time and deterministic stress
 and Aircraft link-recovery scenarios without changing the shipped file. These
 checks retain the existing memory limits; their results are included in the
 diagnostic report. The candidate also runs the measurement-profile mock suites
@@ -105,10 +111,10 @@ again to check its actual instruction observations. The report identifies the
 exact candidate file by path and SHA-256, including when validation fails.
 Candidate validation checks peak native Lua heap and the shared-module guard
 under 32-bit Lua; run `make test-lua32` first to build that interpreter.
-If a complete candidate run observes higher maxima, snapshot generation retains
-those samples, refits, and validates the resulting candidate again. It stops
-without replacement on behavioral or safety failures, incomplete evidence, or
-failure to converge within four candidate passes.
+After fitting once, one deterministic discovery pass retains observations made
+with the new estimates. It does not refit. The final populated artifact then
+passes strict candidate validation before atomic replacement; further growth or
+any safety, coverage, or behavioral failure prevents publication.
 For focused debugging without replacing the snapshot:
 
 ```sh
@@ -117,21 +123,24 @@ python3 tests/run.py --snapshot path/to/candidate.lua tests/integration/widget/t
 python3 tools/audit-scheduler.py --candidate path/to/candidate.lua aircraft-link-recovery
 ```
 
-These focused checks do not replace the full profile.
+These individual checks do not replace the profile.
 `--instruction-report` reads the saved measurements and produces a per-task,
 stage, and grant table with observed min/max and the current shipped bound.
 Coverage requires a real observation for every non-deferred task/stage/grant;
 there is no repetition quota. Mock and native records remain separate.
 Observed zero-grant no-ops are retained and covered by the fitted fixed charge.
+Estimates use the higher mock/native maximum, add 10%, and round upward to
+multiples of 500. Observed extrema and sample counts remain exact. Diagnostic
+evidence retains sampled work/progress and native action/deadline results.
 Instruction spread is reported for review, not treated as a blocker. Cheap and
 no-op executions remain in the observed ranges.
 The scheduler's fixed, per-examination, and per-run charges are conservative
 estimates validated jointly against measured planner self-cost. Their individual
 values are not separately measured ranges; an insufficient combined reservation
 blocks the profile.
-Snapshot generation preserves these coefficients unless a measured shortfall
-requires a larger fixed reservation. The per-task coefficients are unchanged;
-the fixed shortfall target uses the same 10% uplift and rounding as other bounds.
+Snapshot generation preserves the variable coefficients; the fixed reservation
+is rounded to 500 and increased when a measured shortfall requires it. The
+shortfall target uses the same 10% uplift and rounding as other bounds.
 
 **This workflow is still WIP:** the shipped snapshot contains seeded estimates,
 not a validated measured baseline. Chart measurement is deferred; its estimates

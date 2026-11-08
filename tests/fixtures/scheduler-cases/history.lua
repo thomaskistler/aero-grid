@@ -80,7 +80,8 @@ return function(load)
                     local arm = arms[string.format("L%02d", panel)]
                     arm.updatedAt = at
                 end
-                service:advance(at)
+                local task = service.tasks.run
+                task:step(task.want, "run", at)
                 for panel = 1, PANELS do
                     for series = 1, SERIES do
                         service:sample({

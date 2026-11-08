@@ -43,7 +43,7 @@ return function(load)
                     return builder.state(theme, state, accent)
                 end,
             })
-            api.withApi(metric.refresh, context)
+            api.refresh(metric, context)
             if variant == 2 or variant == 4 or variant == 7 then
                 for index, state in ipairs(states) do
                     state.value, state.precision = -seed * index * 98765.4321, seed % 3 + 1
@@ -65,7 +65,7 @@ return function(load)
                 api.withApi(metric.step, context, 1, "geometry")
                 assert(metric.stageOf(context) == "layout")
                 metric.cancelRefresh(context)
-                assert(context.refreshGeometry)
+                assert(not context.refreshWork)
             end
             if target == "layout" and variant == 3 then
                 assert(count == 3)

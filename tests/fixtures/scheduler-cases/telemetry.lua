@@ -57,7 +57,8 @@ return function(load)
                 })
             end
 
-            history:advance(NOW - 10)
+            local task = history.tasks.run
+            task:step(task.want, "run", NOW - 10)
             history:sample({
                 name = "S01",
                 value = seed,
@@ -77,12 +78,14 @@ return function(load)
 
     local cases = {}
     for recorders = 1, historyService.SOURCE_CAP do
-        cases[#cases + 1] = {
-            stage = "run",
-            grant = recorders,
-            setup = setup(recorders),
-            recorders = recorders,
-        }
+        for grant = 1, recorders do
+            cases[#cases + 1] = {
+                stage = "run",
+                grant = grant,
+                setup = setup(recorders),
+                recorders = recorders,
+            }
+        end
     end
     return {
         id = "service:telemetry:source:recorded",

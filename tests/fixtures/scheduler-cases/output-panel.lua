@@ -87,7 +87,11 @@ return function(load)
                         state.trim = { available = true, fraction = seed / 5 }
                     end
                     for _ = 1, 70 do
-                        output.refresh(context)
+                        for _ = 1, 256 do
+                            local _, unfinished = output.step(context, 1, output.stageOf(context))
+                            if not unfinished then break end
+                        end
+                        assert(not context.refreshWork, "Output fixture refresh must finish")
                     end
                     assert(context.showRows == 32)
                     if mode ~= "render-stable" then

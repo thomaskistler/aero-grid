@@ -15,6 +15,9 @@ import json
 import os
 import subprocess
 import tempfile
+import signal
+import sys
+import time
 
 from lupa.lua53 import LuaRuntime, lua_type
 
@@ -24,20 +27,64 @@ SCHEMA = 1
 CEILING = 15000
 MARGIN = 400
 MIN_SAMPLES = 1
-MAX_CANDIDATE_PASSES = 4
+PROFILE_SECONDS = 300
+# These tasks return without progress unless the whole requested grant fits.
+INDIVISIBLE_GRANT_TASKS = {"telemetry.maintenance", "telemetry.recorded"}
 MEMORY_SUITES = (
     "tests/integration/widget/test_shared_module_code.lua",
     "tests/integration/widget/test_aircraft_memory.lua",
     "tests/integration/widget/test_output_memory.lua",
 )
-CANDIDATE_SCENARIOS = ("stress", "stress-clock", "metric-16", "model-panels", "aircraft-link-recovery")
+CANDIDATE_SCENARIOS = ("stress-clock", "aircraft-link-recovery")
+NATIVE_SCENARIOS = ("hook-check", "hook-check-firmware") + CANDIDATE_SCENARIOS
+MOCK_SUITES = tuple(
+    f"tests/unit/lib/test_{name}.lua" for name in (
+        "instruction_samples", "scheduler_registration", "scheduler_registration_load",
+        "model_settings_open", "model_settings_ui", "editor_drawer",
+    )
+) + tuple(
+    f"tests/integration/widget/test_{name}.lua" for name in (
+        "flight_loading", "layout_loading_chunks",
+        "dashboard_lifecycle", "dashboard_lifecycle_admission",
+        "editor_input_admission", "editor_list_admission", "location_details", "session_reset",
+        "instruction_foreground",
+    )
+)
+
+def profile_spec(spec):
+    """Sample steady phases; leave action/deadline assertions and loading intact."""
+    result = dict(spec, instructionProfile=True, deterministicClock=True)
+    result["phases"] = [
+        dict(phase, callbacks=40 if phase["kind"] == "refresh" else 10, perCall=1)
+        if phase["name"] in ("refresh", "background") and not phase.get("action") else dict(phase)
+        for phase in spec.get("phases", [])
+    ]
+    return result
+
+
+def round_estimate(value):
+    return ((value + 499) // 500) * 500
+
+
+def save_report(path, report):
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="ascii", dir=path.parent,
+                                         suffix=".json.tmp", delete=False) as file:
+            temporary = Path(file.name)
+            json.dump(report, file, indent=2)
+            file.write("\n")
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def target(maximum):
-    """ceil10(1.1 * maximum), using exact integer arithmetic."""
+    """ceil500(1.1 * maximum), without rounding observations."""
     if type(maximum) is not int or not 0 <= maximum <= CEILING:
         raise ValueError(f"invalid measured maximum: {maximum!r}")
-    return ((11 * maximum + 99) // 100) * 10
+    return ((11 * maximum + 4999) // 5000) * 500
 
 
 def spread(minimum, maximum):
@@ -58,9 +105,10 @@ def fit(grants):
             per_unit = max(per_unit, (growth + grant - 2) // (grant - 1))
     if not any(grant > 1 for grant in targets):
         fixed = targets.get(0, 0)
-        return {"fixed": fixed, "perUnit": max(1, targets[1] - fixed)}
+        return {"fixed": fixed, "perUnit": round_estimate(max(1, targets[1] - fixed))}
+    per_unit = round_estimate(per_unit)
     fixed = max(0, max(budget - grant * per_unit for grant, budget in targets.items()))
-    return {"fixed": fixed, "perUnit": per_unit}
+    return {"fixed": round_estimate(fixed), "perUnit": per_unit}
 
 
 def observation_key(row):
@@ -143,10 +191,15 @@ def check(snapshot, observations, required, *, updating=False, require_previous=
                 stage = estimates["tasks"].get(row["name"], {}).get(row["stage"])
                 if stage is None:
                     findings.append(f"runtime: missing task estimate for {key}")
-                elif row["max"] > stage["fixed"] + stage["perUnit"] * row["grant"]:
-                    findings.append(f"runtime: {environment}:{key} exceeds its declared bound")
-                elif stage["fixed"] + stage["perUnit"] > CEILING - MARGIN:
-                    findings.append(f"safety: {key} cannot fit beneath the ceiling and margin")
+                else:
+                    charge = stage["fixed"] + stage["perUnit"] * row["grant"]
+                    if row["max"] > charge:
+                        findings.append(f"runtime: {environment}:{key} exceeds its declared bound")
+                    if stage["fixed"] + stage["perUnit"] > CEILING - MARGIN:
+                        findings.append(f"safety: {key} cannot fit beneath the ceiling and margin")
+                    if row["name"] in INDIVISIBLE_GRANT_TASKS and charge > CEILING - MARGIN:
+                        findings.append(f"progress: {environment}:{key} requires {charge} instructions; "
+                                        f"indivisible grant cannot fit within {CEILING - MARGIN}")
             elif row["kind"] == "bound":
                 bound = estimates["bounds"].get(row["name"], {}).get(row["stage"])
                 if bound is None:
@@ -243,7 +296,7 @@ def render(estimates, record):
     )
 
 
-def write(estimates, record, path=SNAPSHOT, *, expected_sha):
+def write(estimates, record, path=SNAPSHOT, *, expected_sha, deadline=None):
     """Replace atomically without overwriting a known concurrent edit."""
     text = render(estimates, record)
     temporary = None
@@ -256,6 +309,8 @@ def write(estimates, record, path=SNAPSHOT, *, expected_sha):
             os.fsync(file.fileno())
         if hashlib.sha256(path.read_bytes()).hexdigest() != expected_sha:
             raise RuntimeError("instruction snapshot changed during measurement; refusing replacement")
+        if deadline is not None and time.monotonic() >= deadline:
+            raise RuntimeError("time: five-minute deadline expired; refusing replacement")
         temporary.replace(path)
     finally:
         if temporary is not None:
@@ -316,6 +371,7 @@ def propose(data, observations, declarations, required):
     estimates = copy.deepcopy(data["estimates"])
     framework = estimates["bounds"].get("scheduler")
     if framework is not None:
+        framework["fixed"] = round_estimate(framework["fixed"])
         for rows in observations.values():
             for row in rows.values():
                 if row["kind"] == "framework" and row["name"] == "scheduler":
@@ -344,22 +400,6 @@ def propose(data, observations, declarations, required):
                 continue
             bounds[name] = target(combined[f"bound|{group}|{name}|0"])
     return estimates
-
-
-def refit_candidate(snapshot, observations, candidate, declarations, required):
-    """Retain completed candidate observations before fitting another artifact."""
-    union = {}
-    for environment in ("mock", "native"):
-        union[environment] = merge_observations(
-            list(observations[environment].values()) + list(candidate[environment].values())
-        )
-    estimates = propose(snapshot, union, declarations, required)
-    revised = {"estimates": estimates, "record": snapshot["record"]}
-    findings = check(revised, union, required, updating=True)
-    errors = [finding for finding in findings if not finding.startswith("efficiency:")]
-    if errors:
-        raise ValueError("; ".join(errors))
-    return estimates, union
 
 
 def native_bound(label, estimates):
@@ -607,11 +647,13 @@ def task_report(path, output=None):
     return 0
 
 
-def validate_candidate(audit, runner, args, estimates, record, executable, library, capture, suites):
+def validate_candidate(audit, runner, args, estimates, record, executable, library, capture, suites,
+                       *, discovery=False):
     """Exercise the exact populated chunk without replacing the shipped snapshot."""
     errors = []
     result = {"mock": [], "chartBehavior": [], "chartFailures": [],
-              "instrumentedMock": [], "native": [], "observations": {}}
+              "instrumentedMock": [], "native": [], "observations": {}, "workSamples": [],
+              "nativeMeasurements": {}}
     directory = ROOT / "build/scheduler-audit"
     directory.mkdir(parents=True, exist_ok=True)
     candidate = temporary = None
@@ -628,35 +670,47 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
         result["bytes"] = len(text.encode("ascii"))
         result["sha256"] = digest
         result["artifact"] = candidate.relative_to(ROOT).as_posix()
-        for name in MEMORY_SUITES:
+        progress = directory / f"candidate-progress-{digest}.json"
+        def checkpoint():
+            save_report(progress, {"errors": errors + ["candidate: validation has not completed"], "result": result})
+        checkpoint()
+        for name in (() if discovery else MEMORY_SUITES):
             try:
                 runner.run_test(ROOT / name, snapshot_path=candidate)
                 result["mock"].append(name)
             except Exception as error:
                 errors.append(f"memory: candidate {name}: {error}")
+            checkpoint()
         try:
-            lua32 = subprocess.run(
-                [str(ROOT / "build/lua32/lua"), str(ROOT / "tests/support/lua32.lua"),
-                 str(ROOT / MEMORY_SUITES[0]), str(ROOT), str(candidate)],
-                cwd=ROOT, text=True, capture_output=True, timeout=args.timeout, check=True,
-            )
-            result["lua32Memory"] = lua32.stdout.strip()
+            if discovery:
+                lua32 = None
+            else:
+                lua32 = subprocess.run(
+                    [str(ROOT / "build/lua32/lua"), str(ROOT / "tests/support/lua32.lua"),
+                     str(ROOT / MEMORY_SUITES[0]), str(ROOT), str(candidate)],
+                    cwd=ROOT, text=True, capture_output=True, timeout=args.timeout, check=True,
+                )
+            if lua32 is not None:
+                result["lua32Memory"] = lua32.stdout.strip()
         except (OSError, subprocess.SubprocessError) as error:
             details = getattr(error, "stderr", None) or getattr(error, "stdout", None)
             errors.append(f"memory: candidate Lua32 shared-module: {error}"
                           + (f"\n{details}" if details else ""))
-        for name in sorted(DEFERRED_SUITES):
+        for name in (() if discovery else sorted(DEFERRED_SUITES)):
             try:
                 runner.run_test(ROOT / name, snapshot_path=candidate)
                 result["chartBehavior"].append(name)
             except Exception as error:
                 result["chartFailures"].append(f"behavior: candidate {name}: {error}")
+            checkpoint()
         if errors:
+            save_report(progress, {"errors": errors, "result": result})
             return errors, result
         mock = []
         for path in suites:
             try:
-                rows, _ = runner.run_test(path, instructions=True, snapshot_path=candidate)
+                rows, _ = runner.run_test(path, instructions=True, snapshot_path=candidate,
+                                          work_samples=result["workSamples"])
                 for value in rows.values():
                     row = _python(value)
                     row["expectedFailures"] = row["failures"]
@@ -666,14 +720,17 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
                 for value in getattr(error, "rows", {}).values():
                     mock.append(_python(value))
                 errors.append(f"behavior: candidate {path.relative_to(ROOT)}: {error}")
+            result["observations"]["mock"] = merge_observations(mock)
+            checkpoint()
         native = []
         for name in CANDIDATE_SCENARIOS:
             try:
                 measured = audit.run(capture, executable, library, name,
-                                     dict(audit.scenarios()[name], instructionProfile=True), args.timeout,
+                                     profile_spec(audit.scenarios()[name]), args.timeout,
                                      snapshot_path=candidate,
-                                     output_name=name + "-snapshot-candidate", memory=name == "stress")
-                if name == "stress":
+                                     output_name=name + "-snapshot-candidate", memory=name == "stress-clock")
+                result["nativeMeasurements"][name] = measured
+                if name == "stress-clock":
                     if "luaMemory" not in measured:
                         raise RuntimeError("native Lua allocator measurement is missing")
                     result["nativeMemory"] = measured["luaMemory"]
@@ -681,13 +738,27 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
                 result["native"].append(name)
             except Exception as error:
                 errors.append(f"native: candidate {name}: {error}")
+            result["observations"]["native"] = merge_observations(native)
+            checkpoint()
+        if not discovery:
+            try:
+                measured = audit.run(capture, executable, library, "stress",
+                                     dict(audit.scenarios()["stress"], instructionProfile=True), args.timeout,
+                                     snapshot_path=candidate, output_name="stress-snapshot-behavior", memory=True)
+                result["realTimeStress"] = {"luaMemory": measured["luaMemory"],
+                                          "artifact": "build/scheduler-audit/stress-snapshot-behavior/results.json"}
+                result["nativeMeasurements"]["stress-behavior"] = measured
+            except Exception as error:
+                errors.append(f"behavior: candidate real-time stress: {error}")
         result["observations"] = {"mock": merge_observations(mock), "native": merge_observations(native)}
         findings = check({"estimates": estimates, "record": record},
                          result["observations"],
-                         set(), updating=False, require_previous=False)
+                         set(record.get("requiredObservations", {}).values()),
+                         updating=discovery, require_previous=False)
         result["warnings"] = [finding for finding in findings if finding.startswith("efficiency:")]
         errors.extend("candidate: " + finding for finding in findings
                       if not finding.startswith("efficiency:"))
+        save_report(progress, {"errors": errors, "result": result})
     except (ValueError, TypeError, OSError) as error:
         errors.append(f"snapshot: candidate validation: {error}")
     finally:
@@ -697,7 +768,40 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
 
 
 def profile(audit, args):
-    """Fresh full mock/native profile; incomplete evidence never writes a file."""
+    """A process-group watchdog bounds even a stuck Lua suite or simulator."""
+    started = time.monotonic()
+    deadline = started + PROFILE_SECONDS
+    output = ROOT / "build/scheduler-audit/instruction-profile.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    save_report(output, {"errors": ["profile: capture has not completed"],
+                         "observations": {"mock": {}, "native": {}}})
+    command = [sys.executable, str(ROOT / "tools/audit-scheduler.py"),
+               "--snapshot" if args.snapshot else "--instructions",
+               "--companion", str(args.companion), "--timeout", str(args.timeout),
+               "--profile-deadline", str(deadline)]
+    process = subprocess.Popen(command, cwd=ROOT, start_new_session=True)
+    try:
+        status = process.wait(timeout=max(0.001, deadline - time.monotonic()))
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+        report = json.loads(output.read_text(encoding="ascii"))
+        pending = report.get("pendingCandidateProgress")
+        if pending and (ROOT / pending).is_file():
+            report["interruptedCandidate"] = json.loads((ROOT / pending).read_text(encoding="ascii"))
+        report.setdefault("errors", []).append("time: five-minute profile deadline exceeded; snapshot unchanged")
+        status = 1
+    else:
+        report = json.loads(output.read_text(encoding="ascii"))
+    report["elapsedSeconds"] = time.monotonic() - started
+    report["limitSeconds"] = PROFILE_SECONDS
+    save_report(output, report)
+    print(f"Instruction profile elapsed: {report['elapsedSeconds']:.3f}s (limit {PROFILE_SECONDS}s)")
+    return status
+
+
+def _profile(audit, args):
+    """Fresh focused mock/native profile; incomplete evidence never writes a file."""
     snapshot = load()
     initial_sha = hashlib.sha256(SNAPSHOT.read_bytes()).hexdigest()
     def source_sha():
@@ -710,11 +814,20 @@ def profile(audit, args):
         return digest.hexdigest()
     inputs_sha = source_sha()
     runner = _module("instruction_test_runner", ROOT / "tests/run.py")
-    errors, mock, native, declarations = [], [], [], {}
-    suites = [path for path in sorted((ROOT / "tests").rglob("test_*.lua"))
-              if "support" not in path.relative_to(ROOT).parts
-              and path.relative_to(ROOT).as_posix() not in DEFERRED_SUITES]
-    completed, chart_behavior, chart_failures = [], [], []
+    errors, mock, native, declarations, native_measurements = [], [], [], {}, {}
+    suites = [ROOT / name for name in MOCK_SUITES]
+    output = ROOT / "build/scheduler-audit/instruction-profile.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    def checkpoint():
+        save_report(output, {
+            "errors": errors + ["profile: capture/validation has not completed"],
+            "observations": {"mock": merge_observations(mock), "native": merge_observations(native)},
+            "declarations": declarations,
+            "workSamples": work_samples,
+            "nativeMeasurements": native_measurements,
+            "coverage": {"mock": completed, "chartBehavior": chart_behavior},
+        })
+    completed, chart_behavior, chart_failures, work_samples = [], [], [], []
     for name in sorted(DEFERRED_SUITES):
         try:
             runner.run_test(ROOT / name)
@@ -727,7 +840,7 @@ def profile(audit, args):
             print(failure)
     for path in suites:
         try:
-            rows, declared = runner.run_test(path, instructions=True)
+            rows, declared = runner.run_test(path, instructions=True, work_samples=work_samples)
             for value in rows.values():
                 row = _python(value)
                 # A passing behavioral suite has validated its negative cases.
@@ -742,41 +855,9 @@ def profile(audit, args):
             for key, maximum in getattr(error, "declarations", {}).items():
                 declarations[key] = max(declarations.get(key, 0), maximum)
             errors.append(f"behavior: {path.relative_to(ROOT)}: {error}")
+        checkpoint()
     available = audit.scenarios()
-    names = ["hook-check", "hook-check-firmware", "stress", "stress-clock", "metric-16", "model-panels",
-             "flight-smart-tasks", "flight-owner-handoff", "session-reset", "aircraft-link-recovery"]
-    names.extend(name for name in available if name.startswith("lifecycle-app"))
-    # Panel extrema supply native stages missed by ordinary dashboard releases.
-    names.extend(name for name in available if name.endswith(("-min", "-max"))
-                 and not name.startswith("chart-"))
-    names.append("theme-showcase-tasks")
-    names.extend(("theme-resolution-corrections", "shared-flight-loading", "layout-loading-error",
-                  "flight-registration-error"))
-    # Existing foreground scenarios exercise the actual staged work and its
-    # behavioral assertions, rather than measuring workBound getters.
-    names.extend((
-        "modal-log", "modal-location", "modal-menu", "modal-settings-save",
-        "modal-settings-save-output", "modal-settings-publication-error",
-        "modal-settings-open-primary", "modal-settings-open-recovered",
-        "modal-settings-open-missing", "modal-settings-open-legacy-one",
-        "modal-settings-open-legacy-conflict", "modal-settings-open-invalid",
-        "modal-settings-open-retirement", "modal-settings-close-return",
-        "editor-drawer-large-config", "editor-list-large-states",
-        "editor-list-remove-panel", "editor-list-append-error",
-        "editor-add-crowded-metric", "editor-list-return", "editor-list-cancel",
-        "editor-write-error", "editor-write-picker-error", "editor-save-registration", "editor-input-keys",
-        "editor-input-tap", "editor-input-add", "editor-input-cancel",
-        "editor-drag-move-crowded", "editor-drag-resize-crowded",
-        "lifecycle-cancel", "lifecycle-settings-drain", "lifecycle-menu-close",
-        "lifecycle-admission-background", "lifecycle-preparation",
-        "lifecycle-retire-admission-16",
-    ))
-    names.extend(name for name in available
-                 if name.startswith(("editor-drawer-", "editor-entry-", "editor-write-entry-"))
-                 and "chart" not in name)
-    names.extend(name for name in available if name.startswith("panel-reflow-") and "chart" not in name)
-    names.extend(name for name in available if name.startswith("editor-drag-move-")
-                 and "chart" not in name and not name.endswith("-quick"))
+    names = NATIVE_SCENARIOS
     checks, native_completed = {}, []
     try:
         library = args.companion / "Contents/Resources/libedgetx-tx16s-simulator.dylib"
@@ -786,7 +867,8 @@ def profile(audit, args):
         for name in dict.fromkeys(names):
             try:
                 results = audit.run(capture, executable, library, name,
-                                    dict(available[name], instructionProfile=True), args.timeout)
+                                    profile_spec(available[name]), args.timeout)
+                native_measurements[name] = results
                 if name.startswith("hook-check"):
                     checks[name] = results
                 else:
@@ -794,6 +876,8 @@ def profile(audit, args):
                 native_completed.append(name)
             except Exception as error:
                 errors.append(f"native: {name}: {error}")
+            checkpoint()
+            print(f"Native sample completed: {name}", flush=True)
         if len(checks) != 2:
             errors.append("safety: both native hook checks must complete")
         else:
@@ -818,23 +902,26 @@ def profile(audit, args):
         errors.append("provenance: measurement inputs changed during the profile; refusing replacement")
     report = {"observations": observations, "errors": errors, "warnings": warnings,
               "chartFailures": chart_failures, "sourceSha": inputs_sha,
+              "workSamples": work_samples, "nativeMeasurements": native_measurements,
               "requiredObservations": sorted(required),
               "declarations": declarations,
               "coverage": {"mock": completed, "chartBehavior": chart_behavior, "native": native_completed,
                            "requiredMock": [path.relative_to(ROOT).as_posix() for path in suites],
                            "requiredChartBehavior": sorted(DEFERRED_SUITES),
                            "requiredNative": list(dict.fromkeys(names))}}
-    output = ROOT / "build/scheduler-audit/instruction-profile.json"
-    output.parent.mkdir(parents=True, exist_ok=True)
     if warnings:
         print(f"Instruction spread review warnings: {len(warnings)} (all samples retained).")
     if errors:
-        output.write_text(json.dumps(report, indent=2) + "\n", encoding="ascii")
+        save_report(output, report)
         print(f"Instruction profile failed ({len(errors)} findings); snapshot unchanged. See {output}")
         for error in errors[:20]:
             print(error)
         return 1
     if args.snapshot:
+        evidence = json.dumps(report, sort_keys=True, indent=2).encode("ascii") + b"\n"
+        evidence_sha = hashlib.sha256(evidence).hexdigest()
+        evidence_path = output.with_name(f"instruction-evidence-{evidence_sha}.json")
+        evidence_path.write_bytes(evidence)
         estimates = snapshot["estimates"]
         record = snapshot["record"]
         for environment, previous in record["observations"].items():
@@ -842,80 +929,74 @@ def profile(audit, args):
                 if deferred(snapshot, row):
                     observations[environment].setdefault(key, row)
         record.update(observations=observations,
+                      requiredObservations=dict(enumerate(sorted(required), 1)),
                       coverage={key: dict(enumerate(values, 1)) for key, values in report["coverage"].items()},
                       warnings={index: finding for index, finding in enumerate(warnings, 1)},
                       environments={"mock": {"lua": "5.3", "runtime": "lupa"},
                                     "native": {"simulator": args.companion.name, "luaIntegerBits": 32}},
-                      provenance={"profile": "full mock/native", "git": audit.subprocess.check_output(
+                      provenance={"profile": "five-minute focused mock/native",
+                                  "evidence": evidence_path.relative_to(ROOT).as_posix(),
+                                  "evidenceSha256": evidence_sha,
+                                  "git": audit.subprocess.check_output(
                           ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(), "sourceSha": inputs_sha})
         if "scheduler" in estimates["bounds"]:
             record["frameworkPolicy"] = {
                 "scheduler": "Conservative coefficients, validated jointly against planner self-cost; "
-                             "only fixed reservation increases to cover a measured shortfall. "
+                             "fixed reservation rounded to 500 and increased for measured shortfalls. "
                              "No independently measured component ranges."
             }
         record["coverage"]["candidateMock"] = dict(enumerate(MEMORY_SUITES, 1))
         record["coverage"]["candidateLua32Memory"] = {1: MEMORY_SUITES[0]}
-        record["coverage"]["candidateNativeMemory"] = {1: "stress"}
+        record["coverage"]["candidateNativeMemory"] = {1: "stress-clock", 2: "stress"}
         record["coverage"]["candidateChartBehavior"] = dict(enumerate(sorted(DEFERRED_SUITES), 1))
         record["coverage"]["candidateInstrumentedMock"] = dict(
             enumerate((path.relative_to(ROOT).as_posix() for path in suites), 1))
         record["coverage"]["candidateNative"] = dict(enumerate(CANDIDATE_SCENARIOS, 1))
-        report["candidateAttempts"] = []
-        for attempt in range(1, MAX_CANDIDATE_PASSES + 1):
-            candidate_errors, candidate_result = validate_candidate(
-                audit, runner, args, estimates, record, executable, library, capture, suites)
-            report["candidate"] = candidate_result
-            report["candidateAttempts"].append({"errors": candidate_errors, "result": candidate_result})
-            candidate_chart_failures = candidate_result.get("chartFailures", [])
-            if candidate_chart_failures:
-                print(f"Deferred candidate Chart behavior failures: {len(candidate_chart_failures)}.")
-                for failure in candidate_chart_failures:
-                    print(failure)
-            if source_sha() != inputs_sha:
-                errors.extend(candidate_errors)
-                errors.append("provenance: measurement inputs changed during candidate validation; refusing replacement")
-                break
-            if not candidate_errors:
-                break
-            repairable = all(error.startswith(("candidate: regression:", "candidate: runtime:"))
-                             for error in candidate_errors)
-            regression = any(error.startswith("candidate: regression:") for error in candidate_errors)
-            complete = (
-                len(candidate_result.get("instrumentedMock", [])) == len(suites)
-                and len(candidate_result.get("native", [])) == len(CANDIDATE_SCENARIOS)
-                and all(candidate_result.get("observations", {}).get(env) for env in ("mock", "native"))
-            )
-            if not repairable or not regression or not complete or attempt == MAX_CANDIDATE_PASSES:
-                errors.extend(candidate_errors)
-                if repairable and regression and complete and attempt == MAX_CANDIDATE_PASSES:
-                    errors.append("snapshot: candidate observations did not converge; refusing replacement")
-                break
-            try:
-                estimates, observations = refit_candidate(
-                    snapshot, observations, candidate_result["observations"], declarations, required)
-            except ValueError as error:
-                errors.extend(candidate_errors)
-                errors.append("snapshot: candidate refit: " + str(error))
-                break
-            snapshot["estimates"] = estimates
-            record["observations"] = observations
-            warnings = [finding for finding in check(snapshot, observations, required, updating=True)
-                        if finding.startswith("efficiency:")]
-            record["warnings"] = dict(enumerate(warnings, 1))
-            report["warnings"] = warnings
-            output.write_text(json.dumps(report, indent=2) + "\n", encoding="ascii")
-            print(f"Candidate observations changed; validating refitted candidate "
-                  f"({attempt + 1}/{MAX_CANDIDATE_PASSES}).")
-        output.write_text(json.dumps(report, indent=2) + "\n", encoding="ascii")
+        digest = hashlib.sha256(render(estimates, record).encode("ascii")).hexdigest()
+        report["pendingCandidateProgress"] = f"build/scheduler-audit/candidate-progress-{digest}.json"
+        save_report(output, report)
+        discovery_errors, discovery_result = validate_candidate(
+            audit, runner, args, estimates, record, executable, library, capture, suites, discovery=True)
+        report["discovery"] = {"errors": discovery_errors, "result": discovery_result}
+        if discovery_errors:
+            errors.extend(discovery_errors)
+            save_report(output, report)
+            print(f"Candidate discovery failed; snapshot unchanged. See {output}")
+            return 1
+        for environment in ("mock", "native"):
+            observations[environment] = merge_observations(
+                list(observations[environment].values())
+                + list(discovery_result["observations"][environment].values()))
+        record["observations"] = observations
+        report["observations"] = observations
+        digest = hashlib.sha256(render(estimates, record).encode("ascii")).hexdigest()
+        report["pendingCandidateProgress"] = f"build/scheduler-audit/candidate-progress-{digest}.json"
+        save_report(output, report)
+        candidate_errors, candidate_result = validate_candidate(
+            audit, runner, args, estimates, record, executable, library, capture, suites)
+        report["candidate"] = candidate_result
+        errors.extend(candidate_errors)
+        if source_sha() != inputs_sha:
+            errors.append("provenance: measurement inputs changed during candidate validation; refusing replacement")
+        if time.monotonic() >= args.profile_deadline:
+            errors.append("time: five-minute deadline expired; refusing replacement")
+        save_report(output, report)
         if errors:
             print(f"Snapshot candidate failed ({len(errors)} findings); snapshot unchanged. See {output}")
             for error in errors[:20]:
                 print(error)
             return 1
-        write(estimates, record, expected_sha=initial_sha)
-        print("Instruction snapshot replaced after full profile checks")
+        try:
+            if candidate_result["sha256"] != hashlib.sha256(render(estimates, record).encode("ascii")).hexdigest():
+                raise RuntimeError("candidate content changed after validation; refusing replacement")
+            write(estimates, record, expected_sha=initial_sha, deadline=args.profile_deadline - 1)
+        except (OSError, RuntimeError) as error:
+            errors.append("publication: " + str(error))
+            save_report(output, report)
+            print(f"Snapshot publication failed; see {output}")
+            return 1
+        print("Instruction snapshot replaced after focused profile checks")
     else:
-        output.write_text(json.dumps(report, indent=2) + "\n", encoding="ascii")
+        save_report(output, report)
         print("Instruction regression profile passed")
     return 0

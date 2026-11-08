@@ -33,12 +33,12 @@ class InstructionSnapshotTests(unittest.TestCase):
     def test_target_exact_rounding(self):
         for maximum in range(15001):
             value = snapshot.target(maximum)
-            self.assertEqual(value % 10, 0)
+            self.assertEqual(value % 500, 0)
             self.assertGreaterEqual(value * 10, maximum * 11)
             if value:
-                self.assertLess((value - 10) * 10, maximum * 11)
-        self.assertEqual(snapshot.target(100), 110)
-        self.assertEqual(snapshot.target(101), 120)
+                self.assertLess((value - 500) * 10, maximum * 11)
+        self.assertEqual(snapshot.target(100), 500)
+        self.assertEqual(snapshot.target(455), 1000)
 
     def test_strict_spread_thresholds(self):
         self.assertFalse(snapshot.spread(400, 700))  # difference == 300
@@ -47,7 +47,7 @@ class InstructionSnapshotTests(unittest.TestCase):
         self.assertTrue(snapshot.spread(0, 301))
         self.assertFalse(snapshot.spread(0, 300))
 
-    def test_scheduler_estimates_are_preserved_and_validated_jointly(self):
+    def test_scheduler_variable_estimates_are_preserved_and_validated_jointly(self):
         data, observations, required = self.data()
         data["estimates"]["bounds"]["scheduler"] = {"fixed": 196, "examine": 64, "run": 224}
         for environment in observations:
@@ -61,23 +61,24 @@ class InstructionSnapshotTests(unittest.TestCase):
         self.assertFalse(any(key.startswith("bound|scheduler|") for key in keys))
         self.assertEqual(snapshot.check(data, observations, keys, updating=True), [])
         proposed = snapshot.propose(data, observations, {"test|run": 1}, keys)
-        self.assertEqual(proposed["bounds"]["scheduler"], data["estimates"]["bounds"]["scheduler"])
+        self.assertEqual(proposed["bounds"]["scheduler"], {"fixed": 500, "examine": 64, "run": 224})
         observations["native"]["framework|scheduler|10:4|0"]["max"] = 1733
         self.assertTrue(any("joint framework charge 1732" in finding
                             for finding in snapshot.check(data, observations, keys, updating=True)))
         proposed = snapshot.propose(data, observations, {"test|run": 1}, keys)
-        self.assertEqual(proposed["bounds"]["scheduler"], {"fixed": 220, "examine": 64, "run": 224})
+        self.assertEqual(proposed["bounds"]["scheduler"], {"fixed": 500, "examine": 64, "run": 224})
 
     def test_measured_incremental_growth_fitting(self):
-        # Raw maxima yielding conservative targets 300, 500 and 700.
         self.assertEqual(snapshot.fit({1: 270, 2: 450, 3: 630}),
-                         {"fixed": 100, "perUnit": 200})
+                         {"fixed": 0, "perUnit": 500})
         grants = {1: 103, 2: 302, 3: 310, 4: 450}
         fitted = snapshot.fit(grants)
         for grant, maximum in grants.items():
             self.assertGreaterEqual(fitted["fixed"] + fitted["perUnit"] * grant, snapshot.target(maximum))
         self.assertGreater(fitted["perUnit"], 0)
-        self.assertEqual(snapshot.fit({1: 100}), {"fixed": 0, "perUnit": 110})
+        self.assertEqual(fitted["fixed"] % 500, 0)
+        self.assertEqual(fitted["perUnit"] % 500, 0)
+        self.assertEqual(snapshot.fit({1: 100}), {"fixed": 0, "perUnit": 500})
         with self.assertRaises(ValueError):
             snapshot.fit({2: 100})
 
@@ -93,18 +94,31 @@ class InstructionSnapshotTests(unittest.TestCase):
         self.assertTrue(any("coverage: missing task" in finding for finding in snapshot.check(data, observations, required)))
 
     def test_zero_grant_noops_are_retained_and_covered_by_fixed_charge(self):
-        self.assertEqual(snapshot.fit({0: 5, 1: 100}), {"fixed": 10, "perUnit": 100})
+        self.assertEqual(snapshot.fit({0: 5, 1: 100}), {"fixed": 500, "perUnit": 500})
         self.assertEqual(snapshot.fit({0: 120, 1: 270, 2: 450, 3: 630}),
-                         {"fixed": 140, "perUnit": 200})
+                         {"fixed": 500, "perUnit": 500})
         data, observations, required = self.data()
         noop = self.row(grant=0, min=5, max=5)
         observations["mock"][snapshot.observation_key(noop)] = noop
         proposed = snapshot.propose(data, observations, {"test|run": 1}, required)
-        self.assertEqual(proposed["tasks"]["test"]["run"], {"fixed": 10, "perUnit": 210})
+        self.assertEqual(proposed["tasks"]["test"]["run"], {"fixed": 500, "perUnit": 500})
         self.assertEqual(snapshot.check({"estimates": proposed, "record": data["record"]},
                                         observations, required, updating=True), [])
         with self.assertRaises(ValueError):
             snapshot.fit({-1: 5, 1: 100})
+
+    def test_indivisible_telemetry_grants_must_fit_the_ceiling(self):
+        data, observations, _ = self.data()
+        data["estimates"]["tasks"]["telemetry.maintenance"] = {"run": {"fixed": 0, "perUnit": 500}}
+        row = self.row(name="telemetry.maintenance", grant=128)
+        key = snapshot.observation_key(row)
+        for environment in observations:
+            observations[environment] = {key: copy.deepcopy(row)}
+        findings = snapshot.check(data, observations, {key}, updating=True, require_previous=False)
+        self.assertTrue(any("indivisible grant cannot fit" in finding for finding in findings))
+        data["estimates"]["tasks"]["telemetry.maintenance"]["run"]["perUnit"] = 100
+        self.assertFalse(any("indivisible grant cannot fit" in finding for finding in
+                             snapshot.check(data, observations, {key}, updating=True, require_previous=False)))
 
     def test_any_increase_fails_and_update_does_not_hide_safety(self):
         data, observations, required = self.data()
@@ -162,7 +176,7 @@ class InstructionSnapshotTests(unittest.TestCase):
         data, observations, required = self.data()
         next(iter(observations["native"].values()))["max"] = 210
         candidate = snapshot.propose(data, observations, {"test|run": 1}, required)
-        self.assertEqual(candidate["tasks"]["test"]["run"], {"fixed": 0, "perUnit": 240})
+        self.assertEqual(candidate["tasks"]["test"]["run"], {"fixed": 0, "perUnit": 500})
         self.assertEqual(data["estimates"]["tasks"]["test"]["run"]["perUnit"], 220)
         with self.assertRaises(ValueError):
             snapshot.propose(data, observations, {"test|run": 1}, required | {"task|test|run|2"})
@@ -247,235 +261,6 @@ class InstructionSnapshotTests(unittest.TestCase):
         self.assertEqual((rows[0]["kind"], rows[0]["stage"], rows[0]["min"], rows[0]["max"]),
                          ("framework", "10:4", 20, 40))
 
-    def test_full_profile_retains_spread_as_review_warning_without_blocking_write(self):
-        row = self.row(name="model", n=1, min=100, max=700)
-        key = snapshot.observation_key(row)
-        data = {
-            "estimates": {"tasks": {"model": {"run": {"fixed": 0, "perUnit": 800}}}, "bounds": {}},
-            "record": {"schema": 1, "deferred": {}, "observations": {"mock": {}, "native": {}}},
-        }
-        runner = SimpleNamespace(run_test=lambda *args, **kwargs: ({key: row}, {"model|run": 1}))
-        class Scenarios(dict):
-            def __missing__(self, key):
-                return {}
-        native = {"stats": {"task:service:model:run": {"units": {"1": {
-            "n": 1, "min": 100, "max": 700,
-        }}}}}
-        def fake_native(*args, **kwargs):
-            measured = copy.deepcopy(native)
-            if kwargs.get("memory"):
-                measured["luaMemory"] = {"peakBytes": 1234}
-            return measured
-        audit = SimpleNamespace(
-            scenarios=Scenarios, build_native=lambda library: "native",
-            capture_module=lambda: None,
-            run=fake_native,
-            hook_check_status=lambda *args: (True, "hook agreement"),
-            subprocess=SimpleNamespace(check_output=lambda *args, **kwargs: "commit\n"),
-        )
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / "tests").mkdir()
-            (root / "tests/test_profile.lua").write_text("return true\n")
-            path = root / "snapshot.lua"
-            path.write_text("seed")
-            companion = root / "Companion.app"
-            library = companion / "Contents/Resources/libedgetx-tx16s-simulator.dylib"
-            library.parent.mkdir(parents=True)
-            library.touch()
-            args = SimpleNamespace(companion=companion, snapshot=True, timeout=120)
-            with patch.object(snapshot, "ROOT", root), patch.object(snapshot, "SNAPSHOT", path), \
-                    patch.object(snapshot, "load", side_effect=lambda: copy.deepcopy(data)), \
-                    patch.object(snapshot, "_module", return_value=runner), \
-                    patch.object(snapshot.subprocess, "run", return_value=SimpleNamespace(stdout="passed")), \
-                    patch.object(snapshot, "write") as write:
-                with patch.object(audit, "run", wraps=audit.run) as runs, \
-                        patch.object(runner, "run_test", wraps=runner.run_test) as mock_runs:
-                    self.assertEqual(snapshot.profile(audit, args), 0)
-                names = [call.kwargs.get("output_name") or call.args[3] for call in runs.call_args_list]
-                self.assertIn("aircraft-link-recovery", names)
-                self.assertIn("aircraft-link-recovery-snapshot-candidate", names)
-                self.assertIn("stress-clock", names)
-                self.assertIn("stress-clock-snapshot-candidate", names)
-                recorded_chart = [
-                    call for call in mock_runs.call_args_list
-                    if call.args[0].relative_to(root).as_posix() in snapshot.DEFERRED_SUITES
-                ]
-                self.assertEqual(len(recorded_chart), 2 * len(snapshot.DEFERRED_SUITES))
-                self.assertTrue(all(not call.kwargs.get("instructions") for call in recorded_chart))
-                write.assert_called_once()
-                estimates, record = write.call_args.args
-                self.assertEqual(estimates["tasks"]["model"]["run"]["perUnit"], 770)
-                self.assertTrue(all(finding.startswith("efficiency:") for finding in record["warnings"].values()))
-                self.assertEqual(record["observations"]["mock"][key]["min"], 100)
-                snapshot.render(estimates, record)
-                baseline_estimates, baseline_record = copy.deepcopy(estimates), copy.deepcopy(record)
-                write.reset_mock()
-                higher = dict(row, max=750)
-                candidate_result = {
-                    "instrumentedMock": ["tests/test_profile.lua"],
-                    "native": list(snapshot.CANDIDATE_SCENARIOS),
-                    "observations": {"mock": {key: higher}, "native": {key: higher}},
-                }
-                with patch.object(snapshot, "validate_candidate", side_effect=[
-                        (["candidate: regression: mock sample grew",
-                          "candidate: runtime: mock sample exceeds bound"], candidate_result),
-                        ([], candidate_result),
-                ]) as validate:
-                    self.assertEqual(snapshot.profile(audit, args), 0)
-                    self.assertEqual(validate.call_count, 2)
-                    estimates, record = write.call_args.args
-                    self.assertEqual(estimates["tasks"]["model"]["run"]["perUnit"], 830)
-                    self.assertEqual(record["observations"]["mock"][key]["max"], 750)
-                    report = json.loads((root / "build/scheduler-audit/instruction-profile.json").read_text())
-                    self.assertEqual(len(report["candidateAttempts"]), 2)
-                    self.assertIn("regression:", report["candidateAttempts"][0]["errors"][0])
-                write.reset_mock()
-                with patch.object(snapshot, "validate_candidate", return_value=(
-                        ["candidate: regression: mock sample grew"], candidate_result)) as validate:
-                    self.assertEqual(snapshot.profile(audit, args), 1)
-                    self.assertEqual(validate.call_count, snapshot.MAX_CANDIDATE_PASSES)
-                    report = json.loads((root / "build/scheduler-audit/instruction-profile.json").read_text())
-                    self.assertTrue(any("did not converge" in error for error in report["errors"]))
-                write.assert_not_called()
-                with patch.object(snapshot, "validate_candidate", return_value=(
-                        ["candidate: regression: mock sample grew", "behavior: failed"], candidate_result)) as validate:
-                    self.assertEqual(snapshot.profile(audit, args), 1)
-                    self.assertEqual(validate.call_count, 1)
-                write.assert_not_called()
-                incomplete = dict(candidate_result, native=[])
-                with patch.object(snapshot, "validate_candidate", return_value=(
-                        ["candidate: regression: mock sample grew"], incomplete)) as validate:
-                    self.assertEqual(snapshot.profile(audit, args), 1)
-                    self.assertEqual(validate.call_count, 1)
-                write.assert_not_called()
-                unsafe = dict(row, max=15001)
-                unsafe_result = dict(candidate_result, observations={"mock": {key: unsafe}, "native": {key: higher}})
-                with patch.object(snapshot, "validate_candidate", return_value=(
-                        ["candidate: regression: mock sample grew"], unsafe_result)) as validate:
-                    self.assertEqual(snapshot.profile(audit, args), 1)
-                    self.assertEqual(validate.call_count, 1)
-                write.assert_not_called()
-                def actual_candidate_observations(path, **kwargs):
-                    if not kwargs.get("instructions"):
-                        return None
-                    measured = higher if kwargs.get("snapshot_path") else row
-                    return {key: measured}, {"model|run": 1}
-                with patch.object(runner, "run_test", side_effect=actual_candidate_observations):
-                    self.assertEqual(snapshot.profile(audit, args), 0)
-                    report = json.loads((root / "build/scheduler-audit/instruction-profile.json").read_text())
-                    self.assertEqual(len(report["candidateAttempts"]), 2)
-                    self.assertTrue(any("regression:" in error for error in report["candidateAttempts"][0]["errors"]))
-                    self.assertEqual(report["candidateAttempts"][1]["errors"], [])
-                    estimates, record = write.call_args.args
-                    artifact = root / report["candidate"]["artifact"]
-                    self.assertEqual(artifact.read_text(encoding="ascii"), snapshot.render(estimates, record))
-                    self.assertEqual(record["observations"]["mock"][key]["max"], 750)
-                write.reset_mock()
-                estimates, record = baseline_estimates, baseline_record
-                def fail_chart(path, **kwargs):
-                    if path.relative_to(root).as_posix() in snapshot.DEFERRED_SUITES:
-                        raise RuntimeError("chart did not draw")
-                    return {key: row}, {"model|run": 1}
-                with patch.object(runner, "run_test", side_effect=fail_chart), \
-                        patch.object(audit, "run", wraps=audit.run) as runs:
-                    self.assertEqual(snapshot.profile(audit, args), 0)
-                    self.assertTrue(runs.called)
-                    report = (root / "build/scheduler-audit/instruction-profile.json").read_text()
-                    self.assertIn("chart did not draw", report)
-                    candidate_errors, result = snapshot.validate_candidate(
-                        audit, runner, args, estimates, record, "native", library, None,
-                        [root / "tests/test_profile.lua"])
-                self.assertFalse(candidate_errors)
-                self.assertEqual(len(result["chartFailures"]), len(snapshot.DEFERRED_SUITES))
-                self.assertEqual(result["chartBehavior"], [])
-                write.assert_called_once()
-                write.reset_mock()
-                write.assert_not_called()
-                with patch.object(runner, "run_test", side_effect=RuntimeError("heap bound exceeded")):
-                    candidate_errors, result = snapshot.validate_candidate(
-                        audit, runner, args, estimates, record, "native", library, None,
-                        [root / "tests/test_profile.lua"])
-                self.assertEqual(len([finding for finding in candidate_errors if finding.startswith("memory:")]), 3)
-                self.assertEqual(result["mock"], [])
-                self.assertFalse(list((root / "build/scheduler-audit").glob("snapshot-candidate-*.lua")))
-                artifact = root / result["artifact"]
-                self.assertTrue(artifact.is_file())
-                self.assertEqual(hashlib.sha256(artifact.read_bytes()).hexdigest(), result["sha256"])
-                with patch.object(snapshot.subprocess, "run", side_effect=FileNotFoundError("missing Lua32")):
-                    candidate_errors, _ = snapshot.validate_candidate(
-                        audit, runner, args, estimates, record, "native", library, None,
-                        [root / "tests/test_profile.lua"])
-                self.assertTrue(any("Lua32 shared-module" in finding for finding in candidate_errors))
-                with patch.object(audit, "run", return_value=native):
-                    candidate_errors, _ = snapshot.validate_candidate(
-                        audit, runner, args, estimates, record, "native", library, None,
-                        [root / "tests/test_profile.lua"])
-                self.assertTrue(any("native Lua allocator measurement is missing" in finding
-                                    for finding in candidate_errors))
-                increased = copy.deepcopy(native)
-                increased["stats"]["task:service:model:run"]["units"]["1"]["max"] = 701
-                with patch.object(audit, "run", return_value=increased):
-                    candidate_errors, _ = snapshot.validate_candidate(
-                        audit, runner, args, estimates, record, "native", library, None,
-                        [root / "tests/test_profile.lua"])
-                self.assertTrue(any("regression:" in finding for finding in candidate_errors))
-                increased_mock = dict(row, max=701)
-                def mock_regression(*args, **kwargs):
-                    if kwargs.get("instructions"):
-                        return {key: increased_mock}, {"model|run": 1}
-                    return None
-                with patch.object(runner, "run_test", side_effect=mock_regression):
-                    candidate_errors, candidate_result = snapshot.validate_candidate(
-                        audit, runner, args, estimates, record, "native", library, None,
-                        [root / "tests/test_profile.lua"])
-                self.assertTrue(any("regression: mock:" in finding for finding in candidate_errors))
-                self.assertEqual(candidate_result["observations"]["mock"][key]["max"], 701)
-                partial = dict(row, max=725)
-                error = RuntimeError("suite failed after recording work")
-                error.rows = {key: partial}
-                error.declarations = {"model|run": 1}
-                def fail_instrumented(*args, **kwargs):
-                    if kwargs.get("instructions"):
-                        raise error
-                    return None
-                with patch.object(runner, "run_test", side_effect=fail_instrumented):
-                    candidate_errors, candidate_result = snapshot.validate_candidate(
-                        audit, runner, args, estimates, record, "native", library, None,
-                        [root / "tests/test_profile.lua"])
-                    self.assertTrue(any("suite failed after recording work" in finding
-                                        for finding in candidate_errors))
-                    self.assertEqual(candidate_result["observations"]["mock"][key]["max"], 725)
-                    self.assertEqual(candidate_result["instrumentedMock"], [])
-                    self.assertEqual(snapshot.profile(audit, args), 1)
-                    report = json.loads((root / "build/scheduler-audit/instruction-profile.json").read_text())
-                    self.assertEqual(report["observations"]["mock"][key]["max"], 725)
-                    self.assertEqual(report["declarations"]["model|run"], 1)
-                    self.assertEqual(report["coverage"]["mock"], [])
-                write.assert_not_called()
-                increased_mock["max"] = 15001
-                with patch.object(runner, "run_test", side_effect=mock_regression):
-                    candidate_errors, _ = snapshot.validate_candidate(
-                        audit, runner, args, estimates, record, "native", library, None,
-                        [root / "tests/test_profile.lua"])
-                self.assertTrue(any("safety: mock:" in finding for finding in candidate_errors))
-                self.assertTrue(any("runtime: mock:" in finding for finding in candidate_errors))
-                def fail_recovery(*args, **kwargs):
-                    if kwargs.get("output_name") == "aircraft-link-recovery-snapshot-candidate":
-                        raise RuntimeError("link did not recover")
-                    return copy.deepcopy(native)
-                with patch.object(audit, "run", side_effect=fail_recovery):
-                    self.assertEqual(snapshot.profile(audit, args), 1)
-                    report = (root / "build/scheduler-audit/instruction-profile.json").read_text()
-                    self.assertIn("link did not recover", report)
-                write.assert_not_called()
-                with patch.object(snapshot, "validate_candidate", return_value=(
-                        ["memory: heap bound exceeded"], {"mock": [], "native": []})):
-                    self.assertEqual(snapshot.profile(audit, args), 1)
-                write.assert_not_called()
-                row["max"] = 15001
-                self.assertEqual(snapshot.profile(audit, args), 1)
-                write.assert_not_called()
 
     def test_native_aircraft_recovery_scenario_preserves_deadline(self):
         audit = snapshot._module("audit_scheduler_scenario", snapshot.ROOT / "tools/audit-scheduler.py")
@@ -491,6 +276,132 @@ class InstructionSnapshotTests(unittest.TestCase):
             [("warm", 200, 20), ("loss", 40, 20), ("check-loss", 1, 20),
              ("recovery", 40, 20), ("check-recovery", 1, 20)],
         )
+
+    def test_focused_profile_retains_discovery_and_validates_exact_final_artifact(self):
+        data, _, _ = self.data()
+        data["record"]["observations"] = {"mock": {}, "native": {}}
+        row = self.row(n=1, min=101, max=201)
+        key = snapshot.observation_key(row)
+        calls = []
+        def run_test(path, **kwargs):
+            calls.append((path.name, kwargs))
+            if path.name == "chart.lua":
+                raise RuntimeError("Chart assertion remains active")
+            if not kwargs.get("instructions"):
+                return None
+            measured = dict(row, max=301 if kwargs.get("snapshot_path") else 201)
+            return {key: measured}, {"test|run": 1}
+        audit = SimpleNamespace(
+            scenarios=lambda: {name: {} for name in ("hook-check", "hook-check-firmware", "focused", "stress")},
+            build_native=lambda library: "native", capture_module=lambda: None,
+            run=lambda *args, **kwargs: {"luaMemory": {"peakBytes": 1234}},
+            hook_check_status=lambda *args: (True, "agreement"),
+            subprocess=SimpleNamespace(check_output=lambda *args, **kwargs: "commit\n"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "tests").mkdir()
+            (root / "tests/focused.lua").write_text("return true\n")
+            shipped = root / "snapshot.lua"
+            shipped.write_text("seed")
+            companion = root / "Companion.app"
+            library = companion / "Contents/Resources/libedgetx-tx16s-simulator.dylib"
+            library.parent.mkdir(parents=True)
+            library.touch()
+            args = SimpleNamespace(companion=companion, snapshot=True, timeout=120,
+                                   profile_deadline=snapshot.time.monotonic() + 300)
+            with patch.object(snapshot, "ROOT", root), patch.object(snapshot, "SNAPSHOT", shipped), \
+                    patch.object(snapshot, "load", side_effect=lambda: copy.deepcopy(data)), \
+                    patch.object(snapshot, "_module", return_value=SimpleNamespace(run_test=run_test)), \
+                    patch.object(snapshot, "MOCK_SUITES", ("tests/focused.lua",)), \
+                    patch.object(snapshot, "MEMORY_SUITES", ("tests/memory.lua",)), \
+                    patch.object(snapshot, "DEFERRED_SUITES", {"tests/chart.lua"}), \
+                    patch.object(snapshot, "CANDIDATE_SCENARIOS", ("focused",)), \
+                    patch.object(snapshot, "NATIVE_SCENARIOS", ("hook-check", "hook-check-firmware", "focused")), \
+                    patch.object(snapshot, "native_rows", return_value=[row]), \
+                    patch.object(snapshot.subprocess, "run", return_value=SimpleNamespace(stdout="passed")), \
+                    patch.object(snapshot, "write") as write:
+                self.assertEqual(snapshot._profile(audit, args), 0)
+                write.assert_called_once()
+                estimates, record = write.call_args.args
+                self.assertEqual(estimates["tasks"]["test"]["run"], {"fixed": 0, "perUnit": 500})
+                self.assertEqual(record["observations"]["mock"][key]["max"], 301)
+                self.assertEqual(record["observations"]["native"][key]["max"], 201)
+                self.assertEqual(record["observations"]["mock"][key]["n"], 2)
+                report = json.loads((root / "build/scheduler-audit/instruction-profile.json").read_text())
+                artifact = root / report["candidate"]["artifact"]
+                self.assertEqual(artifact.read_text(), snapshot.render(estimates, record))
+                self.assertEqual(hashlib.sha256(artifact.read_bytes()).hexdigest(), report["candidate"]["sha256"])
+                self.assertIn("Chart assertion remains active", report["chartFailures"][0])
+                self.assertIn("Chart assertion remains active", report["candidate"]["chartFailures"][0])
+                chart_calls = [kwargs for name, kwargs in calls if name == "chart.lua"]
+                self.assertEqual(len(chart_calls), 2)
+                self.assertTrue(all(not kwargs.get("instructions") for kwargs in chart_calls))
+                self.assertEqual(shipped.read_text(), "seed")
+                write.reset_mock()
+                unsafe = dict(row, max=15001)
+                with patch.object(snapshot, "native_rows", return_value=[unsafe]):
+                    self.assertEqual(snapshot._profile(audit, args), 1)
+                write.assert_not_called()
+                def fail_memory(path, **kwargs):
+                    if path.name == "memory.lua":
+                        raise RuntimeError("retained heap grew")
+                    return run_test(path, **kwargs)
+                with patch.object(snapshot, "_module", return_value=SimpleNamespace(run_test=fail_memory)):
+                    self.assertEqual(snapshot._profile(audit, args), 1)
+                write.assert_not_called()
+                with patch.object(snapshot.subprocess, "run", side_effect=FileNotFoundError("missing Lua32")):
+                    self.assertEqual(snapshot._profile(audit, args), 1)
+                write.assert_not_called()
+                with patch.object(audit, "run", return_value={}):
+                    self.assertEqual(snapshot._profile(audit, args), 1)
+                write.assert_not_called()
+
+    def test_profile_spec_only_cuts_redundant_steady_sampling(self):
+        phases = [
+            dict(name="refresh", kind="refresh", callbacks=1000, perCall=5),
+            dict(name="background", kind="background", callbacks=1000, perCall=5),
+            dict(name="check-loss", kind="refresh", callbacks=1, action="check-loss"),
+            dict(name="warm", kind="refresh", callbacks=200, step=20),
+        ]
+        original = dict(phases=copy.deepcopy(phases))
+        result = snapshot.profile_spec(original)
+        self.assertEqual(original["phases"], phases)
+        self.assertEqual([p["callbacks"] for p in result["phases"]], [40, 10, 1, 200])
+        self.assertEqual(result["phases"][2:], phases[2:])
+        self.assertTrue(result["deterministicClock"])
+
+    def test_candidate_guard_rejects_wrong_integer_or_float_width(self):
+        source = (snapshot.ROOT / "tests/support/lua32.lua").read_text(encoding="ascii")
+        guard = next(line.strip() for line in source.splitlines() if "assert(math.maxinteger" in line)
+        message = next(line.strip() for line in source.splitlines()
+                       if "candidate memory check requires" in line)
+        with self.assertRaisesRegex(Exception, "requires 32-bit integers and floats"):
+            snapshot.LuaRuntime().execute(guard + "\n" + message)
+
+    def test_expired_publication_preserves_snapshot_and_cleans_temporary(self):
+        data, _, _ = self.data()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "snapshot.lua"
+            path.write_text("original")
+            sha = hashlib.sha256(path.read_bytes()).hexdigest()
+            with self.assertRaisesRegex(RuntimeError, "deadline expired"):
+                snapshot.write(**data, path=path, expected_sha=sha, deadline=0)
+            self.assertEqual(path.read_text(), "original")
+            self.assertEqual(list(path.parent.iterdir()), [path])
+
+    def test_menu_mask_cost_is_retained_separately_from_loader_overhead(self):
+        runner = snapshot._module("menu_mask_runner", snapshot.ROOT / "tests/run.py")
+        rows, _ = runner.run_test(snapshot.ROOT / "tests/integration/widget/test_location_details.lua",
+                                  instructions=True)
+        measured = snapshot.merge_observations(rows.values())
+        menu = next(row for row in measured.values() if row["name"] == "menu-ensure")
+        loader = measured["bound|host-overhead|loader|0"]
+        refresh = next(row for row in measured.values()
+                       if row["kind"] == "callback" and row["name"] == "refresh")
+        self.assertGreater(menu["max"], loader["max"])
+        self.assertGreaterEqual(refresh["max"], menu["max"])
+        self.assertGreater(menu["n"], 0)
 
     def test_native_heap_requires_verified_peak_below_firmware_limit(self):
         audit = snapshot._module("audit_heap", snapshot.ROOT / "tools/audit-scheduler.py")

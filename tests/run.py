@@ -17,7 +17,7 @@ class InstrumentedSuiteError(RuntimeError):
         self.declarations = declarations
 
 
-def run_test(path: Path, *, instructions=False, snapshot_path=None):
+def run_test(path: Path, *, instructions=False, snapshot_path=None, work_samples=None):
     lua = LuaRuntime(unpack_returned_tuples=True)
     lua.execute('debug.setmetatable("", nil)')
     if snapshot_path is not None:
@@ -53,6 +53,36 @@ def run_test(path: Path, *, instructions=False, snapshot_path=None):
     """)
     recorder = declarations = None
     if instructions:
+        sys.path.insert(0, str(ROOT / "tools"))
+        import scheduler_audit
+        from instruction_snapshot import native_bound, load as load_snapshot
+        estimates = load_snapshot(snapshot_path)["estimates"] if snapshot_path else load_snapshot()["estimates"]
+        def span_bound(label):
+            result = native_bound(label, estimates)
+            if result is None:
+                return None
+            name, stage, exclusive = result
+            return lua.table_from(dict(name=name, stage=stage, exclusive=exclusive))
+        def patched_main(filename):
+            source = scheduler_audit.patch_main(Path(filename).read_text(encoding="ascii"))
+            for original, replacement in scheduler_audit.MAIN_PATCHES:
+                source = source.replace(replacement, original)
+            return source.removeprefix(scheduler_audit.MAIN_PREFIX)
+        lua.globals().__instructionSpanBound = span_bound
+        lua.globals().__instructionMain = patched_main
+        if work_samples is not None:
+            def witness(value):
+                work_samples.append(dict(value.items(), suite=path.relative_to(ROOT).as_posix()))
+            lua.globals().__instructionWitness = witness
+        lua.execute("""
+            local originalLoadfile = loadfile
+            function loadfile(filename, ...)
+                if type(filename) == "string" and string.match(filename, "WIDGETS/AeroGrid/main%.lua$") then
+                    return load(__instructionMain(filename), "@" .. filename)
+                end
+                return originalLoadfile(filename, ...)
+            end
+        """)
         rows = {}
         declared = {}
         def declare(name, stage, maximum):

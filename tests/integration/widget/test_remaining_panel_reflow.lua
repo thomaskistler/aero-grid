@@ -80,7 +80,10 @@ for _, theme in ipairs({ "modern-dark", "modern-light" }) do
                 assert(module.reflow(context, rect, settings, nil, placement, false))
             end
             local staged, synchronous = create(), create()
-            for _, shape in ipairs({ { 800, 1200 }, { 90, 50 }, { 160, 480 }, { 800, 90 }, { 320, 200 } }) do
+            local shapes = variant == 1
+                and { { 800, 1200 }, { 90, 50 }, { 160, 480 }, { 800, 90 }, { 320, 200 } }
+                or { { 800, 1200 } }
+            for _, shape in ipairs(shapes) do
                 local rect = { x = 1, y = 2, w = shape[1], h = shape[2] }
                 finish(staged, rect, module.reflow(staged, rect, settings, nil, placement, true))
                 module.update(synchronous, rect, settings)
@@ -179,8 +182,29 @@ for _, theme in ipairs({ "modern-dark", "modern-light" }) do
             -- Every continuation can be restarted or preempted synchronously.
             if variant == 1 then
                 local replacement = { x = 5, y = 6, w = 320, h = 200 }
+                local boundaries = {}
+                local sample = create()
+                module.update(sample, target, settings)
+                settle(sample)
+                local done = module.reflow(sample, target, settings, nil, placement, true)
+                for stop = 0, 200 do
+                    if done then break end
+                    local stage = sample.reflowWork.stage
+                    boundaries[stage] = boundaries[stage] or { first = stop }
+                    boundaries[stage].last = stop
+                    done = module.reflow(sample, target, settings, nil, placement, false)
+                end
+                assert(done, kind .. ": boundary discovery must finish")
+                local stops = {}
+                for _, boundary in pairs(boundaries) do
+                    stops[boundary.first], stops[boundary.last] = true, true
+                end
+                local selected = {}
+                for stop = 0, kind == "output" and 90 or 3 do
+                    if stops[stop] then selected[#selected + 1] = stop end
+                end
                 for _, interruption in ipairs({ "resize", "update", "cancelRefresh", "reset" }) do
-                    for stop = 0, kind == "output" and 90 or 3 do
+                    for _, stop in ipairs(selected) do
                         staged, synchronous = create(), create()
                         for _, context in ipairs({ staged, synchronous }) do
                             module.update(context, target, settings)

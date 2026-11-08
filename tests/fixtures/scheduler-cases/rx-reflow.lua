@@ -30,7 +30,7 @@ return function(load)
     end
     local function create(sample)
         local context = withApi(sample.panel.create, api.node(), sample.rect, sample.settings, sample.dependencies())
-        withApi(sample.panel.refresh, context)
+        api.refresh(sample.panel, context)
         return context
     end
     local cases = {}

@@ -18,7 +18,16 @@ local function pump(count)
         fixture.lvglMock.settle()
         callbacks = callbacks + 1
     end
+
     assert(#context.errors == 0, table.concat(context.errors, "\n"))
+end
+
+local function waitFor(predicate, message)
+    for _ = 1, 256 do
+        if predicate() then return end
+        pump(1)
+    end
+    assert(predicate(), message)
 end
 
 local function inputs(index)
@@ -45,7 +54,12 @@ local altitude = assert(fixture.instanceOf(context, "altitude"))
 local baselineObjects
 local function checkpoint()
     inputs(0)
-    pump(40)
+pump(40)
+    waitFor(function()
+        return link.text == "70" and link.stateName == "normal"
+            and battery.text == "3.30" and battery.countText == "2S"
+            and clock.text and flights.text == "0"
+    end, "aircraft checkpoint readings did not settle")
     assert(link.text == "70" and link.stateName == "normal", "link did not recover")
     assert(battery.text == "3.30" and battery.countText == "2S", "pack telemetry was not exercised")
     assert(clock.text and flights.text == "0", "radio-local readings were not exercised")
@@ -75,6 +89,12 @@ local function cycle(number)
         pump(1)
     end
     pump(40)
+    waitFor(function()
+        return link.text ~= "NO LINK"
+            and battery.text == string.format("%.2f", radio.values[100] / 2)
+            and flights.text == tostring(radio.globals[8])
+            and altitude.feed.value == radio.values[106]
+    end, "changing telemetry did not reach the aircraft dashboard")
     assert(link.text ~= "NO LINK", "live telemetry never reached the link panel")
     assert(
         battery.text == string.format("%.2f", radio.values[100] / 2),
@@ -84,6 +104,9 @@ local function cycle(number)
     assert(altitude.feed.value == radio.values[106], "changing altitude never reached the panel")
     radio.rssi = 0
     pump(40)
+    waitFor(function()
+        return link.text == "NO LINK" and link.stateName == "critical" and battery.stateName == "stale"
+    end, "aircraft link loss did not settle")
     assert(link.text == "NO LINK" and link.stateName == "critical", "link loss was not exercised")
     assert(battery.stateName == "stale", "other telemetry did not become stale")
 end
@@ -127,7 +150,8 @@ print(
 )
 
 radio.rssi = 0
-pump(40)
+ pump(40)
+waitFor(function() return link.text == "NO LINK" end, "link loss must precede the no-room check")
 assert(link.text == "NO LINK")
 local host = context.schedulerHost
 local finish = host.finish

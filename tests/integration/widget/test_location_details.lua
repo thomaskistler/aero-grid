@@ -5,7 +5,10 @@ local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().
 fixture.reset()
 local definition = fixture.module("main.lua")
 local context = fixture.createLoaded(nil, { Layout = "review-navigation", Theme = "modern-dark" })
-fixture.pump(context, 40)
+assert(fixture.pumpUntil(context, function()
+    local instance = fixture.instanceOf(context, "compass")
+    return instance and instance.feed and instance.feed.fix and instance.rendered
+end, 256, 10), "navigation data and presentation must settle")
 
 EVT_TOUCH_FIRST = 9101
 EVT_TOUCH_SLIDE = 9102
@@ -43,7 +46,10 @@ end
 tap()
 assert(not context.locationDetails, "normal-mode touches must not open location details")
 fixture.lvglMock.setFullScreen(true)
-fixture.pump(context, 40)
+assert(fixture.pumpUntil(context, function()
+    local instance = fixture.instanceOf(context, "compass")
+    return not context.reflowIndex and instance and instance.feed and instance.feed.fix and instance.rendered
+end, 256, 10), "fullscreen navigation must finish reflow before interaction")
 tap()
 local snapshot = assert(context.locationDetails, "fullscreen navigation tap must open details")
 assert(snapshot.valid and not snapshot.stale)

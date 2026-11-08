@@ -47,6 +47,13 @@ end
 return {
     node = node,
     withApi = withApi,
+    refresh = function(module, context)
+        for _ = 1, 256 do
+            local _, unfinished = withApi(module.step, context, 1, module.stageOf(context))
+            if not unfinished then return end
+        end
+        error("panel fixture did not complete its staged refresh")
+    end,
     theme = {
         accent = "cyan",
         rgb = { surface = 0x212830 },

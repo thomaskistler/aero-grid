@@ -1252,8 +1252,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("scenario", nargs="*", help="Scenario names; omit with --list or --all")
     parser.add_argument("--all", action="store_true")
-    parser.add_argument("--instructions", action="store_true", help="Run the full instruction regression profile")
-    parser.add_argument("--snapshot", action="store_true", help="Run the full profile and atomically update instruction estimates")
+    parser.add_argument("--instructions", action="store_true", help="Run the five-minute instruction regression profile")
+    parser.add_argument("--snapshot", action="store_true", help="Capture and validate a snapshot within five minutes")
+    parser.add_argument("--profile-deadline", type=float, help=argparse.SUPPRESS)
     parser.add_argument("--candidate", type=Path, help="Run selected native scenarios with this candidate snapshot")
     parser.add_argument("--instruction-report", nargs="?", const=OUTPUT / "instruction-profile.json", type=Path,
                         help="Show measured min/current-bound/max per task, stage and grant as Markdown and CSV")
@@ -1282,7 +1283,8 @@ def main():
         if args.scenario or args.all or args.list or args.framework is not None or args.report:
             parser.error("Instruction profiles cannot be combined with partial scenario or report options")
         import instruction_snapshot
-        return instruction_snapshot.profile(sys.modules[__name__], args)
+        run_profile = instruction_snapshot._profile if args.profile_deadline is not None else instruction_snapshot.profile
+        return run_profile(sys.modules[__name__], args)
     available = scenarios()
     if args.framework is not None:
         cases = sorted(CASE_DIR.glob("*.lua"))

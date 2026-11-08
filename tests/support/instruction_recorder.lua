@@ -194,9 +194,10 @@ function recorder:task(name, fn)
     return wrapped
 end
 
-function recorder:callback(kind, fn)
+function recorder:callback(kind, fn, observer)
     return self:wrap(fn, {
         before = function(context)
+            local token = observer and observer.before(context)
             if type(context) ~= "table" then return self.scenario end
             local phase = context.stage or context.reloadState
                 or context.appRebuild and "app-rebuild"
@@ -208,9 +209,13 @@ function recorder:callback(kind, fn)
             if context.pendingPlacement and type(context.pendingPlacement.type) == "string" then
                 phase = phase .. ":" .. context.pendingPlacement.type
             end
-            return self.scenario .. ":" .. phase
+            return { scenario = self.scenario .. ":" .. phase, token = token }
         end,
-        after = function(cost, _, scenario, ok)
+        after = function(cost, own, scenario, ok)
+            if type(scenario) == "table" then
+                if observer then observer.after(cost, own, scenario.token, ok) end
+                scenario = scenario.scenario
+            end
             self:sample("callback", kind, self.scenario, 0, cost, ok, scenario)
         end,
     })

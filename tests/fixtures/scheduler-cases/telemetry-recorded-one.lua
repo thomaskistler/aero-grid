@@ -48,7 +48,8 @@ return function(load)
                         windowSeconds = 30,
                         precision = 0,
                     })
-                    history:advance(90)
+                    local task = history.tasks.run
+                    task:step(task.want, "run", 90)
                     history:sample({
                         name = "S01",
                         value = 5,

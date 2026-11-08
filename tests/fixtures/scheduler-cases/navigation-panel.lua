@@ -71,7 +71,7 @@ return function(load)
             })
             context.feed = support.snapshot(state)
             context.satellites = support.snapshot(satellites)
-            api.withApi(navigation.refresh, context)
+            api.refresh(navigation, context)
             if variant == 1 then
                 state.distance, state.bearing = seed * 9876543.21, seed * 119.5
                 state.latitude = state.latitude + seed / 100

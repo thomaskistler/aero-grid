@@ -84,7 +84,7 @@ return function(load)
                     return builder.state(theme, name, accent)
                 end,
             })
-            withApi(panel.refresh, context)
+            api.refresh(panel, context)
             states.RSSI.value, states.LQ.value = -72 - seed * 5, 96 - seed * 10
             states.MODE.value, states.SNR.value, states.POWER.value = seed + 1, -seed, seed * 100
             if variant == 3 then

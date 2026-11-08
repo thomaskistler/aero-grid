@@ -257,9 +257,12 @@ equal(file:read("*a"), layoutText, "reset must not save or alter layouts")
 file:close()
 
 fixture.radio.logicalSwitches[64] = false
-pump(20)
+untilState(function()
+    return owner.session and owner.session.phase == "ground"
+        and owner.session.arm.value == false
+end)
 fixture.radio.logicalSwitches[64] = true
-pump(100)
+untilState(function() return writes == 2 end)
 equal(writes, 2, "a new flight can qualify after disarming")
 equal(model.getGlobalVariable(8, 0), 19)
 checkHomeBoundary(first)
