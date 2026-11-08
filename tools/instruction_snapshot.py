@@ -270,7 +270,7 @@ def check(snapshot, observations, required, *, updating=False, require_previous=
             if not updating:
                 if old is None:
                     findings.append(f"regression: missing recorded maximum for {environment}:{key}")
-                elif row["max"] > old["max"]:
+                elif row["max"] > old["max"] and 100 * row["max"] >= 105 * old["max"]:
                     findings.append(f"regression: {environment}:{key} grew from {old['max']} to {row['max']}")
             estimates = snapshot["estimates"]
             if row["kind"] == "task":

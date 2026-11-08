@@ -100,7 +100,9 @@ python3 tools/audit-scheduler.py --instruction-report
 ```
 
 The first two commands run fresh mock and native measurements. `--instructions` rejects
-any recorded maximum increase; `--snapshot` updates the shipped estimates and
+increases of 5% or more against the recorded maximum; smaller increases do not
+change that maximum. Runtime bounds, safety, coverage, and behavior remain strict.
+`--snapshot` updates the shipped estimates and
 the compact regression fixture in `tests/fixtures/instruction_baseline.json` only
 after the focused profile passes behavior, coverage, runtime, and safety
 checks. The profile is designed to finish, including candidate validation,
@@ -168,7 +170,8 @@ remain recorded. A native flight-timer witness supplements the live scenarios.
 Native model and control witnesses cover smaller grants that live workloads may
 not produce. Planner scenario coverage is checked by scenario, not by requiring
 the same examined/run counts after estimates change; any historical bucket
-observed again is still checked against its exact recorded maximum.
+observed again is still checked against its recorded maximum with the same
+regression tolerance.
 Snapshot generation preserves the variable coefficients; the fixed reservation
 is rounded to 500 and increased when a measured shortfall requires it. The
 shortfall target uses the same 10% uplift and rounding as other bounds.

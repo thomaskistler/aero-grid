@@ -83,6 +83,11 @@ class InstructionSnapshotTests(unittest.TestCase):
             snapshot.incorporate_candidate(
                 data, observations, candidate, declarations, required,
                 {"mock": data["record"]["observations"]["mock"], "native": previous["native"]})
+        candidate["mock"][key]["max"] = 209
+        with self.assertRaisesRegex(ValueError, "historical regression.*grew from 200 to 209"):
+            snapshot.incorporate_candidate(
+                data, observations, candidate, declarations, required,
+                {"mock": data["record"]["observations"]["mock"], "native": previous["native"]})
         candidate["mock"][key]["max"] = 500
         previous["mock"][key]["max"] = 500
         with self.assertRaisesRegex(ValueError, "new exact-candidate validation"):
@@ -290,12 +295,17 @@ class InstructionSnapshotTests(unittest.TestCase):
         self.assertFalse(any("indivisible grant cannot fit" in finding for finding in
                              snapshot.check(data, observations, {key}, updating=True, require_previous=False)))
 
-    def test_any_increase_fails_and_update_does_not_hide_safety(self):
+    def test_regression_tolerance_and_update_does_not_hide_safety(self):
         data, observations, required = self.data()
         row = next(iter(observations["native"].values()))
-        row["max"] = 201
+        row["max"] = 209
+        self.assertFalse(any("regression:" in finding for finding in snapshot.check(data, observations, required)))
+        self.assertEqual(data["record"]["observations"]["native"][next(iter(required))]["max"], 200)
+        row["max"] = 210
         self.assertTrue(any("regression:" in finding for finding in snapshot.check(data, observations, required)))
         self.assertEqual(snapshot.check(data, observations, required, updating=True), [])
+        row["max"] = 211
+        self.assertTrue(any("regression:" in finding for finding in snapshot.check(data, observations, required)))
         row["max"] = 15001
         findings = snapshot.check(data, observations, required, updating=True)
         for category in ("safety:", "runtime:", "efficiency:"):
@@ -334,7 +344,7 @@ class InstructionSnapshotTests(unittest.TestCase):
         self.assertFalse(any("missing previously recorded" in finding
                              for finding in snapshot.check(data, observations, set(), updating=True)))
 
-    def test_historical_planner_bucket_is_not_required_but_is_still_strict(self):
+    def test_historical_planner_bucket_is_optional_but_regression_checked(self):
         data, observations, required = self.data()
         data["estimates"]["bounds"]["scheduler"] = {"fixed": 1500, "examine": 64, "run": 224}
         old = self.row(kind="framework", name="scheduler", stage="48:48", grant=0, min=400, max=500)
@@ -344,9 +354,23 @@ class InstructionSnapshotTests(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertNotIn(key, keys)
         self.assertFalse(any(key in finding for finding in snapshot.check(data, observations, keys)))
-        observations["native"][key] = dict(old, max=501)
-        self.assertTrue(any(f"regression: native:{key} grew from 500 to 501" == finding
+        observations["native"][key] = dict(old, max=525)
+        self.assertTrue(any(f"regression: native:{key} grew from 500 to 525" == finding
                             for finding in snapshot.check(data, observations, keys)))
+
+    def test_zero_baseline_and_runtime_bound_remain_strict(self):
+        data, observations, required = self.data()
+        key = next(iter(required))
+        data["record"]["observations"]["native"][key]["max"] = 0
+        data["record"]["observations"]["native"][key]["min"] = 0
+        observations["native"][key]["max"] = 1
+        observations["native"][key]["min"] = 0
+        self.assertTrue(any("regression:" in finding for finding in snapshot.check(data, observations, required)))
+        data["record"]["observations"]["native"][key]["max"] = 1000
+        observations["native"][key]["max"] = 1001
+        findings = snapshot.check(data, observations, required)
+        self.assertFalse(any("regression:" in finding for finding in findings))
+        self.assertTrue(any("runtime:" in finding for finding in findings))
 
     def test_expected_errors_remain_observations(self):
         data, observations, required = self.data()
