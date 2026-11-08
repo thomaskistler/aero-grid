@@ -70,17 +70,57 @@ class InstructionSnapshotTests(unittest.TestCase):
 
     def test_measured_incremental_growth_fitting(self):
         self.assertEqual(snapshot.fit({1: 270, 2: 450, 3: 630}),
-                         {"fixed": 0, "perUnit": 500})
+                         {"fixed": 99, "perUnit": 198, "quantum": 500})
         grants = {1: 103, 2: 302, 3: 310, 4: 450}
         fitted = snapshot.fit(grants)
         for grant, maximum in grants.items():
-            self.assertGreaterEqual(fitted["fixed"] + fitted["perUnit"] * grant, snapshot.target(maximum))
+            self.assertGreaterEqual(snapshot.task_cost(fitted, grant), snapshot.target(maximum))
         self.assertGreater(fitted["perUnit"], 0)
-        self.assertEqual(fitted["fixed"] % 500, 0)
-        self.assertEqual(fitted["perUnit"] % 500, 0)
-        self.assertEqual(snapshot.fit({1: 100}), {"fixed": 0, "perUnit": 500})
+        self.assertEqual(fitted["quantum"], 500)
+        self.assertEqual(snapshot.fit({1: 100}), {"fixed": 0, "perUnit": 110, "quantum": 500})
         with self.assertRaises(ValueError):
             snapshot.fit({2: 100})
+
+    def test_rounding_applies_to_totals_not_units(self):
+        grants = {0: 80, 1: 120, 32: 1000, 128: 3600}
+        fitted = snapshot.fit(grants)
+        self.assertLess(fitted["perUnit"], 500)
+        self.assertLess(snapshot.task_cost(fitted, 128), snapshot.CEILING - snapshot.MARGIN)
+        for grant, maximum in grants.items():
+            charge = snapshot.task_cost(fitted, grant)
+            self.assertEqual(charge % 500, 0)
+            self.assertGreaterEqual(charge, snapshot.target(maximum))
+
+    def test_recorded_telemetry_uses_real_one_recorder_poll_as_slope_anchor(self):
+        data, observations, _ = self.data()
+        data["estimates"]["tasks"] = {
+            "telemetry.recorded": {"run": {"fixed": 0, "perUnit": 1}},
+            "telemetry.recorded-one": {"run": {"fixed": 0, "perUnit": 1}},
+        }
+        for task, grant, maximum in (
+            ("telemetry.recorded", 1, 27),
+            ("telemetry.recorded", 2, 1003),
+            ("telemetry.recorded", 3, 1717),
+            ("telemetry.recorded", 24, 6302),
+            ("telemetry.recorded-one", 1, 1072),
+        ):
+            row = self.row(name=task, grant=grant, min=maximum, max=maximum)
+            observations["mock"][snapshot.observation_key(row)] = row
+        # The real declaration covers all grants; provide exact observations
+        # between the endpoints without altering the measured examples.
+        for grant in range(4, 24):
+            maximum = 278 + 251 * grant
+            row = self.row(name="telemetry.recorded", grant=grant, min=maximum, max=maximum)
+            observations["mock"][snapshot.observation_key(row)] = row
+        declarations = {"telemetry.recorded|run": 24, "telemetry.recorded-one|run": 1}
+        proposed = snapshot.propose(data, observations, declarations, set())
+        fitted = proposed["tasks"]["telemetry.recorded"]["run"]
+        self.assertEqual(fitted, snapshot.fit({1: 1072, **{
+            row["grant"]: row["max"] for row in observations["mock"].values()
+            if row["name"] == "telemetry.recorded" and row["grant"] > 1
+        }}))
+        self.assertLess(snapshot.task_cost(fitted, 24), snapshot.CEILING - snapshot.MARGIN)
+        self.assertEqual(observations["mock"]["task|telemetry.recorded|run|1"]["max"], 27)
 
     def test_one_real_sample_suffices_without_repetition_padding(self):
         data, observations, required = self.data()
@@ -94,14 +134,14 @@ class InstructionSnapshotTests(unittest.TestCase):
         self.assertTrue(any("coverage: missing task" in finding for finding in snapshot.check(data, observations, required)))
 
     def test_zero_grant_noops_are_retained_and_covered_by_fixed_charge(self):
-        self.assertEqual(snapshot.fit({0: 5, 1: 100}), {"fixed": 500, "perUnit": 500})
+        self.assertEqual(snapshot.fit({0: 5, 1: 100}), {"fixed": 6, "perUnit": 104, "quantum": 500})
         self.assertEqual(snapshot.fit({0: 120, 1: 270, 2: 450, 3: 630}),
-                         {"fixed": 500, "perUnit": 500})
+                         {"fixed": 132, "perUnit": 198, "quantum": 500})
         data, observations, required = self.data()
         noop = self.row(grant=0, min=5, max=5)
         observations["mock"][snapshot.observation_key(noop)] = noop
         proposed = snapshot.propose(data, observations, {"test|run": 1}, required)
-        self.assertEqual(proposed["tasks"]["test"]["run"], {"fixed": 500, "perUnit": 500})
+        self.assertEqual(proposed["tasks"]["test"]["run"], {"fixed": 6, "perUnit": 214, "quantum": 500})
         self.assertEqual(snapshot.check({"estimates": proposed, "record": data["record"]},
                                         observations, required, updating=True), [])
         with self.assertRaises(ValueError):
@@ -176,7 +216,7 @@ class InstructionSnapshotTests(unittest.TestCase):
         data, observations, required = self.data()
         next(iter(observations["native"].values()))["max"] = 210
         candidate = snapshot.propose(data, observations, {"test|run": 1}, required)
-        self.assertEqual(candidate["tasks"]["test"]["run"], {"fixed": 0, "perUnit": 500})
+        self.assertEqual(candidate["tasks"]["test"]["run"], {"fixed": 0, "perUnit": 231, "quantum": 500})
         self.assertEqual(data["estimates"]["tasks"]["test"]["run"]["perUnit"], 220)
         with self.assertRaises(ValueError):
             snapshot.propose(data, observations, {"test|run": 1}, required | {"task|test|run|2"})
@@ -324,7 +364,7 @@ class InstructionSnapshotTests(unittest.TestCase):
                 self.assertEqual(snapshot._profile(audit, args), 0)
                 write.assert_called_once()
                 estimates, record = write.call_args.args
-                self.assertEqual(estimates["tasks"]["test"]["run"], {"fixed": 0, "perUnit": 500})
+                self.assertEqual(estimates["tasks"]["test"]["run"], {"fixed": 0, "perUnit": 222, "quantum": 500})
                 self.assertEqual(record["observations"]["mock"][key]["max"], 301)
                 self.assertEqual(record["observations"]["native"][key]["max"], 201)
                 self.assertEqual(record["observations"]["mock"][key]["n"], 2)

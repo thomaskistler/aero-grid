@@ -415,6 +415,39 @@ local function testGrantsInUnits()
     equal(log2[1], "chart:run:3", "the grant is what fits")
 end
 
+local function testRoundedStageReservations()
+    local decl = {
+        class = "normal",
+        stages = { run = { fixed = 101, perUnit = 37, maxUnits = 128, quantum = 500 } },
+        shared = { sample = 275 },
+    }
+    local log = {}
+    local s = scheduler.new({ steady = 0 })
+    add(s, "rounded", decl, task(log, "rounded"), 0)
+    decl.stages.run.quantum = 1
+    local room = scheduler.CEILING - scheduler.MARGIN - FIXED - CHARGE
+    local used = room - 3000 - 275 - 199
+    equal(s:run("steady", 1, used), 1)
+    local grant = (3000 - 101) // 37
+    equal(log[1], "rounded:run:" .. grant, "largest grant fitting the rounded budget and shared cost")
+    equal(s.lastPlan.U, used + FIXED + CHARGE + 3000 + 275)
+    assert(s.lastPlan.U <= scheduler.CEILING - scheduler.MARGIN)
+    equal(s:run("steady", 20, scheduler.CEILING), 0, "negative room defers rounded stages")
+    equal(s:takeErrors(), nil)
+
+    local full = scheduler.new({ steady = 0 })
+    local fullLog = {}
+    decl.stages.run.quantum = 500
+    add(full, "full", decl, task(fullLog, "full"), 0)
+    equal(full:run("steady", 1), 1)
+    equal(fullLog[1], "full:run:128", "precise per-unit cost admits the indivisible grant")
+    equal(full.lastPlan.U, FIXED + CHARGE + 5000 + 275)
+    for _, quantum in ipairs({ 0, -1, 1.5, scheduler.CEILING + 1 }) do
+        decl.stages.run.quantum = quantum
+        assert(scheduler.check(decl), "invalid rounding quantum must be rejected")
+    end
+end
+
 local function testExclusiveAndKinds()
     local log = {}
     local s = scheduler.new(OVERHEAD)
@@ -710,6 +743,7 @@ testSkipAndContinueKeepsTheWaiterFirst()
 testCriticalIsNeverDroppedAndKeepsItsPlace()
 testNormalReserve()
 testGrantsInUnits()
+testRoundedStageReservations()
 testExclusiveAndKinds()
 testSharedCostIsChargedOncePerPlan()
 testReadyTasksHaveNoCountCap()

@@ -129,8 +129,9 @@ stage, and grant table with observed min/max and the current shipped bound.
 Coverage requires a real observation for every non-deferred task/stage/grant;
 there is no repetition quota. Mock and native records remain separate.
 Observed zero-grant no-ops are retained and covered by the fitted fixed charge.
-Estimates use the higher mock/native maximum, add 10%, and round upward to
-multiples of 500. Observed extrema and sample counts remain exact. Diagnostic
+Estimates use the higher mock/native maximum, add 10%, and round each stage's
+total for its grant upward to a multiple of 500; per-unit coefficients are not
+rounded to 500. Observed extrema and sample counts remain exact. Diagnostic
 evidence retains sampled work/progress and native action/deadline results.
 Instruction spread is reported for review, not treated as a blocker. Cheap and
 no-op executions remain in the observed ranges.

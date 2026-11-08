@@ -15,7 +15,8 @@
 ---                         task planned, whoever then pays it (a name has one cost)
 ---   kinds = { steady = true, background = true }   default: both
 ---   first = "run"         stage the instance starts in
----   stages = { run = { fixed = F, perUnit = U, maxUnits = N } }
+---   stages = { run = { fixed = F, perUnit = U, maxUnits = N, quantum = Q } }
+--- `quantum` is optional and rounds the total reservation up to its multiple.
 --- The instance has `step(instance, grant, stage, now) -> delay` (a whole number
 --- of ticks, 1 to MAX_DELAY) and may keep `stage` and `want` current. `step` runs
 --- exactly the planned stage with at most `grant` units, or does no work and
@@ -128,13 +129,14 @@ function scheduler.check(decl)
             or not whole(stage.perUnit)
             or stage.perUnit < 1
             or stage.perUnit > CEILING
+            or stage.quantum ~= nil and (not whole(stage.quantum) or stage.quantum < 1 or stage.quantum > CEILING)
             or not whole(stage.maxUnits)
             or stage.maxUnits < 1
             or stage.maxUnits > CEILING
         then
             return "stage "
                 .. tostring(name)
-                .. " needs integers: fixed 0 to the ceiling, perUnit and maxUnits 1 to the ceiling"
+                .. " needs integers: fixed 0 to the ceiling, perUnit, maxUnits and optional quantum 1 to the ceiling"
         end
     end
     return nil
@@ -234,7 +236,9 @@ local function neverFits(self, decl, kinds)
         shared = shared + cost
     end
     for name, stage in pairs(decl.stages) do
-        local need = stage.fixed + stage.perUnit + shared + EXAMINE_COST + RUN_COST
+        local cost = stage.fixed + stage.perUnit
+        if stage.quantum then cost = ((cost + stage.quantum - 1) // stage.quantum) * stage.quantum end
+        local need = cost + shared + EXAMINE_COST + RUN_COST
         local fits = false
         for kind, allowed in pairs(kinds) do
             local overhead = self.overhead[kind]
@@ -289,9 +293,12 @@ function scheduler:add(task)
         -- Copies, so a host that changes its declaration cannot break the planner.
         local stages, shared = {}, {}
         for name, stage in pairs(decl.stages) do
-            stages[name] = { fixed = stage.fixed, perUnit = stage.perUnit, maxUnits = stage.maxUnits }
-            if stage.fixed + stage.perUnit < self.minStep then
-                self.minStep = stage.fixed + stage.perUnit
+            stages[name] = { fixed = stage.fixed, perUnit = stage.perUnit,
+                quantum = stage.quantum, maxUnits = stage.maxUnits }
+            local minimum = stage.fixed + stage.perUnit
+            if stage.quantum then minimum = ((minimum + stage.quantum - 1) // stage.quantum) * stage.quantum end
+            if minimum < self.minStep then
+                self.minStep = minimum
             end
         end
         for name, cost in pairs(decl.shared or {}) do
@@ -544,7 +551,10 @@ function scheduler:run(kind, now, used)
                 else
                     -- Shared costs are looked at only for a task that fits without them.
                     local perUnit = declared.perUnit
-                    local space = limit - spent - RUN_COST - declared.fixed
+                    local space = limit - spent - RUN_COST
+                    local quantum = declared.quantum
+                    if quantum then space = (space // quantum) * quantum end
+                    space = space - declared.fixed
                     local grant = space // perUnit
                     local s1 = meta.s1
                     local extra = 0
@@ -557,7 +567,9 @@ function scheduler:run(kind, now, used)
                             extra = extra + meta.c2
                         end
                         if extra > 0 then
-                            grant = (space - extra) // perUnit
+                            local available = limit - spent - RUN_COST - extra
+                            if quantum then available = (available // quantum) * quantum end
+                            grant = (available - declared.fixed) // perUnit
                         end
                     end
                     if grant >= 1 then
@@ -568,7 +580,9 @@ function scheduler:run(kind, now, used)
                         if grant > cap then
                             grant = cap
                         end
-                        spent = spent + RUN_COST + declared.fixed + extra + grant * perUnit
+                        local taskCost = declared.fixed + grant * perUnit
+                        if quantum then taskCost = ((taskCost + quantum - 1) // quantum) * quantum end
+                        spent = spent + RUN_COST + taskCost + extra
                         planned = planned + 1
                         runTotal = runTotal + 1
                         records[planned], stages[planned], grants[planned] = record, stage, grant

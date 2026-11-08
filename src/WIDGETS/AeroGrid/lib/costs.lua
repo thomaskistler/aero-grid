@@ -18,12 +18,13 @@ function costs.new(snapshot)
     return setmetatable({ tasks = estimates.tasks, bounds = estimates.bounds }, costs)
 end
 
---- Fill `fixed` and `perUnit` of every stage of `decl` from task `name`.
+--- Fill the cost and optional rounding quantum of every stage from task `name`.
 function costs:stages(name, decl)
     local task = self.tasks[name] or missing("tasks", name)
     for stage, declared in pairs(decl.stages) do
         local estimate = task[stage] or missing("tasks." .. name, stage)
         declared.fixed, declared.perUnit = estimate.fixed, estimate.perUnit
+        declared.quantum = estimate.quantum
     end
     return decl
 end

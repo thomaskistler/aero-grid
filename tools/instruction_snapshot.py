@@ -95,7 +95,9 @@ def fit(grants):
     """Measured incremental growth above grant one, then minimal startup cost."""
     if 1 not in grants:
         raise ValueError("stage fitting requires grant one")
-    targets = {grant: target(maximum) for grant, maximum in grants.items()}
+    targets = {grant: (11 * maximum + 9) // 10 for grant, maximum in grants.items()}
+    for maximum in grants.values():
+        target(maximum)
     per_unit = 1
     for grant, budget in targets.items():
         if type(grant) is not int or grant < 0:
@@ -105,10 +107,15 @@ def fit(grants):
             per_unit = max(per_unit, (growth + grant - 2) // (grant - 1))
     if not any(grant > 1 for grant in targets):
         fixed = targets.get(0, 0)
-        return {"fixed": fixed, "perUnit": round_estimate(max(1, targets[1] - fixed))}
-    per_unit = round_estimate(per_unit)
+        return {"fixed": fixed, "perUnit": max(1, targets[1] - fixed), "quantum": 500}
     fixed = max(0, max(budget - grant * per_unit for grant, budget in targets.items()))
-    return {"fixed": round_estimate(fixed), "perUnit": per_unit}
+    return {"fixed": fixed, "perUnit": per_unit, "quantum": 500}
+
+
+def task_cost(stage, grant):
+    value = stage["fixed"] + stage["perUnit"] * grant
+    quantum = stage.get("quantum")
+    return ((value + quantum - 1) // quantum) * quantum if quantum else value
 
 
 def observation_key(row):
@@ -192,10 +199,10 @@ def check(snapshot, observations, required, *, updating=False, require_previous=
                 if stage is None:
                     findings.append(f"runtime: missing task estimate for {key}")
                 else:
-                    charge = stage["fixed"] + stage["perUnit"] * row["grant"]
+                    charge = task_cost(stage, row["grant"])
                     if row["max"] > charge:
                         findings.append(f"runtime: {environment}:{key} exceeds its declared bound")
-                    if stage["fixed"] + stage["perUnit"] > CEILING - MARGIN:
+                    if task_cost(stage, 1) > CEILING - MARGIN:
                         findings.append(f"safety: {key} cannot fit beneath the ceiling and margin")
                     if row["name"] in INDIVISIBLE_GRANT_TASKS and charge > CEILING - MARGIN:
                         findings.append(f"progress: {environment}:{key} requires {charge} instructions; "
@@ -277,10 +284,11 @@ def render(estimates, record):
     """The snapshot file text, with deterministic ordering."""
     for task, stages in estimates["tasks"].items():
         for stage, estimate in stages.items():
-            if set(estimate) != {"fixed", "perUnit"}:
-                raise ValueError(f"{task}.{stage}: estimates need exactly fixed and perUnit")
+            if set(estimate) not in ({"fixed", "perUnit"}, {"fixed", "perUnit", "quantum"}):
+                raise ValueError(f"{task}.{stage}: estimates need fixed, perUnit and optional quantum")
             if (type(estimate["fixed"]) is not int or estimate["fixed"] < 0
-                    or type(estimate["perUnit"]) is not int or estimate["perUnit"] <= 0):
+                    or type(estimate["perUnit"]) is not int or estimate["perUnit"] <= 0
+                    or "quantum" in estimate and estimate["quantum"] != 500):
                 raise ValueError(f"{task}.{stage}: invalid scheduler coefficients")
     return (
         "-- SPDX-License-Identifier: GPL-2.0-only\n\n"
@@ -388,6 +396,14 @@ def propose(data, observations, declarations, required):
                 raise ValueError(f"cannot fit an undeclared stage: {task}.{stage}")
             grants = {grant: combined[f"task|{task}|{stage}|{grant}"]
                       for grant in range(1, maximum + 1)}
+            if task == "telemetry.recorded" and stage == "run":
+                # Both declarations invoke the same indivisible source poll.
+                # A recorded task with one granted unit cannot progress, so
+                # anchor its slope with the real one-recorder poll instead.
+                anchor = combined.get("task|telemetry.recorded-one|run|1")
+                if anchor is None:
+                    raise ValueError("cannot fit recorded telemetry without its one-recorder poll")
+                grants[1] = max(grants[1], anchor)
             noop = combined.get(f"task|{task}|{stage}|0")
             if noop is not None:
                 grants[0] = noop
@@ -586,7 +602,7 @@ def task_rows(data, measurement):
         environments = {environment: rows.get(key) for environment, rows in by_environment.items()}
         observed = [row for row in environments.values() if row is not None]
         estimate = data["estimates"]["tasks"].get(task, {}).get(stage)
-        current = None if estimate is None else estimate["fixed"] + grant * estimate["perUnit"]
+        current = None if estimate is None else task_cost(estimate, grant)
         minimum = min((row["min"] for row in observed), default=None)
         maximum = max((row["max"] for row in observed), default=None)
         samples = sum(row["n"] for row in observed)
@@ -627,7 +643,7 @@ def task_report(path, output=None):
     lines = [
         "# Measured task instructions", "",
         "**min/max:** observed instructions across mock and native. "
-        "**curr:** the current shipped bound (`fixed + perUnit * grant`), not the latest sample.",
+        "**curr:** the current shipped bound for the grant, not the latest sample.",
         "", f"Source: `{path.name}`. Blocking findings: **{len(measurement['errors'])}**; "
         f"review warnings: **{len(measurement.get('warnings', []))}**. "
         "This report is not a validated baseline.",

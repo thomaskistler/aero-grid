@@ -185,7 +185,9 @@ local function sourceDeclaration(recorders)
             or telemetryService.decl.stages.run
         declaration = {
             class = telemetryService.decl.class,
-            stages = { run = { fixed = stage.fixed, perUnit = stage.perUnit, maxUnits = units } },
+            stages = { run = {
+                fixed = stage.fixed, perUnit = stage.perUnit, quantum = stage.quantum, maxUnits = units,
+            } },
         }
         SOURCE_DECLARATIONS[recorders] = declaration
     end
