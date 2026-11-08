@@ -160,7 +160,7 @@ def merge_observations(rows):
 
 def framework_rows(measurement):
     rows = measurement["overhead"]["rows"]
-    if not any(row["tasks"] == 128 and row["examined"] >= 120
+    if not any(row["tasks"] == 128 and row["examined"] >= 120 and row["ran"] == 1
                and "rounded stages skipped for shared cost" in row["name"] for row in rows):
         raise ValueError("native framework audit lacks the rounded 128-task shared-cost scan")
     return [

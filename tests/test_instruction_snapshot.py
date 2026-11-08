@@ -86,6 +86,21 @@ class InstructionSnapshotTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             snapshot.framework_rows({"overhead": {"rows": []}})
 
+    def test_framework_buckets_retain_distinct_real_planner_paths(self):
+        measurement = {"overhead": {"rows": [
+            {"name": "exclusive after the first (128 tasks)", "tasks": 128,
+             "examined": 127, "ran": 1, "measured": 4424},
+            {"name": "rounded stages skipped for shared cost, last one runs (128 tasks)", "tasks": 128,
+             "examined": 127, "ran": 1, "measured": 9569},
+        ]}}
+        row = snapshot.merge_observations(snapshot.framework_rows(measurement))["framework|scheduler|127:1|0"]
+        self.assertEqual((row["min"], row["max"], row["n"]), (4424, 9569, 2))
+        self.assertIn("exclusive after the first", row["minScenario"])
+        self.assertIn("rounded stages skipped", row["maxScenario"])
+        measurement["overhead"]["rows"][1]["ran"] = 0
+        with self.assertRaises(ValueError):
+            snapshot.framework_rows(measurement)
+
     def test_exact_candidate_checks_native_framework_against_its_own_reservation(self):
         data, _, _ = self.data()
         data["estimates"]["bounds"]["scheduler"] = {"fixed": 500, "examine": 64, "run": 224}
