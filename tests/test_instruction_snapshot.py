@@ -291,7 +291,7 @@ class InstructionSnapshotTests(unittest.TestCase):
                     return {key: row}, {"model|run": 1}
                 with patch.object(runner, "run_test", side_effect=fail_chart):
                     self.assertEqual(snapshot.profile(audit, args), 1)
-                    report = (root / "build/scheduler-audit/instruction-profile.json").read_text()
+                    report = (root / "build/scheduler-audit/instruction-profile-preflight.json").read_text()
                     self.assertIn("chart did not draw", report)
                     candidate_errors, result = snapshot.validate_candidate(
                         audit, runner, args, estimates, record, "native", library, None,

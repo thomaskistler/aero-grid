@@ -611,6 +611,8 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
                 result["chartBehavior"].append(name)
             except Exception as error:
                 errors.append(f"behavior: candidate {name}: {error}")
+        if errors:
+            return errors, result
         mock = []
         for path in suites:
             try:
@@ -666,6 +668,23 @@ def profile(audit, args):
               if "support" not in path.relative_to(ROOT).parts
               and path.relative_to(ROOT).as_posix() not in DEFERRED_SUITES]
     completed, chart_behavior = [], []
+    for name in sorted(DEFERRED_SUITES):
+        try:
+            runner.run_test(ROOT / name)
+            chart_behavior.append(name)
+        except Exception as error:
+            errors.append(f"behavior: {name}: {error}")
+    if errors:
+        output = ROOT / "build/scheduler-audit/instruction-profile-preflight.json"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps({
+            "errors": errors, "sourceSha": inputs_sha, "complete": False,
+            "coverage": {"chartBehavior": chart_behavior, "requiredChartBehavior": sorted(DEFERRED_SUITES)},
+        }, indent=2) + "\n", encoding="ascii")
+        print(f"Instruction profile preflight failed ({len(errors)} findings); snapshot unchanged. See {output}")
+        for error in errors:
+            print(error)
+        return 1
     for path in suites:
         try:
             rows, declared = runner.run_test(path, instructions=True)
@@ -679,12 +698,6 @@ def profile(audit, args):
             completed.append(path.relative_to(ROOT).as_posix())
         except Exception as error:
             errors.append(f"behavior: {path.relative_to(ROOT)}: {error}")
-    for name in sorted(DEFERRED_SUITES):
-        try:
-            runner.run_test(ROOT / name)
-            chart_behavior.append(name)
-        except Exception as error:
-            errors.append(f"behavior: {name}: {error}")
     available = audit.scenarios()
     names = ["hook-check", "hook-check-firmware", "stress", "metric-16", "model-panels",
              "flight-smart-tasks", "flight-owner-handoff", "session-reset", "aircraft-link-recovery"]
