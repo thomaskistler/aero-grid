@@ -10,6 +10,58 @@ local host = fixture.module("lib/panel_host.lua")
 local support = fixture.module("lib/services.lua")
 local builder = reference.themeBuilder
 
+do
+    local context = fixture.createLoaded(nil, { Layout = "review-link-status", Theme = "modern-dark" })
+    fixture.pump(context, 100, 10)
+    local instance = fixture.instanceOf(context, "wide-quality")
+    panel.cancelRefresh(instance)
+    instance.text = "NO LINK"
+    instance.link = { live = true }
+    instance.qualityFeed = { known = true, available = true, stale = true, value = 70, unitText = "%" }
+    instance.rssiFeed = nil
+    local _, unfinished = panel.step(instance, 1, "prepare")
+    assert(unfinished and not instance.refreshWork, "recovery waits once for the source poll")
+    instance.qualityFeed.stale = false
+    panel.step(instance, 1, "prepare")
+    assert(instance.refreshWork and not instance.refreshWork.feeds.qualityFeed.stale,
+        "recovery must capture the fresh reading")
+    panel.cancelRefresh(instance)
+    instance.qualityFeed.stale = true
+    panel.step(instance, 1, "prepare")
+    assert(not instance.refreshWork, "a new recovery gets one retry")
+    panel.step(instance, 1, "prepare")
+    assert(instance.refreshWork and instance.refreshWork.feeds.qualityFeed.stale,
+        "a persistently stale source must still be displayed")
+    panel.cancelRefresh(instance)
+    panel.step(instance, 1, "prepare")
+    panel.cancelRefresh(instance)
+    panel.step(instance, 1, "prepare")
+    assert(not instance.refreshWork, "cancellation clears a pending recovery retry")
+    instance.link.live = false
+    panel.step(instance, 1, "prepare")
+    assert(instance.refreshWork and not instance.refreshWork.feeds.link.live,
+        "a flapping link must not keep delaying the disconnected state")
+    panel.cancelRefresh(instance)
+    instance.link.live = true
+    panel.step(instance, 1, "prepare")
+    local entry = fixture.entryById(context, "wide-quality")
+    local record = assert(context.schedulerHost.panelTasks[entry])
+    local scheduler = context.schedulerHost.scheduler
+    fixture.tick(5)
+    scheduler:run("background", getTime(), 0)
+    assert(instance.recoveryDeferred and not instance.refreshWork,
+        "hidden callbacks cannot advance a panel's pending retry")
+    assert(not context.schedulerHost:resetPanelRelease(entry, getTime()))
+    assert(not instance.recoveryDeferred and not instance.refreshWork and record.stage == "prepare",
+        "session reset must discard the retry and wake the prepare stage")
+    panel.step(instance, 1, "prepare")
+    assert(instance.recoveryDeferred)
+    assert(not panel.reflow(instance, { x = 0, y = 0, w = instance.rect.w, h = instance.rect.h },
+        nil, nil, nil, true))
+    assert(not instance.recoveryDeferred and not instance.refreshWork,
+        "reflow must discard the pending retry and any frozen frame")
+end
+
 for _, mode in ipairs({ "modern-dark", "modern-light" }) do
     local theme = builder.build(mode)
     for _, shape in ipairs({

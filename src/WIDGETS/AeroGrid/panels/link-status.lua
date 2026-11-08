@@ -1141,6 +1141,7 @@ function linkStatus.cancelRefresh(context)
     if context.refreshWork then
         context.refreshWork, context.rendered = nil, nil
     end
+    context.recoveryDeferred = nil
 end
 
 local function applyGeometry(context, rect, area)
@@ -1307,6 +1308,16 @@ function linkStatus.step(context, _, stage)
         if not context.rssiFeed and not context.qualityFeed then
             return
         end
+        -- Link liveness can be published before its source tasks refresh.
+        -- Wait once, then still render stale data if the source remains stale.
+        if context.text == "NO LINK" and context.link and context.link.live
+            and ((context.qualityFeed and context.qualityFeed.stale)
+                or (context.rssiFeed and context.rssiFeed.stale))
+            and not context.recoveryDeferred then
+            context.recoveryDeferred = true
+            return nil, true
+        end
+        context.recoveryDeferred = nil
         local feeds = {}
         for _, key in ipairs(FEEDS) do
             feeds[key] = snapshot(context[key])

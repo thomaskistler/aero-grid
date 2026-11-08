@@ -61,6 +61,34 @@ class InstructionSnapshotTests(unittest.TestCase):
             {"estimates": proposed, "record": data["record"]}, observations, required,
             updating=True, require_uplift=True)))
 
+    def test_final_candidate_observations_are_retained_only_for_identical_fit(self):
+        data, observations, required = self.data()
+        declarations = {"test|run": 1}
+        observations["native"]["task|test|run|1"]["max"] = 210
+        data["estimates"] = snapshot.propose(data, observations, declarations, required)
+        candidate = copy.deepcopy(observations)
+        key = "task|test|run|1"
+        candidate["mock"][key]["max"] = 210
+        previous = copy.deepcopy(data["record"]["observations"])
+        previous["mock"][key]["max"] = 210
+        previous["native"][key]["max"] = 210
+        combined = snapshot.incorporate_candidate(
+            data, observations, candidate, declarations, required, previous)
+        self.assertEqual(combined["mock"][key]["max"], 210)
+        self.assertEqual(combined["mock"][key]["n"], 10)
+        self.assertEqual(observations["mock"][key]["max"], 200)
+        self.assertTrue(any("regression:" in finding for finding in
+                            snapshot.check(data, candidate, required)))
+        with self.assertRaisesRegex(ValueError, "historical regression.*grew from 200 to 210"):
+            snapshot.incorporate_candidate(
+                data, observations, candidate, declarations, required,
+                {"mock": data["record"]["observations"]["mock"], "native": previous["native"]})
+        candidate["mock"][key]["max"] = 500
+        previous["mock"][key]["max"] = 500
+        with self.assertRaisesRegex(ValueError, "new exact-candidate validation"):
+            snapshot.incorporate_candidate(
+                data, observations, candidate, declarations, required, previous)
+
     def test_strict_spread_thresholds(self):
         self.assertFalse(snapshot.spread(400, 700))  # difference == 300
         self.assertFalse(snapshot.spread(800, 1200))  # ratio == 1.5
@@ -508,12 +536,12 @@ class InstructionSnapshotTests(unittest.TestCase):
                 self.assertEqual(estimates["tasks"]["test"]["run"], {"fixed": 0, "perUnit": 332, "quantum": 500})
                 self.assertEqual(record["observations"]["mock"][key]["max"], 301)
                 self.assertEqual(record["observations"]["native"][key]["max"], 201)
-                self.assertEqual(record["observations"]["mock"][key]["n"], 2)
+                self.assertEqual(record["observations"]["mock"][key]["n"], 3)
                 self.assertEqual(record["observations"]["mock"][deferred_key]["max"], 123)
                 report = json.loads((root / "build/scheduler-audit/instruction-profile.json").read_text())
                 self.assertEqual(report["snapshotRecord"]["observations"]["mock"][key]["min"], 101)
                 self.assertEqual(report["snapshotRecord"]["observations"]["mock"][key]["max"], 301)
-                self.assertEqual(report["snapshotRecord"]["observations"]["mock"][key]["n"], 2)
+                self.assertEqual(report["snapshotRecord"]["observations"]["mock"][key]["n"], 3)
                 artifact = root / report["candidate"]["artifact"]
                 self.assertEqual(artifact.read_text(), snapshot.render(estimates, record))
                 self.assertEqual(hashlib.sha256(artifact.read_bytes()).hexdigest(), report["candidate"]["sha256"])
@@ -555,6 +583,21 @@ class InstructionSnapshotTests(unittest.TestCase):
         self.assertEqual([p["callbacks"] for p in result["phases"]], [40, 10, 1, 200])
         self.assertEqual(result["phases"][2:], phases[2:])
         self.assertTrue(result["deterministicClock"])
+
+    def test_foreground_native_witnesses_are_required_and_measured(self):
+        for name, witness in snapshot.FOREGROUND_SCENARIOS.items():
+            self.assertIn(name, snapshot.NATIVE_SCENARIOS)
+            self.assertIn(name, snapshot.CANDIDATE_SCENARIOS)
+            phases = [dict(name=str(index), kind="refresh", callbacks=999, action="check")
+                      for index in range(len(witness["counts"]))]
+            result = snapshot.profile_spec({"phases": phases}, name)
+            self.assertEqual([phase["callbacks"] for phase in result["phases"]], list(witness["counts"]))
+            self.assertTrue(all(phase["perCall"] == 4 for phase in result["phases"]))
+            with self.assertRaisesRegex(ValueError, "missing native foreground witness"):
+                snapshot.check_foreground_witness(name, {"stats": {}})
+            snapshot.check_foreground_witness(name, {
+                "stats": {label: {"n": 1} for label in witness["labels"]},
+            })
 
     def test_candidate_guard_rejects_wrong_integer_or_float_width(self):
         source = (snapshot.ROOT / "tests/support/lua32.lua").read_text(encoding="ascii")
