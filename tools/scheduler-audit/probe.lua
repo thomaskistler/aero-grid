@@ -1959,7 +1959,8 @@ actions["link-off"] = function() _G.AUDIT_LINK_OFF = true end
 actions["link-on"] = function() _G.AUDIT_LINK_OFF = false end
 actions["check-link-loss"] = function(context)
     local link = linkPanel(context)
-    assert(link.text == "NO LINK", "not disconnected: " .. tostring(link.text))
+    assert(link.text == "NO LINK" and link.stateName == "critical",
+        "not disconnected: " .. tostring(link.text) .. "/" .. tostring(link.stateName))
 end
 actions["check-link-recovery"] = function(context)
     local link = linkPanel(context)
