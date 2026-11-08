@@ -118,6 +118,10 @@ def spread(minimum, maximum):
     return maximum - minimum > 300 and 2 * maximum > 3 * minimum
 
 
+def regression_exceeds_tolerance(previous, current):
+    return current > previous and 100 * current >= 105 * previous
+
+
 def fit(grants):
     """Measured incremental growth above grant one, then minimal startup cost."""
     if 1 not in grants:
@@ -270,7 +274,7 @@ def check(snapshot, observations, required, *, updating=False, require_previous=
             if not updating:
                 if old is None:
                     findings.append(f"regression: missing recorded maximum for {environment}:{key}")
-                elif row["max"] > old["max"] and 100 * row["max"] >= 105 * old["max"]:
+                elif regression_exceeds_tolerance(old["max"], row["max"]):
                     findings.append(f"regression: {environment}:{key} grew from {old['max']} to {row['max']}")
             estimates = snapshot["estimates"]
             if row["kind"] == "task":
@@ -976,7 +980,7 @@ def incorporate_candidate(snapshot, observations, candidate, declarations, requi
     for environment, rows in combined.items():
         for key, row in rows.items():
             old = previous.get(environment, {}).get(key)
-            if old is not None and not deferred(snapshot, row) and row["max"] > old["max"]:
+            if old is not None and not deferred(snapshot, row) and regression_exceeds_tolerance(old["max"], row["max"]):
                 raise ValueError(f"historical regression: {environment}:{key} grew from "
                                  f"{old['max']} to {row['max']}")
     fitted = propose(snapshot, combined, declarations, required, previous=previous)
@@ -988,6 +992,14 @@ def incorporate_candidate(snapshot, observations, candidate, declarations, requi
     if failures:
         raise ValueError("; ".join(failures))
     return combined
+
+
+def preserve_baseline(observations, previous):
+    """Keep recorded maxima fixed while adding previously unrecorded keys."""
+    result = copy.deepcopy(observations)
+    for environment, rows in previous.items():
+        result[environment].update(copy.deepcopy(rows))
+    return result
 
 
 def profile(audit, args):
@@ -1273,12 +1285,9 @@ def _profile(audit, args):
         try:
             if candidate_result["sha256"] != hashlib.sha256(render(estimates).encode("ascii")).hexdigest():
                 raise RuntimeError("candidate content changed after validation; refusing replacement")
-            for environment, previous in previous_observations.items():
-                for key, row in previous.items():
-                    current = record["observations"][environment].get(key)
-                    if current is None or row["max"] > current["max"]:
-                        record["observations"][environment][key] = row
-            write(estimates, record, expected_sha=initial_sha, expected_baseline_sha=initial_baseline_sha,
+            baseline_record = dict(record, observations=preserve_baseline(record["observations"],
+                                                                           previous_observations))
+            write(estimates, baseline_record, expected_sha=initial_sha, expected_baseline_sha=initial_baseline_sha,
                   deadline=args.profile_deadline - 1)
         except (OSError, RuntimeError) as error:
             errors.append("publication: " + str(error))

@@ -84,10 +84,14 @@ class InstructionSnapshotTests(unittest.TestCase):
                 data, observations, candidate, declarations, required,
                 {"mock": data["record"]["observations"]["mock"], "native": previous["native"]})
         candidate["mock"][key]["max"] = 209
-        with self.assertRaisesRegex(ValueError, "historical regression.*grew from 200 to 209"):
-            snapshot.incorporate_candidate(
-                data, observations, candidate, declarations, required,
-                {"mock": data["record"]["observations"]["mock"], "native": previous["native"]})
+        fixed_previous = {"mock": data["record"]["observations"]["mock"], "native": previous["native"]}
+        accepted = snapshot.incorporate_candidate(data, observations, candidate, declarations, required,
+                                                  fixed_previous)
+        self.assertEqual(accepted["mock"][key]["max"], 209)
+        baseline = snapshot.preserve_baseline(accepted, fixed_previous)
+        self.assertEqual(baseline["mock"][key]["max"], 200)
+        self.assertEqual(snapshot.preserve_baseline(accepted, baseline)["mock"][key]["max"], 200)
+        self.assertEqual(accepted["mock"][key]["max"], 209)
         candidate["mock"][key]["max"] = 500
         previous["mock"][key]["max"] = 500
         with self.assertRaisesRegex(ValueError, "new exact-candidate validation"):
