@@ -447,6 +447,11 @@ class InstructionSnapshotTests(unittest.TestCase):
 
     def test_native_action_refreshes_are_separate_safety_observations(self):
         audit = snapshot._module("audit_scheduler_actions", snapshot.ROOT / "tools/audit-scheduler.py")
+        probe = (snapshot.ROOT / "tools/scheduler-audit/probe.lua").read_text(encoding="ascii")
+        action_table = probe.split("local refreshActions = ", 1)[1].split("\n\nlocal function advance", 1)[0]
+        declared = snapshot._python(snapshot.LuaRuntime().execute("return " + action_table))
+        self.assertEqual(declared, audit.ACTION_REFRESH_COUNTS)
+        self.assertNotIn("refreshFn(context,", probe)
         actions = ["open-location", "open-location", "close-location", "check-log"]
         counts = {
             "callback:action:open-location": {"n": 2},
