@@ -39,7 +39,8 @@ CANDIDATE_SCENARIOS = ("stress-clock", "aircraft-link-recovery")
 NATIVE_SCENARIOS = ("hook-check", "hook-check-firmware") + CANDIDATE_SCENARIOS
 MOCK_SUITES = tuple(
     f"tests/unit/lib/test_{name}.lua" for name in (
-        "instruction_samples", "instruction_framework_paths", "scheduler_registration", "scheduler_registration_load",
+        "instruction_samples", "instruction_framework_paths", "scheduler_readiness",
+        "scheduler_registration", "scheduler_registration_load",
         "model_settings_open", "model_settings_ui", "editor_drawer",
     )
 ) + tuple(

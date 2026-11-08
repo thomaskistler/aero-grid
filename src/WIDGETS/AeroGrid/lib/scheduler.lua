@@ -61,6 +61,7 @@ function scheduler.bindCosts(costs)
     scheduler.FIXED_COST, scheduler.EXAMINE_COST, scheduler.RUN_COST = FIXED_COST, EXAMINE_COST, RUN_COST
 end
 local STEADY_AND_BACKGROUND = { steady = true, background = true }
+local EMPTY_LIST = {}
 local STAGGER_SPACING = 5
 local MAX_SHARED = 2
 
@@ -162,6 +163,7 @@ function scheduler.new(overhead)
         seq = 0,
         stamp = 0,
         lists = { {}, {} },
+        eligible = { {}, {} },
         minStep = math.huge,
         errors = {},
         lastPlan = { kind = nil, U = 0, charged = 0, examined = 0, ran = 0 },
@@ -310,6 +312,7 @@ function scheduler:add(task)
         end
         meta = {
             list = self.lists[CLASS[decl.class]],
+            class = CLASS[decl.class],
             kinds = kinds == STEADY_AND_BACKGROUND and kinds or copy,
             stages = stages,
             first = decl.first or "run",
@@ -337,6 +340,10 @@ function scheduler:add(task)
     end
     self.seq = self.seq + 1
     self.count = self.count + 1
+    local eligible = self.eligible[meta.class]
+    for kind, allowed in pairs(meta.kinds) do
+        if allowed then eligible[kind] = (eligible[kind] or 0) + 1 end
+    end
     local record = {
         id = id,
         instance = instance,
@@ -353,6 +360,13 @@ end
 
 -- Frees the shared names no other task uses.
 local function release(self, meta)
+    local eligible = self.eligible[meta.class]
+    for kind, allowed in pairs(meta.kinds) do
+        if allowed then
+            local count = eligible[kind] - 1
+            eligible[kind] = count > 0 and count or nil
+        end
+    end
     for _, name in ipairs({ meta.s1 or false, meta.s2 or false }) do
         if name then
             local refs = self.sharedRefs[name] - 1
@@ -509,7 +523,7 @@ function scheduler:run(kind, now, used)
     local criticalDue
     local oldest = lists[2][1]
     local aging = oldest and ((oldest.due - tick) & MASK ~ SIGN) - SIGN <= -AGE_TICKS
-    if aging then
+    if aging and self.eligible[1][kind] then
         for index = 1, #lists[1] do
             local record = lists[1][index]
             if ((record.due - tick) & MASK ~ SIGN) - SIGN > 0 or room - spent < EXAMINE_COST then
@@ -524,7 +538,8 @@ function scheduler:run(kind, now, used)
         end
     end
     for class = aging and 0 or 1, 2 do
-        local list = lists[class == 0 and 2 or class]
+        local index = class == 0 and 2 or class
+        local list = self.eligible[index][kind] and lists[index] or EMPTY_LIST
         local limit = room - (RESERVE[class] or 0)
         local examined, taken = 0, 0
         for index = 1, #list do

@@ -159,6 +159,31 @@ local function testKindsAreCheckedWithReasons()
     )
 end
 
+local function testIneligibleClassesDoNotConsumeTheScanBudget()
+    local s, log = scheduler.new({ steady = 0, background = 0 }), {}
+    local blocked = single("critical", 10, { kinds = { steady = true } })
+    for index = 1, scheduler.MAX_TASKS - 1 do
+        add(s, index, blocked, task(log, index), 0)
+    end
+    add(s, "eligible", single("normal", 10, { kinds = { background = true } }), task(log, "eligible"), 0)
+    equal(s:run("background", 1000), 1)
+    equal(log[1], "eligible:run:1")
+    equal(s.lastPlan.examined, 1, "an entirely ineligible class is not examined")
+    assert(s:remove("eligible"))
+    equal(s:run("background", 2000), 0)
+    equal(s.lastPlan.examined, 0, "removal clears the last eligible registration")
+    add(s, "new", single("critical", 10, { kinds = { background = true } }), task(log, "new"), 0)
+    equal(s:run("background", 3000), 1, "adding an eligible task restores its class")
+    local bad = task(log, "bad")
+    bad.stage = "missing"
+    assert(s:remove("new"))
+    add(s, "bad", single("critical", 10, { kinds = { background = true } }), bad, 0)
+    equal(s:run("background", 4000), 0)
+    equal(s.lastPlan.ran, 1, "retired tasks count as planned")
+    equal(s:run("background", 5000), 0)
+    equal(s.lastPlan.examined, 0, "retirement clears eligibility too")
+end
+
 local function testDeclarationsAreReadOnceAndCostsBounded()
     local decl = single("normal", 100)
     local s = scheduler.new({ steady = 0 })
@@ -524,7 +549,9 @@ local function testReadyTasksHaveNoCountCap()
         add(refused, index, single("normal", 12000), task({}, index), 0)
     end
     add(refused, "tiny", single("normal", 1), task({}, "tiny"), 10 ^ 9)
-    equal(refused:run("steady", 1, 6000), 0, "none fits beside the 6000 already used")
+    local used = math.min(6000, room - (scheduler.MAX_TASKS - 1) * EXAMINE - CHARGE - 1)
+    assert(used > room - 12000, "leave too little room for a large task")
+    equal(refused:run("steady", 1, used), 0, "none fits beside the already used room")
     equal(refused.lastPlan.examined, scheduler.MAX_TASKS - 1, "tasks that do not fit are charged, all of them")
 end
 
@@ -544,8 +571,9 @@ end
 local function testOlderCriticalReleasePrecedesTheNormalBacklog()
     local log = {}
     local s = scheduler.new({ steady = 0 })
+    local normalCost = scheduler.CEILING - scheduler.MARGIN - FIXED - CHARGE
     for index = 1, 100 do
-        add(s, "n" .. index, single("normal", 14000), task(log, "n" .. index), 0)
+        add(s, "n" .. index, single("normal", normalCost), task(log, "n" .. index), 0)
     end
     add(s, "c", single("critical", 100), task(log, "c"), 0)
     equal(s:run("steady", 1000), 1)
@@ -729,6 +757,7 @@ testReschedulingPreservesIdentityAndOrder()
 testReschedulingWrapsAndRejectsInvalidReleases()
 testInvalidStagesRetireWithoutRunning()
 testKindsAreCheckedWithReasons()
+testIneligibleClassesDoNotConsumeTheScanBudget()
 testDeclarationsAreReadOnceAndCostsBounded()
 testSharedNamesAreFreedWithTheirLastTask()
 testDueIsRequiredAndStaggerGivesIntegers()
