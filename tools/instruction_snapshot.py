@@ -361,7 +361,7 @@ def _order(key):
     return (0, key, "") if isinstance(key, int) else (1, 0, key)
 
 
-def render(estimates, record):
+def render(estimates):
     """Render the radio's estimates without developer-only observations."""
     for task, stages in estimates["tasks"].items():
         for stage, estimate in stages.items():
@@ -402,7 +402,7 @@ def render_baseline(record, estimates_sha):
 def write(estimates, record, path=SNAPSHOT, *, expected_sha, deadline=None,
           baseline_path=BASELINE, expected_baseline_sha=None):
     """Publish a matching pair; an interrupted publication fails closed on load."""
-    text = render(estimates, record)
+    text = render(estimates)
     baseline = render_baseline(record, hashlib.sha256(text.encode("ascii")).hexdigest())
     temporary = []
     old_baseline = baseline_path.read_bytes()
@@ -787,7 +787,7 @@ def validate_candidate(audit, runner, args, estimates, record, executable, libra
     directory.mkdir(parents=True, exist_ok=True)
     candidate = temporary = None
     try:
-        text = render(estimates, record)
+        text = render(estimates)
         digest = hashlib.sha256(text.encode("ascii")).hexdigest()
         with tempfile.NamedTemporaryFile(mode="w", encoding="ascii", suffix=".lua",
                                          prefix="snapshot-candidate-", dir=directory, delete=False) as file:
@@ -1127,7 +1127,7 @@ def _profile(audit, args):
             enumerate((path.relative_to(ROOT).as_posix() for path in suites), 1))
         record["coverage"]["candidateNative"] = dict(enumerate((*CANDIDATE_SCENARIOS, "framework"), 1))
         report["snapshotRecord"] = record
-        digest = hashlib.sha256(render(estimates, record).encode("ascii")).hexdigest()
+        digest = hashlib.sha256(render(estimates).encode("ascii")).hexdigest()
         report["pendingCandidateProgress"] = f"build/scheduler-audit/candidate-progress-{digest}.json"
         save_report(output, report)
         discovery_errors, discovery_result = validate_candidate(
@@ -1155,7 +1155,7 @@ def _profile(audit, args):
             save_report(output, report)
             print(f"Candidate discovery refit failed; snapshot unchanged. See {output}")
             return 1
-        digest = hashlib.sha256(render(estimates, record).encode("ascii")).hexdigest()
+        digest = hashlib.sha256(render(estimates).encode("ascii")).hexdigest()
         report["pendingCandidateProgress"] = f"build/scheduler-audit/candidate-progress-{digest}.json"
         save_report(output, report)
         candidate_errors, candidate_result = validate_candidate(
@@ -1173,7 +1173,7 @@ def _profile(audit, args):
                 print(error)
             return 1
         try:
-            if candidate_result["sha256"] != hashlib.sha256(render(estimates, record).encode("ascii")).hexdigest():
+            if candidate_result["sha256"] != hashlib.sha256(render(estimates).encode("ascii")).hexdigest():
                 raise RuntimeError("candidate content changed after validation; refusing replacement")
             for environment, previous in previous_observations.items():
                 for key, row in previous.items():

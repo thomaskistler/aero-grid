@@ -321,7 +321,6 @@ second.aeroMenuHandlers.modelSettings()
 untilState(second, function()
     return second.modelSettingsUi and not second.modelSettingsUi.build
 end)
-local modelUi = second.modelSettingsUi
 changeModel(second, "minFlightDuration", 30)
 changeModel(second, "smartDetection", 1)
 assert(owner.document.flight.smartDetection)

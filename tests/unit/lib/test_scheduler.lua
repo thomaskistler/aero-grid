@@ -254,6 +254,7 @@ local function testRunRaisesOnlyForAWrongCall()
     add(s, "a", single("normal", 10), task({}, "a"), 0)
     for _, call in ipairs({
         { "nowhere", 1 },
+        { "modal", 1 },
         { "steady", "1" },
         { "steady", 1.5 },
         { "steady", 1, {} },
@@ -345,6 +346,7 @@ local function testNotReadyTasksWait()
     equal(s:dueOf("a"), 30, "due is the callback time plus the delay")
     equal(s:run("steady", 29), 0)
     equal(s:run("steady", 100), 1, "a late release runs once, with no catch-up")
+    equal(#s.lists[1], 1, "late releases never accumulate catch-up work")
     equal(s:dueOf("a"), 110)
 end
 
@@ -695,16 +697,6 @@ local function testAddAndRemoveDuringARun()
     equal(s:takeErrors(), nil, "and its failure is not reported")
 end
 
-local function testOnePendingReleasePerTask()
-    local s = scheduler.new(OVERHEAD)
-    local log = {}
-    add(s, "a", single("normal", 10), task(log, "a", 10), 0)
-    s:run("steady", 1000)
-    equal(#log, 1)
-    equal(#s.lists[2], 1)
-    equal(s:dueOf("a"), 1010)
-end
-
 local function testListsStayOrdered()
     local s = scheduler.new(OVERHEAD)
     local log = {}
@@ -721,12 +713,6 @@ local function testListsStayOrdered()
             end
         end
     end
-end
-
-local function testUnknownKindFails()
-    local s = scheduler.new(OVERHEAD)
-    local ok = pcall(s.run, s, "modal", 1)
-    equal(ok, false)
 end
 
 local function testDeterminism()
@@ -782,9 +768,7 @@ testStagesAreConsistent()
 testFailuresRetireOnlyTheTask()
 testDelaysAreWholeTicks()
 testAddAndRemoveDuringARun()
-testOnePendingReleasePerTask()
 testListsStayOrdered()
-testUnknownKindFails()
 testDeterminism()
 
 print("Scheduler library passed")

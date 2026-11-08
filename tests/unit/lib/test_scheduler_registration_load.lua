@@ -38,7 +38,6 @@ for _, scenario in ipairs({
     local context, owner = state.context, state.owner
     context.panels, context.panelHost = {}, load("lib/panel_host.lua")
     local scheduling = host.attach(context, {
-        mode = "mixed",
         load = load,
         api = {
             log = function(_, message)

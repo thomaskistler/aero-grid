@@ -147,11 +147,6 @@ return function(load)
             context.feed = { available = seed ~= 3, value = 5 + seed, stale = seed == 4 }
             context.range = { available = seed ~= 5, empty = 6.4, full = 8.4 }
         end
-        if module.refresh then
-            for _ = 1, kind == "output" and 100 or 1 do
-                withApi(module.refresh, context)
-            end
-        end
         return context
     end
     local cases, stages = {}, {}

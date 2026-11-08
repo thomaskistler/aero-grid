@@ -210,7 +210,14 @@ for target = 1, 6 do
         assert(state.renderStage == (stage < 6 and stage + 1 or nil))
     end
     assert(calls() == 2, "one geometry synchronization per requested rendering")
+    ui.close(context, false)
+    assert(context.editorUi == nil and not ui.advance(context), "closed partial render must not resume")
+end
 
+do
+    local context, state = setup(16)
+    for _ = 1, 15 do assert(ui.advance(context)) end
+    state.session.selected = 1
     -- Staged geometry: each step declares the measured bound of its panel type.
     local steps, advanced = { "navigation", "custom", "visit" }, 0
     state.handlers.startLayout = function() return { step = 1 } end

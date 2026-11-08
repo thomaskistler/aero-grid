@@ -306,7 +306,6 @@ for _, entry in ipairs(context.panels) do
             )
         )
     end
-    entry.nextRefresh = math.huge
 end
 print(
     string.format(

@@ -28,7 +28,6 @@ for _, name in ipairs(names) do
             group = {}
             groups[key], order[#order + 1] = group, key
         end
-        groups[key] = group
         group[#group + 1] = index
     end
     for _, key in ipairs(order) do

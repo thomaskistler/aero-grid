@@ -99,4 +99,40 @@ for _, case in ipairs(cases) do
     end
     checked = checked + 1
 end
+
+local nativeConstruction = assert(loadfile(root .. "/tests/support/native_construction.lua"))()
+local representative
+for _, case in ipairs(cases) do
+    if case.kind == "metric" then
+        representative = case
+        break
+    end
+end
+assert(representative and type(representative.settle) == "function")
+local settle, settled = representative.settle, 0
+representative.settle = function(case, instance)
+    settled = settled + 1
+    return settle(case, instance)
+end
+for _, reflowOnly in ipairs({ false, true }) do
+    local exercised = false
+    local state = nativeConstruction(lvgl, { representative }, sameTree,
+        lvgl.box({ x = 0, y = 0, w = 800, h = 480 }), function(current, case)
+            assert(case == representative and current.reference.panel and current.partial.panel)
+            exercised = true
+        end, reflowOnly)
+    local phases = { "begin" }
+    if not reflowOnly then phases[#phases + 1] = "construct" end
+    for _, phase in ipairs({ "refresh", "exercise", "cleanup" }) do
+        phases[#phases + 1] = phase
+    end
+    for _, phase in ipairs(phases) do
+        assert(state.phase == phase and not state:step(), "native factory must advance " .. phase)
+        fixture.lvglMock.settle()
+    end
+    assert(state:step() and state.checked == 1 and exercised)
+    assert(not state.reference and not state.partial and not state.container)
+end
+representative.settle = settle
+assert(settled == 4, "native comparison must settle both trees through scheduler tasks")
 print("Bounded construction: " .. checked .. " synchronous/staged trees, every-stage resize and invalidation passed")

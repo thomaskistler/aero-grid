@@ -262,7 +262,6 @@ do
     active.module, context.panelTasksDirty = activeModule, true
     run()
     assert(host.panelTasks[active] and active.instance.runs == 2, "leaving idle enrolls a genuine task")
-    assert(host.panelTasks[active])
     context.panels = { active }
     run()
     assert(not host.panelEntries[first] and not host.panelEntries[last])

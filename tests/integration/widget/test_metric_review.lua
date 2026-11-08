@@ -8,9 +8,6 @@ fixture.reset()
 fixture.radio.fields.GAlt = { id = 106, name = "GAlt", unit = fixture.radio.fields.Alt.unit }
 fixture.radio.fields["GAlt+"] = { id = 108, name = "GAlt+", unit = fixture.radio.fields.Alt.unit }
 local context = fixture.createLoaded(nil, { Layout = "review-metric", Theme = "modern-dark" })
--- This fixture checks Metric presentation, not saturation from seven legacy
--- refresh bounds; leave room for the migrated telemetry tasks it reads.
-context.schedulerHost.panelBounds = setmetatable({ metric = 0 }, { __index = context.schedulerHost.panelBounds })
 fixture.pump(context, 40)
 assertions.assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
 assertions.assertEqual(#context.panels, 7)

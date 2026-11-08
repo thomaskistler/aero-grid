@@ -9,11 +9,10 @@ local function testSnapshotIsReadOnly()
     local snapshot = services.snapshot({ value = 42 })
     assertions.assertEqual(snapshot.value, 42)
 
-    local ok, err = pcall(function()
+    local ok = pcall(function()
         snapshot.newValue = 1
     end)
     assert(ok == false, "snapshot should reject writes")
-    assert(string.match(err or "", "read-only") or true)
 end
 
 local function testEnvironmentAndRuntime()

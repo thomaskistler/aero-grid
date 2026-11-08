@@ -52,10 +52,6 @@ local function captureFixture(homes)
                 end,
             },
             control = {
-                switch = function(_, name)
-                    assertions.assertEqual(name, "SFv")
-                    return arm
-                end,
                 armSwitch = function(_, name)
                     assertions.assertEqual(name, "SFv")
                     return arm, { read = function() end }

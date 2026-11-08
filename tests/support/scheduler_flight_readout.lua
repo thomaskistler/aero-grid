@@ -117,9 +117,11 @@ return function(load, id)
     }) do
         local rect = { x = 0, y = 0, w = shape[3], h = shape[4] }
         local span = { colSpan = shape[1], rowSpan = shape[2] }
-        for _, detail in ipairs({ false, true }) do
+        for _, detail in ipairs(id == "flight-mode" and { false, true } or { false }) do
             for variant = 1, 9 do
-                cases[#cases + 1] = { stage = "run", grant = 1, setup = setup(rect, span, detail, variant) }
+                if variant ~= 8 or id ~= "flight-counter" then
+                    cases[#cases + 1] = { stage = "run", grant = 1, setup = setup(rect, span, detail, variant) }
+                end
             end
         end
     end

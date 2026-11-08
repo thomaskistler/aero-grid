@@ -6,7 +6,7 @@ return function(load)
     local decl = { class = "normal", first = "admit", stages = {} }
     local cases = {}
     for _, size in ipairs({ 1, 4, 16 }) do
-        for _, action in ipairs({ "admit", "retire", "legacy", "idle-to-active", "active-to-idle" }) do
+        for _, action in ipairs({ "admit", "retire", "idle-to-active", "active-to-idle" }) do
             decl.stages[action] = {
                 fixed = 0,
                 perUnit = action == "idle-to-active" and host.PANEL_ENROLL_COST or host.RECONCILE_COST,
@@ -18,7 +18,6 @@ return function(load)
                 setup = function()
                     local context = { panels = {}, panelHost = panelHost }
                     local scheduling = host.attach(context, {
-                        mode = "mixed",
                         load = load,
                         api = {
                             log = function(_, message)
@@ -28,7 +27,6 @@ return function(load)
                             show = function() end,
                         },
                     })
-                    scheduling.owners, scheduling.panelBounds = { ["panel:sample"] = "new" }, { sample = 0 }
                     local idle = { id = "sample", idle = true }
                     local active = {
                         id = "sample",
@@ -63,8 +61,6 @@ return function(load)
                         end)
                         if action == "retire" then
                             context.panels = {}
-                        elseif action == "legacy" then
-                            scheduling.owners["panel:sample"] = "legacy"
                         elseif action == "idle-to-active" then
                             context.panels[1].module = active
                         else

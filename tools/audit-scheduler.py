@@ -20,7 +20,7 @@ TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
 from scheduler_audit import (CASE_DIR, PROBE_DIR, ROOT, SUPPORT_DIR, WIDGET, lua_literal, patch_chart,  # noqa: E402
                              patch_loader, patch_main, aggregate, framework_report, hook_check_status,
-                             history_parity, reduce_results, supported_spans)
+                             reduce_results, supported_spans)
 from capture_recipes import PANELS, RECIPE_DIR, fixture_inputs, load_recipe  # noqa: E402
 
 OUTPUT = ROOT / "build/scheduler-audit"
@@ -79,13 +79,6 @@ def capture_module():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
-
-
-def matching_history_scenarios(baseline, candidate):
-    """Compare captures with matching inputs and phases."""
-    ignored = {"owners", "flightTasks", "trace"}
-    return ({key: value for key, value in baseline.items() if key not in ignored}
-            == {key: value for key, value in candidate.items() if key not in ignored})
 
 
 def standard_phases(refreshes=400, backgrounds=100):
@@ -257,8 +250,6 @@ def scenarios():
             {"name": "editor-close", "kind": "refresh", "action": "close-editor",
              "callbacks": 40, "step": 5, "perCall": 4},
         ])
-    result["editor-preview-metric-tasks"] = dict(result["editor-preview-metric"], owners=["panel:metric"])
-    result["editor-preview-chart-tasks"] = dict(result["editor-preview-chart"], owners=["panel:chart"])
     theme_source = (WIDGET / "themes/modern-dark.yml").read_text()
     result["theme-resolution-corrections"] = dict(result["metric-max"], themeSource=re.sub(
         r"(?m)^(  \w+: )0x[0-9A-Fa-f]+", r"\g<1>0x777777",
@@ -298,7 +289,7 @@ def scenarios():
                          "sessionReset: L03\nflight:\n  flightSwitch: L64\n",
         phases=standard_phases())
     result["shared-flight-model-switch"] = dict(result["metric-max"], flightModelSwitch=True,
-        settings=True, flightTasks=True, owners=["service:flight", "service:smart"], phases=standard_phases())
+        settings=True, phases=standard_phases())
     for panel in (*PANELS, "theme-showcase"):
         base = result["metric-max"] if panel == "theme-showcase" else result[f"{panel}-max"]
         result[f"panel-reflow-{panel}"] = dict(base, phases=standard_phases() + [
@@ -468,10 +459,6 @@ def scenarios():
                 result[f"lifecycle-construct-{kind}-{size}-{visual}"] = dict(
                     base, fullscreen=True, config=dict(base.get("config", {}), visual=visual),
                     phases=result["lifecycle-app-model"]["phases"])
-                if kind == "rx-battery":
-                    result[f"lifecycle-construct-{kind}-{size}-{visual}-tasks"] = dict(
-                        result[f"lifecycle-construct-{kind}-{size}-{visual}"],
-                        owners=["panel:rx-battery"])
     result["lifecycle-cancel"] = dict(result["modal-settings-reset"], fullscreen=True, phases=[
         {"name": "settle", "kind": "refresh", "callbacks": 40, "step": 5, "perCall": 4},
         {"name": "partial", "kind": "refresh", "action": "lifecycle-app",
@@ -572,8 +559,7 @@ def scenarios():
         {"name": "checked", "kind": "refresh", "action": "preparation-check",
          "callbacks": 1, "step": 5, "perCall": 1},
     ])
-    result["lifecycle-retire-admission-16"] = dict(result["metric-16"], fullscreen=True,
-        owners=["panel:metric"], phases=[
+    result["lifecycle-retire-admission-16"] = dict(result["metric-16"], fullscreen=True, phases=[
             {"name": "settle", "kind": "refresh", "callbacks": 80, "step": 5, "perCall": 1},
             {"name": "retire", "kind": "refresh", "action": "lifecycle-retire",
              "callbacks": 800, "step": 5, "perCall": 1, "trace": True},
@@ -882,11 +868,10 @@ def scenarios():
     result["editor-state-detail"] = dict(result["editor-entry-state"], phases=phases)
     result["editor-rebuild-navigation-tape"] = dict(result["editor-rebuild-navigation"],
                                                      config={"showTape": False})
+    result["metric-tasks-16"] = dict(result["metric-16"], phases=standard_phases())
     for tag in ("min", "max", "16"):
-        result[f"metric-tasks-{tag}"] = dict(result[f"metric-{tag}"], owners=["panel:metric"],
-                                            phases=standard_phases())
         base = result[f"navigation-{tag}"] if tag != "16" else dict(result["metric-16"], recipe="navigation")
-        result[f"navigation-tasks-{tag}"] = dict(base, owners=["panel:navigation"], phases=standard_phases(),
+        result[f"navigation-tasks-{tag}"] = dict(base, phases=standard_phases(),
                                                 config={"showTape": True, "showCoordinates": True,
                                                         "satelliteSource": "Sats"})
     result["navigation-tasks-bearing"] = dict(result["navigation-tasks-max"],
@@ -897,7 +882,7 @@ def scenarios():
     for tag in ("min", "max", "16"):
         base = result[f"link-status-{tag}"] if tag != "16" else dict(result["metric-16"], recipe="link-status")
         result[f"link-status-tasks-{tag}"] = dict(
-            base, owners=["panel:link-status"], phases=standard_phases(), toggleLink=True,
+            base, phases=standard_phases(), toggleLink=True,
             config={"protocol": "elrs4", "reading": "quality", "rssiSource": "1RSS", "qualitySource": "RQly",
                     "modeSource": "RFMD", "snrSource": "RSNR", "powerSource": "TPWR", "visual": "bar"})
     result["link-status-tasks-generic"] = dict(result["link-status-tasks-max"],
@@ -910,7 +895,7 @@ def scenarios():
                 "recipe": "service-probe", "expected": 4, "baseInputs": True,
                 "placements": {f"p{i}": ((i - 1) % 2 * 2, (i - 1) // 2 * 2, 2, 2) for i in range(1, 5)}}
             result[f"service-probe-tasks-{service}-{tag}"] = dict(
-                base, owners=["panel:service-probe"], phases=standard_phases(),
+                base, phases=standard_phases(),
                 config={"service": service, "source": "trim-ail" if service == "control" else "GPS" if service == "navigation" else "RSSI",
                         "index": 0})
     for section in ("identity", "theme", "panels", "sources", "log"):
@@ -919,16 +904,13 @@ def scenarios():
                 "recipe": "host-diagnostics", "expected": 4, "baseInputs": True,
                 "placements": {f"d{i}": ((i - 1) % 2 * 2, (i - 1) // 2 * 2, 2, 2) for i in range(1, 5)}}
             result[f"host-diagnostics-tasks-{section}-{tag}"] = dict(
-                base, owners=["panel:host-diagnostics"], phases=standard_phases(),
+                base, phases=standard_phases(),
                 config={"section": section, "maxEntries": 256}, logEntries=256 if section == "log" else 0,
                 diagnosticsSources=8 if section == "sources" else 0)
             if section == "sources":
                 result[f"host-diagnostics-tasks-{section}-{tag}"]["sources"] = 8
     for panel in ("flight-counter", "flight-mode", "flight-timer", "state", "trim-panel", "tx-battery", "model-identity"):
-        for tag in ("min", "max", "16"):
-            base = result[f"{panel}-{tag}"] if tag != "16" else dict(result["metric-16"], recipe=panel)
-            result[f"{panel}-tasks-{tag}"] = dict(base, owners=[f"panel:{panel}"], phases=standard_phases(),
-                                                  toggleSwitches=panel == "state")
+        result[f"{panel}-tasks-16"] = dict(result["metric-16"], recipe=panel, phases=standard_phases())
     result["light-control"] = {
         "recipe": "trim-panel", "expected": 2, "toggleSwitches": True,
         "layout": custom_layout([
@@ -941,10 +923,9 @@ def scenarios():
         ]),
         "phases": standard_phases(),
     }
-    result["control-panel-tasks"] = dict(result["light-control"], owners=["panel:state", "panel:trim-panel"])
     for tag in ("min", "max", "16"):
         base = result[f"rx-battery-{tag}"] if tag != "16" else dict(result["metric-16"], recipe="rx-battery")
-        result[f"rx-battery-tasks-{tag}"] = dict(base, owners=["panel:rx-battery"], phases=standard_phases(),
+        result[f"rx-battery-tasks-{tag}"] = dict(base, phases=standard_phases(),
                                                   config={"visual": "bar", "showPack": True,
                                                           "showCount": True, "showDelta": True})
     result["flight-smart"] = {
@@ -954,13 +935,10 @@ def scenarios():
                                  "    colSpan: 2\n    rowSpan: 1\n    config:\n      armSwitch: SAv\n"]),
         "phases": standard_phases(refreshes=800),
     }
-    result["flight-smart"]["owners"] = []
-    result["flight-smart-tasks"] = dict(result["flight-smart"], flightTasks=True,
-                                      owners=["service:flight", "service:smart"])
-    result["flight-smart-tasks-background"] = dict(result["flight-smart-tasks"],
+    result["flight-smart-background"] = dict(result["flight-smart"],
         phases=[{"name": "background", "kind": "background", "callbacks": 800, "step": 5, "perCall": 20},
                 {"name": "refresh", "kind": "refresh", "callbacks": 100, "step": 5, "perCall": 20}])
-    result["flight-smart-tasks-no-counter"] = dict(result["flight-smart-tasks"], expected=1,
+    result["flight-smart-no-counter"] = dict(result["flight-smart"], expected=1,
         layout=custom_layout([metric_cell(1, (1, 2, 3))]))
     result["flight-owner-handoff"] = dict(result["metric-max"], flightOwnerHandoff=True,
         phases=standard_phases(refreshes=800))
@@ -970,9 +948,8 @@ def scenarios():
                                  metric_cell(1, (4, 5, 6)).replace("row: 0", "row: 2")]),
         "phases": standard_phases(refreshes=800),
     }
-    result["session-reset-tasks"] = dict(result["session-reset"], owners=["panel:chart", "panel:metric"])
     result["theme-showcase-tasks"] = dict(
-        result["host-diagnostics-max"], owners=["panel:theme-showcase"], phases=standard_phases(),
+        result["host-diagnostics-max"], phases=standard_phases(),
         layout=custom_layout(["  - id: showcase\n    type: theme-showcase\n    col: 0\n    row: 0\n"
                               "    colSpan: 4\n    rowSpan: 4\n"]))
     result["chart-full"] = {
@@ -986,18 +963,9 @@ def scenarios():
     }
     for name in replay:
         result[name]["trace"] = True
-    for tag, base in (("gallery", "default-gallery"), ("stress", "stress"),
-                      ("model", "model-panels"), ("flight-smart", "flight-smart")):
-        result[f"migration-tasks-{tag}"] = dict(
-            result[base], flightTasks=True,
-            owners=["service:flight", "service:smart"] + [f"panel:{panel}" for panel in PANELS])
     result["flight-smart-clock"] = dict(result["flight-smart"], deterministicClock=True)
-    result["flight-smart-clock-flight-tasks"] = dict(
-        result["flight-smart-tasks"], deterministicClock=True)
-    result["flight-smart-clock-panel-tasks"] = dict(
-        result["flight-smart"], deterministicClock=True, owners=[f"panel:{panel}" for panel in PANELS])
-    result["migration-tasks-flight-smart-clock"] = dict(
-        result["migration-tasks-flight-smart"], deterministicClock=True)
+    for name in ("default-gallery", "stress", "model-panels", "flight-smart", "flight-smart-clock"):
+        result[name]["taskCoverage"] = True
     loops = [0, 100, 400, 800, 1600, 3000, 6000, 9000]
     for name in ("hook-check", "hook-check-firmware"):
         result[name] = {"recipe": "metric", "placements": {"subject": (0, 0, 1, 1)}, "expected": 1,
@@ -1075,6 +1043,7 @@ def prepare(capture, name, spec, sd):
               "sharedFlightLoad": spec.get("sharedFlightLoad", False),
               "flightModelSwitch": spec.get("flightModelSwitch", False),
               "flightOwnerHandoff": spec.get("flightOwnerHandoff", False),
+              "taskCoverage": spec.get("taskCoverage", False),
               "sharedFlightRevision": spec.get("sharedFlightRevision", 0),
               "constructionParity": spec.get("constructionParity", False),
               "instructionProfile": spec.get("instructionProfile", False),
@@ -1268,8 +1237,6 @@ def main():
     parser.add_argument("--report", action="store_true", help="Summarize the results already in build/scheduler-audit")
     parser.add_argument("--timeout", type=int, default=900, help="Seconds before a native run is abandoned")
     parser.add_argument("--traces", action="store_true", help=f"Copy callback traces to {TRACE_DIR}")
-    parser.add_argument("--history-parity", action="store_true",
-                        help="Compare two deterministic-clock captures' valid History samples and gaps")
     parser.add_argument("--companion", type=Path, default=COMPANION)
     args = parser.parse_args()
     if args.candidate is not None:
@@ -1307,7 +1274,7 @@ def main():
         return 0 if ok else 1
     if args.report:
         runs = {path.parent.name: json.loads(path.read_text()) for path in sorted(OUTPUT.glob("*/results.json"))
-                if "stats" in json.loads(path.read_text()) and not path.parent.name.endswith("-mixed")}
+                if "stats" in json.loads(path.read_text())}
         status = 0
         pair = [OUTPUT / name / "results.json" for name in ("hook-check", "hook-check-firmware")]
         if all(path.exists() for path in pair):
@@ -1325,10 +1292,6 @@ def main():
     unknown = [name for name in names if name not in available]
     if not names or unknown:
         parser.error(f"Choose scenarios from --list; unknown: {unknown}")
-    if args.history_parity and (len(names) != 2 or not all(available[name].get("deterministicClock") for name in names)):
-        parser.error("--history-parity requires exactly two deterministic-clock scenarios, baseline first")
-    if args.history_parity and not matching_history_scenarios(available[names[0]], available[names[1]]):
-        parser.error("--history-parity requires matching inputs and phases")
     if platform.system() != "Darwin":
         parser.error("This audit requires macOS and the EdgeTX Companion 2.12 simulator.")
     library = args.companion / "Contents/Resources/libedgetx-tx16s-simulator.dylib"
@@ -1337,15 +1300,12 @@ def main():
     executable = build_native(library)
     capture = capture_module()
     checks = {}
-    history_runs = []
     status = 0
     for name in names:
         spec = dict(available[name], instructionProfile=True) if args.candidate else available[name]
         data = run(capture, executable, library, name, spec, args.timeout,
                    snapshot_path=args.candidate,
                    output_name=name + "-snapshot-candidate" if args.candidate else None)
-        if args.history_parity:
-            history_runs.append(data)
         if "loops" in available[name]:
             checks[name] = data
             if len(checks) == 2:
@@ -1360,10 +1320,6 @@ def main():
         if args.traces and data["trace"] and available[name].get("trace"):
             TRACE_DIR.mkdir(parents=True, exist_ok=True)
             (TRACE_DIR / f"{name}.txt").write_text("\n".join(data["trace"]) + "\n")
-    if args.history_parity:
-        ok, message = history_parity(*history_runs)
-        print(message, file=sys.stdout if ok else sys.stderr)
-        status = status or (0 if ok else 1)
     return status
 
 
