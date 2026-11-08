@@ -16,7 +16,7 @@ local edgetx = assert(loadfile(root .. "/tests/support/edgetx.lua"))()
 local firmware = edgetx.firmware
 
 edgetx.constants()
-local lcdMock = edgetx.lcd()
+edgetx.lcd()
 local lvglMock = edgetx.lvgl()
 local radioMock = edgetx.radio(hostIo)
 
@@ -6480,7 +6480,6 @@ local function testReadingsSitInTheirSlots()
 
     local GUTTER, CELLS, WIDTH, HEIGHT = 4, 4, 480, 272
     local cellWidth = math.floor((WIDTH - GUTTER * (CELLS - 1)) / CELLS)
-    local cellHeight = math.floor((HEIGHT - GUTTER * (CELLS - 1)) / CELLS)
 
     local panelHost = assert(loadfile(sourcePath .. "lib/panel_host.lua"))()
     for _, subject in ipairs(SLOTTED) do
@@ -6560,7 +6559,6 @@ local function testReadingsSitInTheirSlots()
 
             -- Rebuilt from the panel, not read back from the panel.
             local panelWidth = cellWidth * cols + GUTTER * (cols - 1)
-            local panelHeight = cellHeight * rows + GUTTER * (rows - 1)
             local content = panelWidth - PAD - PAD_RIGHT
 
             -- Measured the way the radio draws it, which is the whole point: the

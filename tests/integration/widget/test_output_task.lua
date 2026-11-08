@@ -176,30 +176,28 @@ finish()
 assert(instance.showRows == 32, "one-tick mounting continuations must finish every row")
 
 for _, target in ipairs({ "prepare", "render", "apply", "partial" }) do
-    for _, action in ipairs({ "cancelRefresh" }) do
-        feeds[1].fraction = feeds[1].fraction == 0.75 and -0.75 or 0.75
-        assert(step() == 1 and instance.captionWork)
-        if target ~= "prepare" then
-            for _ = 1, 3 do
-                assert(step() == 1)
-            end
-            assert(task.stage == "render")
-            if target ~= "render" then
-                assert(step() == 1 and task.stage == "apply")
-                if target == "partial" then
-                    assert(step(2) == 1 and instance.applyRow == 3)
-                end
+    feeds[1].fraction = feeds[1].fraction == 0.75 and -0.75 or 0.75
+    assert(step() == 1 and instance.captionWork)
+    if target ~= "prepare" then
+        for _ = 1, 3 do
+            assert(step() == 1)
+        end
+        assert(task.stage == "render")
+        if target ~= "render" then
+            assert(step() == 1 and task.stage == "apply")
+            if target == "partial" then
+                assert(step(2) == 1 and instance.applyRow == 3)
             end
         end
-        output[action](instance)
-        assert(not instance.pendingDrawn and not instance.captionWork and not instance.renderReady)
-        if target ~= "prepare" then
-            assert(step(2) == 1 and task.used == 0 and task.stage == "prepare")
-        end
-        finishExpected()
-        finish()
-        assert(snapshot(instance) == snapshot(expectedPanel), action .. " resumes after " .. target)
     end
+    output.cancelRefresh(instance)
+    assert(not instance.pendingDrawn and not instance.captionWork and not instance.renderReady)
+    if target ~= "prepare" then
+        assert(step(2) == 1 and task.used == 0 and task.stage == "prepare")
+    end
+    finishExpected()
+    finish()
+    assert(snapshot(instance) == snapshot(expectedPanel), "cancelRefresh resumes after " .. target)
 end
 
 output.update(instance, { x = 0, y = 0, w = 20, h = 20 }, settings)

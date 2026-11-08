@@ -61,6 +61,9 @@ cross-panel agreement, and deferred cleanup together.
 Reflow geometry covers legal spans and visual variants; interruption checks
 exercise stage boundaries independently rather than multiplying every
 interruption by the complete geometry matrix.
+Construction parity settles both trees through the current scheduler task
+contract, not the removed per-panel `refresh` callback. Flight-readout fixtures
+vary index visibility only for Flight Mode; other readouts do not have that setting.
 
 `test_module_composition.lua` checks direct API references, per-instance state,
 and reading/unit reconciliation. `test_service_subscriptions.lua` checks stable
@@ -127,6 +130,21 @@ python3 tools/audit-scheduler.py --candidate path/to/candidate.lua aircraft-link
 ```
 
 These individual checks do not replace the profile.
+The native catalogue (`python3 tools/audit-scheduler.py --list`) runs the current
+scheduler throughout. Retired `owners`/`flightTasks` selectors and duplicate
+ownership variants are removed. Use `editor-preview-metric`/`editor-preview-chart`,
+the ordinary panel min/max cases, and `lifecycle-construct-rx-battery-*`
+instead of their former `-tasks` variants. `default-gallery`, `stress`,
+`model-panels`, `flight-smart`, and `flight-smart-clock` retain the composed
+task-execution and complete-callback budget checks from `migration-tasks-*`.
+Distinct background and no-counter workloads are `flight-smart-background`
+and `flight-smart-no-counter`; the 16-panel steady-task cases remain.
+Use `light-control` and `session-reset` instead of their duplicate
+`control-panel-tasks` and `session-reset-tasks` aliases.
+The old `--history-parity` ownership comparison is removed because its selectors
+no longer change execution. Historical commands in `plans/scheduler-framework.md`
+describe migration experiments, not the current catalogue.
+
 `--instruction-report` reads the saved measurements and produces a per-task,
 stage, and grant table with observed min/max and the current shipped bound.
 Coverage requires a real observation for every non-deferred task/stage/grant;

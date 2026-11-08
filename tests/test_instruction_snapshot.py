@@ -33,7 +33,7 @@ class InstructionSnapshotTests(unittest.TestCase):
         observations = {environment: {key: copy.deepcopy(row)} for environment in ("mock", "native")}
         data = {"estimates": {"tasks": {"test": {"run": {"fixed": 0, "perUnit": 220}}},
                               "bounds": {}},
-                "record": {"schema": 1, "deferred": {}, "observations": copy.deepcopy(observations)}}
+                "record": {"deferred": {}, "observations": copy.deepcopy(observations)}}
         return data, observations, {key}
 
     def test_target_exact_rounding(self):
@@ -459,6 +459,29 @@ class InstructionSnapshotTests(unittest.TestCase):
                          ("framework", "10:4", 20, 40))
 
 
+    def test_native_scenarios_use_current_scheduler_without_ownership_variants(self):
+        audit = snapshot._module("audit_scheduler_catalogue", snapshot.ROOT / "tools/audit-scheduler.py")
+        scenarios = audit.scenarios()
+        configurations = {}
+        for name, spec in scenarios.items():
+            with self.subTest(scenario=name):
+                self.assertNotIn("owners", spec)
+                self.assertNotIn("flightTasks", spec)
+                if name.startswith("hook-check"):
+                    continue  # The two runners intentionally measure different instruction counters.
+                effective = {key: value for key, value in spec.items() if key not in ("trace", "taskCoverage")}
+                effective["toggleSwitches"] = spec.get("toggleSwitches", spec["recipe"] == "state")
+                key = json.dumps(effective, sort_keys=True)
+                self.assertNotIn(key, configurations, f"duplicate of {configurations.get(key)}")
+                configurations[key] = name
+        self.assertEqual(
+            {name for name, spec in scenarios.items() if spec.get("taskCoverage")},
+            {"default-gallery", "stress", "model-panels", "flight-smart", "flight-smart-clock"},
+        )
+        self.assertNotEqual(scenarios["metric-16"]["phases"], scenarios["metric-tasks-16"]["phases"])
+        self.assertNotEqual(scenarios["flight-smart"]["phases"], scenarios["flight-smart-background"]["phases"])
+        self.assertNotEqual(scenarios["flight-smart"]["layout"], scenarios["flight-smart-no-counter"]["layout"])
+
     def test_native_aircraft_recovery_scenario_preserves_deadline(self):
         audit = snapshot._module("audit_scheduler_scenario", snapshot.ROOT / "tools/audit-scheduler.py")
         stress = audit.scenarios()["stress-clock"]
@@ -543,7 +566,7 @@ class InstructionSnapshotTests(unittest.TestCase):
                 self.assertEqual(report["snapshotRecord"]["observations"]["mock"][key]["max"], 301)
                 self.assertEqual(report["snapshotRecord"]["observations"]["mock"][key]["n"], 3)
                 artifact = root / report["candidate"]["artifact"]
-                self.assertEqual(artifact.read_text(), snapshot.render(estimates, record))
+                self.assertEqual(artifact.read_text(), snapshot.render(estimates))
                 self.assertEqual(hashlib.sha256(artifact.read_bytes()).hexdigest(), report["candidate"]["sha256"])
                 self.assertIn("Chart assertion remains active", report["chartFailures"][0])
                 self.assertIn("Chart assertion remains active", report["candidate"]["chartFailures"][0])
@@ -695,7 +718,7 @@ class InstructionSnapshotTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=snapshot.ROOT) as directory:
             path = Path(directory)
             candidate = path / "candidate.lua"
-            candidate.write_text(snapshot.render(**data), encoding="ascii")
+            candidate.write_text(snapshot.render(data["estimates"]), encoding="ascii")
             copied = path / "fixture/WIDGETS/AeroGrid/lib/instruction_snapshot.lua"
             copied.parent.mkdir(parents=True)
             copied.write_text("error('copied seed was used')\n", encoding="ascii")
@@ -740,12 +763,10 @@ class InstructionSnapshotTests(unittest.TestCase):
         data["estimates"]["candidateMarker"] = True
         with tempfile.TemporaryDirectory() as directory:
             candidate, suite = Path(directory) / "candidate.lua", Path(directory) / "test_candidate.lua"
-            candidate.write_text(snapshot.render(**data), encoding="ascii")
+            candidate.write_text(snapshot.render(data["estimates"]), encoding="ascii")
             copied = Path(directory) / "build/test-widget-fixture/lib/instruction_snapshot.lua"
             copied.parent.mkdir(parents=True)
-            seed = copy.deepcopy(data)
-            seed["estimates"].pop("candidateMarker")
-            copied.write_text(snapshot.render(**seed), encoding="ascii")
+            copied.write_text("error('copied seed was used')\n", encoding="ascii")
             suite.write_text("""
                 local root = ...
                 local chunk = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/instruction_snapshot.lua"))()
@@ -858,7 +879,7 @@ class InstructionSnapshotTests(unittest.TestCase):
             self.assertEqual(set(path.parent.iterdir()), {path, baseline})
             data["estimates"]["overflow"] = 2147483648
             with self.assertRaises(ValueError):
-                snapshot.render(**data)
+                snapshot.render(data["estimates"])
             self.assertEqual(path.read_bytes(), before)
 
 

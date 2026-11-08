@@ -5,6 +5,15 @@ return function(load, builder, only)
     assert(builder, "construction cases need a configured theme builder")
     local primitives = load("lib/primitives.lua")
     local cases = {}
+    local function settle(case, context)
+        local task = host.task({ module = case.panel, instance = context, interval = 20 })
+        for _ = 1, 256 do
+            if task:step(task.want or 1, task.stage, 0) ~= 1 then
+                return
+            end
+        end
+        error(case.name .. ": panel task did not finish")
+    end
     local variants = {
         metric = { "none", "bar", "radial" },
         ["link-status"] = { "none", "bar" },
@@ -70,6 +79,7 @@ return function(load, builder, only)
                             local settings, proof = resolution.settings, resolution.proof
                             cases[#cases + 1] = {
                                 panel = panel,
+                                settle = settle,
                                 settingsValidation = proof,
                                 kind = kind,
                                 variant = variant,

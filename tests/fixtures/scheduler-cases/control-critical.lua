@@ -4,7 +4,6 @@
 -- recording boundaries.
 return function(load)
     local services = load("lib/services.lua")
-    local scheduler = load("lib/scheduler.lua")
     local controlService = load("lib/control_service.lua")
     local NOW, SWITCHES = 1000000, 6
 

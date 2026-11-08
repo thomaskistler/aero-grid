@@ -73,18 +73,15 @@ class ReleaseTests(unittest.TestCase):
 
     def test_release_requires_probe_disabled(self):
         source = release.ROOT / "src/WIDGETS/AeroGrid"
-        for old, new in (
-            ("local SCHEDULER_PROBE = false", "local SCHEDULER_PROBE = true"),
-        ):
-            with self.subTest(setting=new), tempfile.TemporaryDirectory() as directory:
-                copy = Path(directory) / "AeroGrid"
-                shutil.copytree(source, copy)
-                main = copy / "main.lua"
-                text = main.read_text()
-                self.assertIn(old, text)
-                main.write_text(text.replace(old, new))
-                with self.assertRaisesRegex(ValueError, "shipped scheduler setting"):
-                    release.package(copy, Path(directory) / "out")
+        with tempfile.TemporaryDirectory() as directory:
+            copy = Path(directory) / "AeroGrid"
+            shutil.copytree(source, copy)
+            main = copy / "main.lua"
+            text = main.read_text()
+            self.assertIn("local SCHEDULER_PROBE = false", text)
+            main.write_text(text.replace("local SCHEDULER_PROBE = false", "local SCHEDULER_PROBE = true"))
+            with self.assertRaisesRegex(ValueError, "shipped scheduler setting"):
+                release.package(copy, Path(directory) / "out")
 
     def test_version_validation(self):
         with tempfile.TemporaryDirectory() as directory:

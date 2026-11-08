@@ -7,7 +7,7 @@
 
 local config = assert(loadScript("/WIDGETS/AeroGrid/audit/config.lua"))()
 local costs = assert(loadScript("/WIDGETS/AeroGrid/audit/costs.lua"))(nil, true)
-local previewTasks = string.match(config.scenario, "^editor%-preview%-.+%-tasks$") ~= nil
+local previewScenario = string.match(config.scenario, "^editor%-preview%-") ~= nil
 local count, nativePause
 local counterRunning = true
 local function pause(flag)
@@ -175,7 +175,7 @@ local function finish(label, raw, leak)
             or P.lifecycleBounds and P.lifecycleBounds[label]
         gate(not bound or charge(cost) <= bound, label .. " exceeds its declared lifecycle charge: " .. charge(cost))
     end
-    if previewTasks and string.sub(label, 1, 11) == "task:panel:" then
+    if previewScenario and string.sub(label, 1, 11) == "task:panel:" then
         gate(cost <= 4000, label .. " exceeds the preview atom cap: " .. cost)
     end
     if string.sub(config.scenario, 1, 6) == "modal-" and string.sub(label, 1, 6) == "modal:" then
@@ -1093,7 +1093,7 @@ local function report(context)
         gate(P.flightHandoffDone, "parked-owner Flight migration did not complete")
     end
     gate(not config.expectedError or P.expectedErrorSeen, "expected scenario error was not reported")
-    if string.match(config.scenario, "^migration%-tasks%-") then
+    if config.taskCoverage then
         local scheduling = context.schedulerHost
         gate(
             scheduling and not scheduling.reconciliation and not scheduling.pendingPanels,
@@ -1105,7 +1105,7 @@ local function report(context)
         local telemetry = context.serviceRuntime and context.serviceRuntime.byId.telemetry
         for _, item in ipairs(telemetry and telemetry.schedulerTasks or {}) do
             if telemetry.count > 0 and item.instance.want > 0 then
-                gate(stats[item.id], "Telemetry task never ran: " .. item.id)
+                gate(stats["task:" .. item.id .. ":run"], "Telemetry task never ran: " .. item.id)
             end
         end
         for _, entry in ipairs(context.panels) do
@@ -2132,16 +2132,16 @@ local function runCallback(kind, context, fn, e, t)
     if string.match(config.scenario, "^lifecycle%-") or string.match(config.scenario, "^panel%-reflow%-") then
         gate(total <= 15000, kind .. " exceeds the complete lifecycle callback ceiling: " .. total)
     end
-    if string.match(config.scenario, "^migration%-tasks%-") then
-        gate(total <= 15000, kind .. " exceeds the complete migration callback ceiling: " .. total)
+    if config.taskCoverage then
+        gate(total <= 15000, kind .. " exceeds the complete scheduler callback ceiling: " .. total)
     end
-    if previewTasks or surface == "editor-preview" and string.match(config.scenario, "^editor%-preview%-") then
+    if previewScenario then
         gate(total <= 15000, kind .. " exceeds the complete preview callback ceiling: " .. total)
-        if previewTasks and surface == "editor-preview" then
+        if surface == "editor-preview" then
             for _, label in ipairs(topLabels) do
                 gate(
                     not string.match(label, "^panel:") and not string.match(label, "^chart:"),
-                    "scheduler-owned preview dispatched legacy work: " .. label
+                    "preview dispatched work outside the scheduler: " .. label
                 )
             end
         end

@@ -86,13 +86,8 @@ return function(real, cases, sameTree, parent, exercise, reflowOnly)
             end
             assert(self.phase == "refresh", case.name .. ": native construction did not finish")
         elseif self.phase == "refresh" then
-            if case.settle then
-                withApi(case.settle, case, self.reference)
-                withApi(case.settle, case, self.partial)
-            else
-                withApi(case.panel.refresh, self.reference)
-                withApi(case.panel.refresh, self.partial)
-            end
+            withApi(case.settle, case, self.reference)
+            withApi(case.settle, case, self.partial)
             sameTree(
                 self.reference.root or self.reference.panel.root,
                 self.partial.root or self.partial.panel.root,

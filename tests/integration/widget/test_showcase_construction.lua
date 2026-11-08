@@ -7,7 +7,6 @@ local host = fixture.createLoaded(nil, { Layout = "review-metric", Theme = "mode
 fixture.pump(host, 40)
 assert(#host.errors == 0, table.concat(host.errors, "\n"))
 local showcase = fixture.module("panels/theme-showcase.lua")
-local legacy = BASELINE or showcase
 local builder = host.panels[1].instance.themeBuilder
 local frames = 0
 for _, mode in ipairs({ "modern-dark", "modern-light" }) do
@@ -47,11 +46,11 @@ for _, mode in ipairs({ "modern-dark", "modern-light" }) do
             assert(not staged.createStage and not staged.createIndex and not staged.createServices)
             assert(not staged.createRect and not staged.createLayout)
             assert(showcase.construct(staged, latest), "completion is idempotent")
-            local synchronous = create(legacy, false, latest)
+            local synchronous = create(showcase, false, latest)
             sameTree(synchronous.root, staged.root)
             local changed = { x = 0, y = 1, w = rect.w + 40, h = rect.h + 60 }
             showcase.update(staged, changed)
-            legacy.update(synchronous, changed)
+            showcase.update(synchronous, changed)
             sameTree(synchronous.root, staged.root)
             frames = frames + 1
         end

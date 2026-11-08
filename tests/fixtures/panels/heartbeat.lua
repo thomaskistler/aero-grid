@@ -14,8 +14,7 @@
 ---@field label any
 ---@field counter any
 ---@field bar table
----@field ticks integer Foreground refresh callbacks received.
----@field backgroundTicks integer Background callbacks received.
+---@field ticks integer Scheduled foreground steps received.
 ---@field events integer Input events consumed.
 ---@field phase integer Current activity-bar phase.
 
@@ -58,7 +57,7 @@ end
 ---@param context AeroGridHeartbeatContext
 ---@return string
 local function counterText(context)
-    return tostring(context.ticks) .. " / " .. tostring(context.backgroundTicks)
+    return tostring(context.ticks)
 end
 
 --- Create a heartbeat panel inside an LVGL parent container.
@@ -94,7 +93,7 @@ function heartbeat.create(parent, rect, settings, services)
         x = frame.pad,
         y = frame.top,
         w = width,
-        text = "0 / 0",
+        text = "0",
         color = presentation.label,
         font = fonts.label,
     })
@@ -121,10 +120,9 @@ function heartbeat.create(parent, rect, settings, services)
         counter = counter,
         bar = bar,
         ticks = 0,
-        backgroundTicks = 0,
         events = 0,
         phase = 1,
-        text = "0 / 0",
+        text = "0",
     }
 end
 
@@ -150,7 +148,7 @@ function heartbeat.update(context, rect)
     end
 end
 
---- Advance the visible activity indicator once per host refresh.
+--- Advance the visible activity indicator when the scheduler grants a step.
 ---@param context AeroGridHeartbeatContext
 function heartbeat.step(context)
     context.ticks = context.ticks + 1

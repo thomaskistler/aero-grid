@@ -1,12 +1,12 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 local root, costs, scenario, sink, declare = ...
+assert(declare, "instruction profile requires a declaration sink")
 local recorderModule = assert(loadfile(root .. "/tests/support/instruction_recorder.lua"))()
 local count, pause = recorderModule.hookCounter()
 local recorder = recorderModule.new(count, pause, sink)
 recorder.scenario = scenario
 local names, modules = setmetatable({}, { __mode = "k" }), setmetatable({}, { __mode = "k" })
-local declarations = {}
 local instrument
 local foreground = {}
 local spans = {}
@@ -278,12 +278,7 @@ local function registerStages(_, ok, _, _, name, declaration)
     end
     names[declaration] = name
     for stage, entry in pairs(declaration.stages) do
-        if declare then
-            declare(name, stage, entry.maxUnits)
-        else
-            local key = name .. "|" .. stage
-            declarations[key] = math.max(declarations[key] or 0, entry.maxUnits)
-        end
+        declare(name, stage, entry.maxUnits)
     end
 end
 
@@ -442,5 +437,3 @@ loadfile = recorder:wrap(originalLoadfile, function(cost, ok, results, filename)
         end)
     end
 end)
-
-return recorder, declarations

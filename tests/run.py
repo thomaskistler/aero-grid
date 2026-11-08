@@ -51,7 +51,6 @@ def run_test(path: Path, *, instructions=False, snapshot_path=None, work_samples
         end
         return logs
     """)
-    recorder = declarations = None
     if instructions:
         sys.path.insert(0, str(ROOT / "tools"))
         import scheduler_audit
@@ -108,7 +107,7 @@ def run_test(path: Path, *, instructions=False, snapshot_path=None, work_samples
             return assert(loadfile(base .. "costs.lua"))().new(
                 assert(loadfile(base .. "instruction_snapshot.lua"))())
         """, str(ROOT))
-        recorder, declarations = lua.execute(
+        lua.execute(
             (ROOT / "tests/support/instruction_profile.lua").read_text(encoding="ascii"),
             str(ROOT), costs, path.relative_to(ROOT).as_posix(), sample, declare,
         )

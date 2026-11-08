@@ -62,8 +62,7 @@ return function(load)
                     grant = 1,
                     setup = function()
                         local context = { panelHost = panelHost }
-                        local scheduling = host.attach(context, { mode = "mixed", load = load, api = {} })
-                        scheduling.owners = { ["service:reset"] = "new", ["panel:" .. name] = "new" }
+                        local scheduling = host.attach(context, { load = load, api = {} })
                         local queued = {
                             class = "normal",
                             stages = { run = { fixed = 0, perUnit = 100, maxUnits = 1 } },

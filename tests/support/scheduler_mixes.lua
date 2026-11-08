@@ -13,7 +13,6 @@ local function once(class, bound, extra)
     end
     return decl
 end
-mixes.once = once
 
 --- A telemetry task polls up to `batch` sources of one interval; a recorded
 --- source costs 1180 (k = 1), an unrecorded one 420, and the link state 560 is
@@ -30,14 +29,6 @@ mixes.HISTORY = once("critical", 650)
 mixes.CONTROL_CRITICAL = {
     class = "critical",
     stages = { run = { fixed = 200, perUnit = 100, maxUnits = 6 } },
-}
-mixes.CONTROL_NORMAL = {
-    class = "normal",
-    stages = { run = { fixed = 130, perUnit = 240, maxUnits = 6 } },
-}
-mixes.CONTROL_OUTPUTS = {
-    class = "normal",
-    stages = { run = { fixed = 120, perUnit = 60, maxUnits = 32 } },
 }
 mixes.PANEL = once("normal", 1800)
 mixes.CHART = {

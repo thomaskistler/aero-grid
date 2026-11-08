@@ -27,9 +27,12 @@ function recorder.hookCounter()
 end
 
 function recorder.new(count, pause, sink)
+    local meta = getmetatable(sink)
+    assert(type(sink) == "function" or type(meta) == "table" and type(meta.__call) == "function",
+        "instruction recorder requires an observation sink")
     local self = setmetatable({
         count = count, pause = pause, depth = 0, children = {}, workChildren = {},
-        floor = 0, leak = 0, failureLeak = 0, samples = {}, scenario = "unnamed", running = false, sink = sink,
+        floor = 0, leak = 0, failureLeak = 0, scenario = "unnamed", running = false, sink = sink,
         tasks = setmetatable({}, { __mode = "k" }), boundObservers = setmetatable({}, { __mode = "k" }),
     }, recorder)
     self:calibrate()
@@ -154,28 +157,7 @@ end
 function recorder:sample(kind, name, stage, grant, cost, ok, scenario)
     assert(math.type(cost) == "integer" and cost >= 0, "invalid instruction observation")
     assert(math.type(grant) == "integer" and grant >= 0, "invalid instruction grant")
-    if self.sink then
-        self.sink(kind, name, stage, grant, cost, ok, scenario or self.scenario)
-        return
-    end
-    local key = kind .. "|" .. name .. "|" .. stage .. "|" .. tostring(grant)
-    local entry = self.samples[key]
-    if not entry then
-        entry = {
-            kind = kind, name = name, stage = stage, grant = grant,
-            n = 0, min = cost, max = cost, failures = 0,
-            minScenario = scenario or self.scenario, maxScenario = scenario or self.scenario,
-        }
-        self.samples[key] = entry
-    end
-    entry.n = entry.n + 1
-    entry.failures = entry.failures + (ok == false and 1 or 0)
-    if cost < entry.min then
-        entry.min, entry.minScenario = cost, scenario or self.scenario
-    end
-    if cost > entry.max then
-        entry.max, entry.maxScenario = cost, scenario or self.scenario
-    end
+    self.sink(kind, name, stage, grant, cost, ok, scenario or self.scenario)
 end
 
 function recorder:task(name, fn)
@@ -219,18 +201,6 @@ function recorder:callback(kind, fn, observer)
             self:sample("callback", kind, self.scenario, 0, cost, ok, scenario)
         end,
     })
-end
-
-function recorder:observations()
-    local keys, list = {}, {}
-    for key in pairs(self.samples) do
-        keys[#keys + 1] = key
-    end
-    table.sort(keys)
-    for index, key in ipairs(keys) do
-        list[index] = self.samples[key]
-    end
-    return list
 end
 
 return recorder

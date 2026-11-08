@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 local root = assert(...)
-local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
+assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
 local source = root .. "/src/WIDGETS/AeroGrid/"
 local files, folders =
     {}, {
