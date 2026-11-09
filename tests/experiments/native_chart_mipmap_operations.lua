@@ -10,6 +10,9 @@ local Oracle = load("tests/support/mipmap_reading_oracle.lua")
 local Stress = load("tests/support/chart_mipmap_stress.lua", load)
 local mode = "integrated"
 local operation = "append"
+local expansionLevel = 0
+local scrollLap = 1.25
+local widthReduction = 0
 local realTime = getTime
 local state = {
     phase = "loading", logical = 100000, items = {}, oracles = {}, samples = {},
@@ -63,9 +66,10 @@ local function ready(context, initial)
 end
 
 local function attach(context)
-    state.seedEnd = operation == "scroll" and math.ceil(6000 * (4 / 3) ^ 10 * 1.25) - 20
-        or operation == "vertical" and 6800 or operation == "horizontal" and 5990 or 5500
-    state.target = operation == "horizontal" and 6001 or state.seedEnd + 20
+    local crossing = math.ceil(6000 * (4 / 3) ^ expansionLevel)
+    state.seedEnd = operation == "scroll" and math.ceil(6000 * (4 / 3) ^ 10 * scrollLap) - 20
+        or operation == "vertical" and 6800 or operation == "horizontal" and crossing - 10 or 5500
+    state.target = operation == "horizontal" and crossing + 1 or state.seedEnd + 20
     state.level, state.origin = selection(state.target, context.panels[1].instance.area.w)
     state.seedStep = math.max(5, (state.seedEnd / 500) // 1)
     state.high = operation == "vertical" and 4 / 3 or 1
@@ -197,6 +201,14 @@ local function tick(context, refresh)
     if state.phase == "loading" then
         refresh(context)
         if not context.stage and #context.panels == 2 then
+            if widthReduction > 0 then
+                for _, entry in ipairs(context.panels) do
+                    local rect = entry.instance.rect
+                    entry.module.update(entry.instance, {
+                        x = rect.x, y = rect.y, w = rect.w - widthReduction, h = rect.h,
+                    })
+                end
+            end
             state.workload = Stress.new(context, 800, 120, true)
             local env = context.serviceRuntime.env
             local originalValue = env.getValue
@@ -347,17 +359,18 @@ local function tick(context, refresh)
             write("/paint-phase.txt", "2 0 0\n")
         end
     elseif state.phase == "report" then
-        local samples, regions = {}, {}
+        local samples, regions, columns = {}, {}, {}
         for index, usage in ipairs(state.samples) do samples[index] = tostring(usage) end
         for _, entry in ipairs(context.panels) do
+            columns[#columns + 1] = tostring(entry.instance.area.w)
             local rect = context.grid.rect(context.zone, entry.placement, 4, 4, 4)
             regions[#regions + 1] = string.format("REGION %d %d %d %d\n",
                 rect.x + (context.zone.xabs or 0), rect.y + (context.zone.yabs or 0), rect.w, rect.h)
         end
         write("/chart-feasibility.txt", string.format(
-            "MATCHED mode=%s op=%s started_ms=%d submitted_ms=%d trigger=%d prefix_samples=%d prefix_hash=%d callbacks=%d events=%d period_ms=50 sources=24 columns=398,398\n",
+            "MATCHED mode=%s op=%s started_ms=%d submitted_ms=%d trigger=%d prefix_samples=%d prefix_hash=%d callbacks=%d events=%d period_ms=50 sources=24 columns=%s\n",
             mode, operation, state.startedAt * 10, state.finishedAt * 10, state.target,
-            state.prefixSamples, state.prefixHash, state.callbacks, state.events)
+            state.prefixSamples, state.prefixHash, state.callbacks, state.events, table.concat(columns, ","))
             .. "CALLBACK_USAGE " .. table.concat(samples, ",") .. "\n" .. table.concat(regions))
         write("/capture-ready.txt", "controlled operation complete; inspect painted comparison")
         state.phase = "done"

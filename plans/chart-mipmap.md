@@ -42,6 +42,33 @@ and diagnostic memory includes both pools. These results establish the tested
 native callback/pixel gate, not universal quota maxima, hardware memory safety,
 or release acceptance. Hardware memory and broader release checks remain pending.
 
+### Extended native coverage
+
+`build/chart-runtime-gate-extended-v1/runtime-gate.json` passes all eleven cases
+with unchanged 71/63/41 runtime quotas. The original four operations again have
+zero pixel mismatches and worst bounds no higher than 14,800; continuous
+operation peaks at 12,200. Additional cases:
+
+| Case | First complete paint | Worst callback bound | Pixel mismatches |
+| --- | --- | --- | --- |
+| Horizontal expansion from level 4 | 1,600 ms | 14,800 | 0 |
+| Horizontal expansion from level 9 | 1,390 ms | 14,800 | 0 |
+| Maximum-level scroll near lap 2.25 | 1,010 ms | 8,000 | 0 |
+| Maximum-level scroll near lap 4.25 | 960 ms | 7,800 | 0 |
+| Horizontal expansion at 368 columns | 1,510 ms | 14,600 | 0 |
+| Maximum-level scroll at 226 columns | 850 ms | 9,200 | 0 |
+
+Reproduce with:
+
+```sh
+caffeinate -i python3 tests/experiments/run_chart_runtime_gate.py --extended --output build/chart-runtime-gate-extended-new
+```
+
+Higher-level and later-lap cases use bounded seed replay, not an uninterrupted
+long flight or sequential scrolls in one session. Width cases resize before
+measured rendering; they do not measure the resize callback itself. Live resize,
+native pause/resume fallback and actual-radio memory remain unverified.
+
 ## Combined scroll correction and telemetry optimization (2026-11-08)
 
 The user authorized combining both investigations into draft PR #192, with

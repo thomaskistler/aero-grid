@@ -14,6 +14,18 @@ sys.path.pop(0)
 
 
 class RuntimeGateTests(unittest.TestCase):
+    def test_extended_cases_and_fixture_settings(self):
+        cases = GATE.cases(extended=True)
+        self.assertEqual(len(cases), 11)
+        self.assertEqual(len({name for name, _, _ in cases}), len(cases))
+        driver = (EXPERIMENTS / "native_chart_mipmap_operations.lua").read_text(encoding="ascii")
+        source = GATE.controlled_source(driver, "scroll", {"scrollLap": 4.25, "widthReduction": 172})
+        self.assertIn('local operation = "scroll"', source)
+        self.assertIn("local scrollLap = 4.25", source)
+        self.assertIn("local widthReduction = 172", source)
+        with self.assertRaises(ValueError):
+            GATE.controlled_source("", "scroll", {"scrollLap": 4.25})
+
     def report(self):
         return {
             "workload_completed": True,
