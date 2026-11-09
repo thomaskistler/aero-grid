@@ -34,6 +34,8 @@ return function(count, options)
             armSwitch = "L01",
             precision = 3,
             smoothing = options and options.smoothing,
+            timeRange = options and options.timeRange,
+            windowSeconds = options and options.windowSeconds,
         })
     end
     local reading = { fresh = true, kind = "number", precision = 3, unitText = "V" }

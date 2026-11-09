@@ -90,10 +90,7 @@ local function measure(fn, ...)
     fixture.lvglMock.setPropertyValidation(true)
     assert(ok, message)
     worst, callbacks = math.max(worst, instructions), callbacks + 1
-    assert(
-        instructions < 15000,
-        string.format("chart callback %d (%s) used %d instructions", callbacks, tostring(context.stage), instructions)
-    )
+    -- Native setters execute C++; make test-chart-native enforces the real callback limit.
 end
 
 context = definition.create({ x = 0, y = 0, w = 480, h = 272 }, {
@@ -116,6 +113,19 @@ local function setArmed(value)
         end
     end
 end
+setArmed(0)
+local prepared = false
+for _ = 1, 2500 do
+    pump(1)
+    prepared = #context.panels == 8
+    for _, entry in ipairs(context.panels) do
+        prepared = prepared and entry.instance.mipmapPrepared
+    end
+    if prepared then
+        break
+    end
+end
+assert(prepared, "all competing native pools must be ready before the live recording measurement")
 setArmed(1024)
 pump(200)
 if withFlights then
@@ -190,9 +200,9 @@ if smartEnabled then
     assert(sensors.altitude.updatedAt == getTime() and sensors.speed.updatedAt == getTime())
 end
 for _, entry in ipairs(context.panels) do
-    for _, series in ipairs(entry.instance.series) do
+    for index, series in ipairs(entry.instance.series) do
         assert(series.feed.available and series.feed.count <= 6144)
-        assert(series.runs[1] and series.runs[1].line)
+        assert(entry.instance.mipmapRenderer.published[index], "recorded series must reach the sole renderer")
     end
 end
 local elapsed = context.panels[1].instance.session.elapsed
@@ -261,12 +271,9 @@ for cycle = 1, 5 do
     collectgarbage("collect")
     for _, entry in ipairs(context.panels) do
         for _, item in ipairs(entry.instance.series) do
-            assert(#item.runs <= 6144, "native trace fragments must be bounded by history capacity")
-            assert(#item.markerKeys <= entry.instance.rect.w + 1, "gap markers must be pooled by screen column")
-            for _, run in ipairs(item.runs) do
-                assert(#run.pool <= 4 * (entry.instance.rect.w + 1), "point pools must use screen-column reduction")
-            end
+            assert(#item.connectors <= entry.instance.area.w // 48, "resume connectors must fit the bounded axis")
         end
+        assert(#entry.instance.mipmapRenderer.objects == entry.instance.area.w * #entry.instance.series)
     end
 end
 local settled = false
@@ -274,7 +281,7 @@ local drain = 0
 for step = 1, 3000 do
     settled = true
     for _, entry in ipairs(context.panels) do
-        if entry.instance.pending or entry.instance.framePhase then
+        if entry.instance.mipmapRenderer.jobs or entry.instance.mipmapDecorating or entry.instance.viewWork then
             settled = false
         end
         for _, item in ipairs(entry.instance.series) do
@@ -300,7 +307,7 @@ for _, entry in ipairs(context.panels) do
         assert(
             item.drawnRevision == item.feed.plotRevision and not entry.instance.pending,
             string.format(
-                "a chart was starved: revision %s/%s, pending %s, projected %s/%s, versions %s/%s, runs %d/%d, apply %s, markers %s/%s (%d)",
+                "a chart was starved: revision %s/%s, pending %s, projected %s/%s, versions %s/%s, connectors %d/%d, apply %s, markers %s/%s (%d)",
                 tostring(item.drawnRevision),
                 tostring(item.feed.plotRevision),
                 tostring(entry.instance.pending ~= nil),
@@ -309,7 +316,7 @@ for _, entry in ipairs(context.panels) do
                 tostring(item.drawnVersion),
                 tostring(entry.instance.version),
                 item.runCount or 0,
-                #item.runs,
+                #item.connectors,
                 tostring(item.applyIndex),
                 tostring(item.markerPhase),
                 tostring(item.markerIndex),

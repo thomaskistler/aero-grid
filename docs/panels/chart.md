@@ -25,7 +25,7 @@ disables recording rather than restoring the fallback.
 | --- | --- | --- |
 | **Label** | empty | Optional chart heading. Clear it to hide the heading. |
 | **Metrics** | none | Up to three readings. Tap **+** to add one, or tap an entry to edit it. |
-| **Time range** | growing | **growing** keeps the recording from the start; **rolling** shows the latest fixed window. |
+| **Time range** | growing | **growing** expands the view before scrolling; **rolling** uses a fixed-duration view. |
 | **Window duration** | 1 minute | **30 seconds**, **1 minute**, **2 minutes**, **5 minutes**, or **10 minutes**. Shown only when **Time range** is **rolling**. |
 | **Series scales** | shared | **shared** uses one vertical scale; **independent** gives each metric its own scale, useful for unlike units. Independent trace heights are not directly comparable. |
 | **Line smoothing** | off | **off**, **light**, **medium**, or **strong**. Smooths the line only, not the recorded value or extrema. |
@@ -73,9 +73,11 @@ Missing telemetry breaks the traces without adding a pause gap or connector.
 Readouts freeze when recording pauses. Minimum and maximum cover all recorded
 periods, even in rolling mode.
 
-**Growing** starts at one minute and expands in whole-minute steps as
-cumulative recording time increases. **Rolling** drops plot history outside
-**Window duration**, but keeps the recorded minimum and maximum.
+**Growing** starts at one minute and expands by one third as cumulative
+recording time increases, up to about 18 minutes. Longer recordings scroll.
+**Rolling** uses **Window duration** and frees older plot history, but keeps
+the recorded minimum and maximum. Both modes scroll by a quarter-window,
+leaving room on the right for incoming readings.
 Faint solid grid lines mark recording-time intervals; the bottom-right label shows
 the recording-time window. Very dense pause gaps can push older points out of view.
 
@@ -100,6 +102,9 @@ History is held in RAM, not saved to the SD card. It continues while the
 dashboard receives background updates. Reloading or restarting the dashboard,
 including applying editor changes that rebuild it, clears history.
 Editor previews reuse compatible recorded history without starting new recordings.
+Opening a chart on an existing recording or resizing it rebuilds the plot from
+stored history. Rebuilt traces retain the recording's half-digit compression
+tolerance; the recorded values and extrema are unchanged.
 New sources show an explicit no-data preview until saved.
 Flight overlays retain the latest 64 intervals; missing earlier boundaries are
 not guessed.

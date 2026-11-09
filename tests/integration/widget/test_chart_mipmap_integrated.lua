@@ -56,8 +56,7 @@ local context = definition.create({ x = 0, y = 0, w = 480, h = 272 }, {
     Layout = "mipmap-integrated",
     Theme = "modern-dark",
 }, path)
-context.chartMipmap = fixture.module("lib/chart_mipmap.lua")
-context.chartMipmapRenderer = fixture.module("lib/chart_mipmap_renderer.lua")
+assert(context.chartMipmap and context.chartMipmapRenderer, "normal runtime did not load chart mipmap dependencies")
 local worst, callbacks = 0, 0
 local function pump(count)
     for _ = 1, count do
@@ -119,30 +118,27 @@ local oldMap, oldRoot = first.mipmapConsumers[1].map, first.mipmapRenderer.root
 context.panels[1].module.update(first, { x = 0, y = 0, w = first.rect.w - 30, h = first.rect.h })
 assert(first.mipmapConsumers[1].map ~= oldMap)
 assert(sibling.mipmapConsumers[1].map == siblingMap)
-pump(500)
+pump(3000)
 assert(oldRoot.cleared, "resize did not retire the old native pool")
 assert(first.mipmapPrepared and next(first.mipmapRenderer.published))
 assert(first.backPlot == nil)
 local owner = first.mipmapConsumers[1]
--- A real recording resume uses the existing compressed-gap/connector renderer.
+-- A real recording resume keeps the same mipmap renderer and adds the pause seam.
 fixture.radio.values[300] = -1024
 pump(40)
 fixture.radio.values[300] = 1024
 pump(80)
 assert(first.session.resumeLast > 0, "fixture did not create an actual pause/resume")
-for _ = 1, 1000 do
-    if first.mipmapRenderer == nil then
-        break
-    end
-    pump(1)
-end
-assert(first.mipmapRenderer == nil and owner.map ~= nil, "resume fallback lost recording observer")
+local retainedRenderer = first.mipmapRenderer
+pump(3000)
+assert(first.mipmapRenderer == retainedRenderer and owner.map ~= nil, "resume replaced the sole renderer")
+assert(owner.output and #owner.output.connectors > 0, "resume did not reconstruct its dotted connector")
 context.panels[1].module.destroy(first)
 context.panels[2].module.destroy(sibling)
 assert(first.mipmapConsumers == nil and sibling.mipmapConsumers == nil)
 print(
     string.format(
-        "Normal integrated chart: %d callbacks, worst%d instructions; local resize and resume fallback pass",
+        "Normal integrated chart: %d callbacks, worst%d instructions; local resize and mipmap resume pass",
         callbacks,
         worst
     )

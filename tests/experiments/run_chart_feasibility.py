@@ -228,7 +228,8 @@ def verify_matched_paint(output, text):
 
 def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3, stress=False, resized_scroll=False,
            prototype_source=None, integrated=False, matched=None, smart_batch=80, matched_trace=False,
-           runtime_source=False, controlled_driver=None, arm_switch=None, long_run=False):
+           runtime_source=False, controlled_driver=None, arm_switch=None, long_run=False, chart_time_range=None,
+           framebuffer_trace=True):
     sys.path.insert(0, str(ROOT / "tools"))
     spec = importlib.util.spec_from_file_location("capture", ROOT / "tools/capture-panels.py")
     capture = importlib.util.module_from_spec(spec)
@@ -272,6 +273,8 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
                          "    colSpan: 4\n    rowSpan: 2\n    config:")
             if arm_switch is not None:
                 lines.append(f"      armSwitch: {arm_switch}")
+            if chart_time_range is not None:
+                lines.append(f"      timeRange: {chart_time_range}\n      duration: 1m")
             lines.append("      metrics:")
             for channel in range(3):
                 lines.append(f"        - source: Q{chart * 3 + channel + 1}\n          precision: 3")
@@ -284,7 +287,8 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
         (ROOT / "tests/support/chart_feasibility.lua").read_text()
     )
     if recorded:
-        for name in ("chart_mipmap_prototype.lua", "mipmap_recorder.lua", "chart_mipmap_stress.lua", "mipmap_reading_oracle.lua"):
+        for name in ("chart_mipmap_prototype.lua", "mipmap_recorder.lua", "chart_mipmap_stress.lua",
+                     "mipmap_reading_oracle.lua", "chart_assertions.lua"):
             target = widget / "tests/support" / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(prototype_source if name == "chart_mipmap_prototype.lua" and prototype_source is not None
@@ -342,7 +346,7 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
     regions.write_text("0 0 480 272\n")
     with (output / "simulator.log").open("w") as log:
         command = [str(executable), str(library), str(sd), str(output / "frame.rgb565"), str(regions)]
-        if stress:
+        if stress and framebuffer_trace:
             command.append("trace")
         result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT,
                                 timeout=720 if long_run else 240 if stress else 90)
@@ -413,7 +417,8 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
             "instruction_upper_bound": max(((value + 1) * 200 for value in samples), default=None),
             "callback_trace_complete": completed and int(rows[0]["callbacks"]) == len(samples),
             "callback_limits_passed": bool(samples) and all((value + 1) * 200 < 15000 for value in samples),
-            "native_heap": json.loads((output / "frame.rgb565.heap.json").read_text()),
+            "native_heap": json.loads((output / "frame.rgb565.heap.json").read_text())
+            if (output / "frame.rgb565.heap.json").exists() else None,
             "paint_verified": False,
             "gate_passed": False,
             "limitations": [

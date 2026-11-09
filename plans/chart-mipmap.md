@@ -1,5 +1,58 @@
 # Chart mipmap implementation plan
 
+## Sole-renderer migration
+
+The mipmap path is now mandatory; the legacy connected-trace renderer, fallback
+gate, and double-buffer code have been removed. Normal runtime composition loads
+the mipmap modules. Rolling uses a fixed-duration ring with quarter-window
+scrolling. Growing retains eleven 4:3 spans until publication retires fine levels.
+The largest growing span is about 17.76 minutes, followed by quarter scrolling.
+
+Preview, late attachment, and resize reconstruct connected history knots in
+bounded batches. These envelopes preserve the history compression tolerance
+(half a displayed digit), not unavailable exact observed extrema. Raw history,
+telemetry acquisition, and lifetime readouts/extrema are not changed.
+Reconstruction pins a tail and can skip sealed uninterrupted history blocks
+within one column. Resume-axis snapshots retain the 24px gaps, dotted connectors,
+flight shading, directional arm markers, and missing-telemetry breaks.
+
+The 71/63/41 native projection budgets remain, without a telemetry early yield.
+Already-visible columns consume one credit; placing and revealing a hidden
+column consumes two, including catch-up work. A new pool is prepared behind a
+hidden root at canonical column positions. Projection binds its frame inputs
+locally without changing float32 arithmetic or extrema quantization. Completed
+plots invalidate their whole native area so clipped dashed markers do not retain
+incorrect dash pixels.
+
+An initialized chart's resize invalidates its presentation and restarts its
+summaries, leaving reconstruction and projection to the normal bounded refresh
+instead of refreshing the chart twice in the resize callback.
+
+The default native gate adds rolling and late attachment with explicit coverage
+records. `make test` (27 Python tests and the full Lua suite), `make lint`, and
+`caffeinate -i make test-chart-native` passed. The additional live resize/resume
+gate also passed with completed reconstruction and dotted connectors.
+
+| Native case | Whole-callback instruction upper bound |
+| --- | ---: |
+| Append | 7,400 |
+| Horizontal rescale | 13,600 |
+| Vertical rescale | 13,600 |
+| Scroll | 7,800 |
+| Continuous recording | 12,200 |
+| Rolling | 12,000 |
+| Late attachment | 13,800 |
+| Live resize/resume | 14,400 |
+
+All bounds are strictly below 15,000. The four controlled pixel comparisons
+checked 128,640 pixels each with zero mismatches. Evidence is in
+`build/chart-runtime-gate-20261109-020857/runtime-gate.json` and
+`build/sole-lifecycle-final-v10/runtime-gate.json`. These are native simulator
+checks, not hardware memory or real-flight soak acceptance. Dense reconstruction
+can take many callbacks; selecting a level does not eliminate native projection
+work. The sections below record historical gated checkpoints, not current
+default/fallback behavior.
+
 ## Fine-level retirement
 
 The integrated renderer now retires levels below the selected level only after

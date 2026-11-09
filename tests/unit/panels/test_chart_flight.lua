@@ -4,6 +4,7 @@ local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
 local chart = fixture.module("panels/chart.lua")
 local equal = assert(loadfile(root .. "/tests/support/assertions.lua"))().assertEqual
+local chartView = assert(loadfile(root .. "/tests/support/chart_assertions.lua"))()
 fixture.reset()
 local host = fixture.createLoaded(nil, { Layout = "Empty", Theme = "modern-dark" })
 local placement = { col = 0, row = 0, colSpan = 2, rowSpan = 1 }
@@ -37,9 +38,13 @@ services.history = fake
 local settings = { armSwitch = "L01", metrics = { { source = "V" }, { source = "A" }, { source = "Alt" } } }
 local panel = chart.create(host.page, { x = 0, y = 0, w = 238, h = 65 }, settings, services)
 local function settle()
-    for _ = 1, 150 do
-        chart.refresh(panel)
+    for _ = 1, 2000 do
+        local _, pending = chart.refresh(panel)
+        if not pending and chartView.finished(panel) then
+            return
+        end
     end
+    error("flight chart did not settle")
 end
 settle()
 equal(#panel.flightBands, 2, "three metrics share one set of flight intervals")
@@ -69,31 +74,41 @@ session.elapsed, session.flightActive = 5000, false
 session.flightRevision = 2
 intervals[2] = { 500, 4000, true, true }
 settings.timeRange, settings.duration = "rolling", "30s"
+chart.destroy(panel)
+panel = chart.create(host.page, { x = 0, y = 0, w = 238, h = 65 }, settings, services)
 settle()
-assert(panel.flightBands[1].hidden, "expired flights leave the rolling window")
+assert(not panel.flightBands[1] or panel.flightBands[1].hidden, "expired flights leave the rolling window")
 local clipped = panel.flightBands[2].properties
 equal(clipped.x, panel.area.x)
-equal(clipped.x + clipped.w, panel.area.x + math.floor(2000 / 3000 * panel.area.w + 0.5))
+equal(clipped.x + clipped.w, panel.area.x + math.floor((4000 - panel.start) / 3000 * panel.area.w + 0.5))
 equal(clipped.y, panel.area.y)
 equal(clipped.h, panel.area.h)
 chart.update(panel, { x = 0, y = 0, w = 472, h = 196 })
 settle()
 clipped = panel.flightBands[2].properties
-equal(clipped.x + clipped.w, panel.area.x + math.floor(2000 / 3000 * panel.area.w + 0.5))
+equal(clipped.x + clipped.w, panel.area.x + math.floor((4000 - panel.start) / 3000 * panel.area.w + 0.5))
 equal(clipped.h, panel.area.h, "resize reprojects every flight object")
 
 intervals[2] = { 500, 6000, true, true }
 session.flightRevision = session.flightRevision + 1
 settle()
 clipped = panel.flightBands[2].properties
-equal(clipped.x + clipped.w, panel.area.x + panel.area.w, "shading must clip at the plot's right edge")
+equal(
+    clipped.x + clipped.w,
+    panel.area.x + math.floor((session.elapsed - panel.start) / panel.window * panel.area.w + 0.5),
+    "shading must clip at the recorded clock, before the ring's future headroom"
+)
 
 intervals[2] = { 4999, 5000, true, true }
 session.flightRevision = session.flightRevision + 1
 settle()
 clipped = panel.flightBands[2].properties
 equal(clipped.w, 1, "subpixel flights still have a visible band")
-equal(clipped.x + clipped.w, panel.area.x + panel.area.w, "subpixel bands must stay inside the plot")
+equal(
+    clipped.x,
+    panel.area.x + math.floor((session.elapsed - panel.start) / panel.window * panel.area.w + 0.5),
+    "subpixel bands must stay at the recorded clock"
+)
 intervals[2] = { 5000, 6000, true, true }
 session.flightRevision = session.flightRevision + 1
 settle()
@@ -108,13 +123,16 @@ end
 
 session.flightLast, session.flightRevision = 0, session.flightRevision + 1
 settle()
-assert(panel.flightBands[1].hidden and panel.flightBands[2].hidden, "epoch reset hides all old pooled objects")
+assert(
+    (not panel.flightBands[1] or panel.flightBands[1].hidden) and panel.flightBands[2].hidden,
+    "epoch reset hides all old pooled objects"
+)
 session.flightFirst, session.flightLast, session.flightRevision = 65, 66, session.flightRevision + 1
 intervals[65], intervals[66] = { 2500, 3000, false, true }, { 3500, 4500, true, true }
 settle()
 equal(#panel.flightBands, 2, "wrapped flight identities reuse the bounded native pool")
 assert(not panel.flightBands[1].hidden and not panel.flightBands[2].hidden)
-equal(panel.flightBands[1].properties.x, panel.area.x + math.floor(500 / 3000 * panel.area.w + 0.5))
+equal(panel.flightBands[1].properties.x, panel.area.x + math.floor((2500 - panel.start) / 3000 * panel.area.w + 0.5))
 
 session.flightFirst, session.flightLast, session.flightRevision = 128, 128, session.flightRevision + 1
 intervals[128] = { 2500, 3500, true, true }
@@ -232,30 +250,31 @@ function history:armBoundary(_, index)
 end
 function history:recordingBreak() end
 services.preview, services.history = false, history
+settings.timeRange = "growing"
 local consistent = chart.create(host.page, { x = 0, y = 0, w = 472, h = 196 }, settings, services)
 local previous = consistent.plotRoot
 local _, unfinished = chart.refresh(consistent)
-assert(unfinished and consistent.plotRoot.hidden and not previous.hidden)
-local captured = consistent.series[1].tailAt
+assert(unfinished and consistent.plotRoot == previous and not previous.hidden)
 local committed = false
-for step = 1, 200 do
+for step = 1, 2000 do
     live.elapsed = live.elapsed + 10
     samples[#samples + 1] = { live.elapsed, step % 17 }
     feed.last, feed.revision, feed.plotRevision = #samples, feed.revision + 1, feed.plotRevision + 1
     _, unfinished = chart.refresh(consistent)
-    if not unfinished then
+    if not unfinished and chartView.finished(consistent) then
         committed = true
         break
     end
-    assert(not previous.hidden and consistent.plotRoot.hidden, "partial plots must never become visible")
+    assert(consistent.plotRoot == previous and consistent.backPlot == nil, "staged work must retain one native plot")
 end
 assert(committed, "a moving flight clock must not restart or starve a chart transaction")
-assert(previous.hidden and not consistent.plotRoot.hidden)
-equal(consistent.plotRoot.parent, consistent.plotHost, "both plot buffers must stay behind the labels")
-for _, item in ipairs(consistent.series) do
-    equal(item.job.tailAt, captured, "all traces must project the same captured frame")
+assert(not consistent.plotRoot.hidden)
+equal(consistent.plotRoot.parent, consistent.plotHost, "the native pool must stay behind labels")
+local captured = live.elapsed
+for _, job in ipairs(consistent.mipmapRenderer.published) do
+    captured = math.min(captured, job.at)
 end
-local endX = consistent.area.x + math.floor(captured / consistent.window * consistent.area.w + 0.5)
+local endX = consistent.area.x + math.floor((captured - consistent.start) / consistent.window * consistent.area.w + 0.5)
 local frameBand = consistent.flightBands[1].properties
 equal(frameBand.x + frameBand.w, endX, "the live band must stop at recorded telemetry, not race ahead")
 local arm = consistent.armMarkers
@@ -264,7 +283,7 @@ assert(arm.markers[arm.markerKeys[1]].active)
 equal(arm.markers[arm.markerKeys[1]].object.properties.dashGap, nil)
 feed.stale, feed.revision = true, feed.revision + 1
 live.elapsed = live.elapsed + 1000
-for _ = 1, 200 do
+for _ = 1, 2000 do
     local _, pending = chart.refresh(consistent)
     if not pending then
         break
@@ -278,9 +297,9 @@ equal(
 )
 
 local function finishFrame(target)
-    for _ = 1, 200 do
+    for _ = 1, 2000 do
         local _, pending = chart.refresh(target)
-        if not pending then
+        if not pending and chartView.finished(target) then
             return
         end
     end
@@ -390,10 +409,10 @@ do
     local disarmed = pausedPanel.armMarkers.markers[pausedPanel.armMarkers.markerKeys[1]]
     equal(disarmed.object.kind, "triangle")
     assert(disarmed.object.properties.pts[3][2] > disarmed.object.properties.pts[1][2])
-    local firstRun = pausedPanel.series[1].runs[1]
+    local _, endAt = chartView.bounds(pausedPanel, 1)
     equal(
-        firstRun.pts[firstRun.size][1],
-        pausedPanel.area.x + math.floor(1000 / pausedPanel.window * pausedPanel.area.w + 0.5),
+        endAt,
+        pausedPanel.area.x + math.floor(1000 / pausedPanel.window * pausedPanel.area.w),
         "paused traces end at the last real sample, without extending to recording stop"
     )
     equal(data.plotRevision, 1, "pause presentation must not add synthetic samples")
@@ -415,9 +434,9 @@ do
     equal(seam.object.kind, "rectangle")
     equal(seam.slashes, nil, "recording pauses must not add an axis icon")
     equal(#pausedPanel.resumeMarkers.markerKeys, 1, "all metrics share one recording seam")
-    local beforeSample = pausedPanel.series[1].runs[1]
+    local _, beforeSample = chartView.bounds(pausedPanel, 1)
     equal(
-        beforeSample.pts[beforeSample.size][1],
+        beforeSample,
         seam.object.properties.x,
         "a sample at the exact stop timestamp must stay to the left until a resumed sample exists"
     )
@@ -440,9 +459,9 @@ do
     local otherColumn = math.floor(1300 * pausedPanel.axis.scale + 0.5) + 25
     assert(pausedPanel.armMarkers.markers[-otherColumn].active, "other disarm triangles remain visible")
     for _, item in ipairs(pausedPanel.series) do
-        equal(item.runCount, 3, "resuming adds a dotted connector between solid runs")
-        local connector = item.runs[2]
-        assert(connector.dotted and connector.connector and not connector.connector.hidden)
+        equal(#item.connectors, 1, "resuming adds one dotted connector between solid envelopes")
+        local connector = item.connectors[1]
+        assert(connector.connector and not connector.connector.hidden)
         equal(connector.pts[2][1] - connector.pts[1][1], 24, "equal recording timestamps must be separated by the gap")
         equal(connector.pts[1][1], seam.object.properties.x)
         equal(connector.pts[2][1], seam.object.properties.x + seam.object.properties.w)
@@ -459,7 +478,7 @@ do
     finishFrame(pausedPanel)
     equal(#pausedPanel.resumeMarkers.markerKeys, 1, "telemetry gaps must not create recording seams")
     for _, item in ipairs(pausedPanel.series) do
-        equal(item.runCount, 4)
+        equal(#item.connectors, 1, "telemetry loss must not add a recording connector")
         local gap = item.markers[item.markerKeys[1]]
         assert(gap.active)
         equal(gap.object.properties.dashGap, 3, "ordinary telemetry gap styling is unchanged")
@@ -486,6 +505,8 @@ do
     equal(#activeSeams(pausedPanel), 1, "expired journal boundaries must be hidden")
     pauseSettings.timeRange, pauseSettings.duration = "rolling", "30s"
     recording.elapsed = 7000
+    chart.destroy(pausedPanel)
+    pausedPanel = chart.create(host.page, { x = 0, y = 0, w = 472, h = 196 }, pauseSettings, services)
     finishFrame(pausedPanel)
     for _, marker in pairs(pausedPanel.resumeMarkers.markers) do
         assert(not marker.active, "recording seams must leave the rolling window")

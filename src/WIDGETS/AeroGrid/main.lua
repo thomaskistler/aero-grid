@@ -617,6 +617,8 @@ local function create(zone, widgetOptions, path)
             end
         end
         context.panelHost = runtimeModule("lib/panel_host.lua")
+        context.chartMipmap = runtimeModule("lib/chart_mipmap.lua")
+        context.chartMipmapRenderer = runtimeModule("lib/chart_mipmap_renderer.lua")
         local typography = runtimeModule("lib/typography.lua")
         local panelLayout = runtimeModule("lib/panel_layout.lua")
         local reading = runtimeModule("lib/reading.lua")

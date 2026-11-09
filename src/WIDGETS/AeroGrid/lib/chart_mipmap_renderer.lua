@@ -1,12 +1,13 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local renderer = {}
+local renderer = { RUNTIME_API = 1 }
 renderer.__index = renderer
 
 function renderer.new(context)
     local self = setmetatable({
         context = context,
         width = context.area.w // 1,
+        geometry = context.geometryVersion,
         objects = {},
         visible = {},
         groups = {},
@@ -19,6 +20,7 @@ function renderer.new(context)
         prepareIndex = 1,
     }, renderer)
     self.root = lvgl.box(context.plotRoot, { x = 0, y = 0, w = context.rect.w, h = context.rect.h })
+    lvgl.hide(self.root)
     return self
 end
 
@@ -40,7 +42,7 @@ function renderer:prepare()
         local quarter = math.min(3, ((bucket + 1) * 4 - 1) // width)
         local group = (series - 1) * 4 + quarter + 1
         local object = lvgl.rectangle(self.groups[group], {
-            x = 0,
+            x = context.area.x + bucket,
             y = 0,
             w = 1,
             h = 1,
@@ -48,8 +50,8 @@ function renderer:prepare()
             filled = true,
             color = context.series[series].color,
         })
-        lvgl.hide(object)
         self.objects[index], self.membership[index] = object, group
+        self.visible[index] = true
         self.prepareIndex = index + 1
     end
     return false
@@ -86,9 +88,10 @@ function renderer:selection()
     local context, area = self.context, self.context.area
     local jobs, changed = {}, false
     for series, owner in ipairs(context.mipmapConsumers) do
-        local map, item = owner.map, context.series[series]
         local at = math.max(0, context.session.elapsed - owner.startedAt)
-        local level, origin = map:select(at)
+        local map = owner.output or owner.map
+        local level, origin = map:select(map.pinned and 0 or at)
+        local item = context.series[series]
         local previous, summary = self.published[series], map.levels[level]
         local first, last = origin, origin + self.width - 1
         local same = previous
@@ -120,6 +123,7 @@ function renderer:selection()
             last = last,
             at = map.at,
             revision = map.revision,
+            historyRevision = map.historyRevision,
             low = item.low,
             high = item.high,
             geometry = context.geometryVersion,
@@ -134,6 +138,7 @@ function renderer:selection()
                 or previous.map ~= map
                 or previous.origin ~= origin
                 or previous.geometry ~= context.geometryVersion,
+            placeX = self.geometry ~= context.geometryVersion,
             scroll = scroll,
             retainedLast = scroll and ((previous.at or 0) * self.width / summary.span) // 1 - 1,
         }
@@ -177,36 +182,46 @@ function renderer:begin(jobs)
     end
 end
 
-local function draw(self, job, series, quota)
+local function draw(self, job, series, quota, activating)
     if job.index > job.last then
         return 0
     end
     local width, changes = self.width, self.changes
+    local objects, visible = self.objects, self.visible
+    local tags, lows, highs = job.tags, job.lows, job.highs
+    local placeX = job.placeX
+    local minimum, maximum = math.min, math.max
     local finish = math.min(job.last, job.index + quota - 1)
     local slot, offset = job.index % width + 1, (series - 1) * width
-    local scale = job.height / (job.high - job.low)
-    local bottom = job.top + job.height
-    local set = self.objects[1].set
+    local topEdge, lowEdge = job.top, job.low
+    local left, origin = job.left, job.origin
+    local scale = job.height / (job.high - lowEdge)
+    local bottom = topEdge + job.height
+    local set = objects[1].set
     changes.x = nil
     for bucket = job.index, finish do
         local index = offset + slot
-        if job.tags[slot] == bucket + 1 then
-            local low, high = job.lows[slot], job.highs[slot]
-            local top = math.max(job.top, math.min(bottom, (bottom - (high - job.low) * scale + 0.5) // 1))
-            local last = math.max(job.top, math.min(bottom, (bottom - (low - job.low) * scale + 0.5) // 1))
+        if tags[slot] == bucket + 1 then
+            local low, high = lows[slot], highs[slot]
+            local top = maximum(topEdge, minimum(bottom, (bottom - (high - lowEdge) * scale + 0.5) // 1))
+            local last = maximum(topEdge, minimum(bottom, (bottom - (low - lowEdge) * scale + 0.5) // 1))
             changes.y, changes.h = top, last - top + 1
-            if job.updateX or not self.visible[index] then
-                changes.x = job.left + bucket - job.origin - self.offsets[self.membership[index]]
+            if placeX or not visible[index] then
+                if not activating and not visible[index] then
+                    job.activate, finish = true, bucket - 1
+                    break
+                end
+                changes.x = left + bucket - origin - self.offsets[self.membership[index]]
             end
-            set(self.objects[index], changes)
+            set(objects[index], changes)
             changes.x = nil
-            if not self.visible[index] then
-                lvgl.show(self.objects[index])
-                self.visible[index] = true
+            if not visible[index] then
+                lvgl.show(objects[index])
+                visible[index] = true
             end
-        elseif self.visible[index] then
-            lvgl.hide(self.objects[index])
-            self.visible[index] = nil
+        elseif visible[index] then
+            lvgl.hide(objects[index])
+            visible[index] = nil
         end
         slot = slot % width + 1
     end
@@ -228,12 +243,22 @@ function renderer:step(quota)
     end
     local complete = true
     for series, job in ipairs(self.jobs) do
-        local used = draw(self, job, series, math.min(quota, job.updateX and 90 or 130))
-        local remaining = math.min(quota, job.updateX and 90 or 130) - used
+        local activating = job.activate
+        job.activate = nil
+        local limit = math.min(quota, job.updateX and 90 or 130)
+        -- Revealing a hidden column also places it and calls native show.
+        local used = draw(self, job, series, activating and math.max(1, limit // 2) or limit, activating)
+        used = activating and used * 2 or used
+        local remaining = limit - used
+        if job.activate and remaining >= 2 then
+            job.activate = nil
+            remaining = remaining - draw(self, job, series, remaining // 2, true) * 2
+        end
         if job.index > job.last and job.revision ~= job.map.revision then
             job.index = math.max(job.origin, ((job.at or 0) * self.width / job.span) // 1)
             job.last = math.min(job.origin + self.width - 1, ((job.map.at or 0) * self.width / job.span) // 1)
             job.at, job.revision, job.updateX = job.map.at, job.map.revision, false
+            job.historyRevision = job.map.historyRevision
             if remaining > 0 then
                 draw(self, job, series, remaining)
             end
@@ -243,7 +268,9 @@ function renderer:step(quota)
     if complete then
         self.published, self.jobs = self.jobs, nil
         lvgl.show(self.root)
-        for _, job in ipairs(self.published) do
+        for series, job in ipairs(self.published) do
+            local item = self.context.series[series]
+            item.drawnRevision, item.drawnVersion = job.historyRevision, self.context.version
             if job.level > job.map.level then
                 job.map:releaseBelow(job.level)
             end

@@ -30,6 +30,11 @@ for _, width in ipairs({ 226, 397, 398, 399, 400, 800 }) do
     while not renderer:prepare() do
     end
     assert(#renderer.objects == width * 3 and #renderer.groups == 12, "native pool must remain physical-width bounded")
+    assert(renderer.root.hidden, "fresh pool placeholders must remain hidden until first publication")
+    for index, object in ipairs(renderer.objects) do
+        assert(not object.hidden, "pool preparation must not require activating every reconstructed column")
+        assert(object.properties.x == context.area.x + (index - 1) % width, "pool must preplace canonical columns")
+    end
     local function sample(at, missing)
         local values = {}
         for series = 1, 3 do
@@ -47,6 +52,7 @@ for _, width in ipairs({ 226, 397, 398, 399, 400, 800 }) do
             assert(turns < 1000, "renderer failed to settle")
             fixture.lvglMock.settle()
         until renderer:step(24)
+        assert(not renderer.root.hidden, "completed projection must reveal its native pool")
     end
     local function verify()
         for series, job in ipairs(renderer.published) do
@@ -84,6 +90,22 @@ for _, width in ipairs({ 226, 397, 398, 399, 400, 800 }) do
         sample(at)
     end
     finish()
+    verify()
+    renderer:reset()
+    local show, reveals = lvgl.show, 0
+    lvgl.show = function(object)
+        reveals = reveals + 1
+        return show(object)
+    end
+    local complete, turns
+    turns = 0
+    repeat
+        reveals, turns = 0, turns + 1
+        assert(turns < 1000, "hidden pool failed to republish")
+        complete = renderer:step(24)
+        assert(reveals <= 37, "activation must share the half-quota limit, including catch-up")
+    until complete
+    lvgl.show = show
     verify()
     local retained = {}
     for series, owner in ipairs(context.mipmapConsumers) do

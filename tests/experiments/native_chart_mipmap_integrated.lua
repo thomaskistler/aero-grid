@@ -3,11 +3,12 @@
 local function load(path, ...)
     return assert(loadScript("/WIDGETS/AeroGrid/" .. path))(...)
 end
-local Mipmap = load("lib/chart_mipmap.lua")
-local Renderer = load("lib/chart_mipmap_renderer.lua")
 local Stress = load("tests/support/chart_mipmap_stress.lua", load)
+local Assertions = load("tests/support/chart_assertions.lua")
 local lifecycle = false
 local longFlight = false
+local rolling = false
+local lateAttach = false
 local firmwareTime = getTime
 local longSpan = 6000 * (4 / 3) ^ 10
 local state = { phase = "loading", callbacks = 0, worst = 0, samples = {} }
@@ -18,7 +19,7 @@ local function write(path, text)
 end
 
 local function tick(context, refresh)
-    context.chartMipmap, context.chartMipmapRenderer = Mipmap, Renderer
+    assert(context.chartMipmap and context.chartMipmapRenderer, "default runtime did not load mipmap modules")
     if state.previous then
         local usage = getUsage()
         state.worst = math.max(state.worst, usage)
@@ -36,10 +37,18 @@ local function tick(context, refresh)
         state.nextCallback = real + 5
         state.logical = (state.logical or real) + 50
         context.matchedNow = state.logical
-        getTime = function() return state.logical end
-        if context.serviceRuntime then context.serviceRuntime.env.getTime = getTime end
-        if context.flightBroker then context.flightBroker.env.getTime = getTime end
-        for _, entry in ipairs(context.panels or {}) do entry.instance.clock = getTime end
+        getTime = function()
+            return state.logical
+        end
+        if context.serviceRuntime then
+            context.serviceRuntime.env.getTime = getTime
+        end
+        if context.flightBroker then
+            context.flightBroker.env.getTime = getTime
+        end
+        for _, entry in ipairs(context.panels or {}) do
+            entry.instance.clock = getTime
+        end
     end
     if #context.errors > 0 then
         write("/chart-feasibility.txt", "FAIL " .. table.concat(context.errors, "; ") .. "\n")
@@ -97,7 +106,17 @@ local function tick(context, refresh)
             write("/paint-phase.txt", string.format("1 %d 0\n", state.startedAt * 10))
         end
     elseif state.phase == "running" then
-        if lifecycle and state.callbacks == 1100 then
+        if lateAttach and state.callbacks == 900 then
+            local old = context.panels[1]
+            state.oldRenderer, state.oldMap = old.instance.mipmapRenderer, old.instance.mipmapConsumers[1].map
+            state.oldCount = old.instance.series[1].feed.count
+            old.module.destroy(old.instance)
+            lvgl.hide(old.container)
+            local replacement = assert(context.dashboardLoader.buildPanel(context, old.placement))
+            context.panels[1], context.panels[#context.panels] = replacement, nil
+            context.refreshOwner = nil
+            state.attached = true
+        elseif lifecycle and state.callbacks == 1100 then
             local first, sibling = context.panels[1].instance, context.panels[2].instance
             state.oldMap, state.siblingMap = first.mipmapConsumers[1].map, sibling.mipmapConsumers[1].map
             state.oldRenderer = first.mipmapRenderer
@@ -106,15 +125,17 @@ local function tick(context, refresh)
             assert(first.mipmapConsumers[1].map ~= state.oldMap, "resize retained old map")
             assert(sibling.mipmapConsumers[1].map == state.siblingMap, "resize changed sibling map")
             state.resized = true
-        elseif lifecycle and state.callbacks == 1300 then
+        elseif lifecycle and state.resized and not state.pausedAt and Assertions.finished(context.panels[1].instance) then
             local first = context.panels[1].instance
             assert(first.mipmapPrepared and next(first.mipmapRenderer.published), "resize did not republish")
             assert(first.backPlot == nil, "resize bypassed single pool")
             state.owner = first.mipmapConsumers[1]
             state.workload.armed = false
-        elseif lifecycle and state.callbacks == 1600 then
+            state.pausedAt = state.callbacks
+        elseif lifecycle and state.pausedAt and not state.resumed and state.callbacks >= state.pausedAt + 300 then
             assert(not context.panels[1].instance.session.recording, "pause was not observed")
             state.workload.armed = true
+            state.resumed = true
         end
         refresh(context)
         if state.expansionStartedAt and not state.expansionReadyAt then
@@ -177,19 +198,38 @@ local function tick(context, refresh)
                     complete = complete and observation.scrolls >= 6
                 end
             end
-            if complete then state.phase = "report" end
+            if complete then
+                state.phase = "report"
+            end
             assert(state.callbacks < 8000, "long flight did not publish six scrolls")
-        elseif state.callbacks >= (lifecycle and 2300 or 1500) then
-            state.phase = "report"
+        elseif state.callbacks >= (lateAttach and 3000 or lifecycle and 3500 or 1500) then
+            local ready = true
+            if lateAttach or lifecycle then
+                local first = context.panels[1].instance
+                ready = Assertions.finished(first)
+                if lifecycle then
+                    ready = ready
+                        and state.resumed
+                        and first.session.resumeLast > 0
+                        and state.owner.output
+                        and #state.owner.output.connectors > 0
+                end
+                assert(state.callbacks < 6000, "rebuilt chart did not publish before the lifecycle deadline")
+            end
+            if ready then
+                state.phase = "report"
+            end
         end
     elseif state.phase == "report" then
+        state.reportSamples = state.reportSamples or {}
+        local first = #state.reportSamples + 1
+        for index = first, math.min(first + 63, #state.samples) do
+            state.reportSamples[index] = tostring(state.samples[index])
+        end
+        if #state.reportSamples < #state.samples then
+            return
+        end
         if longFlight then
-            state.reportSamples = state.reportSamples or {}
-            local first = #state.reportSamples + 1
-            for index = first, math.min(first + 63, #state.samples) do
-                state.reportSamples[index] = tostring(state.samples[index])
-            end
-            if #state.reportSamples < #state.samples then return end
             local checked = state.checkedLevels or 0
             if checked < 66 then
                 local index = checked // 33 + 1
@@ -222,22 +262,58 @@ local function tick(context, refresh)
                     assert(chart.session.resumeLast == 0 and chart.session.recording, "flight was interrupted")
                 end
             end
-            longCoverage = "COVERAGE levels=11 scrolls_per_series=6 logical_step=50 admission_ms=50 uninterrupted=1 retired_levels_per_series=10\n"
+            longCoverage =
+                "COVERAGE levels=11 scrolls_per_series=6 logical_step=50 admission_ms=50 uninterrupted=1 retired_levels_per_series=10\n"
         end
         if lifecycle then
             local first, sibling = context.panels[1].instance, context.panels[2].instance
             assert(state.resized and first.session.resumeLast > 0, "missing lifecycle transitions")
-            assert(first.mipmapRenderer == nil and sibling.mipmapRenderer == nil, "resume did not fall back")
-            assert(state.owner.map ~= nil and first.series[1].feed.count > 0, "fallback lost history")
-            local samples = {}
-            for index, usage in ipairs(state.samples) do samples[index] = tostring(usage) end
-            write("/chart-feasibility.txt", string.format(
-                "INTEGRATED callbacks=%d usage_percent=%d runtime_ms=%d resized=1 resumed=1 fallback=1 sources=%d\n",
-                #state.samples, state.worst, (getTime() - state.startedAt) * 10, state.workload.history.count)
-                .. "CALLBACK_USAGE " .. table.concat(samples, ",") .. "\n")
+            assert(first.mipmapRenderer and sibling.mipmapRenderer, "resume lost the sole renderer")
+            assert(state.owner.map ~= nil and first.series[1].feed.count > 0, "resume lost history")
+            assert(state.owner.output and #state.owner.output.connectors > 0, "resume did not rebuild pause connectors")
+            local samples = state.reportSamples
+            write(
+                "/chart-feasibility.txt",
+                string.format(
+                    "INTEGRATED callbacks=%d usage_percent=%d runtime_ms=%d resized=1 resumed=1 sole_renderer=1 sources=%d\n",
+                    #state.samples,
+                    state.worst,
+                    (getTime() - state.startedAt) * 10,
+                    state.workload.history.count
+                )
+                    .. "CALLBACK_USAGE "
+                    .. table.concat(samples, ",")
+                    .. "\n"
+            )
             write("/capture-ready.txt", "native lifecycle callback gate complete")
             state.phase = "done"
             return
+        end
+        local inputCoverage = ""
+        if rolling then
+            for _, entry in ipairs(context.panels) do
+                for _, owner in ipairs(entry.instance.mipmapConsumers) do
+                    assert(
+                        owner.map.lastLevel == 0 and owner.map.window == 6000,
+                        "rolling did not use a fixed-span ring"
+                    )
+                    local _, origin = owner.map:select(owner.map.at)
+                    assert(origin > 0, "rolling did not scroll past its first window")
+                end
+            end
+            inputCoverage = "COVERAGE rolling=1 fixed_span=6000 scrolled=1 sole_renderer=1\n"
+        elseif lateAttach then
+            local chart = context.panels[1].instance
+            assert(state.attached and chart.mipmapRenderer ~= state.oldRenderer, "late chart was not newly attached")
+            assert(
+                chart.mipmapConsumers[1].map ~= state.oldMap and chart.mipmapConsumers[1].complete,
+                "late chart did not complete recorded-knot reconstruction"
+            )
+            assert(
+                chart.series[1].feed.count >= state.oldCount and chart.mipmapRenderer.published[1],
+                "late chart did not preserve and publish recorded history"
+            )
+            inputCoverage = "COVERAGE late_attach=1 rebuilt=1 retained_history=1 sole_renderer=1\n"
         end
         local rendered, columns, objects, states = 0, {}, 0, {}
         for _, entry in ipairs(context.panels) do
@@ -265,12 +341,7 @@ local function tick(context, refresh)
                 owner.startedAt
             )
         end
-        local samples = state.reportSamples or {}
-        if not longFlight then
-            for index, usage in ipairs(state.samples) do
-                samples[index] = tostring(usage)
-            end
-        end
+        local samples = state.reportSamples
         write(
             "/chart-feasibility.txt",
             string.format(
@@ -290,6 +361,7 @@ local function tick(context, refresh)
                 .. table.concat(samples, ",")
                 .. "\n"
                 .. longCoverage
+                .. inputCoverage
                 .. table.concat(states)
         )
         write("/capture-ready.txt", "normal chart callback smoke completed; no independent native paint target")

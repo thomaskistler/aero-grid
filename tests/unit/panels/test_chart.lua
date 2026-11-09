@@ -3,11 +3,12 @@
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
 local chartModule = fixture.module("panels/chart.lua")
+local chartView = assert(loadfile(root .. "/tests/support/chart_assertions.lua"))()
 local function refresh(panel)
     local interval, unfinished
     for _ = 1, 2000 do
         interval, unfinished = chartModule.refresh(panel)
-        if not unfinished then
+        if not unfinished and chartView.finished(panel) then
             return interval
         end
     end
@@ -20,6 +21,7 @@ end
 chart.refresh = refresh
 chart.update = function(panel, rect)
     chartModule.update(panel, rect)
+    chartModule.render(panel)
     refresh(panel)
 end
 local host = fixture.module("lib/panel_host.lua")
@@ -173,7 +175,10 @@ equal(#power.armMarkers.markerKeys, 0, "no arm boundary may be created before th
 fixture.radio.values[300] = 1024
 fixture.pump(context, 40)
 assert(fixture.pumpUntil(context, function()
-    return not power.framePhase and power.series[1].snapshot.available
+    return power.series[1].feed.available
+        and power.series[1].drawnRevision == power.series[1].feed.plotRevision
+        and not power.mipmapRenderer.jobs
+        and not power.mipmapDecorating
 end, 500))
 equal(power.status.properties.text, "")
 equal(#power.armMarkers.markerKeys, 0, "the initial arming must not draw a vertical boundary")
@@ -181,10 +186,12 @@ assert(power.session.recording)
 assert(power.series[1].low < 24 and power.series[1].high > 24)
 equal(power.series[1].feed.value, 24)
 equal(power.series[2].feed.value, 10)
-assert(power.series[1].runs[1].line)
-assert(power.series[2].runs[1].line)
-equal(power.series[1].runs[1].line.properties.thickness, 1)
-equal(power.series[2].runs[1].line.properties.thickness, 1)
+for series = 1, 2 do
+    local rectangles = chartView.rectangles(power, series)
+    assert(#rectangles > 0)
+    equal(rectangles[1].object.kind, "rectangle")
+    equal(rectangles[1].w, 1, "native envelopes must be one pixel wide")
+end
 local function alignedReadouts(panel)
     for _, item in ipairs(panel.series) do
         local legendX, legendW = item.legendX or panel.area.legendX, item.legendW or panel.area.legendW
@@ -335,7 +342,7 @@ assert(power.series[1].name.properties.x > power.area.x + power.area.w)
 assert(power.series[1].extrema.properties.y > power.series[1].value.properties.y)
 assert(power.showExtrema, "two sources must retain their extrema in a standard short panel")
 assert(fixture.instanceOf(context, "recording").showExtrema, "a tall panel must fit three enlarged legend entries")
-equal(power.series[1].runs[1].line.kind, power.series[2].runs[1].line.kind)
+equal(chartView.rectangles(power, 1)[1].object.kind, chartView.rectangles(power, 2)[1].object.kind)
 local fixed = fixture.instanceOf(context, "fixed")
 assert(fixture.pumpUntil(context, function()
     return fixed.series[1].low ~= nil
@@ -346,7 +353,7 @@ local elapsed = power.session.elapsed
 fixture.radio.values[300] = 0
 fixture.pump(context, 40)
 assert(fixture.pumpUntil(context, function()
-    return not power.framePhase and not power.session.recording
+    return not power.mipmapRenderer.jobs and not power.mipmapDecorating and not power.session.recording
 end, 500))
 local paused = power.session.elapsed
 assert(paused >= elapsed)
@@ -359,11 +366,7 @@ equal(disarmMarker.object.kind, "triangle")
 assert(disarmMarker.object.properties.pts[3][2] > disarmMarker.object.properties.pts[1][2])
 local pausedRevision = power.series[1].feed.plotRevision
 chart.update(power, power.rect)
-assert(
-    power.armMarkers.markers[-disarmColumn] == disarmMarker
-        or power.backPlot.armMarkers.markers[-disarmColumn] == disarmMarker,
-    "reflow must reuse pooled markers"
-)
+assert(power.armMarkers.markers[-disarmColumn] == disarmMarker, "reflow must reuse pooled markers")
 fixture.radio.values[100] = 3
 fixture.pump(context, 40)
 equal(power.session.elapsed, paused)
@@ -372,13 +375,17 @@ equal(power.series[1].feed.plotRevision, pausedRevision, "showing a disarm marke
 fixture.radio.values[300] = 1024
 fixture.pump(context, 40)
 assert(fixture.pumpUntil(context, function()
-    return not power.framePhase and power.series[1].snapshot.value == 3
+    return power.series[1].feed.value == 3
+        and not power.mipmapRenderer.jobs
+        and not power.mipmapDecorating
+        and power.series[1].connectors[1]
+        and power.series[1].connectors[1].connector
 end, 500))
 equal(power.series[1].feed.value, 3)
 equal(power.series[1].feed.min, 3)
 equal(power.series[1].feed.max, 24)
-assert(power.series[1].runCount >= 3, "rearm adds a dotted connector between separate solid segments")
-assert(power.series[1].runs[2].dotted and power.series[1].runs[2].connector)
+assert(#power.series[1].connectors > 0, "rearm adds a dotted connector between separate solid segments")
+assert(power.series[1].connectors[1].connector)
 equal(power.status.properties.text, "")
 equal(#power.series[1].markerKeys, 0, "a recording pause must not add a full-height telemetry-gap marker")
 local seam = power.resumeMarkers.markers[power.resumeMarkers.markerKeys[#power.resumeMarkers.markerKeys]]
@@ -398,7 +405,7 @@ for _, size in ipairs({ { 320, 240 }, { 800, 480 }, { 480, 272 } }) do
         chart.refresh(panel)
         assert(panel.area.w > 0 and panel.area.h > 0)
         assert(panel.topLegend or panel.area.legendX >= panel.area.x + panel.area.w)
-        for _, item in ipairs(panel.series) do
+        for series, item in ipairs(panel.series) do
             equal(item.name.properties.font(), panel.legendFont, "metric names must follow the legend font")
             equal(item.value.properties.font(), panel.legendFont, "recorded values must follow the legend font")
             equal(item.unit.properties.font(), panel.legendFont, "units must follow the reading font")
@@ -433,13 +440,9 @@ for _, size in ipairs({ { 320, 240 }, { 800, 480 }, { 480, 272 } }) do
             end
             alignedReadouts(panel)
             separatedReadouts(panel)
-            for _, run in ipairs(item.runs) do
-                if run.line and not run.line.hidden then
-                    for _, point in ipairs(run.pts) do
-                        assert(point[1] >= panel.area.x and point[1] <= panel.area.x + panel.area.w)
-                        assert(point[2] >= panel.area.y and point[2] <= panel.area.y + panel.area.h)
-                    end
-                end
+            for _, rect in ipairs(chartView.rectangles(panel, series)) do
+                assert(rect.x >= panel.area.x and rect.x < panel.area.x + panel.area.w)
+                assert(rect.y >= panel.area.y and rect.y + rect.h - 1 <= panel.area.y + panel.area.h)
             end
         end
     end
@@ -501,6 +504,7 @@ local function typographyPanel(count, top)
         config = { metrics = metrics, armSwitch = "SAv" },
     })
     assert(entry, message)
+    chart.refresh(entry.instance)
     return entry.instance
 end
 
@@ -771,7 +775,7 @@ for count = 1, 3 do
     end
 end
 
-local function recordingPanel(id, range)
+local function recordingPanel(id, range, duration)
     local entry, errorMessage = context.dashboardLoader.buildPanel(context, {
         id = id,
         type = "chart",
@@ -782,7 +786,7 @@ local function recordingPanel(id, range)
         config = {
             armSwitch = "SAv",
             timeRange = range,
-            duration = range == "rolling" and "30s" or "10m",
+            duration = duration or (range == "rolling" and "30s" or "10m"),
             metrics = { { source = id, precision = 3, rangeMin = -100, rangeMax = 100 } },
         },
     })
@@ -795,10 +799,9 @@ local function finishDrawing(panel)
         chart.refresh(panel)
         local item = panel.series[1]
         if
-            not panel.pending
-            and not panel.framePhase
-            and item.drawnRevision == item.feed.plotRevision
-            and item.drawnVersion == panel.version
+            not panel.mipmapRenderer.jobs
+            and not panel.mipmapDecorating
+            and (not item.feed.available or item.drawnRevision == item.feed.plotRevision and item.drawnVersion == panel.version)
             and panel.gridVersion == panel.version
         then
             return
@@ -807,8 +810,7 @@ local function finishDrawing(panel)
     error("staged projection did not converge")
 end
 
-local gridPanel = recordingPanel("minute-grid", "rolling")
-gridPanel.settings.duration = "10m"
+local gridPanel = recordingPanel("minute-grid", "rolling", "10m")
 gridPanel.session = { configured = true, available = true, recording = false, elapsed = 65000 }
 for _ = 1, 24 do
     chart.refresh(gridPanel)
@@ -863,30 +865,28 @@ chart.update(gridPanel, gridPanel.rect)
 assert(not gridPanel.title.hidden)
 checkDurationCorner(gridPanel)
 assert(gridPanel.area.y > gridPanel.area.frame.labelY, "explicit titles must retain a header")
-gridPanel.settings.duration = "30s"
-gridPanel.settings.timeRange = "growing"
-for _, case in ipairs({
-    { 0, 6000 },
-    { 5999, 6000 },
-    { 6000, 6000 },
-    { 6001, 12000 },
-    { 12000, 12000 },
-    { 12001, 18000 },
-    { 18000, 18000 },
-    { 18001, 24000 },
-    { 600000, 600000 },
-    { 600001, 606000 },
-}) do
-    gridPanel.session.elapsed = case[1]
-    for _ = 1, 12 do
-        chart.refresh(gridPanel)
+chart.destroy(gridPanel)
+gridPanel = recordingPanel("minute-grid", "growing")
+gridPanel.session = { configured = true, available = true, recording = false, elapsed = 0 }
+for _, elapsed in ipairs({ 0, 5999, 6000, 6001, 12000, 12001, 18000, 18001, 600000, 600001 }) do
+    gridPanel.session.elapsed = elapsed
+    chart.refresh(gridPanel)
+    local level = 0
+    while level < 10 and elapsed >= 6000 * (4 / 3) ^ level do
+        level = level + 1
     end
-    equal(gridPanel.window, case[2], "growing windows must advance by whole minutes only after a boundary is exceeded")
-    equal(gridPanel.duration.properties.text, chart.durationText(case[2]))
-    equal(gridPanel.start, 0, "growing mode must retain the full recording")
+    local span = 6000 * (4 / 3) ^ level
+    equal(gridPanel.window, span, "growing views must select a precomputed mipmap span")
+    equal(gridPanel.duration.properties.text, chart.durationText(span))
+    if level < 10 then
+        equal(gridPanel.start, 0, "fitting levels retain the recording origin")
+    end
 end
 gridPanel.settings.duration = "10m"
 gridPanel.session.elapsed = 0
+for _, owner in ipairs(gridPanel.mipmapConsumers) do
+    owner:reset()
+end
 chart.refresh(gridPanel)
 equal(gridPanel.window, 6000, "legacy growing durations must not override the fixed one-minute start")
 checkDurationCorner(gridPanel)
@@ -923,13 +923,10 @@ equal(denseItem.feed.count, 6001)
 equal(denseItem.feed.full, false)
 equal(denseItem.feed.epsilon, 0.0005, "metric precision must reach the compressor")
 finishDrawing(dense)
-local run = denseItem.runs[1]
-assert(run.size <= 4 * (dense.area.w + 1), "dense histories must project to bounded screen-column points")
-local top, bottom = false, false
-for _, point in ipairs(run.pts) do
-    top, bottom = top or point[2] == dense.area.y, bottom or point[2] == dense.area.y + dense.area.h
-end
-assert(top and bottom, "display reduction must retain spikes in both directions")
+equal(#dense.mipmapRenderer.objects, dense.area.w, "dense histories must use a bounded native column pool")
+local _, _, top, bottom = chartView.bounds(dense, 1)
+equal(top, dense.area.y, "display reduction must retain upward spikes")
+equal(bottom, dense.area.y + dense.area.h, "display reduction must retain downward spikes")
 for index = 6001, 6144 do
     reading.value, reading.updatedAt = index % 2 == 0 and -100 or 100, now + index * 10
     syntheticSample()
@@ -945,7 +942,7 @@ chart.refresh(dense)
 chart.update(dense, { x = 0, y = 0, w = 472, h = 264 })
 finishDrawing(dense)
 equal(dense.status.properties.text, "HISTORY FULL")
-assert(denseItem.runs[1].line and not denseItem.runs[1].line.hidden, "full history must remain drawable after resize")
+assert(#chartView.rectangles(dense, 1) > 0, "full history must remain drawable after resize")
 history.failed = true
 chart.refresh(dense)
 equal(dense.status.properties.text, "HISTORY N/A", "full status must not mask service failure")
@@ -958,11 +955,17 @@ for index = 0, 60 do
     syntheticSample()
 end
 finishDrawing(clipped)
-local clippedRun = clipped.series[1].runs[1]
-local first = clippedRun.pts[1]
-equal(first[1], clipped.area.x, "rolling ramps must interpolate at the left boundary")
-local expectedY = clipped.area.y + math.floor((1 - (30 + 100) / 200) * clipped.area.h + 0.5)
-equal(first[2], expectedY, "window clipping must interpolate the retained bracketing segment")
+local first
+for _, rect in ipairs(chartView.rectangles(clipped, 1)) do
+    if rect.x == clipped.area.x then
+        first = rect
+    end
+end
+assert(first, "rolling ramps must interpolate at the ring window's left boundary")
+local anchorAt, anchorValue = clipped.history:point(clipped.series[1].feed, clipped.series[1].feed.first)
+local valueAtLeft = anchorValue + (clipped.start - anchorAt) / 100
+local expectedY = clipped.area.y + math.floor((1 - (valueAtLeft + 100) / 200) * clipped.area.h + 0.5)
+equal(first.y + first.h - 1, expectedY, "window clipping must interpolate the retained bracketing segment")
 
 local empty = fixture.createLoaded(nil, { Layout = "Empty", Theme = "modern-dark" })
 local built, message = empty.dashboardLoader.buildPanel(empty, {
@@ -984,14 +987,12 @@ fixture.pump(light, 80)
 equal(#light.errors, 0, table.concat(light.errors, "\n"))
 for _, entry in ipairs(light.panels) do
     local panel = entry.instance
-    for _, item in ipairs(panel.series) do
+    for series, item in ipairs(panel.series) do
         assert(item.color ~= panel.theme.color[item.settings.accent or "cyan"], "light traces need dedicated chart ink")
         equal(item.name.properties.color, item.color, "legend names must match their trace")
-        for _, run in ipairs(item.runs) do
-            if run.line then
-                equal(run.line.properties.color, item.color)
-                equal(run.line.properties.thickness, 1, "stronger colors must preserve one-pixel traces")
-            end
+        for _, rect in ipairs(chartView.rectangles(panel, series)) do
+            equal(rect.color, item.color)
+            equal(rect.w, 1, "stronger colors must preserve one-pixel envelopes")
         end
     end
 end
@@ -1030,10 +1031,12 @@ end
 equal(lightPower.series[1].color, lightPower.theme.color.chartCyan)
 equal(lightPower.series[2].color, lightPower.theme.color.chartOrange)
 lightPower.settings.timeRange, lightPower.settings.duration = "rolling", "2m"
-chart.update(lightPower, lightPower.rect)
-for _ = 1, 24 do
-    chart.refresh(lightPower)
+for _, owner in ipairs(lightPower.mipmapConsumers) do
+    owner.window = 12000
+    owner:restart(lightPower.area.w, lightPower.session.elapsed)
 end
+chart.update(lightPower, lightPower.rect)
+finishDrawing(lightPower)
 checkGrid(lightPower)
 equal(lightPower.baseline.properties.color, lightPower.theme.color.chartGrid, "baseline and minute grid must agree")
 
@@ -1074,10 +1077,10 @@ assert(compatible, previewError)
 equal(compatible.instance.series[1].feed, lightPower.series[1].feed, "visual edits must reuse compatible history views")
 finishDrawing(compatible.instance)
 equal(compatible.instance.status.properties.text, "PREVIEW")
-assert(compatible.instance.series[1].runs[1].line, "a compatible chart preview must still draw recorded history")
+assert(#chartView.rectangles(compatible.instance, 1) > 0, "a compatible chart preview must still draw recorded history")
 chart.update(compatible.instance, { x = 0, y = 0, w = 472, h = 196 })
 finishDrawing(compatible.instance)
-assert(not compatible.instance.series[1].runs[1].line.hidden, "resizing a read-only preview preserves its traces")
+assert(#chartView.rectangles(compatible.instance, 1) > 0, "resizing a read-only preview preserves its traces")
 local incompatible, incompatibleError = light.dashboardLoader.buildPanel(light, {
     id = "chart-preview-new",
     type = "chart",

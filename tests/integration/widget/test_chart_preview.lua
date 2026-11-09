@@ -54,8 +54,13 @@ end)
 local compatible = fixture.instanceOf(context, "power")
 assert(compatible.preview and not compatible.previewMissing)
 equal(compatible.series[1].feed, feed)
-fixture.pump(context, 100)
-assert(compatible.series[1].runs[1].line, "compatible visual edits retain the recorded plot in the editor")
+assert(
+    fixture.pumpUntil(context, function()
+        return compatible.mipmapRenderer and compatible.mipmapRenderer.published[1]
+    end, 2500),
+    "editor preview did not publish reconstructed history"
+)
+assert(compatible.mipmapRenderer.published[1], "compatible visual edits retain recorded mipmaps in the editor")
 equal(history.count, subscriptions)
 equal(telemetry.count, telemetryCount)
 equal(controls.count, controlCount)
@@ -66,6 +71,11 @@ equal(compatible.history, history)
 equal(compatible.preview, false)
 equal(compatible.session, session)
 equal(compatible.series[1].feed, feed)
+fixture.pump(context, 200)
+assert(
+    not compatible.mipmapConsumers[1].readonly and compatible.mipmapConsumers[1].history == history,
+    "saving a compatible preview must reattach its live mipmap observers"
+)
 
 fixture.radio.fields.NewChart = { id = 5100, name = "NewChart", unit = 1 }
 fixture.radio.values[5100] = 55

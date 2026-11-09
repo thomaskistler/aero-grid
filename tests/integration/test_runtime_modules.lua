@@ -71,6 +71,35 @@ for _, relative in ipairs({
 end
 loadScript = originalLoadScript
 
+for _, relative in ipairs({ "lib/chart_mipmap.lua", "lib/chart_mipmap_renderer.lua" }) do
+    for _, failure in ipairs({ "missing", "incompatible" }) do
+        loadScript = function(filename)
+            if string.sub(filename, -#relative) == relative then
+                if failure == "missing" then
+                    return nil, "deliberately missing " .. relative
+                end
+                return function()
+                    return { RUNTIME_API = 0 }
+                end
+            end
+            return originalLoadScript(filename)
+        end
+        local host = fixture.createLoaded(nil, { Layout = "review-chart", Theme = "modern-dark" })
+        assert(
+            string.find(table.concat(logs, "\n"), relative, 1, true),
+            "missing mandatory chart runtime must reach the console"
+        )
+        assert(
+            string.find(table.concat(host.errors, "\n"), "runtime unavailable", 1, true),
+            "missing mandatory chart runtime must remain visible in the dashboard"
+        )
+        for _, entry in ipairs(host.panels) do
+            assert(entry.placement.type ~= "chart", "missing runtime silently selected another renderer")
+        end
+    end
+end
+loadScript = originalLoadScript
+
 local context = fixture.createLoaded()
 assert(not context.runtimeFailed and #context.errors == 0)
 assert(context.dashboardLoader and context.dashboardLifecycle and context.editorController)

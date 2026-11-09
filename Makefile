@@ -29,7 +29,7 @@ help:
 	  'make help    List the supported Make targets' \
 	  'make setup   Install development dependencies into build/venv' \
 	  'make test    Run pure Lua and mocked EdgeTX behavior tests' \
-	  'make test-chart-native Gate opt-in chart callbacks and pixels in native EdgeTX (macOS)' \
+	  'make test-chart-native Gate chart callbacks and pixels in native EdgeTX (macOS)' \
 	  'make test-installer Test browser installer and release mirroring' \
 	  'make check   Run behavior tests and syntax validation' \
 	  'make lint    Lint Lua files with lua-language-server' \

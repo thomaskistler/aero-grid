@@ -9,6 +9,10 @@ local makeJob, draw, drawScroll
 local function checkpoint() end
 
 function prototype.new(chart, _fixtureColumns, background)
+    if chart.mipmapSetup then
+        chart.mipmapSetup = nil
+        load("panels/chart.lua").geometry(chart, chart.rect)
+    end
     local width = math.floor(chart.area.w)
     assert(width >= 1, "chart requires a drawable pixel column")
     local record = recorder(#chart.series)

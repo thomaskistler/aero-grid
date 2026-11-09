@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
-"""Native callback/correctness gate for the actual opt-in chart runtime."""
+"""Native callback/correctness gate for the default chart runtime."""
 
 import argparse
 import json
@@ -11,6 +11,7 @@ from run_chart_feasibility import ROOT, native
 def cases(extended=False):
     result = [(operation, operation, {}) for operation in
               ("append", "horizontal", "vertical", "scroll", "continuous")]
+    result += [("rolling", "rolling", {}), ("late-attach", "late-attach", {})]
     if extended:
         result += [
             ("horizontal-level4", "horizontal", {"expansionLevel": 4}),
@@ -54,6 +55,14 @@ def report_passes(report, painted):
 
 
 def coverage_passes(report, operation):
+    if operation == "rolling":
+        return report.get("coverage") == [{
+            "rolling": "1", "fixed_span": "6000", "scrolled": "1", "sole_renderer": "1",
+        }]
+    if operation == "late-attach":
+        return report.get("coverage") == [{
+            "late_attach": "1", "rebuilt": "1", "retained_history": "1", "sole_renderer": "1",
+        }]
     if operation != "long-flight":
         return True
     return report.get("coverage") == [{
@@ -81,10 +90,11 @@ def main():
     for name, operation, settings in selected:
         target = output / name
         target.mkdir()
-        continuous = operation in ("continuous", "lifecycle", "long-flight")
-        if operation in ("lifecycle", "long-flight"):
+        continuous = operation in ("continuous", "lifecycle", "long-flight", "rolling", "late-attach")
+        if operation in ("lifecycle", "long-flight", "rolling", "late-attach"):
             source = (ROOT / "tests/experiments/native_chart_mipmap_integrated.lua").read_text(encoding="ascii")
-            marker = "lifecycle" if operation == "lifecycle" else "longFlight"
+            marker = {"lifecycle": "lifecycle", "long-flight": "longFlight",
+                      "rolling": "rolling", "late-attach": "lateAttach"}[operation]
             source = source.replace(f"local {marker} = false", f"local {marker} = true")
         else:
             source = None if continuous else controlled_source(driver, operation, settings)
@@ -93,24 +103,35 @@ def main():
             integrated=continuous, matched=None if continuous else "integrated",
             runtime_source=True, controlled_driver=source,
             arm_switch="SAv" if operation == "lifecycle" else None,
-            long_run=operation == "long-flight",
+            long_run=operation in ("long-flight", "lifecycle", "late-attach"),
+            chart_time_range="rolling" if operation == "rolling" else None,
+            framebuffer_trace=not continuous,
         )
         report = json.loads((target / "native-results.json").read_text())
         report["kind"] = (
-            f"actual opt-in chart native {operation} callback smoke" if continuous
-            else f"actual opt-in chart native {operation}: full-panel input-derived reference comparison"
+            f"default chart native {operation} callback smoke" if continuous
+            else f"default chart native {operation}: full-panel input-derived reference comparison"
         )
         report.pop("allowance", None)
         report["quota_policy"] = "Unmodified repository chart runtime; no allowance injection."
         report["runtime_modules_unmodified"] = {
             path: (target / "sdcard/WIDGETS/AeroGrid" / path).read_bytes()
             == (ROOT / "src/WIDGETS/AeroGrid" / path).read_bytes()
-            for path in ("panels/chart.lua", "lib/chart_mipmap.lua", "lib/chart_mipmap_renderer.lua")
+            for path in ("panels/chart.lua", "lib/chart_mipmap.lua",
+                         "lib/chart_mipmap_renderer.lua", "lib/history_service.lua")
         }
+        loader = (target / "sdcard/WIDGETS/AeroGrid/lib/dashboard_loader.lua").read_text()
+        override = 'support.environment(assert(loadScript("/WIDGETS/AeroGrid/capture-inputs.lua"))())'
+        report["loader_input_override_verified"] = (
+            loader.count(override) == 1
+            and loader.replace(override, "support.environment()")
+            == (ROOT / "src/WIDGETS/AeroGrid/lib/dashboard_loader.lua").read_text()
+        )
         report["runtime_source_unmodified"] = all(report["runtime_modules_unmodified"].values())
         passed = (
             report_passes(report, painted=not continuous)
             and report["runtime_source_unmodified"]
+            and report["loader_input_override_verified"]
             and coverage_passes(report, operation)
         )
         reports[name] = {
@@ -123,7 +144,8 @@ def main():
         }
         report["runtime_callback_gate_passed"] = passed
         report["limitations"] = [
-            "Chart panel, mipmap and renderer sources are copied unchanged; opt-in dependencies and diagnostic clocks are injected.",
+            "Default runtime loads its own mipmap dependencies; panel, history, mipmap and renderer sources are unchanged.",
+            "Loader differs only by its verified deterministic input-environment override; refresh wrapper and clocks are diagnostic.",
             "Controlled cases replay dense inputs and fence chart observers; continuous smoke does not fence.",
             "Paint references retain normal overlays, not an independent overlay-algorithm oracle.",
             "This gate covers native callback instructions and controlled pixels, not hardware memory or release acceptance.",

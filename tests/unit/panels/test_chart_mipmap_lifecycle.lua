@@ -19,11 +19,13 @@ local services = {
     history = history,
     clock = getTime,
     span = { colSpan = 4, rowSpan = 2 },
-    chartMipmap = mipmap,
+    chartMipmap = dashboard.chartMipmap,
+    chartMipmapRenderer = dashboard.chartMipmapRenderer,
     state = function(name, accent)
         return template.themeBuilder.state(template.theme, name, accent)
     end,
 }
+assert(services.chartMipmap and services.chartMipmapRenderer, "normal runtime did not provide mipmap modules")
 local host = fixture.module("lib/panel_host.lua")
 local function panel(mode)
     local settings = host.resolveSettings(chart, {
@@ -53,11 +55,19 @@ for at = 0, 100 do
 end
 equal(owner.map.at, 100)
 local late = panel()
-assert(not late.mipmapConsumers[1].complete, "late chart must retain history-renderer fallback")
+assert(not late.mipmapConsumers[1].complete, "late chart must reconstruct retained history")
 local before, siblingMap, count = owner.map, other.map, feed.count
+local resizeSteps, step = 0, owner.step
+owner.step = function(self, ...)
+    resizeSteps = resizeSteps + 1
+    return step(self, ...)
+end
 chart.update(first, { x = 0, y = 0, w = 320, h = 134 })
+equal(resizeSteps, 0, "resize must leave reconstruction to the scheduled refresh")
+assert(first.mipmapRenderer == nil, "resize must not also prepare a native pool synchronously")
+owner.step = step
 assert(owner.map ~= before and owner.map.width == first.area.w)
-assert(owner.map.at == nil and owner.startedAt == first.session.elapsed)
+assert(owner.map.at == 100 and owner.startedAt == 0)
 equal(other.map, siblingMap)
 equal(other.map.at, 100)
 equal(feed.count, count)
@@ -66,7 +76,7 @@ chart.update(first, { x = 5, y = 7, w = 320, h = 134 })
 equal(owner.map, resized, "moving a chart must not reset its presentation")
 observed.sample(110, { 0.7 })
 baseline.sample(110, { 0.7 })
-equal(owner.map.at, 10)
+equal(owner.map.at, 110)
 equal(other.map.at, 110)
 equal(before.at, 100)
 chart.destroy(first)
@@ -74,7 +84,7 @@ chart.destroy(first)
 assert(first.mipmapConsumers == nil and owner.map == nil)
 observed.sample(120, { 0.9 })
 baseline.sample(120, { 0.9 })
-equal(resized.at, 10, "destroyed chart is still observed")
+equal(resized.at, 110, "destroyed chart is still observed")
 equal(other.map.at, 120)
 equal(feed.count, baseline.feeds[1].count)
 for index = feed.first, feed.last do
@@ -87,20 +97,21 @@ chart.destroy(sibling)
 assert(history.views[feed].observers == nil)
 
 services.chartMipmap = nil
-local normal = panel()
-assert(normal.mipmapConsumers == nil, "normal renderer must remain default until integration is validated")
-chart.destroy(normal)
+assert(not pcall(panel), "missing mipmap module must fail explicitly")
 services.chartMipmap = mipmap
+local rendererModule = services.chartMipmapRenderer
+services.chartMipmapRenderer = nil
+assert(not pcall(panel), "missing renderer must fail explicitly")
+services.chartMipmapRenderer = rendererModule
 local rolling = panel("rolling")
-assert(rolling.mipmapConsumers == nil, "rolling history must keep its established renderer")
+assert(rolling.mipmapConsumers[1].map.lastLevel == 0, "rolling history must use one fixed-span mipmap ring")
 chart.destroy(rolling)
 services.preview = true
 local preview = panel()
-assert(preview.mipmapConsumers == nil, "preview must not attach to live input")
+assert(preview.mipmapConsumers[1].readonly, "preview must reconstruct without observing live input")
 chart.destroy(preview)
 
 services.preview = false
-services.chartMipmapRenderer = fixture.module("lib/chart_mipmap_renderer.lua")
 local activeRecorder = recorder(1)
 services.history = activeRecorder.history
 local liveSession = services.history:session("L01")
@@ -139,4 +150,4 @@ active.mipmapDecorating, active.frameThrough = true, 1200
 chart.resetSession(active)
 assert(active.mipmapDecorating == nil and active.frameThrough == nil, "reset retained an old decoration pass")
 chart.destroy(active)
-print("Normal chart lifecycle owns isolated opt-in mipmap consumers and stable plot widths")
+print("Sole chart renderer owns isolated mipmaps for live, rolling, rebuilt and preview histories")

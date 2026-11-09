@@ -585,7 +585,6 @@ end
 --- Observers reset with their recording; consumers must detach when destroyed.
 function history:observeSamples(view, observer)
     local entry = assert(self.views[view], "unknown history subscription")
-    assert(entry.mode == "growing", "sample observer prototype requires growing history")
     assert(type(observer.sample) == "function" and type(observer.reset) == "function", "invalid sample observer")
     entry.observers = entry.observers or {}
     for _, existing in ipairs(entry.observers) do

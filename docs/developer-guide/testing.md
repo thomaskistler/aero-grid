@@ -89,6 +89,18 @@ It fails at **15,000 instructions or more**, reserving headroom against EdgeTX's
 callback budget. Read the printed `budget headroom` and `steady state` results
 when changing scheduling or rendering.
 
+For chart rendering, mock setters are not firmware instruction costs. On macOS
+with EdgeTX Companion 2.12 installed, run:
+
+```sh
+caffeinate -i make test-chart-native
+```
+
+This gates the unmodified chart runtime's whole native callbacks strictly below
+15,000 instructions. It compares controlled append/rescale/scroll pixels and
+covers continuous rendering, rolling windows, and late-history reconstruction.
+Use the runner's `--extended` option for higher levels and resize/resume coverage.
+
 The resource suites check reload collectibility, object counts, sustained
 updates, and font callback retention. They cannot measure native LVGL/bitmap
 memory, firmware GC cadence, or radio timing. A short green mock run is not

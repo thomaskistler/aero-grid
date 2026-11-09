@@ -30,7 +30,8 @@ class RuntimeGateTests(unittest.TestCase):
 
     def test_extended_cases_and_fixture_settings(self):
         cases = GATE.cases(extended=True)
-        self.assertEqual(len(cases), 13)
+        self.assertEqual(len(cases), 15)
+        self.assertEqual(len(GATE.cases()), 7)
         self.assertEqual(len({name for name, _, _ in cases}), len(cases))
         driver = (EXPERIMENTS / "native_chart_mipmap_operations.lua").read_text(encoding="ascii")
         source = GATE.controlled_source(driver, "scroll", {"scrollLap": 4.25, "widthReduction": 172})
@@ -53,6 +54,16 @@ class RuntimeGateTests(unittest.TestCase):
         self.assertTrue(GATE.report_passes(report, painted=True))
         report["callback_samples"] = [74]
         self.assertFalse(GATE.report_passes(report, painted=True))
+
+    def test_rebuilt_cases_require_explicit_coverage(self):
+        self.assertFalse(GATE.coverage_passes({}, "rolling"))
+        self.assertFalse(GATE.coverage_passes({}, "late-attach"))
+        self.assertTrue(GATE.coverage_passes({"coverage": [{
+            "rolling": "1", "fixed_span": "6000", "scrolled": "1", "sole_renderer": "1",
+        }]}, "rolling"))
+        self.assertTrue(GATE.coverage_passes({"coverage": [{
+            "late_attach": "1", "rebuilt": "1", "retained_history": "1", "sole_renderer": "1",
+        }]}, "late-attach"))
 
     def test_incomplete_or_missing_callback_samples_fail(self):
         for field, value in (("workload_completed", False), ("callback_trace_complete", False),

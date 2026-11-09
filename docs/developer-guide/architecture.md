@@ -166,13 +166,19 @@ per-knot snapshot tables. Growing history freezes at capacity without relaxing
 accuracy; rolling expiration reuses ring slots while retaining an interpolation
 anchor. Raw readouts/extrema continue even when plot storage is full.
 
-Multilevel extrema/gap indexes accelerate projection only inside one pixel
-column; they never replace stored knots. Projection, native trace updates and
-gap-marker updates are staged with bounded work per callback. Geometry changes
-restart pending projection. Recorded gaps stay separate except when their
-endpoints coincide on screen; marker objects are pooled by pixel column.
-Unchanged readouts are cached so their callback budget can process a larger
-bounded projection batch; same-pixel extrema do not add redundant geometry.
+The chart has one mipmap renderer with a single native column-object pool.
+Live growing consumers maintain eleven bounded extrema/gap rings with 4:3 time
+spans; rolling consumers maintain one ring at the configured duration. Selecting
+a coarser span avoids rebinning the existing view, but changed coordinates still
+require bounded native projection/application. Fine rings retire only after
+replacement publication. Raw knots and other consumers remain independent.
+
+Late attachment, resize, and read-only previews rebuild envelopes from connected
+history knots in bounded batches, preserving the recording compression tolerance
+rather than claiming exact observed extrema. Sealed blocks may skip knots inside
+one column. Reconstruction yields dispatcher ownership between callbacks.
+Resume-axis views use the same renderer, with fixed-width gaps and dotted
+connectors. Missing telemetry remains a break, not a resume connector.
 
 History consumes at most one flight journal record per service turn, keyed by
 the event's pinned `armKey`, never by the optional Sticky output or the current
@@ -181,15 +187,15 @@ to the cumulative recording axis; qualification/confirmation receipt times do
 not place boundaries. Grace samples remain after the mapped end. A 64-interval
 ring supplies scalar `history:flight(sessionView, index)` reads, independent of
 metric subscriptions. Shaded flight bands are staged in a bounded native-object
-pool behind the grid and traces. Each chart snapshots its inputs and stages a
-complete plot in a second reusable buffer before swapping it on screen.
+pool behind the grid and traces. Reconstructed views pin their input horizon;
+the single native pool applies replacement columns progressively without a
+second legacy plot buffer.
 Arm/disarm triangles use a bounded directional transition journal.
 A separate resume journal drives fixed-width axis gaps and dotted trace connectors;
 the same projection maps traces, flight bands, grid lines, and axis markers.
 Crowded gaps evict the oldest visible section rather than narrowing the gaps.
 During normal sampling, flight bands clip to the recorded telemetry horizon.
-Telemetry-sampling turns reserve projection headroom without lowering the
-existing callback or staged-drain limits.
+Telemetry-sampling and Smart turns select service-aware bounded projection quotas.
 
 Journal loss sets the session's `flightLost` flag and closes an unmatched open
 band at its last observed recording time rather than extending it into later

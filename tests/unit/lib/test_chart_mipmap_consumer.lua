@@ -22,18 +22,26 @@ local count, last = feed.count, feed.last
 
 screen:restart(226, 100)
 equal(screen.map.width, 226)
-equal(screen.startedAt, 100)
-assert(screen.complete and screen.map.at == nil)
+equal(screen.startedAt, 0)
+assert(not screen.complete and screen.map.at == 100)
 assert(screen.map ~= original and detail.map == detailMap)
 equal(feed.count, count)
 equal(feed.last, last)
 observed.sample(110, { 0.7 })
 baseline.sample(110, { 0.7 })
-equal(screen.map.at, 10)
+equal(screen.map.at, 110)
 equal(detail.map.at, 110)
 equal(late.map.at, 110)
 equal(original.at, 100, "retired screen map still receives input")
 assert(not late.complete)
+for _, owner in ipairs({ screen, late }) do
+    for _ = 1, 2000 do
+        if owner:step() then
+            break
+        end
+    end
+    assert(owner.complete, "reconstruction must finish while telemetry continues")
+end
 assert(not pcall(screen.restart, screen, 0, 110))
 assert(not pcall(screen.restart, screen, 226, -1))
 equal(screen.map.width, 226, "invalid restart changed the live map")
@@ -44,7 +52,7 @@ screen:destroy()
 assert(screen.map == nil and screen.history == nil and screen.feed == nil)
 observed.sample(120, { 0.9 })
 baseline.sample(120, { 0.9 })
-equal(retired.at, 10)
+equal(retired.at, 110)
 equal(detail.map.at, 120)
 equal(feed.count, baseline.feeds[1].count)
 for index = feed.first, feed.last do
@@ -62,7 +70,7 @@ until not index
 assert(detail.complete and late.complete, "new recording must enable complete coverage")
 equal(detail.startedAt, 0)
 equal(late.map.at, nil)
-equal(retired.at, 10, "destroyed consumer was reset")
+equal(retired.at, 110, "destroyed consumer was reset")
 observed.sample(210, { 0.4 })
 equal(detail.map.at, 0)
 equal(late.map.at, 0)
@@ -80,7 +88,7 @@ for at = 220, 320, 10 do
     observed.sample(at, { at / 1000 })
     equal(#entry.observers, 2)
     equal(sibling.map.at, at - 210)
-    equal(panel.map.at, 0)
+    equal(panel.map.at, at - 210)
 end
 panel:destroy()
 equal(#entry.observers, 1)

@@ -3,8 +3,6 @@
 local function load(path, ...)
     return assert(loadScript("/WIDGETS/AeroGrid/" .. path))(...)
 end
-local Mipmap = load("lib/chart_mipmap.lua")
-local Renderer = load("lib/chart_mipmap_renderer.lua")
 local Prototype = load("tests/support/chart_mipmap_prototype.lua", load)
 local Oracle = load("tests/support/mipmap_reading_oracle.lua")
 local Stress = load("tests/support/chart_mipmap_stress.lua", load)
@@ -33,7 +31,7 @@ local function write(path, text)
     io.close(file)
 end
 
-if tracing then
+local function traceRenderer(Renderer)
     local originalStep = Renderer.step
     function Renderer:step(quota)
         if state.turn then
@@ -239,7 +237,11 @@ return function(context, refresh)
     state.nextCallback = now + (state.startedAt and state.phase == "running" and 16 or 5)
     state.logical, state.callbackStarted = state.logical + 16, now
     context.matchedNow = state.logical
-    context.chartMipmap, context.chartMipmapRenderer = Mipmap, Renderer
+    assert(context.chartMipmap and context.chartMipmapRenderer, "default runtime did not load mipmap modules")
+    if tracing and not state.rendererTraced then
+        traceRenderer(context.chartMipmapRenderer)
+        state.rendererTraced = true
+    end
     if context.serviceRuntime then
         context.serviceRuntime.env.getTime = getTime
     end
