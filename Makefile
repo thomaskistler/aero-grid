@@ -22,12 +22,14 @@ LUA_LS ?= $(shell command -v lua-language-server 2>/dev/null)
 STYLUA ?= $(shell command -v stylua 2>/dev/null)
 
 .PHONY: help setup test test-installer check build clean lint format docs docs-serve capture-setup video-setup release-package
+.PHONY: test-chart-native
 
 help:
 	@printf '%s\n' \
 	  'make help    List the supported Make targets' \
 	  'make setup   Install development dependencies into build/venv' \
 	  'make test    Run pure Lua and mocked EdgeTX behavior tests' \
+	  'make test-chart-native Gate opt-in chart callbacks and pixels in native EdgeTX (macOS)' \
 	  'make test-installer Test browser installer and release mirroring' \
 	  'make check   Run behavior tests and syntax validation' \
 	  'make lint    Lint Lua files with lua-language-server' \
@@ -39,6 +41,9 @@ help:
 	  'make video-setup Install optional tutorial video dependencies' \
 	  'make release-package Build the source-only installation ZIP and checksum' \
 	  'make clean   Remove generated build output'
+
+test-chart-native:
+	@"$(PYTHON)" tests/experiments/run_chart_runtime_gate.py --output "$(BUILD_DIR)/chart-runtime-gate-$$(date +%Y%m%d-%H%M%S)"
 
 setup: $(VENV_STAMP)
 

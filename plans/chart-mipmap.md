@@ -1,11 +1,54 @@
 # Chart mipmap implementation plan
 
+## Actual gated-runtime callback gate
+
+The opt-in normal chart now uses **71 ordinary / 63 Smart / 41 telemetry**
+columns per series, without the telemetry early yield. Telemetry takes priority
+over Smart only when the service timestamp matches the current callback; stale
+service markers do not select the telemetry quota. Default enablement is unchanged.
+
+The user approved keeping Lua-mock correctness and lifecycle checks while moving
+the callback-budget assertion to real native EdgeTX setters. The repeatable gate
+copies the repository chart source unchanged and checks all four controlled
+operations plus continuous operation. Every conservative whole-callback bound
+`(getUsage() + 1) * 200` must be **strictly below 15,000**. This already includes
+the requested 5,000-instruction firmware margin; no additional margin is imposed.
+
+The isolated comparison below did not establish safe actual-runtime quotas:
+73/65/43 reached 15,000 horizontally and 15,200 vertically when used throughout
+warm-up and measured work with fresh service classification. At 71/63/43,
+horizontal reached 15,200 on a telemetry callback; 71/63/42 reached exactly
+15,000 and was correctly rejected. The passing 71/63/41 run is:
+
+| Operation | First complete paint | Callbacks | Worst callback bound | Pixel mismatches |
+| --- | --- | --- | --- | --- |
+| Append | 750 ms | 13 | 8,600 | 0 / 128,640 |
+| Horizontal rescale | 1,440 ms | 26 | 14,800 | 0 / 128,640 |
+| Vertical rescale | 1,020 ms | 18 | 14,800 | 0 / 128,640 |
+| Ordinary scroll | 970 ms | 17 | 8,400 | 0 / 128,640 |
+| Continuous operation | Not measured | 1,872 | 12,200 | Not measured |
+
+Evidence: `build/chart-runtime-gate-production-v6/runtime-gate.json`.
+Reproduce on macOS with Companion 2.12 installed:
+
+```sh
+caffeinate -i make test-chart-native
+```
+
+Full Python/Lua behavior suites and Lua lint passed. Controlled cases use the
+50 ms policy and fence chart observers after initial publication; services keep
+running. Continuous operation does not fence. References retain normal overlays,
+and diagnostic memory includes both pools. These results establish the tested
+native callback/pixel gate, not universal quota maxima, hardware memory safety,
+or release acceptance. Hardware memory and broader release checks remain pending.
+
 ## Combined scroll correction and telemetry optimization (2026-11-08)
 
 The user authorized combining both investigations into draft PR #192, with
-production gating unchanged. The runtime still uses 40/24 and retains the
-telemetry early yield; the quotas below exist only in isolated diagnostic SD
-copies.
+production gating unchanged. At this checkpoint the runtime still used 40/24
+and retained the telemetry early yield; the quotas below existed only in
+isolated diagnostic SD copies. The actual-runtime section above supersedes
+that runtime policy, not these historical comparison results.
 
 The scroll mismatch was a renderer defect, not an oracle discrepancy. A full
 redraw at a non-lap maximum-level origin left the quarter groups in a different

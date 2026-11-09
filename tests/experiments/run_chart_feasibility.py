@@ -227,7 +227,8 @@ def verify_matched_paint(output, text):
 
 
 def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3, stress=False, resized_scroll=False,
-           prototype_source=None, integrated=False, matched=None, smart_batch=80, matched_trace=False):
+           prototype_source=None, integrated=False, matched=None, smart_batch=80, matched_trace=False,
+           runtime_source=False, controlled_driver=None):
     sys.path.insert(0, str(ROOT / "tools"))
     spec = importlib.util.spec_from_file_location("capture", ROOT / "tools/capture-panels.py")
     capture = importlib.util.module_from_spec(spec)
@@ -304,15 +305,17 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
             .replace('local mode = "integrated"', f'local mode = "{matched}"' if matched else 'local mode = "integrated"')
             .replace("local tracing = false", f"local tracing = {'true' if matched_trace else 'false'}")
             .replace("local resizedScroll = false", f"local resizedScroll = {'true' if resized_scroll else 'false'}"))
-    if matched:
+    if controlled_driver is not None:
+        (widget / "chart-feasibility-driver.lua").write_text(controlled_driver)
+    if matched and not runtime_source:
         chart_path = widget / "panels/chart.lua"
         chart_source = chart_path.read_text()
-        allowance = "local quota = host and host.flightPolled and 24 or 40"
+        allowance = "local quota = telemetryUpdated and 41 or host and host.flightPolled and 63 or 71"
         if chart_source.count(allowance) != 1:
             raise RuntimeError("Update the isolated matched allowance injection")
         chart_path.write_text(chart_source.replace(
             allowance, "local quota = host and host.matchedOperation "
-            f"and (host.flightPolled and {smart_batch} or {batch}) or (host and host.flightPolled and 24 or 40)"))
+            f"and (host.flightPolled and {smart_batch} or {batch}) or (telemetryUpdated and 41 or host and host.flightPolled and 63 or 71)"))
     source = (ROOT / "src/WIDGETS/AeroGrid/main.lua").read_text()
     if source.count("    refresh = refresh,") != 1:
         raise RuntimeError("Update the experiment's isolated refresh injection")

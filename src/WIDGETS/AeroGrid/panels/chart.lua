@@ -1775,9 +1775,7 @@ local function refreshMipmap(context)
         return finishMipmap(context)
     end
     local host = context.host
-    if host and host.servicesUpdatedAt == context.clock() and host.updatedService == "telemetry" then
-        return 1, true
-    end
+    local telemetryUpdated = host and host.servicesUpdatedAt == context.clock() and host.updatedService == "telemetry"
     local readings = not renderer.jobs and not context.projectionTurn and chart.render(context)
     context.projectionTurn = false
     if readings or not context.rangesReady then
@@ -1823,7 +1821,7 @@ local function refreshMipmap(context)
         updateGrid(context)
         return 1, true
     end
-    local quota = host and host.flightPolled and 24 or 40
+    local quota = telemetryUpdated and 41 or host and host.flightPolled and 63 or 71
     if not renderer:step(quota) then
         return 1, true
     end
