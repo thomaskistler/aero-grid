@@ -83,12 +83,15 @@ for _, width in ipairs({ 226, 397, 398, 399, 400, 800 }) do
     finish()
     verify()
     local span = context.mipmapConsumers[1].map.levels[10].span
-    for at = 6100, math.ceil(span * 3), 101 do
+    -- The first last-level frame starts one quarter into the ring, so later
+    -- grouped scrolls must retain columns drawn at a non-lap origin.
+    for at = 6100, math.ceil(span * 1.25) - 20, 101 do
         sample(at)
     end
     finish()
     verify()
-    for quarter = 9, 20 do
+    assert(renderer.published[1].level == 10 and renderer.published[1].origin % width ~= 0)
+    for quarter = 1, 12 do
         sample(math.ceil(span + quarter * span / 4))
         finish()
         verify()

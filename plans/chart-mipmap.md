@@ -1,5 +1,69 @@
 # Chart mipmap implementation plan
 
+## Combined scroll correction and telemetry optimization (2026-11-08)
+
+The user authorized combining both investigations into draft PR #192, with
+production gating unchanged. The runtime still uses 40/24 and retains the
+telemetry early yield; the quotas below exist only in isolated diagnostic SD
+copies.
+
+The scroll mismatch was a renderer defect, not an oracle discrepancy. A full
+redraw at a non-lap maximum-level origin left the quarter groups in a different
+ring layout from the layout assumed by the next grouped scroll. Every x-moving
+begin now installs canonical per-series phase offsets. The regression covers
+the first level-10 frame at `1.25 * span - 20`, twelve subsequent quarter
+scrolls, and widths 226, 397, 398, 399, 400 and 800.
+
+Telemetry work now reuses history ring addressing, block-array references and
+precision epsilon constants, avoids idle subscription precision scans while
+re-enrolling late resolutions, and reuses the incoming mipmap sample position.
+Exact equivalence against `2f040da` passed 40 cases and 288,040 samples,
+comparing history bytes, summaries and mipmaps.
+
+### Combined four-operation native comparison
+
+Both implementations use identical timestamped seed readings and gaps, two
+398-column three-series charts, 24 sources, Smart detection, native Companion
+2.12 drawing, and the controlled 50 ms logical/admission policy. Integrated
+quotas are **73 ordinary / 65 Smart / 43 telemetry** per series, with the
+telemetry guard bypassed only during measured work. The direct-dispatch
+prototype baseline uses **130 / 130 / 90**, with lighter overlay work. Both
+retain the 90-column x-update cap. The prototype's vertical projection is
+bottom-anchored to match the normal chart's range expansion.
+
+| Operation | Prototype complete paint | Prototype callbacks / bound | Integrated complete paint | Integrated callbacks / bound |
+| --- | --- | --- | --- | --- |
+| Append | 590 ms | 10 / 7,200 | 800 ms | 14 / 8,200 |
+| Horizontal rescale | 640 ms | 10 / 14,800 | 1,480 ms | 25 / 14,800 |
+| Vertical rescale | 590 ms | 10 / 14,800 | 1,160 ms | 18 / 14,800 |
+| Ordinary scroll | 490 ms | 10 / 13,400 | 900 ms | 17 / 9,400 |
+
+All eight frames match all 128,640 compared panel pixels with **zero mismatches**.
+Every complete measured callback has conservative bound `(getUsage() + 1) * 200`
+strictly below 15,000; no CPU-limit failure occurred. The combined integrated
+telemetry allowance of 43 fits, so no reduction was necessary. Matching seed
+hashes (prototype and integrated) are 14800113, 4912788, 7332694 and 13755531,
+with 3010, 3280, 3154 and 3016 seed samples respectively.
+
+Artifacts are `build/mipmap-controlled-<operation>-integrated-combined-integrated-v1`
+and `build/mipmap-controlled-<operation>-prototype-combined-prototype-v1`.
+The local diagnostic adapter is `build/mipmap-four-operations.{lua,py}`:
+
+```sh
+caffeinate -i python3 build/mipmap-four-operations.py --modes integrated --batch 73 --smart-batch 65 --telemetry-batch 43 --version combined-integrated-v1
+caffeinate -i python3 build/mipmap-four-operations.py --modes prototype --batch 130 --smart-batch 130 --telemetry-batch 90 --version combined-prototype-v1
+python3 tests/experiments/run_telemetry_cost.py --baseline-ref 2f040da --verify
+```
+
+These are controlled comparative timings, not hardware deadlines or complete
+production acceptance. Inputs fence after the initial redraws while services
+continue; the reference retains existing normal overlays rather than
+independently recomputing their algorithms. Diagnostic memory includes both
+pools. Historical fixed-800/398 and 160 ms natural-trigger results below remain
+separate. Radio memory, long-running behavior, broader acceptance and default
+enablement remain outstanding. Full Python/Lua suites and Lua lint passed for
+the combined changes.
+
 ## Saved integration checkpoint
 
 The user requested committing and pushing the current gated integration and

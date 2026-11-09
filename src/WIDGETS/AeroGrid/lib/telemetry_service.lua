@@ -135,6 +135,7 @@ function telemetryService.new(env, support)
         entries = {},
         cursor = 1,
         scanCursor = 1,
+        precisionScans = 0,
         linkLive = false,
         rssi = 0,
     }, telemetryService)
@@ -274,8 +275,15 @@ function telemetryService:resolve(entry, now)
         if state.kind == "cells" and entry.base ~= state.name then
             state.kind = "number"
         end
+        if not entry.scanIndex then
+            self.precisionScans = self.precisionScans + 1
+        end
         entry.scanIndex = 0
     else
+        if entry.scanIndex then
+            entry.scanIndex = nil
+            self.precisionScans = self.precisionScans - 1
+        end
         state.telemetry = false
         state.unit = 0
         state.unitText = ""
@@ -295,6 +303,7 @@ function telemetryService:scanPrecision(entry)
     local getSensor = self.env.getSensor
     if not getSensor then
         entry.scanIndex = nil
+        self.precisionScans = self.precisionScans - 1
         entry.state.precisionKnown = true
         return
     end
@@ -312,6 +321,7 @@ function telemetryService:scanPrecision(entry)
             entry.state.sensorIndex = index
             entry.state.precisionKnown = true
             entry.scanIndex = nil
+            self.precisionScans = self.precisionScans - 1
             return
         end
         index = index + 1
@@ -320,6 +330,9 @@ function telemetryService:scanPrecision(entry)
     -- Give up at the end of the table; precision stays at zero.
     entry.scanIndex = index < telemetryService.SENSOR_LIMIT and index or nil
     entry.state.precisionKnown = entry.scanIndex == nil
+    if not entry.scanIndex then
+        self.precisionScans = self.precisionScans - 1
+    end
 end
 
 --- Apply one poll result to a subscription.
@@ -463,6 +476,10 @@ function telemetryService:update(now)
     local scan = self.scanCursor
     if scan > total then
         scan = 1
+    end
+    if self.precisionScans == 0 then
+        self.scanCursor = scan
+        return
     end
     for _ = 1, total do
         local entry = entries[scan]

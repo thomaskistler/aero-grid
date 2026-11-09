@@ -5,6 +5,7 @@ local mipmap = { LAST_LEVEL = 10 }
 mipmap.__index = mipmap
 local consumer = {}
 consumer.__index = consumer
+local huge = math.huge
 
 function mipmap.new(width)
     assert(type(width) == "number" and width >= 1 and width % 1 == 0, "mipmap requires an integer column count")
@@ -28,27 +29,29 @@ function mipmap:sample(at, value, broken)
     assert(type(at) == "number" and at >= 0 and at % 1 == 0, "invalid mipmap timestamp")
     assert(not self.at or at >= self.at, "mipmap time moved backwards; reset required")
     assert(
-        value == nil or type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge,
+        value == nil or type(value) == "number" and value == value and value ~= huge and value ~= -huge,
         "invalid mipmap reading"
     )
     local width = self.width
+    local position = at * width
     for index = self.level, mipmap.LAST_LEVEL do
         local level = self.levels[index]
-        local bucket = (at * width / level.span) // 1
+        local bucket = (position / level.span) // 1
         local slot, tag = bucket % width + 1, bucket + 1
-        local previous = level.tags[slot]
+        local lows, highs, tags = level.low, level.high, level.tags
+        local previous = tags[slot]
         if previous ~= tag and previous ~= -tag then
-            level.low[slot], level.high[slot] = value, value
-            level.tags[slot] = value == nil and -tag or tag
+            lows[slot], highs[slot] = value, value
+            tags[slot] = value == nil and -tag or tag
         elseif value == nil or broken or previous == -tag then
-            local endpoint = value or level.high[slot]
-            level.low[slot], level.high[slot], level.tags[slot] = endpoint, endpoint, -tag
+            local endpoint = value or highs[slot]
+            lows[slot], highs[slot], tags[slot] = endpoint, endpoint, -tag
         else
-            if value < level.low[slot] then
-                level.low[slot] = value
+            if value < lows[slot] then
+                lows[slot] = value
             end
-            if value > level.high[slot] then
-                level.high[slot] = value
+            if value > highs[slot] then
+                highs[slot] = value
             end
         end
     end

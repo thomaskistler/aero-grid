@@ -91,11 +91,86 @@ local function testHostPollingBudgetKeepsRoundRobinProgress()
     assertions.assertEqual(service.cursor, 17, "a host cannot raise the service's existing cap")
 end
 
+local function testPrecisionSearchesResumeAfterIdle()
+    local calls = {}
+    local service = telemetryService.new(
+        services.environment({
+            getRSSI = function()
+                return 42
+            end,
+            getFieldInfo = function(name)
+                return { id = #name, name = name, unit = 1 }
+            end,
+            getValue = function()
+                return 12
+            end,
+            model = {
+                getSensor = function(index)
+                    calls[#calls + 1] = index
+                    if index == 0 then
+                        return { name = "Early", prec = 1 }
+                    end
+                    if index == 59 then
+                        return { name = "Late", prec = 3 }
+                    end
+                end,
+            },
+        }),
+        services
+    )
+    local early, missing = service:subscribe("Early"), service:subscribe("Missing")
+    service:update(10)
+    assertions.assertEqual(early.precision, 1)
+    assertions.assertEqual(service.precisionScans, 1)
+    for tick = 20, 90, 10 do
+        service:update(tick)
+    end
+    assertions.assertEqual(service.precisionScans, 0)
+    assertions.assertEqual(missing.precisionKnown, true)
+    local count, cursor = #calls, service.scanCursor
+    for tick = 100, 140, 10 do
+        service:update(tick)
+    end
+    assertions.assertEqual(#calls, count, "finished precision scans must stay idle")
+    assertions.assertEqual(service.scanCursor, cursor)
+    local late = service:subscribe("Late")
+    service:update(150)
+    assertions.assertEqual(service.precisionScans, 1, "late resolution must restart bounded scanning")
+    assertions.assertEqual(late.precisionKnown, false)
+    assertions.assertEqual(#calls - count, 8, "only one capped precision scan runs per update")
+    for tick = 160, 220, 10 do
+        service:update(tick)
+    end
+    assertions.assertEqual(service.precisionScans, 0)
+    assertions.assertEqual(late.precision, 3)
+    assertions.assertEqual(late.sensorIndex, 59)
+    assertions.assertEqual(late.precisionKnown, true)
+
+    service.env.getSensor = nil
+    service:subscribe("NoAPI")
+    service:update(230)
+    assertions.assertEqual(service.precisionScans, 0, "missing firmware API must finish a scan")
+    local entry = service.names.Early
+    service:resolve(entry, 240)
+    service:resolve(entry, 240)
+    assertions.assertEqual(service.precisionScans, 1, "re-resolution must not double-enroll a search")
+    service:scanPrecision(entry)
+    assertions.assertEqual(service.precisionScans, 0)
+    service:resolve(entry, 250)
+    service.env.getFieldInfo = function()
+        return { id = 1 }
+    end
+    service:resolve(entry, 250)
+    assertions.assertEqual(service.precisionScans, 0, "local re-resolution must retire a pending sensor scan")
+    assertions.assertEqual(entry.scanIndex, nil)
+end
+
 local function run()
     testSubscribeReturnsLiveView()
     testLinkSubscriptionExists()
     testTransmitterLocalSourceIsNotLinkEvidence()
     testHostPollingBudgetKeepsRoundRobinProgress()
+    testPrecisionSearchesResumeAfterIdle()
 end
 
 run()

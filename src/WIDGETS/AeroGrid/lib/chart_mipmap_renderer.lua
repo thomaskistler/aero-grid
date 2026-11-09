@@ -11,6 +11,7 @@ function renderer.new(context)
         visible = {},
         groups = {},
         offsets = {},
+        phases = {},
         membership = {},
         published = {},
         changes = {},
@@ -27,6 +28,7 @@ function renderer:prepare()
         local index = #self.groups + 1
         self.groups[index] = lvgl.box(self.root, { x = 0, y = 0, w = context.rect.w, h = context.rect.h })
         self.offsets[index] = 0
+        self.phases[(index - 1) // 4 + 1] = 0
         return false
     end
     for _ = 1, 8 do
@@ -139,40 +141,40 @@ function renderer:selection()
     return jobs, changed
 end
 
+--- Every draw uses one ring layout: object x is left + slot and each quarter
+--- group carries the origin, so a later scroll may retain any prior frame.
 function renderer:begin(jobs)
     local grouped, reset = true, false
     for _, job in ipairs(jobs) do
         grouped = grouped and job.scroll
         reset = reset or job.updateX
     end
-    if grouped then
-        for series, job in ipairs(jobs) do
+    self.jobs = jobs
+    -- Any origin change, including a scroll, marks its job as moving in x.
+    if not reset then
+        return
+    end
+    for series, job in ipairs(jobs) do
+        local phase, moved = job.origin % self.width, false
+        if self.phases[series] ~= phase then
+            self.phases[series] = phase
             for quarter = 0, 3 do
-                local start = (quarter * self.width / 4) // 1
-                local base = (job.origin // self.width) * self.width + start
-                if base < job.origin then
-                    base = base + self.width
-                end
                 local group = (series - 1) * 4 + quarter + 1
-                self.groupChanges.x = base - start - job.origin
-                self.groups[group]:set(self.groupChanges)
-                self.offsets[group] = self.groupChanges.x
+                local offset = (quarter * self.width / 4) // 1 < phase and self.width - phase or -phase
+                if self.offsets[group] ~= offset then
+                    self.groupChanges.x = offset
+                    self.groups[group]:set(self.groupChanges)
+                    self.offsets[group], moved = offset, true
+                end
             end
+        end
+        if grouped then
             job.index = math.max(job.index, job.retainedLast + 1)
             job.updateX = false
-        end
-    elseif reset then
-        for index, group in ipairs(self.groups) do
-            if self.offsets[index] ~= 0 then
-                self.groupChanges.x = 0
-                group:set(self.groupChanges)
-                self.offsets[index] = 0
-                local job = jobs[(index - 1) // 4 + 1]
-                job.updateX, job.index, job.last = true, job.origin, job.origin + self.width - 1
-            end
+        elseif moved and not job.updateX then
+            job.updateX, job.index, job.last = true, job.origin, job.origin + self.width - 1
         end
     end
-    self.jobs = jobs
 end
 
 local function draw(self, job, series, quota)
