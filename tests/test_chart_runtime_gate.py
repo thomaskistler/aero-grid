@@ -19,10 +19,10 @@ class RuntimeGateTests(unittest.TestCase):
         self.assertFalse(GATE.coverage_passes(report, "long-flight"))
         report["coverage"] = [{
             "levels": "11", "scrolls_per_series": "6", "logical_step": "50",
-            "admission_ms": "50", "uninterrupted": "1",
+            "admission_ms": "50", "uninterrupted": "1", "retired_levels_per_series": "10",
         }]
         self.assertTrue(GATE.coverage_passes(report, "long-flight"))
-        for field in ("levels", "scrolls_per_series", "uninterrupted"):
+        for field in ("levels", "scrolls_per_series", "uninterrupted", "retired_levels_per_series"):
             original = report["coverage"][0][field]
             report["coverage"][0][field] = "0"
             self.assertFalse(GATE.coverage_passes(report, "long-flight"))

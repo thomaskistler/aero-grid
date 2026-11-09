@@ -58,7 +58,7 @@ def coverage_passes(report, operation):
         return True
     return report.get("coverage") == [{
         "levels": "11", "scrolls_per_series": "6", "logical_step": "50",
-        "admission_ms": "50", "uninterrupted": "1",
+        "admission_ms": "50", "uninterrupted": "1", "retired_levels_per_series": "10",
     }]
 
 
@@ -102,10 +102,12 @@ def main():
         )
         report.pop("allowance", None)
         report["quota_policy"] = "Unmodified repository chart runtime; no allowance injection."
-        report["runtime_source_unmodified"] = (
-            (target / "sdcard/WIDGETS/AeroGrid/panels/chart.lua").read_bytes()
-            == (ROOT / "src/WIDGETS/AeroGrid/panels/chart.lua").read_bytes()
-        )
+        report["runtime_modules_unmodified"] = {
+            path: (target / "sdcard/WIDGETS/AeroGrid" / path).read_bytes()
+            == (ROOT / "src/WIDGETS/AeroGrid" / path).read_bytes()
+            for path in ("panels/chart.lua", "lib/chart_mipmap.lua", "lib/chart_mipmap_renderer.lua")
+        }
+        report["runtime_source_unmodified"] = all(report["runtime_modules_unmodified"].values())
         passed = (
             report_passes(report, painted=not continuous)
             and report["runtime_source_unmodified"]
@@ -121,7 +123,7 @@ def main():
         }
         report["runtime_callback_gate_passed"] = passed
         report["limitations"] = [
-            "Actual chart source is copied unchanged; internal opt-in dependencies and diagnostic clocks are injected.",
+            "Chart panel, mipmap and renderer sources are copied unchanged; opt-in dependencies and diagnostic clocks are injected.",
             "Controlled cases replay dense inputs and fence chart observers; continuous smoke does not fence.",
             "Paint references retain normal overlays, not an independent overlay-algorithm oracle.",
             "This gate covers native callback instructions and controlled pixels, not hardware memory or release acceptance.",

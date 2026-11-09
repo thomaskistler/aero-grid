@@ -243,6 +243,11 @@ function renderer:step(quota)
     if complete then
         self.published, self.jobs = self.jobs, nil
         lvgl.show(self.root)
+        for _, job in ipairs(self.published) do
+            if job.level > job.map.level then
+                job.map:releaseBelow(job.level)
+            end
+        end
     end
     return complete
 end

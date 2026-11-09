@@ -197,7 +197,10 @@ local function tick(context, refresh)
                 local level = checked % 11
                 local map = context.panels[index].instance.mipmapConsumers[series].map
                 local retained = map.levels[level]
-                if retained then
+                if level < map.level then
+                    assert(retained == nil, "published fine level was not retired")
+                else
+                    assert(retained, "required coarse level was retired")
                     for slot in pairs(retained.tags) do
                         assert(slot >= 1 and slot <= map.width, "mipmap exceeded ring capacity")
                     end
@@ -215,11 +218,11 @@ local function tick(context, refresh)
                     end
                     local chart = context.panels[index].instance
                     local map = chart.mipmapConsumers[series].map
-                    assert(map:select(map.at) == 10, "long flight did not retain maximum level")
+                    assert(map.level == 10 and map:select(map.at) == 10, "long flight did not retire fine levels")
                     assert(chart.session.resumeLast == 0 and chart.session.recording, "flight was interrupted")
                 end
             end
-            longCoverage = "COVERAGE levels=11 scrolls_per_series=6 logical_step=50 admission_ms=50 uninterrupted=1\n"
+            longCoverage = "COVERAGE levels=11 scrolls_per_series=6 logical_step=50 admission_ms=50 uninterrupted=1 retired_levels_per_series=10\n"
         end
         if lifecycle then
             local first, sibling = context.panels[1].instance, context.panels[2].instance

@@ -19,12 +19,13 @@ for _, width in ipairs({ 226, 397, 398, 399, 400, 800 }) do
         series = {},
         mipmapConsumers = {},
     }
-    local oracles = {}
+    local oracles, fine, frozen = {}, {}, {}
     for series = 1, 3 do
         context.series[series] = { color = lcd.RGB(series * 70, 0, 0), low = -1, high = 2 }
         context.mipmapConsumers[series] = Mipmap.attach(record.history, record.feeds[series], width)
         oracles[series] = Oracle.new()
     end
+    local detail = Mipmap.attach(record.history, record.feeds[1], 800)
     local renderer = Renderer.new(context)
     while not renderer:prepare() do
     end
@@ -50,6 +51,17 @@ for _, width in ipairs({ 226, 397, 398, 399, 400, 800 }) do
     local function verify()
         for series, job in ipairs(renderer.published) do
             assert(job.revision == job.map.revision)
+            assert(job.map.level == job.level, "publication did not advance the retained level")
+            for level = 0, job.level - 1 do
+                assert(job.map.levels[level] == nil, "published replacement retains a finer level")
+            end
+            if frozen[series] then
+                for slot = 1, width do
+                    assert(fine[series].tags[slot] == frozen[series].tags[slot], "retired tags still receive samples")
+                    assert(fine[series].low[slot] == frozen[series].low[slot], "retired minima still receive samples")
+                    assert(fine[series].high[slot] == frozen[series].high[slot], "retired maxima still receive samples")
+                end
+            end
             for bucket = job.origin, job.origin + width - 1 do
                 local low, high, gap = oracles[series]:column(width, job.level, bucket)
                 local index = (series - 1) * width + bucket % width + 1
@@ -65,6 +77,7 @@ for _, width in ipairs({ 226, 397, 398, 399, 400, 800 }) do
                     assert(properties.y == top and properties.h == last - top + 1, "incorrect clipped envelope")
                 end
             end
+            assert(detail.map.level == 0 and detail.map.levels[0], "retirement changed a separate detail consumer")
         end
     end
     for at = 0, 5900, 5 do
@@ -72,11 +85,30 @@ for _, width in ipairs({ 226, 397, 398, 399, 400, 800 }) do
     end
     finish()
     verify()
+    local retained = {}
+    for series, owner in ipairs(context.mipmapConsumers) do
+        fine[series], retained[series] = owner.map.levels[0], owner.map.levels[1]
+    end
     sample(6001)
     renderer:step(24)
+    for _, owner in ipairs(context.mipmapConsumers) do
+        assert(owner.map.level == 0 and owner.map.levels[0], "partial projection retired the visible level")
+    end
+    -- Match chart invalidation: abandoned jobs must not retire their sources.
+    renderer.jobs = nil
+    context.geometryVersion = context.geometryVersion + 1
     sample(6005)
     finish()
     verify()
+    for series, owner in ipairs(context.mipmapConsumers) do
+        assert(retained[series] == owner.map.levels[1], "retirement replaced the prepared coarse summary")
+        frozen[series] = { tags = {}, low = {}, high = {} }
+        for slot = 1, width do
+            frozen[series].tags[slot] = fine[series].tags[slot]
+            frozen[series].low[slot] = fine[series].low[slot]
+            frozen[series].high[slot] = fine[series].high[slot]
+        end
+    end
     for _, item in ipairs(context.series) do
         item.low, item.high = -0.5, 0.5
     end
@@ -97,6 +129,7 @@ for _, width in ipairs({ 226, 397, 398, 399, 400, 800 }) do
         verify()
     end
     renderer:reset()
+    frozen = {}
     for _, oracle in ipairs(oracles) do
         oracle.times, oracle.values, oracle.breaks = {}, {}, {}
     end
@@ -104,12 +137,19 @@ for _, width in ipairs({ 226, 397, 398, 399, 400, 800 }) do
     repeat
         index = record.history:resetSession(1000000, index)
     until not index
+    for _, owner in ipairs(context.mipmapConsumers) do
+        assert(owner.map.level == 0, "recording reset did not restore fine levels")
+        for level = 0, 10 do
+            assert(owner.map.levels[level], "recording reset left a level retired")
+        end
+    end
     sample(1000010)
     finish()
     verify()
     for _, owner in ipairs(context.mipmapConsumers) do
         owner:destroy()
     end
+    detail:destroy()
     renderer:destroy()
 end
 print("Production mipmap single-pool geometry matches independent input envelopes")

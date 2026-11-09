@@ -72,7 +72,7 @@ function mipmap:select(at)
     return level, origin
 end
 
---- Single-consumer prototype: call only after publishing the replacement view.
+--- Chart-local summaries: call only after publishing the replacement view.
 function mipmap:releaseBelow(level)
     assert(
         type(level) == "number" and level % 1 == 0 and level >= self.level and level <= mipmap.LAST_LEVEL,

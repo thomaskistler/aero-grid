@@ -135,6 +135,14 @@ local function reference(context)
     local chart, item = entry.instance, state.items[state.referenceChart]
     local active, area = view(chart, item), chart.area
     if not state.referenceRoot then
+        for _, owner in ipairs(chart.mipmapConsumers) do
+            assert(owner.map.level == state.level, "replacement publication did not retire finer levels")
+            for level = 0, state.level - 1 do
+                assert(owner.map.levels[level] == nil, "replacement still retains a finer level")
+            end
+        end
+    end
+    if not state.referenceRoot then
         state.referenceRoot = lvgl.box(active.root, { x = 0, y = 0, w = chart.rect.w, h = chart.rect.h })
         lvgl.hide(state.referenceRoot)
         state.referenceSeries, state.referenceBucket = 1, 0

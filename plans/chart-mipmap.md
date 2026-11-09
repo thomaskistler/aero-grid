@@ -1,5 +1,30 @@
 # Chart mipmap implementation plan
 
+## Fine-level retirement
+
+The integrated renderer now retires levels below the selected level only after
+all series finish their replacement projection and the frame is published.
+Partial or cancelled redraws retain their source levels. The published level
+and all coarser levels remain unchanged; subsequent samples update only those
+retained levels. At level 10, each chart consumer maintains one ring instead of
+eleven. Removed arrays become garbage-collectible without forcing collection
+inside the callback.
+
+Retirement is chart-local: separate detail consumers, raw recording history,
+telemetry acquisition and legacy fallbacks are unchanged. Recording reset and
+resize restore a new complete hierarchy. Regressions cover cancellation,
+continued sampling, vertical projection, scrolls and reset restoration.
+
+`build/chart-runtime-retirement-v1/runtime-gate.json` passes all thirteen
+native cases with unchanged 71/63/41 quotas. All ten painted comparisons have
+zero mismatches; the highest whole-callback bound is 14,800. Live resize/resume
+passes 2,672 callbacks at 12,200. The accelerated long flight passes 5,705
+callbacks at 12,600, publishing all eleven levels and six consecutive scrolls
+per series, with ten finer levels retired per series at completion. Full
+Python/Lua suites and Lua lint pass. The gate also verifies byte-identical
+panel, mipmap and renderer sources. Hardware memory and real-time soak remain
+unverified; default enablement stays off.
+
 ## Actual gated-runtime callback gate
 
 The opt-in normal chart now uses **71 ordinary / 63 Smart / 41 telemetry**
@@ -108,9 +133,10 @@ reported 12,500 ms first-expansion submission is logical time, not a measured
 paint deadline. No long-flight pixel oracle is supplied.
 
 Every retained level's tag keys remain within the plot-width ring bounds.
-The integrated renderer currently retains all eleven levels; it does not call
-the prototype's `releaseBelow` helper. These bounded-storage checks therefore
-do not establish fine-level retirement or actual-radio memory safety.
+At this checkpoint the integrated renderer retained all eleven levels and did
+not call `releaseBelow`; the retirement section above supersedes that behavior.
+Those bounded-storage checks did not establish fine-level retirement or
+actual-radio memory safety.
 
 The scenario is the thirteenth extended case:
 
