@@ -125,7 +125,12 @@ local function tick(context, refresh)
             assert(first.mipmapConsumers[1].map ~= state.oldMap, "resize retained old map")
             assert(sibling.mipmapConsumers[1].map == state.siblingMap, "resize changed sibling map")
             state.resized = true
-        elseif lifecycle and state.resized and not state.pausedAt and Assertions.finished(context.panels[1].instance) then
+        elseif
+            lifecycle
+            and state.resized
+            and not state.pausedAt
+            and Assertions.finished(context.panels[1].instance)
+        then
             local first = context.panels[1].instance
             assert(first.mipmapPrepared and next(first.mipmapRenderer.published), "resize did not republish")
             assert(first.backPlot == nil, "resize bypassed single pool")
