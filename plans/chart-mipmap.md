@@ -29,29 +29,69 @@ summaries, leaving reconstruction and projection to the normal bounded refresh
 instead of refreshing the chart twice in the resize callback.
 
 The default native gate adds rolling and late attachment with explicit coverage
-records. `make test` (27 Python tests and the full Lua suite), `make lint`, and
-`caffeinate -i make test-chart-native` passed. The additional live resize/resume
-gate also passed with completed reconstruction and dotted connectors.
+records. The latest `make test-chart-native` and live resize/resume gates passed.
+With two 3-series charts, 398 columns, 24 sources, and the controlled 50 ms
+input policy, the native results are:
 
-| Native case | Whole-callback instruction upper bound |
-| --- | ---: |
-| Append | 7,400 |
-| Horizontal rescale | 13,600 |
-| Vertical rescale | 13,600 |
-| Scroll | 7,800 |
-| Continuous recording | 12,200 |
-| Rolling | 12,000 |
-| Late attachment | 13,800 |
-| Live resize/resume | 14,400 |
+| Case | Complete paint / publication | Callbacks to completion | Worst callback bound | Pixel mismatches |
+| --- | ---: | ---: | ---: | ---: |
+| Append | 750 ms | 13 | 9,400 | 0 / 128,640 |
+| Horizontal rescale | 2,540 ms | 44 | 14,800 | 0 / 128,640 |
+| Vertical rescale | 980 ms | 17 | 14,400 | 0 / 128,640 |
+| Ordinary scroll | 1,670 ms | 28 | 11,000 | 0 / 128,640 |
+| Late attachment | 54,970 ms | 990 | 14,000 | N/A |
 
-All bounds are strictly below 15,000. The four controlled pixel comparisons
-checked 128,640 pixels each with zero mismatches. Evidence is in
-`build/chart-runtime-gate-20261109-020857/runtime-gate.json` and
-`build/sole-lifecycle-final-v10/runtime-gate.json`. These are native simulator
-checks, not hardware memory or real-flight soak acceptance. Dense reconstruction
-can take many callbacks; selecting a level does not eliminate native projection
-work. The sections below record historical gated checkpoints, not current
-default/fallback behavior.
+Continuous recording and rolling passed with bounds of 11,400 and 11,600.
+All current-gate measured whole-callback bounds are strictly below 15,000;
+this includes the requested firmware margin. Each of the four controlled
+framebuffer comparisons checked 128,640 pixels with zero mismatches. Evidence is in
+`build/chart-runtime-gate-20261109-144908/runtime-gate.json`. These are native
+simulator checks, not hardware memory or real-flight soak acceptance.
+
+The renderer now starts the first bounded decoration step in the same callback
+that completes drawing, rather than yielding between those steps. The latest
+profile records 21 drawing, 12 decoration, 9 grid, and 2 metadata turns for
+horizontal rescale; services updated on all 44 callbacks, with no owner waits.
+This reduces separate callback turns for append and scroll, but spends more
+work in a single callback: horizontal rescale reached 14,800, still strictly
+below the 15,000 gate. Non-resume marker batches are 12 operations; resume
+markers remain at 2.
+
+The latest append and scroll runs have different sample fingerprints and event
+counts from the prior gate (append 3,012 samples / hash 452,790 / 6 events vs.
+3,010 / 5,765,716 / 8; scroll 3,018 / 6,079,844 / 12 vs. 3,016 / 11,990,804 /
+20). Treat the reduced times and callback counts as encouraging, not as exact
+input-matched deltas. The full current gate passed all framebuffer comparisons.
+
+Late attachment rebuilds at up to 12 / 24 / 32 history spans per refresh for
+telemetry / flight-polled / other callbacks, and prepares 16 renderer objects
+per refresh. The latest full native gate records 334 rebuild turns, 87 renderer
+setup turns, and 54,970 ms / 990 callbacks from attach to publication, with a
+14,000 worst callback bound. Earlier runs measured 76,590 ms / 1,374 callbacks
+and 90,510 ms / 1,632 callbacks, showing substantial run-to-run variation.
+
+A follow-up replay of `8818f46` reached horizontal rescale with the same
+50 ms operation driver, 73/65/43 measured quotas, 24 sources, and 398 columns.
+It painted in 1,460 ms / 25 callbacks with zero mismatches; the current code
+under those quotas painted in 2,550 ms / 46 callbacks, also with zero
+mismatches. However, the seed fingerprints differ (4,912,788 vs. 12,063,188;
+both contain 3,280 samples), and measured live events differ (14 vs. 24), so
+this is not an exact input-matched comparison and cannot assign the entire
+latency gap to code changes. The historical harness needed the diagnostic
+driver to load its mipmap modules and skip a level-retirement assertion that
+did not exist in that revision; its telemetry yield was bypassed only during
+the measured redraw. The replay also reached a 15,200 callback bound, above
+the strict 15,000 ceiling; the current run was at 14,800.
+The old profile had 15 drawing, 9 grid, 1 metadata, and no decoration turns.
+Before combining callbacks, the current profile had 17 drawing, 9 grid, 2
+metadata, and 18 decoration turns. The old `finishMipmap` did not rebuild the
+break/resume/connector overlays now preserved by the current path. A
+current-code quota-only replay before the marker-batch increase changed paint
+time by about 50 ms and did not change its 54 callbacks under 71/63/41 vs.
+73/65/43, so the two-credit quota difference does not explain the large timing
+gap. The historical pixels compare the plotted envelopes but retain existing
+overlays; they are not an independent overlay oracle. The sections below
+record historical gated checkpoints, not current default/fallback behavior.
 
 ## Fine-level retirement
 

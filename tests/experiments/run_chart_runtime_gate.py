@@ -60,9 +60,19 @@ def coverage_passes(report, operation):
             "rolling": "1", "fixed_span": "6000", "scrolled": "1", "sole_renderer": "1",
         }]
     if operation == "late-attach":
-        return report.get("coverage") == [{
-            "late_attach": "1", "rebuilt": "1", "retained_history": "1", "sole_renderer": "1",
-        }]
+        profile, timing = report.get("phase_profile"), report.get("late_attach")
+        return (
+            report.get("coverage") == [{
+                "late_attach": "1", "rebuilt": "1", "retained_history": "1", "sole_renderer": "1",
+            }]
+            and profile
+            and profile.get("rebuild", 0) > 0
+            and profile.get("renderer_setup", 0) > 0
+            and timing
+            and 0 <= timing.get("attach_to_publish_ms", 105000) < 105000
+            and timing.get("attach_to_publish_callbacks", 0) > 0
+            and timing.get("callbacks", 0) > 0
+        )
     if operation != "long-flight":
         return True
     return report.get("coverage") == [{
@@ -139,6 +149,8 @@ def main():
             "instruction_upper_bound": report["instruction_upper_bound"],
             "paint": report.get("paint"),
             "measurements": report["measurements"],
+            "phase_profile": report.get("phase_profile"),
+            "late_attach": report.get("late_attach"),
             "fixture_settings": settings,
             "coverage": report.get("coverage", []),
         }

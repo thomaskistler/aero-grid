@@ -995,7 +995,7 @@ applyMarkers = function(context, item)
             end
             item.markerIndex = item.markerIndex + 1
         end
-        if changes == (item.style == "resume" and 2 or 4) then
+        if changes == (item.style == "resume" and 2 or 12) then
             break
         end
     end
@@ -1428,7 +1428,7 @@ local function refreshMipmap(context)
     end
     context.viewReady = nil
     context.mipmapDecorating, context.frameThrough = true, nil
-    return 1, true
+    return finishMipmap(context)
 end
 
 function chart.refresh(context, creating)
@@ -1473,7 +1473,7 @@ function chart.refresh(context, creating)
         if owner.rebuildJob then
             local host = context.host
             local telemetry = host and host.servicesUpdatedAt == context.clock() and host.updatedService == "telemetry"
-            owner:step(telemetry and 8 or host and host.flightPolled and 16 or 24)
+            owner:step(telemetry and 12 or host and host.flightPolled and 24 or 32)
             return 1, not host
         end
     end

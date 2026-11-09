@@ -5,6 +5,7 @@ local function load(path, ...)
 end
 local Stress = load("tests/support/chart_mipmap_stress.lua", load)
 local Assertions = load("tests/support/chart_assertions.lua")
+local Profile = load("tests/support/chart_runtime_profile.lua")
 local lifecycle = false
 local longFlight = false
 local rolling = false
@@ -19,11 +20,13 @@ local function write(path, text)
 end
 
 local function tick(context, refresh)
+    Profile.install(context, state)
     assert(context.chartMipmap and context.chartMipmapRenderer, "default runtime did not load mipmap modules")
     if state.previous then
         local usage = getUsage()
         state.worst = math.max(state.worst, usage)
         state.samples[#state.samples + 1] = usage
+        Profile.recordUsage(state, usage)
         state.previous = false
     end
     if state.phase == "done" then
@@ -115,7 +118,8 @@ local function tick(context, refresh)
             local replacement = assert(context.dashboardLoader.buildPanel(context, old.placement))
             context.panels[1], context.panels[#context.panels] = replacement, nil
             context.refreshOwner = nil
-            state.attached = true
+            state.attached, state.attachStartedAt = true, getTime()
+            Profile.reset(state)
         elseif lifecycle and state.callbacks == 1100 then
             local first, sibling = context.panels[1].instance, context.panels[2].instance
             state.oldMap, state.siblingMap = first.mipmapConsumers[1].map, sibling.mipmapConsumers[1].map
@@ -142,7 +146,16 @@ local function tick(context, refresh)
             state.workload.armed = true
             state.resumed = true
         end
+        Profile.beginCallback(state, context)
         refresh(context)
+        Profile.finishCallback(state, context)
+        if
+            state.attached
+            and not state.rebuildCompletedAt
+            and Assertions.finished(context.panels[1].instance)
+        then
+            state.rebuildCompletedAt, state.rebuildCompletedCallbacks = getTime(), state.profile.callbacks
+        end
         if state.expansionStartedAt and not state.expansionReadyAt then
             local ready = true
             for _, entry in ipairs(context.panels) do
@@ -289,6 +302,7 @@ local function tick(context, refresh)
                     .. "CALLBACK_USAGE "
                     .. table.concat(samples, ",")
                     .. "\n"
+                    .. Profile.line(state)
             )
             write("/capture-ready.txt", "native lifecycle callback gate complete")
             state.phase = "done"
@@ -365,6 +379,13 @@ local function tick(context, refresh)
                 .. "CALLBACK_USAGE "
                 .. table.concat(samples, ",")
                 .. "\n"
+                .. (lateAttach and string.format(
+                    "LATE_ATTACH attach_to_publish_ms=%d attach_to_publish_callbacks=%d callbacks=%d\n",
+                    state.rebuildCompletedAt and (state.rebuildCompletedAt - state.attachStartedAt) * 10 or -1,
+                    state.rebuildCompletedCallbacks or 0,
+                    state.profile and state.profile.callbacks or 0
+                ) or "")
+                .. Profile.line(state)
                 .. longCoverage
                 .. inputCoverage
                 .. table.concat(states)

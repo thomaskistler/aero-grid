@@ -6,6 +6,7 @@ end
 local Prototype = load("tests/support/chart_mipmap_prototype.lua", load)
 local Oracle = load("tests/support/mipmap_reading_oracle.lua")
 local Stress = load("tests/support/chart_mipmap_stress.lua", load)
+local Profile = load("tests/support/chart_runtime_profile.lua")
 local mode = "integrated"
 local operation = "append"
 local expansionLevel = 0
@@ -150,6 +151,7 @@ local function begin(context, now)
         entry.nextRefresh = state.logical
     end
     context.refreshOwner = nil
+    Profile.reset(state)
     state.phase = "running"
     write("/paint-phase.txt", string.format("1 %d 0\n", now * 10))
 end
@@ -209,8 +211,11 @@ local function reference(context)
 end
 
 local function tick(context, refresh)
+    Profile.install(context, state)
     if state.previous then
-        state.samples[#state.samples + 1] = getUsage()
+        local usage = getUsage()
+        state.samples[#state.samples + 1] = usage
+        Profile.recordUsage(state, usage)
         state.previous = false
     end
     if state.phase == "done" then
@@ -422,7 +427,9 @@ local function tick(context, refresh)
     elseif state.phase == "begin" then
         begin(context, now)
     elseif state.phase == "running" then
+        Profile.beginCallback(state, context)
         refresh(context)
+        Profile.finishCallback(state, context)
         state.callbacks, state.previous = state.callbacks + 1, true
         if state.forwarding and ready(context, true) then
             state.forwarding = false
@@ -471,6 +478,7 @@ local function tick(context, refresh)
                 .. "CALLBACK_USAGE "
                 .. table.concat(samples, ",")
                 .. "\n"
+                .. Profile.line(state)
                 .. table.concat(regions)
         )
         write("/capture-ready.txt", "controlled operation complete; inspect painted comparison")

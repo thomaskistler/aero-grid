@@ -61,9 +61,20 @@ class RuntimeGateTests(unittest.TestCase):
         self.assertTrue(GATE.coverage_passes({"coverage": [{
             "rolling": "1", "fixed_span": "6000", "scrolled": "1", "sole_renderer": "1",
         }]}, "rolling"))
-        self.assertTrue(GATE.coverage_passes({"coverage": [{
-            "late_attach": "1", "rebuilt": "1", "retained_history": "1", "sole_renderer": "1",
-        }]}, "late-attach"))
+        report = {
+            "coverage": [{
+                "late_attach": "1", "rebuilt": "1", "retained_history": "1", "sole_renderer": "1",
+            }],
+            "phase_profile": {"rebuild": 508, "renderer_setup": 162},
+            "late_attach": {
+                "attach_to_publish_ms": 100000,
+                "attach_to_publish_callbacks": 1400,
+                "callbacks": 2000,
+            },
+        }
+        self.assertTrue(GATE.coverage_passes(report, "late-attach"))
+        report["late_attach"]["attach_to_publish_ms"] = 105000
+        self.assertFalse(GATE.coverage_passes(report, "late-attach"))
 
     def test_incomplete_or_missing_callback_samples_fail(self):
         for field, value in (("workload_completed", False), ("callback_trace_complete", False),

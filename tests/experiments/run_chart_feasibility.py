@@ -288,7 +288,7 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
     )
     if recorded:
         for name in ("chart_mipmap_prototype.lua", "mipmap_recorder.lua", "chart_mipmap_stress.lua",
-                     "mipmap_reading_oracle.lua", "chart_assertions.lua"):
+                     "mipmap_reading_oracle.lua", "chart_assertions.lua", "chart_runtime_profile.lua"):
             target = widget / "tests/support" / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(prototype_source if name == "chart_mipmap_prototype.lua" and prototype_source is not None
@@ -355,6 +355,8 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
     if matched:
         rows = [dict(re.findall(r"(\w+)=([\w,]+)", line)) for line in text.splitlines()
                 if line.startswith("MATCHED ")]
+        profiles = [dict(re.findall(r"(\w+)=(\w+)", line)) for line in text.splitlines()
+                    if line.startswith("PROFILE ")]
         samples = [int(value) for line in text.splitlines() if line.startswith("CALLBACK_USAGE ")
                    for value in line.split(" ", 1)[1].split(",")]
         completed = result.returncode == 0 and "FAIL" not in text and len(rows) == 1
@@ -372,6 +374,7 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
             "workload_completed": completed,
             "measurements": rows,
             "callback_samples": samples,
+            "phase_profile": {key: int(value) for key, value in profiles[0].items()} if profiles else None,
             "callback_trace": traces,
             "callback_reasons": reasons,
             "phase_trace_complete": (
@@ -404,6 +407,10 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
                 if line.startswith("INTEGRATED ")]
         coverage = [dict(re.findall(r"(\w+)=([\w,]+)", line)) for line in text.splitlines()
                     if line.startswith("COVERAGE ")]
+        profiles = [dict(re.findall(r"(\w+)=(\w+)", line)) for line in text.splitlines()
+                    if line.startswith("PROFILE ")]
+        late_attach = [dict(re.findall(r"(\w+)=(\w+)", line)) for line in text.splitlines()
+                       if line.startswith("LATE_ATTACH ")]
         samples = [int(value) for line in text.splitlines() if line.startswith("CALLBACK_USAGE ")
                    for value in line.split(" ", 1)[1].split(",")]
         completed = result.returncode == 0 and "FAIL" not in text and len(rows) == 1
@@ -414,6 +421,10 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
             "measurements": rows,
             "coverage": coverage,
             "callback_samples": samples,
+            "phase_profile": {key: int(value) for key, value in profiles[0].items()} if profiles else None,
+            "late_attach": {
+                key: int(value) for key, value in late_attach[0].items()
+            } if late_attach else None,
             "instruction_upper_bound": max(((value + 1) * 200 for value in samples), default=None),
             "callback_trace_complete": completed and int(rows[0]["callbacks"]) == len(samples),
             "callback_limits_passed": bool(samples) and all((value + 1) * 200 < 15000 for value in samples),

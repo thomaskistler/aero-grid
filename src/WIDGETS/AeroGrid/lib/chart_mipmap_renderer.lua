@@ -33,7 +33,7 @@ function renderer:prepare()
         self.phases[(index - 1) // 4 + 1] = 0
         return false
     end
-    for _ = 1, 8 do
+    for _ = 1, 16 do
         local index = self.prepareIndex
         if index > width * #context.series then
             return true
