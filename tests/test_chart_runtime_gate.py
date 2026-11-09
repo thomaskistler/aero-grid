@@ -16,7 +16,7 @@ sys.path.pop(0)
 class RuntimeGateTests(unittest.TestCase):
     def test_extended_cases_and_fixture_settings(self):
         cases = GATE.cases(extended=True)
-        self.assertEqual(len(cases), 11)
+        self.assertEqual(len(cases), 12)
         self.assertEqual(len({name for name, _, _ in cases}), len(cases))
         driver = (EXPERIMENTS / "native_chart_mipmap_operations.lua").read_text(encoding="ascii")
         source = GATE.controlled_source(driver, "scroll", {"scrollLap": 4.25, "widthReduction": 172})

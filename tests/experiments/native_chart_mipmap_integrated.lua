@@ -6,6 +6,7 @@ end
 local Mipmap = load("lib/chart_mipmap.lua")
 local Renderer = load("lib/chart_mipmap_renderer.lua")
 local Stress = load("tests/support/chart_mipmap_stress.lua", load)
+local lifecycle = false
 local state = { phase = "loading", callbacks = 0, worst = 0, samples = {} }
 local function write(path, text)
     local file = assert(io.open(path, "w"))
@@ -71,6 +72,25 @@ return function(context, refresh)
             write("/paint-phase.txt", string.format("1 %d 0\n", state.startedAt * 10))
         end
     elseif state.phase == "running" then
+        if lifecycle and state.callbacks == 1100 then
+            local first, sibling = context.panels[1].instance, context.panels[2].instance
+            state.oldMap, state.siblingMap = first.mipmapConsumers[1].map, sibling.mipmapConsumers[1].map
+            state.oldRenderer = first.mipmapRenderer
+            local rect = first.rect
+            context.panels[1].module.update(first, { x = rect.x, y = rect.y, w = rect.w - 30, h = rect.h })
+            assert(first.mipmapConsumers[1].map ~= state.oldMap, "resize retained old map")
+            assert(sibling.mipmapConsumers[1].map == state.siblingMap, "resize changed sibling map")
+            state.resized = true
+        elseif lifecycle and state.callbacks == 1300 then
+            local first = context.panels[1].instance
+            assert(first.mipmapPrepared and next(first.mipmapRenderer.published), "resize did not republish")
+            assert(first.backPlot == nil, "resize bypassed single pool")
+            state.owner = first.mipmapConsumers[1]
+            state.workload.armed = false
+        elseif lifecycle and state.callbacks == 1600 then
+            assert(not context.panels[1].instance.session.recording, "pause was not observed")
+            state.workload.armed = true
+        end
         refresh(context)
         if state.expansionStartedAt and not state.expansionReadyAt then
             local ready = true
@@ -106,10 +126,25 @@ return function(context, refresh)
                 return
             end
         end
-        if state.callbacks >= 1500 then
+        if state.callbacks >= (lifecycle and 2300 or 1500) then
             state.phase = "report"
         end
     elseif state.phase == "report" then
+        if lifecycle then
+            local first, sibling = context.panels[1].instance, context.panels[2].instance
+            assert(state.resized and first.session.resumeLast > 0, "missing lifecycle transitions")
+            assert(first.mipmapRenderer == nil and sibling.mipmapRenderer == nil, "resume did not fall back")
+            assert(state.owner.map ~= nil and first.series[1].feed.count > 0, "fallback lost history")
+            local samples = {}
+            for index, usage in ipairs(state.samples) do samples[index] = tostring(usage) end
+            write("/chart-feasibility.txt", string.format(
+                "INTEGRATED callbacks=%d usage_percent=%d runtime_ms=%d resized=1 resumed=1 fallback=1 sources=%d\n",
+                #state.samples, state.worst, (getTime() - state.startedAt) * 10, state.workload.history.count)
+                .. "CALLBACK_USAGE " .. table.concat(samples, ",") .. "\n")
+            write("/capture-ready.txt", "native lifecycle callback gate complete")
+            state.phase = "done"
+            return
+        end
         local rendered, columns, objects, states = 0, {}, 0, {}
         for _, entry in ipairs(context.panels) do
             local chart = entry.instance

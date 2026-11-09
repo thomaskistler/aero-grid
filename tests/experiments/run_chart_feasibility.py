@@ -228,7 +228,7 @@ def verify_matched_paint(output, text):
 
 def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3, stress=False, resized_scroll=False,
            prototype_source=None, integrated=False, matched=None, smart_batch=80, matched_trace=False,
-           runtime_source=False, controlled_driver=None):
+           runtime_source=False, controlled_driver=None, arm_switch=None):
     sys.path.insert(0, str(ROOT / "tools"))
     spec = importlib.util.spec_from_file_location("capture", ROOT / "tools/capture-panels.py")
     capture = importlib.util.module_from_spec(spec)
@@ -268,7 +268,10 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
         lines = ["version: 5", "grid:", "  columns: 4", "  rows: 4", "panels:"]
         for chart in range(2):
             lines.append(f"  - id: stress{chart + 1}\n    type: chart\n    col: 0\n    row: {chart * 2}\n"
-                         "    colSpan: 4\n    rowSpan: 2\n    config:\n      metrics:")
+                         "    colSpan: 4\n    rowSpan: 2\n    config:")
+            if arm_switch is not None:
+                lines.append(f"      armSwitch: {arm_switch}")
+            lines.append("      metrics:")
             for channel in range(3):
                 lines.append(f"        - source: Q{chart * 3 + channel + 1}\n          precision: 3")
                 if matched:

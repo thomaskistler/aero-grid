@@ -67,7 +67,30 @@ caffeinate -i python3 tests/experiments/run_chart_runtime_gate.py --extended --o
 Higher-level and later-lap cases use bounded seed replay, not an uninterrupted
 long flight or sequential scrolls in one session. Width cases resize before
 measured rendering; they do not measure the resize callback itself. Live resize,
-native pause/resume fallback and actual-radio memory remain unverified.
+native pause/resume fallback were not covered by those eleven cases.
+
+### Native live resize and recording resume
+
+`build/chart-runtime-lifecycle-v4/runtime-gate.json` passes **2,672 callbacks**
+with worst conservative bound **12,200**, including a live 398-to-368-column
+resize and a real pause/resume. Both charts retain Smart detection and 24
+recorded sources. The fixture waits through the flight disarm hold before
+rearming; the earlier short pause correctly left recording active and did not
+exercise a resume.
+
+Assertions verify local map replacement without changing the sibling map,
+republication after resize without a legacy double buffer, a genuine recording
+pause and nonzero resume marker, both charts switching to the existing legacy
+resume renderer, and retained history/observer data. No transition pixel oracle
+is supplied: this is a native callback/lifecycle gate, not painted-output
+acceptance. The scenario is now the twelfth extended case and can run alone:
+
+```sh
+caffeinate -i python3 tests/experiments/run_chart_runtime_gate.py --case live-resize-resume --output build/chart-runtime-lifecycle-new
+```
+
+Uninterrupted longer flights, sequential maximum-level scrolling and actual-radio
+memory remain outstanding. Default enablement is unchanged.
 
 ## Combined scroll correction and telemetry optimization (2026-11-08)
 

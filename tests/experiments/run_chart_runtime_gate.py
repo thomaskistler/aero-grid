@@ -19,6 +19,7 @@ def cases(extended=False):
             ("scroll-lap4", "scroll", {"scrollLap": 4.25}),
             ("horizontal-width368", "horizontal", {"widthReduction": 30}),
             ("scroll-width226", "scroll", {"widthReduction": 172}),
+            ("live-resize-resume", "lifecycle", {}),
         ]
     return result
 
@@ -55,6 +56,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--extended", action="store_true", help="Also gate higher levels, later scroll laps and resized widths")
+    parser.add_argument("--case", choices=[name for name, _, _ in cases(True)],
+                        help="Run one case instead of the full gate")
     args = parser.parse_args()
     output = args.output.resolve()
     if not output.is_relative_to(ROOT / "build"):
@@ -64,19 +67,25 @@ def main():
     output.mkdir(parents=True)
     driver = (ROOT / "tests/experiments/native_chart_mipmap_operations.lua").read_text(encoding="ascii")
     reports = {}
-    for name, operation, settings in cases(args.extended):
+    selected = [case for case in cases(True) if case[0] == args.case] if args.case else cases(args.extended)
+    for name, operation, settings in selected:
         target = output / name
         target.mkdir()
-        continuous = operation == "continuous"
-        source = None if continuous else controlled_source(driver, operation, settings)
+        continuous = operation in ("continuous", "lifecycle")
+        if operation == "lifecycle":
+            source = (ROOT / "tests/experiments/native_chart_mipmap_integrated.lua").read_text(encoding="ascii")
+            source = source.replace("local lifecycle = false", "local lifecycle = true")
+        else:
+            source = None if continuous else controlled_source(driver, operation, settings)
         native(
             target, 800, True, 73, 20, 3, True, False,
             integrated=continuous, matched=None if continuous else "integrated",
             runtime_source=True, controlled_driver=source,
+            arm_switch="SAv" if operation == "lifecycle" else None,
         )
         report = json.loads((target / "native-results.json").read_text())
         report["kind"] = (
-            "actual opt-in chart native continuous callback smoke" if continuous
+            f"actual opt-in chart native {operation} callback smoke" if continuous
             else f"actual opt-in chart native {operation}: full-panel input-derived reference comparison"
         )
         report.pop("allowance", None)
