@@ -7,6 +7,9 @@ local Mipmap = load("lib/chart_mipmap.lua")
 local Renderer = load("lib/chart_mipmap_renderer.lua")
 local Stress = load("tests/support/chart_mipmap_stress.lua", load)
 local lifecycle = false
+local longFlight = false
+local firmwareTime = getTime
+local longSpan = 6000 * (4 / 3) ^ 10
 local state = { phase = "loading", callbacks = 0, worst = 0, samples = {} }
 local function write(path, text)
     local file = assert(io.open(path, "w"))
@@ -14,7 +17,7 @@ local function write(path, text)
     io.close(file)
 end
 
-return function(context, refresh)
+local function tick(context, refresh)
     context.chartMipmap, context.chartMipmapRenderer = Mipmap, Renderer
     if state.previous then
         local usage = getUsage()
@@ -24,6 +27,19 @@ return function(context, refresh)
     end
     if state.phase == "done" then
         return
+    end
+    if longFlight then
+        local real = firmwareTime()
+        if state.nextCallback and real < state.nextCallback then
+            return
+        end
+        state.nextCallback = real + 5
+        state.logical = (state.logical or real) + 50
+        context.matchedNow = state.logical
+        getTime = function() return state.logical end
+        if context.serviceRuntime then context.serviceRuntime.env.getTime = getTime end
+        if context.flightBroker then context.flightBroker.env.getTime = getTime end
+        for _, entry in ipairs(context.panels or {}) do entry.instance.clock = getTime end
     end
     if #context.errors > 0 then
         write("/chart-feasibility.txt", "FAIL " .. table.concat(context.errors, "; ") .. "\n")
@@ -35,6 +51,15 @@ return function(context, refresh)
         refresh(context)
         if not context.stage and #context.panels == 2 then
             state.workload = Stress.new(context, 800, 130, true)
+            if longFlight then
+                state.observations = {}
+                for index in ipairs(context.panels) do
+                    state.observations[index] = {}
+                    for series = 1, 3 do
+                        state.observations[index][series] = { levels = {}, scrolls = 0 }
+                    end
+                end
+            end
             state.phase, state.source = "subscriptions", 7
         end
     elseif state.phase == "subscriptions" then
@@ -107,6 +132,25 @@ return function(context, refresh)
                 state.expansionReadyAt = getTime()
             end
         end
+        if longFlight then
+            for index, entry in ipairs(context.panels) do
+                local renderer = entry.instance.mipmapRenderer
+                for series = 1, 3 do
+                    local job = renderer and renderer.published[series]
+                    if job then
+                        local observation = state.observations[index][series]
+                        observation.levels[job.level] = true
+                        if job.level == 10 and job.origin ~= observation.origin then
+                            if observation.origin ~= nil then
+                                assert(job.origin > observation.origin, "scroll origin went backwards")
+                                observation.scrolls = observation.scrolls + 1
+                            end
+                            observation.origin = job.origin
+                        end
+                    end
+                end
+            end
+        end
         state.callbacks = state.callbacks + 1
         if state.callbacks == 200 then
             local chart = context.panels[1].instance
@@ -126,10 +170,57 @@ return function(context, refresh)
                 return
             end
         end
-        if state.callbacks >= (lifecycle and 2300 or 1500) then
+        if longFlight then
+            local complete = context.panels[1].instance.session.elapsed >= longSpan * 2.5
+            for _, observations in ipairs(state.observations) do
+                for _, observation in ipairs(observations) do
+                    complete = complete and observation.scrolls >= 6
+                end
+            end
+            if complete then state.phase = "report" end
+            assert(state.callbacks < 8000, "long flight did not publish six scrolls")
+        elseif state.callbacks >= (lifecycle and 2300 or 1500) then
             state.phase = "report"
         end
     elseif state.phase == "report" then
+        if longFlight then
+            state.reportSamples = state.reportSamples or {}
+            local first = #state.reportSamples + 1
+            for index = first, math.min(first + 63, #state.samples) do
+                state.reportSamples[index] = tostring(state.samples[index])
+            end
+            if #state.reportSamples < #state.samples then return end
+            local checked = state.checkedLevels or 0
+            if checked < 66 then
+                local index = checked // 33 + 1
+                local series = (checked % 33) // 11 + 1
+                local level = checked % 11
+                local map = context.panels[index].instance.mipmapConsumers[series].map
+                local retained = map.levels[level]
+                if retained then
+                    for slot in pairs(retained.tags) do
+                        assert(slot >= 1 and slot <= map.width, "mipmap exceeded ring capacity")
+                    end
+                end
+                state.checkedLevels = checked + 1
+                return
+            end
+        end
+        local longCoverage = ""
+        if longFlight then
+            for index, observations in ipairs(state.observations) do
+                for series, observation in ipairs(observations) do
+                    for level = 0, 10 do
+                        assert(observation.levels[level], "long flight skipped a published level")
+                    end
+                    local chart = context.panels[index].instance
+                    local map = chart.mipmapConsumers[series].map
+                    assert(map:select(map.at) == 10, "long flight did not retain maximum level")
+                    assert(chart.session.resumeLast == 0 and chart.session.recording, "flight was interrupted")
+                end
+            end
+            longCoverage = "COVERAGE levels=11 scrolls_per_series=6 logical_step=50 admission_ms=50 uninterrupted=1\n"
+        end
         if lifecycle then
             local first, sibling = context.panels[1].instance, context.panels[2].instance
             assert(state.resized and first.session.resumeLast > 0, "missing lifecycle transitions")
@@ -171,9 +262,11 @@ return function(context, refresh)
                 owner.startedAt
             )
         end
-        local samples = {}
-        for index, usage in ipairs(state.samples) do
-            samples[index] = tostring(usage)
+        local samples = state.reportSamples or {}
+        if not longFlight then
+            for index, usage in ipairs(state.samples) do
+                samples[index] = tostring(usage)
+            end
         end
         write(
             "/chart-feasibility.txt",
@@ -193,10 +286,21 @@ return function(context, refresh)
                 .. "CALLBACK_USAGE "
                 .. table.concat(samples, ",")
                 .. "\n"
+                .. longCoverage
                 .. table.concat(states)
         )
         write("/capture-ready.txt", "normal chart callback smoke completed; no independent native paint target")
         state.phase = "done"
     end
+
     state.previous = state.phase ~= "done"
+end
+
+return function(context, refresh)
+    local ok, message = pcall(tick, context, refresh)
+    if not ok then
+        write("/chart-feasibility.txt", "FAIL " .. tostring(message) .. "\n")
+        write("/capture-ready.txt", "native runtime fixture failed")
+        state.phase = "done"
+    end
 end

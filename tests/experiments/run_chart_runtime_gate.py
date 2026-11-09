@@ -20,6 +20,7 @@ def cases(extended=False):
             ("horizontal-width368", "horizontal", {"widthReduction": 30}),
             ("scroll-width226", "scroll", {"widthReduction": 172}),
             ("live-resize-resume", "lifecycle", {}),
+            ("long-flight", "long-flight", {}),
         ]
     return result
 
@@ -52,6 +53,15 @@ def report_passes(report, painted):
     )
 
 
+def coverage_passes(report, operation):
+    if operation != "long-flight":
+        return True
+    return report.get("coverage") == [{
+        "levels": "11", "scrolls_per_series": "6", "logical_step": "50",
+        "admission_ms": "50", "uninterrupted": "1",
+    }]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
@@ -71,10 +81,11 @@ def main():
     for name, operation, settings in selected:
         target = output / name
         target.mkdir()
-        continuous = operation in ("continuous", "lifecycle")
-        if operation == "lifecycle":
+        continuous = operation in ("continuous", "lifecycle", "long-flight")
+        if operation in ("lifecycle", "long-flight"):
             source = (ROOT / "tests/experiments/native_chart_mipmap_integrated.lua").read_text(encoding="ascii")
-            source = source.replace("local lifecycle = false", "local lifecycle = true")
+            marker = "lifecycle" if operation == "lifecycle" else "longFlight"
+            source = source.replace(f"local {marker} = false", f"local {marker} = true")
         else:
             source = None if continuous else controlled_source(driver, operation, settings)
         native(
@@ -82,6 +93,7 @@ def main():
             integrated=continuous, matched=None if continuous else "integrated",
             runtime_source=True, controlled_driver=source,
             arm_switch="SAv" if operation == "lifecycle" else None,
+            long_run=operation == "long-flight",
         )
         report = json.loads((target / "native-results.json").read_text())
         report["kind"] = (
@@ -94,13 +106,18 @@ def main():
             (target / "sdcard/WIDGETS/AeroGrid/panels/chart.lua").read_bytes()
             == (ROOT / "src/WIDGETS/AeroGrid/panels/chart.lua").read_bytes()
         )
-        passed = report_passes(report, painted=not continuous) and report["runtime_source_unmodified"]
+        passed = (
+            report_passes(report, painted=not continuous)
+            and report["runtime_source_unmodified"]
+            and coverage_passes(report, operation)
+        )
         reports[name] = {
             "passed": passed,
             "instruction_upper_bound": report["instruction_upper_bound"],
             "paint": report.get("paint"),
             "measurements": report["measurements"],
             "fixture_settings": settings,
+            "coverage": report.get("coverage", []),
         }
         report["runtime_callback_gate_passed"] = passed
         report["limitations"] = [
@@ -109,6 +126,11 @@ def main():
             "Paint references retain normal overlays, not an independent overlay-algorithm oracle.",
             "This gate covers native callback instructions and controlled pixels, not hardware memory or release acceptance.",
         ]
+        if operation == "long-flight":
+            report["limitations"].append(
+                "Long flight advances 50 logical ticks per 50ms admission (10x); services acquire every sample "
+                "without replay or observer fences. Logical sample density differs from a real-time flight."
+            )
         (target / "native-results.json").write_text(json.dumps(report, indent=2) + "\n")
     passed = all(report["passed"] for report in reports.values())
     summary = {"passed": passed, "operations": reports}

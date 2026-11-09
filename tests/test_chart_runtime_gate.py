@@ -14,9 +14,23 @@ sys.path.pop(0)
 
 
 class RuntimeGateTests(unittest.TestCase):
+    def test_long_flight_requires_explicit_complete_coverage(self):
+        report = {}
+        self.assertFalse(GATE.coverage_passes(report, "long-flight"))
+        report["coverage"] = [{
+            "levels": "11", "scrolls_per_series": "6", "logical_step": "50",
+            "admission_ms": "50", "uninterrupted": "1",
+        }]
+        self.assertTrue(GATE.coverage_passes(report, "long-flight"))
+        for field in ("levels", "scrolls_per_series", "uninterrupted"):
+            original = report["coverage"][0][field]
+            report["coverage"][0][field] = "0"
+            self.assertFalse(GATE.coverage_passes(report, "long-flight"))
+            report["coverage"][0][field] = original
+
     def test_extended_cases_and_fixture_settings(self):
         cases = GATE.cases(extended=True)
-        self.assertEqual(len(cases), 12)
+        self.assertEqual(len(cases), 13)
         self.assertEqual(len({name for name, _, _ in cases}), len(cases))
         driver = (EXPERIMENTS / "native_chart_mipmap_operations.lua").read_text(encoding="ascii")
         source = GATE.controlled_source(driver, "scroll", {"scrollLap": 4.25, "widthReduction": 172})

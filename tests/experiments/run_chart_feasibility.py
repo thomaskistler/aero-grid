@@ -228,7 +228,7 @@ def verify_matched_paint(output, text):
 
 def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3, stress=False, resized_scroll=False,
            prototype_source=None, integrated=False, matched=None, smart_batch=80, matched_trace=False,
-           runtime_source=False, controlled_driver=None, arm_switch=None):
+           runtime_source=False, controlled_driver=None, arm_switch=None, long_run=False):
     sys.path.insert(0, str(ROOT / "tools"))
     spec = importlib.util.spec_from_file_location("capture", ROOT / "tools/capture-panels.py")
     capture = importlib.util.module_from_spec(spec)
@@ -248,7 +248,8 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
         if source.count("tick < 3000") != 1:
             raise RuntimeError("Update the experiment's native preparation timeout injection")
         capture_source = output / "capture-native.cpp"
-        capture_source.write_text(source.replace("tick < 3000", f"tick < {18000 if stress else 6000}"))
+        ticks = 60000 if long_run else 18000 if stress else 6000
+        capture_source.write_text(source.replace("tick < 3000", f"tick < {ticks}"))
     subprocess.run([
         "clang++", "-std=c++11", "-arch", architecture[0],
         str(capture_source),
@@ -327,7 +328,7 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
             or assert(loadScript("/WIDGETS/AeroGrid/chart-feasibility-driver.lua"))()
         return context.feasibilityDriver(context, refresh)
     end,""")
-    if matched:
+    if matched or long_run:
         source = (
             "local matchedContext\nlocal matchedFirmwareTime = getTime\n"
             "local function getTime()\n"
@@ -343,7 +344,8 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
         command = [str(executable), str(library), str(sd), str(output / "frame.rgb565"), str(regions)]
         if stress:
             command.append("trace")
-        result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=240 if stress else 90)
+        result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT,
+                                timeout=720 if long_run else 240 if stress else 90)
     results = sd / "chart-feasibility.txt"
     text = results.read_text() if results.exists() else ""
     if matched:
@@ -396,6 +398,8 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
     if integrated:
         rows = [dict(re.findall(r"(\w+)=([\w,]+)", line)) for line in text.splitlines()
                 if line.startswith("INTEGRATED ")]
+        coverage = [dict(re.findall(r"(\w+)=([\w,]+)", line)) for line in text.splitlines()
+                    if line.startswith("COVERAGE ")]
         samples = [int(value) for line in text.splitlines() if line.startswith("CALLBACK_USAGE ")
                    for value in line.split(" ", 1)[1].split(",")]
         completed = result.returncode == 0 and "FAIL" not in text and len(rows) == 1
@@ -404,6 +408,7 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
             "capture_exit": result.returncode,
             "workload_completed": completed,
             "measurements": rows,
+            "coverage": coverage,
             "callback_samples": samples,
             "instruction_upper_bound": max(((value + 1) * 200 for value in samples), default=None),
             "callback_trace_complete": completed and int(rows[0]["callbacks"]) == len(samples),

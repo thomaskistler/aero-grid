@@ -92,6 +92,38 @@ caffeinate -i python3 tests/experiments/run_chart_runtime_gate.py --case live-re
 Uninterrupted longer flights, sequential maximum-level scrolling and actual-radio
 memory remain outstanding. Default enablement is unchanged.
 
+### Service-driven accelerated long flight
+
+`build/chart-runtime-long-flight-v5/runtime-gate.json` passes **5,705 callbacks**
+with worst conservative bound **12,600**. Each of the six series publishes all
+eleven levels and at least six consecutive maximum-level scrolls. The flight
+remains recording with no resume marker. All readings arrive through the actual
+services without seed replay or observer fences. Explicit coverage records are
+required by the gate; missing levels, scrolls or uninterrupted status fail.
+
+The diagnostic advances 50 logical ticks per 50 ms admission (10x), reaching
+266,400 ticks of recorded chart time (44.4 minutes). This is not a real-time
+44-minute soak: logical sample density and service alignment differ. The
+reported 12,500 ms first-expansion submission is logical time, not a measured
+paint deadline. No long-flight pixel oracle is supplied.
+
+Every retained level's tag keys remain within the plot-width ring bounds.
+The integrated renderer currently retains all eleven levels; it does not call
+the prototype's `releaseBelow` helper. These bounded-storage checks therefore
+do not establish fine-level retirement or actual-radio memory safety.
+
+The scenario is the thirteenth extended case:
+
+```sh
+caffeinate -i python3 tests/experiments/run_chart_runtime_gate.py --case long-flight --output build/chart-runtime-long-flight-new
+```
+
+The unchanged lifecycle scenario was rerun after the shared fixture changes:
+`build/chart-runtime-lifecycle-v5/runtime-gate.json` again passes 2,672 callbacks
+at 12,200. Full Python/Lua suites and Lua lint pass. Actual-radio memory,
+real-time soak and long-flight/transition pixel acceptance remain outstanding;
+default enablement remains off.
+
 ## Combined scroll correction and telemetry optimization (2026-11-08)
 
 The user authorized combining both investigations into draft PR #192, with
