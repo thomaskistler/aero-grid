@@ -51,9 +51,34 @@ class RuntimeGateTests(unittest.TestCase):
 
     def test_strict_instruction_limit(self):
         report = self.report()
-        self.assertTrue(GATE.report_passes(report, painted=True))
+        self.assertTrue(GATE.report_passes(report, painted=True, operation="horizontal"))
         report["callback_samples"] = [79]
-        self.assertFalse(GATE.report_passes(report, painted=True))
+        self.assertFalse(GATE.report_passes(report, painted=True, operation="horizontal"))
+
+    def test_painted_latency_ceilings(self):
+        for operation, accepted, rejected in (
+            ("append", 499, 500),
+            ("scroll", 499, 500),
+            ("horizontal", 1000, 1001),
+            ("vertical", 1000, 1001),
+        ):
+            with self.subTest(operation=operation):
+                report = self.report()
+                report["paint"]["paint_complete_ms"] = accepted
+                self.assertTrue(GATE.report_passes(report, painted=True, operation=operation))
+                for elapsed in (rejected, None, -1, float("nan"), float("inf"), True):
+                    report["paint"]["paint_complete_ms"] = elapsed
+                    self.assertFalse(GATE.report_passes(report, painted=True, operation=operation))
+                self.assertTrue(GATE.report_passes(report, painted=False, operation=operation))
+
+    def test_measured_slow_frames_fail_despite_correct_pixels_and_callback_budget(self):
+        for operation, elapsed in (
+            ("append", 580), ("horizontal", 3240), ("vertical", 1580), ("scroll", 2300),
+        ):
+            with self.subTest(operation=operation):
+                report = self.report()
+                report["paint"]["paint_complete_ms"] = elapsed
+                self.assertFalse(GATE.report_passes(report, painted=True, operation=operation))
 
     def test_rebuilt_cases_require_explicit_coverage(self):
         self.assertFalse(GATE.coverage_passes({}, "rolling"))
@@ -81,11 +106,11 @@ class RuntimeGateTests(unittest.TestCase):
                              ("callback_samples", [])):
             report = self.report()
             report[field] = value
-            self.assertFalse(GATE.report_passes(report, painted=False))
+            self.assertFalse(GATE.report_passes(report, painted=False, operation="continuous"))
 
     def test_painted_cases_require_verified_output(self):
         for field, value in (("verified", False), ("mismatched_pixels", 1), ("paint_complete_ms", None)):
             report = self.report()
             report["paint"][field] = value
-            self.assertFalse(GATE.report_passes(report, painted=True))
-            self.assertTrue(GATE.report_passes(report, painted=False))
+            self.assertFalse(GATE.report_passes(report, painted=True, operation="horizontal"))
+            self.assertTrue(GATE.report_passes(report, painted=False, operation="continuous"))

@@ -15,12 +15,20 @@ ROOT = Path(__file__).resolve().parents[2]
 RUNTIME_OPERATIONS = {"append", "horizontal", "vertical", "scroll"}
 
 
+def painted_latency_passes(operation, elapsed_ms):
+    if not isinstance(elapsed_ms, (int, float)) or isinstance(elapsed_ms, bool) or elapsed_ms < 0:
+        return False
+    if operation in ("append", "scroll", "resized_scroll"):
+        return elapsed_ms < 500
+    return elapsed_ms <= 1000
+
+
 def operation_limits(operation, elapsed_ms, turns, series=3, stress=False):
     if stress and operation not in RUNTIME_OPERATIONS:
         return True
     incremental = operation in ("append", "scroll", "resized_scroll")
     turn_limit = 1 if operation == "append" and series == 1 else 2 if incremental else 5
-    return elapsed_ms < (500 if incremental else 1001) and turns <= turn_limit
+    return painted_latency_passes(operation, elapsed_ms) and turns <= turn_limit
 
 
 def mock(output, kernel, recorded=False, batch=130, profile=False, sample_ticks=20, stress=False, resized_scroll=False):

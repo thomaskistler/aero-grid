@@ -5,7 +5,7 @@ import argparse
 import json
 from pathlib import Path
 
-from run_chart_feasibility import ROOT, native
+from run_chart_feasibility import ROOT, native, painted_latency_passes
 
 
 def cases(extended=False):
@@ -37,7 +37,7 @@ def controlled_source(driver, operation, settings):
     return source
 
 
-def report_passes(report, painted):
+def report_passes(report, painted, operation):
     return (
         report.get("workload_completed") is True
         and report.get("callback_trace_complete") is True
@@ -48,7 +48,7 @@ def report_passes(report, painted):
             or (
                 report.get("paint", {}).get("verified") is True
                 and report["paint"].get("mismatched_pixels") == 0
-                and report["paint"].get("paint_complete_ms") is not None
+                and painted_latency_passes(operation, report["paint"].get("paint_complete_ms"))
             )
         )
     )
@@ -140,7 +140,7 @@ def main():
         )
         report["runtime_source_unmodified"] = all(report["runtime_modules_unmodified"].values())
         passed = (
-            report_passes(report, painted=not continuous)
+            report_passes(report, painted=not continuous, operation=operation)
             and report["runtime_source_unmodified"]
             and report["loader_input_override_verified"]
             and coverage_passes(report, operation)
@@ -160,6 +160,7 @@ def main():
             "Default runtime loads its own mipmap dependencies; panel, history, mipmap and renderer sources are unchanged.",
             "Loader differs only by its verified deterministic input-environment override; refresh wrapper and clocks are diagnostic.",
             "Controlled cases replay dense inputs and fence chart observers; continuous smoke does not fence.",
+            "Controlled complete paint must take <500ms for append/scroll or <=1000ms for horizontal/vertical rescale.",
             "Paint references retain normal overlays, not an independent overlay-algorithm oracle.",
             "This gate covers native callback instructions and controlled pixels, not hardware memory or release acceptance.",
         ]

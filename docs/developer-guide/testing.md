@@ -97,8 +97,11 @@ caffeinate -i make test-chart-native
 ```
 
 This gates the unmodified chart runtime's whole native callbacks strictly below
-16,000 instructions. It compares controlled append/rescale/scroll pixels and
-covers continuous rendering, rolling windows, and late-history reconstruction.
+16,000 instructions. Controlled complete-painted-frame latency must be below
+500 ms for append/ordinary scroll and at most 1,000 ms for horizontal/vertical
+rescale, with matching pixels. It also covers continuous rendering, rolling
+windows, and late-history reconstruction; those smoke cases do not establish
+painted-frame latency.
 Use the runner's `--extended` option for higher levels and resize/resume coverage.
 
 The resource suites check reload collectibility, object counts, sustained
