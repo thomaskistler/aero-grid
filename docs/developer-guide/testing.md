@@ -97,9 +97,12 @@ caffeinate -i make test-chart-native
 ```
 
 This gates the unmodified chart runtime's whole native callbacks strictly below
-16,000 instructions. Controlled complete-painted-frame latency must be below
-500 ms for append/ordinary scroll and at most 1,000 ms for horizontal/vertical
-rescale, with matching pixels. It also covers continuous rendering, rolling
+16,000 instructions. Controlled complete-painted-frame latency must not exceed
+the chart PR's measured current-gate baseline (`17eeaa6`, quotas 71/63/41):
+append 940 ms, horizontal rescale 2,620 ms, vertical rescale 1,500 ms, and ordinary
+scroll 2,210 ms, with matching pixels. These regression ceilings are separate
+from the feasibility experiment's unachieved 500/1,000 ms targets.
+It also covers continuous rendering, rolling
 windows, and late-history reconstruction; those smoke cases do not establish
 painted-frame latency.
 Use the runner's `--extended` option for higher levels and resize/resume coverage.

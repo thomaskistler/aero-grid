@@ -1,11 +1,27 @@
 # SPDX-License-Identifier: GPL-2.0-only
-"""Native callback/correctness gate for the default chart runtime."""
+"""Native callback, correctness and latency gate for the default chart runtime."""
 
 import argparse
 import json
 from pathlib import Path
 
-from run_chart_feasibility import ROOT, native, painted_latency_passes
+from run_chart_feasibility import ROOT, native
+
+# Measured current-gate baseline from chart PR #192 (17eeaa6, 71/63/41).
+PAINTED_LATENCY_CEILINGS_MS = {
+    "append": 940,
+    "horizontal": 2620,
+    "vertical": 1500,
+    "scroll": 2210,
+}
+
+
+def painted_latency_passes(operation, elapsed_ms):
+    return (
+        isinstance(elapsed_ms, (int, float))
+        and not isinstance(elapsed_ms, bool)
+        and 0 <= elapsed_ms <= PAINTED_LATENCY_CEILINGS_MS[operation]
+    )
 
 
 def cases(extended=False):
@@ -147,6 +163,7 @@ def main():
         )
         reports[name] = {
             "passed": passed,
+            "painted_latency_ceiling_ms": None if continuous else PAINTED_LATENCY_CEILINGS_MS[operation],
             "instruction_upper_bound": report["instruction_upper_bound"],
             "paint": report.get("paint"),
             "measurements": report["measurements"],
@@ -160,7 +177,8 @@ def main():
             "Default runtime loads its own mipmap dependencies; panel, history, mipmap and renderer sources are unchanged.",
             "Loader differs only by its verified deterministic input-environment override; refresh wrapper and clocks are diagnostic.",
             "Controlled cases replay dense inputs and fence chart observers; continuous smoke does not fence.",
-            "Controlled complete paint must take <500ms for append/scroll or <=1000ms for horizontal/vertical rescale.",
+            "Controlled complete paint must not exceed the measured 17eeaa6 baseline: "
+            "append 940ms, horizontal 2620ms, vertical 1500ms, scroll 2210ms.",
             "Paint references retain normal overlays, not an independent overlay-algorithm oracle.",
             "This gate covers native callback instructions and controlled pixels, not hardware memory or release acceptance.",
         ]

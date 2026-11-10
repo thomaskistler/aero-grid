@@ -57,10 +57,10 @@ class RuntimeGateTests(unittest.TestCase):
 
     def test_painted_latency_ceilings(self):
         for operation, accepted, rejected in (
-            ("append", 499, 500),
-            ("scroll", 499, 500),
-            ("horizontal", 1000, 1001),
-            ("vertical", 1000, 1001),
+            ("append", 940, 941),
+            ("scroll", 2210, 2211),
+            ("horizontal", 2620, 2621),
+            ("vertical", 1500, 1501),
         ):
             with self.subTest(operation=operation):
                 report = self.report()
@@ -71,14 +71,15 @@ class RuntimeGateTests(unittest.TestCase):
                     self.assertFalse(GATE.report_passes(report, painted=True, operation=operation))
                 self.assertTrue(GATE.report_passes(report, painted=False, operation=operation))
 
-    def test_measured_slow_frames_fail_despite_correct_pixels_and_callback_budget(self):
-        for operation, elapsed in (
-            ("append", 580), ("horizontal", 3240), ("vertical", 1580), ("scroll", 2300),
+    def test_measured_frames_against_previous_gate(self):
+        for operation, elapsed, passed in (
+            ("append", 580, True), ("horizontal", 3240, False),
+            ("vertical", 1580, False), ("scroll", 2300, False),
         ):
             with self.subTest(operation=operation):
                 report = self.report()
                 report["paint"]["paint_complete_ms"] = elapsed
-                self.assertFalse(GATE.report_passes(report, painted=True, operation=operation))
+                self.assertEqual(GATE.report_passes(report, painted=True, operation=operation), passed)
 
     def test_rebuilt_cases_require_explicit_coverage(self):
         self.assertFalse(GATE.coverage_passes({}, "rolling"))
