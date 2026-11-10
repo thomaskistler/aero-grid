@@ -51,7 +51,7 @@ for _, width in ipairs({ 226, 397, 398, 399, 400, 800 }) do
             turns = turns + 1
             assert(turns < 1000, "renderer failed to settle")
             fixture.lvglMock.settle()
-        until renderer:step(24)
+        until renderer:step(2000)
         assert(not renderer.root.hidden, "completed projection must reveal its native pool")
     end
     local function verify()
@@ -102,8 +102,8 @@ for _, width in ipairs({ 226, 397, 398, 399, 400, 800 }) do
     repeat
         reveals, turns = 0, turns + 1
         assert(turns < 1000, "hidden pool failed to republish")
-        complete = renderer:step(24)
-        assert(reveals <= 37, "activation must share the half-quota limit, including catch-up")
+        complete = renderer:step(2000)
+        assert(reveals <= 27, "reveals must share one weighted allowance across all series")
     until complete
     lvgl.show = show
     verify()
@@ -112,7 +112,7 @@ for _, width in ipairs({ 226, 397, 398, 399, 400, 800 }) do
         fine[series], retained[series] = owner.map.levels[0], owner.map.levels[1]
     end
     sample(6001)
-    renderer:step(24)
+    renderer:step(2000)
     for _, owner in ipairs(context.mipmapConsumers) do
         assert(owner.map.level == 0 and owner.map.levels[0], "partial projection retired the visible level")
     end
@@ -174,7 +174,7 @@ for _, width in ipairs({ 226, 397, 398, 399, 400, 800 }) do
         liveTurns = liveTurns + 1
         assert(liveTurns < 1000, "continuous sampling must not hold renderer ownership indefinitely")
         sample(1000010 + liveTurns * 5)
-        complete = renderer:step(24)
+        complete = renderer:step(2000)
     until complete
     assert(renderer.published[1].at < context.mipmapConsumers[1].map.at, "publication must retain a finite horizon")
     finish()
@@ -186,3 +186,50 @@ for _, width in ipairs({ 226, 397, 398, 399, 400, 800 }) do
     renderer:destroy()
 end
 print("Production mipmap single-pool geometry matches independent input envelopes")
+
+do
+    local function task(width, populated)
+        local tags, lows, highs, objects, visible = {}, {}, {}, {}, {}
+        for index = 1, width * 2 do
+            objects[index] = lvgl.rectangle({ x = 0, y = 0, w = 1, h = 1 })
+            visible[index] = true
+        end
+        for index = 1, width do
+            tags[index], lows[index], highs[index] = populated and index or 0, 0, 1
+        end
+        local jobs = {}
+        for series = 1, 2 do
+            jobs[series] = {
+                index = 0,
+                last = width - 1,
+                origin = 0,
+                top = 0,
+                low = 0,
+                high = 1,
+                left = 0,
+                height = 100,
+                tags = tags,
+                lows = lows,
+                highs = highs,
+            }
+        end
+        return setmetatable({
+            width = width,
+            changes = {},
+            objects = objects,
+            visible = visible,
+            jobs = jobs,
+        }, Renderer)
+    end
+    local dense = task(30, true)
+    local done, used = dense:step(2000)
+    assert(not done and used == 1950)
+    assert(dense.jobs[1].index == 26 and dense.jobs[2].index == 0, "series must share the same allowance")
+    local sparse = task(150, false)
+    done, used = sparse:step(2000)
+    assert(not done and used == 2000)
+    assert(sparse.jobs[1].index == 80 and sparse.jobs[2].index == 0, "empty and hide paths must cost twenty-five")
+    local blocked = task(30, true)
+    done, used = blocked:step(74)
+    assert(not done and used == 0 and blocked.jobs[1].index == 0, "do not exceed allowance on the next column")
+end

@@ -129,6 +129,19 @@ local function run()
         assert(not services.consumption(value, 8))
     end
     assert(services.consumption(0, 8) and services.consumption(8, 8))
+    task.updateCost, task.due = 0, 50
+    task.update = function(_, _, slots)
+        assert(slots == 0)
+    end
+    id, message, used = services.dispatch(runtime, task, 50, 0)
+    assert(id == "variable" and not message and used == 0 and task.due == 60)
+    assert(services.dispatch(runtime, task, 50, 0) == nil, "zero-slot work must retain its due interval")
+    task.update = function()
+        error("zero-slot failure")
+    end
+    id, message, used = services.dispatch(runtime, task, 60, 0)
+    assert(id == "variable" and message and used == 0 and task.failed)
+    assert(services.grant(0, 0) == 0)
 end
 
 run()

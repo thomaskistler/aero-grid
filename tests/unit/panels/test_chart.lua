@@ -811,11 +811,41 @@ local function finishDrawing(panel)
 end
 
 local gridPanel = recordingPanel("minute-grid", "rolling", "10m")
+do
+    local setup = gridPanel.mipmapSetup
+    assert(setup, "recording panel must require initial attachment")
+    local _, unfinished, used = chartModule.refresh(gridPanel, false, 2)
+    assert(unfinished and used == 0 and gridPanel.mipmapSetup == setup, "attachment must wait for three slots")
+    _, unfinished, used = chartModule.refresh(gridPanel, false, 3)
+    assert(unfinished and used == 3 and not gridPanel.mipmapSetup, "attachment must charge three slots")
+end
 gridPanel.session = { configured = true, available = true, recording = false, elapsed = 65000 }
 for _ = 1, 24 do
     chart.refresh(gridPanel)
 end
 assert(gridPanel.title.hidden, "empty labels must hide the title instead of deriving one")
+do
+    local render = chartModule.render
+    local renderer = gridPanel.mipmapRenderer
+    local step = renderer.step
+    chartModule.render = function()
+        return true
+    end
+    renderer.step = function()
+        error("readout updates must yield before drawing")
+    end
+    gridPanel.projectionTurn, gridPanel.viewWork, gridPanel.viewReady = nil, nil, nil
+    local _, unfinished, used = chartModule.refresh(gridPanel, false, 8)
+    assert(unfinished and used == 1, "readout and range updates must charge one slot")
+    gridPanel.gridVersion = gridPanel.version
+    renderer.step = function(_, allowance)
+        assert(allowance == 3500, "drawing must reserve 500 from the granted instruction allowance")
+        return false, 1000
+    end
+    _, unfinished, used = chartModule.refresh(gridPanel, false, 2)
+    assert(unfinished and used == 1, "drawing consumption must include the fixed estimate before rounding")
+    chartModule.render, renderer.step = render, step
+end
 assert(not gridPanel.durationBackground.hidden, "titleless charts need a readable duration annotation")
 equal(gridPanel.duration.properties.text, "10m")
 checkDurationCorner(gridPanel)

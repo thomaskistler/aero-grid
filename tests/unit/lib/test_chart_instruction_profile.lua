@@ -33,10 +33,16 @@ local history = {
         native = native + 100
     end,
 }
-local chart = {}
+local chart = {
+    series = { {} },
+    mipmapRenderer = { step = function() native = native + 400; return false, 2000 end },
+}
+local originalStep = chart.mipmapRenderer.step
 local module = {
-    refresh = function()
-        native = native + 500
+    refresh = function(owner)
+        local complete, estimated = owner.mipmapRenderer:step()
+        assert(complete == false and estimated == 2000, "profiling must preserve renderer accounting")
+        native = native + 100
         return 1, true, 3
     end,
 }
@@ -67,6 +73,8 @@ assert(row.charges[1].id == "flight_poll" and row.charges[1].instructions == 90)
 assert(row.charges[2].id == "telemetry" and row.charges[2].instructions == 340 and row.charges[2].slots == 2)
 assert(row.charges[3].id == "history" and row.charges[3].instructions == 100 and row.charges[3].slots == 1)
 assert(row.charges[4].id == "chart1" and row.charges[4].instructions == 500 and row.charges[4].slots == 3)
+assert(row.charges[4].detail.projection == 400 and row.charges[4].detail.grant == 4)
+assert(row.charges[4].detail.series == 1 and chart.mipmapRenderer.step == originalStep)
 broker:tick()
 assert(#row.charges == 4, "work outside the measured region must not be attributed")
 profile.write(state)

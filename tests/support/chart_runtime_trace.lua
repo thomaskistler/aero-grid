@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local trace = { VERSION = 1, EPOCH = 1000000, BATCHES = 4, PERIOD = 5 }
+local trace = { VERSION = 2, EPOCH = 1000000, BATCHES = 4, PERIOD = 5 }
 
 function trace.value(at, source)
     return ((at * 17 + source * 13) % 97 + 1) / 100

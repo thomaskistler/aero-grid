@@ -116,3 +116,25 @@ definition.background(context)
 assert(#calls == 1 and calls[1].id == "telemetry" and calls[1].slots == 8)
 definition.background(context)
 assert(#calls == 3 and calls[2].id == "service" and calls[3].id == "telemetry")
+
+-- Free services still run once after a variable task exhausts the allowance.
+ordinary.updateCost = 0
+context.panels = { panel("blocked") }
+context.workCursor = 1
+calls = {}
+fixture.tick(10)
+definition.refresh(context)
+assert(#calls == 2 and calls[1].id == "telemetry" and calls[2].id == "service")
+assert(calls[2].slots == 0 and context.remainingSlots == 0)
+fixture.tick(10)
+definition.refresh(context)
+assert(calls[3].id == "blocked", "charged work deferred by free-service scanning must retain its turn")
+assert(calls[4].id == "telemetry" and calls[5].id == "service")
+assert(#calls == 5, "each service must run at most once per callback")
+context.workCursor = 1
+calls = {}
+fixture.tick(10)
+definition.background(context)
+assert(#calls == 2 and calls[2].id == "service" and calls[2].slots == 0)
+assert(fixture.module("lib/history_service.lua").updateCost == 0)
+assert(fixture.module("lib/control_service.lua").updateCost == 0)

@@ -39,6 +39,7 @@ local function stage(chart)
     if chart.mipmapSetup then
         return "setup"
     end
+
     for _, owner in ipairs(chart.mipmapConsumers or {}) do
         if owner.rebuildJob then
             return "rebuild"
@@ -61,6 +62,8 @@ local function stage(chart)
     end
     return "metadata"
 end
+
+profile.stage = stage
 
 local function decorationState(chart)
     local result = {

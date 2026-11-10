@@ -182,7 +182,7 @@ function renderer:begin(jobs)
     end
 end
 
-local function draw(self, job, series, quota, activating)
+local function draw(self, job, series, allowance)
     if job.index > job.last then
         return 0
     end
@@ -191,7 +191,7 @@ local function draw(self, job, series, quota, activating)
     local tags, lows, highs = job.tags, job.lows, job.highs
     local placeX = job.placeX
     local minimum, maximum = math.min, math.max
-    local finish = math.min(job.last, job.index + quota - 1)
+    local finish, remaining = job.index - 1, allowance
     local slot, offset = job.index % width + 1, (series - 1) * width
     local topEdge, lowEdge = job.top, job.low
     local left, origin = job.left, job.origin
@@ -199,18 +199,20 @@ local function draw(self, job, series, quota, activating)
     local bottom = topEdge + job.height
     local set = objects[1].set
     changes.x = nil
-    for bucket = job.index, finish do
+    for bucket = job.index, job.last do
         local index = offset + slot
-        if tags[slot] == bucket + 1 then
+        local populated = tags[slot] == bucket + 1
+        local cost = populated and 75 or 25
+        if cost > remaining then
+            break
+        end
+        remaining, finish = remaining - cost, bucket
+        if populated then
             local low, high = lows[slot], highs[slot]
             local top = maximum(topEdge, minimum(bottom, (bottom - (high - lowEdge) * scale + 0.5) // 1))
             local last = maximum(topEdge, minimum(bottom, (bottom - (low - lowEdge) * scale + 0.5) // 1))
             changes.y, changes.h = top, last - top + 1
             if placeX or not visible[index] then
-                if not activating and not visible[index] then
-                    job.activate, finish = true, bucket - 1
-                    break
-                end
                 changes.x = left + bucket - origin - self.offsets[self.membership[index]]
             end
             set(objects[index], changes)
@@ -225,35 +227,24 @@ local function draw(self, job, series, quota, activating)
         end
         slot = slot % width + 1
     end
-    local consumed = finish - job.index + 1
     job.index = finish + 1
-    return consumed
+    return allowance - remaining
 end
 
-function renderer:step(quota)
+function renderer:step(allowance)
     if self.resetIndex and not self:resetStep() then
-        return false
+        return false, math.min(allowance, 2000)
     end
     if not self.jobs then
         local jobs, changed = self:selection()
         if not changed then
-            return true
+            return true, 0
         end
         self:begin(jobs)
     end
-    local complete = true
+    local complete, consumed = true, 0
     for series, job in ipairs(self.jobs) do
-        local activating = job.activate
-        job.activate = nil
-        local limit = math.min(quota, job.updateX and 90 or 130)
-        -- Revealing a hidden column also places it and calls native show.
-        local used = draw(self, job, series, activating and math.max(1, limit // 2) or limit, activating)
-        used = activating and used * 2 or used
-        local remaining = limit - used
-        if job.activate and remaining >= 2 then
-            job.activate = nil
-            remaining = remaining - draw(self, job, series, remaining // 2, true) * 2
-        end
+        consumed = consumed + draw(self, job, series, allowance - consumed)
         -- Publish this horizon before chasing newer samples. Polling every
         -- callback must not keep an owner alive forever and starve other charts.
         complete = complete and job.index > job.last
@@ -269,7 +260,7 @@ function renderer:step(quota)
             end
         end
     end
-    return complete
+    return complete, consumed
 end
 
 return renderer

@@ -36,7 +36,7 @@ function services.grant(cost, remaining)
         return remaining
     end
     cost = cost or 1
-    assert(type(cost) == "number" and cost >= 1 and cost <= services.SLOTS and cost % 1 == 0, "invalid slot cost")
+    assert(type(cost) == "number" and cost >= 0 and cost <= services.SLOTS and cost % 1 == 0, "invalid slot cost")
     return cost <= remaining and cost or 0
 end
 
@@ -161,11 +161,11 @@ end
 
 --- Run one service if it is due and fits the available slots.
 function services.dispatch(runtime, instance, now, remaining)
-    if instance.failed or instance.count == 0 or now < instance.due or remaining < 1 then
+    if instance.failed or instance.count == 0 or now < instance.due then
         return nil
     end
     local granted = services.grant(instance.updateCost, remaining)
-    if granted == 0 then
+    if granted == 0 and instance.updateCost ~= 0 then
         return nil, nil, 0
     end
     instance.due = now + instance.interval

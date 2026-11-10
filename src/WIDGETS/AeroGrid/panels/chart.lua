@@ -1415,23 +1415,23 @@ local function refreshMipmap(context, slots)
     end
     updateHeader(context)
     text(context.status, plotStatus(context), context.theme.color.textFaint)
-    -- Reserve decoration callbacks rather than stacking native work on submission.
     if readings then
         context.projectionTurn = true
-        return 1, true
+        return 1, true, 1
     end
     if context.gridVersion ~= context.version then
         updateGrid(context)
         return 1, true
     end
-    local quota = slots * 8
-    if not renderer:step(quota) then
-        return 1, true, slots
+    local complete, estimated = renderer:step(slots * 2000 - 500)
+    local consumed = math.max(1, math.ceil((estimated + 500) / 2000))
+    if not complete then
+        return 1, true, consumed
     end
     context.viewReady = nil
     context.mipmapDecorating, context.frameThrough = true, nil
     local interval, unfinished = finishMipmap(context)
-    return interval, unfinished, slots
+    return interval, unfinished, consumed
 end
 
 local function refreshChart(context, creating, slots)
@@ -1453,6 +1453,9 @@ local function refreshChart(context, creating, slots)
         end
     end
     if context.mipmapSetup then
+        if slots < 3 then
+            return 1, true, 0
+        end
         chart.geometry(context, context.rect)
         context.mipmapConsumers = {}
         for index, item in ipairs(context.series) do
@@ -1464,7 +1467,7 @@ local function refreshChart(context, creating, slots)
             context.mipmapReadonly = context.mipmapReadonly or context.mipmapConsumers[index].readonly
         end
         context.mipmapSetup = nil
-        return 1, true
+        return 1, true, 3
     end
     if creating or not context.history or context.history.failed or #context.series == 0 then
         chart.render(context)

@@ -2,6 +2,7 @@
 
 --- Connected, error-bounded recordings of cumulative recording time.
 local history = { RUNTIME_API = 1, CAPACITY = 6144, FLIGHT_CAPACITY = 64 }
+history.updateCost = 0
 history.__index = history
 
 local TAU = { off = 0, light = 50, medium = 100, strong = 200 }

@@ -18,7 +18,7 @@ class FrozenComparisonTests(unittest.TestCase):
         return {
             "workload_completed": True,
             "measurements": [{
-                "trace_version": "1", "op": "horizontal", "trigger": "6001",
+                "trace_version": "2", "op": "horizontal", "trigger": "6001",
                 "seed_end": "5990", "seed_step": "11", "prefix_samples": "3276",
                 "prefix_hash": "4097166", "prefix_break_hash": "123", "events": "24",
                 "event_hash": "13624132", "event_break_hash": "456",
@@ -59,6 +59,16 @@ class FrozenComparisonTests(unittest.TestCase):
             COMPARISON.compare([self.report(), second])
         with self.assertRaises(ValueError):
             COMPARISON.compare([self.report()])
+        second = self.report()
+        second["measurements"][0]["trace_version"] = "1"
+        with self.assertRaises(ValueError):
+            COMPARISON.compare([self.report(), second])
+
+    def test_recording_times_can_differ_with_identical_arrivals(self):
+        first, second = self.report(), self.report()
+        first["measurements"][0]["recorded_hash"] = "123"
+        second["measurements"][0]["recorded_hash"] = "456"
+        self.assertEqual(COMPARISON.compare([first, second])["trace_version"], "2")
 
     def test_matching_inputs_do_not_override_budget_or_pixel_failures(self):
         for key, value in (("callback_trace_complete", False), ("callback_samples", []),

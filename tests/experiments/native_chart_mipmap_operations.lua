@@ -8,6 +8,7 @@ local Oracle = load("tests/support/mipmap_reading_oracle.lua")
 local Stress = load("tests/support/chart_mipmap_stress.lua", load)
 local Profile = load("tests/support/chart_runtime_profile.lua")
 local Trace = load("tests/support/chart_runtime_trace.lua")
+local Queue = load("tests/support/chart_telemetry_queue.lua")
 local mode = "integrated"
 local operation = "append"
 local expansionLevel = 0
@@ -105,9 +106,28 @@ local function attach(context)
     history.sample = function(service, reading, now)
         local source = tonumber(string.match(reading.name, "^Q(%d+)$"))
         if source and source <= 6 and not state.replaying then
+            local event = state.queue and state.queue.polled[source]
+            if not event then
+                return
+            end
+            state.queue.polled[source], state.delivery = nil, event
+            sample(service, reading, now)
+            state.delivery = nil
             return
         end
         return sample(service, reading, now)
+    end
+    local telemetry = context.serviceRuntime.byId.telemetry
+    local poll = telemetry.poll
+    telemetry.poll = function(service, entry, now)
+        local source = tonumber(string.match(entry.state.name, "^Q(%d+)$"))
+        local event = state.queue and source and state.queue:take(source, now - state.base)
+        if source and source <= 6 and state.queue then
+            state.queue.polled[source] = event
+        end
+        state.pollEvent = event
+        poll(service, entry, now)
+        state.pollEvent = nil
     end
     for index, entry in ipairs(context.panels) do
         local chart, item = entry.instance, state.items[index]
@@ -122,30 +142,37 @@ local function attach(context)
             owner.sample = function(target, at, value, broken)
                 if state.replaying then
                     local stamp = at - target.startedAt
-                    assert(stamp == state.traceAt,
-                        string.format("trace timestamp differs: expected=%d actual=%d", state.traceAt, stamp))
+                    assert(
+                        stamp == state.traceAt,
+                        string.format("trace timestamp differs: expected=%d actual=%d", state.traceAt, stamp)
+                    )
                     local source = (index - 1) * 3 + series
-                    assert(value == state.traceValues[source],
-                        string.format("trace value differs: source=%d expected=%s actual=%s",
-                            source, tostring(state.traceValues[source]), tostring(value)))
+                    assert(
+                        value == state.traceValues[source],
+                        string.format(
+                            "trace value differs: source=%d expected=%s actual=%s",
+                            source,
+                            tostring(state.traceValues[source]),
+                            tostring(value)
+                        )
+                    )
                     oracle:sample(stamp, value, broken)
                     original(target, at, value, broken)
                     item.clock = target.map.at
-                    if state.phase == "running" then
-                        state.seen[index][series] = true
-                        state.firstRevision[index][series] = state.firstRevision[index][series] or target.map.revision
-                        state.events = state.events + 1
-                        state.eventHash = Trace.digest(
-                            state.eventHash, stamp, (index - 1) * 3 + series, value or 0, value == nil
-                        )
-                        state.eventBreakHash = Trace.digest(state.eventBreakHash, stamp, source, 0, broken)
-                    else
-                        state.prefixSamples = state.prefixSamples + 1
-                        state.prefixHash = Trace.digest(
-                            state.prefixHash, stamp, (index - 1) * 3 + series, value or 0, value == nil
-                        )
-                        state.prefixBreakHash = Trace.digest(state.prefixBreakHash, stamp, source, 0, broken)
-                    end
+                    state.prefixSamples = state.prefixSamples + 1
+                    state.prefixHash =
+                        Trace.digest(state.prefixHash, stamp, (index - 1) * 3 + series, value or 0, value == nil)
+                    state.prefixBreakHash = Trace.digest(state.prefixBreakHash, stamp, source, 0, broken)
+                elseif state.delivery then
+                    original(target, at, value, broken)
+                    item.clock = target.map.at
+                    local event = state.delivery
+                    event.deliveries = (event.deliveries or 0) + 1
+                    event.stamp, event.observed, event.broken = at - target.startedAt, value, broken
+                    event.observedSource = (index - 1) * 3 + series
+                    state.seen[index][series] = true
+                    state.firstRevision[index][series] = state.firstRevision[index][series] or target.map.revision
+                    state.events = state.events + 1
                 end
             end
         end
@@ -159,9 +186,7 @@ local function replay(context, at, missing)
     state.replaying = true
     state.traceAt = at
     state.traceValues = {}
-    local running = state.phase == "running"
-    local count = running and state.events or state.prefixSamples
-    local expectedHash = running and state.eventHash or state.prefixHash
+    local count, expectedHash = state.prefixSamples, state.prefixHash
     Trace.emit(at, missing, function(source, value, gap)
         state.traceValues[source] = not gap and value or nil
         expectedHash = Trace.digest(expectedHash, at, source, gap and 0 or value, gap)
@@ -178,14 +203,24 @@ local function replay(context, at, missing)
     end)
     state.replaying = false
     assert(
-        (running and state.events or state.prefixSamples) == count + 6,
-        string.format("trace delivery differs: phase=%s at=%d before=%d after=%d",
-            state.phase, at, count, running and state.events or state.prefixSamples)
+        state.prefixSamples == count + 6,
+        string.format(
+            "trace delivery differs: phase=%s at=%d before=%d after=%d",
+            state.phase,
+            at,
+            count,
+            state.prefixSamples
+        )
     )
     assert(
-        (running and state.eventHash or state.prefixHash) == expectedHash,
-        string.format("delivered trace differs: phase=%s at=%d expected=%d actual=%d",
-            state.phase, at, expectedHash, running and state.eventHash or state.prefixHash)
+        state.prefixHash == expectedHash,
+        string.format(
+            "delivered trace differs: phase=%s at=%d expected=%d actual=%d",
+            state.phase,
+            at,
+            expectedHash,
+            state.prefixHash
+        )
     )
 end
 
@@ -209,9 +244,27 @@ local function begin(context, now)
         entry.nextRefresh = state.logical
     end
     context.refreshOwner = nil
+    state.queue = Queue.new(Trace, state.target)
+    state.validationIndex, state.recordedHash = 1, 1
     Profile.reset(state)
     state.phase = "running"
     write("/paint-phase.txt", string.format("1 %d 0\n", now * 10))
+end
+
+local function validateDelivery()
+    local event = state.queue.events[state.validationIndex]
+    if not event then
+        return true
+    end
+    assert(event.deliveries == 1 and event.observedSource == event.source, "queued reading lost or duplicated")
+    assert(event.observed == event.value and event.stamp >= event.at, "queued reading changed or arrived early")
+    local chart, series = (event.source - 1) // 3 + 1, (event.source - 1) % 3 + 1
+    state.oracles[chart][series]:sample(event.stamp, event.observed, event.broken)
+    state.eventHash = Trace.digest(state.eventHash, event.at, event.source, event.observed, false)
+    state.eventBreakHash = Trace.digest(state.eventBreakHash, event.at, event.source, 0, false)
+    state.recordedHash = Trace.digest(state.recordedHash, event.stamp, event.source, event.observed, event.broken)
+    state.validationIndex = state.validationIndex + 1
+    return false
 end
 
 local function reference(context)
@@ -296,7 +349,7 @@ local function tick(context, refresh)
     then
         state.logical = state.logical + 5
     elseif state.phase == "running" then
-        state.logical = state.logical + 5
+        state.logical = state.base + state.target + state.callbacks * Trace.PERIOD
     end
     context.matchedNow = state.logical
     assert(context.chartMipmap and context.chartMipmapRenderer, "default runtime did not load mipmap modules")
@@ -330,6 +383,9 @@ local function tick(context, refresh)
             local env = context.serviceRuntime.env
             local originalValue = env.getValue
             local value = function(id)
+                if state.pollEvent and id == 5000 + state.pollEvent.source then
+                    return state.pollEvent.value
+                end
                 if type(id) == "number" and id > 5000 and id <= 5024 then
                     return ((state.logical * 17 + id * 13) % 97 + 1) / 100
                 end
@@ -480,12 +536,9 @@ local function tick(context, refresh)
     elseif state.phase == "begin" then
         begin(context, now)
     elseif state.phase == "running" then
-        if state.callbacks < Trace.BATCHES then
-            replay(context, state.target + state.callbacks * Trace.PERIOD, false)
-        end
         Profile.beginCallback(state, context)
         if Instructions then
-            Instructions.begin(context, state)
+            Instructions.begin(context, state, Profile.stage)
         end
         refresh(context)
         Profile.finishCallback(state, context)
@@ -493,11 +546,15 @@ local function tick(context, refresh)
             Instructions.finish(context, state)
         end
         state.callbacks, state.previous = state.callbacks + 1, true
-        if state.callbacks >= Trace.BATCHES and ready(context, false) then
-            state.finishedAt, state.phase, state.referenceChart = realTime(), "reference", 1
+        if state.events == Trace.BATCHES * 6 and ready(context, false) then
+            state.finishedAt, state.phase, state.referenceChart = realTime(), "validate", 1
             write("/paint-phase.txt", string.format("1 %d %d\n", state.startedAt * 10, state.finishedAt * 10))
         end
         assert(state.callbacks < 180, "operation did not converge: " .. operation)
+    elseif state.phase == "validate" then
+        if validateDelivery() then
+            state.phase = "reference"
+        end
     elseif state.phase == "reference" then
         if reference(context) then
             state.phase = "report"
@@ -526,7 +583,7 @@ local function tick(context, refresh)
         write(
             "/chart-feasibility.txt",
             string.format(
-                "MATCHED mode=%s op=%s started_ms=%d submitted_ms=%d trigger=%d prefix_samples=%d prefix_hash=%d callbacks=%d events=%d period_ms=50 sources=24 columns=%s trace_version=%d event_hash=%d input_batches=%d seed_end=%d seed_step=%d prefix_break_hash=%d event_break_hash=%d\n",
+                "MATCHED mode=%s op=%s started_ms=%d submitted_ms=%d trigger=%d prefix_samples=%d prefix_hash=%d callbacks=%d events=%d period_ms=50 sources=24 columns=%s trace_version=%d event_hash=%d input_batches=%d seed_end=%d seed_step=%d prefix_break_hash=%d event_break_hash=%d recorded_hash=%d\n",
                 mode,
                 operation,
                 state.startedAt * 10,
@@ -543,7 +600,8 @@ local function tick(context, refresh)
                 state.seedEnd,
                 state.seedStep,
                 state.prefixBreakHash,
-                state.eventBreakHash
+                state.eventBreakHash,
+                state.recordedHash
             )
                 .. "CALLBACK_USAGE "
                 .. table.concat(samples, ",")

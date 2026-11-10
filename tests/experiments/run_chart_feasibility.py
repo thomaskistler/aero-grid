@@ -298,7 +298,7 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
     if recorded:
         for name in ("chart_mipmap_prototype.lua", "mipmap_recorder.lua", "chart_mipmap_stress.lua",
                      "mipmap_reading_oracle.lua", "chart_assertions.lua", "chart_runtime_profile.lua",
-                     "chart_runtime_trace.lua", "chart_instruction_profile.lua"):
+                     "chart_runtime_trace.lua", "chart_instruction_profile.lua", "chart_telemetry_queue.lua"):
             target = widget / "tests/support" / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(prototype_source if name == "chart_mipmap_prototype.lua" and prototype_source is not None

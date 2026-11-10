@@ -113,7 +113,8 @@ def main():
         "latency_non_regression": native_passed and medians["head"] <= medians["base"],
         "runs": runs,
         "limitations": [
-            "Frozen v1 chart inputs enter the real history recorder; service-driven inputs to these six sources are fenced.",
+            "Frozen v2 chart arrivals are retained in per-source queues and delivered by scheduled telemetry.",
+            "Recording timestamps follow actual polling; oracle validation runs after measurement.",
             "Telemetry, Smart and the other 18 history sources remain background load, not matched service-work traces.",
             "Normal overlays are retained by the pixel reference, not independently reimplemented.",
             "Do not compare these timings to older completion-dependent workloads or silently replace their ceilings.",

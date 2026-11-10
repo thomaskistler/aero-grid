@@ -98,6 +98,8 @@ does not consume scheduled work.
 Due services and panels share eight nominal 2,000-instruction slots in round-robin
 order. Ordinary tasks default to one slot. Variable tasks receive the remaining
 slots and report consumption, leaving unused slots available to later tasks.
+History and control declare zero slots: they retain their due intervals and
+run at most once per callback, even when charged work exhausts the allowance.
 Flight polling runs first and consumes one slot when it ticks. Slot costs are
 initial approximations, not live instruction measurements; the whole callback
 must remain below 16,000 instructions. Callback/scheduler overhead is not
@@ -260,10 +262,17 @@ stopped-stream detector. Callbacks too infrequent to observe fresh flags
 conservatively fall back to standard detection.
 
 The Smart poller is due every 100ms and shares the same slot allowance as
-dashboard work. Telemetry polls at most eight sources per turn, initially
+dashboard work. Telemetry polls at most eight sources per turn, experimentally
 charging one slot per two sources, including their synchronous observers.
-Charts use their granted slots for bounded projection/reconstruction batches,
-rather than selecting quotas based on which service ran. Both pollers retain
+Charts use their granted slots for bounded projection/reconstruction batches.
+The experimental projection accounting shares one allowance across all series,
+reserving 500 estimated instructions per drawing turn, then charging 25 for
+empty/hide columns and 75 for populated columns, with 2,000 estimated instructions
+per slot. Initial layout/attachment requires three slots; changed readouts,
+layout and ranges use one slot and yield before projection. Finishing projection
+can also enter decoration; further decoration uses separate turns. These weights are not a measured
+callback bound and have not passed native safety validation.
+Charts use this allowance rather than selecting quotas based on which service ran. Both pollers retain
 round-robin progress. Selected metadata is compared directly rather than
 rebuilding identity strings on every poll. Expensive loading/editor work
 still gets separate, per-widget fair slices, and pending input takes priority.

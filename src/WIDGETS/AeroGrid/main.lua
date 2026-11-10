@@ -927,14 +927,15 @@ local function dispatchDue(context, hidden)
         cursor = 1
     end
 
-    local dispatched, failures, examined = 0, false, 0
+    local dispatched, failures, examined, deferred = 0, false, 0, nil
 
-    while examined < count and context.remainingSlots > 0 do
+    while examined < count do
         examined = examined + 1
         if cursor <= serviceCount then
-            local id, message, used = support.dispatch(registry, registry.order[cursor], now, context.remainingSlots)
+            local allowance = deferred and 0 or context.remainingSlots
+            local id, message, used = support.dispatch(registry, registry.order[cursor], now, allowance)
             if not id and used == 0 then
-                break
+                deferred = deferred or cursor
             end
             if id then
                 context.remainingSlots = context.remainingSlots - used
@@ -956,32 +957,34 @@ local function dispatchDue(context, hidden)
                 and type(rawget(entry.module, eventName)) == "function"
             then
                 local cost = hidden and 1 or rawget(entry.module, "refreshCost") or 1
-                local granted = support.grant(cost, context.remainingSlots)
+                local granted = support.grant(cost, deferred and 0 or context.remainingSlots)
                 if granted == 0 then
-                    break
-                end
-                local ok, message, _, unfinished, used = context.panelHost.dispatch(entry, eventName, false, granted)
-                if cost ~= "variable" then
-                    used = granted
-                end
-                if ok and not support.consumption(used, granted) then
-                    ok, message = false, "refresh consumption must be whole slots within the grant"
-                    entry.failed, entry.error = true, message
-                end
-                context.remainingSlots = context.remainingSlots - (ok and used or granted)
-                dispatched = dispatched + 1
-                if not hidden then
-                    entry.nextRefresh = now + entry.interval
-                end
-                if not ok and message then
-                    addError(context, entry.placement.id .. ": " .. eventName .. ": " .. message)
-                    failures = true
-                end
-                if not hidden then
-                    if ok and unfinished then
-                        context.refreshOwner = entry
-                    elseif context.refreshOwner == entry then
-                        context.refreshOwner = nil
+                    deferred = deferred or cursor
+                else
+                    local ok, message, _, unfinished, used =
+                        context.panelHost.dispatch(entry, eventName, false, granted)
+                    if cost ~= "variable" then
+                        used = granted
+                    end
+                    if ok and not support.consumption(used, granted) then
+                        ok, message = false, "refresh consumption must be whole slots within the grant"
+                        entry.failed, entry.error = true, message
+                    end
+                    context.remainingSlots = context.remainingSlots - (ok and used or granted)
+                    dispatched = dispatched + 1
+                    if not hidden then
+                        entry.nextRefresh = now + entry.interval
+                    end
+                    if not ok and message then
+                        addError(context, entry.placement.id .. ": " .. eventName .. ": " .. message)
+                        failures = true
+                    end
+                    if not hidden then
+                        if ok and unfinished then
+                            context.refreshOwner = entry
+                        elseif context.refreshOwner == entry then
+                            context.refreshOwner = nil
+                        end
                     end
                 end
             end
@@ -991,7 +994,7 @@ local function dispatchDue(context, hidden)
     end
 
     -- Resume from where we stopped so every panel is served in turn.
-    context.workCursor = cursor
+    context.workCursor = deferred or cursor
     if failures then
         showErrors(context)
     end

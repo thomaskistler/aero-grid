@@ -22,7 +22,7 @@ def input_signature(report):
     row = rows[0]
     if any(field not in row for field in INPUT_FIELDS):
         raise ValueError("Missing frozen-input fingerprint fields")
-    if row["trace_version"] != "1" or row["input_batches"] != "4" or row["events"] != "24":
+    if row["trace_version"] != "2" or row["input_batches"] != "4" or row["events"] != "24":
         raise ValueError("Incomplete or unsupported input trace")
     return {field: row[field] for field in INPUT_FIELDS}
 

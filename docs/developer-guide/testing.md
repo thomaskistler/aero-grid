@@ -115,15 +115,18 @@ caffeinate -i python3 tests/experiments/run_chart_runtime_comparison.py \
 ```
 
 It snapshots one harness for both revisions, runs each twice, and rejects
-different starting-history or measured-input fingerprints. The v1 workload
-replays a fixed prefix and four batches of six chart readings through the
-history recorder, independent of warm-up and render completion. Service-driven
-readings for those six chart sources are fenced; telemetry, Smart and the other
-18 history sources remain background load. Separate continuous cases retain
-service-driven recording coverage. The comparison reports both runs and their
+different starting-history or measured-input fingerprints. The v2 workload
+seeds a fixed history prefix, then queues four batches of six chart readings at
+fixed arrival times. Scheduled telemetry polls retain every pending reading
+and run the normal recorder and mipmap observers within the service grant.
+Recording timestamps follow actual polling, not arrival; the pixel oracle uses
+those recorded timestamps. Oracle and hash checks run after measurement.
+Telemetry, Smart and the other 18 history sources remain background load.
+The comparison reports both runs and their
 median painted latency, and fails on a median regression, incorrect pixels or
 callback-budget violations. Do not equate its timings to the older
-completion-dependent workload or silently replace the existing ceilings.
+completion-dependent or v1 replay workloads, or silently replace the existing
+ceilings.
 
 For per-task instruction attribution on that frozen workload:
 
@@ -136,12 +139,40 @@ The opt-in macOS capture helper counts native Lua opcodes and forwards the
 firmware's original instruction hook every 200 opcodes. Each callback checks
 agreement with that hook. The report lists calls, charged slots, total/average/
 minimum/maximum instructions, unused slots and unattributed overhead.
+Per-slot distributions divide each task call's measured instructions by its
+charged slots, reporting mean, range and standard deviation. The recipient
+report also gives total instructions divided by total charged slots. These
+are normalized call measurements, not independently measured individual slots;
+zero-slot services remain separate.
+Add `--startup` to capture initial setup, preparation and seeded redraws as well
+as the chosen operation. Startup rows stream to a separate file with a
+1,024-callback limit. The report separates renderer/consumer spans from the
+remaining chart work and lists each callback's tasks and residual overhead.
+Native function records include self opcode counts and selected inclusive chart
+spans; inclusive spans overlap and must not be added. Cached bytecode can strip
+source names, so unnamed function counts are retained without guessing their
+origin. If a profiled callback reaches the firmware CPU limit, the native helper
+also writes `sdcard/instruction-limit-stack.txt` with its stack and numeric locals,
+including active grants and remaining renderer allowance.
+Recording and synchronous observer work are included in telemetry attribution.
+Chart diagnostics also group turns by entry/exit state, grant and series count,
+and report renderer and reconstruction subspans. Projection groups include
+processed-column counts when a drawing job was already active; new jobs have
+an unknown count. State labels are not exact stage boundaries: a turn can
+transition between kinds of work.
+Add `--operations` to classify native draw-loop opcodes as empty scans,
+visible updates, positioning, reveals, hides or deferred activation probes.
+These per-column spans include ring advance but exclude the for-loop backedge,
+function setup/teardown and native C++ execution. The classifier reads source-line
+markers from the copied renderer and adds no Lua probes or production changes.
+After measurement, known-path checks exercise the classifier on an offscreen
+object; their costs are reported separately from the benchmark.
 Synchronous observers count toward their caller; Smart's private services are
 included in flight polling rather than double-counted. An optional
 `--compare-report PATH` rejects inputs that differ from an uninstrumented native
 report. Counts include small measurement-boundary overhead (the empty counter
 probe is reported) and exclude C++ CPU cost. Instrumented timing is not latency
-acceptance evidence, and frozen telemetry costs omit fenced chart recording work.
+acceptance evidence.
 Neither production scheduling nor the installed simulator library is changed.
 
 The resource suites check reload collectibility, object counts, sustained
