@@ -107,6 +107,24 @@ windows, and late-history reconstruction; those smoke cases do not establish
 painted-frame latency.
 Use the runner's `--extended` option for higher levels and resize/resume coverage.
 
+For a revision comparison, use the frozen-input runner (replace the base ref):
+
+```sh
+caffeinate -i python3 tests/experiments/run_chart_runtime_comparison.py \
+  --base BASE_REF --case horizontal --output build/chart-horizontal-comparison
+```
+
+It snapshots one harness for both revisions, runs each twice, and rejects
+different starting-history or measured-input fingerprints. The v1 workload
+replays a fixed prefix and four batches of six chart readings through the
+history recorder, independent of warm-up and render completion. Service-driven
+readings for those six chart sources are fenced; telemetry, Smart and the other
+18 history sources remain background load. Separate continuous cases retain
+service-driven recording coverage. The comparison reports both runs and their
+median painted latency, and fails on a median regression, incorrect pixels or
+callback-budget violations. Do not equate its timings to the older
+completion-dependent workload or silently replace the existing ceilings.
+
 The resource suites check reload collectibility, object counts, sustained
 updates, and font callback retention. They cannot measure native LVGL/bitmap
 memory, firmware GC cadence, or radio timing. A short green mock run is not

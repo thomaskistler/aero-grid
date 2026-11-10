@@ -7,6 +7,25 @@ from pathlib import Path
 
 from run_chart_feasibility import ROOT, native
 
+
+INPUT_FIELDS = (
+    "trace_version", "op", "trigger", "seed_end", "seed_step", "prefix_samples",
+    "prefix_hash", "prefix_break_hash", "events", "event_hash", "event_break_hash",
+    "input_batches", "period_ms", "sources", "columns",
+)
+
+
+def input_signature(report):
+    rows = report.get("measurements", [])
+    if report.get("workload_completed") is not True or len(rows) != 1:
+        raise ValueError("Frozen workload did not complete")
+    row = rows[0]
+    if any(field not in row for field in INPUT_FIELDS):
+        raise ValueError("Missing frozen-input fingerprint fields")
+    if row["trace_version"] != "1" or row["input_batches"] != "4" or row["events"] != "24":
+        raise ValueError("Incomplete or unsupported input trace")
+    return {field: row[field] for field in INPUT_FIELDS}
+
 # Measured current-gate baseline from chart PR #192 (17eeaa6, 71/63/41).
 PAINTED_LATENCY_CEILINGS_MS = {
     "append": 940,
@@ -155,6 +174,7 @@ def main():
             == (ROOT / "src/WIDGETS/AeroGrid/lib/dashboard_loader.lua").read_text()
         )
         report["runtime_source_unmodified"] = all(report["runtime_modules_unmodified"].values())
+        report["input_signature"] = None if continuous else input_signature(report)
         passed = (
             report_passes(report, painted=not continuous, operation=operation)
             and report["runtime_source_unmodified"]
@@ -170,13 +190,16 @@ def main():
             "phase_profile": report.get("phase_profile"),
             "late_attach": report.get("late_attach"),
             "fixture_settings": settings,
+            "input_signature": report["input_signature"],
             "coverage": report.get("coverage", []),
         }
         report["runtime_callback_gate_passed"] = passed
         report["limitations"] = [
             "Default runtime loads its own mipmap dependencies; panel, history, mipmap and renderer sources are unchanged.",
             "Loader differs only by its verified deterministic input-environment override; refresh wrapper and clocks are diagnostic.",
-            "Controlled cases replay dense inputs and fence chart observers; continuous smoke does not fence.",
+            "Controlled v1 cases reset history at a fixed epoch and replay a fixed prefix plus four six-source batches.",
+            "Those six chart sources reject service-driven samples; telemetry/Smart and other sources remain active.",
+            "Frozen-trace timings are not directly comparable to the old completion-dependent baseline ceilings.",
             "Controlled complete paint must not exceed the measured 17eeaa6 baseline: "
             "append 940ms, horizontal 2620ms, vertical 1500ms, scroll 2210ms.",
             "Paint references retain normal overlays, not an independent overlay-algorithm oracle.",

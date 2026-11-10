@@ -7,6 +7,7 @@ local Prototype = load("tests/support/chart_mipmap_prototype.lua", load)
 local Oracle = load("tests/support/mipmap_reading_oracle.lua")
 local Stress = load("tests/support/chart_mipmap_stress.lua", load)
 local Profile = load("tests/support/chart_runtime_profile.lua")
+local Trace = load("tests/support/chart_runtime_trace.lua")
 local mode = "integrated"
 local operation = "append"
 local expansionLevel = 0
@@ -24,6 +25,9 @@ local state = {
     prefixHash = 1,
     prefixSamples = 0,
     events = 0,
+    eventHash = 1,
+    prefixBreakHash = 1,
+    eventBreakHash = 1,
 }
 getTime = function()
     return state.logical
@@ -92,7 +96,17 @@ local function attach(context)
     state.level, state.origin = selection(state.target, context.panels[1].instance.area.w)
     state.seedStep = math.max(5, (state.seedEnd / 500) // 1)
     state.high = operation == "vertical" and 4 / 3 or 1
-    state.base = state.logical
+    state.base, state.logical = Trace.EPOCH, Trace.EPOCH
+    context.matchedNow = state.logical
+    local history = state.workload.history
+    local sample = history.sample
+    history.sample = function(service, reading, now)
+        local source = tonumber(string.match(reading.name, "^Q(%d+)$"))
+        if source and source <= 6 and not state.replaying then
+            return
+        end
+        return sample(service, reading, now)
+    end
     for index, entry in ipairs(context.panels) do
         local chart, item = entry.instance, state.items[index]
         state.oracles[index], state.seen[index], state.firstRevision[index] = {}, {}, {}
@@ -104,8 +118,14 @@ local function attach(context)
             local oracle, original = Oracle.new(), owner.sample
             state.oracles[index][series] = oracle
             owner.sample = function(target, at, value, broken)
-                if state.phase ~= "running" or state.forwarding then
+                if state.replaying then
                     local stamp = at - target.startedAt
+                    assert(stamp == state.traceAt,
+                        string.format("trace timestamp differs: expected=%d actual=%d", state.traceAt, stamp))
+                    local source = (index - 1) * 3 + series
+                    assert(value == state.traceValues[source],
+                        string.format("trace value differs: source=%d expected=%s actual=%s",
+                            source, tostring(state.traceValues[source]), tostring(value)))
                     oracle:sample(stamp, value, broken)
                     original(target, at, value, broken)
                     item.clock = target.map.at
@@ -113,29 +133,65 @@ local function attach(context)
                         state.seen[index][series] = true
                         state.firstRevision[index][series] = state.firstRevision[index][series] or target.map.revision
                         state.events = state.events + 1
+                        state.eventHash = Trace.digest(
+                            state.eventHash, stamp, (index - 1) * 3 + series, value or 0, value == nil
+                        )
+                        state.eventBreakHash = Trace.digest(state.eventBreakHash, stamp, source, 0, broken)
                     else
                         state.prefixSamples = state.prefixSamples + 1
-                        state.prefixHash = (
-                            state.prefixHash * 33
-                            + stamp * 17
-                            + math.floor((value or 0) * 1000) * 7
-                            + index * 3
-                            + series
-                            + (broken and 1 or 0)
-                        ) % 16777213
+                        state.prefixHash = Trace.digest(
+                            state.prefixHash, stamp, (index - 1) * 3 + series, value or 0, value == nil
+                        )
+                        state.prefixBreakHash = Trace.digest(state.prefixBreakHash, stamp, source, 0, broken)
                     end
                 end
             end
         end
     end
-    state.seedAt, state.phase = 0, "seed"
+    state.seedAt, state.resetIndex, state.phase = 0, 1, "reset"
+end
+
+local function replay(context, at, missing)
+    state.logical = state.base + at
+    context.matchedNow = state.logical
+    state.replaying = true
+    state.traceAt = at
+    state.traceValues = {}
+    local running = state.phase == "running"
+    local count = running and state.events or state.prefixSamples
+    local expectedHash = running and state.eventHash or state.prefixHash
+    Trace.emit(at, missing, function(source, value, gap)
+        state.traceValues[source] = not gap and value or nil
+        expectedHash = Trace.digest(expectedHash, at, source, gap and 0 or value, gap)
+        state.workload.history:sample({
+            name = "Q" .. source,
+            fresh = not gap,
+            kind = "number",
+            value = value,
+            updatedAt = state.logical,
+            precision = 3,
+            precisionKnown = true,
+            unitText = "",
+        }, state.logical)
+    end)
+    state.replaying = false
+    assert(
+        (running and state.events or state.prefixSamples) == count + 6,
+        string.format("trace delivery differs: phase=%s at=%d before=%d after=%d",
+            state.phase, at, count, running and state.events or state.prefixSamples)
+    )
+    assert(
+        (running and state.eventHash or state.prefixHash) == expectedHash,
+        string.format("delivered trace differs: phase=%s at=%d expected=%d actual=%d",
+            state.phase, at, expectedHash, running and state.eventHash or state.prefixHash)
+    )
 end
 
 local function begin(context, now)
     state.logical = state.base + state.target
     context.matchedNow = state.logical
     context.matchedOperation = true
-    state.startedAt, state.forwarding, state.callbacks = now, true, 0
+    state.startedAt, state.callbacks = now, 0
     for _, entry in ipairs(context.panels) do
         local chart, item = entry.instance, entry.instance.operationPrototype
         for _, series in ipairs(chart.series) do
@@ -360,6 +416,11 @@ local function tick(context, refresh)
                 break
             end
         end
+    elseif state.phase == "reset" then
+        state.resetIndex = state.workload.history:resetSession(state.base - 1, state.resetIndex)
+        if not state.resetIndex then
+            state.phase = "seed"
+        end
     elseif state.phase == "seed" then
         state.logical = state.base + state.seedAt
         context.matchedNow = state.logical
@@ -369,19 +430,7 @@ local function tick(context, refresh)
                 control:readSwitch(entry, state.logical)
             end
         end
-        for source = 1, 6 do
-            local missing = state.seedAt > 0 and (state.seedAt // state.seedStep) % 53 == 0
-            state.workload.history:sample({
-                name = "Q" .. source,
-                fresh = not missing,
-                kind = "number",
-                value = ((state.seedAt * 17 + source * 13) % 97 + 1) / 100,
-                updatedAt = state.logical,
-                precision = 3,
-                precisionKnown = true,
-                unitText = "",
-            }, state.logical)
-        end
+        replay(context, state.seedAt, state.seedAt > 0 and (state.seedAt // state.seedStep) % 53 == 0)
         if state.seedAt == state.seedEnd then
             state.phase = "normal-warm"
             for _, entry in ipairs(context.panels) do
@@ -429,14 +478,14 @@ local function tick(context, refresh)
     elseif state.phase == "begin" then
         begin(context, now)
     elseif state.phase == "running" then
+        if state.callbacks < Trace.BATCHES then
+            replay(context, state.target + state.callbacks * Trace.PERIOD, false)
+        end
         Profile.beginCallback(state, context)
         refresh(context)
         Profile.finishCallback(state, context)
         state.callbacks, state.previous = state.callbacks + 1, true
-        if state.forwarding and ready(context, true) then
-            state.forwarding = false
-        end
-        if not state.forwarding and ready(context, false) then
+        if state.callbacks >= Trace.BATCHES and ready(context, false) then
             state.finishedAt, state.phase, state.referenceChart = realTime(), "reference", 1
             write("/paint-phase.txt", string.format("1 %d %d\n", state.startedAt * 10, state.finishedAt * 10))
         end
@@ -447,6 +496,7 @@ local function tick(context, refresh)
             write("/paint-phase.txt", "2 0 0\n")
         end
     elseif state.phase == "report" then
+        assert(state.events == Trace.BATCHES * 6, "operation input trace is incomplete")
         local samples, regions, columns = {}, {}, {}
         for index, usage in ipairs(state.samples) do
             samples[index] = tostring(usage)
@@ -465,7 +515,7 @@ local function tick(context, refresh)
         write(
             "/chart-feasibility.txt",
             string.format(
-                "MATCHED mode=%s op=%s started_ms=%d submitted_ms=%d trigger=%d prefix_samples=%d prefix_hash=%d callbacks=%d events=%d period_ms=50 sources=24 columns=%s\n",
+                "MATCHED mode=%s op=%s started_ms=%d submitted_ms=%d trigger=%d prefix_samples=%d prefix_hash=%d callbacks=%d events=%d period_ms=50 sources=24 columns=%s trace_version=%d event_hash=%d input_batches=%d seed_end=%d seed_step=%d prefix_break_hash=%d event_break_hash=%d\n",
                 mode,
                 operation,
                 state.startedAt * 10,
@@ -475,7 +525,14 @@ local function tick(context, refresh)
                 state.prefixHash,
                 state.callbacks,
                 state.events,
-                table.concat(columns, ",")
+                table.concat(columns, ","),
+                Trace.VERSION,
+                state.eventHash,
+                Trace.BATCHES,
+                state.seedEnd,
+                state.seedStep,
+                state.prefixBreakHash,
+                state.eventBreakHash
             )
                 .. "CALLBACK_USAGE "
                 .. table.concat(samples, ",")
