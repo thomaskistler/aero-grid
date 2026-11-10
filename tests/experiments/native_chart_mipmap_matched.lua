@@ -61,7 +61,7 @@ local function tracedRefresh(context, chart, original, ...)
         gridReadyBefore = chart.gridVersion,
     }
     state.turn = turn
-    local interval, unfinished = original(chart, ...)
+    local interval, unfinished, consumed = original(chart, ...)
     state.turn = nil
     turn.reason = turn.draw and "draw"
         or turn.decorating and "decoration"
@@ -72,7 +72,7 @@ local function tracedRefresh(context, chart, original, ...)
     turn.geometry, turn.window = chart.geometryVersion, chart.window
     turn.unfinished, turn.interval = unfinished and 1 or 0, interval
     state.dispatch = turn
-    return interval, unfinished
+    return interval, unfinished, consumed
 end
 
 local function published(chart, item)
@@ -278,7 +278,7 @@ return function(context, refresh)
                 entry.instance.matchedIndex = entry.placement.id
                 entry.module.refresh = function(chart, ...)
                     if state.phase == "pools" or state.phase == "reference" or state.phase == "report" then
-                        return 1
+                        return 1, false, 0
                     end
                     if state.phase == "running" and state.startedAt and mode == "prototype" then
                         lvgl.hide(chart.plotRoot)
@@ -289,7 +289,9 @@ return function(context, refresh)
                         chart.matchedPrototype.batch = service == "telemetry" and 64
                             or context.flightPolled and 80
                             or 130
-                        return chart.matchedPrototype:step()
+                        local interval, unfinished = chart.matchedPrototype:step()
+                        local _, slots = ...
+                        return interval, unfinished, slots or 8
                     end
                     return tracedRefresh(context, chart, original, ...)
                 end

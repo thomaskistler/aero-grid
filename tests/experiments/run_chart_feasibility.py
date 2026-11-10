@@ -229,7 +229,7 @@ def verify_matched_paint(output, text):
 def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3, stress=False, resized_scroll=False,
            prototype_source=None, integrated=False, matched=None, smart_batch=80, matched_trace=False,
            runtime_source=False, controlled_driver=None, arm_switch=None, long_run=False, chart_time_range=None,
-           framebuffer_trace=True):
+           framebuffer_trace=True, instruction_limit=15000):
     sys.path.insert(0, str(ROOT / "tools"))
     spec = importlib.util.spec_from_file_location("capture", ROOT / "tools/capture-panels.py")
     capture = importlib.util.module_from_spec(spec)
@@ -384,7 +384,7 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
             ) if matched_trace else None,
             "callback_trace_complete": completed and int(rows[0]["callbacks"]) == len(samples),
             "instruction_upper_bound": max(((value + 1) * 200 for value in samples), default=None),
-            "callback_limits_passed": bool(samples) and all((value + 1) * 200 < 15000 for value in samples),
+            "callback_limits_passed": bool(samples) and all((value + 1) * 200 < instruction_limit for value in samples),
             "paint": paint,
             "native_heap": json.loads(heap_path.read_text()) if heap_path.exists() else None,
             "gate_passed": False,
@@ -427,7 +427,7 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
             } if late_attach else None,
             "instruction_upper_bound": max(((value + 1) * 200 for value in samples), default=None),
             "callback_trace_complete": completed and int(rows[0]["callbacks"]) == len(samples),
-            "callback_limits_passed": bool(samples) and all((value + 1) * 200 < 15000 for value in samples),
+            "callback_limits_passed": bool(samples) and all((value + 1) * 200 < instruction_limit for value in samples),
             "native_heap": json.loads((output / "frame.rgb565.heap.json").read_text())
             if (output / "frame.rgb565.heap.json").exists() else None,
             "paint_verified": False,
@@ -470,10 +470,10 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
         for row in measurements
     )
     callback_limits_passed = trace_complete and all(
-        (int(sample["usage_percent"]) + 1) * 200 < 15000 for sample in callback_samples
+        (int(sample["usage_percent"]) + 1) * 200 < instruction_limit for sample in callback_samples
     )
     limits_passed = callback_limits_passed and all(
-        row["instruction_upper_bound"] < 15000
+        row["instruction_upper_bound"] < instruction_limit
         and operation_limits(row["op"], int(row["setter_complete_ms"]), int(row["turns"]), series, stress)
         for row in measurements
     )

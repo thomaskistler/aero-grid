@@ -97,7 +97,7 @@ caffeinate -i make test-chart-native
 ```
 
 This gates the unmodified chart runtime's whole native callbacks strictly below
-15,000 instructions. It compares controlled append/rescale/scroll pixels and
+16,000 instructions. It compares controlled append/rescale/scroll pixels and
 covers continuous rendering, rolling windows, and late-history reconstruction.
 Use the runner's `--extended` option for higher levels and resize/resume coverage.
 

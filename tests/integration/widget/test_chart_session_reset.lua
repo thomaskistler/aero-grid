@@ -149,6 +149,8 @@ for _, context in ipairs({ first, second }) do
     end
 end
 
+-- Force a full projection: a single-series incremental redraw can finish in one turn.
+first.panels[1].instance.mipmapRenderer.published = {}
 untilState(function()
     local chart = first.panels[1].instance
     return chart.mipmapRenderer.jobs ~= nil

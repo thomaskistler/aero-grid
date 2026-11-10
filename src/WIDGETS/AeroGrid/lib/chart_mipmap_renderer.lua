@@ -254,15 +254,8 @@ function renderer:step(quota)
             job.activate = nil
             remaining = remaining - draw(self, job, series, remaining // 2, true) * 2
         end
-        if job.index > job.last and job.revision ~= job.map.revision then
-            job.index = math.max(job.origin, ((job.at or 0) * self.width / job.span) // 1)
-            job.last = math.min(job.origin + self.width - 1, ((job.map.at or 0) * self.width / job.span) // 1)
-            job.at, job.revision, job.updateX = job.map.at, job.map.revision, false
-            job.historyRevision = job.map.historyRevision
-            if remaining > 0 then
-                draw(self, job, series, remaining)
-            end
-        end
+        -- Publish this horizon before chasing newer samples. Polling every
+        -- callback must not keep an owner alive forever and starve other charts.
         complete = complete and job.index > job.last
     end
     if complete then

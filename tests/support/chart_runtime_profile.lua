@@ -161,7 +161,7 @@ function profile.install(context, state)
             published = chart.mipmapRenderer and chart.mipmapRenderer.published
             decoration = decorationState(chart)
         end
-        local first, second, third, fourth = dispatch(entry, method, ...)
+        local first, second, third, fourth, fifth = dispatch(entry, method, ...)
         if isChart then
             local after = stage(chart)
             local wasDecorating = before == "decoration"
@@ -186,7 +186,7 @@ function profile.install(context, state)
             current.chart_dispatches = current.chart_dispatches + 1
             current.callbackStage = callbackStage
         end
-        return first, second, third, fourth
+        return first, second, third, fourth, fifth
     end
     state.profileInstalled = true
 end
@@ -197,7 +197,7 @@ function profile.beginCallback(state, context)
         return
     end
     current.ownerWasActive = context.refreshOwner ~= nil
-    current.serviceAtStart = context.servicesUpdatedAt
+    current.serviceAtStart = context.serviceRuntime.updates
     current.chart_dispatches_at_start = current.chart_dispatches
 end
 
@@ -207,7 +207,7 @@ function profile.finishCallback(state, context)
         return
     end
     current.callbacks = current.callbacks + 1
-    if context.servicesUpdatedAt ~= current.serviceAtStart then
+    if context.serviceRuntime.updates ~= current.serviceAtStart then
         current.service = current.service + 1
     end
     if current.ownerWasActive or context.refreshOwner ~= nil then

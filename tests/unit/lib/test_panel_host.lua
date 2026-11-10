@@ -8,6 +8,10 @@ local panelHost = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/panel_host.
 local function testPanelContract()
     local valid = { id = "demo", apiVersion = 1, create = function() end }
     assert(panelHost.validateModule(valid, "demo"))
+    valid.refreshCost = "variable"
+    assert(panelHost.validateModule(valid, "demo"))
+    valid.refreshCost = 8
+    assert(panelHost.validateModule(valid, "demo"))
 
     local function rejects(module, typeName, pattern)
         local ok, err = panelHost.validateModule(module, typeName)
@@ -22,7 +26,7 @@ local function testPanelContract()
     rejects({ id = "demo", apiVersion = 1 }, "demo", "no create function")
     rejects({ id = "demo", apiVersion = 1, create = function() end, refresh = 5 }, "demo", "refresh must be a function")
     rejects({ id = "demo", apiVersion = 1, create = function() end, supportedSpans = 5 }, "demo", "supportedSpans")
-    for _, cost in ipairs({ 0, 7, 1.5, "6", 0 / 0 }) do
+    for _, cost in ipairs({ 0, 9, 1.5, "6", 0 / 0 }) do
         rejects({ id = "demo", apiVersion = 1, create = function() end, refreshCost = cost }, "demo", "refreshCost")
     end
 end
@@ -58,10 +62,10 @@ local function run()
         assertions.assertEqual(entry.interval, interval)
     end
     entry.module.refresh = function()
-        return 1, true
+        return 1, true, 3
     end
-    local ok, message, interval, unfinished = panelHost.dispatch(entry, "refresh")
-    assert(ok and not message and interval == 1 and unfinished == true)
+    local ok, message, interval, unfinished, consumed = panelHost.dispatch(entry, "refresh")
+    assert(ok and not message and interval == 1 and unfinished == true and consumed == 3)
     entry.module.refresh = function()
         return result
     end

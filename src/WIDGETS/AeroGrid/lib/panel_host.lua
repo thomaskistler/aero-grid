@@ -17,13 +17,15 @@
 ---@field refreshInterval? integer Ticks of 10ms between refreshes. 0 or absent
 ---  means every frame. Telemetry rarely needs more than a few hertz, and the
 ---  host pays every panel's cost inside one instruction budget.
----@field refreshCost? integer Host refresh slots consumed, 1 to 6; defaults to 1.
+---@field refreshCost? integer|"variable" Nominal 2000-instruction slots, 1 to 8; defaults to 1.
 ---@field settings? AeroGridPanelSetting[]
 ---@field create fun(parent: any, rect: table, settings: table, services: table): any
 ---@field update? fun(instance: any, rect: table, settings: table)
 ---@field refresh? fun(instance: any)
 --- A numeric refresh result selects the next interval in 10ms ticks.
 --- A second result of true requests consecutive turns until this update finishes.
+--- Variable refreshes receive (instance, false, slots) and return consumed slots
+--- as a third result.
 ---@field background? fun(instance: any)
 ---@field resetSession? fun(instance: any, now: integer) Second result true requests another reset turn.
 ---@field event? fun(instance: any, event: any): boolean
@@ -117,8 +119,12 @@ function panelHost.validateModule(module, typeName)
         return false, "refreshInterval must be a non-negative whole number of ticks"
     end
     local cost = field(module, "refreshCost")
-    if cost ~= nil and (type(cost) ~= "number" or cost < 1 or cost > 6 or cost ~= math.floor(cost)) then
-        return false, "refreshCost must be a whole number from 1 to 6"
+    if
+        cost ~= nil
+        and cost ~= "variable"
+        and (type(cost) ~= "number" or cost < 1 or cost > 8 or cost ~= math.floor(cost))
+    then
+        return false, "refreshCost must be a whole number from 1 to 8 or variable"
     end
 
     return true
@@ -278,6 +284,7 @@ end
 ---@return string? error Set only on the call that first fails.
 ---@return any result First value returned by the callback.
 ---@return boolean? unfinished Whether this staged refresh needs another turn.
+---@return integer? consumed Nominal slots consumed by a variable refresh.
 function panelHost.dispatch(entry, event, ...)
     if type(entry) ~= "table" or entry.failed then
         return false
@@ -288,7 +295,7 @@ function panelHost.dispatch(entry, event, ...)
         return true
     end
 
-    local ok, resultOrError, unfinished = pcall(callback, entry.instance, ...)
+    local ok, resultOrError, unfinished, consumed = pcall(callback, entry.instance, ...)
     if ok and event == "refresh" and type(resultOrError) == "number" then
         if resultOrError < 1 or resultOrError > 6000 or resultOrError ~= math.floor(resultOrError) then
             ok, resultOrError = false, "refresh interval must be a whole number from 1 to 6000 ticks"
@@ -297,7 +304,7 @@ function panelHost.dispatch(entry, event, ...)
         end
     end
     if ok then
-        return true, nil, resultOrError, unfinished
+        return true, nil, resultOrError, unfinished, consumed
     end
 
     entry.failed = true

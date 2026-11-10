@@ -89,6 +89,20 @@ local function testHostPollingBudgetKeepsRoundRobinProgress()
     service.pollCap = 100
     service:update(80)
     assertions.assertEqual(service.cursor, 17, "a host cannot raise the service's existing cap")
+    local observed = 0
+    service:observe({
+        sample = function(_, reading, now)
+            assert(reading.updatedAt == now)
+            observed = observed + 1
+        end,
+    })
+    local consumed = service:update(90, 1)
+    assertions.assertEqual(consumed, 1)
+    assertions.assertEqual(observed, 2, "one slot must bound polling and synchronous observers")
+    assertions.assertEqual(service.cursor, 19, "slot grants preserve the polling cursor")
+    consumed = service:update(100, 8)
+    assertions.assertEqual(consumed, 4, "a capped poll batch returns unused slots")
+    assertions.assertEqual(observed, 10)
 end
 
 local function testPrecisionSearchesResumeAfterIdle()

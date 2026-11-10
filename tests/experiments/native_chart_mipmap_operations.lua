@@ -288,7 +288,7 @@ local function tick(context, refresh)
                 local original = entry.module.refresh
                 entry.module.refresh = function(chart, ...)
                     if state.phase == "pools" or state.phase == "seed" or state.phase == "prototype-warm" then
-                        return 1
+                        return 1, false, 0
                     end
                     if state.phase == "running" and mode == "prototype" then
                         lvgl.hide(chart.plotRoot)
@@ -297,7 +297,9 @@ local function tick(context, refresh)
                         local item = chart.operationPrototype
                         lvgl.show(item.root)
                         item.batch = context.flightPolled and 75 or 120
-                        return item:step()
+                        local interval, unfinished = item:step()
+                        local _, slots = ...
+                        return interval, unfinished, slots or 8
                     end
                     return original(chart, ...)
                 end

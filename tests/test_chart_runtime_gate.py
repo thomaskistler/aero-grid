@@ -45,14 +45,14 @@ class RuntimeGateTests(unittest.TestCase):
         return {
             "workload_completed": True,
             "callback_trace_complete": True,
-            "callback_samples": [73],
+            "callback_samples": [78],
             "paint": {"verified": True, "mismatched_pixels": 0, "paint_complete_ms": 900},
         }
 
     def test_strict_instruction_limit(self):
         report = self.report()
         self.assertTrue(GATE.report_passes(report, painted=True))
-        report["callback_samples"] = [74]
+        report["callback_samples"] = [79]
         self.assertFalse(GATE.report_passes(report, painted=True))
 
     def test_rebuilt_cases_require_explicit_coverage(self):

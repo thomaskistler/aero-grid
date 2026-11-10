@@ -81,8 +81,9 @@ return function(context, refresh)
             if state.entry.instance.backPlot then
                 lvgl.hide(state.entry.instance.backPlot.plotRoot)
             end
-            state.entry.module.refresh = function()
-                return item:step()
+            state.entry.module.refresh = function(_, _, slots)
+                local interval, unfinished = item:step()
+                return interval, unfinished, slots or 8
             end
             context.refreshOwner = nil
         end

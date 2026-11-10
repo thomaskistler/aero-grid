@@ -79,8 +79,9 @@ do
         entry.instance.feasibility = item
         if not original[entry.module] then
             original[entry.module] = entry.module.refresh
-            entry.module.refresh = function(instance)
-                return instance.feasibility:step()
+            entry.module.refresh = function(instance, _, slots)
+                local interval, unfinished = instance.feasibility:step()
+                return interval, unfinished, slots or 8
             end
         end
     end

@@ -51,6 +51,7 @@
 
 local telemetryService = { RUNTIME_API = 1 }
 telemetryService.__index = telemetryService
+telemetryService.updateCost = "variable"
 
 --- Ticks of 10ms between polls. Faster than any panel's refresh so a
 --- panel never renders a reading older than its own interval.
@@ -59,6 +60,7 @@ telemetryService.INTERVAL = 10
 --- Subscriptions refreshed per update, served round robin. Sixteen sources
 --- split across two updates still give every source 5 Hz at the interval above.
 telemetryService.POLL_CAP = 8
+telemetryService.SOURCES_PER_SLOT = 2
 
 --- Ticks between attempts to resolve a source the radio does not yet know.
 --- Sensors appear when telemetry first arrives, so an unresolved name must be
@@ -440,7 +442,7 @@ local function pollEntry(service, entry, now)
     end
 end
 
-function telemetryService:update(now)
+function telemetryService:update(now, slots)
     local read = self.env.getRSSI
     local rssi = read and read() or 0
     if type(rssi) ~= "number" then
@@ -455,16 +457,15 @@ function telemetryService:update(now)
 
     local entries = self.entries
     if #entries == 0 then
-        return
+        return 1
     end
-    self.cursor = self.support.roundRobin(
-        entries,
-        self.cursor,
-        math.min(self.pollCap or telemetryService.POLL_CAP, telemetryService.POLL_CAP),
-        pollEntry,
-        self,
-        now
+    local polls = math.min(
+        #entries,
+        telemetryService.POLL_CAP,
+        slots and slots * telemetryService.SOURCES_PER_SLOT or self.pollCap or telemetryService.POLL_CAP
     )
+    local consumed = math.max(1, math.ceil(polls / telemetryService.SOURCES_PER_SLOT))
+    self.cursor = self.support.roundRobin(entries, self.cursor, polls, pollEntry, self, now)
 
     -- Republished after the polls, because a live reading can prove the
     -- indicator wrong part way through this very update.
@@ -479,7 +480,7 @@ function telemetryService:update(now)
     end
     if self.precisionScans == 0 then
         self.scanCursor = scan
-        return
+        return consumed
     end
     for _ = 1, total do
         local entry = entries[scan]
@@ -490,6 +491,7 @@ function telemetryService:update(now)
         end
     end
     self.scanCursor = scan
+    return consumed
 end
 
 --- Format a reading for display, honoring its precision.

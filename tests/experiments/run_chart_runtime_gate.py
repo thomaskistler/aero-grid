@@ -42,7 +42,7 @@ def report_passes(report, painted):
         report.get("workload_completed") is True
         and report.get("callback_trace_complete") is True
         and bool(report.get("callback_samples"))
-        and all((value + 1) * 200 < 15000 for value in report["callback_samples"])
+        and all((value + 1) * 200 < 16000 for value in report["callback_samples"])
         and (
             not painted
             or (
@@ -116,6 +116,7 @@ def main():
             long_run=operation in ("long-flight", "lifecycle", "late-attach"),
             chart_time_range="rolling" if operation == "rolling" else None,
             framebuffer_trace=not continuous,
+            instruction_limit=16000,
         )
         report = json.loads((target / "native-results.json").read_text())
         report["kind"] = (

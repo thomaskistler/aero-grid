@@ -87,14 +87,15 @@ function stress.new(context, width, batch, integrated)
     })
     self.history = runtime.byId.history
     for _, entry in ipairs(integrated and {} or context.panels) do
-        entry.module.refresh = function(chart)
+        entry.module.refresh = function(chart, _, slots)
             if self.running then
                 local service = self:serviceWork()
                 local allowance = service == "telemetry" and 64 or context.flightPolled and 80 or 130
                 chart.feasibility.batch = math.min(self.batch, allowance)
-                return chart.feasibility:step()
+                local interval, unfinished = chart.feasibility:step()
+                return interval, unfinished, slots or 8
             end
-            return 1
+            return 1, false, 0
         end
     end
     return self

@@ -329,12 +329,15 @@ end
 local first = context.panels[1]
 local refresh = first.module.refresh
 first.module.refresh = function()
-    return 37
+    return 37, false, 1
 end
 first.nextRefresh = 0
-measure(definition.refresh, context)
-if smartEnabled and first.interval ~= 37 then
+context.refreshOwner = nil
+for _ = 1, 4 do
     measure(definition.refresh, context)
+    if first.interval == 37 then
+        break
+    end
 end
 assert(
     first.interval == 37 and first.nextRefresh == getTime() + 37,

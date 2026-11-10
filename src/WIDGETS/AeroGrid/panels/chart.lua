@@ -5,7 +5,7 @@ local chart = {
     apiVersion = 1,
     supportedSpans = { "2x1", "3x1", "4x1", "2x2", "3x2", "4x2", "3x3", "4x3", "4x4" },
     refreshInterval = 20,
-    refreshCost = 6,
+    refreshCost = "variable",
     settings = {
         { key = "label", label = "Label", type = "string", default = "" },
         { key = "armSwitch", label = "Arm switch position", type = "string", default = "", legacyArm = true },
@@ -1323,7 +1323,11 @@ local function finishMipmap(context)
     return publishMipmap(context)
 end
 
-local function refreshMipmap(context)
+local function reconstructionBudget(slots)
+    return math.min(32, slots * 8)
+end
+
+local function refreshMipmap(context, slots)
     if not context.mipmapRenderer then
         context.mipmapRenderer = context.mipmapRendererModule.new(context)
     end
@@ -1335,8 +1339,6 @@ local function refreshMipmap(context)
     if context.mipmapDecorating then
         return finishMipmap(context)
     end
-    local host = context.host
-    local telemetryUpdated = host and host.servicesUpdatedAt == context.clock() and host.updatedService == "telemetry"
     local readings = not renderer.jobs
         and not context.viewWork
         and not context.viewReady
@@ -1383,11 +1385,11 @@ local function refreshMipmap(context)
         end
         local consumer = context.mipmapConsumers[work.index]
         if consumer then
-            local quota = telemetryUpdated and 8 or host and host.flightPolled and 16 or 24
+            local quota = reconstructionBudget(slots)
             if consumer:view(work.axis, work.version, quota) then
                 work.index = work.index + 1
             end
-            return 1, true
+            return 1, true, math.ceil(quota / 8)
         end
         context.viewReady, context.viewWork = true, nil
     end
@@ -1422,16 +1424,17 @@ local function refreshMipmap(context)
         updateGrid(context)
         return 1, true
     end
-    local quota = telemetryUpdated and 41 or host and host.flightPolled and 63 or 71
+    local quota = slots * 8
     if not renderer:step(quota) then
-        return 1, true
+        return 1, true, slots
     end
     context.viewReady = nil
     context.mipmapDecorating, context.frameThrough = true, nil
-    return finishMipmap(context)
+    local interval, unfinished = finishMipmap(context)
+    return interval, unfinished, slots
 end
 
-function chart.refresh(context, creating)
+local function refreshChart(context, creating, slots)
     if
         context.mipmapReadonly
         and not context.preview
@@ -1471,13 +1474,17 @@ function chart.refresh(context, creating)
     end
     for _, owner in ipairs(context.mipmapConsumers) do
         if owner.rebuildJob then
-            local host = context.host
-            local telemetry = host and host.servicesUpdatedAt == context.clock() and host.updatedService == "telemetry"
-            owner:step(telemetry and 12 or host and host.flightPolled and 24 or 32)
-            return 1, not host
+            local quota = reconstructionBudget(slots)
+            owner:step(quota)
+            return 1, not context.host, math.ceil(quota / 8)
         end
     end
-    return refreshMipmap(context)
+    return refreshMipmap(context, slots)
+end
+
+function chart.refresh(context, creating, slots)
+    local interval, unfinished, consumed = refreshChart(context, creating, slots or 8)
+    return interval, unfinished, consumed or 1
 end
 
 function chart.create(parent, rect, settings, services)

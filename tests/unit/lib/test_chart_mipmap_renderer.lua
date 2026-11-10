@@ -168,6 +168,17 @@ for _, width in ipairs({ 226, 397, 398, 399, 400, 800 }) do
     sample(1000010)
     finish()
     verify()
+    renderer:reset()
+    local liveTurns = 0
+    repeat
+        liveTurns = liveTurns + 1
+        assert(liveTurns < 1000, "continuous sampling must not hold renderer ownership indefinitely")
+        sample(1000010 + liveTurns * 5)
+        complete = renderer:step(24)
+    until complete
+    assert(renderer.published[1].at < context.mipmapConsumers[1].map.at, "publication must retain a finite horizon")
+    finish()
+    verify()
     for _, owner in ipairs(context.mipmapConsumers) do
         owner:destroy()
     end
