@@ -125,6 +125,25 @@ median painted latency, and fails on a median regression, incorrect pixels or
 callback-budget violations. Do not equate its timings to the older
 completion-dependent workload or silently replace the existing ceilings.
 
+For per-task instruction attribution on that frozen workload:
+
+```sh
+caffeinate -i python3 tests/experiments/profile_chart_instructions.py \
+  --case horizontal --output build/chart-horizontal-instructions
+```
+
+The opt-in macOS capture helper counts native Lua opcodes and forwards the
+firmware's original instruction hook every 200 opcodes. Each callback checks
+agreement with that hook. The report lists calls, charged slots, total/average/
+minimum/maximum instructions, unused slots and unattributed overhead.
+Synchronous observers count toward their caller; Smart's private services are
+included in flight polling rather than double-counted. An optional
+`--compare-report PATH` rejects inputs that differ from an uninstrumented native
+report. Counts include small measurement-boundary overhead (the empty counter
+probe is reported) and exclude C++ CPU cost. Instrumented timing is not latency
+acceptance evidence, and frozen telemetry costs omit fenced chart recording work.
+Neither production scheduling nor the installed simulator library is changed.
+
 The resource suites check reload collectibility, object counts, sustained
 updates, and font callback retention. They cannot measure native LVGL/bitmap
 memory, firmware GC cadence, or radio timing. A short green mock run is not

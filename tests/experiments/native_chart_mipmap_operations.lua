@@ -13,6 +13,8 @@ local operation = "append"
 local expansionLevel = 0
 local scrollLap = 1.25
 local widthReduction = 0
+local instructionProfiling = false
+local Instructions = instructionProfiling and load("tests/support/chart_instruction_profile.lua")
 local realTime = getTime
 local state = {
     phase = "loading",
@@ -482,8 +484,14 @@ local function tick(context, refresh)
             replay(context, state.target + state.callbacks * Trace.PERIOD, false)
         end
         Profile.beginCallback(state, context)
+        if Instructions then
+            Instructions.begin(context, state)
+        end
         refresh(context)
         Profile.finishCallback(state, context)
+        if Instructions then
+            Instructions.finish(context, state)
+        end
         state.callbacks, state.previous = state.callbacks + 1, true
         if state.callbacks >= Trace.BATCHES and ready(context, false) then
             state.finishedAt, state.phase, state.referenceChart = realTime(), "reference", 1
@@ -496,6 +504,9 @@ local function tick(context, refresh)
             write("/paint-phase.txt", "2 0 0\n")
         end
     elseif state.phase == "report" then
+        if Instructions then
+            Instructions.write(state)
+        end
         assert(state.events == Trace.BATCHES * 6, "operation input trace is incomplete")
         local samples, regions, columns = {}, {}, {}
         for index, usage in ipairs(state.samples) do

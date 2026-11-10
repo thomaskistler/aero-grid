@@ -10,6 +10,10 @@
 #include <cstdint>
 #include <unistd.h>
 
+#if defined(CAPTURE_INSTRUCTIONS)
+extern "C" void captureInstructionProfileInit(void*);
+extern "C" bool captureInstructionProfileInstalled();
+#endif
 // LVGL v8.3 monitor ABI used by the EdgeTX 2.12 simulator.
 struct NativeHeap {
     std::uint32_t total_size, free_count, free_size, largest_free, used_count, peak_used;
@@ -72,6 +76,9 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "%s\n", dlerror());
         return 1;
     }
+#if defined(CAPTURE_INSTRUCTIONS)
+    captureInstructionProfileInit(library);
+#endif
     // EdgeTX 2.12 native simulator entry points; see targets/simu/simpgmspace.cpp.
     auto init = symbol<void(*)()>(library, "_Z8simuInitv");
     auto start = symbol<void(*)(bool, const char*, const char*)>(library, "_Z9simuStartbPKcS0_");
@@ -160,6 +167,12 @@ int main(int argc, char** argv) {
         usleep(10000);
     }
     stop();
+#if defined(CAPTURE_INSTRUCTIONS)
+    if (!captureInstructionProfileInstalled()) {
+        std::fprintf(stderr, "Native instruction profiler was never activated\n");
+        return 1;
+    }
+#endif
     if (tracing) {
         // Shutdown frees widgets. Only the lifetime high-water mark measures the workload.
         NativeHeap heap{};

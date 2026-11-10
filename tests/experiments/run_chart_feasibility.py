@@ -229,7 +229,7 @@ def verify_matched_paint(output, text):
 def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3, stress=False, resized_scroll=False,
            prototype_source=None, integrated=False, matched=None, smart_batch=80, matched_trace=False,
            runtime_source=False, controlled_driver=None, arm_switch=None, long_run=False, chart_time_range=None,
-           framebuffer_trace=True, instruction_limit=15000):
+           framebuffer_trace=True, instruction_limit=15000, instruction_profile=False):
     sys.path.insert(0, str(ROOT / "tools"))
     spec = importlib.util.spec_from_file_location("capture", ROOT / "tools/capture-panels.py")
     capture = importlib.util.module_from_spec(spec)
@@ -251,9 +251,18 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
         capture_source = output / "capture-native.cpp"
         ticks = 60000 if long_run else 18000 if stress else 6000
         capture_source.write_text(source.replace("tick < 3000", f"tick < {ticks}"))
+    instruction_args = []
+    if instruction_profile:
+        profiler = output / "capture-instructions.dylib"
+        subprocess.run([
+            "clang++", "-std=c++11", "-arch", architecture[0], "-dynamiclib",
+            str(ROOT / "tools/capture-instructions.cpp"), "-o", str(profiler),
+            "-Wl,-install_name," + str(profiler),
+        ], check=True)
+        instruction_args = ["-DCAPTURE_INSTRUCTIONS", str(profiler)]
     subprocess.run([
         "clang++", "-std=c++11", "-arch", architecture[0],
-        str(capture_source),
+        str(capture_source), *instruction_args,
         f"-Wl,-rpath,{companion / 'Contents/Frameworks'}", "-o", str(executable),
     ], check=True)
     sd = output / "sdcard"
@@ -289,7 +298,7 @@ def native(output, points, recorded=False, batch=130, sample_ticks=20, series=3,
     if recorded:
         for name in ("chart_mipmap_prototype.lua", "mipmap_recorder.lua", "chart_mipmap_stress.lua",
                      "mipmap_reading_oracle.lua", "chart_assertions.lua", "chart_runtime_profile.lua",
-                     "chart_runtime_trace.lua"):
+                     "chart_runtime_trace.lua", "chart_instruction_profile.lua"):
             target = widget / "tests/support" / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(prototype_source if name == "chart_mipmap_prototype.lua" and prototype_source is not None
