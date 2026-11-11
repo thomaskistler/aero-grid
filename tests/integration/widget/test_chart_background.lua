@@ -4,6 +4,7 @@ local root = assert(...)
 local hostIo = io
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
 local definition = fixture.module("main.lua")
+local equal = assert(loadfile(root .. "/tests/support/assertions.lua"))().assertEqual
 fixture.reset()
 for index = 1, 3 do
     fixture.radio.fields["B" .. index] = { id = 5100 + index, name = "B" .. index, unit = 1 }
@@ -73,4 +74,36 @@ end
 worst = 0
 pump(40)
 assert(worst < 16000, string.format("returning to a hidden chart cost %d Lua instructions in one callback", worst))
-print(string.format("Hidden charts stay current; first visible callbacks peak at %d Lua instructions", worst))
+local hiddenWorst = worst
+
+-- Ten seconds in the editor: telemetry is consumed but nothing is drawn.
+local renderer = panel.columnRenderer
+local set = 0
+for _, object in pairs(renderer.objects) do
+    local original = object.set
+    object.set = function(self, values)
+        set = set + 1
+        return original(self, values)
+    end
+end
+local host = panel.host
+panel.host = { editorUi = {} }
+pump(200)
+equal(set, 0, "charts must not redraw while the editor is open")
+for _, owner in ipairs(panel.columnConsumers) do
+    assert(#owner.pending <= 6, "edited charts must keep consuming telemetry")
+end
+panel.host = host
+worst = 0
+pump(80)
+assert(worst < 16000, string.format("leaving the editor cost %d Lua instructions in one callback", worst))
+for _, owner in ipairs(panel.columnConsumers) do
+    assert(#owner.map.dirtyList <= 3, "charts must catch up after the editor closes")
+end
+print(
+    string.format(
+        "Hidden and edited charts stay cheap; returning peaks at %d and %d Lua instructions",
+        hiddenWorst,
+        worst
+    )
+)

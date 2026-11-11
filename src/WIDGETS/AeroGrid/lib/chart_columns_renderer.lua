@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local renderer = { RUNTIME_API = 1 }
+local renderer = { RUNTIME_API = 1, PAINT_LIMIT = 12 }
 renderer.__index = renderer
 
 function renderer.new(context)
@@ -100,10 +100,15 @@ function renderer:append(deferPaint)
         end
         local look = not deferPaint and map.dirtyList[1] and style(self, series)
         if look then
-            for index, slot in ipairs(map.dirtyList) do
+            -- A bounded batch per append; any backlog is drawn on later appends.
+            local list = map.dirtyList
+            local count = math.min(#list, renderer.PAINT_LIMIT)
+            for index = 1, count do
+                local slot = list[index]
                 paintColumn(self, map, series, slot, look)
-                map.dirtyColumns[slot], map.dirtyList[index] = nil, nil
+                map.dirtyColumns[slot] = nil
             end
+            table.move(list, count + 1, #list + count, 1)
         end
         publish(self, series, map)
     end

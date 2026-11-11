@@ -2151,6 +2151,22 @@ end
 
 function chart.refresh(context, creating, slots)
     slots = slots or 8
+    local host = context.host
+    if
+        host
+        and host.editorUi
+        and not context.preview
+        and not creating
+        and context.columnRenderer
+        and not context.columnSetup
+    then
+        -- While editing, keep telemetry flowing into the columns but draw nothing,
+        -- so the editor stays responsive; drawing catches up afterwards.
+        for _, owner in ipairs(context.columnConsumers or {}) do
+            owner:append()
+        end
+        return 25, false, 1
+    end
     local auto = context.auto
     local ready = auto and auto.consumers and not creating and context.columnRenderer and not context.columnSetup
     local rescaling = auto and (auto.rangeRequest or auto.job and auto.job.kind == "range")
