@@ -2204,6 +2204,25 @@ function chart.refresh(context, creating, slots)
     return interval, unfinished, consumed
 end
 
+--- While the dashboard is hidden, keep columns current so returning to it
+--- draws only overlays; a rescale in progress continues with what is left.
+function chart.background(context)
+    local renderer = context.columnRenderer
+    if not renderer or context.columnSetup or not context.columnConsumers then
+        return
+    end
+    local auto = context.auto
+    local appended = 0
+    for _, owner in ipairs(context.columnConsumers) do
+        appended = appended + #(owner.pending or {}) * 250
+    end
+    local rescaling = auto and (auto.rangeRequest or auto.job and auto.job.kind == "range")
+    renderer:append(rescaling or auto and auto.window and overflowed(auto.consumers))
+    if auto then
+        background(context, math.max(0, BACKGROUND_ALLOWANCE - appended))
+    end
+end
+
 function chart.create(parent, rect, settings, services)
     local warnings = chart.validateSettings(settings, nil, nil, services.host and services.host.modelArmed)
     assert(#warnings == 0, table.concat(warnings, "; "))
