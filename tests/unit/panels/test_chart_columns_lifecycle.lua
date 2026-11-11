@@ -86,22 +86,20 @@ assert(owner.map ~= before and sibling.map == other)
 settle(first, 2)
 assert(first.start == 0 and first.window == 6000)
 assert(next(owner.map.kinds) == nil, "resize must not reconstruct old telemetry")
-local nativeRoot = first.columnRenderer.root
-for at = 1200, 6500, 100 do
+for at = 1200, 5900, 100 do
     record.sample(at, { at % 83 })
     settle(first)
 end
-local frozen = {}
-for slot = 1, owner.map.width do
-    frozen[slot] = { owner.map.low[slot], owner.map.high[slot], owner.map.ends[slot] }
-end
-for at = 6600, 20000, 100 do
+assert(first.start == 0, "a fixed window must not slide before it is full")
+for at = 6000, 20000, 100 do
     record.sample(at, { -at })
     settle(first)
 end
-assert(first.columnRenderer.root == nativeRoot and first.start == 0 and first.window == 6000)
-for slot, saved in ipairs(frozen) do
-    assert(owner.map.low[slot] == saved[1] and owner.map.high[slot] == saved[2] and owner.map.ends[slot] == saved[3])
+assert(first.start == 18000 and first.window == 6000, "fixed windows slide by a minute")
+local slid = owner.map
+for at = 18000, 20000, 100 do
+    local slot = slid:bucketOf(at, slid:gapCount(at)) + 1
+    assert(slid.low[slot] == -at and slid.high[slot] == -at and slid.ends[slot] == -at, "slid columns lost samples")
 end
 assert(first.series[1].feed.value == -20000, "right-edge stop froze readouts")
 assert(first.columnRenderer.spare == nil and owner.map.levels == nil)

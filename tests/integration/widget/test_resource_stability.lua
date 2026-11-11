@@ -26,6 +26,19 @@ local function finish()
     for _ = 1, 10 do
         refresh()
     end
+    -- A model picture is built once model data arrives, whose timing depends on
+    -- the clock phase; baselines must include it rather than see it on reflow.
+    for _ = 1, 150 do
+        local waiting = false
+        for _, entry in ipairs(context.panels) do
+            local area = entry.instance.area
+            waiting = waiting or type(area) == "table" and area.showImage == true and entry.instance.image == nil
+        end
+        if not waiting then
+            break
+        end
+        refresh()
+    end
     local output = fixture.instanceOf(context, "outputs")
     if output then
         for _ = 1, 150 do

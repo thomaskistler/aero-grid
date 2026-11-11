@@ -1725,15 +1725,32 @@ local function decorationStamp(auto, session)
     }
 end
 
---- Whether the next auto window needs background turns now rather than only
---- alongside ordinary refreshes.
---- Completed columns a hidden layer has yet to take: fine columns merged for the
---- next window, or the visible plot's own columns repainted at new bounds.
+--- Pixels a fixed window slides: a whole-pixel minute keeps the slid columns
+--- an exact shift of the visible ones.
+local function slideShift(map)
+    return math.max(1, (6000 * map.pixels + map.window // 2) // map.window)
+end
+
+--- A slid plot keeps only columns after the first minute, so preparation waits
+--- for them; a one-minute window slides to an empty plot prepared halfway.
+local function slideDue(auto)
+    local map = auto.consumers[1].map
+    return auto.slide == true and (map.last or -1) >= math.min(slideShift(map), map.width // 2)
+end
+
+--- Columns a hidden layer merges: fine columns for the next auto window, or the
+--- visible columns themselves for a fixed window sliding by a minute.
+local function jobSource(job, consumer)
+    return job.kind == "slide" and consumer.map or consumer.fine
+end
+
+--- Completed columns a hidden layer has yet to take; new bounds repaint the
+--- visible columns in place.
 local function behind(job, owner, consumer)
     if job.kind == "range" then
         return (owner.map.last or -1) - (owner.next or 1) + 1
     end
-    return (consumer.fine.last or 0) - (owner.map.cursor or 0)
+    return (jobSource(job, consumer).last or 0) - (owner.map.cursor or 0)
 end
 
 local function hiddenLagging(auto)
@@ -1756,7 +1773,9 @@ local function autoPending(auto, session)
     end
     local job = auto.job
     if not job then
-        return auto.rangeRequest == true or auto.window and not auto.stopped and consumers[1].step < auto.limit
+        return auto.rangeRequest == true
+            or slideDue(auto)
+            or auto.window and not auto.stopped and consumers[1].step < auto.limit
     end
     return not job.ready
         or job.kind == "range"
@@ -1852,11 +1871,18 @@ local function background(context, allowance)
         end
     end
     if not job then
-        if not auto.window or auto.stopped or consumers[1].step >= Columns.AUTO_STEPS then
-            -- Fixed windows and the longest auto window stop at the right edge.
+        if auto.slide then
+            if not slideDue(auto) then
+                return used
+            end
+            -- Fixed windows slide by a minute once the plot is full.
+            job = { kind = "slide", phase = "layer" }
+        elseif not auto.window or auto.stopped or consumers[1].step >= Columns.AUTO_STEPS then
+            -- The longest auto window stops at the right edge.
             return used
+        else
+            job = { target = consumers[1].step + 1, phase = "halve" }
         end
-        job = { target = consumers[1].step + 1, phase = "halve" }
         auto.job = job
     end
     local target = job.target
@@ -1915,10 +1941,15 @@ local function background(context, allowance)
             end
             hidden.recycle = nil
         end
-        local owners, window, gap = {}, nil, nil
+        local owners, window, gap, offset, start = {}, nil, nil, nil, nil
         if job.kind == "range" then
             job.targets, job.factor = rangeTargets(context, consumers), 1
             window, gap = consumers[1].map.window, consumers[1].map.breakWidth
+        elseif job.kind == "slide" then
+            local map = consumers[1].map
+            offset = map.offset + slideShift(map)
+            start = offset * map.window // map.pixels
+            window, gap, job.factor = map.window, map.breakWidth, 1
         else
             local minutes, level = Columns.autoMinutes(target), Columns.autoLevel(target)
             window, gap, job.factor = minutes * 6000, Columns.autoGap(target), minutes >> level
@@ -1926,15 +1957,18 @@ local function background(context, allowance)
         for index, owner in ipairs(consumers) do
             -- New bounds repaint the visible columns themselves; a new window merges fine ones.
             owners[index] = {
-                map = job.kind == "range" and owner.map
-                    or Columns.new(owner.width, window, owner.recording, { breakWidth = gap }),
+                map = job.kind == "range" and owner.map or Columns.new(owner.width, window, owner.recording, {
+                    breakWidth = gap,
+                    offset = offset,
+                    start = start,
+                }),
                 startedAt = 0,
             }
             local item, bounds = hidden.series[index], job.targets and job.targets[index]
             item.low = bounds and bounds[1] or context.series[index].low
             item.high = bounds and bounds[2] or context.series[index].high
         end
-        hidden.columnConsumers, hidden.window, hidden.start = owners, window, context.start or 0
+        hidden.columnConsumers, hidden.window, hidden.start = owners, window, start or context.start or 0
         hidden.version, hidden.axis = (hidden.version or 0) + 1, nil
         hidden.gridVersion, hidden.gridLayoutVersion = nil, nil
         hidden.connectorWork, hidden.columnsDecorating, hidden.frameThrough = nil, nil, nil
@@ -1969,8 +2003,8 @@ local function background(context, allowance)
             end
         else
             for index, owner in ipairs(hidden.columnConsumers) do
-                local fine = consumers[index].fine
-                local _, stage = owner.map:absorb(fine, job.factor, fine.last or -1, math.huge)
+                local source = jobSource(job, consumers[index])
+                local _, stage = owner.map:absorb(source, job.factor, source.last or -1, math.huge)
                 used = used + stage
             end
         end
@@ -1998,8 +2032,8 @@ local function background(context, allowance)
                 break
             end
             local index = (job.rotation + offset - 1) % #owners + 1
-            local fine = consumers[index].fine
-            local _, stage = owners[index].map:absorb(fine, job.factor, (fine.last or 0) - 1, remaining)
+            local source = jobSource(job, consumers[index])
+            local _, stage = owners[index].map:absorb(source, job.factor, (source.last or 0) - 1, remaining)
             remaining, used = remaining - stage, used + stage
         end
         painted = hidden.columnRenderer:paint(math.max(0, remaining // PAINT_COST), job.rotation)
@@ -2058,7 +2092,7 @@ local function refreshColumns(context, slots)
     end
     remaining, used = remaining - 1, used + 1
     local owner = context.columnConsumers[1]
-    local window, start = owner.map.window, owner.startedAt
+    local window, start = owner.map.window, owner.map.start
     if context.window ~= window or context.start ~= start then
         context.window, context.start = window, start
         context.axis = nil
@@ -2121,6 +2155,7 @@ local function refreshChart(context, creating, slots)
                     preview = context.preview,
                     recording = { history = context.history, session = context.session },
                     auto = context.autoWanted,
+                    slide = not context.autoWanted,
                     elapsed = context.session.elapsed,
                 })
             context.columnsReadonly = context.columnsReadonly or context.columnConsumers[index].readonly
@@ -2135,6 +2170,7 @@ local function refreshChart(context, creating, slots)
                         hidden = context.auto and context.auto.hidden,
                         limit = context.columnModule.AUTO_STEPS,
                         window = context.columnConsumers[1].auto,
+                        slide = context.columnConsumers[1].slide,
                     }
                 or nil
         end
@@ -2170,7 +2206,7 @@ function chart.refresh(context, creating, slots)
     local auto = context.auto
     local ready = auto and auto.consumers and not creating and context.columnRenderer and not context.columnSetup
     local rescaling = auto and (auto.rangeRequest or auto.job and auto.job.kind == "range")
-    local full = ready and auto.window and overflowed(auto.consumers)
+    local full = ready and (auto.window or auto.slide) and overflowed(auto.consumers)
     if ready and (rescaling or full and autoPending(auto, context.session)) then
         -- A full or wrongly scaled plot gains little from readout, overlay or column
         -- refreshes: samples are appended and the rest of the ordinary slot, plus
@@ -2233,7 +2269,7 @@ function chart.background(context)
         appended = appended + #(owner.pending or {}) * 250
     end
     local rescaling = auto and (auto.rangeRequest or auto.job and auto.job.kind == "range")
-    renderer:append(rescaling or auto and auto.window and overflowed(auto.consumers))
+    renderer:append(rescaling or auto and (auto.window or auto.slide) and overflowed(auto.consumers))
     if auto then
         background(context, math.max(0, BACKGROUND_ALLOWANCE - appended))
     end

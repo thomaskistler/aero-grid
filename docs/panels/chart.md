@@ -77,10 +77,9 @@ Readouts freeze when recording pauses. Minimum and maximum cover all recorded pe
 
 The horizontal axis starts at recording time zero. With **Auto**, the window
 starts at 1 minute; when the plot is full it compresses to 2, 3, 4, 6, 8, 12, 16,
-24, 32 minutes and so on, keeping all earlier data on screen. A fixed window stops
-adding data at the right edge and preserves existing columns. Readouts and recorded
-extrema continue updating. Resizing the panel or resetting the session clears the
-plot. The plot never scrolls. Earlier saved
+24, 32 minutes and so on, keeping all earlier data on screen. When a fixed window
+is full, it slides left by 1 minute; the oldest minute leaves the plot. Resizing
+the panel or resetting the session clears the plot. Earlier saved
 growing/rolling choices are ignored; saved durations that are not whole minutes
 round up, and longer ones are limited to 60 minutes.
 Faint solid grid lines mark recording-time intervals; the bottom-right label shows

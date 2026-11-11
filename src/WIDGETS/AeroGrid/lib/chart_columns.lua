@@ -35,7 +35,9 @@ function columns.autoStep(elapsed)
     return step
 end
 
----@param options? { breakWidth?: integer, pixels?: integer, passive?: boolean }
+--- `offset` (whole pixels) and `start` (ticks) place a slid window; pauses before
+--- `start` take no space.
+---@param options? { breakWidth?: integer, pixels?: integer, passive?: boolean, offset?: integer, start?: integer }
 function columns.new(width, window, recording, options)
     assert(type(width) == "number" and width >= 1 and width % 1 == 0, "columns require an integer width")
     assert(window == nil or type(window) == "number" and window > 0, "invalid column window")
@@ -47,8 +49,14 @@ function columns.new(width, window, recording, options)
         pixels = options.pixels or width,
         breakWidth = options.breakWidth or columns.BREAK_WIDTH,
         passive = options.passive == true,
+        offset = options.offset or 0,
+        start = options.start or 0,
+        gapBase = 0,
     }, columns)
     self:reset()
+    if self.start > 0 then
+        self.gapBase = self:gapCount(self.start)
+    end
     return self
 end
 
@@ -104,7 +112,15 @@ function columns:gapCount(at, before)
 end
 
 function columns:pixel(at, before)
-    return at * self.pixels / self.window + self:gapCount(at, before) * self.breakWidth
+    return at * self.pixels / self.window - self.offset + (self:gapCount(at, before) - self.gapBase) * self.breakWidth
+end
+
+--- Column a sample falls in; integer division keeps fine and plot columns
+--- aligned on float32 radios.
+function columns:bucketOf(at, gaps)
+    return ((math.tointeger(at) or at) * self.pixels) // self.window
+        - self.offset
+        + (gaps - self.gapBase) * self.breakWidth
 end
 
 function columns:seamConnectors()
@@ -196,8 +212,7 @@ end
 --- Sample already validated by `columns:sample` (the fine store mirrors the plot).
 function columns:record(at, value, broken, resumed, gaps)
     self.revision = self.revision + 1
-    -- Integer division keeps fine and plot columns aligned on float32 radios.
-    local bucket = ((math.tointeger(at) or at) * self.pixels) // self.window + gaps * self.breakWidth
+    local bucket = self:bucketOf(at, gaps)
     if bucket >= self.width then
         self.overflowed = true
     end
@@ -214,7 +229,8 @@ function columns:absorb(source, factor, through, allowance)
         local kind = source.kinds[slot]
         if kind == "data" or kind == "missing" then
             local gaps = source.counts[slot]
-            local bucket = (cursor - gaps * source.breakWidth) // factor + gaps * self.breakWidth
+            local time = cursor - (gaps - source.gapBase) * source.breakWidth + source.offset
+            local bucket = time // factor - self.offset + (gaps - self.gapBase) * self.breakWidth
             if bucket >= self.width then
                 self.overflowed = true
             end
@@ -280,6 +296,7 @@ function columns.attach(history, feed, width, options)
         breakWidth = options.breakWidth,
         recording = options.recording,
         auto = options.auto == true and not readonly,
+        slide = options.slide == true and options.auto ~= true and not readonly,
         startedAt = 0,
         readonly = readonly,
         resets = 0,
@@ -311,7 +328,7 @@ end
 
 function consumer:sample(at, value, broken, resumed)
     local sample = { at, value, broken, resumed, self.feed.plotRevision, self.map:gapCount(at) }
-    if not self.auto and self.map:pixel(at) >= self.map.width then
+    if not self.auto and not self.slide and self.map:pixel(at) >= self.map.width then
         self.tail = sample
     else
         self.pending[#self.pending + 1] = sample
@@ -328,10 +345,16 @@ function consumer:append()
     local fine = self.fine
     local pending = self.pending
     -- A bounded batch per append keeps a backlog from overrunning one callback.
-    local count = math.min(#pending, columns.APPEND_LIMIT)
-    for index = 1, count do
-        local sample = pending[index]
+    local count = 0
+    while count < math.min(#pending, columns.APPEND_LIMIT) do
+        local sample = pending[count + 1]
         local at, value, broken, resumed = sample[1], sample[2], sample[3], sample[4]
+        if self.slide and self.map:bucketOf(at, sample[6]) >= self.map.width then
+            -- A full sliding plot keeps later samples for the slid window.
+            self.map.overflowed = true
+            break
+        end
+        count = count + 1
         -- A full auto plot cannot show later samples; only the fine store needs them.
         if not (fine and self.map.overflowed) then
             self.map:sample(at, value, broken, resumed, sample[6])
