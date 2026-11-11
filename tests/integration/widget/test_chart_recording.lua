@@ -5,6 +5,7 @@ assert(root)
 local hostIo = io
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
 local definition = fixture.module("main.lua")
+local chartView = assert(loadfile(root .. "/tests/support/chart_assertions.lua"))()
 fixture.reset()
 if withFlights then
     fixture.radio.fields.ch3 = { id = 306, name = "ch3" }
@@ -112,13 +113,13 @@ for _ = 1, 2500 do
     pump(1)
     prepared = #context.panels == 8
     for _, entry in ipairs(context.panels) do
-        prepared = prepared and entry.instance.columnsPrepared
+        prepared = prepared and entry.instance.columnRenderer and entry.instance.gridVersion == entry.instance.version
     end
     if prepared then
         break
     end
 end
-assert(prepared, "all competing native pools must be ready before the live recording measurement")
+assert(prepared, "all chart frames must be initialized before recording starts")
 setArmed(1024)
 pump(200)
 if withFlights then
@@ -275,16 +276,17 @@ for cycle = 1, 5 do
         for _, item in ipairs(entry.instance.series) do
             assert(#item.connectors <= entry.instance.area.w // 48, "resume connectors must fit the bounded axis")
         end
-        assert(#entry.instance.columnRenderer.objects == entry.instance.area.w * #entry.instance.series)
+        assert(
+            chartView.nativeColumns(entry.instance.columnRenderer) <= entry.instance.area.w * #entry.instance.series * 2
+        )
     end
 end
 local settled = false
--- Drain the retained knots across eight three-series charts. This is a
--- correctness/lifecycle check, not a radio performance measurement.
+-- Finish pending appends and decorations across eight three-series charts.
 for step = 1, 200000 do
     settled = true
     for _, entry in ipairs(context.panels) do
-        if entry.instance.columnRenderer.jobs or entry.instance.columnsDecorating then
+        if entry.instance.columnsDecorating then
             settled = false
         end
         for _, item in ipairs(entry.instance.series) do

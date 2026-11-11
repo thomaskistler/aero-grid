@@ -149,12 +149,10 @@ for _, context in ipairs({ first, second }) do
     end
 end
 
--- Force a full projection: a single-series incremental redraw can finish in one turn.
-first.panels[1].instance.columnRenderer.published = {}
-untilState(function()
-    local chart = first.panels[1].instance
-    return chart.columnRenderer.jobs ~= nil
-end)
+-- Reset while telemetry is queued but has not yet been appended.
+local queued = first.panels[1].instance
+queued.columnConsumers[1]:sample(queued.session.elapsed, 99)
+assert(#queued.columnConsumers[1].pending > 0)
 local activeCharts, activeObjects = {}, {}
 local objectCount = #fixture.lvglMock.objects
 for _, context in ipairs({ first, second }) do
@@ -169,8 +167,8 @@ for _, context in ipairs({ first, second }) do
     untilState(settled)
     equal(#fixture.lvglMock.objects, objectCount, "reset must not allocate replacement display objects")
     for chart, buffer in pairs(activeCharts) do
-        equal(chart.columnRenderer, buffer, "a mid-frame reset must retain the native object pool")
-        equal(chart.columnRenderer.jobs, nil, "a mid-frame reset must discard the old projection job")
+        equal(chart.columnRenderer, buffer, "reset must retain existing native columns")
+        equal(#chart.columnConsumers[1].pending, 0, "reset must discard pre-reset telemetry")
         equal(chart.series[1].feed.count, 0)
     end
     for object, state in pairs(activeObjects) do

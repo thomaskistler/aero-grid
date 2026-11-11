@@ -40,7 +40,7 @@ Tap a reading under **Metrics** to open its settings.
 | --- | --- | --- |
 | **Label** | source name | Name in the legend. Clear it to use the source name. |
 | **Source** | required | Numeric EdgeTX source to record. |
-| **Range min**, **Range max** | 0, 100 | Fixed lower and upper vertical bounds, in steps of 0.1. If both are set, maximum must exceed minimum. Clearing a bound restores its default. |
+| **Range min**, **Range max** | -1000, 1000 | Fixed lower and upper vertical bounds, in steps of 0.1. If both are set, maximum must exceed minimum. Clearing a bound restores its default. |
 | **Unit** | sensor unit | Unit text beside the value. Changes the label, not the number. |
 | **Precision** | Sensor | Decimal places, 0 to 3. Step below 0 to select **Sensor**, using the source's precision. |
 | **Color** | by entry order | Trace and legend color: **cyan**, **green**, **orange**, or **amber**. Defaults to cyan, orange, then green; cyan uses blue ink in Modern Light. An explicit choice keeps that color. |
@@ -82,7 +82,7 @@ Earlier saved growing/rolling choices are ignored; **Window duration** is used.
 Faint solid grid lines mark recording-time intervals; the bottom-right label shows
 the recording-time window. Pause gaps can fill the window sooner.
 
-The default vertical bounds are 0 and 100. With **shared**
+The default vertical bounds are -1000 and 1000. With **shared**
 scales, the lowest configured minimum and highest configured maximum apply
 to all traces; an unset side uses its default. With
 **independent** scales, each metric uses its own bounds. Fixed bounds clip
@@ -101,10 +101,11 @@ updating.
 History is held in RAM, not saved to the SD card. It continues while the
 dashboard receives background updates. Reloading or restarting the dashboard,
 including applying editor changes that rebuild it, clears history.
-Editor previews reuse compatible recorded history without starting new recordings.
-Opening a chart on an existing recording or resizing it rebuilds the plot from
-stored history. Rebuilt traces retain the recording's half-digit compression
-tolerance; the recorded values and extrema are unchanged.
+Each append consumes telemetry received since the previous append, summarizes
+the affected pixel columns, and draws only those columns.
+Charts do not reconstruct traces from stored history. Opening or resizing a
+chart starts an empty plot; only subsequent telemetry is drawn in the fixed
+recording-time window. Editor previews do not replay history or record new data.
 New sources show an explicit no-data preview until saved.
 Flight overlays retain the latest 64 intervals; missing earlier boundaries are
 not guessed.

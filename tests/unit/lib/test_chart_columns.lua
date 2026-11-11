@@ -9,15 +9,45 @@ local Oracle = assert(loadfile(root .. "/tests/support/chart_column_oracle.lua")
 fixture.reset()
 
 for _, width in ipairs({ 60, 226, 397, 800 }) do
-    local map, oracle = Columns.new(width), Oracle.new()
+    local history = {}
+    function history:point()
+        error("appends must never read recorded history")
+    end
+    function history:observeSamples(_, observer)
+        self.observer = observer
+    end
+    function history:unobserveSamples()
+        self.observer = nil
+    end
+    local feed = { count = 5000, first = 1, last = 5000, plotRevision = 0 }
+    local owner, oracle = Columns.attach(history, feed, width), Oracle.new()
+    assert(next(owner.map.tags) == nil and #owner.pending == 0, "attachment replayed old history")
+    local context = {
+        area = { x = 4, y = 10, w = width, h = 90 },
+        rect = { w = width + 20, h = 120 },
+        geometryVersion = 1,
+        version = 1,
+        plotRoot = lvgl.box({ x = 0, y = 0, w = width + 20, h = 120 }),
+        series = { { color = lcd.RGB(255, 0, 0), low = 10, high = 50 } },
+        columnConsumers = { owner },
+    }
+    local renderer = Renderer.new(context)
+    assert(next(renderer.objects) == nil, "empty charts must not allocate a full column pool")
     for at = 0, 5999, 5 do
         local value = at % 71
         if at % 113 == 0 then
             value = nil
         end
-        map:sample(at, value)
+        feed.plotRevision = feed.plotRevision + 1
+        history.observer:sample(at, value)
         oracle:sample(at, value)
+        if at % 20 == 0 then
+            renderer:append()
+            assert(#owner.pending == 0 and #owner.map.dirtyList == 0, "append left unfinished work")
+        end
     end
+    renderer:append()
+    local map = owner.map
     for bucket = 0, width - 1 do
         local expected, actual = oracle:summary(width, bucket), map:summary(bucket)
         assert(not expected == not actual)
@@ -25,186 +55,140 @@ for _, width in ipairs({ 60, 226, 397, 800 }) do
             assert(actual.kind == expected.kind and actual.min == expected.min and actual.max == expected.max)
             assert(actual["end"] == expected.finish and actual.width == expected.width and actual.from == expected.from)
         end
-    end
-    local geometry = {
-        area = { x = 4, y = 10, w = width, h = 90 },
-        rect = { w = width + 20, h = 120 },
-        geometryVersion = 1,
-        version = 1,
-        session = { elapsed = 5999 },
-        plotRoot = lvgl.box({ x = 0, y = 0, w = width + 20, h = 120 }),
-        series = { { color = lcd.RGB(255, 0, 0), low = 10, high = 50 } },
-        columnConsumers = { { map = map } },
-    }
-    local projected = Renderer.new(geometry)
-    while not projected:prepare(2000) do
-    end
-    for turn = 1, 2000 do
-        if projected:step(2000) then
-            break
-        end
-        assert(turn < 2000, "fixed geometry did not converge")
-    end
-    for bucket = 0, width - 1 do
-        local expected = oracle:summary(width, bucket)
         local populated = expected and expected.kind ~= "missing"
-        assert(not not projected.visible[bucket + 1] == not not populated)
+        assert(not not renderer.visible[bucket + 1] == not not populated)
         if populated then
-            local actual = projected.objects[bucket + 1].properties
+            local rectangle = renderer.objects[bucket + 1].properties
             local top = math.max(10, math.min(100, math.floor(100 - (expected.max - 10) * 90 / 40 + 0.5)))
             local bottom = math.max(10, math.min(100, math.floor(100 - (expected.min - 10) * 90 / 40 + 0.5)))
-            assert(actual.x == 4 + bucket and actual.y == top and actual.h == bottom - top + 1)
-            local points = oracle:connection(width, bucket, geometry.area, 10, 50)
-            assert(not not projected.connected[bucket + 1] == not not points)
+            assert(rectangle.x == 4 + bucket and rectangle.y == top and rectangle.h == bottom - top + 1)
+            local points = oracle:connection(width, bucket, context.area, 10, 50)
+            assert(not not renderer.connected[bucket + 1] == not not points)
             if points then
-                local actualPoints = projected.connections[bucket + 1].properties.pts
+                local actualPoints = renderer.connections[bucket + 1].properties.pts
                 for index = 1, 2 do
                     assert(actualPoints[index][1] == points[index][1] and actualPoints[index][2] == points[index][2])
                 end
             end
         end
     end
-    projected:destroy()
     local saved = {}
     for slot = 1, width do
         saved[slot] = { map.low[slot], map.high[slot], map.ends[slot], map.tags[slot] }
     end
-
-    do
-        local points, feed = {}, { count = 20, first = 1, last = 20, plotRevision = 1 }
-        local history = {}
-        function history:point(_, index)
-            local point = points[index]
-            return point[1], point[2]
-        end
-        function history:observeSamples(_, observer)
-            self.observer = observer
-        end
-        function history:unobserveSamples()
-            self.observer = nil
-        end
-        local baseline = Columns.new(120)
-        for index = 1, 20 do
-            points[index] = { index * 10, index % 7 }
-            baseline:sample(points[index][1], points[index][2])
-        end
-        local live = Columns.attach(history, feed, 120)
-        for turn = 1, 300 do
-            local at, value = 200 + turn * 10, turn % 11
-            history.observer:sample(at, value)
-            baseline:sample(at, value)
-            local complete, used = live:step(1400)
-            assert(used <= 1400)
-            if complete then
-                break
-            end
-        end
-        assert(live.complete, "incoming samples starved historical reconstruction")
-        for bucket = 0, 119 do
-            local expected, actual = baseline:summary(bucket), live.map:summary(bucket)
-            assert(not expected == not actual)
-            if expected then
-                assert(expected.min == actual.min and expected.max == actual.max and expected["end"] == actual["end"])
-                assert(expected.width == actual.width and expected.from == actual.from)
-            end
-        end
-        live:destroy()
-        assert(history.observer == nil)
-    end
     for at = 6000, 50000, 50 do
-        map:sample(at, -at)
+        history.observer:sample(at, -at)
     end
+    assert(#owner.pending == 0 and owner.tail, "offscreen input accumulated an unnecessary backlog")
+    renderer:append()
     for slot, previous in ipairs(saved) do
         assert(map.low[slot] == previous[1] and map.high[slot] == previous[2])
         assert(map.ends[slot] == previous[3] and map.tags[slot] == previous[4], "full chart overwrote old columns")
     end
-    assert(map.levels == nil and map.lastLevel == nil and map.tags[width + 1] == nil)
+    owner:resize(width)
+    assert(next(owner.map.tags) == nil and #owner.pending == 0, "resize replayed history")
+    renderer:destroy()
+    owner:destroy()
+    assert(history.observer == nil)
 end
 
-local record = recorder(1)
-local owner = Columns.attach(record.history, record.feeds[1], 120, {
-    recording = { history = record.history, session = record.session },
-})
-local points = { { 0, 10 }, { 100, 30 }, { 200, 20 }, { 300, 40 } }
-for _, point in ipairs(points) do
-    record.sample(point[1], { point[2] })
-end
-local rebuilt = Columns.attach(record.history, record.feeds[1], 120, {
-    recording = { history = record.history, session = record.session },
-    preview = true,
-})
-for _ = 1, 100 do
-    local complete, used = rebuilt:step(1400)
-    assert(used <= 1400)
-    if complete then
-        break
-    end
-end
-assert(rebuilt.complete)
-for slot = 1, 120 do
-    assert(owner.map.low[slot] == rebuilt.map.low[slot] and owner.map.high[slot] == rebuilt.map.high[slot])
-    assert(owner.map.ends[slot] == rebuilt.map.ends[slot] and owner.map.widths[slot] == rebuilt.map.widths[slot])
-end
-
+local record = recorder(3)
 local context = {
     area = { x = 4, y = 10, w = 120, h = 90 },
     rect = { w = 160, h = 120 },
     geometryVersion = 1,
     session = record.session,
     plotRoot = lvgl.box({ x = 0, y = 0, w = 160, h = 120 }),
-    series = { { color = lcd.RGB(255, 0, 0), low = 0, high = 100 } },
-    columnConsumers = { owner },
+    series = {},
+    columnConsumers = {},
     version = 1,
 }
+for series = 1, 3 do
+    context.series[series] = { color = lcd.RGB(255, 0, 0), low = 0, high = 100 }
+    context.columnConsumers[series] = Columns.attach(record.history, record.feeds[series], 120, {
+        recording = { history = record.history, session = record.session },
+    })
+end
 local renderer = Renderer.new(context)
-while not renderer:prepare(2000) do
-end
-local function settle()
-    for _ = 1, 1000 do
-        local complete, used = renderer:step(2000)
-        assert(used <= 2000)
-        if complete then
-            return
-        end
-    end
-    error("fixed-column projection did not converge")
-end
-settle()
-local rootObject, first = renderer.root, renderer.objects[1]
-local original = { x = first.properties.x, y = first.properties.y, h = first.properties.h }
-local calls, set = 0, first.set
+record.sample(0, { 10, 20, 30 })
+assert(next(context.columnConsumers[1].map.tags) == nil, "telemetry callback created columns before append")
+renderer:append()
+local first, set = renderer.objects[1], renderer.objects[1].set
+local calls = {}
 first.set = function(self, values)
-    if self == first then
-        calls = calls + 1
-    end
+    calls[self] = (calls[self] or 0) + 1
     return set(self, values)
 end
-record.sample(400, { 50 })
-settle()
-assert(calls == 0, "append redrew a prefix column")
-assert(renderer.root == rootObject and renderer.spare == nil)
-assert(first.properties.x == original.x and first.properties.y == original.y and first.properties.h == original.h)
-assert(#renderer.objects == 120 and #renderer.connections == 120)
-local incoming = renderer.connections[9].properties.pts
-assert(incoming[1][1] == 10 and incoming[2][1] == 12, "connection must span from the previous endpoint")
-assert(incoming[1][2] == 64 and incoming[2][2] == 55)
+for at = 100, 103 do
+    record.sample(at, { at - 90, at - 80, at - 70 })
+end
+renderer:append()
+assert(calls[first] == nil, "append redrew a prefix column")
+for series, owner in ipairs(context.columnConsumers) do
+    local summary = owner.map:summary(2)
+    assert(summary.min == series * 10 and summary.max == series * 10 + 3 and summary["end"] == series * 10 + 3)
+    assert(#owner.pending == 0 and #owner.map.dirtyList == 0)
+    assert(context.series[series].drawnRevision == record.feeds[series].plotRevision)
+end
+local second = renderer.objects[3]
+second.set = first.set
+calls = {}
+record.sample(104, { 14, 24, 34 })
+record.sample(105, { 15, 25, 35 })
+renderer:append()
+assert(calls[second] == 1, "same-column readings must be summarized before one native draw")
+calls = {}
+record.sample(4000, { 50, 60, 70 })
+renderer:append()
+assert(calls[second] == nil, "sparse input redrew previous columns")
+for index in pairs(renderer.objects) do
+    local bucket = (index - 1) % 120
+    assert(bucket == 0 or bucket == 2 or bucket == 80, "append allocated empty columns across a time gap")
+end
 
-record.sample(500, { 0 }, false, false)
-record.sample(600, { 60 }, false, true)
-settle()
-assert(#owner.map.seams == 1, "resume must retain its dotted connector")
-local resumed = owner.map:summary(owner.map:pixel(owner.map.at) // 1)
-assert(resumed.kind == "break" and resumed.width == 24 and resumed.from == nil)
-record.sample(700, { 60 }, true)
-record.sample(800, { 70 })
-settle()
-assert(owner.map:summary(owner.map:pixel(owner.map.at) // 1).from == nil, "missing data reconnected a trace")
-assert(#owner.map.seams == 1)
-owner:reset()
+record.sample(4100, { 0, 0, 0 }, false, false)
+record.sample(4200, { 60, 60, 60 }, false, true)
+renderer:append()
+for _, owner in ipairs(context.columnConsumers) do
+    local map = owner.map
+    assert(#map.seams == 1)
+    local resumed = map:summary(map:pixel(map.at) // 1)
+    assert(resumed.kind == "break" and resumed.width == 24 and resumed.from == nil)
+end
+record.sample(4300, { 0, 0, 0 }, true)
+record.sample(4400, { 70, 70, 70 })
+renderer:append()
+for _, owner in ipairs(context.columnConsumers) do
+    assert(owner.map:summary(owner.map:pixel(owner.map.at) // 1).from == nil, "missing data reconnected a trace")
+    owner:reset()
+end
 renderer:reset()
-settle()
-assert(next(owner.map.tags) == nil)
+renderer:append()
+assert(next(renderer.visible) == nil)
+for _, owner in ipairs(context.columnConsumers) do
+    assert(next(owner.map.tags) == nil)
+    owner:destroy()
+end
 renderer:destroy()
-owner:destroy()
-rebuilt:destroy()
-print("Fixed pixel columns preserve summaries, geometry, gaps, prefix appends and right-edge data")
+
+local queuedSession = { resumeFirst = 1, resumeLast = 0, resumeRevision = 0 }
+local queuedHistory = {}
+function queuedHistory:observeSamples() end
+function queuedHistory:unobserveSamples() end
+function queuedHistory:recordingBreak()
+    return 1000
+end
+local queued = Columns.attach(queuedHistory, { plotRevision = 1 }, 120, {
+    recording = { history = queuedHistory, session = queuedSession },
+})
+queued:sample(0, 10)
+queued:sample(1000, 30)
+queuedSession.resumeLast, queuedSession.resumeRevision = 1, 1
+queued:sample(1000, 50, true, true)
+assert(next(queued.map.tags) == nil)
+queued:append()
+assert(queued.map:summary(20)["end"] == 30, "queued pre-resume data shifted across the pause gap")
+assert(queued.map:summary(44).kind == "break")
+assert(queued.map.seams[1][1] == 20 and queued.map.seams[1][3] == 44)
+queued:destroy()
+print("Append-only columns consume new telemetry, summarize once, preserve geometry and never replay history")

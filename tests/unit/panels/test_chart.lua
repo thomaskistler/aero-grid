@@ -84,11 +84,12 @@ local scales = {
     },
 }
 chart.ranges(scales)
-equal(scales.series[1].low, 0, "default fixed scale must start at zero")
+equal(scales.series[1].low, -1000, "default fixed scale must start at -1000")
+equal(scales.series[1].high, 1000)
 equal(scales.series[1].low, scales.series[2].low)
 scales.settings.scaling = "independent"
 chart.ranges(scales)
-equal(scales.series[2].low, 0)
+equal(scales.series[2].low, -1000)
 scales.settings.scaling, scales.settings.range = "shared", "fixed"
 scales.series[1].settings.rangeMin, scales.series[1].settings.rangeMax = -10, 50
 chart.ranges(scales)
@@ -107,17 +108,19 @@ local function expectBounds(config, rawLow, rawHigh, low, high)
     assert(item.high > item.low, "one-sided bounds must always leave a usable range")
 end
 
-expectBounds({}, 100, 300, 0, 100)
-expectBounds({}, 0, 100, 0, 100)
-expectBounds({ rangeMin = 0 }, 100, 300, 0, 100)
-expectBounds({ rangeMax = 400 }, 100, 300, 0, 400)
+expectBounds({}, 100, 300, -1000, 1000)
+expectBounds({}, 0, 100, -1000, 1000)
+expectBounds({ rangeMin = 0 }, 100, 300, 0, 1000)
+expectBounds({ rangeMax = 400 }, 100, 300, -1000, 400)
 expectBounds({ rangeMin = 0, rangeMax = 200 }, 100, 300, 0, 200)
 expectBounds({ rangeMin = -50, rangeMax = -10 }, 100, 300, -50, -10)
-expectBounds({ rangeMin = 500 }, 100, 300, 500, 600)
-expectBounds({ rangeMax = 0 }, 100, 300, -100, 0)
-expectBounds({ rangeMin = 100 }, nil, nil, 100, 200)
-expectBounds({ rangeMax = -100 }, nil, nil, -200, -100)
-expectBounds({}, 0, 0, 0, 100)
+expectBounds({ rangeMin = 500 }, 100, 300, 500, 1000)
+expectBounds({ rangeMax = 0 }, 100, 300, -1000, 0)
+expectBounds({ rangeMin = 100 }, nil, nil, 100, 1000)
+expectBounds({ rangeMax = -100 }, nil, nil, -1000, -100)
+expectBounds({ rangeMin = 1500 }, nil, nil, 1500, 1600)
+expectBounds({ rangeMax = -1500 }, nil, nil, -1600, -1500)
+expectBounds({}, 0, 0, -1000, 1000)
 
 scales.settings.scaling = "shared"
 scales.series[1].settings = { rangeMin = 0 }
@@ -363,7 +366,7 @@ local elapsed = power.session.elapsed
 fixture.radio.values[300] = 0
 fixture.pump(context, 40)
 assert(fixture.pumpUntil(context, function()
-    return not power.columnRenderer.jobs and not power.columnsDecorating and not power.session.recording
+    return not power.columnsDecorating and not power.session.recording
 end, 500))
 local paused = power.session.elapsed
 assert(paused >= elapsed)
@@ -386,7 +389,6 @@ fixture.radio.values[300] = 1024
 fixture.pump(context, 40)
 assert(fixture.pumpUntil(context, function()
     return power.series[1].feed.value == 3
-        and not power.columnRenderer.jobs
         and not power.columnsDecorating
         and power.series[1].connectors[1]
         and power.series[1].connectors[1].connector
@@ -837,8 +839,7 @@ local function finishDrawing(panel)
         chart.refresh(panel)
         local item = panel.series[1]
         if
-            not panel.columnRenderer.jobs
-            and not panel.columnsDecorating
+            not panel.columnsDecorating
             and (not item.feed.available or item.drawnRevision == item.feed.plotRevision and item.drawnVersion == panel.version)
             and panel.gridVersion == panel.version
         then
@@ -865,24 +866,25 @@ assert(gridPanel.title.hidden, "empty labels must hide the title instead of deri
 do
     local render = chartModule.render
     local renderer = gridPanel.columnRenderer
-    local step = renderer.step
+    local append = renderer.append
     chartModule.render = function()
         return true
     end
-    renderer.step = function()
+    renderer.append = function()
         error("readout updates must yield before drawing")
     end
-    gridPanel.metadataReady = nil
+    gridPanel.metadataReady, gridPanel.columnsDecorating = nil, nil
     local _, unfinished, used = chartModule.refresh(gridPanel, false, 8)
     assert(unfinished and used == 1, "readout and legend updates must use one slot without drawing")
     gridPanel.gridVersion = gridPanel.version
-    renderer.step = function(_, allowance)
-        assert(allowance == 2299, "drawing must honor the per-slot allowance, metadata charge and callback reserve")
-        return false, 1000
+    local appended = false
+    renderer.append = function(self)
+        appended = true
+        append(self)
     end
     _, unfinished, used = chartModule.refresh(gridPanel, false, 2)
-    assert(unfinished and used == 2, "drawing consumption must include the fixed estimate before rounding")
-    chartModule.render, renderer.step = render, step
+    assert(appended and not unfinished and used == 1, "the entire append must complete in one slot")
+    chartModule.render, renderer.append = render, append
 end
 assert(not gridPanel.durationBackground.hidden, "titleless charts need a readable duration annotation")
 equal(gridPanel.duration.properties.text, "10m")
@@ -961,6 +963,7 @@ end
 checkGrid(gridPanel)
 
 local dense = recordingPanel("dense-chart", "growing")
+finishDrawing(dense)
 equal(
     dense.series[1].feed.window,
     6000,
@@ -985,7 +988,7 @@ equal(denseItem.feed.count, 6001)
 equal(denseItem.feed.full, false)
 equal(denseItem.feed.epsilon, 0.0005, "metric precision must reach the compressor")
 finishDrawing(dense)
-equal(#dense.columnRenderer.objects, dense.area.w, "dense histories must use a bounded native column pool")
+assert(next(dense.columnRenderer.objects), "incoming data must allocate native columns")
 local _, _, top, bottom = chartView.bounds(dense, 1)
 equal(top, dense.area.y, "display reduction must retain upward spikes")
 equal(bottom, dense.area.y + dense.area.h, "display reduction must retain downward spikes")
@@ -1004,7 +1007,7 @@ chart.refresh(dense)
 chart.update(dense, { x = 0, y = 0, w = 472, h = 264 })
 finishDrawing(dense)
 equal(dense.status.properties.text, "HISTORY FULL")
-assert(#chartView.rectangles(dense, 1) > 0, "full history must remain drawable after resize")
+equal(#chartView.rectangles(dense, 1), 0, "resize must not replay retained history")
 history.failed = true
 chart.refresh(dense)
 equal(dense.status.properties.text, "HISTORY N/A", "full status must not mask service failure")
@@ -1086,7 +1089,7 @@ equal(lightPower.series[2].color, lightPower.theme.color.chartOrange)
 lightPower.settings.timeRange, lightPower.settings.duration = "rolling", "2m"
 for _, owner in ipairs(lightPower.columnConsumers) do
     owner.window = 12000
-    owner:restart(lightPower.area.w, lightPower.session.elapsed)
+    owner:resize(lightPower.area.w)
 end
 chart.update(lightPower, lightPower.rect)
 finishDrawing(lightPower)
@@ -1130,10 +1133,10 @@ assert(compatible, previewError)
 equal(compatible.instance.series[1].feed, lightPower.series[1].feed, "visual edits must reuse compatible history views")
 finishDrawing(compatible.instance)
 equal(compatible.instance.status.properties.text, "PREVIEW")
-assert(#chartView.rectangles(compatible.instance, 1) > 0, "a compatible chart preview must still draw recorded history")
+equal(#chartView.rectangles(compatible.instance, 1), 0, "previews must not draw recorded history")
 chart.update(compatible.instance, { x = 0, y = 0, w = 472, h = 196 })
 finishDrawing(compatible.instance)
-assert(#chartView.rectangles(compatible.instance, 1) > 0, "resizing a read-only preview preserves its traces")
+equal(#chartView.rectangles(compatible.instance, 1), 0, "resizing a preview must not reconstruct traces")
 local incompatible, incompatibleError = light.dashboardLoader.buildPanel(light, {
     id = "chart-preview-new",
     type = "chart",

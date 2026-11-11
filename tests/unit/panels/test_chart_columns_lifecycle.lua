@@ -36,44 +36,42 @@ for at = 0, 1000, 20 do
     settle(first)
     settle(second)
 end
-assert(first.series[1].low == 0 and first.series[1].high == 100)
+assert(first.series[1].low == -1000 and first.series[1].high == 1000)
 assert(first.window == 6000 and first.start == 0 and owner.map.width == originalWidth)
 assert(first.columnRenderer.root ~= second.columnRenderer.root)
 record.sample(1020, { 45 })
-first.metadataReady, first.appendMaintenance = nil, true
-local draw = first.columnRenderer.step
-first.columnRenderer.step = function()
+first.metadataReady = nil
+local draw = first.columnRenderer.append
+first.columnRenderer.append = function()
     error("metadata slot attempted plot work")
 end
 local _, metadataPending, metadataSlots = chart.refresh(first, false, 1)
 assert(metadataPending and metadataSlots == 1 and first.metadataReady)
 assert(first.series[1].valueText == "45.000", "one-slot metadata pass did not update its readout")
-first.columnRenderer.step = draw
+first.columnRenderer.append = draw
 settle(first)
+chart.refresh(first, false, 1)
 local render = chart.render
 chart.render = function()
     error("append slot attempted metadata work")
 end
 local appendCalls = 0
-first.columnRenderer.step = function(self, allowance)
+first.columnRenderer.append = function(self)
     appendCalls = appendCalls + 1
-    assert(allowance == 700, "append work must retain the one-slot callback reserve")
-    return draw(self, allowance)
+    draw(self)
 end
 record.sample(1040, { 46 })
-for _ = 1, 100 do
-    local _, pending, slots = chart.refresh(first, false, 8)
-    assert(slots == 1, "routine append consumed more than one scheduling slot")
-    if not pending then
-        break
-    end
-end
-assert(appendCalls > 0 and not first.appendDrawing, "one-slot append did not finish")
-chart.render, first.columnRenderer.step = render, draw
+local _, appendPending, appendSlots = chart.refresh(first, false, 1)
+assert(appendSlots == 1 and not appendPending, "the entire append must finish in one slot")
+assert(appendCalls == 1)
+assert(first.columnRenderer.published[1].revision == owner.map.revision)
+assert(first.series[1].drawnRevision == first.series[1].feed.plotRevision)
+assert(#owner.map.dirtyList == 0 and #owner.pending == 0)
+chart.render, first.columnRenderer.append = render, draw
 settle(first)
 local late = panel()
 settle(late)
-assert(late.columnConsumers[1].complete, "late chart did not rebuild retained history")
+assert(next(late.columnConsumers[1].map.tags) == nil, "late chart must not replay retained history")
 
 local ranges = { first.series[1].low, first.series[1].high }
 record.sample(1100, { 100000 })
@@ -86,6 +84,7 @@ chart.update(first, { x = 0, y = 0, w = 320, h = 134 })
 assert(owner.map ~= before and sibling.map == other)
 settle(first, 2)
 assert(first.start == 0 and first.window == 6000)
+assert(next(owner.map.tags) == nil, "resize must not reconstruct old telemetry")
 local nativeRoot = first.columnRenderer.root
 for at = 1200, 6500, 100 do
     record.sample(at, { at % 83 })
@@ -106,6 +105,28 @@ end
 assert(first.series[1].feed.value == -20000, "right-edge stop froze readouts")
 assert(first.columnRenderer.spare == nil and owner.map.levels == nil)
 
+local triple = recorder(3)
+services.history = triple.history
+local three = chart.create(dashboard.page, { x = 0, y = 0, w = 472, h = 196 }, {
+    armSwitch = "L01",
+    metrics = {
+        { source = triple.feeds[1].name },
+        { source = triple.feeds[2].name },
+        { source = triple.feeds[3].name },
+    },
+}, services)
+settle(three, 1)
+chart.refresh(three, false, 1)
+triple.sample(0, { -2000, 0, 2000 })
+triple.sample(1, { -500, 500, -500 })
+local _, triplePending, tripleSlots = chart.refresh(three, false, 1)
+assert(not triplePending and tripleSlots == 1, "all three series must finish appending in one slot")
+for index, consumer in ipairs(three.columnConsumers) do
+    assert(#consumer.pending == 0 and #consumer.map.dirtyList == 0)
+    assert(three.series[index].drawnRevision == triple.feeds[index].plotRevision)
+end
+chart.destroy(three)
+services.history = record.history
 services.preview = true
 local preview = panel()
 settle(preview)
@@ -119,4 +140,4 @@ chart.destroy(first)
 chart.destroy(first)
 chart.destroy(second)
 assert(record.history.views[record.feeds[1]].observers == nil)
-print("Fixed charts keep axes and prefix data, rebuild on resize, share history and release observers")
+print("Append-only charts keep fixed axes, finish each append in one slot and never reconstruct history")

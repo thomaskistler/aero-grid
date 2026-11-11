@@ -61,9 +61,9 @@ assert(
     fixture.pumpUntil(context, function()
         return compatible.columnRenderer and compatible.columnRenderer.published[1]
     end, 2500),
-    "editor preview did not publish reconstructed history"
+    "editor preview did not initialize its empty presentation"
 )
-assert(compatible.columnRenderer.published[1], "compatible visual edits retain recorded mipmaps in the editor")
+assert(next(compatible.columnConsumers[1].map.tags) == nil, "previews must not reconstruct recorded history")
 equal(history.count, subscriptions)
 equal(telemetry.count, telemetryCount)
 equal(controls.count, controlCount)
@@ -77,7 +77,7 @@ equal(compatible.series[1].feed, feed)
 fixture.pump(context, 200)
 assert(
     not compatible.columnConsumers[1].readonly and compatible.columnConsumers[1].history == history,
-    "saving a compatible preview must reattach its live mipmap observers"
+    "saving a compatible preview must attach observers for new telemetry"
 )
 
 fixture.radio.fields.NewChart = { id = 5100, name = "NewChart", unit = 1 }

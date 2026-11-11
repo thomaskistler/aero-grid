@@ -7,16 +7,27 @@ function assertions.finished(panel)
         return true
     end
     local renderer = panel.columnRenderer
-    if not renderer or not panel.columnsPrepared or renderer.jobs or panel.columnsDecorating then
+    if not renderer or panel.columnsDecorating then
         return false
     end
-    for index, owner in ipairs(panel.columnConsumers or {}) do
+    for index in ipairs(panel.columnConsumers or {}) do
         local published = renderer.published[index]
-        if owner.rebuildJob or owner.mergeJob or not published or published.geometry ~= panel.geometryVersion then
+        if not published or published.geometry ~= panel.geometryVersion then
             return false
         end
     end
     return panel.gridVersion == panel.version
+end
+
+function assertions.nativeColumns(renderer)
+    local count = 0
+    for _ in pairs(renderer.objects) do
+        count = count + 1
+    end
+    for _ in pairs(renderer.connections) do
+        count = count + 1
+    end
+    return count
 end
 
 function assertions.rectangles(panel, series)

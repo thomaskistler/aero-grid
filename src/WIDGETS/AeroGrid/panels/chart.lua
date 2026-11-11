@@ -21,8 +21,8 @@ local chart = {
             fields = {
                 { key = "source", label = "Source", type = "string", required = true },
                 { key = "label", label = "Label", type = "string" },
-                { key = "rangeMin", label = "Range min", type = "number", step = 0.1, empty = "0" },
-                { key = "rangeMax", label = "Range max", type = "number", step = 0.1, empty = "100" },
+                { key = "rangeMin", label = "Range min", type = "number", step = 0.1, empty = "-1000" },
+                { key = "rangeMax", label = "Range max", type = "number", step = 0.1, empty = "1000" },
                 { key = "unit", label = "Unit", type = "string" },
                 {
                     key = "precision",
@@ -897,7 +897,7 @@ function chart.geometry(context, rect)
 end
 
 local function valueRange(minimum, maximum)
-    local low, high = minimum or 0, maximum or 100
+    local low, high = minimum or -1000, maximum or 1000
     if high <= low then
         if minimum ~= nil and maximum == nil then
             high = low + 100
@@ -1253,7 +1253,6 @@ end
 --- Retire the current native presentation in bounded batches.
 function chart.resetSession(context, slots)
     context.metadataReady = nil
-    context.appendDrawing, context.appendMaintenance = nil, nil
     local reset = context.resetWork
     if not reset then
         if context.columnRenderer then
@@ -1321,7 +1320,6 @@ function chart.resetSession(context, slots)
 end
 
 local function publishColumns(context)
-    context.appendMaintenance = nil
     context.metadataReady = nil
     -- Native dashed lines shift their phase under partial invalidation.
     -- Only changed overlays need a complete invalidation, not ordinary appends.
@@ -1504,77 +1502,11 @@ local function finishColumns(context, allowance)
     return publishColumns(context), false, used + 250
 end
 
-local function appendOnly(context, allowance)
-    local renderer, session = context.columnRenderer, context.session
-    if
-        not renderer
-        or not context.columnsPrepared
-        or context.columnsDecorating
-        or context.appendMaintenance
-        or context.gridVersion ~= context.version
-        or context.paintedVersion ~= context.version
-        or context.paintedResumeRevision ~= session.resumeRevision
-        or context.paintedArmRevision ~= session.armRevision
-        or context.paintedFlightRevision ~= session.flightRevision
-    then
-        return
-    end
-    local changed = false
-    for index, owner in ipairs(context.columnConsumers) do
-        local item, published = context.series[index], renderer.published[index]
-        if
-            owner.readonly
-            or owner.rebuildJob
-            or owner.mergeJob
-            or not published
-            or published.map ~= owner.map
-            or published.geometry ~= context.geometryVersion
-            or item.drawnVersion ~= context.version
-            or published.low ~= item.low
-            or published.high ~= item.high
-            or item.drawnBreak ~= owner.map.breakLast
-        then
-            return
-        end
-        changed = changed or published.revision ~= owner.map.revision
-    end
-    if not changed and not context.appendDrawing then
-        return
-    end
-    local complete, used = renderer:step(allowance)
-    if complete then
-        context.appendDrawing, context.appendMaintenance = nil, true
-        return true, used
-    end
-    context.appendDrawing = true
-    return false, used
-end
-
 local function refreshColumns(context, slots)
     local remaining, used = instructionAllowance(slots), 0
-    if remaining >= 450 then
-        local complete, cost = appendOnly(context, instructionAllowance(1))
-        if complete ~= nil then
-            return 1, not complete, consumedSlots(cost)
-        end
-    end
-    context.appendDrawing = nil
     if not context.columnRenderer then
-        if remaining < 500 then
-            return 1, true, consumedSlots(used)
-        end
         context.columnRenderer = context.columnRendererModule.new(context)
-        remaining, used = remaining - 500, used + 500
-    end
-    local renderer = context.columnRenderer
-    if not context.columnsPrepared then
-        local complete, stageUsed = renderer:prepare(remaining)
-        remaining, used = remaining - stageUsed, used + stageUsed
-        if not complete then
-            return 1, true, consumedSlots(used)
-        end
-        context.columnsPrepared = true
-        return 1, true, consumedSlots(used)
+        return 1, true, 1
     end
     if context.columnsDecorating then
         local interval, unfinished, stageUsed = finishColumns(context, remaining)
@@ -1609,17 +1541,6 @@ local function refreshColumns(context, slots)
             return 1, true, consumedSlots(used)
         end
     end
-    local geometry = context.geometryVersion
-    if renderer.jobs then
-        for series, job in ipairs(renderer.jobs) do
-            local item, consumer = context.series[series], context.columnConsumers[series]
-            local map = consumer.map
-            if job.map ~= map or job.geometry ~= geometry or job.low ~= item.low or job.high ~= item.high then
-                renderer.jobs = nil
-                break
-            end
-        end
-    end
     if context.gridVersion ~= context.version then
         local complete, stageUsed = updateGrid(context, remaining)
         remaining, used = remaining - stageUsed, used + stageUsed
@@ -1627,14 +1548,13 @@ local function refreshColumns(context, slots)
             return 1, true, consumedSlots(used)
         end
     end
-    local complete, estimated = renderer:step(remaining)
-    remaining, used = remaining - estimated, used + estimated
-    if not complete then
+    if used > 1 then
         return 1, true, consumedSlots(used)
     end
+    context.columnRenderer:append()
+    context.metadataReady = nil
     context.columnsDecorating, context.frameThrough = true, nil
-    local interval, unfinished, stageUsed = finishColumns(context, remaining)
-    return interval, unfinished, consumedSlots(used + stageUsed)
+    return 1, false, 1
 end
 
 local function refreshChart(context, creating, slots)
@@ -1651,7 +1571,8 @@ local function refreshChart(context, creating, slots)
         context.columnConsumers, context.columnsReadonly, context.columnSetupIndex = nil, nil, nil
         context.columnSetup = context.columnModule
         if context.columnRenderer then
-            context.columnRenderer.jobs = nil
+            context.columnRenderer:reset()
+            context.columnsDecorating = nil
         end
     end
     if context.columnSetup then
@@ -1683,21 +1604,6 @@ local function refreshChart(context, creating, slots)
         updateHeader(context)
         text(context.status, plotStatus(context), context.theme.color.textFaint)
         return 20
-    end
-    for index, owner in ipairs(context.columnConsumers) do
-        if
-            owner.readonly
-            and owner.map.recording
-            and not owner.rebuildJob
-            and owner.builtRevision ~= owner.feed.plotRevision
-            and (owner.builtRevision == nil or context.series[index].drawnRevision == owner.builtRevision)
-        then
-            owner:restart(owner.map.width, context.session.elapsed)
-        end
-        if owner.rebuildJob or owner.mergeJob then
-            local _, used = owner:step(instructionAllowance(slots))
-            return 1, owner.readonly or not context.host, consumedSlots(used)
-        end
     end
     return refreshColumns(context, slots)
 end
@@ -1815,7 +1721,6 @@ end
 function chart.update(context, rect)
     context.metadataReady = nil
     context.rangesReady = false
-    context.appendDrawing, context.appendMaintenance = nil, nil
     if context.columnSetup then
         if context.columnSetupIndex then
             for _, owner in ipairs(context.columnConsumers) do
@@ -1840,11 +1745,11 @@ function chart.update(context, rect)
     if resized and context.columnConsumers then
         if context.columnRenderer then
             context.columnRenderer:destroy()
-            context.columnRenderer, context.columnsPrepared = nil, nil
+            context.columnRenderer = nil
         end
         context.columnsDecorating, context.frameThrough = nil, nil
         for _, consumer in ipairs(context.columnConsumers) do
-            consumer:restart(context.area.w // 1, context.session.elapsed)
+            consumer:resize(context.area.w // 1)
         end
     end
     context.connectorWork = nil

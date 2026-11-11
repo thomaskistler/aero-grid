@@ -5,6 +5,25 @@ local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().
 local chart = fixture.module("panels/chart.lua")
 local equal = assert(loadfile(root .. "/tests/support/assertions.lua"))().assertEqual
 local chartView = assert(loadfile(root .. "/tests/support/chart_assertions.lua"))()
+local function liveSamples(service)
+    local observers = {}
+    function service:observeSamples(_, observer)
+        observers[#observers + 1] = observer
+    end
+    function service:unobserveSamples(_, observer)
+        for index, value in ipairs(observers) do
+            if value == observer then
+                table.remove(observers, index)
+                return
+            end
+        end
+    end
+    return function(...)
+        for _, observer in ipairs(observers) do
+            observer:sample(...)
+        end
+    end
+end
 fixture.reset()
 local host = fixture.createLoaded(nil, { Layout = "Empty", Theme = "modern-dark" })
 local placement = { col = 0, row = 0, colSpan = 2, rowSpan = 1 }
@@ -217,6 +236,7 @@ local live = {
     armRevision = 1,
 }
 local history = { FLIGHT_CAPACITY = 64 }
+local emit = liveSamples(history)
 local confirmedEnd
 function history:session()
     return live
@@ -252,8 +272,9 @@ for step = 1, 2000 do
     live.elapsed = live.elapsed + 10
     samples[#samples + 1] = { live.elapsed, step % 17 }
     feed.last, feed.revision, feed.plotRevision = #samples, feed.revision + 1, feed.plotRevision + 1
+    emit(live.elapsed, step % 17)
     _, unfinished = chart.refresh(consistent)
-    if not unfinished and chartView.finished(consistent) then
+    if not unfinished and consistent.paintedVersion == consistent.version and not consistent.columnsDecorating then
         committed = true
         break
     end
@@ -277,7 +298,7 @@ feed.stale, feed.revision = true, feed.revision + 1
 live.elapsed = live.elapsed + 1000
 for _ = 1, 2000 do
     local _, pending = chart.refresh(consistent)
-    if not pending then
+    if not pending and not consistent.columnsDecorating then
         break
     end
 end
@@ -367,6 +388,7 @@ do
         unitText = "",
     }
     local pausedHistory = {}
+    local emitPaused = liveSamples(pausedHistory)
     function pausedHistory:session()
         return recording
     end
@@ -393,6 +415,9 @@ do
     services.history = pausedHistory
     local pauseSettings = { label = "Recorded", metrics = { { source = "V" }, { source = "A" } } }
     local pausedPanel = chart.create(host.page, { x = 0, y = 0, w = 472, h = 196 }, pauseSettings, services)
+    finishFrame(pausedPanel)
+    emitPaused(0, 3)
+    emitPaused(1000, 5)
     finishFrame(pausedPanel)
     equal(#pausedPanel.resumeMarkers.markerKeys, 0)
     recording.recording, recording.elapsed = false, 1000
@@ -451,6 +476,8 @@ do
     data.last, data.revision, data.plotRevision = 4, 2, 2
     recording.elapsed = 1500
     recording.armLast, recording.armRevision, arms[3] = 3, 3, { 1300, false }
+    emitPaused(1000, 9, true, true)
+    emitPaused(1500, 10)
     finishFrame(pausedPanel)
     local otherColumn = math.floor(1300 * pausedPanel.axis.scale + 0.5) + 25
     assert(pausedPanel.armMarkers.markers[-otherColumn].active, "other disarm triangles remain visible")
@@ -471,6 +498,8 @@ do
     points[5], points[6] = { 1800, 8, true }, { 2000, 7, false }
     data.last, data.revision, data.plotRevision = 6, 3, 3
     recording.elapsed = 2000
+    emitPaused(1800, 8, true)
+    emitPaused(2000, 7)
     finishFrame(pausedPanel)
     equal(#pausedPanel.resumeMarkers.markerKeys, 1, "telemetry gaps must not create recording seams")
     for _, item in ipairs(pausedPanel.series) do
@@ -485,6 +514,8 @@ do
     recording.elapsed = 2400
     points[7], points[8] = { 2300, 11, true, true }, { 2400, 10, false }
     data.last, data.revision, data.plotRevision = 8, 4, 4
+    emitPaused(2300, 11, true, true)
+    emitPaused(2400, 10)
     finishFrame(pausedPanel)
     local function activeSeams(target)
         local result = {}
