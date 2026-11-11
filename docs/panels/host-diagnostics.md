@@ -16,7 +16,7 @@ The panel needs at least 2x2 cells to fit its rows.
 | Setting | Default | What it does |
 | --- | --- | --- |
 | **Label** | section name | Panel heading. Clear it to use the selected **Section**. |
-| **Section** | identity | Report to show: **identity**, **theme**, **panels**, **sources**, or **log**. |
+| **Section** | identity | Report to show: **identity**, **theme**, **panels**, **sources**, **log**, or **scheduler**. |
 | **Maximum log entries** | 64 | Shown for **log**. Retains 1–256 messages radio-wide. When several log panels exist, the largest requested limit applies. |
 | **Accent** | cyan | Panel accent: **cyan**, **green**, **amber**, or **orange**. Diagnostic messages do not change the panel color. |
 | **Remove panel** | | Deletes the panel from the screen. |
@@ -43,6 +43,22 @@ Reports read the live host context rather than resolving the layout or theme
 again. Lines are left-aligned and refresh about twice per second. The panel
 shows only the lines that fit, up to twelve; enlarge it to reveal more. Long
 reports can still extend beyond that limit.
+
+### Scheduler
+
+Select **scheduler** to show two wrapping traces on a fixed 0–100% scale:
+cyan is average slot utilization; orange is the percentage of due work requests
+deferred because slots were unavailable. Each point covers one second.
+A request still waiting on another callback counts again. Zero-slot work is
+excluded from request counts.
+
+The cursor marks the newest point. At the right edge, drawing resumes on the
+left and overwrites the oldest points without connecting across the wrap.
+One horizontal pixel represents one second; resizing starts a new sweep.
+The display measures the current widget's accounted slots, not actual CPU usage.
+The scheduler view consumes zero scheduler slots, but still uses a small amount
+of CPU. Measurement runs only while a live scheduler view exists, including
+on hidden screens; editor previews do not enable it.
 
 ### Shared log
 

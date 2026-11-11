@@ -17,7 +17,8 @@
 ---@field refreshInterval? integer Ticks of 10ms between refreshes. 0 or absent
 ---  means every frame. Telemetry rarely needs more than a few hertz, and the
 ---  host pays every panel's cost inside one instruction budget.
----@field refreshCost? integer|"variable" Nominal 2000-instruction slots, 1 to 8; defaults to 1.
+---@field refreshCost? integer|"variable" Nominal 2000-instruction slots, 0 to 8; defaults to 1.
+--- An instance may override refreshCost; zero-cost refreshes run when due even without remaining slots.
 ---@field settings? AeroGridPanelSetting[]
 ---@field create fun(parent: any, rect: table, settings: table, services: table): any
 ---@field update? fun(instance: any, rect: table, settings: table)
@@ -122,9 +123,9 @@ function panelHost.validateModule(module, typeName)
     if
         cost ~= nil
         and cost ~= "variable"
-        and (type(cost) ~= "number" or cost < 1 or cost > 8 or cost ~= math.floor(cost))
+        and (type(cost) ~= "number" or cost < 0 or cost > 8 or cost ~= math.floor(cost))
     then
-        return false, "refreshCost must be a whole number from 1 to 8 or variable"
+        return false, "refreshCost must be a whole number from 0 to 8 or variable"
     end
 
     return true

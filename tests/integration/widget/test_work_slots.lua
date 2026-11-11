@@ -138,3 +138,56 @@ definition.background(context)
 assert(#calls == 2 and calls[2].id == "service" and calls[2].slots == 0)
 assert(fixture.module("lib/history_service.lua").updateCost == 0)
 assert(fixture.module("lib/control_service.lua").updateCost == 0)
+
+-- Free panels run even after charged work was deferred, without affecting demand.
+context.panels = { panel("blocked"), panel("diagnostic", 0) }
+context.schedulerStats = {
+    started = getTime(),
+    callbacks = 0,
+    used = 0,
+    requested = 0,
+    denied = 0,
+    revision = 0,
+    utilization = 0,
+    deferrals = 0,
+}
+context.workCursor = 1
+calls = {}
+fixture.tick(100)
+definition.refresh(context)
+assert(#calls == 3 and calls[3].id == "diagnostic" and calls[3].slots == 0)
+local stats = context.schedulerStats
+assert(stats.revision == 1 and stats.utilization == 100 and stats.deferrals == 50)
+assert(context.remainingSlots == 0)
+-- The same zero-cost contract can be selected by an individual panel instance.
+context.panels[2].module.refreshCost = 1
+context.panels[2].instance.refreshCost = 0
+context.workCursor = 1
+calls = {}
+fixture.tick(100)
+definition.refresh(context)
+assert(#calls == 3 and calls[3].id == "diagnostic" and calls[3].slots == 0)
+assert(stats.revision == 2 and stats.deferrals == 50)
+
+context.serviceRuntime = support.runtime({})
+context.panels = { panel("two", 2), panel("one", 1), panel("not-due", 8) }
+context.panels[3].nextRefresh = getTime() + 1000
+context.workCursor = 1
+fixture.tick(100)
+definition.refresh(context)
+assert(stats.revision == 3 and stats.utilization == 37.5 and stats.deferrals == 0)
+context.panels = {}
+fixture.tick(100)
+-- Keep an inactive service in the registry so the normal dispatch path runs.
+local inactive = {
+    id = "inactive",
+    count = 0,
+    interval = 0,
+    revision = 0,
+    update = function()
+        error("inactive work must not run")
+    end,
+}
+support.register(context.serviceRuntime, inactive, 0)
+definition.refresh(context)
+assert(stats.revision == 4 and stats.utilization == 0 and stats.deferrals == 0)

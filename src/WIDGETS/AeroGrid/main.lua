@@ -928,12 +928,22 @@ local function dispatchDue(context, hidden)
     end
 
     local dispatched, failures, examined, deferred = 0, false, 0, nil
+    local stats = context.schedulerStats
+    local requested, denied = 0, 0
 
     while examined < count do
         examined = examined + 1
         if cursor <= serviceCount then
+            local service = registry.order[cursor]
+            local due = stats and not service.failed and service.count ~= 0 and now >= service.due
             local allowance = deferred and 0 or context.remainingSlots
-            local id, message, used = support.dispatch(registry, registry.order[cursor], now, allowance)
+            local id, message, used = support.dispatch(registry, service, now, allowance)
+            if due and service.updateCost ~= 0 then
+                requested = requested + 1
+                if not id and used == 0 then
+                    denied = denied + 1
+                end
+            end
             if not id and used == 0 then
                 deferred = deferred or cursor
             end
@@ -956,9 +966,18 @@ local function dispatchDue(context, hidden)
                 and (hidden or now >= (entry.nextRefresh or 0))
                 and type(rawget(entry.module, eventName)) == "function"
             then
-                local cost = hidden and 1 or rawget(entry.module, "refreshCost") or 1
+                local cost = hidden and 1
+                    or rawget(entry.instance, "refreshCost")
+                    or rawget(entry.module, "refreshCost")
+                    or 1
                 local granted = support.grant(cost, deferred and 0 or context.remainingSlots)
-                if granted == 0 then
+                if stats and cost ~= 0 then
+                    requested = requested + 1
+                    if granted == 0 then
+                        denied = denied + 1
+                    end
+                end
+                if granted == 0 and cost ~= 0 then
                     deferred = deferred or cursor
                 else
                     local ok, message, _, unfinished, used =
@@ -995,6 +1014,17 @@ local function dispatchDue(context, hidden)
 
     -- Resume from where we stopped so every panel is served in turn.
     context.workCursor = deferred or cursor
+    if stats then
+        stats.callbacks = stats.callbacks + 1
+        stats.used = stats.used + support.SLOTS - context.remainingSlots
+        stats.requested, stats.denied = stats.requested + requested, stats.denied + denied
+        if now - stats.started >= 100 then
+            stats.utilization = stats.used * 100 / (stats.callbacks * support.SLOTS)
+            stats.deferrals = stats.requested > 0 and stats.denied * 100 / stats.requested or 0
+            stats.revision = stats.revision + 1
+            stats.started, stats.callbacks, stats.used, stats.requested, stats.denied = now, 0, 0, 0, 0
+        end
+    end
     if failures then
         showErrors(context)
     end

@@ -26,7 +26,9 @@ local function testPanelContract()
     rejects({ id = "demo", apiVersion = 1 }, "demo", "no create function")
     rejects({ id = "demo", apiVersion = 1, create = function() end, refresh = 5 }, "demo", "refresh must be a function")
     rejects({ id = "demo", apiVersion = 1, create = function() end, supportedSpans = 5 }, "demo", "supportedSpans")
-    for _, cost in ipairs({ 0, 9, 1.5, "6", 0 / 0 }) do
+    valid.refreshCost = 0
+    assert(panelHost.validateModule(valid, "demo"))
+    for _, cost in ipairs({ -1, 9, 1.5, "6", 0 / 0 }) do
         rejects({ id = "demo", apiVersion = 1, create = function() end, refreshCost = cost }, "demo", "refreshCost")
     end
 end

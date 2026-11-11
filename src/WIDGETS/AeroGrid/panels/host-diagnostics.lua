@@ -41,7 +41,7 @@
 --- part of the set the arrangement was designed for.
 
 ---@class AeroGridDiagnosticsSettings
----@field section "identity"|"theme"|"panels"|"sources"|"log"
+---@field section "identity"|"theme"|"panels"|"sources"|"log"|"scheduler"
 ---@field maxEntries? integer Shared log retention, 1 to 256.
 ---@field label? string Panel title; defaults to the section name.
 ---@field accent? string
@@ -62,7 +62,7 @@ local diagnostics = {
             label = "Section",
             type = "string",
             default = "identity",
-            choices = { "identity", "theme", "panels", "sources", "log" },
+            choices = { "identity", "theme", "panels", "sources", "log", "scheduler" },
         },
         {
             key = "maxEntries",
@@ -86,6 +86,108 @@ local diagnostics = {
 
 --- Most lines any section will draw, whatever its span.
 local MAX_LINES = 12
+
+local function schedulerStats(context)
+    if context.host and not context.preview then
+        context.schedulerActive = true
+    end
+    if context.host and not context.preview and not context.host.schedulerStats then
+        context.host.schedulerStats = {
+            started = getTime(),
+            callbacks = 0,
+            used = 0,
+            requested = 0,
+            denied = 0,
+            revision = 0,
+            utilization = 0,
+            deferrals = 0,
+        }
+    end
+    return context.host and context.host.schedulerStats
+end
+
+local function schedulerGraph(context, rect, area)
+    if context.graph then
+        for _, lines in ipairs(context.graph.lines) do
+            for _, line in ipairs(lines) do
+                lvgl.hide(line)
+            end
+        end
+    else
+        context.graph = {
+            root = lvgl.box(context.panel.root, { x = 0, y = 0, w = rect.w, h = rect.h }),
+            lines = { {}, {} },
+            references = {},
+        }
+    end
+    local graph = context.graph
+    graph.root:set({ w = rect.w, h = rect.h })
+    graph.x, graph.y = area.pad, area.top + area.lineHeight * 2
+    graph.width, graph.height = math.max(2, area.content // 1), math.max(1, rect.h - graph.y - area.frame.bottom)
+    graph.index, graph.previous = 0, nil
+    graph.revision = context.host and context.host.schedulerStats and context.host.schedulerStats.revision or 0
+    local cursor = {
+        x = graph.x,
+        y = graph.y,
+        w = 1,
+        h = graph.height,
+        color = context.theme.color.textFaint,
+    }
+    if graph.cursor then
+        graph.cursor:set(cursor)
+    else
+        graph.cursor = lvgl.vline(graph.root, cursor)
+    end
+    for index, percent in ipairs({ 0, 100 }) do
+        local options = {
+            x = graph.x,
+            y = graph.y + (100 - percent) * graph.height / 100,
+            w = graph.width,
+            h = 1,
+            color = context.theme.color.textFaint,
+        }
+        if graph.references[index] then
+            graph.references[index]:set(options)
+        else
+            graph.references[index] = lvgl.hline(graph.root, options)
+        end
+    end
+    context.rows[1]:set({ text = "Slots (0-100%)", color = context.theme.chartColor.cyan })
+    context.rows[2]:set({ text = "Requests deferred", color = context.theme.chartColor.orange })
+end
+
+local function refreshScheduler(context)
+    local stats, graph = schedulerStats(context), context.graph
+    if not stats or stats.revision == graph.revision then
+        return
+    end
+    local consecutive = stats.revision == graph.revision + 1
+    graph.revision = stats.revision
+    local index = graph.index
+    local values = { stats.utilization, stats.deferrals }
+    for series = 1, 2 do
+        local y = graph.y + math.floor((100 - values[series]) * graph.height / 100 + 0.5)
+        local previous = consecutive and index > 0 and graph.previous and graph.previous[series] or y
+        local options = { pts = { { graph.x + math.max(0, index - 1), previous }, { graph.x + index, y } } }
+        local line = graph.lines[series][index + 1]
+        if line then
+            line:set(options)
+            lvgl.show(line)
+        else
+            options.color = context.theme.chartColor[series == 1 and "cyan" or "orange"]
+            options.thickness = 1
+            graph.lines[series][index + 1] = lvgl.line(graph.root, options)
+        end
+        values[series] = y
+        local nextLine = graph.lines[series][(index + 1) % graph.width + 1]
+        if nextLine then
+            lvgl.hide(nextLine)
+        end
+    end
+    graph.previous = values
+    graph.cursor:set({ x = graph.x + index })
+    graph.index = (index + 1) % graph.width
+end
 
 function diagnostics.validateSettings(settings)
     local limit = settings.maxEntries
@@ -454,12 +556,24 @@ function diagnostics.create(parent, rect, settings, services)
     end
 
     context.visibleLines = area.lines
+    if section == "scheduler" then
+        context.refreshCost = 0
+        schedulerStats(context)
+        for index = 3, MAX_LINES do
+            lvgl.hide(context.rows[index])
+        end
+        schedulerGraph(context, rect, area)
+    end
     return context
 end
 
 --- Repaint only the lines whose text changed.
 ---@param context table
 function diagnostics.refresh(context)
+    if context.section == "scheduler" then
+        refreshScheduler(context)
+        return
+    end
     local lines = diagnostics.lines(context.host, context.section, context.visibleLines)
     local start = context.section == "log" and math.max(1, #lines - context.visibleLines + 1) or 1
     local changed = 0
@@ -505,6 +619,24 @@ function diagnostics.update(context, rect)
     end
 
     context.visibleLines = area.lines
+    if context.section == "scheduler" then
+        for index = 3, MAX_LINES do
+            lvgl.hide(context.rows[index])
+        end
+        schedulerGraph(context, rect, area)
+    end
+end
+
+function diagnostics.destroy(context)
+    if context.section == "scheduler" and context.host and not context.preview then
+        context.schedulerActive = false
+        for _, entry in ipairs(context.host.panels or {}) do
+            if entry.instance and entry.instance ~= context and entry.instance.schedulerActive then
+                return
+            end
+        end
+        context.host.schedulerStats = nil
+    end
 end
 
 return diagnostics
