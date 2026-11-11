@@ -119,7 +119,7 @@ is used only before model arming has been saved. A qualified shared flight with
 the same effective arm condition keeps recording through disarm grace until
 confirmed flight end. Otherwise disarming pauses immediately. Rearming during
 grace does not break or duplicate a flight; rearming after a pause resumes the
-same history with a gap and dotted connectors. The horizontal axis counts cumulative
+same history with a gap and faint connectors. The horizontal axis counts cumulative
 recording time, including retained grace samples. Neutral background bands
 show actual flight times; bottom-axis triangles mark arming and disarming
 except the first arming. No logical-switch

@@ -14,7 +14,7 @@ local function panel()
     return chart.create(dashboard.page, { x = 0, y = 0, w = 238, h = 100 }, {
         armSwitch = "L01",
         duration = 1,
-        metrics = { { source = record.feeds[1].name, precision = 3 } },
+        metrics = { { source = record.feeds[1].name, precision = 3, rangeMin = -1000, rangeMax = 1000 } },
     }, services)
 end
 local first, second = panel(), panel()

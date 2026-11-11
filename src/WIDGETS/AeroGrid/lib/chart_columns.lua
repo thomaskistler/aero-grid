@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 -- 18 auto steps reach 512 minutes, keeping tick-times-pixel products within int32.
-local columns = { RUNTIME_API = 1, BREAK_WIDTH = 24, AUTO_STEPS = 18 }
+local columns = { RUNTIME_API = 1, BREAK_WIDTH = 24, AUTO_STEPS = 18, APPEND_LIMIT = 10 }
 columns.__index = columns
 local consumer = {}
 consumer.__index = consumer
@@ -73,6 +73,7 @@ function columns:reset()
     self.breakFirst, self.breakLast = 1, 0
     self.at, self.bucket, self.value, self.missing, self.last = nil, nil, nil, nil, nil
     self.cursor, self.breakSource, self.overflowed = nil, nil, nil
+    self.minimum, self.maximum = nil, nil
     self.gapAt, self.gapRevision = nil, nil
     self.revision = (self.revision or 0) + 1
     self.historyRevision = nil
@@ -150,6 +151,7 @@ local function put(self, bucket, low, high, finish, connected, start, gaps)
     elseif kind == "data" then
         -- One pixel cannot show an interruption, so the column keeps its incoming value.
         self.low[slot], self.high[slot] = math.min(self.low[slot], low), math.max(self.high[slot], high)
+        self.minimum, self.maximum = math.min(self.minimum, low), math.max(self.maximum, high)
         self.ends[slot] = finish
         mark(self, slot)
     else
@@ -169,6 +171,9 @@ local function put(self, bucket, low, high, finish, connected, start, gaps)
         end
         place(self, bucket, "data", low, from, 1)
         self.high[slot], self.ends[slot] = high, finish
+        -- Drawn extremes decide automatic vertical bounds.
+        self.minimum = self.minimum and math.min(self.minimum, low) or low
+        self.maximum = self.maximum and math.max(self.maximum, high) or high
         self.starts[slot], self.counts[slot] = start, gaps
     end
     self.last = math.max(self.last or bucket, bucket)
@@ -321,7 +326,11 @@ function consumer:append()
         self.pending[#self.pending + 1], self.tail = self.tail, nil
     end
     local fine = self.fine
-    for index, sample in ipairs(self.pending) do
+    local pending = self.pending
+    -- A bounded batch per append keeps a backlog from overrunning one callback.
+    local count = math.min(#pending, columns.APPEND_LIMIT)
+    for index = 1, count do
+        local sample = pending[index]
         local at, value, broken, resumed = sample[1], sample[2], sample[3], sample[4]
         -- A full auto plot cannot show later samples; only the fine store needs them.
         if not (fine and self.map.overflowed) then
@@ -338,8 +347,8 @@ function consumer:append()
             end
         end
         self.hadValue = self.hadValue or value ~= nil
-        self.pending[index] = nil
     end
+    table.move(pending, count + 1, #pending + count, 1)
 end
 
 function consumer:reset()

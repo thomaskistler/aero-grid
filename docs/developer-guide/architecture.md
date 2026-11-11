@@ -190,7 +190,7 @@ Late attachment, resize, and read-only previews rebuild envelopes from connected
 history knots in bounded batches, preserving the recording compression tolerance
 rather than claiming exact observed extrema. Sealed blocks may skip knots inside
 one column. Reconstruction yields dispatcher ownership between callbacks.
-Resume-axis views use the same renderer, with fixed-width gaps and dotted
+Resume-axis views use the same renderer, with fixed-width gaps and faint
 connectors. Missing telemetry remains a break, not a resume connector.
 
 History consumes at most one flight journal record per service turn, keyed by
@@ -204,7 +204,7 @@ pool behind the grid and traces. Reconstructed views pin their input horizon;
 the single native pool applies replacement columns progressively without a
 second legacy plot buffer.
 Arm/disarm triangles use a bounded directional transition journal.
-A separate resume journal drives fixed-width axis gaps and dotted trace connectors;
+A separate resume journal drives fixed-width axis gaps and faint trace connectors;
 the same projection maps traces, flight bands, grid lines, and axis markers.
 Crowded gaps evict the oldest visible section rather than narrowing the gaps.
 During normal sampling, flight bands clip to the recorded telemetry horizon.

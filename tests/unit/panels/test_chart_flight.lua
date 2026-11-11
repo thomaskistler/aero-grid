@@ -483,17 +483,18 @@ do
     local otherColumn = math.floor(1300 * pausedPanel.axis.scale + 0.5) + 25
     assert(pausedPanel.armMarkers.markers[-otherColumn].active, "other disarm triangles remain visible")
     for _, item in ipairs(pausedPanel.series) do
-        equal(#item.connectors, 1, "resuming adds one dotted connector between solid envelopes")
+        equal(#item.connectors, 1, "resuming adds one connector between solid envelopes")
         local connector = item.connectors[1]
         assert(connector.connector and not connector.connector.hidden)
         equal(connector.pts[2][1] - connector.pts[1][1], 24, "equal recording timestamps must be separated by the gap")
         equal(connector.pts[1][1], seam.object.properties.x)
         equal(connector.pts[2][1], seam.object.properties.x + seam.object.properties.w)
-        assert(#connector.dots > 2, "dotted connectors need separated native dots, not a solid line")
-        for index = 1, connector.dotCount do
-            equal(connector.dots[index].properties.color, item.color)
-            equal(connector.dots[index].properties.w, 1)
-        end
+        local line = connector.connector
+        equal(line.kind, "line", "a pause connector is one native line")
+        equal(line.properties.color, item.color)
+        assert(line.properties.opacity < 255, "pause connectors are fainter than the trace")
+        equal(line.properties.pts[1][1], connector.pts[1][1])
+        equal(line.properties.pts[2][1], connector.pts[2][1])
         equal(#item.markerKeys, 0, "a resume must not also draw a full-height dashed gap line")
     end
     points[5], points[6] = { 1800, 8, true }, { 2000, 7, false }

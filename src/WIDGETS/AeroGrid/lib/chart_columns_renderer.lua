@@ -33,9 +33,21 @@ end
 
 --- Data columns span their incoming value too, so adjacent columns join without
 --- line objects; a hold is one rectangle across skipped columns at the held value.
-local function paintColumn(self, map, series, slot)
+--- Per-series drawing constants, read once per batch rather than per column.
+local function style(self, series)
     local context = self.context
     local item, area = context.series[series], context.area
+    return {
+        low = item.low,
+        scale = area.h / (item.high - item.low),
+        top = area.y,
+        bottom = area.y + area.h,
+        x = area.x - 1,
+        color = item.color,
+    }
+end
+
+local function paintColumn(self, map, series, slot, look)
     local index = (series - 1) * self.width + slot
     local kind = map.kinds[slot]
     if kind == "data" or kind == "hold" then
@@ -43,11 +55,10 @@ local function paintColumn(self, map, series, slot)
         if from then
             low, high = math.min(low, from), math.max(high, from)
         end
-        local bottom = area.y + area.h
-        local scale = area.h / (item.high - item.low)
-        local top = math.max(area.y, math.min(bottom, (bottom - (high - item.low) * scale + 0.5) // 1))
-        local last = math.max(area.y, math.min(bottom, (bottom - (low - item.low) * scale + 0.5) // 1))
-        local changes = { x = area.x + slot - 1, y = top, w = map.widths[slot], h = last - top + 1 }
+        local bottom = look.bottom
+        local top = math.max(look.top, math.min(bottom, (bottom - (high - look.low) * look.scale + 0.5) // 1))
+        local last = math.max(look.top, math.min(bottom, (bottom - (low - look.low) * look.scale + 0.5) // 1))
+        local changes = { x = look.x + slot, y = top, w = map.widths[slot], h = last - top + 1 }
         local object = self.objects[index]
         if object then
             object:set(changes)
@@ -55,7 +66,7 @@ local function paintColumn(self, map, series, slot)
                 lvgl.show(object)
             end
         else
-            changes.color, changes.filled, changes.thickness = item.color, true, 0
+            changes.color, changes.filled, changes.thickness = look.color, true, 0
             self.objects[index] = lvgl.rectangle(self.seriesRoots[series], changes)
         end
         self.visible[index] = true
@@ -76,14 +87,23 @@ local function publish(self, series, map)
     item.drawnRevision, item.drawnVersion = map.historyRevision, context.version
 end
 
-function renderer:append()
+--- Append new samples and draw changed columns; `deferPaint` keeps them pending
+--- for a layer about to replace this one.
+function renderer:append(deferPaint)
     local context = self.context
     for series, owner in ipairs(context.columnConsumers) do
         owner:append()
         local map = owner.map
-        for index, slot in ipairs(map.dirtyList) do
-            paintColumn(self, map, series, slot)
-            map.dirtyColumns[slot], map.dirtyList[index] = nil, nil
+        if context.checkRange then
+            -- Lets the chart seed or grow automatic bounds before columns are drawn.
+            context.checkRange(context, series, map)
+        end
+        local look = not deferPaint and map.dirtyList[1] and style(self, series)
+        if look then
+            for index, slot in ipairs(map.dirtyList) do
+                paintColumn(self, map, series, slot, look)
+                map.dirtyColumns[slot], map.dirtyList[index] = nil, nil
+            end
         end
         publish(self, series, map)
     end
@@ -100,10 +120,11 @@ function renderer:paint(limit, first)
         local series = ((first or 1) + offset - 1) % #owners + 1
         local map = owners[series].map
         local list, count = map.dirtyList, #map.dirtyList
+        local look = count > 0 and painted < limit and style(self, series)
         while count > 0 and painted < limit do
             local slot = list[count]
             list[count], map.dirtyColumns[slot] = nil, nil
-            paintColumn(self, map, series, slot)
+            paintColumn(self, map, series, slot, look)
             count, painted = count - 1, painted + 1
         end
         publish(self, series, map)
@@ -112,24 +133,46 @@ function renderer:paint(limit, first)
     return painted, complete
 end
 
+--- Paint completed columns of shared maps in slot order at this layer's scale,
+--- at most `limit` per call; `final` also paints each map's newest column.
+---@return integer painted
+---@return boolean complete
+function renderer:paintSlots(limit, first, final)
+    local owners = self.context.columnConsumers
+    local painted, complete = 0, true
+    for offset = 0, #owners - 1 do
+        local series = ((first or 1) + offset - 1) % #owners + 1
+        local owner = owners[series]
+        local map = owner.map
+        local through = (map.last or -1) + (final and 1 or 0)
+        local slot = owner.next or 1
+        local look = slot <= through and painted < limit and style(self, series)
+        while slot <= through and painted < limit do
+            paintColumn(self, map, series, slot, look)
+            slot, painted = slot + 1, painted + 1
+        end
+        owner.next = slot
+        publish(self, series, map)
+        complete = complete and slot > through
+    end
+    return painted, complete
+end
+
 --- Hide previously drawn columns, at most `limit` objects per call.
 ---@return integer visited
 ---@return boolean complete
 function renderer:sweep(limit)
-    local index, visited = self.sweepIndex or 1, 0
-    local last = #self.context.series * self.width
-    while index <= last and visited < limit do
-        if self.visible[index] then
-            lvgl.hide(self.objects[index])
-            self.visible[index] = nil
+    local visited = 0
+    while visited < limit do
+        local index = next(self.visible)
+        if not index then
+            self.published = {}
+            return visited, true
         end
-        index, visited = index + 1, visited + 1
+        lvgl.hide(self.objects[index])
+        self.visible[index], visited = nil, visited + 1
     end
-    self.sweepIndex = index <= last and index or nil
-    if index > last then
-        self.published = {}
-    end
-    return visited, index > last
+    return visited, false
 end
 
 return renderer

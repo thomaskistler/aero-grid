@@ -21,8 +21,8 @@ local chart = {
             fields = {
                 { key = "source", label = "Source", type = "string", required = true },
                 { key = "label", label = "Label", type = "string" },
-                { key = "rangeMin", label = "Range min", type = "number", step = 0.1, empty = "-1000" },
-                { key = "rangeMax", label = "Range max", type = "number", step = 0.1, empty = "1000" },
+                { key = "rangeMin", label = "Range min", type = "number", step = 0.1, empty = "Auto" },
+                { key = "rangeMax", label = "Range max", type = "number", step = 0.1, empty = "Auto" },
                 { key = "unit", label = "Unit", type = "string" },
                 {
                     key = "precision",
@@ -278,6 +278,8 @@ local ITEM_KEYS = {
     "drawnRevision",
     "drawnVersion",
     "drawnResumeRevision",
+    "low",
+    "high",
 }
 local LAYER_KEY, ITEM_KEY = {}, {}
 for _, key in ipairs(LAYER_KEYS) do
@@ -1010,7 +1012,7 @@ function chart.ranges(context)
     for _, item in ipairs(context.series) do
         local settings = item.settings
         if independent then
-            item.low, item.high = valueRange(settings.rangeMin, settings.rangeMax)
+            item.fixedLow, item.fixedHigh = settings.rangeMin, settings.rangeMax
         else
             if settings.rangeMin ~= nil then
                 minimum = minimum and math.min(minimum, settings.rangeMin) or settings.rangeMin
@@ -1020,12 +1022,108 @@ function chart.ranges(context)
             end
         end
     end
-    if not independent then
-        local low, high = valueRange(minimum, maximum)
-        for _, item in ipairs(context.series) do
-            item.low, item.high = low, high
+    for _, item in ipairs(context.series) do
+        if not independent then
+            item.fixedLow, item.fixedHigh = minimum, maximum
+        end
+        if not item.rangeSeeded or not item.low then
+            -- Provisional until the first reading seeds automatic bounds.
+            item.low, item.high = valueRange(item.fixedLow, item.fixedHigh)
+        else
+            item.low, item.high = item.fixedLow or item.low, item.fixedHigh or item.high
         end
     end
+end
+
+--- Grow automatic bounds to fit `dataLow`..`dataHigh` with headroom: the span at
+--- least doubles and covers the data with 25% to spare. Configured sides stay.
+function chart.growRange(low, high, dataLow, dataHigh, fixedLow, fixedHigh)
+    if fixedLow and fixedHigh then
+        return fixedLow, fixedHigh
+    end
+    local needLow = fixedLow or math.min(low or dataLow, dataLow)
+    local needHigh = fixedHigh or math.max(high or dataHigh, dataHigh)
+    local need = math.max(0, needHigh - needLow)
+    local span =
+        math.max(2 * (low and high - low or 0), 1.25 * need, math.abs(needLow) * 0.1, math.abs(needHigh) * 0.1, 0.1)
+    local extra = span - need
+    if fixedLow then
+        needHigh = needHigh + extra
+    elseif fixedHigh then
+        needLow = needLow - extra
+    else
+        needLow, needHigh = needLow - extra / 2, needHigh + extra / 2
+    end
+    local step = 10 ^ (math.floor(math.log(span, 10)) - 1)
+    return fixedLow or math.floor(needLow / step) * step, fixedHigh or math.ceil(needHigh / step) * step
+end
+
+local function outside(item, low, high, map)
+    return map.minimum ~= nil and (not item.fixedLow and map.minimum < low or not item.fixedHigh and map.maximum > high)
+end
+
+--- Seed automatic bounds from the first readings, before anything is drawn, and
+--- request a background rescale once drawn data leaves the current bounds.
+local function checkRange(context, series, map)
+    local consumers, auto = context.columnConsumers, context.auto
+    local resets = 0
+    for _, owner in ipairs(consumers) do
+        resets = resets + (owner.resets or 0)
+    end
+    if context.rangeResets ~= resets then
+        -- A session reset or resize clears the plot, so bounds are seeded again.
+        context.rangeResets = resets
+        for _, item in ipairs(context.series) do
+            item.rangeSeeded = nil
+        end
+    end
+    local item = context.series[series]
+    if map.minimum == nil or item.fixedLow and item.fixedHigh then
+        return
+    end
+    if not item.rangeSeeded then
+        local independent = context.settings.scaling == "independent"
+        for index, other in ipairs(context.series) do
+            if independent and index == series or not independent and not other.rangeSeeded then
+                other.low, other.high =
+                    chart.growRange(nil, nil, map.minimum, map.maximum, other.fixedLow, other.fixedHigh)
+                other.rangeSeeded = true
+            end
+        end
+    elseif auto and not (auto.job and auto.job.kind == "range") and outside(item, item.low, item.high, map) then
+        -- A rebuild in progress checks its own targets against new data.
+        auto.rangeRequest = true
+    end
+end
+
+--- Bounds the hidden layer is drawn at for a range rescale.
+local function rangeTargets(context, consumers)
+    local targets, independent = {}, context.settings.scaling == "independent"
+    local low, high
+    for index, item in ipairs(context.series) do
+        local map = consumers[index].map
+        if independent then
+            local from, to = item.low, item.high
+            if outside(item, from, to, map) then
+                from, to = chart.growRange(from, to, map.minimum, map.maximum, item.fixedLow, item.fixedHigh)
+            end
+            targets[index] = { from, to }
+        elseif map.minimum then
+            low = low and math.min(low, map.minimum) or map.minimum
+            high = high and math.max(high, map.maximum) or map.maximum
+        end
+    end
+    if not independent then
+        local item = context.series[1]
+        local from, to = item.low, item.high
+        if low then
+            from, to = chart.growRange(from, to, low, high, item.fixedLow, item.fixedHigh)
+        end
+        for index in ipairs(context.series) do
+            targets[index] = { from, to }
+        end
+    end
+    return targets
 end
 
 local function positionBreak(context, marker, job, column)
@@ -1157,62 +1255,23 @@ applyMarkers = function(context, item, allowance)
     return false, used
 end
 
+-- Pause connectors are one faint solid line in the series color.
+local CONNECTOR_OPACITY = 128
+
 local function applyConnector(context, item, run, allowance)
-    local remaining, used = allowance, 0
-    if not run.connector then
-        if remaining < 500 then
-            return false, used
-        end
-        run.connector = lvgl.box(context.plotRoot, { x = 0, y = 0, w = context.rect.w, h = context.rect.h })
-        run.dots = {}
-        remaining, used = remaining - 500, used + 500
-    elseif run.dotIndex == 1 then
-        if remaining < 250 then
-            return false, used
-        end
-        run.connector:set({ w = context.rect.w, h = context.rect.h })
-        remaining, used = remaining - 250, used + 250
+    local cost = run.connector and 200 or 300
+    if allowance < cost then
+        return false, 0
     end
-    local first, last = run.pts[1], run.pts[run.size]
-    if not run.dotCount then
-        run.dotCount = math.max(1, math.ceil(math.sqrt((last[1] - first[1]) ^ 2 + (last[2] - first[2]) ^ 2) / 3)) + 1
+    local options = { pts = { run.pts[1], run.pts[run.size] }, color = item.color, opacity = CONNECTOR_OPACITY }
+    if run.connector then
+        run.connector:set(options)
+        lvgl.show(run.connector)
+    else
+        options.thickness = 1
+        run.connector = lvgl.line(context.plotRoot, options)
     end
-    while true do
-        local index = run.dotIndex
-        if index > math.max(run.dotCount, #run.dots) then
-            if remaining < 100 then
-                return false, used
-            end
-            lvgl.show(run.connector)
-            return true, used + 100
-        end
-        local dot = run.dots[index]
-        local cost = index <= run.dotCount and (dot and 200 or 300) or 100
-        if remaining < cost then
-            return false, used
-        end
-        if index <= run.dotCount then
-            local fraction = (index - 1) / (run.dotCount - 1)
-            local options = {
-                x = math.floor(first[1] + (last[1] - first[1]) * fraction + 0.5),
-                y = math.floor(first[2] + (last[2] - first[2]) * fraction + 0.5),
-                w = 1,
-                h = 1,
-                color = item.color,
-            }
-            if dot then
-                dot:set(options)
-                lvgl.show(dot)
-            else
-                options.filled, options.thickness = true, 0
-                run.dots[index] = lvgl.rectangle(run.connector, options)
-            end
-        else
-            lvgl.hide(dot)
-        end
-        run.dotIndex = index + 1
-        remaining, used = remaining - cost, used + cost
-    end
+    return true, cost
 end
 
 function chart.intervalFor(window, pixels, sources)
@@ -1558,7 +1617,7 @@ local function finishColumns(context, allowance)
                     if remaining < 150 then
                         return 1, true, used
                     end
-                    saved = saved or { dots = {} }
+                    saved = saved or {}
                     item.connectors[work.index] = saved
                     local function y(value)
                         local fraction =
@@ -1569,7 +1628,7 @@ local function finishColumns(context, allowance)
                         { context.area.x + math.floor(values[1] + 0.5), y(values[2]) },
                         { context.area.x + math.floor(values[3] + 0.5), y(values[4]) },
                     }
-                    saved.size, saved.dotIndex, saved.dotCount = 2, 1, nil
+                    saved.size = 2
                     saved.key = nil
                     work.prepared = true
                     remaining, used = remaining - 150, used + 150
@@ -1602,7 +1661,7 @@ local function finishColumns(context, allowance)
 end
 
 -- Measured cost of painting one hidden column through the layer view.
-local PAINT_COST = 200
+local PAINT_COST = 120
 -- Estimated work per extra slot; per-call overhead brings the measured cost to about one slot.
 local BACKGROUND_ALLOWANCE = 1100
 
@@ -1668,11 +1727,22 @@ end
 
 --- Whether the next auto window needs background turns now rather than only
 --- alongside ordinary refreshes.
+--- Completed columns a hidden layer has yet to take: fine columns merged for the
+--- next window, or the visible plot's own columns repainted at new bounds.
+local function behind(job, owner, consumer)
+    if job.kind == "range" then
+        return (owner.map.last or -1) - (owner.next or 1) + 1
+    end
+    return (consumer.fine.last or 0) - (owner.map.cursor or 0)
+end
+
 local function hiddenLagging(auto)
-    local owners = auto.hidden and rawget(auto.hidden, "columnConsumers")
+    local owners = auto.job and auto.hidden and rawget(auto.hidden, "columnConsumers")
     for index, owner in ipairs(owners or {}) do
-        local fine = auto.consumers[index].fine
-        if (fine.last or 0) - (owner.map.cursor or 0) > 2 or #owner.map.dirtyList > 2 then
+        if
+            behind(auto.job, owner, auto.consumers[index]) > 2
+            or #owner.map.dirtyList > 2 and auto.job.kind ~= "range"
+        then
             return true
         end
     end
@@ -1685,11 +1755,11 @@ local function autoPending(auto, session)
         return false
     end
     local job = auto.job
-    if auto.stopped or not job and consumers[1].step >= auto.limit then
-        return false
+    if not job then
+        return auto.rangeRequest == true or auto.window and not auto.stopped and consumers[1].step < auto.limit
     end
-    return not job
-        or not job.ready
+    return not job.ready
+        or job.kind == "range"
         or overflowed(consumers)
         or not decorationCurrent(auto, session)
         or hiddenLagging(auto)
@@ -1718,7 +1788,7 @@ local function swapLayers(context, auto, job)
         previous.series[index] = saved
     end
     for index, owner in ipairs(auto.consumers) do
-        owner:adopt(context.columnConsumers[index].map, job.target)
+        owner:adopt(context.columnConsumers[index].map, job.target or owner.step)
     end
     context.columnConsumers = auto.consumers
     context.columnRenderer.context = context
@@ -1750,20 +1820,40 @@ local function background(context, allowance)
             auto.hidden.recycle = true
         end
     end
-    if auto.stopped then
-        return used
-    end
-    for _, owner in ipairs(consumers) do
-        if owner.fine.overflowed then
-            -- Too many pauses for the fine store: keep the plot fixed at its edge.
-            auto.stopped, auto.job = true, nil
-            return used
+    if auto.window and not auto.stopped then
+        for _, owner in ipairs(consumers) do
+            if owner.fine.overflowed then
+                -- Too many pauses for the fine store: keep the plot fixed at its edge.
+                auto.stopped = true
+                if auto.job and auto.job.kind ~= "range" then
+                    auto.job = nil
+                end
+            end
         end
     end
     local job = auto.job
+    if auto.rangeRequest and (not job or job.kind ~= "range") then
+        -- New bounds take priority; the next window is prepared again afterwards.
+        job = { kind = "range", phase = "layer" }
+        auto.job, auto.rangeRequest = job, nil
+        if auto.hidden then
+            auto.hidden.recycle = true
+        end
+    elseif job and job.kind == "range" and job.targets then
+        for index, item in ipairs(context.series) do
+            local bounds = job.targets[index]
+            if outside(item, bounds[1], bounds[2], consumers[index].map) then
+                -- Data left the bounds being prepared; prepare wider ones.
+                job = { kind = "range", phase = "layer" }
+                auto.job = job
+                auto.hidden.recycle = true
+                break
+            end
+        end
+    end
     if not job then
-        if consumers[1].step >= Columns.AUTO_STEPS then
-            -- The longest auto window stops at the right edge like a fixed one.
+        if not auto.window or auto.stopped or consumers[1].step >= Columns.AUTO_STEPS then
+            -- Fixed windows and the longest auto window stop at the right edge.
             return used
         end
         job = { target = consumers[1].step + 1, phase = "halve" }
@@ -1825,35 +1915,43 @@ local function background(context, allowance)
             end
             hidden.recycle = nil
         end
-        local minutes, level = Columns.autoMinutes(target), Columns.autoLevel(target)
-        local owners = {}
+        local owners, window, gap = {}, nil, nil
+        if job.kind == "range" then
+            job.targets, job.factor = rangeTargets(context, consumers), 1
+            window, gap = consumers[1].map.window, consumers[1].map.breakWidth
+        else
+            local minutes, level = Columns.autoMinutes(target), Columns.autoLevel(target)
+            window, gap, job.factor = minutes * 6000, Columns.autoGap(target), minutes >> level
+        end
         for index, owner in ipairs(consumers) do
+            -- New bounds repaint the visible columns themselves; a new window merges fine ones.
             owners[index] = {
-                map = Columns.new(
-                    owner.width,
-                    minutes * 6000,
-                    owner.recording,
-                    { breakWidth = Columns.autoGap(target) }
-                ),
+                map = job.kind == "range" and owner.map
+                    or Columns.new(owner.width, window, owner.recording, { breakWidth = gap }),
                 startedAt = 0,
             }
+            local item, bounds = hidden.series[index], job.targets and job.targets[index]
+            item.low = bounds and bounds[1] or context.series[index].low
+            item.high = bounds and bounds[2] or context.series[index].high
         end
-        hidden.columnConsumers, hidden.window, hidden.start = owners, minutes * 6000, 0
+        hidden.columnConsumers, hidden.window, hidden.start = owners, window, context.start or 0
         hidden.version, hidden.axis = (hidden.version or 0) + 1, nil
         hidden.gridVersion, hidden.gridLayoutVersion = nil, nil
         hidden.connectorWork, hidden.columnsDecorating, hidden.frameThrough = nil, nil, nil
-        job.factor, job.phase = minutes >> level, "build"
+        job.phase = "build"
         return used + 100 * #consumers
     end
     local swapCost
-    if job.ready and overflowed(consumers) then
+    -- New bounds show as soon as they are ready; a new window waits for a full plot.
+    if job.ready and (job.kind == "range" or overflowed(consumers)) then
         swapCost = 800
         for index, owner in ipairs(hidden.columnConsumers) do
-            local fine = consumers[index].fine
-            local backlog = #owner.map.dirtyList
-            swapCost = swapCost
-                + math.max(0, (fine.last or 0) - (owner.map.cursor or 0) + 1) * 100
-                + (backlog > 2 and math.huge or 0)
+            local pending = math.max(0, behind(job, owner, consumers[index]) + 1)
+            if job.kind == "range" then
+                swapCost = swapCost + pending * PAINT_COST
+            else
+                swapCost = swapCost + pending * 100 + (#owner.map.dirtyList > 2 and math.huge or 0)
+            end
         end
     end
     -- The newest fine column can still grow, so the final catch-up and the swap
@@ -1861,11 +1959,20 @@ local function background(context, allowance)
     -- the next ordinary append; otherwise keep catching up first.
     -- Swap only with overlays drawn for every pause, arm and flight so far.
     local current = job.ready and decorationCurrent(auto, context.session)
-    if swapCost and current and swapCost <= math.max(remaining, BACKGROUND_ALLOWANCE) and used == 0 then
-        for index, owner in ipairs(hidden.columnConsumers) do
-            local fine = consumers[index].fine
-            local _, stage = owner.map:absorb(fine, job.factor, fine.last or -1, math.huge)
-            used = used + stage
+    if swapCost and current and swapCost <= math.max(remaining, SLOT_INSTRUCTIONS) and used == 0 then
+        if job.kind == "range" then
+            local painted = hidden.columnRenderer:paintSlots(math.huge, 1, true)
+            used = used + painted * PAINT_COST
+            -- Every column is now drawn at the new bounds; later changes mark again.
+            for _, owner in ipairs(hidden.columnConsumers) do
+                owner.map.dirtyColumns, owner.map.dirtyList = {}, {}
+            end
+        else
+            for index, owner in ipairs(hidden.columnConsumers) do
+                local fine = consumers[index].fine
+                local _, stage = owner.map:absorb(fine, job.factor, fine.last or -1, math.huge)
+                used = used + stage
+            end
         end
         swapLayers(context, auto, job)
         return used + 800
@@ -1880,6 +1987,10 @@ local function background(context, allowance)
         -- Paint absorbed columns before absorbing more, so no backlog reaches the swap.
         local owners = hidden.columnConsumers
         job.rotation = (job.rotation or 0) % #owners + 1
+        if job.kind == "range" then
+            local painted = hidden.columnRenderer:paintSlots(remaining // PAINT_COST, job.rotation)
+            return used + painted * PAINT_COST
+        end
         local painted = hidden.columnRenderer:paint(remaining // PAINT_COST, job.rotation)
         remaining, used = remaining - painted * PAINT_COST, used + painted * PAINT_COST
         for offset = 0, #owners - 1 do
@@ -1910,7 +2021,11 @@ local function background(context, allowance)
         job.stamp = decorationStamp(auto, context.session)
     end
     hidden.columnsDecorating = true
-    local _, unfinished, stage = finishColumns(hidden, remaining)
+    -- A pass that made no progress gets up to one slot, so the largest overlay
+    -- item always fits without inflating ordinary turns.
+    local allowed = job.stalled and used == 0 and math.max(remaining, SLOT_INSTRUCTIONS) or remaining
+    local _, unfinished, stage = finishColumns(hidden, allowed)
+    job.stalled = unfinished and stage == 0
     if not unfinished then
         job.phase, job.ready, job.decorated = "ready", true, job.stamp
     end
@@ -2013,11 +2128,13 @@ local function refreshChart(context, creating, slots)
         end
         if context.columnSetupIndex > #context.series then
             context.columnSetup, context.columnSetupIndex = nil, nil
-            context.auto = context.columnConsumers[1].auto
+            -- Live charts prepare rescaled layers: the next auto window, or new bounds.
+            context.auto = not context.columnConsumers[1].readonly
                     and {
                         consumers = context.columnConsumers,
                         hidden = context.auto and context.auto.hidden,
                         limit = context.columnModule.AUTO_STEPS,
+                        window = context.columnConsumers[1].auto,
                     }
                 or nil
         end
@@ -2036,40 +2153,50 @@ function chart.refresh(context, creating, slots)
     slots = slots or 8
     local auto = context.auto
     local ready = auto and auto.consumers and not creating and context.columnRenderer and not context.columnSetup
-    if ready and overflowed(auto.consumers) and autoPending(auto, context.session) then
-        -- The full plot cannot show new data, so every turn finishes the next window;
-        -- queued samples still reach the fine store first.
+    local rescaling = auto and (auto.rangeRequest or auto.job and auto.job.kind == "range")
+    local full = ready and auto.window and overflowed(auto.consumers)
+    if ready and (rescaling or full and autoPending(auto, context.session)) then
+        -- A full or wrongly scaled plot gains little from readout, overlay or column
+        -- refreshes: samples are appended and the rest of the ordinary slot, plus
+        -- the extra slot when granted, finishes the rescaled layer. Columns left
+        -- unpainted are drawn by the layer that replaces this one.
         local appended = 0
         for _, owner in ipairs(auto.consumers) do
-            appended = appended + #owner.pending * 120
+            appended = appended + #owner.pending * 150
         end
-        -- Paints nothing on the full plot but records the drawn revisions.
-        context.columnRenderer:append()
-        background(context, math.max(0, BACKGROUND_ALLOWANCE - appended))
-        return 1, false, 1
+        context.columnRenderer:append(true)
+        local extra = slots >= 2 and BACKGROUND_ALLOWANCE or 0
+        background(context, math.max(0, BACKGROUND_ALLOWANCE - appended) + extra)
+        return 1, true, extra > 0 and 2 or 1
     end
     if auto and auto.wakeAt and ready then
         local now = context.clock()
-        if now < auto.wakeAt then
-            -- Between ordinary refreshes only the next auto window is prepared.
+        -- A bounded run of preparation turns never starves ordinary refreshes.
+        if now < auto.wakeAt and (auto.backgroundTurns or 0) < 4 then
+            auto.backgroundTurns = (auto.backgroundTurns or 0) + 1
+            -- Between ordinary refreshes only the rescaled layer is prepared.
             background(context, BACKGROUND_ALLOWANCE)
             local interval = autoPending(auto, context.session) and 1 or auto.wakeAt - now
-            return math.max(1, math.min(6000, interval)), false, 1
+            -- The visible plot still owes its next refresh.
+            return math.max(1, math.min(6000, interval)), true, 1
         end
     end
     local interval, unfinished, consumed = refreshChart(context, creating, slots)
     consumed = consumed or 1
+    if auto then
+        auto.backgroundTurns = 0
+    end
     if auto and auto.consumers and context.auto == auto and not creating then
         -- A cycle ends when decorations publish, not when the append returns.
         local idle = not unfinished and not context.columnsDecorating and not context.metadataReady
-        auto.wakeAt = idle and context.clock() + interval or nil
         local pending = autoPending(auto, context.session)
-        -- At most one extra slot per refresh goes to the next auto window.
-        if slots > consumed and (pending or idle) then
+        -- At most one extra slot per refresh goes to a rescaled layer.
+        if slots > consumed and not context.columnsDecorating and (pending or idle and auto.job ~= nil) then
             background(context, BACKGROUND_ALLOWANCE)
             consumed = consumed + 1
             pending = autoPending(auto, context.session)
         end
+        auto.wakeAt = idle and pending and context.clock() + interval or nil
         if pending then
             interval = 1
         end
@@ -2168,6 +2295,7 @@ function chart.create(parent, rect, settings, services)
     context.window, context.start, context.pixelStart = timeWindow(settings, 0), 0, 0
     if context.history and #context.series > 0 then
         context.autoWanted = settings.duration == nil and not context.preview
+        context.checkRange = checkRange
         context.columnSetup = assert(services.chartColumns, "chart column runtime unavailable")
         assert(context.columnRendererModule, "chart column renderer runtime unavailable")
     else

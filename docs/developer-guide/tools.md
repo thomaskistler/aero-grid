@@ -56,7 +56,7 @@ Chart omits the unsupported 1x2 placement. Its adapter generates varying
 synthetic readings through the real telemetry/history services, records for
 two flights separated by a recording pause, and waits for confirmed completion
 and finished projection before capturing. This shows neutral flight bands,
-arm/disarm triangles, and a resume gap with dotted connectors.
+arm/disarm triangles, and a resume gap with faint connectors.
 Its recipe requires `armSwitch: SFv`; the adapter supplies that condition and
 a motor channel through the real services, with isolated model flight settings.
 

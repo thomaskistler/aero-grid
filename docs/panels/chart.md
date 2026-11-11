@@ -40,7 +40,7 @@ Tap a reading under **Metrics** to open its settings.
 | --- | --- | --- |
 | **Label** | source name | Name in the legend. Clear it to use the source name. |
 | **Source** | required | Numeric EdgeTX source to record. |
-| **Range min**, **Range max** | -1000, 1000 | Fixed lower and upper vertical bounds, in steps of 0.1. If both are set, maximum must exceed minimum. Clearing a bound restores its default. |
+| **Range min**, **Range max** | Auto | Optional fixed lower and upper vertical bounds, in steps of 0.1. If both are set, maximum must exceed minimum. A cleared bound is **Auto**. |
 | **Unit** | sensor unit | Unit text beside the value. Changes the label, not the number. |
 | **Precision** | Sensor | Decimal places, 0 to 3. Step below 0 to select **Sensor**, using the source's precision. |
 | **Color** | by entry order | Trace and legend color: **cyan**, **green**, **orange**, or **amber**. Defaults to cyan, orange, then green; cyan uses blue ink in Modern Light. An explicit choice keeps that color. |
@@ -65,7 +65,7 @@ mid-flight shades only the recorded portion.
 Upward triangles on the bottom axis mark arming; downward triangles mark disarming.
 The first arming that starts recording is not marked.
 Pausing simply stops the traces, without a label or stop marker.
-Resuming inserts a gap; dotted lines
+Resuming inserts a gap; faint lines in each trace's color
 connect the last recorded values to the resumed values.
 The gap is 24 pixels wide in a fixed window and narrows as an **Auto** window grows.
 It indicates omitted time, not the length of the pause, and uses space in the window.
@@ -80,18 +80,19 @@ starts at 1 minute; when the plot is full it compresses to 2, 3, 4, 6, 8, 12, 16
 24, 32 minutes and so on, keeping all earlier data on screen. A fixed window stops
 adding data at the right edge and preserves existing columns. Readouts and recorded
 extrema continue updating. Resizing the panel or resetting the session clears the
-plot. There is no automatic vertical rescaling or scrolling. Earlier saved
+plot. The plot never scrolls. Earlier saved
 growing/rolling choices are ignored; saved durations that are not whole minutes
 round up, and longer ones are limited to 60 minutes.
 Faint solid grid lines mark recording-time intervals; the bottom-right label shows
 the recording-time window. Pause gaps can fill the window sooner.
 
-The default vertical bounds are -1000 and 1000. With **shared**
-scales, the lowest configured minimum and highest configured maximum apply
-to all traces; an unset side uses its default. With
-**independent** scales, each metric uses its own bounds. Fixed bounds clip
-the plot, not recorded values or extrema. If a single configured bound crosses
-the other default, the unset side is placed 100 units away to keep a valid range.
+An **Auto** bound starts close to the first reading. When drawn data leaves the
+range, the plot is redrawn at a wider range, typically within a second: the range
+at least doubles and fits the data with some headroom. Auto bounds only grow until
+the panel is resized or the session is reset. With **shared** scales, the lowest
+configured minimum and highest configured maximum apply to all traces, and Auto
+sides follow all traces. With **independent** scales, each metric uses its own
+bounds. Fixed bounds clip the plot, not recorded values or extrema.
 
 Smoothing reduces short-term fluctuations in the line. **Light**,
 **medium**, and **strong** respond over approximately 0.5, 1, and 2 seconds.

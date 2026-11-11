@@ -24,6 +24,7 @@ local panel = chart.create(dashboard.page, { x = 0, y = 0, w = 472, h = 196 }, {
 }, services)
 local worst, counted, grant = 0, 0, 1
 local depth, inside, worstBackground, backgroundCount = 0, nil, 0, 0
+local worstByGrant = {}
 local function hook(event)
     if event == "count" then
         counted = counted + 1
@@ -38,6 +39,7 @@ local function hook(event)
     elseif event == "return" then
         if inside == depth then
             worstBackground, inside = math.max(worstBackground, backgroundCount), nil
+            worstByGrant[grant] = math.max(worstByGrant[grant] or 0, backgroundCount)
         end
         depth = depth - 1
     end
@@ -74,7 +76,8 @@ for at = 0, 9000, 5 do
         overflowAt = at
     end
     if not swappedAt and panel.window == 12000 then
-        swappedAt = at
+        -- The swap can land in the same callback in which the plot fills.
+        swappedAt, overflowAt = at, overflowAt or at
         equal(activeResumes(), 1, "the swapped layer must already show pauses recorded before the swap")
         for _, item in ipairs(panel.series) do
             assert(item.connectors[1] and item.connectors[1].key, "pause connectors must be drawn before the swap")
@@ -100,7 +103,10 @@ assert(view.finished(panel), "the swapped layer must keep drawing")
 local left, right = view.bounds(panel, 1)
 assert(left <= panel.area.x + 1, "earlier data must stay visible after the swap")
 assert(right >= panel.area.x + math.floor(panel.area.w * 0.7), "the swap must keep the newest data")
-assert(worstBackground < 2600, "rescale preparation must stay near one extra slot")
+-- Preparation uses what is left of the ordinary slot plus at most one extra slot
+-- (nominally 2,000 instructions each).
+assert((worstByGrant[1] or 0) < 2400, "one-slot turns must keep preparation within the slot")
+assert((worstByGrant[2] or 0) < 4000, "preparation must not exceed one extra slot")
 print(
     string.format(
         "Auto chart windows swap within one extra slot; worst refresh %d, worst preparation %d Lua instructions",
