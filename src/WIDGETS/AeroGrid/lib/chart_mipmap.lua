@@ -174,15 +174,21 @@ local function rebuild(history, feed, map, axis)
     }
 end
 
-local function rebuildStep(job, quota)
-    for _ = 1, quota or 24 do
+local REBUILD_POINT_COST = 250
+local REBUILD_BLOCK_COST = 500
+
+local function rebuildStep(job, allowance)
+    local remaining = allowance or 6000
+    local used = 0
+    while remaining >= REBUILD_POINT_COST do
+        remaining, used = remaining - REBUILD_POINT_COST, used + REBUILD_POINT_COST
         if not job.current then
             if job.index > job.last then
                 job.level = job.level + 1
                 if job.level > job.map.lastLevel or job.last < job.first then
                     job.map.revision = job.map.revision + 1
                     job.map.historyRevision = math.max(job.map.historyRevision or 0, job.revision or 0)
-                    return true
+                    return true, used
                 end
                 job.index, job.previous = job.first, nil
             end
@@ -246,8 +252,11 @@ local function rebuildStep(job, quota)
             local blockLast, lowIndex, highIndex, interrupted
             if job.history.block and not current.broken and not job.axis then
                 local before = (right // 1 + 1) * job.map.levels[level].span / job.map.width
-                blockLast, lowIndex, highIndex, interrupted =
-                    job.history:block(job.feed, job.index, job.last - 1, before)
+                if remaining >= REBUILD_BLOCK_COST then
+                    remaining, used = remaining - REBUILD_BLOCK_COST, used + REBUILD_BLOCK_COST
+                    blockLast, lowIndex, highIndex, interrupted =
+                        job.history:block(job.feed, job.index, job.last - 1, before)
+                end
             end
             if blockLast and not interrupted and blockLast > job.index then
                 local _, low = job.history:point(job.feed, lowIndex, job.first)
@@ -262,7 +271,7 @@ local function rebuildStep(job, quota)
             job.index = job.index + 1
         end
     end
-    return false
+    return false, used
 end
 
 --- Reconstructed envelopes follow stored knots within recording precision.
@@ -304,15 +313,17 @@ function consumer:reset()
     self.map:reset()
 end
 
-function consumer:step(quota)
+function consumer:step(allowance)
     if self.rebuildJob then
-        if not rebuildStep(self.rebuildJob, quota) then
-            return false
+        local complete, used = rebuildStep(self.rebuildJob, allowance)
+        if not complete then
+            return false, used
         end
         self.complete, self.builtRevision, self.rebuildJob = true, self.rebuildJob.revision, nil
+        return true, used
     end
 
-    return true
+    return true, 0
 end
 
 function consumer:prepareView(axis, version)
@@ -343,18 +354,20 @@ function consumer:prepareView(axis, version)
     end
 end
 
-function consumer:view(axis, version, quota)
+function consumer:view(axis, version, allowance)
     if not self.viewJob then
         self:prepareView(axis, version)
     end
     if self.viewJob then
-        if not rebuildStep(self.viewJob, quota) then
-            return false
+        local complete, used = rebuildStep(self.viewJob, allowance)
+        if not complete then
+            return false, used
         end
         self.output, self.viewVersion, self.viewRevision = self.viewJob.map, self.viewJob.version, self.viewJob.revision
         self.viewJob = nil
+        return true, used
     end
-    return true
+    return true, 0
 end
 
 --- Configuration-time restart affects this presentation, never its recording.

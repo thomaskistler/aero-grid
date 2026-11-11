@@ -278,7 +278,8 @@ for cycle = 1, 5 do
 end
 local settled = false
 local drain = 0
-for step = 1, 3000 do
+-- Grant-sized reconstruction takes longer than the previous fixed-point batches.
+for step = 1, 6000 do
     settled = true
     for _, entry in ipairs(context.panels) do
         if entry.instance.mipmapRenderer.jobs or entry.instance.mipmapDecorating or entry.instance.viewWork then
@@ -296,7 +297,7 @@ for step = 1, 3000 do
     pump(1)
     drain = step
 end
-assert(settled, "retained multi-flight histories must finish their staged redraws within 3000 callbacks")
+assert(settled, "retained multi-flight histories must finish their staged redraws within 6000 callbacks")
 for _, entry in ipairs(context.panels) do
     assert(entry.instance.status.properties.text == "", "stopped recordings must not show a pause label")
     assert(

@@ -115,7 +115,7 @@ for _ = 1, 200 do
     busy.sample(at, { (at // 5) % 2 })
 end
 callbacks = 0
-while not rebuilding:step(8) do
+while not rebuilding:step(2000) do
     callbacks = callbacks + 1
     assert(callbacks < 3000, "reconstruction failed to progress while retained history advanced")
     for _ = 1, 4 do

@@ -207,6 +207,16 @@ local function label(context, color, font)
 end
 
 local GRID_CAP = 12
+local SLOT_INSTRUCTIONS = 1700
+local CALLBACK_RESERVE = 500
+
+local function instructionAllowance(slots)
+    return math.max(0, slots * SLOT_INSTRUCTIONS - CALLBACK_RESERVE)
+end
+
+local function consumedSlots(instructions)
+    return math.max(1, math.ceil((instructions + CALLBACK_RESERVE) / SLOT_INSTRUCTIONS))
+end
 
 local function axisPosition(axis, at, before)
     local low, high = 1, #axis.breaks
@@ -229,7 +239,7 @@ local function timeX(context, at, before)
     return context.area.x + math.floor((at - context.start) / context.window * context.area.w + 0.5)
 end
 
-local function prepareAxis(context)
+local function prepareAxis(context, allowance)
     local session, area = context.session, context.area
     local window, start = context.window, context.start
     local axis = context.axis
@@ -240,47 +250,52 @@ local function prepareAxis(context)
         and axis.window == window
         and axis.geometryVersion == context.geometryVersion
     then
-        return true
+        return true, 0
     end
     local work = context.axisWork
     if not work then
-        work = { index = session.resumeLast or 0, reverse = {}, start = start }
+        work = { index = session.resumeLast or 0, reverse = {}, start = start, phase = "scan" }
         context.axisWork = work
     end
     -- Keep room for recorded data when fixed-width breaks crowd the axis.
     local capacity = math.max(1, area.w // (BREAK_WIDTH * 2))
-    for _ = 1, 32 do
+    local remaining, used = allowance, 0
+    while work.phase == "scan" and remaining >= 200 do
         if work.index < (session.resumeFirst or 1) or not context.history.recordingBreak then
-            work.done = true
-            break
-        end
-        local at = context.history:recordingBreak(context.liveSession or session, work.index)
-        work.index = work.index - 1
-        if at and at < start then
-            work.done = true
-            break
-        end
-        if at and at <= start + window and at ~= work.reverse[#work.reverse] then
-            if #work.reverse == capacity then
-                work.start, work.done = work.reverse[#work.reverse], true
-                break
+            work.phase = "copy"
+            work.copyIndex, work.breaks = #work.reverse, {}
+        else
+            local at = context.history:recordingBreak(context.liveSession or session, work.index)
+            work.index = work.index - 1
+            remaining, used = remaining - 200, used + 200
+            if at and at < start then
+                work.phase = "copy"
+                work.copyIndex, work.breaks = #work.reverse, {}
+            elseif at and at <= start + window and at ~= work.reverse[#work.reverse] then
+                if #work.reverse == capacity then
+                    work.start = work.reverse[#work.reverse]
+                    work.phase = "copy"
+                    work.copyIndex, work.breaks = #work.reverse, {}
+                else
+                    work.reverse[#work.reverse + 1] = at
+                end
             end
-            work.reverse[#work.reverse + 1] = at
         end
     end
-    if not work.done then
-        return false
+    while work.phase == "copy" and work.copyIndex > 0 and remaining >= 100 do
+        work.breaks[#work.breaks + 1] = work.reverse[work.copyIndex]
+        work.copyIndex = work.copyIndex - 1
+        remaining, used = remaining - 100, used + 100
     end
-    local breaks = {}
-    for index = #work.reverse, 1, -1 do
-        breaks[#breaks + 1] = work.reverse[index]
+    if work.phase ~= "copy" or work.copyIndex > 0 or remaining < 100 then
+        return false, used
     end
     local gap = math.min(BREAK_WIDTH, area.w // 2)
     if gap == 0 then
-        breaks = {}
+        work.breaks = {}
     end
     context.axis = {
-        breaks = breaks,
+        breaks = work.breaks,
         start = work.start,
         baseStart = start,
         window = window,
@@ -290,10 +305,10 @@ local function prepareAxis(context)
         geometryVersion = context.geometryVersion,
     }
     axis = context.axis
-    axis.scale = (area.w - #breaks * axis.gap) / math.max(1, start + window - axis.start)
+    axis.scale = (area.w - #work.breaks * axis.gap) / math.max(1, start + window - axis.start)
     context.axisWork = nil
     context.version = context.version + 1
-    return true
+    return true, used + 100
 end
 
 function chart.gridInterval(window, pixels)
@@ -309,7 +324,7 @@ function chart.gridInterval(window, pixels)
     end
 end
 
-local function updateGrid(context)
+local function updateGrid(context, allowance)
     local area, start, window = context.area, context.start, context.window
     if context.gridLayoutVersion ~= context.version then
         context.gridStep = chart.gridInterval(window, area.w)
@@ -317,10 +332,26 @@ local function updateGrid(context)
             * context.gridStep
         context.gridLayoutVersion = context.version
     end
-    -- Fill a fixed pool gradually, behind the traces, and limit native changes.
-    for _ = 1, #context.grid < GRID_CAP and 1 or 3 do
+    local remaining, used = allowance, 0
+    -- Fill the reusable pool behind the traces without exceeding the grant.
+    while remaining >= 100 do
         local index = context.gridCursor
         local line = context.grid[index]
+        local cost = line and 100 or 600
+        if line and line.version ~= context.version then
+            local at = context.gridFirst + (index - 1) * context.gridStep
+            local x = timeX(context, at)
+            local visible = at < start + window and x > area.x and x < area.x + area.w
+            if visible and (line.x ~= x or line.geometryVersion ~= context.geometryVersion) then
+                cost = cost + 350
+            end
+            if visible and not line.visible or not visible and line.visible then
+                cost = cost + 150
+            end
+        end
+        if remaining < cost then
+            break
+        end
         if not line then
             line = {
                 object = lvgl.vline(context.gridRoot, {
@@ -356,7 +387,12 @@ local function updateGrid(context)
             context.gridVersion = context.version
         end
         context.gridCursor = index % GRID_CAP + 1
+        remaining, used = remaining - cost, used + cost
+        if context.gridVersion == context.version then
+            return true, used
+        end
     end
+    return false, used
 end
 
 local function updateHeader(context)
@@ -400,7 +436,7 @@ local function updateHeader(context)
     context.headerGeometry, context.durationText = context.geometryVersion, duration
 end
 
-local function updateFlights(context)
+local function updateFlights(context, allowance)
     local session, historyService = context.session, context.history
     if
         not session
@@ -408,7 +444,7 @@ local function updateFlights(context)
         or not historyService.flight
         or (session.flightLast or 0) == 0 and not context.flightBands
     then
-        return false
+        return true, 0
     end
     local elapsed = session.flightActive and (context.frameThrough or session.elapsed) or 0
     if
@@ -416,7 +452,7 @@ local function updateFlights(context)
         and context.flightDrawnVersion == context.version
         and context.flightDrawnElapsed == elapsed
     then
-        return false
+        return true, 0
     end
     context.flightBands = context.flightBands or {}
     local first, last = session.flightFirst, session.flightLast
@@ -424,50 +460,72 @@ local function updateFlights(context)
         context.flightCursor = 1
         context.flightPassRevision, context.flightPassVersion = session.flightRevision, context.version
     end
-    local slot = context.flightCursor or 1
-    local index = first + (slot - 1 - (first - 1) % historyService.FLIGHT_CAPACITY) % historyService.FLIGHT_CAPACITY
-    local band = context.flightBands[slot]
-    local at, finish = historyService:flight(context.liveSession or session, index)
-    finish = math.min(finish or session.elapsed, context.frameThrough or session.elapsed)
-    local area, start, window = context.area, context.start, context.window
-    local visible = at
-        and finish > at
-        and finish > (context.axis and context.axis.start or start)
-        and at < start + window
-    if visible then
-        local left = math.max(area.x, math.min(area.x + area.w - 1, timeX(context, at)))
-        local right = math.max(area.x, math.min(area.x + area.w, timeX(context, finish, true)))
-        if not band then
-            band = lvgl.rectangle(context.flightRoot, {
-                x = left,
-                y = area.y,
-                w = 1,
-                h = area.h,
-                color = context.theme.chartColor.flightBand,
-                opacity = 48,
-                filled = true,
-                thickness = 0,
-            })
-            context.flightBands[slot] = band
-            context.flightSlots = math.max(context.flightSlots or 0, slot)
+    local remaining, used = allowance, 0
+    while true do
+        local slot = context.flightCursor or 1
+        local slots = math.max(context.flightSlots or 0, math.min(historyService.FLIGHT_CAPACITY, last))
+        if slot > slots then
+            context.flightCursor = 1
+            context.flightDrawnRevision = session.flightRevision
+            context.flightDrawnVersion = context.version
+            context.flightDrawnElapsed = elapsed
+            return true, used
         end
-        local key = table.concat({ left, right, area.y, area.h }, ":")
-        if context.flightKeys[slot] ~= key then
-            band:set({ x = left, y = area.y, w = math.max(1, right - left), h = area.h })
+        local index = first + (slot - 1 - (first - 1) % historyService.FLIGHT_CAPACITY)
+            % historyService.FLIGHT_CAPACITY
+        local band = context.flightBands[slot]
+        local at, finish = historyService:flight(context.liveSession or session, index)
+        finish = math.min(finish or session.elapsed, context.frameThrough or session.elapsed)
+        local area, start, window = context.area, context.start, context.window
+        local visible = at
+            and finish > at
+            and finish > (context.axis and context.axis.start or start)
+            and at < start + window
+        local left, right, key
+        local cost = 200
+        if visible then
+            left = math.max(area.x, math.min(area.x + area.w - 1, timeX(context, at)))
+            right = math.max(area.x, math.min(area.x + area.w, timeX(context, finish, true)))
+            key = table.concat({ left, right, area.y, area.h }, ":")
+            cost = cost
+                + (band and context.flightKeys[slot] == key and 100 or 500)
+            if not band then
+                cost = cost + 500
+            end
+        elseif band and context.flightKeys[slot] then
+            cost = cost + 200
+        end
+        if remaining < cost then
+            return false, used
+        end
+        if visible then
+            if not band then
+                band = lvgl.rectangle(context.flightRoot, {
+                    x = left,
+                    y = area.y,
+                    w = 1,
+                    h = area.h,
+                    color = context.theme.chartColor.flightBand,
+                    opacity = 48,
+                    filled = true,
+                    thickness = 0,
+                })
+                context.flightBands[slot] = band
+                context.flightSlots = math.max(context.flightSlots or 0, slot)
+            end
+            if context.flightKeys[slot] ~= key then
+                band:set({ x = left, y = area.y, w = math.max(1, right - left), h = area.h })
+                context.flightKeys[slot] = key
+            end
+            lvgl.show(band)
             context.flightKeys[slot] = key
+        elseif band and context.flightKeys[slot] then
+            lvgl.hide(band)
+            context.flightKeys[slot] = nil
         end
-        lvgl.show(band)
-    elseif band then
-        lvgl.hide(band)
+        context.flightCursor = slot + 1
+        remaining, used = remaining - cost, used + cost
     end
-    local slots = math.max(context.flightSlots or 0, math.min(historyService.FLIGHT_CAPACITY, last))
-    context.flightCursor = slot < slots and slot + 1 or 1
-    if context.flightCursor == 1 then
-        context.flightDrawnRevision = session.flightRevision
-        context.flightDrawnVersion = context.version
-        context.flightDrawnElapsed = elapsed
-    end
-    return true
 end
 
 local applyMarkers
@@ -492,17 +550,17 @@ local function markBoundary(context, item, pass, at, armed)
     end
 end
 
-local function updateSessionMarkers(context, item, first, last, revision, readBoundary)
+local function updateSessionMarkers(context, item, first, last, revision, readBoundary, allowance)
     local session, service = context.session, context.history
     if not service or not readBoundary then
-        return true
+        return true, 0
     end
     if
         item.drawnRevision == revision
         and item.drawnVersion == context.version
         and item.drawnResumeRevision == session.resumeRevision
     then
-        return true
+        return true, 0
     end
     if not item.job then
         item.job = {
@@ -515,22 +573,25 @@ local function updateSessionMarkers(context, item, first, last, revision, readBo
         item.markerIndex, item.markerPhase = 1, "hide"
     end
     local pass = item.job
-    for _ = 1, 64 do
-        if pass.index > (last or 0) then
-            if applyMarkers(context, item) then
-                item.drawnRevision, item.drawnVersion = revision, context.version
-                item.drawnResumeRevision = session.resumeRevision
-                item.marked = pass.marked
-                item.job = nil
-                return true
-            end
-            return false
-        end
+    local remaining, used = allowance, 0
+    while pass.index <= (last or 0) and remaining >= 250 do
         local at, armed = readBoundary(service, context.liveSession or session, pass.index)
         markBoundary(context, item, pass, at, armed)
         pass.index = pass.index + 1
+        remaining, used = remaining - 250, used + 250
     end
-    return false
+    if pass.index <= (last or 0) then
+        return false, used
+    end
+    local complete, markerUsed = applyMarkers(context, item, remaining)
+    used = used + markerUsed
+    if complete then
+        item.drawnRevision, item.drawnVersion = revision, context.version
+        item.drawnResumeRevision = session.resumeRevision
+        item.marked = pass.marked
+        item.job = nil
+    end
+    return complete, used
 end
 
 local function extremaFont(font)
@@ -912,25 +973,41 @@ local function showMarker(marker)
     marker.active = true
 end
 
-applyMarkers = function(context, item)
+applyMarkers = function(context, item, allowance)
     local job = item.job
-    local changes = 0
-    for _ = 1, 16 do
+    local remaining, used = allowance, 0
+    while remaining >= 100 do
         local keys = item.markerPhase == "hide" and item.markerKeys or job.markerColumns
         local key = keys[item.markerIndex]
+        local cost = 100
         if not key then
             if item.markerPhase == "show" then
-                return true
+                return true, used
             end
             item.markerPhase, item.markerIndex = "show", 1
         else
             local column = math.abs(key)
             local marker = item.markers[key]
             if item.markerPhase == "hide" then
-                if marker.active and not job.marked[key] then
+                if marker and marker.active and not job.marked[key] then
+                    cost = cost + 200
+                end
+            elseif
+                not marker
+                or marker.geometryVersion ~= job.geometryVersion
+                or item.style == "arm" and marker.footerLeft ~= context.durationLeft
+            then
+                cost = cost + 500
+            elseif not marker.active then
+                cost = cost + 150
+            end
+            if remaining < cost then
+                return false, used
+            end
+            if item.markerPhase == "hide" then
+                if marker and marker.active and not job.marked[key] then
                     lvgl.hide(marker.object)
                     marker.active = false
-                    changes = changes + 1
                 end
             elseif
                 not marker
@@ -988,38 +1065,54 @@ applyMarkers = function(context, item)
                 showMarker(marker)
                 marker.geometryVersion = job.geometryVersion
                 marker.footerLeft = context.durationLeft
-                changes = changes + 1
             elseif not marker.active then
                 showMarker(marker)
-                changes = changes + 1
             end
             item.markerIndex = item.markerIndex + 1
         end
-        if changes == (item.style == "resume" and 2 or 12) then
-            break
+        if key then
+            remaining, used = remaining - cost, used + cost
+        else
+            remaining, used = remaining - 100, used + 100
         end
     end
-    return false
+    return false, used
 end
 
-local function applyConnector(context, item, run)
+local function applyConnector(context, item, run, allowance)
+    local remaining, used = allowance, 0
     if not run.connector then
+        if remaining < 500 then
+            return false, used
+        end
         run.connector = lvgl.box(context.plotRoot, { x = 0, y = 0, w = context.rect.w, h = context.rect.h })
         run.dots = {}
+        remaining, used = remaining - 500, used + 500
     elseif run.dotIndex == 1 then
+        if remaining < 250 then
+            return false, used
+        end
         run.connector:set({ w = context.rect.w, h = context.rect.h })
+        remaining, used = remaining - 250, used + 250
     end
     local first, last = run.pts[1], run.pts[run.size]
     if not run.dotCount then
         run.dotCount = math.max(1, math.ceil(math.sqrt((last[1] - first[1]) ^ 2 + (last[2] - first[2]) ^ 2) / 3)) + 1
     end
-    for _ = 1, 3 do
+    while true do
         local index = run.dotIndex
         if index > math.max(run.dotCount, #run.dots) then
+            if remaining < 100 then
+                return false, used
+            end
             lvgl.show(run.connector)
-            return true
+            return true, used + 100
         end
         local dot = run.dots[index]
+        local cost = index <= run.dotCount and (dot and 200 or 300) or 100
+        if remaining < cost then
+            return false, used
+        end
         if index <= run.dotCount then
             local fraction = (index - 1) / (run.dotCount - 1)
             local options = {
@@ -1040,8 +1133,8 @@ local function applyConnector(context, item, run)
             lvgl.hide(dot)
         end
         run.dotIndex = index + 1
+        remaining, used = remaining - cost, used + cost
     end
-    return false
 end
 
 function chart.intervalFor(window, pixels, sources)
@@ -1137,7 +1230,7 @@ local function plotStatus(context)
 end
 
 --- Retire the current native presentation in bounded batches.
-function chart.resetSession(context)
+function chart.resetSession(context, slots)
     local reset = context.resetWork
     if not reset then
         if context.mipmapRenderer then
@@ -1163,20 +1256,32 @@ function chart.resetSession(context)
             reset.groups[#reset.groups + 1] = { kind = "connectors", keys = item.connectors }
         end
     end
-    for _ = 1, 8 do
+    local remaining, used = instructionAllowance(slots or 1), 0
+    while remaining >= 100 do
         local group = reset.groups[reset.group]
         if not group then
             context.resetWork = nil
-            return
+            return nil, nil, consumedSlots(used)
         end
         local value = group.keys[reset.index]
         if value then
+            local marker, cost
+            if group.kind == "connectors" then
+                cost = value.connector and 150 or 50
+            elseif group.kind == "markers" then
+                marker = group.pool.markers[value]
+                cost = marker.active and 150 or 50
+            else
+                cost = 150
+            end
+            if remaining < cost then
+                break
+            end
             if group.kind == "connectors" then
                 if value.connector then
                     lvgl.hide(value.connector)
                 end
             elseif group.kind == "markers" then
-                local marker = group.pool.markers[value]
                 if marker.active then
                     lvgl.hide(marker.object)
                     marker.active = false
@@ -1185,11 +1290,12 @@ function chart.resetSession(context)
                 lvgl.hide(value)
             end
             reset.index = reset.index + 1
+            remaining, used = remaining - cost, used + cost
         else
             reset.group, reset.index = reset.group + 1, 1
         end
     end
-    return nil, true
+    return nil, true, consumedSlots(used)
 end
 
 local function publishMipmap(context)
@@ -1201,7 +1307,14 @@ local function publishMipmap(context)
     return chart.intervalFor(context.window, context.area.w, #context.series)
 end
 
-local function finishMipmap(context)
+local function finishMipmap(context, allowance)
+    local remaining, used = allowance, 0
+    for series = 1, #context.series do
+        if not context.mipmapRenderer.published[series] then
+            context.mipmapDecorating, context.frameThrough = nil, nil
+            return 1, true, 0
+        end
+    end
     if not context.frameThrough then
         context.frameThrough = context.session.elapsed
         for series, job in ipairs(context.mipmapRenderer.published) do
@@ -1212,21 +1325,24 @@ local function finishMipmap(context)
             end
         end
     end
-    if updateFlights(context) and context.flightCursor ~= 1 then
-        return 1, true
+    local complete, stageUsed = updateFlights(context, remaining)
+    remaining, used = remaining - stageUsed, used + stageUsed
+    if not complete then
+        return 1, true, used
     end
     context.armMarkers = context.armMarkers or markerPool("arm")
-    if
-        not updateSessionMarkers(
-            context,
-            context.armMarkers,
-            context.session.armFirst,
-            context.session.armLast,
-            context.session.armRevision,
-            context.history.armBoundary
-        )
-    then
-        return 1, true
+    complete, stageUsed = updateSessionMarkers(
+        context,
+        context.armMarkers,
+        context.session.armFirst,
+        context.session.armLast,
+        context.session.armRevision,
+        context.history.armBoundary,
+        remaining
+    )
+    remaining, used = remaining - stageUsed, used + stageUsed
+    if not complete then
+        return 1, true, used
     end
     for series, item in ipairs(context.series) do
         local map = context.mipmapRenderer.published[series].map
@@ -1246,51 +1362,62 @@ local function finishMipmap(context)
                 item.markerIndex, item.markerPhase = 1, "hide"
             end
             local pass = item.job
-            for _ = 1, 32 do
-                if pass.index > map.breakLast then
-                    if applyMarkers(context, item) then
-                        item.drawnBreakMap, item.drawnBreak, item.drawnBreakVersion =
-                            map, map.breakLast, context.version
-                        item.job = nil
-                    end
-                    return 1, true
-                end
+            while pass.index <= map.breakLast and remaining >= 250 do
                 markBoundary(context, item, pass, map.breaks[(pass.index - 1) % map.width + 1])
                 pass.index = pass.index + 1
+                remaining, used = remaining - 250, used + 250
             end
-            return 1, true
+            if pass.index <= map.breakLast then
+                return 1, true, used
+            end
+            complete, stageUsed = applyMarkers(context, item, remaining)
+            remaining, used = remaining - stageUsed, used + stageUsed
+            if complete then
+                item.drawnBreakMap, item.drawnBreak, item.drawnBreakVersion =
+                    map, map.breakLast, context.version
+                item.job = nil
+            else
+                return 1, true, used
+            end
         end
     end
     if context.axis then
         context.resumeMarkers = context.resumeMarkers or markerPool("resume")
-        if
-            not updateSessionMarkers(
-                context,
-                context.resumeMarkers,
-                context.session.resumeFirst,
-                context.session.resumeLast,
-                context.session.resumeRevision,
-                context.history.recordingBreak
-            )
-        then
-            return 1, true
+        complete, stageUsed = updateSessionMarkers(
+            context,
+            context.resumeMarkers,
+            context.session.resumeFirst,
+            context.session.resumeLast,
+            context.session.resumeRevision,
+            context.history.recordingBreak,
+            remaining
+        )
+        remaining, used = remaining - stageUsed, used + stageUsed
+        if not complete then
+            return 1, true, used
         end
     else
-        return publishMipmap(context)
+        if remaining < 250 then
+            return 1, true, used
+        end
+        return publishMipmap(context), false, used + 250
     end
     local work = context.connectorWork
     if not work then
         work = { series = 1, index = 1 }
         context.connectorWork = work
     end
-    local item = context.series[work.series]
-    if item then
+    while work.series <= #context.series do
+        local item = context.series[work.series]
         local published = context.mipmapRenderer.published[work.series]
         local source = published and published.map.connectors or {}
         local saved = item.connectors[work.index]
         local values = source[work.index]
         if values then
             if not work.prepared then
+                if remaining < 150 then
+                    return 1, true, used
+                end
                 saved = saved or { dots = {} }
                 item.connectors[work.index] = saved
                 local function y(value)
@@ -1304,40 +1431,54 @@ local function finishMipmap(context)
                 }
                 saved.size, saved.dotIndex, saved.dotCount = 2, 1, nil
                 work.prepared = true
+                remaining, used = remaining - 150, used + 150
             end
-            if not applyConnector(context, item, saved) then
-                return 1, true
+            complete, stageUsed = applyConnector(context, item, saved, remaining)
+            remaining, used = remaining - stageUsed, used + stageUsed
+            if not complete then
+                return 1, true, used
             end
             work.index, work.prepared = work.index + 1, nil
         elseif saved then
-            if saved.connector then
+            if saved.connector and remaining >= 150 then
                 lvgl.hide(saved.connector)
+                used, remaining = used + 150, remaining - 150
+            elseif saved.connector then
+                return 1, true, used
             end
             work.index = work.index + 1
-        else
+        elseif values == nil and saved == nil then
             work.series, work.index = work.series + 1, 1
         end
-        return 1, true
     end
     context.connectorWork = nil
-    return publishMipmap(context)
-end
-
-local function reconstructionBudget(slots)
-    return math.min(32, slots * 8)
+    if remaining < 250 then
+        return 1, true, used
+    end
+    return publishMipmap(context), false, used + 250
 end
 
 local function refreshMipmap(context, slots)
+    local remaining, used = instructionAllowance(slots), 0
     if not context.mipmapRenderer then
+        if remaining < 500 then
+            return 1, true, consumedSlots(used)
+        end
         context.mipmapRenderer = context.mipmapRendererModule.new(context)
+        remaining, used = remaining - 500, used + 500
     end
     local renderer = context.mipmapRenderer
     if not context.mipmapPrepared then
-        context.mipmapPrepared = renderer:prepare()
-        return 1, true
+        local complete, stageUsed = renderer:prepare(remaining)
+        remaining, used = remaining - stageUsed, used + stageUsed
+        if not complete then
+            return 1, true, consumedSlots(used)
+        end
+        context.mipmapPrepared = true
     end
     if context.mipmapDecorating then
-        return finishMipmap(context)
+        local interval, unfinished, stageUsed = finishMipmap(context, remaining)
+        return interval, unfinished, consumedSlots(used + stageUsed)
     end
     local readings = not renderer.jobs
         and not context.viewWork
@@ -1369,8 +1510,12 @@ local function refreshMipmap(context, slots)
         context.axis = nil
         context.version = context.version + 1
     end
-    if (context.session.resumeLast or 0) > 0 and not prepareAxis(context) then
-        return 1, true
+    if (context.session.resumeLast or 0) > 0 then
+        local axisReady, stageUsed = prepareAxis(context, remaining)
+        remaining, used = remaining - stageUsed, used + stageUsed
+        if not axisReady then
+            return 1, true, consumedSlots(used)
+        end
     end
     if not renderer.jobs and (context.axis or context.mipmapReadonly) and not context.viewReady then
         local work = context.viewWork
@@ -1383,13 +1528,15 @@ local function refreshMipmap(context, slots)
                 consumer:prepareView(work.axis, work.version)
             end
         end
-        local consumer = context.mipmapConsumers[work.index]
-        if consumer then
-            local quota = reconstructionBudget(slots)
-            if consumer:view(work.axis, work.version, quota) then
+        while context.mipmapConsumers[work.index] do
+            local consumer = context.mipmapConsumers[work.index]
+            local complete, stageUsed = consumer:view(work.axis, work.version, remaining)
+            remaining, used = remaining - stageUsed, used + stageUsed
+            if complete then
                 work.index = work.index + 1
+            else
+                return 1, true, consumedSlots(used)
             end
-            return 1, true, math.ceil(quota / 8)
         end
         context.viewReady, context.viewWork = true, nil
     end
@@ -1417,21 +1564,24 @@ local function refreshMipmap(context, slots)
     text(context.status, plotStatus(context), context.theme.color.textFaint)
     if readings then
         context.projectionTurn = true
-        return 1, true, 1
+        return 1, true, consumedSlots(used + 1)
     end
     if context.gridVersion ~= context.version then
-        updateGrid(context)
-        return 1, true
+        local complete, stageUsed = updateGrid(context, remaining)
+        remaining, used = remaining - stageUsed, used + stageUsed
+        if not complete then
+            return 1, true, consumedSlots(used)
+        end
     end
-    local complete, estimated = renderer:step(slots * 2000 - 500)
-    local consumed = math.max(1, math.ceil((estimated + 500) / 2000))
+    local complete, estimated = renderer:step(remaining)
+    remaining, used = remaining - estimated, used + estimated
     if not complete then
-        return 1, true, consumed
+        return 1, true, consumedSlots(used)
     end
     context.viewReady = nil
     context.mipmapDecorating, context.frameThrough = true, nil
-    local interval, unfinished = finishMipmap(context)
-    return interval, unfinished, consumed
+    local interval, unfinished, stageUsed = finishMipmap(context, remaining)
+    return interval, unfinished, consumedSlots(used + stageUsed)
 end
 
 local function refreshChart(context, creating, slots)
@@ -1477,9 +1627,8 @@ local function refreshChart(context, creating, slots)
     end
     for _, owner in ipairs(context.mipmapConsumers) do
         if owner.rebuildJob then
-            local quota = reconstructionBudget(slots)
-            owner:step(quota)
-            return 1, not context.host, math.ceil(quota / 8)
+            local _, used = owner:step(instructionAllowance(slots))
+            return 1, not context.host, consumedSlots(used)
         end
     end
     return refreshMipmap(context, slots)

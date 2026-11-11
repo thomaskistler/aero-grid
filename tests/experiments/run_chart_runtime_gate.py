@@ -200,6 +200,9 @@ def main():
             "Controlled v1 cases reset history at a fixed epoch and replay a fixed prefix plus four six-source batches.",
             "Those six chart sources reject service-driven samples; telemetry/Smart and other sources remain active.",
             "Frozen-trace timings are not directly comparable to the old completion-dependent baseline ceilings.",
+            "Paint latency includes delivery of all 24 readings by scheduled telemetry polls at actual poll timestamps; "
+            "submission_ms measures the time until the final reading is submitted and may itself exceed an old "
+            "ceiling. A miss therefore does not establish a chart-rendering regression.",
             "Controlled complete paint must not exceed the measured 17eeaa6 baseline: "
             "append 940ms, horizontal 2620ms, vertical 1500ms, scroll 2210ms.",
             "Paint references retain normal overlays, not an independent overlay-algorithm oracle.",

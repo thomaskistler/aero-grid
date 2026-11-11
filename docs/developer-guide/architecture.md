@@ -205,7 +205,11 @@ A separate resume journal drives fixed-width axis gaps and dotted trace connecto
 the same projection maps traces, flight bands, grid lines, and axis markers.
 Crowded gaps evict the oldest visible section rather than narrowing the gaps.
 During normal sampling, flight bands clip to the recorded telemetry horizon.
-Chart projection and reconstruction batches use the scheduler's remaining slots.
+Pool preparation/reset, reconstruction, axes, projection, grid, markers, flight
+bands, and connectors each consume work scaled to the chart's granted slots.
+Charts budget 1,700 instructions per nominal 2,000-instruction slot and reserve
+500 per callback for uncharged overhead. These costs are estimates; the native
+callback gate verifies the hard instruction bound.
 
 Journal loss sets the session's `flightLost` flag and closes an unmatched open
 band at its last observed recording time rather than extending it into later

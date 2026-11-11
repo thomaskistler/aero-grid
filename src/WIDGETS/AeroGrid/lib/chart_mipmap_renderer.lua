@@ -24,19 +24,32 @@ function renderer.new(context)
     return self
 end
 
-function renderer:prepare()
+function renderer:prepare(allowance)
     local context, width = self.context, self.width
-    if #self.groups < #context.series * 4 then
-        local index = #self.groups + 1
-        self.groups[index] = lvgl.box(self.root, { x = 0, y = 0, w = context.rect.w, h = context.rect.h })
-        self.offsets[index] = 0
-        self.phases[(index - 1) // 4 + 1] = 0
-        return false
+    local remaining, used = allowance or 2000, 0
+    while true do
+        if #self.groups < #context.series * 4 then
+            local cost = 300
+            if remaining < cost then
+                return false, used
+            end
+            local index = #self.groups + 1
+            self.groups[index] = lvgl.box(self.root, { x = 0, y = 0, w = context.rect.w, h = context.rect.h })
+            self.offsets[index] = 0
+            self.phases[(index - 1) // 4 + 1] = 0
+            remaining, used = remaining - cost, used + cost
+        else
+            break
+        end
     end
-    for _ = 1, 16 do
+    while true do
         local index = self.prepareIndex
         if index > width * #context.series then
-            return true
+            return true, used
+        end
+        local cost = 300
+        if remaining < cost then
+            return false, used
         end
         local series, bucket = (index - 1) // width + 1, (index - 1) % width
         local quarter = math.min(3, ((bucket + 1) * 4 - 1) // width)
@@ -53,8 +66,8 @@ function renderer:prepare()
         self.objects[index], self.membership[index] = object, group
         self.visible[index] = true
         self.prepareIndex = index + 1
+        remaining, used = remaining - cost, used + cost
     end
-    return false
 end
 
 function renderer:reset()
@@ -63,20 +76,25 @@ function renderer:reset()
     lvgl.hide(self.root)
 end
 
-function renderer:resetStep()
-    for _ = 1, 8 do
+function renderer:resetStep(allowance)
+    local remaining, used = allowance or 2000, 0
+    while true do
         local index = self.resetIndex
         if index > #self.objects then
             self.resetIndex = nil
-            return true
+            return true, used
+        end
+        local cost = self.visible[index] and 100 or 25
+        if remaining < cost then
+            return false, used
         end
         if self.visible[index] then
             lvgl.hide(self.objects[index])
             self.visible[index] = nil
         end
         self.resetIndex = index + 1
+        remaining, used = remaining - cost, used + cost
     end
-    return false
 end
 
 function renderer:destroy()
@@ -155,31 +173,54 @@ function renderer:begin(jobs)
         reset = reset or job.updateX
     end
     self.jobs = jobs
+    self.grouped = grouped
+    self.beginIndex = nil
     -- Any origin change, including a scroll, marks its job as moving in x.
     if not reset then
         return
     end
+    self.beginIndex = 1
     for series, job in ipairs(jobs) do
-        local phase, moved = job.origin % self.width, false
-        if self.phases[series] ~= phase then
-            self.phases[series] = phase
-            for quarter = 0, 3 do
-                local group = (series - 1) * 4 + quarter + 1
-                local offset = (quarter * self.width / 4) // 1 < phase and self.width - phase or -phase
-                if self.offsets[group] ~= offset then
-                    self.groupChanges.x = offset
-                    self.groups[group]:set(self.groupChanges)
-                    self.offsets[group], moved = offset, true
-                end
+        job.beginPhase = job.origin % self.width
+        job.beginQuarter, job.beginMoved = 0, false
+        job.beginShift = self.phases[series] ~= job.beginPhase
+    end
+end
+
+local function beginStep(self, allowance)
+    local remaining, used = allowance, 0
+    while self.beginIndex and self.beginIndex <= #self.jobs do
+        local series, job = self.beginIndex, self.jobs[self.beginIndex]
+        while job.beginQuarter < 4 do
+            local quarter = job.beginQuarter
+            local group = (series - 1) * 4 + quarter + 1
+            local offset = (quarter * self.width / 4) // 1 < job.beginPhase
+                and self.width - job.beginPhase
+                or -job.beginPhase
+            local changed = job.beginShift and self.offsets[group] ~= offset
+            local cost = changed and 200 or 25
+            if remaining < cost then
+                return false, used
             end
+            if changed then
+                self.groupChanges.x = offset
+                self.groups[group]:set(self.groupChanges)
+                self.offsets[group], job.beginMoved = offset, true
+            end
+            job.beginQuarter = quarter + 1
+            remaining, used = remaining - cost, used + cost
         end
-        if grouped then
+        self.phases[series] = job.beginPhase
+        if self.grouped then
             job.index = math.max(job.index, job.retainedLast + 1)
             job.updateX = false
-        elseif moved and not job.updateX then
+        elseif job.beginMoved and not job.updateX then
             job.updateX, job.index, job.last = true, job.origin, job.origin + self.width - 1
         end
+        self.beginIndex = series + 1
     end
+    self.beginIndex = nil
+    return true, used
 end
 
 local function draw(self, job, series, allowance)
@@ -202,7 +243,7 @@ local function draw(self, job, series, allowance)
     for bucket = job.index, job.last do
         local index = offset + slot
         local populated = tags[slot] == bucket + 1
-        local cost = populated and 75 or 25
+        local cost = populated and 100 or 35
         if cost > remaining then
             break
         end
@@ -232,26 +273,43 @@ local function draw(self, job, series, allowance)
 end
 
 function renderer:step(allowance)
-    if self.resetIndex and not self:resetStep() then
-        return false, math.min(allowance, 2000)
+    local consumed = 0
+    if self.resetIndex then
+        local complete
+        complete, consumed = self:resetStep(allowance)
+        if not complete then
+            return false, consumed
+        end
     end
     if not self.jobs then
+        if allowance - consumed < 450 then
+            return false, consumed
+        end
         local jobs, changed = self:selection()
+        consumed = #jobs * 150
         if not changed then
-            return true, 0
+            return true, consumed
         end
         self:begin(jobs)
     end
-    local complete, consumed = true, 0
+    if self.beginIndex then
+        local complete, used = beginStep(self, allowance - consumed)
+        consumed = consumed + used
+        if not complete then
+            return false, consumed
+        end
+    end
+    local complete = true
     for series, job in ipairs(self.jobs) do
         consumed = consumed + draw(self, job, series, allowance - consumed)
         -- Publish this horizon before chasing newer samples. Polling every
         -- callback must not keep an owner alive forever and starve other charts.
         complete = complete and job.index > job.last
     end
-    if complete then
+    if complete and consumed + 200 <= allowance then
         self.published, self.jobs = self.jobs, nil
         lvgl.show(self.root)
+        consumed = consumed + 200
         for series, job in ipairs(self.published) do
             local item = self.context.series[series]
             item.drawnRevision, item.drawnVersion = job.historyRevision, self.context.version
@@ -259,6 +317,8 @@ function renderer:step(allowance)
                 job.map:releaseBelow(job.level)
             end
         end
+    else
+        complete = false
     end
     return complete, consumed
 end

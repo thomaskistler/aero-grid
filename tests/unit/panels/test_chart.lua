@@ -176,16 +176,26 @@ fixture.radio.values[300] = 1024
 fixture.pump(context, 40)
 assert(fixture.pumpUntil(context, function()
     return power.series[1].feed.available
-        and power.series[1].drawnRevision == power.series[1].feed.plotRevision
-        and not power.mipmapRenderer.jobs
-        and not power.mipmapDecorating
 end, 500))
+refresh(power)
+equal(power.series[1].drawnRevision, power.series[1].feed.plotRevision)
+equal(power.series[1].drawnVersion, power.version)
 equal(power.status.properties.text, "")
 equal(#power.armMarkers.markerKeys, 0, "the initial arming must not draw a vertical boundary")
 assert(power.session.recording)
 assert(power.series[1].low < 24 and power.series[1].high > 24)
 equal(power.series[1].feed.value, 24)
 equal(power.series[2].feed.value, 10)
+local published = power.mipmapRenderer.published[1]
+power.mipmapRenderer.published[1], power.mipmapDecorating = nil, true
+for _ = 1, 4 do
+    refresh(power)
+    if not power.mipmapDecorating then
+        break
+    end
+end
+equal(power.mipmapDecorating, nil, "decoration must recover when a series publication is missing")
+power.mipmapRenderer.published[1] = published
 for series = 1, 2 do
     local rectangles = chartView.rectangles(power, series)
     assert(#rectangles > 0)
@@ -839,7 +849,7 @@ do
     assert(unfinished and used == 1, "readout and range updates must charge one slot")
     gridPanel.gridVersion = gridPanel.version
     renderer.step = function(_, allowance)
-        assert(allowance == 3500, "drawing must reserve 500 from the granted instruction allowance")
+        assert(allowance == 2900, "drawing must honor the per-slot allowance and callback reserve")
         return false, 1000
     end
     _, unfinished, used = chartModule.refresh(gridPanel, false, 2)
