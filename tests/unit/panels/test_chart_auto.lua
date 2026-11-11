@@ -70,6 +70,16 @@ end
 for at = 0, 9000, 5 do
     -- A one-second pause at 40 s, after the next window is already prepared.
     record.sample(at, { (at * 7) % 997, -(at % 389), (at % 600) - 300 }, false, not (at >= 4000 and at < 4100))
+    if at == 1000 then
+        -- A flight that is still open when the window swaps.
+        for _, session in ipairs(record.history.sessions) do
+            local interval = { id = 1, start = 1000, startKnown = true }
+            session.flights[1], session.openFlight = interval, interval
+            local state = session.state
+            state.flightFirst, state.flightLast, state.flightActive = 1, 1, true
+            state.flightRevision = state.flightRevision + 1
+        end
+    end
     callbacks(1)
     local first = panel.columnConsumers and panel.columnConsumers[1]
     if not overflowAt and first and first.map.overflowed then
@@ -79,6 +89,15 @@ for at = 0, 9000, 5 do
         -- The swap can land in the same callback in which the plot fills.
         swappedAt, overflowAt = at, overflowAt or at
         equal(activeResumes(), 1, "the swapped layer must already show pauses recorded before the swap")
+        local band, area = panel.flightBands[1].properties, panel.area
+        -- One pause gap lies before the current time.
+        local reach = area.x
+            + math.floor(record.session.elapsed / panel.window * area.w + 0.5)
+            + panel.columnConsumers[1].map.breakWidth
+        assert(
+            not panel.flightBands[1].hidden and math.abs(band.x + band.w - reach) <= 1,
+            "the swapped layer's open flight band must reach the current time"
+        )
         for _, item in ipairs(panel.series) do
             assert(item.connectors[1] and item.connectors[1].key, "pause connectors must be drawn before the swap")
         end

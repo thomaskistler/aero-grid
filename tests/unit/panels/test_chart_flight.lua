@@ -88,6 +88,19 @@ session.elapsed = 1100
 settle()
 active = panel.flightBands[2].properties
 assert(active.w > previousWidth, "active flight shading must grow as recording continues")
+do
+    local lookups, lookup = {}, fake.flight
+    fake.flight = function(self, view, index)
+        lookups[index] = (lookups[index] or 0) + 1
+        return lookup(self, view, index)
+    end
+    session.elapsed = 1400
+    settle()
+    fake.flight = lookup
+    assert(next(lookups) == nil, "advancing time must only move the open band's right edge")
+    active = panel.flightBands[2].properties
+    equal(active.x + active.w, area.x + math.floor(1400 / panel.window * area.w + 0.5))
+end
 
 session.elapsed, session.flightActive = 10000, false
 session.flightRevision = 2

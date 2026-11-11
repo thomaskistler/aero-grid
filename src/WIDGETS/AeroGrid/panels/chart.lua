@@ -255,6 +255,9 @@ local LAYER_KEYS = {
     "flightDrawnRevision",
     "flightDrawnVersion",
     "flightDrawnElapsed",
+    "flightOpenIndex",
+    "flightOpenLeft",
+    "flightOpenRight",
     "armMarkers",
     "resumeMarkers",
     "paintedVersion",
@@ -498,6 +501,69 @@ local function updateHeader(context)
     context.headerGeometry, context.durationText = context.geometryVersion, duration
 end
 
+--- Place, resize, show or hide the band for flight `index` in `slot` within
+--- `remaining` estimated instructions; returns the cost, or nil when it does not fit.
+---@return integer?
+local function drawFlight(context, slot, index, remaining)
+    local session, historyService = context.session, context.history
+    local band, drawn = context.flightBands[slot], context.flightKeys[slot]
+    local at, finish = historyService:flight(context.liveSession or session, index)
+    finish = math.min(finish or session.elapsed, context.frameThrough or session.elapsed)
+    local area, start, window = context.area, context.start, context.window
+    local visible = at
+        and finish > at
+        and finish > (context.axis and context.axis.start or start)
+        and at < start + window
+    local left, right, key
+    local cost = 200
+    if visible then
+        left = math.max(area.x, math.min(area.x + area.w - 1, timeX(context, at)))
+        right = math.max(area.x, math.min(area.x + area.w, timeX(context, finish, true)))
+        key = table.concat({ left, right, area.y, area.h }, ":")
+        cost = cost + (band and drawn == key and 100 or 500)
+        if not band then
+            cost = cost + 500
+        end
+    elseif band and drawn then
+        cost = cost + 200
+    end
+    if remaining < cost then
+        return nil
+    end
+    if visible then
+        if not band then
+            band = lvgl.rectangle(context.flightRoot, {
+                x = left,
+                y = area.y,
+                w = 1,
+                h = area.h,
+                color = context.theme.chartColor.flightBand,
+                opacity = 48,
+                filled = true,
+                thickness = 0,
+            })
+            context.flightBands[slot] = band
+            context.flightSlots = math.max(context.flightSlots or 0, slot)
+        end
+        if drawn ~= key then
+            band:set({ x = left, y = area.y, w = math.max(1, right - left), h = area.h })
+            if drawn == nil then
+                lvgl.show(band)
+            end
+            context.flightKeys[slot] = key
+        end
+    elseif band and drawn then
+        lvgl.hide(band)
+        context.flightKeys[slot] = nil
+    end
+    if index == session.flightLast then
+        -- Where the open flight's band starts, so growing it only moves its right edge.
+        context.flightOpenIndex = visible and session.flightActive and index or nil
+        context.flightOpenLeft, context.flightOpenRight = left, right
+    end
+    return cost
+end
+
 local function updateFlights(context, allowance)
     local session, historyService = context.session, context.history
     if
@@ -509,15 +575,36 @@ local function updateFlights(context, allowance)
         return true, 0
     end
     local elapsed = session.flightActive and (context.frameThrough or session.elapsed) or 0
-    if
-        context.flightDrawnRevision == session.flightRevision
-        and context.flightDrawnVersion == context.version
-        and context.flightDrawnElapsed == elapsed
-    then
-        return true, 0
+    local first, last = session.flightFirst, session.flightLast
+    if context.flightDrawnRevision == session.flightRevision and context.flightDrawnVersion == context.version then
+        if context.flightDrawnElapsed == elapsed then
+            return true, 0
+        end
+        -- Only time advanced: earlier bands stay put and the open flight's band grows.
+        local cost = 0
+        local slot = (last - 1) % historyService.FLIGHT_CAPACITY + 1
+        if context.flightOpenIndex == last and session.flightActive then
+            local area = context.area
+            local finish = math.min(session.elapsed, context.frameThrough or session.elapsed)
+            local right = math.max(area.x, math.min(area.x + area.w, timeX(context, finish, true)))
+            cost = 60
+            if right ~= context.flightOpenRight then
+                local left = context.flightOpenLeft
+                context.flightBands[slot]:set({ w = math.max(1, right - left) })
+                context.flightKeys[slot] = left .. ":" .. right .. ":" .. area.y .. ":" .. area.h
+                context.flightOpenRight, cost = right, 160
+            end
+        elseif session.flightActive and last >= first then
+            local band = drawFlight(context, slot, last, allowance)
+            if not band then
+                return false, 0
+            end
+            cost = band
+        end
+        context.flightDrawnElapsed = elapsed
+        return true, cost
     end
     context.flightBands = context.flightBands or {}
-    local first, last = session.flightFirst, session.flightLast
     if context.flightPassRevision ~= session.flightRevision or context.flightPassVersion ~= context.version then
         context.flightCursor = 1
         context.flightPassRevision, context.flightPassVersion = session.flightRevision, context.version
@@ -534,54 +621,9 @@ local function updateFlights(context, allowance)
             return true, used
         end
         local index = first + (slot - 1 - (first - 1) % historyService.FLIGHT_CAPACITY) % historyService.FLIGHT_CAPACITY
-        local band = context.flightBands[slot]
-        local at, finish = historyService:flight(context.liveSession or session, index)
-        finish = math.min(finish or session.elapsed, context.frameThrough or session.elapsed)
-        local area, start, window = context.area, context.start, context.window
-        local visible = at
-            and finish > at
-            and finish > (context.axis and context.axis.start or start)
-            and at < start + window
-        local left, right, key
-        local cost = 200
-        if visible then
-            left = math.max(area.x, math.min(area.x + area.w - 1, timeX(context, at)))
-            right = math.max(area.x, math.min(area.x + area.w, timeX(context, finish, true)))
-            key = table.concat({ left, right, area.y, area.h }, ":")
-            cost = cost + (band and context.flightKeys[slot] == key and 100 or 500)
-            if not band then
-                cost = cost + 500
-            end
-        elseif band and context.flightKeys[slot] then
-            cost = cost + 200
-        end
-        if remaining < cost then
+        local cost = drawFlight(context, slot, index, remaining)
+        if not cost then
             return false, used
-        end
-        if visible then
-            if not band then
-                band = lvgl.rectangle(context.flightRoot, {
-                    x = left,
-                    y = area.y,
-                    w = 1,
-                    h = area.h,
-                    color = context.theme.chartColor.flightBand,
-                    opacity = 48,
-                    filled = true,
-                    thickness = 0,
-                })
-                context.flightBands[slot] = band
-                context.flightSlots = math.max(context.flightSlots or 0, slot)
-            end
-            if context.flightKeys[slot] ~= key then
-                band:set({ x = left, y = area.y, w = math.max(1, right - left), h = area.h })
-                context.flightKeys[slot] = key
-            end
-            lvgl.show(band)
-            context.flightKeys[slot] = key
-        elseif band and context.flightKeys[slot] then
-            lvgl.hide(band)
-            context.flightKeys[slot] = nil
         end
         context.flightCursor = slot + 1
         remaining, used = remaining - cost, used + cost
@@ -1420,6 +1462,8 @@ function chart.resetSession(context, slots)
         context.connectorWork, context.axis, context.axisWork = nil, nil, nil
         context.rangesReady = false
         context.flightPassRevision, context.flightDrawnRevision = nil, nil
+        -- Hidden bands are shown again by the next pass.
+        context.flightKeys = {}
         reset = { groups = {}, group = 1, index = 1 }
         context.resetWork = reset
         local function markers(pool)
@@ -1978,7 +2022,7 @@ local function background(context, allowance)
     local swapCost
     -- New bounds show as soon as they are ready; a new window waits for a full plot.
     if job.ready and (job.kind == "range" or overflowed(consumers)) then
-        swapCost = 800
+        swapCost = 1000
         for index, owner in ipairs(hidden.columnConsumers) do
             local pending = math.max(0, behind(job, owner, consumers[index]) + 1)
             if job.kind == "range" then
@@ -2008,6 +2052,10 @@ local function background(context, allowance)
                 used = used + stage
             end
         end
+        -- The open flight's band grew while the layer waited; extend it before it shows.
+        hidden.frameThrough = nil
+        local _, stage = updateFlights(hidden, math.huge)
+        used = used + stage
         swapLayers(context, auto, job)
         return used + 800
     end
