@@ -64,6 +64,18 @@ local function chartCells()
         if entry.instance.columnRenderer then
             count = count + chartAssertions.nativeColumns(entry.instance.columnRenderer)
         end
+        -- Auto charts prepare their next window in a lazily built hidden layer.
+        local hidden = entry.instance.auto and entry.instance.auto.hidden
+        local host = hidden and rawget(hidden, "layerHost")
+        if host then
+            for _, object in ipairs(fixture.lvglMock.objects) do
+                local ancestor = object
+                while ancestor and ancestor ~= host do
+                    ancestor = ancestor.parent
+                end
+                count = count + (ancestor and 1 or 0)
+            end
+        end
     end
     return count
 end

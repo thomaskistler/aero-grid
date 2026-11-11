@@ -89,16 +89,16 @@ settle()
 active = panel.flightBands[2].properties
 assert(active.w > previousWidth, "active flight shading must grow as recording continues")
 
-session.elapsed, session.flightActive = 5000, false
+session.elapsed, session.flightActive = 10000, false
 session.flightRevision = 2
-intervals[2] = { 500, 4000, true, true }
-settings.timeRange, settings.duration = "rolling", "30s"
+intervals[2] = { 500, 8000, true, true }
+settings.timeRange, settings.duration = "rolling", 1
 chart.destroy(panel)
 panel = chart.create(host.page, { x = 0, y = 0, w = 238, h = 65 }, settings, services)
 settle()
 assert(not panel.flightBands[1].hidden, "fixed window must retain earlier flights")
 local clipped = panel.flightBands[2].properties
-equal(clipped.x, panel.area.x + math.floor(500 / 3000 * panel.area.w + 0.5))
+equal(clipped.x, panel.area.x + math.floor(500 / 6000 * panel.area.w + 0.5))
 equal(clipped.x + clipped.w, panel.area.x + panel.area.w)
 equal(clipped.y, panel.area.y)
 equal(clipped.h, panel.area.h)
@@ -108,24 +108,24 @@ clipped = panel.flightBands[2].properties
 equal(clipped.x + clipped.w, panel.area.x + panel.area.w)
 equal(clipped.h, panel.area.h, "resize reprojects every flight object")
 
-intervals[2] = { 500, 6000, true, true }
+intervals[2] = { 500, 12000, true, true }
 session.flightRevision = session.flightRevision + 1
 settle()
 clipped = panel.flightBands[2].properties
 equal(clipped.x + clipped.w, panel.area.x + panel.area.w, "shading must clip at the fixed window's right edge")
 
-intervals[2] = { 2999, 3000, true, true }
+intervals[2] = { 5999, 6000, true, true }
 session.flightRevision = session.flightRevision + 1
 settle()
 clipped = panel.flightBands[2].properties
 equal(clipped.w, 1, "subpixel flights still have a visible band")
 equal(clipped.x, panel.area.x + panel.area.w - 1, "subpixel bands must stay inside the fixed window")
-intervals[2] = { 5000, 6000, true, true }
+intervals[2] = { 7000, 8000, true, true }
 session.flightRevision = session.flightRevision + 1
 settle()
 assert(panel.flightBands[2].hidden, "flights starting beyond the window must not spill into the legend")
 
-for _, interval in ipairs({ { 3500, 3500 }, { 4000, 5000 }, { 3501, 3500 } }) do
+for _, interval in ipairs({ { 3500, 3500 }, { 7000, 8000 }, { 3501, 3500 } }) do
     intervals[2] = interval
     session.flightRevision = session.flightRevision + 1
     settle()
@@ -143,7 +143,7 @@ intervals[65], intervals[66] = { 2500, 3000, false, true }, { 1500, 2500, true, 
 settle()
 equal(#panel.flightBands, 2, "wrapped flight identities reuse the bounded native pool")
 assert(not panel.flightBands[1].hidden and not panel.flightBands[2].hidden)
-equal(panel.flightBands[1].properties.x, panel.area.x + math.floor((2500 - panel.start) / 3000 * panel.area.w + 0.5))
+equal(panel.flightBands[1].properties.x, panel.area.x + math.floor((2500 - panel.start) / 6000 * panel.area.w + 0.5))
 
 session.flightFirst, session.flightLast, session.flightRevision = 128, 128, session.flightRevision + 1
 intervals[128] = { 2500, 3500, true, true }
@@ -282,7 +282,8 @@ for step = 1, 2000 do
 end
 assert(committed, "a moving flight clock must not restart or starve a chart transaction")
 assert(not consistent.plotRoot.hidden)
-equal(consistent.plotRoot.parent, consistent.plotHost, "the native pool must stay behind labels")
+equal(consistent.plotRoot.parent, consistent.layerHost, "each plot layer owns its native pool")
+equal(consistent.layerHost.parent, consistent.plotHost, "the native pool must stay behind labels")
 local captured = live.elapsed
 for _, job in ipairs(consistent.columnRenderer.published) do
     captured = math.min(captured, job.at)
@@ -413,7 +414,7 @@ do
         return self
     end
     services.history = pausedHistory
-    local pauseSettings = { label = "Recorded", metrics = { { source = "V" }, { source = "A" } } }
+    local pauseSettings = { label = "Recorded", duration = 1, metrics = { { source = "V" }, { source = "A" } } }
     local pausedPanel = chart.create(host.page, { x = 0, y = 0, w = 472, h = 196 }, pauseSettings, services)
     finishFrame(pausedPanel)
     emitPaused(0, 3)
@@ -530,7 +531,7 @@ do
     recording.resumeFirst, recording.resumeRevision = 2, 4
     finishFrame(pausedPanel)
     equal(#activeSeams(pausedPanel), 1, "expired journal boundaries must be hidden")
-    pauseSettings.timeRange, pauseSettings.duration = "rolling", "30s"
+    pauseSettings.timeRange, pauseSettings.duration = "rolling", 1
     recording.elapsed = 7000
     chart.destroy(pausedPanel)
     pausedPanel = chart.create(host.page, { x = 0, y = 0, w = 472, h = 196 }, pauseSettings, services)

@@ -46,12 +46,14 @@ local chart = {
             end,
         },
         {
+            -- Whole minutes; unset grows automatically (see layout.normalizePanel).
             key = "duration",
-            label = "Window duration",
-            type = "string",
-            default = "1m",
-            choices = { "30s", "1m", "2m", "5m", "10m" },
-            choiceLabels = { "30 seconds", "1 minute", "2 minutes", "5 minutes", "10 minutes" },
+            label = "Window minutes",
+            type = "number",
+            min = 1,
+            max = 60,
+            step = 1,
+            empty = "Auto",
         },
         {
             key = "scaling",
@@ -88,14 +90,12 @@ local chart = {
     },
 }
 
-local DURATIONS = { ["30s"] = 30, ["1m"] = 60, ["2m"] = 120, ["5m"] = 300, ["10m"] = 600 }
 local COLORS = { "cyan", "orange", "green" }
 local LEGEND_FONTS = { MIDSIZE, 0, SMLSIZE }
-local BREAK_WIDTH = 24
 local textCache = setmetatable({}, { __mode = "k" })
 
 local function timeWindow(settings)
-    return (DURATIONS[settings.duration] or 60) * 100
+    return (type(settings.duration) == "number" and settings.duration or 1) * 6000
 end
 
 local function finite(value)
@@ -148,6 +148,10 @@ function chart.validateSettings(settings, _, _, modelArmed)
                 sharedMax = sharedMax and math.max(sharedMax, entry.rangeMax) or entry.rangeMax
             end
         end
+    end
+    local duration = settings.duration
+    if duration ~= nil and not (finite(duration) and duration % 1 == 0 and duration >= 1 and duration <= 60) then
+        warnings[#warnings + 1] = "duration must be whole minutes from 1 to 60, or unset for automatic"
     end
     if count > 3 or #settings.metrics ~= count then
         warnings[#warnings + 1] = "metrics must contain a contiguous list of up to 3 sources"
@@ -217,6 +221,98 @@ local function consumedSlots(instructions)
     return math.max(1, math.ceil((instructions + CALLBACK_RESERVE) / SLOT_INSTRUCTIONS))
 end
 
+-- Plot state owned by one layer. Auto windows prepare the next window in a
+-- hidden layer with the same staged pipeline, then swap the layers.
+local LAYER_KEYS = {
+    "layerHost",
+    "plotRoot",
+    "flightRoot",
+    "gapRoot",
+    "gridRoot",
+    "columnConsumers",
+    "columnRenderer",
+    "axis",
+    "axisWork",
+    "window",
+    "start",
+    "pixelStart",
+    "version",
+    "frameThrough",
+    "columnsDecorating",
+    "connectorWork",
+    "grid",
+    "gridCursor",
+    "gridVersion",
+    "gridLayoutVersion",
+    "gridStep",
+    "gridFirst",
+    "flightBands",
+    "flightKeys",
+    "flightCursor",
+    "flightSlots",
+    "flightPassRevision",
+    "flightPassVersion",
+    "flightDrawnRevision",
+    "flightDrawnVersion",
+    "flightDrawnElapsed",
+    "armMarkers",
+    "resumeMarkers",
+    "paintedVersion",
+    "paintedArmRevision",
+    "paintedResumeRevision",
+    "paintedFlightRevision",
+}
+local ITEM_KEYS = {
+    "connectors",
+    "markers",
+    "markerKeys",
+    "job",
+    "markerIndex",
+    "markerPhase",
+    "marked",
+    "drawnBreakMap",
+    "drawnBreak",
+    "drawnBreakVersion",
+    "paintedBreakMap",
+    "paintedBreak",
+    "drawnRevision",
+    "drawnVersion",
+    "drawnResumeRevision",
+}
+local LAYER_KEY, ITEM_KEY = {}, {}
+for _, key in ipairs(LAYER_KEYS) do
+    LAYER_KEY[key] = true
+end
+for _, key in ipairs(ITEM_KEYS) do
+    ITEM_KEY[key] = true
+end
+
+--- A hidden layer reads shared chart state through `context` but keeps its own
+--- plot state; writes always stay on the view.
+local function layerView(context, view)
+    setmetatable(view, {
+        __index = function(_, key)
+            if LAYER_KEY[key] then
+                return nil
+            end
+            return context[key]
+        end,
+    })
+    local series = rawget(view, "series") or {}
+    rawset(view, "series", series)
+    for index, item in ipairs(context.series) do
+        series[index] = setmetatable(series[index] or { connectors = {}, markers = {}, markerKeys = {} }, {
+            __index = function(_, key)
+                if ITEM_KEY[key] then
+                    return nil
+                end
+                return item[key]
+            end,
+        })
+    end
+    return view
+end
+
 local function axisPosition(axis, at, before)
     if axis.map then
         return axis.x + axis.map:pixel(at, before)
@@ -252,7 +348,7 @@ local function prepareAxis(context, allowance)
             context.axis = {
                 map = map,
                 x = area.x,
-                gap = area.w >= BREAK_WIDTH and BREAK_WIDTH or 0,
+                gap = area.w >= map.breakWidth and map.breakWidth or 0,
                 scale = area.w / window,
                 start = start,
                 baseStart = start,
@@ -513,8 +609,8 @@ local function markBoundary(context, item, pass, at, armed)
         fixed
         and (
             x >= context.area.x + context.area.w
-            or x + (item.style == "resume" and BREAK_WIDTH or 0) < context.area.x
-            or item.style == "resume" and x + BREAK_WIDTH == context.area.x
+            or x + (item.style == "resume" and context.axis.gap or 0) < context.area.x
+            or item.style == "resume" and x + context.axis.gap == context.area.x
         )
     then
         return
@@ -1253,6 +1349,9 @@ end
 --- Retire the current native presentation in bounded batches.
 function chart.resetSession(context, slots)
     context.metadataReady = nil
+    if context.auto then
+        context.auto.wakeAt = nil
+    end
     local reset = context.resetWork
     if not reset then
         if context.columnRenderer then
@@ -1502,6 +1601,246 @@ local function finishColumns(context, allowance)
     return publishColumns(context), false, used + 250
 end
 
+-- Measured cost of painting one hidden column through the layer view.
+local PAINT_COST = 200
+-- Estimated work per extra slot; per-call overhead brings the measured cost to about one slot.
+local BACKGROUND_ALLOWANCE = 1100
+
+local function newLayer(context)
+    local rect = context.rect
+    local layerHost = lvgl.box(context.plotHost, { x = 0, y = 0, w = rect.w, h = rect.h })
+    lvgl.hide(layerHost)
+    local root = lvgl.box(layerHost, { x = 0, y = 0, w = rect.w, h = rect.h })
+    return layerView(context, {
+        layerHost = layerHost,
+        plotRoot = root,
+        flightRoot = lvgl.box(root, { x = 0, y = 0, w = rect.w, h = rect.h }),
+        gapRoot = lvgl.box(root, { x = 0, y = 0, w = rect.w, h = rect.h }),
+        gridRoot = lvgl.box(root, { x = 0, y = 0, w = rect.w, h = rect.h }),
+        grid = {},
+        gridCursor = 1,
+        flightKeys = {},
+        armMarkers = markerPool("arm"),
+        resumeMarkers = markerPool("resume"),
+        version = 0,
+    })
+end
+
+local function overflowed(consumers)
+    for _, owner in ipairs(consumers) do
+        if owner.map.overflowed then
+            return true
+        end
+    end
+    return false
+end
+
+--- Whether the auto window needs background turns now rather than only
+--- alongside ordinary refreshes.
+local function autoPending(auto)
+    local consumers = auto and auto.consumers
+    if not consumers then
+        return false
+    end
+    local job = auto.job
+    return not job or not job.ready or overflowed(consumers)
+end
+
+local function forgetMarkers(markers)
+    for _, marker in pairs(markers or {}) do
+        marker.geometryVersion = nil
+    end
+end
+
+--- Show the prepared layer. Plot state moves once; nothing is redrawn.
+local function swapLayers(context, auto, job)
+    local hidden = auto.hidden
+    local previous = { series = {} }
+    for _, key in ipairs(LAYER_KEYS) do
+        previous[key] = context[key]
+        context[key] = rawget(hidden, key)
+    end
+    for index, item in ipairs(context.series) do
+        local saved, loaded = {}, rawget(hidden, "series")[index]
+        for _, key in ipairs(ITEM_KEYS) do
+            saved[key] = item[key]
+            item[key] = rawget(loaded, key)
+        end
+        previous.series[index] = saved
+    end
+    for index, owner in ipairs(auto.consumers) do
+        owner:adopt(context.columnConsumers[index].map, job.target)
+    end
+    context.columnConsumers = auto.consumers
+    context.columnRenderer.context = context
+    lvgl.show(context.layerHost)
+    lvgl.hide(previous.layerHost)
+    previous.columnConsumers, previous.recycle = nil, true
+    auto.hidden, auto.job = layerView(context, previous), nil
+    previous.columnRenderer.context = auto.hidden
+    context.metadataReady, context.columnsDecorating, context.frameThrough = nil, nil, nil
+end
+
+--- Prepare the next auto window within `allowance` estimated instructions:
+--- coarsen fine stores when needed, build the hidden layer from them, decorate
+--- it with the ordinary staged pipeline, and swap once the visible plot is full.
+local function background(context, allowance)
+    local auto = context.auto
+    local consumers = auto and auto.consumers
+    if not consumers or context.columnSetup or not context.columnRenderer then
+        return 0
+    end
+    local Columns, remaining, used = context.columnModule, allowance, 0
+    local resets = 0
+    for _, owner in ipairs(consumers) do
+        resets = resets + owner.resets
+    end
+    if auto.resets ~= resets or auto.geometry ~= context.geometryVersion then
+        auto.resets, auto.geometry, auto.job = resets, context.geometryVersion, nil
+        if auto.hidden then
+            auto.hidden.recycle = true
+        end
+    end
+    local job = auto.job
+    if not job then
+        job = { target = consumers[1].step + 1, phase = "halve" }
+        auto.job = job
+    end
+    local target = job.target
+    if job.phase == "halve" then
+        local level = Columns.autoLevel(target)
+        if consumers[1].fine.level >= level then
+            job.phase = "layer"
+        else
+            job.fines = job.fines or {}
+            local complete = true
+            for index, owner in ipairs(consumers) do
+                local fine = owner.fine
+                job.fines[index] = job.fines[index] or Columns.fine(owner.width, level, owner.recording)
+                local done, stage = job.fines[index]:absorb(fine, 2, (fine.last or 0) - 1, remaining)
+                remaining, used = remaining - stage, used + stage
+                complete = complete and done
+                if not done then
+                    break
+                end
+            end
+            -- The newest fine column can still grow, so it moves with the switch.
+            if complete and remaining >= 150 * #consumers then
+                for index, owner in ipairs(consumers) do
+                    local _, stage = job.fines[index]:absorb(owner.fine, 2, owner.fine.last or -1, remaining)
+                    used = used + stage
+                    owner.fine = job.fines[index]
+                end
+                job.phase, job.fines = "layer", nil
+            end
+            return used
+        end
+    end
+    local hidden = auto.hidden
+    if job.phase == "layer" then
+        if not hidden then
+            auto.hidden = newLayer(context)
+            return used + 1500
+        end
+        if not hidden.columnRenderer then
+            hidden.columnRenderer = context.columnRendererModule.new(hidden)
+            return used + 800
+        end
+        if hidden.recycle then
+            if hidden.recycle == true then
+                forgetMarkers(hidden.armMarkers and hidden.armMarkers.markers)
+                forgetMarkers(hidden.resumeMarkers and hidden.resumeMarkers.markers)
+                for _, item in ipairs(hidden.series) do
+                    forgetMarkers(item.markers)
+                end
+                hidden.recycle = "sweep"
+            end
+            local visited, complete = hidden.columnRenderer:sweep(math.max(1, remaining // 20))
+            used = used + visited * 20
+            if not complete then
+                return used
+            end
+            hidden.recycle = nil
+        end
+        local minutes, level = Columns.autoMinutes(target), Columns.autoLevel(target)
+        local owners = {}
+        for index, owner in ipairs(consumers) do
+            owners[index] = {
+                map = Columns.new(
+                    owner.width,
+                    minutes * 6000,
+                    owner.recording,
+                    { breakWidth = Columns.autoGap(target) }
+                ),
+                startedAt = 0,
+            }
+        end
+        hidden.columnConsumers, hidden.window, hidden.start = owners, minutes * 6000, 0
+        hidden.version, hidden.axis = (hidden.version or 0) + 1, nil
+        hidden.gridVersion, hidden.gridLayoutVersion = nil, nil
+        hidden.connectorWork, hidden.columnsDecorating, hidden.frameThrough = nil, nil, nil
+        job.factor, job.phase = minutes >> level, "build"
+        return used + 100 * #consumers
+    end
+    local swapCost
+    if job.ready and overflowed(consumers) then
+        swapCost = 800
+        for index, owner in ipairs(hidden.columnConsumers) do
+            local fine = consumers[index].fine
+            local backlog = #owner.map.dirtyList
+            swapCost = swapCost
+                + math.max(0, (fine.last or 0) - (owner.map.cursor or 0) + 1) * 100
+                + (backlog > 2 and math.huge or 0)
+        end
+    end
+    -- The newest fine column can still grow, so the final catch-up and the swap
+    -- happen in one turn of at most one slot. A few unpainted columns are left to
+    -- the next ordinary append; otherwise keep catching up first.
+    if swapCost and swapCost <= math.max(remaining, BACKGROUND_ALLOWANCE) and used == 0 then
+        for index, owner in ipairs(hidden.columnConsumers) do
+            local fine = consumers[index].fine
+            local _, stage = owner.map:absorb(fine, job.factor, fine.last or -1, math.huge)
+            used = used + stage
+        end
+        swapLayers(context, auto, job)
+        return used + 800
+    end
+    -- Paint absorbed columns before absorbing more, so no backlog reaches the swap.
+    local painted = hidden.columnRenderer:paint(remaining // PAINT_COST)
+    remaining, used = remaining - painted * PAINT_COST, used + painted * PAINT_COST
+    local complete = true
+    for index, owner in ipairs(hidden.columnConsumers) do
+        if remaining < 120 then
+            complete = false
+            break
+        end
+        local fine = consumers[index].fine
+        local absorbed, stage = owner.map:absorb(fine, job.factor, (fine.last or 0) - 1, remaining)
+        remaining, used = remaining - stage, used + stage
+        complete = complete and absorbed
+    end
+    local done
+    painted, done = hidden.columnRenderer:paint(math.max(0, remaining // PAINT_COST))
+    remaining, used = remaining - painted * PAINT_COST, used + painted * PAINT_COST
+    if not (complete and done) or remaining < 300 or swapCost then
+        return used
+    end
+    prepareAxis(hidden, remaining)
+    if hidden.gridVersion ~= hidden.version then
+        local gridDone, stage = updateGrid(hidden, remaining)
+        remaining, used = remaining - stage, used + stage
+        if not gridDone or remaining < 300 then
+            return used
+        end
+    end
+    hidden.columnsDecorating = true
+    local _, unfinished, stage = finishColumns(hidden, remaining)
+    if not unfinished then
+        job.phase, job.ready = "ready", true
+    end
+    return used + stage
+end
+
 local function refreshColumns(context, slots)
     local remaining, used = instructionAllowance(slots), 0
     if not context.columnRenderer then
@@ -1590,12 +1929,17 @@ local function refreshChart(context, creating, slots)
                     window = timeWindow(context.settings),
                     preview = context.preview,
                     recording = { history = context.history, session = context.session },
+                    auto = context.autoWanted,
+                    elapsed = context.session.elapsed,
                 })
             context.columnsReadonly = context.columnsReadonly or context.columnConsumers[index].readonly
             context.columnSetupIndex, used = index + 1, used + 1
         end
         if context.columnSetupIndex > #context.series then
             context.columnSetup, context.columnSetupIndex = nil, nil
+            context.auto = context.columnConsumers[1].auto
+                    and { consumers = context.columnConsumers, hidden = context.auto and context.auto.hidden }
+                or nil
         end
         return 1, true, used
     end
@@ -1609,8 +1953,35 @@ local function refreshChart(context, creating, slots)
 end
 
 function chart.refresh(context, creating, slots)
-    local interval, unfinished, consumed = refreshChart(context, creating, slots or 8)
-    return interval, unfinished, consumed or 1
+    slots = slots or 8
+    local auto = context.auto
+    if auto and auto.wakeAt and not creating and context.columnRenderer and not context.columnSetup then
+        local now = context.clock()
+        if now < auto.wakeAt then
+            -- Between ordinary refreshes only the next auto window is prepared.
+            background(context, BACKGROUND_ALLOWANCE)
+            local interval = autoPending(auto) and 1 or auto.wakeAt - now
+            return math.max(1, math.min(6000, interval)), false, 1
+        end
+    end
+    local interval, unfinished, consumed = refreshChart(context, creating, slots)
+    consumed = consumed or 1
+    if auto and auto.consumers and context.auto == auto and not creating then
+        -- A cycle ends when decorations publish, not when the append returns.
+        local idle = not unfinished and not context.columnsDecorating and not context.metadataReady
+        auto.wakeAt = idle and context.clock() + interval or nil
+        local pending = autoPending(auto)
+        -- At most one extra slot per refresh goes to the next auto window.
+        if slots > consumed and (pending or idle) then
+            background(context, BACKGROUND_ALLOWANCE)
+            consumed = consumed + 1
+            pending = autoPending(auto)
+        end
+        if pending then
+            interval = 1
+        end
+    end
+    return interval, unfinished, consumed
 end
 
 function chart.create(parent, rect, settings, services)
@@ -1642,7 +2013,10 @@ function chart.create(parent, rect, settings, services)
     local presentation = services.state("normal", settings.accent or "cyan")
     context.panel = context.primitives.panel(parent, rect, context.theme, presentation)
     context.plotHost = lvgl.box(context.panel.root, { x = 0, y = 0, w = rect.w, h = rect.h })
-    context.plotRoot = lvgl.box(context.plotHost, { x = 0, y = 0, w = rect.w, h = rect.h })
+    context.baseline =
+        lvgl.hline(context.plotHost, { x = 0, y = 0, w = 1, h = 1, color = context.theme.chartColor.grid })
+    context.layerHost = lvgl.box(context.plotHost, { x = 0, y = 0, w = rect.w, h = rect.h })
+    context.plotRoot = lvgl.box(context.layerHost, { x = 0, y = 0, w = rect.w, h = rect.h })
     context.flightRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
     context.gapRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
     context.gridRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
@@ -1698,10 +2072,9 @@ function chart.create(parent, rect, settings, services)
         filled = true,
     })
     context.title, context.duration, context.status = label(context), label(context), label(context)
-    context.baseline =
-        lvgl.hline(context.plotRoot, { x = 0, y = 0, w = 1, h = 1, color = context.theme.chartColor.grid })
     context.window, context.start, context.pixelStart = timeWindow(settings, 0), 0, 0
     if context.history and #context.series > 0 then
+        context.autoWanted = settings.duration == nil and not context.preview
         context.columnSetup = assert(services.chartColumns, "chart column runtime unavailable")
         assert(context.columnRendererModule, "chart column renderer runtime unavailable")
     else
@@ -1720,6 +2093,9 @@ end
 
 function chart.update(context, rect)
     context.metadataReady = nil
+    if context.auto then
+        context.auto.wakeAt = nil
+    end
     context.rangesReady = false
     if context.columnSetup then
         if context.columnSetupIndex then
@@ -1737,11 +2113,24 @@ function chart.update(context, rect)
     context.legendFont, context.legendIndex, context.legendWidth = nil, nil, nil
     context.primitives.resizePanel(context.panel, rect)
     context.plotHost:set({ w = rect.w, h = rect.h })
+    context.layerHost:set({ w = rect.w, h = rect.h })
     context.plotRoot:set({ w = rect.w, h = rect.h })
     context.flightRoot:set({ w = rect.w, h = rect.h })
     context.gapRoot:set({ w = rect.w, h = rect.h })
     context.gridRoot:set({ w = rect.w, h = rect.h })
     chart.geometry(context, rect)
+    local hidden = context.auto and context.auto.hidden
+    if resized and hidden then
+        -- Resizing clears the chart; the next auto window is prepared again.
+        for _, key in ipairs({ "layerHost", "plotRoot", "flightRoot", "gapRoot", "gridRoot" }) do
+            hidden[key]:set({ w = rect.w, h = rect.h })
+        end
+        if hidden.columnRenderer then
+            hidden.columnRenderer:destroy()
+            hidden.columnRenderer = nil
+        end
+        hidden.recycle, context.auto.job = true, nil
+    end
     if resized and context.columnConsumers then
         if context.columnRenderer then
             context.columnRenderer:destroy()

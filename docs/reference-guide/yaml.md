@@ -103,7 +103,7 @@ It supports 2x1, 3x1, 4x1, 2x2, 3x2, 4x2, 3x3, 4x3, and 4x4.
 | `accent` | Per-metric trace color or panel stripe: cyan, green, orange, amber. Traces default to cyan, orange, green in order. Modern Light renders the cyan trace with blue ink. |
 | `rangeMin`, `rangeMax` | Optional per-metric finite bounds. Omit either key for Auto on that side; zero is an explicit bound. If both are set, maximum must exceed minimum. Shared scales use the lowest configured minimum and highest configured maximum; a side with no configured bound follows all recorded series automatically. |
 | `timeRange` | `growing` (default) or `rolling`. |
-| `duration` | `30s`, `1m` (default), `2m`, `5m`, `10m`. Fixed Rolling window; ignored in Growing mode. |
+| `duration` | Omitted (default) grows the window automatically; whole minutes `1` to `60` fix it. Earlier values such as `30s` or `5m` round up to whole minutes. |
 | `scaling` | `shared` (default) or `independent`. Select independent explicitly for unlike units. |
 | `range` | Obsolete preview setting (`auto` / `fixed`), accepted for compatibility but ignored. Only the presence of `rangeMin` / `rangeMax` determines fixed versus automatic bounds. |
 | `smoothing` | `off` (default), `light`, `medium`, `strong`; line-only EMA with approximately 0.5/1/2-second response. |

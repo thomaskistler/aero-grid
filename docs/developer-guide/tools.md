@@ -141,7 +141,7 @@ the panel reference pages. Use `--help` for supported scene names.
 Panel drawer scenes save **SFv** as the model-wide Arm switch, so obsolete
 panel arm controls are not shown. The Chart scenes use a native GV1 source
 labeled **Reading**.
-`chart-settings` selects **rolling** to include **Window duration**;
+`chart-settings` selects **rolling** to include **Window minutes**;
 `chart-metric-entry` opens Chart's own entry drawer, not Metric's.
 The `aero-menu`, `model-settings`, `model-settings-reset`, and
 `model-settings-bottom` scenes show the shared model menu and settings.

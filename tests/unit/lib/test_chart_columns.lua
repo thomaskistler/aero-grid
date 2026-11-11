@@ -203,4 +203,51 @@ assert(queued.map:summary(44).kind == "data" and queued.map:summary(44).from == 
 assert(queued.map:summary(21).kind == "pause" and queued.map:summary(21).width == 23, "a pause must follow its prefix")
 assert(queued.map.seams[1][1] == 20 and queued.map.seams[1][3] == 44)
 queued:destroy()
+
+-- Auto windows: every step is a whole number of fine columns per plot column,
+-- and merging fine columns (including halving) equals sampling the window directly.
+assert(Columns.autoMinutes(4) == 4 and Columns.autoMinutes(5) == 6 and Columns.autoMinutes(6) == 8)
+assert(Columns.autoMinutes(7) == 12 and Columns.autoMinutes(10) == 32)
+for step = 1, 12 do
+    local factor = Columns.autoMinutes(step) / (1 << Columns.autoLevel(step))
+    assert(factor % 1 == 0 and factor >= 1 and factor <= 4)
+end
+assert(Columns.autoGap(1) == 24 and Columns.autoGap(3) == 8 and Columns.autoGap(8) == 4)
+assert(Columns.autoStep(0) == 1 and Columns.autoStep(6000) == 2 and Columns.autoStep(30000) == 5)
+for _, step in ipairs({ 2, 3, 4, 5, 6, 7, 8, 10 }) do
+    local width, minutes, level = 97, Columns.autoMinutes(step), Columns.autoLevel(step)
+    local fine, direct = Columns.fine(width, 0), Columns.new(width, minutes * 6000)
+    for at = 0, minutes * 6000 - 1, 37 + step do
+        local value = (at * 7) % 113
+        if at % 13 == 0 then
+            value = nil
+        end
+        while fine.level < level and (at * width) // fine.window >= width * 3 do
+            local coarser = Columns.fine(width, fine.level + 1)
+            coarser:absorb(fine, 2, fine.last, math.huge)
+            fine = coarser
+        end
+        fine:sample(at, value)
+        direct:sample(at, value)
+    end
+    while fine.level < level do
+        local coarser = Columns.fine(width, fine.level + 1)
+        coarser:absorb(fine, 2, fine.last, math.huge)
+        fine = coarser
+    end
+    local merged = Columns.new(width, minutes * 6000)
+    merged:absorb(fine, minutes >> level, fine.last, math.huge)
+    for bucket = 0, width - 1 do
+        local expected, actual = direct:summary(bucket), merged:summary(bucket)
+        assert(not expected == not actual, "step " .. step .. " column " .. bucket .. " presence differs")
+        if expected then
+            for _, key in ipairs({ "kind", "min", "max", "end", "width", "from" }) do
+                assert(
+                    expected[key] == actual[key],
+                    "step " .. step .. " column " .. bucket .. " " .. key .. " differs"
+                )
+            end
+        end
+    end
+end
 print("Append-only typed columns consume new telemetry, summarize once, hold skipped columns and never replay history")

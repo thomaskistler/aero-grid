@@ -65,23 +65,70 @@ local function paintColumn(self, map, series, slot)
     end
 end
 
+local function publish(self, series, map)
+    local context, item = self.context, self.context.series[series]
+    local published = self.published[series] or {}
+    published.map, published.at = map, map.at
+    published.revision, published.historyRevision = map.revision, map.historyRevision
+    published.geometry, published.low, published.high = context.geometryVersion, item.low, item.high
+    published.connectors = map:seamConnectors()
+    self.published[series] = published
+    item.drawnRevision, item.drawnVersion = map.historyRevision, context.version
+end
+
 function renderer:append()
     local context = self.context
     for series, owner in ipairs(context.columnConsumers) do
         owner:append()
-        local map, item = owner.map, context.series[series]
+        local map = owner.map
         for index, slot in ipairs(map.dirtyList) do
             paintColumn(self, map, series, slot)
             map.dirtyColumns[slot], map.dirtyList[index] = nil, nil
         end
-        local published = self.published[series] or {}
-        published.map, published.at = map, map.at
-        published.revision, published.historyRevision = map.revision, map.historyRevision
-        published.geometry, published.low, published.high = context.geometryVersion, item.low, item.high
-        published.connectors = map:seamConnectors()
-        self.published[series] = published
-        item.drawnRevision, item.drawnVersion = map.historyRevision, context.version
+        publish(self, series, map)
     end
+end
+
+--- Paint at most `limit` pending columns of maps filled without live samples.
+---@return integer painted
+---@return boolean complete
+function renderer:paint(limit)
+    local painted = 0
+    for series, owner in ipairs(self.context.columnConsumers) do
+        local map = owner.map
+        local list, count = map.dirtyList, #map.dirtyList
+        while count > 0 and painted < limit do
+            local slot = list[count]
+            list[count], map.dirtyColumns[slot] = nil, nil
+            paintColumn(self, map, series, slot)
+            count, painted = count - 1, painted + 1
+        end
+        publish(self, series, map)
+        if count > 0 then
+            return painted, false
+        end
+    end
+    return painted, true
+end
+
+--- Hide previously drawn columns, at most `limit` objects per call.
+---@return integer visited
+---@return boolean complete
+function renderer:sweep(limit)
+    local index, visited = self.sweepIndex or 1, 0
+    local last = #self.context.series * self.width
+    while index <= last and visited < limit do
+        if self.visible[index] then
+            lvgl.hide(self.objects[index])
+            self.visible[index] = nil
+        end
+        index, visited = index + 1, visited + 1
+    end
+    self.sweepIndex = index <= last and index or nil
+    if index > last then
+        self.published = {}
+    end
+    return visited, index > last
 end
 
 return renderer

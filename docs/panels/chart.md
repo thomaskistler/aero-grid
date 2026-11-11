@@ -25,7 +25,7 @@ disables recording rather than restoring the fallback.
 | --- | --- | --- |
 | **Label** | empty | Optional chart heading. Clear it to hide the heading. |
 | **Metrics** | none | Up to three readings. Tap **+** to add one, or tap an entry to edit it. |
-| **Window duration** | 1 minute | Fixed plot duration: **30 seconds**, **1 minute**, **2 minutes**, **5 minutes**, or **10 minutes**. |
+| **Window minutes** | Auto | **Auto** grows the window as recording continues. A whole number of minutes from 1 to 60 fixes it. |
 | **Series scales** | shared | **shared** uses one vertical scale; **independent** gives each metric its own scale, useful for unlike units. Independent trace heights are not directly comparable. |
 | **Line smoothing** | off | **off**, **light**, **medium**, or **strong**. Smooths the line only, not the recorded value or extrema. |
 | **Accent** | cyan | Panel stripe color: **cyan**, **green**, **amber**, or **orange**. Does not change trace colors. |
@@ -67,19 +67,22 @@ The first arming that starts recording is not marked.
 Pausing simply stops the traces, without a label or stop marker.
 Resuming inserts a gap; dotted lines
 connect the last recorded values to the resumed values.
-The gap stays 24 pixels wide and does not move earlier traces.
-It indicates omitted time, not the length of the pause, and uses space in the fixed window.
+The gap is 24 pixels wide in a fixed window and narrows as an **Auto** window grows.
+It indicates omitted time, not the length of the pause, and uses space in the window.
 Missing telemetry breaks the traces without adding a pause gap or connector.
 Consecutive valid readings are connected: each screen column shows its minimum
 and maximum and joins the previous column's last value. When readings arrive less
 often than once per column, the trace holds the last value until the next reading.
 Readouts freeze when recording pauses. Minimum and maximum cover all recorded periods.
 
-The horizontal axis starts at recording time zero and stays fixed.
-At the right edge, the plot stops adding data and preserves existing columns.
-Readouts and recorded extrema continue updating. There is no automatic
-vertical rescaling, horizontal expansion, scrolling, or background scale preparation.
-Earlier saved growing/rolling choices are ignored; **Window duration** is used.
+The horizontal axis starts at recording time zero. With **Auto**, the window
+starts at 1 minute; when the plot is full it compresses to 2, 3, 4, 6, 8, 12, 16,
+24, 32 minutes and so on, keeping all earlier data on screen. A fixed window stops
+adding data at the right edge and preserves existing columns. Readouts and recorded
+extrema continue updating. Resizing the panel or resetting the session clears the
+plot. There is no automatic vertical rescaling or scrolling. Earlier saved
+growing/rolling choices are ignored; saved durations that are not whole minutes
+round up, and longer ones are limited to 60 minutes.
 Faint solid grid lines mark recording-time intervals; the bottom-right label shows
 the recording-time window. Pause gaps can fill the window sooner.
 

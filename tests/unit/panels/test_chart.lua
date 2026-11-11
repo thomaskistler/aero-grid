@@ -67,7 +67,14 @@ assert(#chart.validateSettings({ metrics = { {}, {}, {}, {} } }) > 0)
 assert(#chart.validateSettings({ metrics = { [2] = {} } }) > 0)
 local settings, warnings = host.resolveSettings(chart, {})
 equal(#warnings, 0)
-equal(settings.duration, "1m")
+equal(settings.duration, nil, "unset windows grow automatically")
+local layoutModule = fixture.module("lib/layout.lua")
+for _, case in ipairs({ { "30s", 1 }, { "90s", 2 }, { "5m", 5 }, { 2.5, 3 }, { 90, 60 }, { 0, 1 }, { 7, 7 } }) do
+    local normalized = layoutModule.normalizePanel({ type = "chart", config = { duration = case[1] } })
+    equal(normalized.config.duration, case[2], "windows round up to whole minutes from 1 to 60")
+end
+assert(#chart.validateSettings({ duration = 2.5, metrics = {} }) > 0)
+equal(#chart.validateSettings({ duration = 60, metrics = {} }), 0)
 equal(settings.smoothing, "off")
 equal(#settings.metrics, 0)
 settings, warnings = host.resolveSettings(chart, { range = "fixed", metrics = { { rangeMin = 200 } } })
@@ -150,7 +157,7 @@ equal(#context.panels, 4)
 local power = fixture.instanceOf(context, "power")
 equal(power.axisStart, nil, "bottom axis labels must not be created")
 equal(power.axisEnd, nil, "bottom axis labels must not be created")
-equal(power.duration.properties.text, "30s")
+equal(power.duration.properties.text, "1m", "earlier 30s windows round up to whole minutes")
 local function checkDurationCorner(panel)
     local properties, area = panel.duration.properties, panel.area
     equal(properties.x + properties.w, area.x + area.w, "duration must align with the plot's right edge")
@@ -826,7 +833,7 @@ local function recordingPanel(id, range, duration)
         config = {
             armSwitch = "SAv",
             timeRange = range,
-            duration = duration or (range == "rolling" and "30s" or "10m"),
+            duration = duration or (range == "rolling" and 1 or 10),
             metrics = { { source = id, precision = 3, rangeMin = -100, rangeMax = 100 } },
         },
     })
@@ -849,7 +856,7 @@ local function finishDrawing(panel)
     error("staged projection did not converge")
 end
 
-local gridPanel = recordingPanel("minute-grid", "rolling", "10m")
+local gridPanel = recordingPanel("minute-grid", "rolling", 10)
 do
     local setup = gridPanel.columnSetup
     assert(setup, "recording panel must require initial attachment")
@@ -948,7 +955,7 @@ for _, elapsed in ipairs({ 0, 5999, 6000, 6001, 12000, 12001, 18000, 18001, 6000
     equal(gridPanel.duration.properties.text, chart.durationText(60000))
     equal(gridPanel.start, 0, "fixed window must never scroll")
 end
-gridPanel.settings.duration = "10m"
+gridPanel.settings.duration = 10
 gridPanel.session.elapsed = 0
 for _, owner in ipairs(gridPanel.columnConsumers) do
     owner:reset()
@@ -1086,7 +1093,7 @@ for _, target in ipairs({ context, light }) do
 end
 equal(lightPower.series[1].color, lightPower.theme.color.chartCyan)
 equal(lightPower.series[2].color, lightPower.theme.color.chartOrange)
-lightPower.settings.timeRange, lightPower.settings.duration = "rolling", "2m"
+lightPower.settings.timeRange, lightPower.settings.duration = "rolling", 2
 for _, owner in ipairs(lightPower.columnConsumers) do
     owner.window = 12000
     owner:resize(lightPower.area.w)

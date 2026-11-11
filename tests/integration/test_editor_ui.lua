@@ -1891,7 +1891,7 @@ local function chartDrawerOrder()
 end
 equal(
     chartDrawerOrder(),
-    "Label,Arm switch position,Metrics,Alt,+,Window duration,Series scales,Line smoothing,Accent,Remove panel",
+    "Label,Arm switch position,Metrics,Alt,+,Window minutes,Series scales,Line smoothing,Accent,Remove panel",
     "Fixed chart drawer exposes duration without a time-range selector"
 )
 equal(control("armSwitch").kind, "switch", "Chart must use the native switch-position picker")
@@ -1913,11 +1913,11 @@ equal(
 )
 back()
 equal(drawerRow("duration").row.hidden, false, "fixed window duration must always be visible")
-equal(drawerRow("duration").field.label, "Window duration", "duration labels the fixed window")
-equal(context.editorSession.draft.panels[1].config.duration, "5m", "fixed charts must preserve the saved duration")
-control("duration").properties.set(3)
+equal(drawerRow("duration").field.label, "Window minutes", "duration labels the fixed window")
+equal(context.editorSession.draft.panels[1].config.duration, 5, "saved durations load as whole minutes")
+control("duration").properties.set(2)
 settleDrawer()
-equal(context.editorSession.draft.panels[1].config.duration, "2m", "fixed window must remain editable")
+equal(context.editorSession.draft.panels[1].config.duration, 2, "fixed window must remain editable")
 back()
 equal(context.panels[1].instance.window, 12000, "fixed preview must use the selected duration")
 equal(context.panels[1].settings.armSwitch, "SAv", "preview rebuilds must preserve the panel's arm switch")

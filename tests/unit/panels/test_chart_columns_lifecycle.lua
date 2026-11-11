@@ -13,6 +13,7 @@ services.history = record.history
 local function panel()
     return chart.create(dashboard.page, { x = 0, y = 0, w = 238, h = 100 }, {
         armSwitch = "L01",
+        duration = 1,
         metrics = { { source = record.feeds[1].name, precision = 3 } },
     }, services)
 end
@@ -109,6 +110,7 @@ local triple = recorder(3)
 services.history = triple.history
 local three = chart.create(dashboard.page, { x = 0, y = 0, w = 472, h = 196 }, {
     armSwitch = "L01",
+    duration = 1,
     metrics = {
         { source = triple.feeds[1].name },
         { source = triple.feeds[2].name },
