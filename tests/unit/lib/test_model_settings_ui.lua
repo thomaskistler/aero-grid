@@ -76,7 +76,7 @@ local function fixture(width)
         end,
     })
     assert(state.nextY == 4 and state.smartStatus.hidden)
-    for _ = 1, 12 do
+    for _ = 1, 13 do
         ui.advance(c)
         mock.settle()
     end
@@ -122,11 +122,14 @@ local function fixture(width)
     assert(descriptions["Used by charts, navigation and flight detection"])
     assert(headings["Flight detection"] > state.controls.armed.parent.properties.y)
     assert(headings["Flight detection"] < state.controls.motorSource.parent.properties.y)
-    assert(descriptions["Detects when a flight begins and ends using live telemetry data."])
+    assert(descriptions["Detects when a flight begins and ends."])
     assert(
         descriptions["On during a detected flight. Use for your own special functions. Choose a dedicated Sticky logical switch, or None."]
     )
     assert(state.controls.armed.parent.properties.title == "Arm switch")
+    assert(state.controls.requireReceiver.kind == "toggle")
+    assert(state.controls.requireReceiver.parent.properties.title == "Require receiver")
+    assert(state.controls.requireReceiver.properties.get() == 1, "receiver connection is required by default")
     assert(headings["Flight status output"] > state.controls.smartDetection.parent.properties.y)
     assert(state.controls.history == nil, "CSV history must not be offered")
     assert(state.controls.minFlightDuration.parent.properties.title == "Start detection window (s)")
@@ -158,6 +161,10 @@ do
     end
     change("motorReversed", 1)
     assert(document().flight.motorReversed and document().armed == nil, "unrelated edits preserve legacy arming")
+    change("requireReceiver", 0)
+    assert(document().flight.requireReceiver == false and state.controls.requireReceiver.properties.get() == 0)
+    change("requireReceiver", 1)
+    assert(document().flight.requireReceiver == true and state.controls.requireReceiver.properties.get() == 1)
     change("armed", 1064)
     assert(document().armed == "L64")
     assert(state.controls.sessionReset.kind == "switch")

@@ -28,8 +28,8 @@ Numeric sources such as `ch5` or `sa` are not arm conditions.
 ## Flight detection
 
 Flight detection distinguishes a flight from simply being armed. It observes
-the armed condition, motor output, and live telemetry to confirm a flight
-start, then confirms its end after sustained disarming.
+the armed condition, motor output, and (by default) live telemetry to confirm
+a flight start, then confirms its end after sustained disarming.
 
 Each confirmed start increments the model's flight total once, shown by
 Flight counter. Detection also supplies Chart flight shading, keeps recording
@@ -43,12 +43,14 @@ It runs across the model's dashboards even without a Flight counter panel.
 | --- | --- | --- |
 | **Motor channel** | CH3 | Channel used to measure motor output. |
 | **Reverse motor** | off | Enable when the motor channel runs from high at idle to low at full power. |
+| **Require receiver** | on | Require a live receiver telemetry connection to confirm flight start. Turn off to test without a receiver; arming, motor threshold, and detection windows still apply. |
 | **Motor threshold (%)** | 25 | Motor output must be strictly above this percentage to qualify a flight. Set from 0 to 99 in whole-percent steps. |
-| **Start detection window (s)** | 30 | Continuous armed state, sufficient motor output, and live telemetry required to confirm flight start. |
+| **Start detection window (s)** | 30 | How long the start conditions must hold continuously to confirm flight start. |
 | **End detection window (s)** | 10 | Continuous disarming required to confirm flight end. Rearming within this window keeps the flight open. |
 | **Smart detection** | off | Also allows sustained altitude or GPS groundspeed evidence to confirm takeoff earlier. See [Flight counter](../panels/flight-counter.md#behavior). |
 
-Flight detection observes live telemetry; it does not arm the aircraft.
+Flight detection does not arm the aircraft. With **Require receiver** off,
+bench tests can increment the real flight total and activate the Flight status switch.
 Both detection windows can be set from 1 to 3600 seconds in whole-second steps.
 Flight timestamps use the beginning of each window, not the later confirmation.
 

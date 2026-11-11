@@ -4,11 +4,24 @@ local config = { RUNTIME_API = 1 }
 local defaults = {
     motorSource = "ch3",
     motorReversed = false,
+    requireReceiver = true,
     smartDetection = false,
     minMotorPercent = 25,
     minFlightDuration = 30,
     disarmDuration = 10,
     flightSwitch = "",
+}
+local booleanKeys = { "motorReversed", "requireReceiver", "smartDetection" }
+local durationKeys = { "minFlightDuration", "disarmDuration" }
+local signatureKeys = {
+    "motorSource",
+    "motorReversed",
+    "requireReceiver",
+    "smartDetection",
+    "minMotorPercent",
+    "minFlightDuration",
+    "disarmDuration",
+    "flightSwitch",
 }
 
 function config.defaults()
@@ -42,12 +55,12 @@ function config.validate(values)
     if not channel or tonumber(channel) < 1 or tonumber(channel) > 32 then
         errors[#errors + 1] = "Motor channel must be CH1-CH32"
     end
-    for _, key in ipairs({ "motorReversed", "smartDetection" }) do
+    for _, key in ipairs(booleanKeys) do
         if type(values[key]) ~= "boolean" then
             errors[#errors + 1] = key .. " must be a boolean"
         end
     end
-    for _, key in ipairs({ "minFlightDuration", "disarmDuration" }) do
+    for _, key in ipairs(durationKeys) do
         local value = values[key]
         if type(value) ~= "number" or value ~= value or value <= 0 or value > 3600 then
             errors[#errors + 1] = key .. " must be greater than 0 and at most 3600 seconds"
@@ -67,15 +80,7 @@ end
 
 function config.key(values)
     local parts = {}
-    for _, key in ipairs({
-        "motorSource",
-        "motorReversed",
-        "smartDetection",
-        "minMotorPercent",
-        "minFlightDuration",
-        "disarmDuration",
-        "flightSwitch",
-    }) do
+    for _, key in ipairs(signatureKeys) do
         local value = values[key]
         parts[#parts + 1] = type(value) == "number" and string.format("%.17g", value) or tostring(value)
     end

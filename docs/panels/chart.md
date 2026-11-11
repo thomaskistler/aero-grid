@@ -40,7 +40,7 @@ Tap a reading under **Metrics** to open its settings.
 | --- | --- | --- |
 | **Label** | source name | Name in the legend. Clear it to use the source name. |
 | **Source** | required | Numeric EdgeTX source to record. |
-| **Range min**, **Range max** | Auto | Optional fixed lower and upper vertical bounds, in steps of 0.1. If both are set, maximum must exceed minimum. A cleared bound is **Auto**. |
+| **Range min**, **Range max** | Auto | Tap to type a fixed lower or upper vertical bound. Negative numbers and decimals are accepted. If both are set, maximum must exceed minimum. Clear the text for **Auto**. |
 | **Unit** | sensor unit | Unit text beside the value. Changes the label, not the number. |
 | **Precision** | Sensor | Decimal places, 0 to 3. Step below 0 to select **Sensor**, using the source's precision. |
 | **Color** | by entry order | Trace and legend color: **cyan**, **green**, **orange**, or **amber**. Defaults to cyan, orange, then green; cyan uses blue ink in Modern Light. An explicit choice keeps that color. |
