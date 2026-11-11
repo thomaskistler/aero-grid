@@ -154,8 +154,9 @@ end
 
 local function resetBound(leaf)
     local bound = control("metrics", leaf)
-    assert(bound.display(bound.min) == "Auto", "one step below the numeric minimum must offer Auto")
-    assert(bound.display(bound.min + 1) ~= "Auto", "the next step must be a numeric bound")
+    local default = panelType == "chart" and (leaf == "rangeMin" and "0" or "100") or "Auto"
+    assert(bound.display(bound.min) == default, "one step below the numeric minimum must offer the default")
+    assert(bound.display(bound.min + 1) ~= default, "the next step must be an explicit bound")
     bound.set(bound.min)
     drawerReady()
 end
@@ -251,8 +252,8 @@ for catalogIndex, item in ipairs(editor.CATALOG) do
         if panelType == "chart" then
             local entry = placement.config.metrics[1]
             local minimum, maximum = control("metrics", "rangeMin"), control("metrics", "rangeMax")
-            assert(minimum.display(minimum.get()) == "Auto" and maximum.display(maximum.get()) == "Auto")
-            assert(minimum.get() == minimum.min and maximum.get() == maximum.min, "bounds must default to Auto")
+            assert(minimum.display(minimum.get()) == "0" and maximum.display(maximum.get()) == "100")
+            assert(minimum.get() == minimum.min and maximum.get() == maximum.min, "bounds must use fixed defaults")
             assert(entry.rangeMin == nil and entry.rangeMax == nil, "Auto must not store a numeric bound")
             minimum.set(minimum.get() + 1)
             drawerReady()
@@ -273,7 +274,7 @@ for catalogIndex, item in ipairs(editor.CATALOG) do
             assert(entry.rangeMin == -10 and entry.rangeMax == 200, "negative bounds must remain editable")
             resetBound("rangeMin")
             assert(entry.rangeMin == nil and entry.rangeMax == 200, "one-sided bounds must survive saving")
-            assert(minimum.get() == minimum.min and minimum.display(minimum.get()) == "Auto")
+            assert(minimum.get() == minimum.min and minimum.display(minimum.get()) == "0")
         end
         back()
     end

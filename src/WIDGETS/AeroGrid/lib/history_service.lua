@@ -2,6 +2,7 @@
 
 --- Connected, error-bounded recordings of cumulative recording time.
 local history = { RUNTIME_API = 1, CAPACITY = 6144, FLIGHT_CAPACITY = 64 }
+history.updateCost = 0
 history.__index = history
 
 local TAU = { off = 0, light = 50, medium = 100, strong = 200 }
@@ -12,10 +13,15 @@ local BYTES = math.max(string.packsize(NUMBER_FORMAT), string.packsize(INTEGER_F
 NUMBER_FORMAT = NUMBER_FORMAT .. string.rep("x", BYTES - string.packsize(NUMBER_FORMAT))
 INTEGER_FORMAT = INTEGER_FORMAT .. string.rep("x", BYTES - string.packsize(INTEGER_FORMAT))
 local ROUNDING = (string.packsize("n") == 4 and 2 ^ -23 or 2 ^ -52) * 32
+local abs, min, max, huge = math.abs, math.min, math.max, math.huge
+local EPSILON = {}
+for precision = 0, 3 do
+    EPSILON[precision] = 0.5 * 10 ^ -precision
+end
 history.BYTES_PER_POINT = BYTES
 
 local function finite(value)
-    return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
+    return type(value) == "number" and value == value and value ~= huge and value ~= -huge
 end
 
 local function location(index)
@@ -43,7 +49,8 @@ end
 
 local function write(entry, at, value, broken, resumed)
     local index = entry.last + 1
-    local chunk, offset = location(index)
+    local slot = (index - 1) % history.CAPACITY
+    local chunk, offset = slot // CHUNK + 1, slot % CHUNK * BYTES + 1
     -- Preserve native integers too: float32 cannot represent every int32.
     -- Never round a synthesized endpoint again when committing it.
     local integer = math.type(value) == "integer"
@@ -54,23 +61,25 @@ local function write(entry, at, value, broken, resumed)
     entry.last = index
     if broken then
         -- Only broken knots need a reason; one bit per ring slot stays bounded.
-        local slot = (index - 1) % history.CAPACITY
         local bucket, bit = slot // 32 + 1, 1 << (slot % 32)
         local flags = entry.resumeBits[bucket] or 0
         entry.resumeBits[bucket] = resumed and flags | bit or flags & ~bit
     end
-    for level, size in ipairs(SIZES) do
-        local relative = (index - 1) % size
+    local lows, highs, summaries, blocks = entry.lows, entry.highs, entry.bounds, entry.blocks
+    for level = 1, #SIZES do
+        local size = SIZES[level]
+        -- CAPACITY is a multiple of every block size, including after ring wrap.
+        local relative = slot % size
         if relative == 0 then
-            entry.lows[level], entry.highs[level] = value, value
-            entry.bounds[level] = 0
+            lows[level], highs[level] = value, value
+            summaries[level] = 0
         end
-        local bounds = entry.bounds[level]
-        if value < entry.lows[level] then
-            entry.lows[level], bounds = value, bounds & 0x3ff00 | relative
+        local bounds = summaries[level]
+        if value < lows[level] then
+            lows[level], bounds = value, bounds & 0x3ff00 | relative
         end
-        if value > entry.highs[level] then
-            entry.highs[level], bounds = value, bounds & 0x300ff | relative << 8
+        if value > highs[level] then
+            highs[level], bounds = value, bounds & 0x300ff | relative << 8
         end
         if broken and index > 1 then
             bounds = bounds | 0x10000
@@ -78,9 +87,8 @@ local function write(entry, at, value, broken, resumed)
                 bounds = bounds | 0x20000
             end
         end
-        entry.bounds[level] = bounds
-        local block = math.floor(((index - 1) % history.CAPACITY) / size) + 1
-        entry.blocks[level][block] = bounds
+        summaries[level] = bounds
+        blocks[level][slot // size + 1] = bounds
     end
 end
 
@@ -207,6 +215,11 @@ function history:resetSession(now, index)
         state.first, state.last, state.count = 1, 0, 0
         state.window = entry.mode == "growing" and 6000 or state.window
         state.revision, state.plotRevision = state.revision + 1, state.plotRevision + 1
+        if entry.observers then
+            for _, observer in ipairs(entry.observers) do
+                observer:reset()
+            end
+        end
     end
     return index + 1
 end
@@ -531,6 +544,7 @@ function history:subscribe(source, options)
         lastAt = 0,
         mode = mode,
         precision = precision,
+        epsilon = precision and EPSILON[precision],
         tau = TAU[smoothing],
         gap = true,
         session = session,
@@ -566,6 +580,32 @@ function history:point(view, index, retainedFirst)
         return entry.lastAt, entry.endpoint, false, false
     end
     return read(entry, index)
+end
+
+--- Observe the chart's filtered samples without polling again or changing knots.
+--- Observers reset with their recording; consumers must detach when destroyed.
+function history:observeSamples(view, observer)
+    local entry = assert(self.views[view], "unknown history subscription")
+    assert(type(observer.sample) == "function" and type(observer.reset) == "function", "invalid sample observer")
+    entry.observers = entry.observers or {}
+    for _, existing in ipairs(entry.observers) do
+        assert(existing ~= observer, "sample observer already registered")
+    end
+    entry.observers[#entry.observers + 1] = observer
+end
+
+function history:unobserveSamples(view, observer)
+    local entry = assert(self.views[view], "unknown history subscription")
+    for index, existing in ipairs(entry.observers or {}) do
+        if existing == observer then
+            table.remove(entry.observers, index)
+            if #entry.observers == 0 then
+                entry.observers = nil
+            end
+            return
+        end
+    end
+    error("sample observer is not registered")
 end
 
 --- Skip sealed blocks only when they fit in one screen column. These summaries
@@ -612,13 +652,13 @@ local function record(entry, value, at, epsilon, segment)
         write(entry, at, value, true, entry.segment ~= nil and entry.segment ~= segment)
         entry.anchorAt, entry.anchor = at, value
         entry.lastAt, entry.endpoint = at, value
-        entry.low, entry.high = -math.huge, math.huge
+        entry.low, entry.high = -huge, huge
     else
         for attempt = 1, 2 do
             local elapsed = at - entry.anchorAt
-            local tolerance = epsilon - math.max(math.abs(value), math.abs(entry.anchor), epsilon) * ROUNDING
-            local low = math.max(entry.low, (value - entry.anchor - tolerance) / elapsed)
-            local high = math.min(entry.high, (value - entry.anchor + tolerance) / elapsed)
+            local tolerance = epsilon - max(abs(value), abs(entry.anchor), epsilon) * ROUNDING
+            local low = max(entry.low, (value - entry.anchor - tolerance) / elapsed)
+            local high = min(entry.high, (value - entry.anchor + tolerance) / elapsed)
             local endpoint = entry.anchor + (low / 2 + high / 2) * elapsed
             local slope = (endpoint - entry.anchor) / elapsed
             if tolerance > 0 and finite(endpoint) and low <= slope and slope <= high then
@@ -672,16 +712,32 @@ function history:sample(reading, now)
                 end
                 entry.sampledAt = now
                 state.value = value
-                state.min = state.min and math.min(state.min, value) or value
-                state.max = state.max and math.max(state.max, value) or value
+                state.min = state.min and min(state.min, value) or value
+                state.max = state.max and max(state.max, value) or value
                 state.unitText, state.precision = reading.unitText, reading.precision
                 state.available, state.stale = true, false
-                local precision = entry.precision or (reading.precisionKnown == false and 3 or reading.precision or 0)
-                precision = math.min(3, math.max(0, precision))
-                record(entry, entry.filtered, session.elapsed, 0.5 * 10 ^ -precision, session.segment)
+                local epsilon = entry.epsilon
+                if not epsilon then
+                    local precision = reading.precisionKnown == false and 3 or reading.precision or 0
+                    precision = min(3, max(0, precision))
+                    epsilon = EPSILON[precision] or (0.5 * 10 ^ -precision)
+                end
+                local resumed = entry.segment ~= nil and entry.segment ~= session.segment
+                local broken = entry.gap or entry.segment ~= session.segment or session.elapsed <= entry.lastAt
+                record(entry, entry.filtered, session.elapsed, epsilon, session.segment)
+                if entry.observers and not state.full then
+                    for _, observer in ipairs(entry.observers) do
+                        observer:sample(session.elapsed, entry.filtered, broken, resumed)
+                    end
+                end
                 state.revision = state.revision + 1
             else
                 entry.gap = true
+                if entry.observers and not entry.state.full then
+                    for _, observer in ipairs(entry.observers) do
+                        observer:sample(session.elapsed, nil, true)
+                    end
+                end
                 if not state.stale then
                     state.stale = state.available
                     state.revision = state.revision + 1

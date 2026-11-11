@@ -44,12 +44,18 @@ write("shared-armed-copy", document)
 
 local worst, callbacks = 0, 0
 local function measured(callback, context)
+    fixture.lvglMock.setPropertyValidation(false)
+    fixture.lvglMock.setCallCounting(false)
+    fixture.lcdMock.setTextMeasurement(false)
     local instructions = 0
     debug.sethook(function()
         instructions = instructions + 100
     end, "", 100)
     local ok, message = pcall(callback, context)
     debug.sethook()
+    fixture.lcdMock.setTextMeasurement(true)
+    fixture.lvglMock.setCallCounting(true)
+    fixture.lvglMock.setPropertyValidation(true)
     assert(ok, message)
     worst, callbacks = math.max(worst, instructions), callbacks + 1
     assert(instructions < 15000, "model Armed callback exceeded budget: " .. instructions)

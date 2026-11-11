@@ -181,7 +181,7 @@ function extremaService:reset(now)
     end
 end
 
-function extremaService:resetSession(_, index)
+function extremaService:resetSession(now, index)
     index = index or 1
     local session = self.sessionOrder[index]
     if session then
@@ -195,6 +195,7 @@ function extremaService:resetSession(_, index)
         end
         local state = track.state
         state.min, state.max, state.samples, state.available, state.session = nil, nil, 0, false, 0
+        track.resetAt = now
     end
     return index + 1
 end
@@ -206,6 +207,10 @@ local function sample(track)
     if type(reading) ~= "table" or not reading.fresh then
         return
     end
+    if track.resetAt and (type(reading.updatedAt) ~= "number" or reading.updatedAt < track.resetAt) then
+        return
+    end
+    track.resetAt = nil
 
     local value = reading.value
     if type(value) ~= "number" or value ~= value then

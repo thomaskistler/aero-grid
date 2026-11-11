@@ -9,6 +9,8 @@ The legend shows each recorded value and its minimum and maximum.
 Wide layouts keep the legend on the right. Square and tall layouts put it above
 the full-width plot, with two or three metrics arranged left to right. Each metric
 uses two lines: its name and value, then its minimum and maximum.
+Live readings do not change the plot width. Legend text shrinks to fit; values
+that still cannot fit show `...` instead of a truncated number.
 Use separate panels for separate charts.
 Select **Arm switch** in **AeroGrid → Model settings**; changes save automatically.
 Until model arming has been saved, an existing panel arm switch remains in use
@@ -23,8 +25,7 @@ disables recording rather than restoring the fallback.
 | --- | --- | --- |
 | **Label** | empty | Optional chart heading. Clear it to hide the heading. |
 | **Metrics** | none | Up to three readings. Tap **+** to add one, or tap an entry to edit it. |
-| **Time range** | growing | **growing** keeps the recording from the start; **rolling** shows the latest fixed window. |
-| **Window duration** | 1 minute | **30 seconds**, **1 minute**, **2 minutes**, **5 minutes**, or **10 minutes**. Shown only when **Time range** is **rolling**. |
+| **Window duration** | 1 minute | Fixed plot duration: **30 seconds**, **1 minute**, **2 minutes**, **5 minutes**, or **10 minutes**. |
 | **Series scales** | shared | **shared** uses one vertical scale; **independent** gives each metric its own scale, useful for unlike units. Independent trace heights are not directly comparable. |
 | **Line smoothing** | off | **off**, **light**, **medium**, or **strong**. Smooths the line only, not the recorded value or extrema. |
 | **Accent** | cyan | Panel stripe color: **cyan**, **green**, **amber**, or **orange**. Does not change trace colors. |
@@ -39,7 +40,7 @@ Tap a reading under **Metrics** to open its settings.
 | --- | --- | --- |
 | **Label** | source name | Name in the legend. Clear it to use the source name. |
 | **Source** | required | Numeric EdgeTX source to record. |
-| **Range min**, **Range max** | Auto | Optional lower and upper vertical bounds, in steps of 0.1. Step below the lowest numeric value to select **Auto**. If both are set, maximum must exceed minimum. |
+| **Range min**, **Range max** | 0, 100 | Fixed lower and upper vertical bounds, in steps of 0.1. If both are set, maximum must exceed minimum. Clearing a bound restores its default. |
 | **Unit** | sensor unit | Unit text beside the value. Changes the label, not the number. |
 | **Precision** | Sensor | Decimal places, 0 to 3. Step below 0 to select **Sensor**, using the source's precision. |
 | **Color** | by entry order | Trace and legend color: **cyan**, **green**, **orange**, or **amber**. Defaults to cyan, orange, then green; cyan uses blue ink in Modern Light. An explicit choice keeps that color. |
@@ -66,24 +67,27 @@ The first arming that starts recording is not marked.
 Pausing simply stops the traces, without a label or stop marker.
 Resuming inserts a gap; dotted lines
 connect the last recorded values to the resumed values.
-The gap indicates omitted time, not the length of the pause.
+The gap stays 24 pixels wide and does not move earlier traces.
+It indicates omitted time, not the length of the pause, and uses space in the fixed window.
 Missing telemetry breaks the traces without adding a pause gap or connector.
-Readouts freeze when recording pauses. Minimum and maximum cover all recorded
-periods, even in rolling mode.
+Consecutive valid readings are connected, with each screen column retaining
+its minimum and maximum rather than leaving unsampled pixels blank.
+Readouts freeze when recording pauses. Minimum and maximum cover all recorded periods.
 
-**Growing** starts at one minute and expands in whole-minute steps as
-cumulative recording time increases. **Rolling** drops plot history outside
-**Window duration**, but keeps the recorded minimum and maximum.
+The horizontal axis starts at recording time zero and stays fixed.
+At the right edge, the plot stops adding data and preserves existing columns.
+Readouts and recorded extrema continue updating. There is no automatic
+vertical rescaling, horizontal expansion, scrolling, or background scale preparation.
+Earlier saved growing/rolling choices are ignored; **Window duration** is used.
 Faint solid grid lines mark recording-time intervals; the bottom-right label shows
-the recording-time window. Very dense pause gaps can push older points out of view.
+the recording-time window. Pause gaps can fill the window sooner.
 
-Each vertical bound can be fixed independently: set only **Range min** to
-anchor the bottom, only **Range max** to fix the top, or both for a fixed
-range. **Auto** follows recorded extrema with some padding. With **shared**
+The default vertical bounds are 0 and 100. With **shared**
 scales, the lowest configured minimum and highest configured maximum apply
-to all traces; an unset side follows all metrics automatically. With
+to all traces; an unset side uses its default. With
 **independent** scales, each metric uses its own bounds. Fixed bounds clip
-the plot, not recorded values or extrema.
+the plot, not recorded values or extrema. If a single configured bound crosses
+the other default, the unset side is placed 100 units away to keep a valid range.
 
 Smoothing reduces short-term fluctuations in the line. **Light**,
 **medium**, and **strong** respond over approximately 0.5, 1, and 2 seconds.
@@ -92,12 +96,15 @@ recording a false zero; a fresh numeric zero is valid.
 
 If **HISTORY FULL** appears, existing plot history is preserved and new plot
 samples stop for the full series. Readouts and extrema continue
-updating. Rolling mode frees space as old history leaves the window.
+updating.
 
 History is held in RAM, not saved to the SD card. It continues while the
 dashboard receives background updates. Reloading or restarting the dashboard,
 including applying editor changes that rebuild it, clears history.
 Editor previews reuse compatible recorded history without starting new recordings.
+Opening a chart on an existing recording or resizing it rebuilds the plot from
+stored history. Rebuilt traces retain the recording's half-digit compression
+tolerance; the recorded values and extrema are unchanged.
 New sources show an explicit no-data preview until saved.
 Flight overlays retain the latest 64 intervals; missing earlier boundaries are
 not guessed.

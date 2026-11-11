@@ -142,6 +142,8 @@ function module.new(dependencies)
             extrema = byId.extrema,
             navigation = byId.navigation,
             history = byId.history,
+            chartColumns = context.chartColumns,
+            chartColumnsRenderer = context.chartColumnsRenderer,
             flight = byId.flight,
         }
     end

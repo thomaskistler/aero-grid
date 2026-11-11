@@ -35,6 +35,33 @@ end
 local function run()
     testExtremaServiceCreatesFlightState()
     testSessionExtremaCreatesTrack()
+    local reading = { fresh = true, value = 25, updatedAt = 10 }
+    local runtime = services.runtime({})
+    runtime.byId.telemetry = {
+        subscribe = function()
+            return reading
+        end,
+    }
+    local arm = { key = "test", configured = true, fresh = true, value = true, updatedAt = 20 }
+    runtime.byId.armed = {
+        state = function()
+            return arm
+        end,
+    }
+    local service = extremaService.new({}, services, runtime)
+    local track = service:sessionExtrema("RQly")
+    service:update(20)
+    assert(track.min == 25)
+    local index = 1
+    repeat
+        index = service:resetSession(20, index)
+    until not index
+    service:update(20)
+    assert(not track.available, "a reset must not resample a cached pre-reset reading")
+    reading.value, reading.updatedAt = 80, 21
+    arm.updatedAt = 21
+    service:update(21)
+    assert(track.available and track.min == 80 and track.max == 80)
 end
 
 run()

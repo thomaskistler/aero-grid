@@ -1891,8 +1891,8 @@ local function chartDrawerOrder()
 end
 equal(
     chartDrawerOrder(),
-    "Label,Arm switch position,Metrics,Alt,+,Time range,Series scales,Line smoothing,Accent,Remove panel",
-    "Growing chart drawer follows the guide, with add after entries and remove last"
+    "Label,Arm switch position,Metrics,Alt,+,Window duration,Series scales,Line smoothing,Accent,Remove panel",
+    "Fixed chart drawer exposes duration without a time-range selector"
 )
 equal(control("armSwitch").kind, "switch", "Chart must use the native switch-position picker")
 equal(control("armSwitch").properties.get(), getSwitchIndex("SA" .. CHAR_DOWN), "legacy Chart switch remains visible")
@@ -1912,53 +1912,26 @@ equal(
     "chart metric drawer puts limits before display options and color, with remove last"
 )
 back()
-equal(drawerRow("duration").row.hidden, true, "Growing must hide the rolling duration control")
-equal(drawerRow("duration").field.label, "Window duration", "duration must describe only the rolling window")
-equal(
-    drawerRow("scaling").row.properties.y - drawerRow("timeRange").row.properties.y,
-    36,
-    "hidden duration must reclaim its drawer row"
-)
-control("timeRange").properties.set(2)
-settleDrawer()
-equal(
-    chartDrawerOrder(),
-    "Label,Arm switch position,Metrics,Alt,+,Time range,Window duration,Series scales,Line smoothing,Accent,Remove panel",
-    "Rolling keeps its window duration beside the time-range selector"
-)
-equal(drawerRow("duration").row.hidden, false, "Rolling must reveal its fixed window control")
-equal(
-    context.editorSession.draft.panels[1].config.duration,
-    "5m",
-    "switching modes must preserve saved rolling choices"
-)
+equal(drawerRow("duration").row.hidden, false, "fixed window duration must always be visible")
+equal(drawerRow("duration").field.label, "Window duration", "duration labels the fixed window")
+equal(context.editorSession.draft.panels[1].config.duration, "5m", "fixed charts must preserve the saved duration")
 control("duration").properties.set(3)
 settleDrawer()
-equal(context.editorSession.draft.panels[1].config.duration, "2m", "rolling window must remain editable")
-control("timeRange").properties.set(1)
-settleDrawer()
-equal(drawerRow("duration").row.hidden, true, "returning to Growing must hide duration again")
-equal(
-    context.editorSession.draft.panels[1].config.duration,
-    "2m",
-    "Growing must preserve the hidden rolling preference"
-)
+equal(context.editorSession.draft.panels[1].config.duration, "2m", "fixed window must remain editable")
 back()
-equal(context.panels[1].instance.window, 6000, "Growing preview must ignore the saved rolling duration")
+equal(context.panels[1].instance.window, 12000, "fixed preview must use the selected duration")
 equal(context.panels[1].settings.armSwitch, "SAv", "preview rebuilds must preserve the panel's arm switch")
 rect = state.controls[1].rect
 tap(rect.x + rect.w - 12, rect.y + 12)
 settleDrawer()
-control("timeRange").properties.set(2)
-settleDrawer()
-equal(drawerRow("duration").row.hidden, false, "reopening Rolling must restore the duration control")
+equal(drawerRow("duration").row.hidden, false, "reopening must retain the duration control")
 equal(
     control("armSwitch").properties.get(),
     getSwitchIndex("SA" .. CHAR_DOWN),
     "reopening the drawer must restore the selected physical switch position"
 )
 back()
-equal(context.panels[1].instance.window, 12000, "Rolling preview must use its saved fixed window")
+equal(context.panels[1].instance.window, 12000, "preview must use its saved fixed window")
 exitWith("Discard changes")
 widget.lvglMock.setFullScreen(false)
 

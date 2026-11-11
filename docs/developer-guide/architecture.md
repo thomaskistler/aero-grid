@@ -95,6 +95,16 @@ They do not each poll EdgeTX or maintain their own telemetry cache.
 Subscriptions to the same source share polling, and an unsubscribed service
 does not consume scheduled work.
 
+Due services and panels share eight nominal 2,000-instruction slots in round-robin
+order. Ordinary tasks default to one slot. Variable tasks receive the remaining
+slots and report consumption, leaving unused slots available to later tasks.
+History and control declare zero slots: they retain their due intervals and
+run at most once per callback, even when charged work exhausts the allowance.
+Flight polling runs first and consumes one slot when it ticks. Slot costs are
+initial approximations, not live instruction measurements; the whole callback
+must remain below 16,000 instructions. Callback/scheduler overhead is not
+separately charged.
+
 | Service module | Responsibility |
 | --- | --- |
 | `telemetry_service.lua` | Source resolution, readings, units, precision, freshness, and link status. |
@@ -166,13 +176,19 @@ per-knot snapshot tables. Growing history freezes at capacity without relaxing
 accuracy; rolling expiration reuses ring slots while retaining an interpolation
 anchor. Raw readouts/extrema continue even when plot storage is full.
 
-Multilevel extrema/gap indexes accelerate projection only inside one pixel
-column; they never replace stored knots. Projection, native trace updates and
-gap-marker updates are staged with bounded work per callback. Geometry changes
-restart pending projection. Recorded gaps stay separate except when their
-endpoints coincide on screen; marker objects are pooled by pixel column.
-Unchanged readouts are cached so their callback budget can process a larger
-bounded projection batch; same-pixel extrema do not add redundant geometry.
+The chart has one mipmap renderer with a single native column-object pool.
+Live growing consumers maintain eleven bounded extrema/gap rings with 4:3 time
+spans; rolling consumers maintain one ring at the configured duration. Selecting
+a coarser span avoids rebinning the existing view, but changed coordinates still
+require bounded native projection/application. Fine rings retire only after
+replacement publication. Raw knots and other consumers remain independent.
+
+Late attachment, resize, and read-only previews rebuild envelopes from connected
+history knots in bounded batches, preserving the recording compression tolerance
+rather than claiming exact observed extrema. Sealed blocks may skip knots inside
+one column. Reconstruction yields dispatcher ownership between callbacks.
+Resume-axis views use the same renderer, with fixed-width gaps and dotted
+connectors. Missing telemetry remains a break, not a resume connector.
 
 History consumes at most one flight journal record per service turn, keyed by
 the event's pinned `armKey`, never by the optional Sticky output or the current
@@ -181,15 +197,19 @@ to the cumulative recording axis; qualification/confirmation receipt times do
 not place boundaries. Grace samples remain after the mapped end. A 64-interval
 ring supplies scalar `history:flight(sessionView, index)` reads, independent of
 metric subscriptions. Shaded flight bands are staged in a bounded native-object
-pool behind the grid and traces. Each chart snapshots its inputs and stages a
-complete plot in a second reusable buffer before swapping it on screen.
+pool behind the grid and traces. Reconstructed views pin their input horizon;
+the single native pool applies replacement columns progressively without a
+second legacy plot buffer.
 Arm/disarm triangles use a bounded directional transition journal.
 A separate resume journal drives fixed-width axis gaps and dotted trace connectors;
 the same projection maps traces, flight bands, grid lines, and axis markers.
 Crowded gaps evict the oldest visible section rather than narrowing the gaps.
 During normal sampling, flight bands clip to the recorded telemetry horizon.
-Telemetry-sampling turns reserve projection headroom without lowering the
-existing callback or staged-drain limits.
+Pool preparation/reset, reconstruction, axes, projection, grid, markers, flight
+bands, and connectors each consume work scaled to the chart's granted slots.
+Charts budget 1,700 instructions per nominal 2,000-instruction slot and reserve
+500 per callback for uncharged overhead. These costs are estimates; the native
+callback gate verifies the hard instruction bound.
 
 Journal loss sets the session's `flightLost` flag and closes an unmatched open
 band at its last observed recording time rather than extending it into later
@@ -245,11 +265,19 @@ Receipt age remains bounded evidence, not an exact timestamp or instant
 stopped-stream detector. Callbacks too infrequent to observe fresh flags
 conservatively fall back to standard detection.
 
-The Smart poller is due every 100ms. Ordinary chart callbacks continue on
-Smart polling callbacks: the host reduces that callback's dashboard telemetry
-batch from eight sources to four, reserving room for Smart's four sensor
-categories. Both pollers retain round-robin progress; Smart does not skip
-whole chart callbacks. Selected metadata is compared directly rather than
+The Smart poller is due every 100ms and shares the same slot allowance as
+dashboard work. Telemetry polls at most eight sources per turn, experimentally
+charging one slot per two sources, including their synchronous observers.
+Charts use their granted slots for bounded projection/reconstruction batches.
+The experimental projection accounting shares one allowance across all series,
+reserving 500 estimated instructions per drawing turn, then charging 25 for
+empty/hide columns and 75 for populated columns, with 2,000 estimated instructions
+per slot. Initial layout/attachment requires three slots; changed readouts,
+layout and ranges use one slot and yield before projection. Finishing projection
+can also enter decoration; further decoration uses separate turns. These weights are not a measured
+callback bound and have not passed native safety validation.
+Charts use this allowance rather than selecting quotas based on which service ran. Both pollers retain
+round-robin progress. Selected metadata is compared directly rather than
 rebuilding identity strings on every poll. Expensive loading/editor work
 still gets separate, per-widget fair slices, and pending input takes priority.
 Discovery uses numeric `telemN` sources and custom
@@ -307,9 +335,9 @@ Use `panels/flight-mode.lua` as a small working example and
 | `id`, `apiVersion`, `supportedSpans` | Identify the module, check compatibility, and advertise valid grid sizes. |
 | `settings` | Typed fields, defaults, bounds, and choices used by validation and the editor. |
 | `refreshInterval` | Desired foreground interval in 10 ms ticks; work still shares the host budget. |
-| `refreshCost` | Whole-number share of the six host refresh slots (default 1). Chart uses all six so dense layouts cannot batch expensive redraws into one callback. |
+| `refreshCost` | Number of nominal 2,000-instruction slots, 1–8 (default 1), or `"variable"` to receive the remaining allowance. |
 | `create(parent, rect, settings, services)` | Build LVGL objects, subscribe to data, and return private instance state. |
-| `refresh(context)` | Optional callback to update existing objects from snapshots. May return a whole-number interval of 1–6000 ticks; nil preserves the current interval. A second result of `true` reserves subsequent turns among panels of the same type until the update completes; other panel types and services continue running. |
+| `refresh(context, creating, slots)` | Optional callback to update existing objects from snapshots; scheduled calls pass `false` for `creating`. May return a whole-number interval of 1–6000 ticks; nil preserves the current interval. A second result of `true` reserves subsequent turns among panels of the same type until the update completes; other panel types and services continue running. Variable tasks return consumed slots (0–grant) as a third result. |
 | `update(context, rect, settings, detailsOnly, placement)` | Optional geometry/configuration update. Host reflows and editor resizes pass the current grid placement as the fifth argument, leaving the internal `detailsOnly` argument unset. |
 | `background(context)` | Optional work when the dashboard is not visible. |
 | `resetSession(context, now)` | Optional session-data reset without rebuilding the panel. A second result of `true` requests another bounded reset turn. |

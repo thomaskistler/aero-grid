@@ -120,7 +120,7 @@ for index, context in ipairs({ first, second }) do
         local beforeChart = charts[index][position]
         equal(chart, beforeChart.instance, "reset must retain chart objects")
         equal(chart.backPlot, beforeChart.backPlot, "reset must reuse plot buffers")
-        assert(chart.plotRoot == beforeChart.plot or chart.backPlot.plotRoot == beforeChart.plot)
+        equal(chart.plotRoot, beforeChart.plot, "reset must reuse the sole plot root")
         equal(chart.series[1].name.properties.text, beforeChart.caption, "reset must retain chart captions")
         equal(chart.session.elapsed, 0, "a paused chart must reset its timeline")
         equal(chart.series[1].feed.count, 0, "a paused chart must discard all old samples")
@@ -149,15 +149,17 @@ for _, context in ipairs({ first, second }) do
     end
 end
 
+-- Force a full projection: a single-series incremental redraw can finish in one turn.
+first.panels[1].instance.columnRenderer.published = {}
 untilState(function()
     local chart = first.panels[1].instance
-    return chart.framePhase == "traces" and chart.pending ~= nil
+    return chart.columnRenderer.jobs ~= nil
 end)
 local activeCharts, activeObjects = {}, {}
 local objectCount = #fixture.lvglMock.objects
 for _, context in ipairs({ first, second }) do
     for _, entry in ipairs(context.panels) do
-        activeCharts[entry.instance] = entry.instance.backPlot
+        activeCharts[entry.instance] = entry.instance.columnRenderer
     end
     for _, object in ipairs(fixture.lvglMock.objects) do
         activeObjects[object] = { cleared = object.cleared, invalid = object.invalid }
@@ -167,9 +169,8 @@ for _, context in ipairs({ first, second }) do
     untilState(settled)
     equal(#fixture.lvglMock.objects, objectCount, "reset must not allocate replacement display objects")
     for chart, buffer in pairs(activeCharts) do
-        equal(chart.backPlot, buffer, "a mid-frame reset must retain both display buffers")
-        equal(chart.framePhase, nil, "a mid-frame reset must cancel the old snapshot")
-        equal(chart.pending, nil, "a mid-frame reset must discard the old projection job")
+        equal(chart.columnRenderer, buffer, "a mid-frame reset must retain the native object pool")
+        equal(chart.columnRenderer.jobs, nil, "a mid-frame reset must discard the old projection job")
         equal(chart.series[1].feed.count, 0)
     end
     for object, state in pairs(activeObjects) do

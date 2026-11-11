@@ -123,9 +123,10 @@ same history with a gap and dotted connectors. The horizontal axis counts cumula
 recording time, including retained grace samples. Neutral background bands
 show actual flight times; bottom-axis triangles mark arming and disarming
 except the first arming. No logical-switch
-output or Flight counter panel is needed. Growing starts at one minute and expands to
-the next whole minute when exceeded; its duration is not configurable. Rolling
-keeps only the latest plot window but retains raw lifetime min/max. History is
+output or Flight counter panel is needed. Growing starts at one minute and expands
+by one third up to about 18 minutes, then scrolls; its duration is not configurable.
+Rolling uses a fixed-duration view and retains raw lifetime min/max. Both modes
+scroll in quarter-window steps, leaving headroom for incoming readings. History is
 RAM-only and clears on dashboard reload or model-wide session reset. Connected linear compression bounds
 error to half a step of each metric's `precision` (sensor precision when omitted);
 with smoothing, this bound applies to the filtered signal. Each distinct

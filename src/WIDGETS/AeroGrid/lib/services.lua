@@ -9,15 +9,12 @@
 --- 1. A service only reads what a loaded panel actually subscribed to. A
 ---    service with no subscriptions is skipped entirely, so a dashboard of
 ---    metrics never pays for GPS, trims, or global variables.
---- 2. At most one service is updated per host cycle, chosen round robin among
----    those due, and each service further caps how many subscriptions it
----    refreshes in one update. Per-callback cost is therefore bounded by the
----    caps rather than by how much the layout asks for.
+--- 2. Services share the host's work slots with panels. Ordinary updates cost
+---    one slot; variable updates receive the remaining slots and report usage.
 ---
 --- Panels receive immutable views. The service mutates its own state table
 --- in place, which costs no allocation per cycle, and hands out a proxy whose
---- writes raise. Services update before panels refresh, so a panel
---- sees one consistent set of readings for the cycle.
+--- writes raise. Each task sees the completed updates of earlier tasks.
 
 ---@class AeroGridServiceInstance
 ---@field id string Service name used in the services table.
@@ -26,10 +23,26 @@
 ---@field revision integer Incremented on every completed update.
 ---@field count integer Number of live subscriptions.
 ---@field failed? boolean Set after an update raises, which retires the service.
----@field update fun(self: AeroGridServiceInstance, now: integer)
+---@field updateCost? integer|"variable" Nominal 2000-instruction slots; defaults to 1.
+---@field update fun(self: AeroGridServiceInstance, now: integer, slots: integer): integer?
 ---@field resetSession? fun(self: AeroGridServiceInstance, now: integer, index: integer): integer? Next reset item, or nil when finished.
 
 local services = { RUNTIME_API = 1 }
+services.SLOTS = 8
+services.INSTRUCTIONS_PER_SLOT = 2000
+
+function services.grant(cost, remaining)
+    if cost == "variable" then
+        return remaining
+    end
+    cost = cost or 1
+    assert(type(cost) == "number" and cost >= 0 and cost <= services.SLOTS and cost % 1 == 0, "invalid slot cost")
+    return cost <= remaining and cost or 0
+end
+
+function services.consumption(used, granted)
+    return type(used) == "number" and used >= 0 and used <= granted and used % 1 == 0
+end
 
 --- Service modules loaded by the host, in the order they are staged.
 --- Each entry's `id` becomes the key in the services table handed to a
@@ -146,6 +159,34 @@ function services.register(runtime, instance, now)
     instance.due = now + (#order - 1)
 end
 
+--- Run one service if it is due and fits the available slots.
+function services.dispatch(runtime, instance, now, remaining)
+    if instance.failed or instance.count == 0 or now < instance.due then
+        return nil
+    end
+    local granted = services.grant(instance.updateCost, remaining)
+    if granted == 0 and instance.updateCost ~= 0 then
+        return nil, nil, 0
+    end
+    instance.due = now + instance.interval
+    runtime.updates = runtime.updates + 1
+    local ok, result = pcall(instance.update, instance, now, granted)
+    if not ok then
+        instance.failed = true
+        return instance.id, tostring(result), granted
+    end
+    local used = result
+    if instance.updateCost ~= "variable" then
+        used = granted
+    end
+    if type(used) ~= "number" or not services.consumption(used, granted) then
+        instance.failed = true
+        return instance.id, "update consumption must be whole slots within the grant", granted
+    end
+    instance.revision = instance.revision + 1
+    return instance.id, nil, used
+end
+
 --- Update at most one due service.
 --- Returns the service updated so the host can report a failure exactly once,
 --- and so tests can observe the scheduling instead of inferring it.
@@ -153,7 +194,8 @@ end
 ---@param now integer
 ---@return string? id
 ---@return string? error
-function services.update(runtime, now)
+---@return integer? consumed
+function services.update(runtime, now, remaining)
     local order = runtime.order
     local count = #order
     if count == 0 then
@@ -170,21 +212,14 @@ function services.update(runtime, now)
         cursor = cursor % count + 1
 
         -- An idle service costs nothing: nothing loaded references it.
-        if instance and not instance.failed and instance.count > 0 and now >= instance.due then
-            instance.due = now + instance.interval
+        local id, message, used = services.dispatch(runtime, instance, now, remaining or services.SLOTS)
+        if not id and used == 0 then
+            runtime.cursor = (cursor - 2) % count + 1
+            return nil
+        end
+        if id then
             runtime.cursor = cursor
-            runtime.updates = runtime.updates + 1
-
-            -- A source that misbehaves must not raise inside a widget callback, and
-            -- a service that fails once is retired rather than left to fail forever.
-            local ok, updateError = pcall(instance.update, instance, now)
-            if not ok then
-                instance.failed = true
-                return instance.id, tostring(updateError)
-            end
-
-            instance.revision = instance.revision + 1
-            return instance.id
+            return id, message, used
         end
     end
 

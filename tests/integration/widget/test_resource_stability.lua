@@ -3,6 +3,7 @@
 local root = assert(..., "repository root argument is required")
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
 local definition = fixture.module("main.lua")
+local chartAssertions = assert(loadfile(root .. "/tests/support/chart_assertions.lua"))()
 function getOutputValue(index)
     return index * 32
 end
@@ -35,31 +36,39 @@ local function finish()
     end
     if fixture.instanceOf(context, "power") then
         local ready = false
-        for _ = 1, 500 do
+        for _ = 1, 2500 do
             refresh()
             ready = true
             for _, entry in ipairs(context.panels) do
                 local panel = entry.instance
-                ready = ready and #panel.grid == 12 and panel.backPlot and #panel.backPlot.grid == 12
-                for index, item in ipairs(panel.series or {}) do
-                    local back = panel.backPlot and panel.backPlot.series[index]
-                    ready = ready and item.runs[1] and item.runs[1].line and back and back.runs[1] and back.runs[1].line
-                end
+                ready = ready and #panel.grid == 12 and chartAssertions.finished(panel)
             end
             if ready then
                 break
             end
         end
-        assert(ready, "both reusable chart buffers must finish mounting before resource measurement")
+        assert(ready, "the sole chart pool must finish mounting before resource measurement")
         for _, entry in ipairs(context.panels) do
-            for _, item in ipairs(entry.instance.series or {}) do
-                assert(item.runs[1] and item.runs[1].line, "chart traces did not finish mounting")
-            end
+            local panel = entry.instance
+            assert(
+                #panel.columnRenderer.objects == panel.area.w * #panel.series,
+                "chart must retain exactly one native envelope per physical column and series"
+            )
         end
     end
     assert(#context.errors == 0, table.concat(context.errors, "\n"))
     fixture.lvglMock.releaseClearedObjects()
     collectgarbage("collect")
+end
+
+local function chartCells()
+    local count = 0
+    for _, entry in ipairs(context.panels) do
+        if entry.instance.columnRenderer then
+            count = count + #entry.instance.columnRenderer.objects + #entry.instance.columnRenderer.connections
+        end
+    end
+    return count
 end
 
 local dashboards = {
@@ -79,7 +88,9 @@ local worstRefreshMs = 0
 local worstRefreshDashboard = ""
 local weak = setmetatable({}, { __mode = "v" })
 
-for cycle = 1, 21 do
+-- Warm every dashboard before taking baselines: the mock object registry retains
+-- its array capacity after the larger physical-width chart pools are cleared.
+for cycle = 1, 22 do
     for _, dashboard in ipairs(dashboards) do
         weak.page = context.page
         weak.runtime = context.serviceRuntime
@@ -93,23 +104,32 @@ for cycle = 1, 21 do
         assert(weak.runtime == nil, "a retired service runtime remains reachable")
 
         local fullObjects = #fixture.lvglMock.objects
+        local fixedObjects = fullObjects - chartCells()
         for _, size in ipairs({ { 320, 180 }, { 480, 227 }, { 480, 272 } }) do
             zone.w, zone.h = size[1], size[2]
             finish()
-            assert(#fixture.lvglMock.objects == fullObjects, dashboard .. " allocated objects during reflow")
+            assert(
+                #fixture.lvglMock.objects - chartCells() == fixedObjects,
+                string.format(
+                    "%s reflow changed non-column objects: %d -> %d",
+                    dashboard,
+                    fixedObjects,
+                    #fixture.lvglMock.objects - chartCells()
+                )
+            )
         end
         local memory = collectgarbage("count")
         assert(fixture.lvglMock.replacedFontRefCount() == 0, dashboard .. " replaced font callbacks during reflow")
         peakObjects = math.max(peakObjects, fullObjects)
-        if cycle == 1 then
+        if cycle == 2 then
             baseline[dashboard] = { memory = memory, objects = fullObjects }
-        else
+        elseif cycle > 2 then
             local growth = memory - baseline[dashboard].memory
             maxGrowth = math.max(maxGrowth, growth)
             assert(fullObjects == baseline[dashboard].objects, dashboard .. " grew its live object count")
             assert(growth < 16, string.format("%s retained %.1f KiB after cycle %d", dashboard, growth, cycle))
         end
-        if cycle == 21 then
+        if cycle == 22 then
             local started = os.clock()
             for _ = 1, 1000 do
                 refresh()
