@@ -46,11 +46,17 @@ reports can still extend beyond that limit.
 
 ### Scheduler
 
-Select **scheduler** to show two wrapping traces on a fixed 0–100% scale:
-cyan is average slot utilization; orange is the percentage of due work requests
-deferred because slots were unavailable. Each point covers one second.
-A request still waiting on another callback counts again. Zero-slot work is
-excluded from request counts.
+Select **scheduler** to show slot use on a fixed 0–100% scale. Each one-second
+column stacks the slots used by the five busiest consumers in cyan, blue,
+green, amber, and red. The rest is gray. The top of the stack is total
+utilization. The legend lists each color's slots per second and consumer: a
+panel's ID and type, a service, or the flight detector. A consumer keeps its
+color while it remains among the five busiest. Enlarge the panel to see the
+full legend.
+
+The orange line is the percentage of due work requests deferred because slots
+were unavailable. A request still waiting on another callback counts again.
+Zero-slot work is excluded from request counts.
 
 The cursor marks the newest point. At the right edge, drawing resumes on the
 left and overwrites the oldest points without connecting across the wrap.

@@ -930,6 +930,16 @@ local function dispatchDue(context, hidden)
     local dispatched, failures, examined, deferred = 0, false, 0, nil
     local stats = context.schedulerStats
     local requested, denied = 0, 0
+    local window = stats and stats.window
+    if stats and not window then
+        window = {}
+        stats.window = window
+    end
+    -- Slots already spent this callback belong to the flight detector.
+    local flight = window and support.SLOTS - context.remainingSlots
+    if flight and flight > 0 then
+        window.flight = (window.flight or 0) + flight
+    end
 
     while examined < count do
         examined = examined + 1
@@ -949,6 +959,9 @@ local function dispatchDue(context, hidden)
             end
             if id then
                 context.remainingSlots = context.remainingSlots - used
+                if window and used > 0 then
+                    window[service] = (window[service] or 0) + used
+                end
                 if message then
                     addError(context, id .. ": " .. message)
                     failures = true
@@ -989,7 +1002,11 @@ local function dispatchDue(context, hidden)
                         ok, message = false, "refresh consumption must be whole slots within the grant"
                         entry.failed, entry.error = true, message
                     end
-                    context.remainingSlots = context.remainingSlots - (ok and used or granted)
+                    local spent = ok and used or granted
+                    context.remainingSlots = context.remainingSlots - spent
+                    if window and spent > 0 then
+                        window[entry] = (window[entry] or 0) + spent
+                    end
                     dispatched = dispatched + 1
                     if not hidden then
                         entry.nextRefresh = now + entry.interval
@@ -1022,6 +1039,8 @@ local function dispatchDue(context, hidden)
             stats.utilization = stats.used * 100 / (stats.callbacks * support.SLOTS)
             stats.deferrals = stats.requested > 0 and stats.denied * 100 / stats.requested or 0
             stats.revision = stats.revision + 1
+            stats.consumers, stats.window = window, nil
+            stats.capacity, stats.seconds = stats.callbacks * support.SLOTS, (now - stats.started) / 100
             stats.started, stats.callbacks, stats.used, stats.requested, stats.denied = now, 0, 0, 0, 0
         end
     end

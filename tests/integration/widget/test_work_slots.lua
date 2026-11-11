@@ -168,6 +168,27 @@ fixture.tick(100)
 definition.refresh(context)
 assert(#calls == 3 and calls[3].id == "diagnostic" and calls[3].slots == 0)
 assert(stats.revision == 2 and stats.deferrals == 50)
+assert(stats.consumers[telemetry] == 8 and next(stats.consumers, next(stats.consumers)) == nil)
+assert(stats.capacity == 8 and stats.seconds == 1, "consumer slots are reported per measured second")
+context.flightFactory = {
+    broker = {
+        identity = function()
+            return "model"
+        end,
+        filename = "model",
+        documentLoaded = true,
+        session = true,
+        errors = {},
+        state = {},
+        view = { diagnosticRevision = 0, epoch = 1 },
+        tick = function() end,
+    },
+}
+context.flightReportedRevision, context.flightReportedEpoch = 0, 1
+fixture.tick(100)
+definition.refresh(context)
+assert(stats.consumers.flight == 1, "flight detection slots are attributed")
+context.flightFactory = nil
 
 context.serviceRuntime = support.runtime({})
 context.panels = { panel("two", 2), panel("one", 1), panel("not-due", 8) }
@@ -175,7 +196,7 @@ context.panels[3].nextRefresh = getTime() + 1000
 context.workCursor = 1
 fixture.tick(100)
 definition.refresh(context)
-assert(stats.revision == 3 and stats.utilization == 37.5 and stats.deferrals == 0)
+assert(stats.revision == 4 and stats.utilization == 37.5 and stats.deferrals == 0)
 context.panels = {}
 fixture.tick(100)
 -- Keep an inactive service in the registry so the normal dispatch path runs.
@@ -190,4 +211,4 @@ local inactive = {
 }
 support.register(context.serviceRuntime, inactive, 0)
 definition.refresh(context)
-assert(stats.revision == 4 and stats.utilization == 0 and stats.deferrals == 0)
+assert(stats.revision == 5 and stats.utilization == 0 and stats.deferrals == 0)
