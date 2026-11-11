@@ -89,13 +89,16 @@ function renderer:append()
     end
 end
 
---- Paint at most `limit` pending columns of maps filled without live samples.
+--- Paint at most `limit` pending columns of maps filled without live samples,
+--- starting with series `first` so no series waits behind the others.
 ---@return integer painted
 ---@return boolean complete
-function renderer:paint(limit)
-    local painted = 0
-    for series, owner in ipairs(self.context.columnConsumers) do
-        local map = owner.map
+function renderer:paint(limit, first)
+    local owners = self.context.columnConsumers
+    local painted, complete = 0, true
+    for offset = 0, #owners - 1 do
+        local series = ((first or 1) + offset - 1) % #owners + 1
+        local map = owners[series].map
         local list, count = map.dirtyList, #map.dirtyList
         while count > 0 and painted < limit do
             local slot = list[count]
@@ -104,11 +107,9 @@ function renderer:paint(limit)
             count, painted = count - 1, painted + 1
         end
         publish(self, series, map)
-        if count > 0 then
-            return painted, false
-        end
+        complete = complete and count == 0
     end
-    return painted, true
+    return painted, complete
 end
 
 --- Hide previously drawn columns, at most `limit` objects per call.

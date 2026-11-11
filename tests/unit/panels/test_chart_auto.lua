@@ -22,7 +22,7 @@ local panel = chart.create(dashboard.page, { x = 0, y = 0, w = 472, h = 196 }, {
         { source = record.feeds[3].name },
     },
 }, services)
-local worst, counted = 0, 0
+local worst, counted, grant = 0, 0, 1
 local depth, inside, worstBackground, backgroundCount = 0, nil, 0, 0
 local function hook(event)
     if event == "count" then
@@ -42,27 +42,49 @@ local function hook(event)
         depth = depth - 1
     end
 end
--- Simulate 50 ms callbacks with two granted slots: one ordinary, one extra.
+-- Simulate 50 ms callbacks on a shared dashboard: one or two granted slots in turn.
 local function callbacks(count)
     for _ = 1, count do
         now = now + 5
         counted = 0
         depth, inside = 0, nil
         debug.sethook(hook, "cr", 1)
-        local _, _, used = chart.refresh(panel, false, 2)
+        grant = 3 - grant
+        local _, _, used = chart.refresh(panel, false, grant)
         debug.sethook()
         worst = math.max(worst, counted)
-        assert(used >= 1 and used <= 2, "auto preparation must stay within one extra slot")
+        assert(used >= 1 and used <= grant, "auto preparation must stay within the grant")
     end
 end
 -- One sample per series and one chart refresh per simulated 50 ms callback.
-local swappedAt
-for at = 0, 9000, 5 do
-    record.sample(at, { (at * 7) % 997, -(at % 389), (at % 600) - 300 })
-    callbacks(1)
-    swappedAt = swappedAt or panel.window == 12000 and at or nil
+local swappedAt, overflowAt
+local function activeResumes()
+    local count = 0
+    for _, marker in pairs(panel.resumeMarkers.markers) do
+        count = count + (marker.active and 1 or 0)
+    end
+    return count
 end
-assert(swappedAt and swappedAt >= 6000 and swappedAt <= 6100, "the next window must appear within a second of overflow")
+for at = 0, 9000, 5 do
+    -- A one-second pause at 40 s, after the next window is already prepared.
+    record.sample(at, { (at * 7) % 997, -(at % 389), (at % 600) - 300 }, false, not (at >= 4000 and at < 4100))
+    callbacks(1)
+    local first = panel.columnConsumers and panel.columnConsumers[1]
+    if not overflowAt and first and first.map.overflowed then
+        overflowAt = at
+    end
+    if not swappedAt and panel.window == 12000 then
+        swappedAt = at
+        equal(activeResumes(), 1, "the swapped layer must already show pauses recorded before the swap")
+        for _, item in ipairs(panel.series) do
+            assert(item.connectors[1] and item.connectors[1].key, "pause connectors must be drawn before the swap")
+        end
+    end
+end
+assert(
+    overflowAt and swappedAt and swappedAt - overflowAt <= 100,
+    "the next window must appear within a second of overflow"
+)
 callbacks(400)
 equal(panel.window, 12000, "a full one-minute plot must swap to two minutes")
 equal(panel.duration.properties.text, "2m")

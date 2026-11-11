@@ -187,8 +187,11 @@ fixture.pump(context, 40)
 assert(fixture.pumpUntil(context, function()
     return power.series[1].feed.available
 end, 500))
-refresh(power)
-equal(power.series[1].drawnRevision, power.series[1].feed.plotRevision)
+-- Rolling expiry can publish a revision without a sample; drawing catches up on the next one.
+assert(fixture.pumpUntil(context, function()
+    refresh(power)
+    return power.series[1].drawnRevision == power.series[1].feed.plotRevision
+end, 200))
 equal(power.series[1].drawnVersion, power.version)
 equal(power.status.properties.text, "")
 equal(#power.armMarkers.markerKeys, 0, "the initial arming must not draw a vertical boundary")

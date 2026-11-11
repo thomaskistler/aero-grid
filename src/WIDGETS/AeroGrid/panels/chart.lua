@@ -1635,15 +1635,64 @@ local function overflowed(consumers)
     return false
 end
 
---- Whether the auto window needs background turns now rather than only
+--- Whether the hidden layer's overlays still match the session's pauses, arms
+--- and flights and the pause connectors of its columns.
+local function decorationCurrent(auto, session)
+    local job, hidden = auto.job, auto.hidden
+    local seen = job and job.decorated
+    if not seen then
+        return false
+    end
+    local seams = 0
+    for _, owner in ipairs(rawget(hidden, "columnConsumers") or {}) do
+        seams = seams + #owner.map.seams
+    end
+    return seen.resume == session.resumeRevision
+        and seen.arm == session.armRevision
+        and seen.flight == session.flightRevision
+        and seen.seams == seams
+end
+
+local function decorationStamp(auto, session)
+    local seams = 0
+    for _, owner in ipairs(rawget(auto.hidden, "columnConsumers") or {}) do
+        seams = seams + #owner.map.seams
+    end
+    return {
+        resume = session.resumeRevision,
+        arm = session.armRevision,
+        flight = session.flightRevision,
+        seams = seams,
+    }
+end
+
+--- Whether the next auto window needs background turns now rather than only
 --- alongside ordinary refreshes.
-local function autoPending(auto)
+local function hiddenLagging(auto)
+    local owners = auto.hidden and rawget(auto.hidden, "columnConsumers")
+    for index, owner in ipairs(owners or {}) do
+        local fine = auto.consumers[index].fine
+        if (fine.last or 0) - (owner.map.cursor or 0) > 2 or #owner.map.dirtyList > 2 then
+            return true
+        end
+    end
+    return false
+end
+
+local function autoPending(auto, session)
     local consumers = auto and auto.consumers
     if not consumers then
         return false
     end
     local job = auto.job
-    return not job or not job.ready or overflowed(consumers)
+    if auto.stopped or not job and consumers[1].step >= auto.limit then
+        return false
+    end
+    return not job
+        or not job.ready
+        or overflowed(consumers)
+        or not decorationCurrent(auto, session)
+        or hiddenLagging(auto)
 end
 
 local function forgetMarkers(markers)
@@ -1696,13 +1745,27 @@ local function background(context, allowance)
         resets = resets + owner.resets
     end
     if auto.resets ~= resets or auto.geometry ~= context.geometryVersion then
-        auto.resets, auto.geometry, auto.job = resets, context.geometryVersion, nil
+        auto.resets, auto.geometry, auto.job, auto.stopped = resets, context.geometryVersion, nil, nil
         if auto.hidden then
             auto.hidden.recycle = true
         end
     end
+    if auto.stopped then
+        return used
+    end
+    for _, owner in ipairs(consumers) do
+        if owner.fine.overflowed then
+            -- Too many pauses for the fine store: keep the plot fixed at its edge.
+            auto.stopped, auto.job = true, nil
+            return used
+        end
+    end
     local job = auto.job
     if not job then
+        if consumers[1].step >= Columns.AUTO_STEPS then
+            -- The longest auto window stops at the right edge like a fixed one.
+            return used
+        end
         job = { target = consumers[1].step + 1, phase = "halve" }
         auto.job = job
     end
@@ -1796,7 +1859,9 @@ local function background(context, allowance)
     -- The newest fine column can still grow, so the final catch-up and the swap
     -- happen in one turn of at most one slot. A few unpainted columns are left to
     -- the next ordinary append; otherwise keep catching up first.
-    if swapCost and swapCost <= math.max(remaining, BACKGROUND_ALLOWANCE) and used == 0 then
+    -- Swap only with overlays drawn for every pause, arm and flight so far.
+    local current = job.ready and decorationCurrent(auto, context.session)
+    if swapCost and current and swapCost <= math.max(remaining, BACKGROUND_ALLOWANCE) and used == 0 then
         for index, owner in ipairs(hidden.columnConsumers) do
             local fine = consumers[index].fine
             local _, stage = owner.map:absorb(fine, job.factor, fine.last or -1, math.huge)
@@ -1805,24 +1870,31 @@ local function background(context, allowance)
         swapLayers(context, auto, job)
         return used + 800
     end
-    -- Paint absorbed columns before absorbing more, so no backlog reaches the swap.
-    local painted = hidden.columnRenderer:paint(remaining // PAINT_COST)
-    remaining, used = remaining - painted * PAINT_COST, used + painted * PAINT_COST
-    local complete = true
-    for index, owner in ipairs(hidden.columnConsumers) do
-        if remaining < 120 then
-            complete = false
-            break
+    -- Catch up when the hidden columns lag; otherwise spend the turn on overlays,
+    -- which resume across turns, so one-slot grants still finish decorating.
+    local lagging = hiddenLagging(auto)
+    local decorating = rawget(hidden, "columnsDecorating")
+    -- Long overlay passes alternate with catch-up so neither starves.
+    job.alternate = lagging and decorating and not job.alternate
+    if lagging and (not decorating or job.alternate) or not decorating and current then
+        -- Paint absorbed columns before absorbing more, so no backlog reaches the swap.
+        local owners = hidden.columnConsumers
+        job.rotation = (job.rotation or 0) % #owners + 1
+        local painted = hidden.columnRenderer:paint(remaining // PAINT_COST, job.rotation)
+        remaining, used = remaining - painted * PAINT_COST, used + painted * PAINT_COST
+        for offset = 0, #owners - 1 do
+            if remaining < 120 then
+                break
+            end
+            local index = (job.rotation + offset - 1) % #owners + 1
+            local fine = consumers[index].fine
+            local _, stage = owners[index].map:absorb(fine, job.factor, (fine.last or 0) - 1, remaining)
+            remaining, used = remaining - stage, used + stage
         end
-        local fine = consumers[index].fine
-        local absorbed, stage = owner.map:absorb(fine, job.factor, (fine.last or 0) - 1, remaining)
-        remaining, used = remaining - stage, used + stage
-        complete = complete and absorbed
+        painted = hidden.columnRenderer:paint(math.max(0, remaining // PAINT_COST), job.rotation)
+        return used + painted * PAINT_COST
     end
-    local done
-    painted, done = hidden.columnRenderer:paint(math.max(0, remaining // PAINT_COST))
-    remaining, used = remaining - painted * PAINT_COST, used + painted * PAINT_COST
-    if not (complete and done) or remaining < 300 or swapCost then
+    if remaining < 300 then
         return used
     end
     prepareAxis(hidden, remaining)
@@ -1833,10 +1905,14 @@ local function background(context, allowance)
             return used
         end
     end
+    if not rawget(hidden, "columnsDecorating") then
+        -- Changes during a multi-turn pass leave the result stale.
+        job.stamp = decorationStamp(auto, context.session)
+    end
     hidden.columnsDecorating = true
     local _, unfinished, stage = finishColumns(hidden, remaining)
     if not unfinished then
-        job.phase, job.ready = "ready", true
+        job.phase, job.ready, job.decorated = "ready", true, job.stamp
     end
     return used + stage
 end
@@ -1938,7 +2014,11 @@ local function refreshChart(context, creating, slots)
         if context.columnSetupIndex > #context.series then
             context.columnSetup, context.columnSetupIndex = nil, nil
             context.auto = context.columnConsumers[1].auto
-                    and { consumers = context.columnConsumers, hidden = context.auto and context.auto.hidden }
+                    and {
+                        consumers = context.columnConsumers,
+                        hidden = context.auto and context.auto.hidden,
+                        limit = context.columnModule.AUTO_STEPS,
+                    }
                 or nil
         end
         return 1, true, used
@@ -1955,12 +2035,25 @@ end
 function chart.refresh(context, creating, slots)
     slots = slots or 8
     local auto = context.auto
-    if auto and auto.wakeAt and not creating and context.columnRenderer and not context.columnSetup then
+    local ready = auto and auto.consumers and not creating and context.columnRenderer and not context.columnSetup
+    if ready and overflowed(auto.consumers) and autoPending(auto, context.session) then
+        -- The full plot cannot show new data, so every turn finishes the next window;
+        -- queued samples still reach the fine store first.
+        local appended = 0
+        for _, owner in ipairs(auto.consumers) do
+            appended = appended + #owner.pending * 120
+        end
+        -- Paints nothing on the full plot but records the drawn revisions.
+        context.columnRenderer:append()
+        background(context, math.max(0, BACKGROUND_ALLOWANCE - appended))
+        return 1, false, 1
+    end
+    if auto and auto.wakeAt and ready then
         local now = context.clock()
         if now < auto.wakeAt then
             -- Between ordinary refreshes only the next auto window is prepared.
             background(context, BACKGROUND_ALLOWANCE)
-            local interval = autoPending(auto) and 1 or auto.wakeAt - now
+            local interval = autoPending(auto, context.session) and 1 or auto.wakeAt - now
             return math.max(1, math.min(6000, interval)), false, 1
         end
     end
@@ -1970,12 +2063,12 @@ function chart.refresh(context, creating, slots)
         -- A cycle ends when decorations publish, not when the append returns.
         local idle = not unfinished and not context.columnsDecorating and not context.metadataReady
         auto.wakeAt = idle and context.clock() + interval or nil
-        local pending = autoPending(auto)
+        local pending = autoPending(auto, context.session)
         -- At most one extra slot per refresh goes to the next auto window.
         if slots > consumed and (pending or idle) then
             background(context, BACKGROUND_ALLOWANCE)
             consumed = consumed + 1
-            pending = autoPending(auto)
+            pending = autoPending(auto, context.session)
         end
         if pending then
             interval = 1

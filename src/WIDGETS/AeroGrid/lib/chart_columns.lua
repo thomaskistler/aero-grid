@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local columns = { RUNTIME_API = 1, BREAK_WIDTH = 24 }
+-- 18 auto steps reach 512 minutes, keeping tick-times-pixel products within int32.
+local columns = { RUNTIME_API = 1, BREAK_WIDTH = 24, AUTO_STEPS = 18 }
 columns.__index = columns
 local consumer = {}
 consumer.__index = consumer
@@ -28,7 +29,7 @@ end
 --- Smallest auto step whose window still has room after `elapsed` ticks.
 function columns.autoStep(elapsed)
     local step = 1
-    while columns.autoMinutes(step) * 6000 <= (elapsed or 0) + 100 do
+    while step < columns.AUTO_STEPS and columns.autoMinutes(step) * 6000 <= (elapsed or 0) + 100 do
         step = step + 1
     end
     return step
@@ -322,7 +323,10 @@ function consumer:append()
     local fine = self.fine
     for index, sample in ipairs(self.pending) do
         local at, value, broken, resumed = sample[1], sample[2], sample[3], sample[4]
-        self.map:sample(at, value, broken, resumed, sample[6])
+        -- A full auto plot cannot show later samples; only the fine store needs them.
+        if not (fine and self.map.overflowed) then
+            self.map:sample(at, value, broken, resumed, sample[6])
+        end
         if fine then
             fine:record(at, value, broken, resumed, sample[6])
         end
