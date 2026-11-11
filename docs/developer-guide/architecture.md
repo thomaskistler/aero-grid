@@ -177,6 +177,9 @@ accuracy; rolling expiration reuses ring slots while retaining an interpolation
 anchor. Raw readouts/extrema continue even when plot storage is full.
 
 The chart has one mipmap renderer with a single native column-object pool.
+Each touched pixel column is data, hold, missing, or pause and draws at most one
+rectangle: data spans its extrema and the previous column's last value, and a hold
+spans skipped columns at that value. Missing and pause columns draw nothing.
 Live growing consumers maintain eleven bounded extrema/gap rings with 4:3 time
 spans; rolling consumers maintain one ring at the configured duration. Selecting
 a coarser span avoids rebinning the existing view, but changed coordinates still

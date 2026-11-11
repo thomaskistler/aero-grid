@@ -24,9 +24,6 @@ function assertions.nativeColumns(renderer)
     for _ in pairs(renderer.objects) do
         count = count + 1
     end
-    for _ in pairs(renderer.connections) do
-        count = count + 1
-    end
     return count
 end
 
@@ -56,24 +53,11 @@ function assertions.bounds(panel, series)
     local left, right, top, bottom
     for _, rect in ipairs(assertions.rectangles(panel, series)) do
         left = math.min(left or rect.x, rect.x)
-        right = math.max(right or rect.x, rect.x)
+        right = math.max(right or rect.x, rect.x + rect.w - 1)
         top = math.min(top or rect.y, rect.y)
         bottom = math.max(bottom or rect.y, rect.y + rect.h - 1)
     end
     return left, right, top, bottom
-end
-
-function assertions.connections(panel, series)
-    local renderer, result = panel.columnRenderer, {}
-    if not renderer or renderer.root.hidden then
-        return result
-    end
-    for index = (series - 1) * renderer.width + 1, series * renderer.width do
-        if renderer.connected[index] then
-            result[#result + 1] = renderer.connections[index].properties.pts
-        end
-    end
-    return result
 end
 
 return assertions

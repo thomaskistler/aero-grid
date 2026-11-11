@@ -71,7 +71,7 @@ chart.render, first.columnRenderer.append = render, draw
 settle(first)
 local late = panel()
 settle(late)
-assert(next(late.columnConsumers[1].map.tags) == nil, "late chart must not replay retained history")
+assert(next(late.columnConsumers[1].map.kinds) == nil, "late chart must not replay retained history")
 
 local ranges = { first.series[1].low, first.series[1].high }
 record.sample(1100, { 100000 })
@@ -84,7 +84,7 @@ chart.update(first, { x = 0, y = 0, w = 320, h = 134 })
 assert(owner.map ~= before and sibling.map == other)
 settle(first, 2)
 assert(first.start == 0 and first.window == 6000)
-assert(next(owner.map.tags) == nil, "resize must not reconstruct old telemetry")
+assert(next(owner.map.kinds) == nil, "resize must not reconstruct old telemetry")
 local nativeRoot = first.columnRenderer.root
 for at = 1200, 6500, 100 do
     record.sample(at, { at % 83 })
@@ -131,8 +131,8 @@ services.preview = true
 local preview = panel()
 settle(preview)
 assert(preview.columnConsumers[1].readonly)
-for slot = 1, owner.map.width do
-    assert(owner.map.tags[slot] == nil or math.abs(owner.map.tags[slot]) <= owner.map.width)
+for slot in pairs(owner.map.kinds) do
+    assert(slot >= 1 and slot <= owner.map.width)
 end
 chart.destroy(preview)
 chart.destroy(late)

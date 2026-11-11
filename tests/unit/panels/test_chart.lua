@@ -1021,7 +1021,7 @@ for index = 0, 60 do
 end
 finishDrawing(clipped)
 equal(clipped.start, 0, "late input must not scroll the fixed window")
-equal(#chartView.connections(clipped, 1), 0, "input beyond the right edge must not replace the prefix")
+equal(#chartView.rectangles(clipped, 1), 0, "input beyond the right edge must not replace the prefix")
 
 local empty = fixture.createLoaded(nil, { Layout = "Empty", Theme = "modern-dark" })
 local built, message = empty.dashboardLoader.buildPanel(empty, {
@@ -1048,7 +1048,7 @@ for _, entry in ipairs(light.panels) do
         equal(item.name.properties.color, item.color, "legend names must match their trace")
         for _, rect in ipairs(chartView.rectangles(panel, series)) do
             equal(rect.color, item.color)
-            equal(rect.w, 1, "stronger colors must preserve one-pixel envelopes")
+            assert(rect.w == 1 or rect.h == 1, "stronger colors must preserve one-pixel envelopes and holds")
         end
     end
 end

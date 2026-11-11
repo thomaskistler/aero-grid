@@ -63,7 +63,7 @@ assert(
     end, 2500),
     "editor preview did not initialize its empty presentation"
 )
-assert(next(compatible.columnConsumers[1].map.tags) == nil, "previews must not reconstruct recorded history")
+assert(next(compatible.columnConsumers[1].map.kinds) == nil, "previews must not reconstruct recorded history")
 equal(history.count, subscriptions)
 equal(telemetry.count, telemetryCount)
 equal(controls.count, controlCount)

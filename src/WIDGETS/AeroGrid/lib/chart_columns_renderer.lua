@@ -8,8 +8,6 @@ function renderer.new(context)
         context = context,
         width = context.area.w // 1,
         objects = {},
-        connections = {},
-        connected = {},
         visible = {},
         seriesRoots = {},
         published = {},
@@ -25,10 +23,7 @@ function renderer:reset()
     for _, object in pairs(self.objects) do
         lvgl.hide(object)
     end
-    for _, line in pairs(self.connections) do
-        lvgl.hide(line)
-    end
-    self.visible, self.connected, self.published = {}, {}, {}
+    self.visible, self.published = {}, {}
 end
 
 function renderer:destroy()
@@ -36,48 +31,23 @@ function renderer:destroy()
     self.root:clear()
 end
 
-local function connection(context, item, bucket, width, from, to)
-    if not from or width == 0 then
-        return nil
-    end
-    local left = bucket - width
-    local first, last = math.max(0, -left / width), 1
-    local delta = to - from
-    if delta == 0 then
-        if from < item.low or from > item.high then
-            return nil
-        end
-    else
-        local a, b = (item.low - from) / delta, (item.high - from) / delta
-        first, last = math.max(first, math.min(a, b)), math.min(last, math.max(a, b))
-    end
-    if first > last then
-        return nil
-    end
-    local area = context.area
-    local scale = area.h / (item.high - item.low)
-    return {
-        {
-            area.x + math.floor(left + first * width + 0.5),
-            area.y + math.floor((item.high - (from + first * delta)) * scale + 0.5),
-        },
-        {
-            area.x + math.floor(left + last * width + 0.5),
-            area.y + math.floor((item.high - (from + last * delta)) * scale + 0.5),
-        },
-    }
-end
-
+--- Data columns span their incoming value too, so adjacent columns join without
+--- line objects; a hold is one rectangle across skipped columns at the held value.
 local function paintColumn(self, map, series, slot)
-    local context, bucket = self.context, slot - 1
+    local context = self.context
     local item, area = context.series[series], context.area
     local index = (series - 1) * self.width + slot
-    if map.tags[slot] == slot then
+    local kind = map.kinds[slot]
+    if kind == "data" or kind == "hold" then
+        local low, high, from = map.low[slot], map.high[slot], map.froms[slot]
+        if from then
+            low, high = math.min(low, from), math.max(high, from)
+        end
         local bottom = area.y + area.h
         local scale = area.h / (item.high - item.low)
-        local top = math.max(area.y, math.min(bottom, (bottom - (map.high[slot] - item.low) * scale + 0.5) // 1))
-        local last = math.max(area.y, math.min(bottom, (bottom - (map.low[slot] - item.low) * scale + 0.5) // 1))
-        local changes = { x = area.x + bucket, y = top, w = 1, h = last - top + 1 }
+        local top = math.max(area.y, math.min(bottom, (bottom - (high - item.low) * scale + 0.5) // 1))
+        local last = math.max(area.y, math.min(bottom, (bottom - (low - item.low) * scale + 0.5) // 1))
+        local changes = { x = area.x + slot - 1, y = top, w = map.widths[slot], h = last - top + 1 }
         local object = self.objects[index]
         if object then
             object:set(changes)
@@ -89,32 +59,9 @@ local function paintColumn(self, map, series, slot)
             self.objects[index] = lvgl.rectangle(self.seriesRoots[series], changes)
         end
         self.visible[index] = true
-        local points = connection(context, item, bucket, map.widths[slot], map.froms[slot], map.low[slot])
-        if points then
-            local line = self.connections[index]
-            if line then
-                line:set({ pts = points })
-                if not self.connected[index] then
-                    lvgl.show(line)
-                end
-            else
-                self.connections[index] =
-                    lvgl.line(self.seriesRoots[series], { pts = points, thickness = 1, color = item.color })
-            end
-            self.connected[index] = true
-        elseif self.connected[index] then
-            lvgl.hide(self.connections[index])
-            self.connected[index] = nil
-        end
-    else
-        if self.visible[index] then
-            lvgl.hide(self.objects[index])
-            self.visible[index] = nil
-        end
-        if self.connected[index] then
-            lvgl.hide(self.connections[index])
-            self.connected[index] = nil
-        end
+    elseif self.visible[index] then
+        lvgl.hide(self.objects[index])
+        self.visible[index] = nil
     end
 end
 

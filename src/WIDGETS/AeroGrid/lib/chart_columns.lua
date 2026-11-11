@@ -4,7 +4,7 @@ local columns = { RUNTIME_API = 1, BREAK_WIDTH = 24 }
 columns.__index = columns
 local consumer = {}
 consumer.__index = consumer
-local fields = { "low", "high", "ends", "widths", "froms", "kinds", "gaps", "tags" }
+local fields = { "kinds", "low", "high", "ends", "froms", "widths" }
 
 function columns.new(width, window, recording)
     assert(type(width) == "number" and width >= 1 and width % 1 == 0, "columns require an integer width")
@@ -21,7 +21,7 @@ function columns:reset()
     self.seams, self.breaks = {}, {}
     self.dirtyColumns, self.dirtyList = {}, {}
     self.breakFirst, self.breakLast = 1, 0
-    self.at, self.bucket, self.value, self.missing = nil, nil, nil, nil
+    self.at, self.bucket, self.value, self.missing, self.last = nil, nil, nil, nil, nil
     self.gapAt, self.gapRevision = nil, nil
     self.revision = (self.revision or 0) + 1
     self.historyRevision = nil
@@ -67,54 +67,55 @@ function columns:breakAt(at)
     self.breaks[self.breakLast] = at
 end
 
+local function mark(self, slot)
+    if not self.dirtyColumns[slot] then
+        self.dirtyColumns[slot] = true
+        self.dirtyList[#self.dirtyList + 1] = slot
+    end
+end
+
+local function place(self, bucket, kind, value, from, width)
+    local slot = bucket + 1
+    self.kinds[slot], self.low[slot], self.high[slot], self.ends[slot] = kind, value, value, value
+    self.froms[slot], self.widths[slot] = from, width
+    mark(self, slot)
+end
+
+--- Every touched pixel column has one kind: "data" (min, max, end and the
+--- incoming value it connects from), "hold" (the previous value carried across
+--- skipped columns), "missing" or "pause" (a gap before resumed data).
 local function append(self, bucket, value, broken, resumed)
     if bucket < 0 or bucket >= self.width then
         return
     end
-    local slot, tag = bucket + 1, bucket + 1
-    if not self.dirtyColumns[slot] then
-        self.dirtyList[#self.dirtyList + 1] = slot
-    end
-    self.dirtyColumns[slot] = true
-    local previous = self.tags[slot]
-    local interrupted = broken or resumed or self.missing
-    local width = self.bucket and math.max(0, bucket - self.bucket)
-        or (value == nil or self.missing) and math.max(0, bucket)
-        or 0
-    local gap = resumed
-            and {
-                kind = "break",
-                min = value,
-                max = value,
-                ["end"] = value,
-                width = columns.BREAK_WIDTH,
-            }
-        or interrupted and (self.bucket or self.missing) and { kind = "missing", width = width }
-        or nil
-    if resumed and not self.missing and value ~= nil and self.bucket and self.value ~= nil then
-        self.seams[#self.seams + 1] = { self.bucket, self.value, bucket, value }
-    end
-    local same = previous == tag or previous == -tag
+    local slot = bucket + 1
+    local kind = self.kinds[slot]
     if value == nil then
-        if not same or previous == -tag then
-            self.low[slot], self.high[slot], self.ends[slot] = nil, nil, nil
-            self.tags[slot], self.kinds[slot], self.widths[slot] = -tag, "missing", width
-            self.froms[slot] = nil
+        if kind == nil then
+            place(self, bucket, "missing", nil, nil, 1)
         end
-        self.gaps[slot] = gap
-    elseif same and previous == tag and not interrupted then
-        if self.kinds[slot] == "break" then
-            self.kinds[slot], self.widths[slot] = "data", 0
-        end
+    elseif kind == "data" then
+        -- One pixel cannot show an interruption, so the column keeps its incoming value.
         self.low[slot], self.high[slot] = math.min(self.low[slot], value), math.max(self.high[slot], value)
         self.ends[slot] = value
+        mark(self, slot)
     else
-        self.low[slot], self.high[slot], self.ends[slot] = value, value, value
-        self.tags[slot], self.kinds[slot] = tag, resumed and "break" or "data"
-        self.widths[slot] = resumed and columns.BREAK_WIDTH or width
-        self.froms[slot] = not interrupted and self.value or nil
-        self.gaps[slot] = gap
+        local previous = self.bucket
+        local from = not (broken or resumed or self.missing) and self.value or nil
+        if resumed then
+            local first = math.max(bucket - columns.BREAK_WIDTH, self.last and self.last + 1 or 0)
+            if first < bucket then
+                place(self, first, "pause", nil, nil, bucket - first)
+            end
+            if not self.missing and previous and self.value ~= nil then
+                self.seams[#self.seams + 1] = { previous, self.value, bucket, value }
+            end
+        elseif from ~= nil and bucket - previous > 1 then
+            place(self, previous + 1, "hold", from, nil, bucket - previous - 1)
+        end
+        place(self, bucket, "data", value, from, 1)
     end
+    self.last = math.max(self.last or bucket, bucket)
     self.missing = value == nil
     if value ~= nil then
         self.bucket, self.value = bucket, value
@@ -130,23 +131,23 @@ function columns:sample(at, value, broken, resumed, gapCount)
     )
     self.revision = self.revision + 1
     local pixel = gapCount and at * self.width / self.window + gapCount * columns.BREAK_WIDTH or self:pixel(at)
-    append(self, pixel // 1, value, broken, resumed)
+    append(self, math.floor(pixel), value, broken, resumed)
     self.at = at
 end
 
 function columns:summary(bucket)
     local slot = bucket + 1
-    if not self.tags[slot] then
+    local kind = self.kinds[slot]
+    if not kind then
         return nil
     end
     return {
-        kind = self.kinds[slot],
+        kind = kind,
         min = self.low[slot],
         max = self.high[slot],
         ["end"] = self.ends[slot],
         width = self.widths[slot],
         from = self.froms[slot],
-        gap = self.gaps[slot],
     }
 end
 

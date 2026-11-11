@@ -70,8 +70,9 @@ connect the last recorded values to the resumed values.
 The gap stays 24 pixels wide and does not move earlier traces.
 It indicates omitted time, not the length of the pause, and uses space in the fixed window.
 Missing telemetry breaks the traces without adding a pause gap or connector.
-Consecutive valid readings are connected, with each screen column retaining
-its minimum and maximum rather than leaving unsampled pixels blank.
+Consecutive valid readings are connected: each screen column shows its minimum
+and maximum and joins the previous column's last value. When readings arrive less
+often than once per column, the trace holds the last value until the next reading.
 Readouts freeze when recording pauses. Minimum and maximum cover all recorded periods.
 
 The horizontal axis starts at recording time zero and stays fixed.

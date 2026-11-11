@@ -8,7 +8,9 @@ local recorder = assert(loadfile(root .. "/tests/support/chart_recorder.lua"))(r
 local Oracle = assert(loadfile(root .. "/tests/support/chart_column_oracle.lua"))()
 fixture.reset()
 
-for _, width in ipairs({ 60, 226, 397, 800 }) do
+local holds = 0
+for run = 1, 8 do
+    local width, stride = ({ 60, 226, 397, 800 })[(run - 1) % 4 + 1], run <= 4 and 5 or 37
     local history = {}
     function history:point()
         error("appends must never read recorded history")
@@ -21,7 +23,7 @@ for _, width in ipairs({ 60, 226, 397, 800 }) do
     end
     local feed = { count = 5000, first = 1, last = 5000, plotRevision = 0 }
     local owner, oracle = Columns.attach(history, feed, width), Oracle.new()
-    assert(next(owner.map.tags) == nil and #owner.pending == 0, "attachment replayed old history")
+    assert(next(owner.map.kinds) == nil and #owner.pending == 0, "attachment replayed old history")
     local context = {
         area = { x = 4, y = 10, w = width, h = 90 },
         rect = { w = width + 20, h = 120 },
@@ -33,7 +35,7 @@ for _, width in ipairs({ 60, 226, 397, 800 }) do
     }
     local renderer = Renderer.new(context)
     assert(next(renderer.objects) == nil, "empty charts must not allocate a full column pool")
-    for at = 0, 5999, 5 do
+    for at = 0, 5999, stride do
         local value = at % 71
         if at % 113 == 0 then
             value = nil
@@ -41,7 +43,7 @@ for _, width in ipairs({ 60, 226, 397, 800 }) do
         feed.plotRevision = feed.plotRevision + 1
         history.observer:sample(at, value)
         oracle:sample(at, value)
-        if at % 20 == 0 then
+        if at % (stride * 4) == 0 then
             renderer:append()
             assert(#owner.pending == 0 and #owner.map.dirtyList == 0, "append left unfinished work")
         end
@@ -51,30 +53,26 @@ for _, width in ipairs({ 60, 226, 397, 800 }) do
     for bucket = 0, width - 1 do
         local expected, actual = oracle:summary(width, bucket), map:summary(bucket)
         assert(not expected == not actual)
+        holds = holds + (expected and expected.kind == "hold" and 1 or 0)
         if expected then
             assert(actual.kind == expected.kind and actual.min == expected.min and actual.max == expected.max)
             assert(actual["end"] == expected.finish and actual.width == expected.width and actual.from == expected.from)
         end
-        local populated = expected and expected.kind ~= "missing"
-        assert(not not renderer.visible[bucket + 1] == not not populated)
-        if populated then
-            local rectangle = renderer.objects[bucket + 1].properties
-            local top = math.max(10, math.min(100, math.floor(100 - (expected.max - 10) * 90 / 40 + 0.5)))
-            local bottom = math.max(10, math.min(100, math.floor(100 - (expected.min - 10) * 90 / 40 + 0.5)))
-            assert(rectangle.x == 4 + bucket and rectangle.y == top and rectangle.h == bottom - top + 1)
-            local points = oracle:connection(width, bucket, context.area, 10, 50)
-            assert(not not renderer.connected[bucket + 1] == not not points)
-            if points then
-                local actualPoints = renderer.connections[bucket + 1].properties.pts
-                for index = 1, 2 do
-                    assert(actualPoints[index][1] == points[index][1] and actualPoints[index][2] == points[index][2])
-                end
+        local rectangle = oracle:rectangle(width, bucket, context.area, 10, 50)
+        assert(not not renderer.visible[bucket + 1] == not not rectangle)
+        if rectangle then
+            local properties = renderer.objects[bucket + 1].properties
+            for _, key in ipairs({ "x", "y", "w", "h" }) do
+                assert(
+                    properties[key] == rectangle[key],
+                    "column " .. bucket .. " " .. key .. " differs from the oracle"
+                )
             end
         end
     end
     local saved = {}
     for slot = 1, width do
-        saved[slot] = { map.low[slot], map.high[slot], map.ends[slot], map.tags[slot] }
+        saved[slot] = { map.low[slot], map.high[slot], map.ends[slot], map.kinds[slot], map.froms[slot] }
     end
     for at = 6000, 50000, 50 do
         history.observer:sample(at, -at)
@@ -83,14 +81,16 @@ for _, width in ipairs({ 60, 226, 397, 800 }) do
     renderer:append()
     for slot, previous in ipairs(saved) do
         assert(map.low[slot] == previous[1] and map.high[slot] == previous[2])
-        assert(map.ends[slot] == previous[3] and map.tags[slot] == previous[4], "full chart overwrote old columns")
+        assert(map.ends[slot] == previous[3] and map.kinds[slot] == previous[4], "full chart overwrote old columns")
+        assert(map.froms[slot] == previous[5], "full chart overwrote old columns")
     end
     owner:resize(width)
-    assert(next(owner.map.tags) == nil and #owner.pending == 0, "resize replayed history")
+    assert(next(owner.map.kinds) == nil and #owner.pending == 0, "resize replayed history")
     renderer:destroy()
     owner:destroy()
     assert(history.observer == nil)
 end
+assert(holds > 100, "sparse input must exercise held columns")
 
 local record = recorder(3)
 local context = {
@@ -111,7 +111,7 @@ for series = 1, 3 do
 end
 local renderer = Renderer.new(context)
 record.sample(0, { 10, 20, 30 })
-assert(next(context.columnConsumers[1].map.tags) == nil, "telemetry callback created columns before append")
+assert(next(context.columnConsumers[1].map.kinds) == nil, "telemetry callback created columns before append")
 renderer:append()
 local first, set = renderer.objects[1], renderer.objects[1].set
 local calls = {}
@@ -143,7 +143,15 @@ renderer:append()
 assert(calls[second] == nil, "sparse input redrew previous columns")
 for index in pairs(renderer.objects) do
     local bucket = (index - 1) % 120
-    assert(bucket == 0 or bucket == 2 or bucket == 80, "append allocated empty columns across a time gap")
+    assert(bucket <= 3 or bucket == 80, "append allocated empty columns across a time gap")
+end
+for series, owner in ipairs(context.columnConsumers) do
+    local hold = owner.map:summary(3)
+    assert(hold.kind == "hold" and hold.width == 77 and hold.min == series * 10 + 5, "skipped columns must hold")
+    local jump = owner.map:summary(80)
+    assert(jump.kind == "data" and jump.from == series * 10 + 5 and jump.min == series * 10 + 40)
+    local rectangle = renderer.objects[(series - 1) * 120 + 4].properties
+    assert(rectangle.x == 7 and rectangle.w == 77 and rectangle.h == 1, "a hold must be one rectangle")
 end
 
 record.sample(4100, { 0, 0, 0 }, false, false)
@@ -152,8 +160,11 @@ renderer:append()
 for _, owner in ipairs(context.columnConsumers) do
     local map = owner.map
     assert(#map.seams == 1)
-    local resumed = map:summary(map:pixel(map.at) // 1)
-    assert(resumed.kind == "break" and resumed.width == 24 and resumed.from == nil)
+    local bucket = map:pixel(map.at) // 1
+    local resumed, pause = map:summary(bucket), map:summary(bucket - 24)
+    assert(resumed.kind == "data" and resumed.width == 1 and resumed.from == nil)
+    assert(pause.kind == "pause" and pause.width == 24, "a pause must be one 24-pixel column")
+    assert(map:summary(bucket - 1) == nil and not renderer.visible[bucket - 23], "a pause must draw nothing")
 end
 record.sample(4300, { 0, 0, 0 }, true)
 record.sample(4400, { 70, 70, 70 })
@@ -166,7 +177,7 @@ renderer:reset()
 renderer:append()
 assert(next(renderer.visible) == nil)
 for _, owner in ipairs(context.columnConsumers) do
-    assert(next(owner.map.tags) == nil)
+    assert(next(owner.map.kinds) == nil)
     owner:destroy()
 end
 renderer:destroy()
@@ -185,10 +196,11 @@ queued:sample(0, 10)
 queued:sample(1000, 30)
 queuedSession.resumeLast, queuedSession.resumeRevision = 1, 1
 queued:sample(1000, 50, true, true)
-assert(next(queued.map.tags) == nil)
+assert(next(queued.map.kinds) == nil)
 queued:append()
 assert(queued.map:summary(20)["end"] == 30, "queued pre-resume data shifted across the pause gap")
-assert(queued.map:summary(44).kind == "break")
+assert(queued.map:summary(44).kind == "data" and queued.map:summary(44).from == nil)
+assert(queued.map:summary(21).kind == "pause" and queued.map:summary(21).width == 23, "a pause must follow its prefix")
 assert(queued.map.seams[1][1] == 20 and queued.map.seams[1][3] == 44)
 queued:destroy()
-print("Append-only columns consume new telemetry, summarize once, preserve geometry and never replay history")
+print("Append-only typed columns consume new telemetry, summarize once, hold skipped columns and never replay history")
