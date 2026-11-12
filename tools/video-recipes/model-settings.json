@@ -2,10 +2,10 @@
   "version": 1,
   "id": "model-settings",
   "initial": "default-dashboard",
-  "ticks": 25340,
+  "ticks": 24600,
   "warmup_ticks": 500,
   "trim_start": 0,
-  "duration": 248.4,
+  "duration": 241.0,
   "actions": "model-settings.actions.txt",
   "narration": [
     {
@@ -106,61 +106,55 @@
     },
     {
       "start": 169.5,
-      "end": 176.9,
-      "text": "Set it to play once, so you don't hear it every time you turn on the radio.",
-      "rate": 0
-    },
-    {
-      "start": 176.9,
-      "end": 179.9,
+      "end": 172.5,
       "text": "Then turn it on with Enable.",
       "rate": 0
     },
     {
-      "start": 179.9,
-      "end": 194.8,
+      "start": 172.5,
+      "end": 187.4,
       "text": "Want a sound when the flight ends, too? Add a second one on not L01.",
       "rate": 0
     },
     {
-      "start": 194.8,
-      "end": 205.0,
+      "start": 187.4,
+      "end": 197.6,
       "text": "Back in AeroGrid's Model settings, set Flight status switch to L01.",
       "rate": 0
     },
     {
-      "start": 205.0,
-      "end": 210.8,
+      "start": 197.6,
+      "end": 203.4,
       "text": "Keep L01 just for this. Don't use it for arming or session reset.",
       "rate": 0
     },
     {
-      "start": 210.8,
-      "end": 217.0,
+      "start": 203.4,
+      "end": 209.6,
       "text": "Next is Session reset. It's handy when you want to start fresh between flights.",
       "rate": 0
     },
     {
-      "start": 217.0,
-      "end": 225.6,
+      "start": 209.6,
+      "end": 218.2,
       "text": "Pick a switch that isn't your arm switch.",
       "rate": 0
     },
     {
-      "start": 225.6,
-      "end": 232.6,
+      "start": 218.2,
+      "end": 225.2,
       "text": "When you flip it, AeroGrid clears your charts and the navigation home it captured at arming.",
       "rate": 0
     },
     {
-      "start": 232.6,
-      "end": 238.4,
+      "start": 225.2,
+      "end": 231.0,
       "text": "You might want to use the same switch to reset your timer, too.",
       "rate": 0
     },
     {
-      "start": 238.4,
-      "end": 248.4,
+      "start": 231.0,
+      "end": 241.0,
       "text": "And that's it. Your model is set up, and all of your AeroGrid dashboards are ready to go.",
       "rate": 0
     }
