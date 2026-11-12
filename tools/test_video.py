@@ -172,6 +172,16 @@ class VideoTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             video.prepare(self.recipe, self.directory)
 
+    def test_default_dashboard_preparation(self):
+        recipe = video.load_recipe(video.RECIPES / "model-settings.json")
+        sd = video.prepare(recipe, self.directory)
+        model = (sd / "MODELS/model1.yml").read_text()
+        self.assertIn('name: "Crack Yak"', model)
+        self.assertIn("unsignedValue: 2", model, "layout option must select Default")
+        names = (sd / "AEROGRID/layout-registry.txt").read_text().splitlines()
+        self.assertEqual(names[1], "Default")
+        self.assertIn("\nbacklightMode: backlight_mode_on\n", (sd / "RADIO/radio.yml").read_text())
+
     def test_offline_render_screen_and_radio(self):
         try:
             video.ffmpeg()

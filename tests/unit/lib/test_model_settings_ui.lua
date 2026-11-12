@@ -81,7 +81,13 @@ local function fixture(width)
         mock.settle()
     end
     assert(not state.build and not state.save and not state.cancel, "no draft-form buttons")
-    assert(state.smartStatus.properties.y > state.controls.flightSwitch.parent.properties.y)
+    local smart = state.controls.smartDetection.parent.properties
+    assert(state.smartStatus.properties.y >= smart.y + smart.h, "Smart status follows Smart detection")
+    assert(
+        state.smartStatus.properties.y + state.smartStatus.properties.h
+            < state.controls.flightSwitch.parent.properties.y
+    )
+    assert(not state.smartStatus.hidden)
     local headings = {}
     for _, object in ipairs(mock.objects) do
         if object.parent == state.dialog and object.kind == "label" then
@@ -101,12 +107,12 @@ local function fixture(width)
     assert(headings["Model arming"] == 4, "the first section must not gain leading space")
     for _, section in ipairs({
         { "Flight detection", "armed" },
-        { "Session reset", "smartDetection" },
-        { "Flight status output", "sessionReset" },
+        { "Session reset", "flightSwitch" },
     }) do
         local previous = state.controls[section[2]].parent.properties
         assert(headings[section[1]] - previous.y - previous.h == 14, "sections must have extra separation")
     end
+    assert(headings["Flight status output"] == nil, "flight status belongs to the flight detection section")
     local motor = state.controls.motorSource.parent.properties
     assert(
         state.controls.motorReversed.parent.properties.y - motor.y - motor.h == 2,
@@ -130,7 +136,8 @@ local function fixture(width)
     assert(state.controls.requireReceiver.kind == "toggle")
     assert(state.controls.requireReceiver.parent.properties.title == "Require receiver")
     assert(state.controls.requireReceiver.properties.get() == 1, "receiver connection is required by default")
-    assert(headings["Flight status output"] > state.controls.smartDetection.parent.properties.y)
+    assert(state.controls.flightSwitch.parent.properties.y > state.controls.smartDetection.parent.properties.y)
+    assert(state.controls.flightSwitch.parent.properties.y < headings["Session reset"])
     assert(state.controls.history == nil, "CSV history must not be offered")
     assert(state.controls.minFlightDuration.parent.properties.title == "Start detection window (s)")
     assert(state.controls.disarmDuration.parent.properties.title == "End detection window (s)")

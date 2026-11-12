@@ -92,8 +92,9 @@ typography, spacing, colors, and state indicators across the dashboard.
 
 ## How to use
 
-Follow these three short walkthroughs to install
-[AeroGrid](user-guide/installation.md), create a dashboard, and customize it.
+Follow these four short walkthroughs to install
+[AeroGrid](user-guide/installation.md), create a dashboard, customize it, and
+set it up for your model.
 
 <div class="ag-video-gallery">
   <section>
@@ -110,5 +111,10 @@ Follow these three short walkthroughs to install
     <h3>Add, move, and resize panels</h3>
     <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/hJtvJaOf7YY" title="Add, move, and resize AeroGrid panels" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
     <p><a href="user-guide/edit-dashboard/">Read the editing guide</a> or <a href="https://www.youtube.com/watch?v=hJtvJaOf7YY">watch on YouTube</a>.</p>
+  </section>
+  <section>
+    <h3>Set up model settings</h3>
+    <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/VtwC9R3lhOQ" title="Set up AeroGrid model settings" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+    <p><a href="user-guide/model-settings/">Read the model settings guide</a> or <a href="https://www.youtube.com/watch?v=VtwC9R3lhOQ">watch on YouTube</a>.</p>
   </section>
 </div>
