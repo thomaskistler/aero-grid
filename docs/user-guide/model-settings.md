@@ -1,5 +1,10 @@
 # Edit model settings
 
+<div class="ag-video">
+  <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/VtwC9R3lhOQ" title="Set up AeroGrid model settings" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+  <p><a href="https://www.youtube.com/watch?v=VtwC9R3lhOQ">Watch the model settings walkthrough on YouTube</a>.</p>
+</div>
+
 Long-press the AeroGrid dashboard to enter fullscreen. The AeroGrid icon
 appears in the top-left corner. Tap it, then choose **Model settings**.
 
