@@ -85,7 +85,7 @@ def load_recipe(path):
         raise ValueError("Only recipe version 1 is supported")
     if not isinstance(recipe["id"], str) or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", recipe["id"]):
         raise ValueError("Invalid recipe id")
-    if recipe["initial"] not in ("fresh-model", "empty-dashboard"):
+    if recipe["initial"] not in ("fresh-model", "empty-dashboard", "default-dashboard"):
         raise ValueError("Unknown initial state")
     for key in ("ticks", "warmup_ticks"):
         if type(recipe[key]) is not int or recipe[key] < 0 or recipe[key] % 5:
@@ -173,13 +173,15 @@ def prepare(recipe, directory):
     capture_module().prepare(sd, "select-layout")
     model = """semver: 3.0.0
 header:
-   name: "AEROGRID DEMO"
+   name: "Crack Yak"
    bitmap: ""
    labels: ""
 disableThrottleWarning: 1
 """
-    if recipe["initial"] == "empty-dashboard":
-        model += """screenData:
+    if recipe["initial"] != "fresh-model":
+        # Layout option indexes the registry written below: 1 is Empty, 2 is Default.
+        layout = 2 if recipe["initial"] == "default-dashboard" else 1
+        model += f"""screenData:
    0:
       LayoutId: Layout1x1AM
       layoutData:
@@ -191,7 +193,7 @@ disableThrottleWarning: 1
                      0:
                         type: Unsigned
                         value:
-                           unsignedValue: 1
+                           unsignedValue: {layout}
                      1:
                         type: Unsigned
                         value:
@@ -250,6 +252,12 @@ return {
             "support.environment()",
             'support.environment(assert(loadScript("/WIDGETS/AeroGrid/video-inputs.lua"))())'))
     (sd / "MODELS/model1.yml").write_text(model)
+    # A touch after the backlight times out only wakes the screen, so keep it on through narration pauses.
+    radio = sd / "RADIO/radio.yml"
+    settings = radio.read_text()
+    if settings.count("\nbacklightMode: ") != 1:
+        raise ValueError("Radio backlight setting changed; update video preparation")
+    radio.write_text(re.sub(r"(?m)^backlightMode: \w+$", "backlightMode: backlight_mode_on", settings))
     (sd / "AEROGRID/layout-registry.txt").write_text("Empty\nDefault\nDiagnostics\nPalette\n")
     (sd / "capture-ready.txt").unlink(missing_ok=True)
     return sd

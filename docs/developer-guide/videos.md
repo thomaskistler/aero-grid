@@ -31,8 +31,8 @@ build/video-venv/bin/python tools/video.py validate
 build/video-venv/bin/python tools/video.py capture
 ```
 
-The default recipe is `add-move-resize-panel.json`. Select the other tutorial
-with `--recipe tools/video-recipes/create-empty-dashboard.json` on **each**
+The default recipe is `add-move-resize-panel.json`. Select another tutorial,
+such as `--recipe tools/video-recipes/model-settings.json`, on **each**
 command. `--output build/video/my-run` selects a different working directory.
 `compile` only builds the recorder; `prepare` only creates an SD card.
 `capture` does both, then records. Preparation refuses an existing SD card:
@@ -40,7 +40,9 @@ use a new output directory for another capture. It never replaces your
 development SD image.
 
 Capture uses `capture-editor.py`'s SD preparation and the current checkout's
-widget source, including uncommitted changes. All editor interactions go
+widget source, including uncommitted changes. The demo model is named
+**Crack Yak**, and the radio backlight stays on: after a backlight timeout,
+the firmware treats the next touch as a wake-up and drops it. All editor interactions go
 through genuine simulator touch/key input. No panel code is rewritten.
 The editing recipe explicitly injects demonstration telemetry **only in its
 isolated widget copy**: registered `GSpd`/maximum sensor, values 48/72, RSSI
@@ -157,7 +159,8 @@ alignment, source units, and photo placement before publishing.
 ## Recipe format and reproducibility
 
 Version 1 is validated before execution; unknown fields are rejected.
-Recipes require `id`, `initial` (`fresh-model` or `empty-dashboard`), `ticks`,
+Recipes require `id`, `initial` (`fresh-model`, `empty-dashboard`, or
+`default-dashboard`), `ticks`,
 `warmup_ticks`, `trim_start`, `duration`, recipe-relative `actions`,
 `narration`, `radio`, and `provenance`. Optional `sample_telemetry: true`
 is supported only for the editing fixture. Tick totals/warmup are multiples
@@ -189,6 +192,13 @@ of its first long-press; check intro timing. The last second is a held frame.
 Radio restart and selecting the new layout after Save as are **narrated
 instructions**, not automated or demonstrated steps. Panel unit appearance
 comes from production source, never simulator-only rendering patches.
+
+**Model settings:** a native replay starting from the Default dashboard. It
+sets the arm switch, shows the flight detection defaults, creates a Sticky
+**L01** logical switch with a Play Sound special function, selects L01 as the
+Flight status switch, and sets a Session reset switch. Motor channel stays
+at its CH3 default; its picker is not opened. The flight-end sound on `!L01`
+is narrated, not demonstrated.
 
 Fixed-coordinate/realtime scripts can change behavior with firmware,
 machine load, or widget changes. There is no UI-state assertion or automatic

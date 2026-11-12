@@ -1,0 +1,199 @@
+{
+  "version": 1,
+  "id": "model-settings",
+  "initial": "default-dashboard",
+  "ticks": 24370,
+  "warmup_ticks": 500,
+  "trim_start": 0,
+  "duration": 238.7,
+  "actions": "model-settings.actions.txt",
+  "narration": [
+    {
+      "start": 0.0,
+      "end": 13.0,
+      "text": "Before you go flying with your new AeroGrid layouts, AeroGrid needs to know a few things about your model. These settings are used across all your panels and all your dashboards.",
+      "rate": 0
+    },
+    {
+      "start": 13.0,
+      "end": 21.6,
+      "text": "Let's open Model settings. Long-press to go fullscreen, tap the AeroGrid icon in the top left, and pick Model settings.",
+      "rate": 0
+    },
+    {
+      "start": 21.6,
+      "end": 27.8,
+      "text": "There's no save button. Every change is saved as soon as you confirm it.",
+      "rate": 0
+    },
+    {
+      "start": 27.8,
+      "end": 35.6,
+      "text": "First up is the arm switch. Just pick the same switch you already use to arm your model.",
+      "rate": 0
+    },
+    {
+      "start": 35.6,
+      "end": 53.1,
+      "text": "AeroGrid uses it to know when to start recording charts and when to start detecting flights. And if your navigation panel uses first-arm home, that's when it grabs the home position. Don't worry, AeroGrid only watches this switch. It never arms anything.",
+      "rate": 0
+    },
+    {
+      "start": 53.1,
+      "end": 66.1,
+      "text": "Now, being armed doesn't mean you're flying. You might just be sitting on the bench. That's what flight detection is for. Your flight counter uses it, and so do your charts.",
+      "rate": 0
+    },
+    {
+      "start": 66.1,
+      "end": 75.5,
+      "text": "Set Motor channel to your throttle. If your throttle is high at idle and low at full power, turn on Reverse motor.",
+      "rate": 0
+    },
+    {
+      "start": 75.5,
+      "end": 85.7,
+      "text": "We'll keep the defaults. A flight starts once you're armed, the receiver is connected, and the throttle stays above twenty-five percent for thirty seconds.",
+      "rate": 0
+    },
+    {
+      "start": 85.7,
+      "end": 93.5,
+      "text": "Every flight bumps the flight counter by one. The flight ends once you've been disarmed for ten seconds.",
+      "rate": 0
+    },
+    {
+      "start": 93.5,
+      "end": 103.3,
+      "text": "If you have altitude or GPS telemetry, Smart detection can spot a takeoff a bit sooner. It's optional, so we'll leave it off.",
+      "rate": 0
+    },
+    {
+      "start": 103.3,
+      "end": 107.9,
+      "text": "One more setting in this section: the flight status switch.",
+      "rate": 0
+    },
+    {
+      "start": 107.9,
+      "end": 120.5,
+      "text": "AeroGrid can pass the flight status to Edge T X through a logical switch. That way you can play a sound or an announcement when a flight starts or ends.",
+      "rate": 0
+    },
+    {
+      "start": 120.5,
+      "end": 131.5,
+      "text": "Let's set that up. First we need a logical switch. Leave AeroGrid for a moment and open Logical Switches in your model settings.",
+      "rate": 0
+    },
+    {
+      "start": 131.5,
+      "end": 142.0,
+      "text": "Add L01 and make it Sticky. Leave everything else empty. AeroGrid turns it on and off for you.",
+      "rate": 0
+    },
+    {
+      "start": 142.0,
+      "end": 156.5,
+      "text": "Now go to Special Functions. Add one that runs on L01 and plays a sound.",
+      "rate": 0
+    },
+    {
+      "start": 156.5,
+      "end": 161.0,
+      "text": "Pick whatever you like.",
+      "rate": 0
+    },
+    {
+      "start": 161.0,
+      "end": 168.4,
+      "text": "Set it to play once, so you don't hear it every time you turn on the radio.",
+      "rate": 0
+    },
+    {
+      "start": 168.4,
+      "end": 171.4,
+      "text": "Then turn it on with Enable.",
+      "rate": 0
+    },
+    {
+      "start": 171.4,
+      "end": 186.3,
+      "text": "Want a sound when the flight ends, too? Add a second one on not L01.",
+      "rate": 0
+    },
+    {
+      "start": 186.3,
+      "end": 196.5,
+      "text": "Back in AeroGrid's Model settings, set Flight status switch to L01.",
+      "rate": 0
+    },
+    {
+      "start": 196.5,
+      "end": 202.3,
+      "text": "Keep L01 just for this. Don't use it for arming or session reset.",
+      "rate": 0
+    },
+    {
+      "start": 202.3,
+      "end": 208.5,
+      "text": "Next is Session reset. It's handy when you want to start fresh between flights.",
+      "rate": 0
+    },
+    {
+      "start": 208.5,
+      "end": 217.1,
+      "text": "Pick a switch that isn't your arm switch.",
+      "rate": 0
+    },
+    {
+      "start": 217.1,
+      "end": 224.1,
+      "text": "When you flip it, AeroGrid clears your charts and the navigation home it captured at arming.",
+      "rate": 0
+    },
+    {
+      "start": 224.1,
+      "end": 229.9,
+      "text": "You might want to use the same switch to reset your timer, too.",
+      "rate": 0
+    },
+    {
+      "start": 229.9,
+      "end": 238.7,
+      "text": "And that's it. Your model is set up, and all of your AeroGrid dashboards are ready to go.",
+      "rate": 0
+    }
+  ],
+  "radio": {
+    "crop": [
+      2080,
+      1000,
+      960,
+      2700
+    ],
+    "canvas": [
+      1560,
+      750
+    ],
+    "screen": [
+      317,
+      80,
+      930,
+      532
+    ],
+    "return_button": [
+      147,
+      507
+    ],
+    "mask_threshold": [
+      80,
+      120
+    ],
+    "source": "User-supplied 4000x4000 upscale of RadioMaster TX16S product photo: https://radiomasterrc.com/cdn/shop/files/478937e8d66c767632b986b2cb0362f5_1800x1800.jpg?v=1755743144"
+  },
+  "provenance": {
+    "status": "Native replay on the EdgeTX Companion 2.12 TX16S simulator; review the full video before publishing.",
+    "notes": "Starts from the Default dashboard with AeroGrid installed. Ticks 100-220 prime touch input before recorded frames. Every visible tap, drag, and RTN press is genuine simulator input. Motor channel is shown at its CH3 default without opening its picker. The flight-end Special Function on !L01 is narrated, not demonstrated."
+  }
+}
