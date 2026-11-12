@@ -38,6 +38,7 @@ do
     assert(result.revision == 1 and result.modelFilename == "plane.yml")
     assert(result.flight.motorSource == "ch3" and result.flight.history == nil)
     assert(result.flight.smartDetection == false)
+    assert(result.flight.requireReceiver == true)
     assert(result.armed == "SFv" and store:load("plane.yml").armed == "SFv")
     assert(result.sessionReset == "!L01" and store:load("plane.yml").sessionReset == "!L01")
     result.flight.motorSource = "ch1"
@@ -45,11 +46,14 @@ do
     local draft = config.defaults()
     draft.flightSwitch = "L64"
     draft.smartDetection = true
+    draft.requireReceiver = false
     saved, result = store:save("plane.yml", 1, draft)
     assert(saved and result.revision == 2, result)
     assert(result.armed == "SFv", "flight-only callers preserve saved model arming")
     assert(result.sessionReset == "!L01", "old callers preserve the reset switch")
     assert(store:load("plane.yml").flight.smartDetection == true, "Smart survives verified save/reload")
+    assert(store:load("plane.yml").flight.requireReceiver == false, "receiver opt-out survives verified save/reload")
+    assert(yaml.parse(files[path() .. ".bak"]).flight.requireReceiver == true)
     assert(yaml.parse(files[path() .. ".bak"]).flight.smartDetection == false)
     assert(yaml.parse(files[path() .. ".bak"]).revision == 1)
     saved, result = store:save("plane.yml", 1, draft)
@@ -100,10 +104,12 @@ for _, history in ipairs({ true, false }) do
     local store, files = fixture()
     local legacy = config.defaults()
     legacy.smartDetection = nil
+    legacy.requireReceiver = nil
     legacy.announcements = true
     legacy.history = history
     files[path()] = assert(yaml.serialize({ version = 1, modelFilename = "plane.yml", revision = 3, flight = legacy }))
     assert(store:load("plane.yml").flight.smartDetection == false, "existing model files keep standard detection")
+    assert(store:load("plane.yml").flight.requireReceiver == true, "existing model files still require a receiver")
     local loaded = store:load("plane.yml")
     assert(loaded.flight.announcements == nil, "obsolete audio settings are ignored")
     assert(loaded.flight.history == nil, "obsolete CSV settings must not prevent loading existing model files")
@@ -185,6 +191,8 @@ do
         { "armSwitch", "SF^" },
         { "ownership", true },
         { "motorReversed", 1 },
+        { "requireReceiver", 1 },
+        { "requireReceiver", "false" },
         { "smartDetection", 1 },
         { "motorSource", "ch33" },
         { "flightSwitch", "!L01" },

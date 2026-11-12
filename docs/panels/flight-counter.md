@@ -37,8 +37,8 @@ Configure Model settings before removing the last legacy counter.
 ## Behavior
 
 A flight qualifies when the effective armed condition, **Motor threshold (%)**,
-and live telemetry hold continuously for the **Start detection window**. Any
-interruption before qualification resets the attempt. Qualification increments
+and (with **Require receiver** on) live telemetry hold continuously for the
+**Start detection window**. Any interruption before qualification resets the attempt. Qualification increments
 the total once. Motor percentage maps the channel's normal low-to-high travel
 to 0–100%, after applying **Reverse motor**.
 
@@ -46,7 +46,8 @@ With **Smart detection** on, a flight can also qualify when trustworthy
 barometric altitude is **more than 3 metres above its arming reference for
 2 continuous seconds**, **or** valid GPS groundspeed is **more than 10 mph for
 2 continuous seconds**. Both shortcuts still require armed state, motor above
-the configured threshold, and live telemetry. The fixed speed rule is a
+the configured threshold, and trustworthy sensor readings; **Require receiver**
+also checks the telemetry link when enabled. The fixed speed rule is a
 provisional heuristic, not a guaranteed taxi/flight discriminator.
 
 Smart discovers supported CRSF/ELRS and FrSky S.Port sensors automatically.

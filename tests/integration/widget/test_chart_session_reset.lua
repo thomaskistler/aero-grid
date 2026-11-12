@@ -91,18 +91,26 @@ for index, context in ipairs({ first, second }) do
     for position, entry in ipairs(context.panels) do
         assert(entry.instance.series[1].feed.available)
         local chart = entry.instance
+        local hidden = chart.auto and chart.auto.hidden
         charts[index][position] = {
             instance = chart,
             caption = chart.series[1].name.properties.text,
             plot = chart.plotRoot,
-            backPlot = chart.backPlot,
+            renderer = chart.columnRenderer,
+            hidden = hidden,
+            hiddenPlot = hidden and rawget(hidden, "plotRoot"),
+            hiddenRenderer = hidden and rawget(hidden, "columnRenderer"),
         }
+        if index == 1 then
+            assert(next(chart.columnRenderer.visible), "the visible layer must show the old recording")
+        end
     end
 end
 for _, object in ipairs(fixture.lvglMock.objects) do
     objects[object] = { cleared = object.cleared, invalid = object.invalid }
 end
 local epoch = owner.epoch
+local hiddenLayers = 0
 fixture.radio.values[fixture.radio.fields.Alt.id] = 50
 fixture.radio.logicalSwitches[3] = true
 untilState(function()
@@ -119,8 +127,25 @@ for index, context in ipairs({ first, second }) do
         local chart = entry.instance
         local beforeChart = charts[index][position]
         equal(chart, beforeChart.instance, "reset must retain chart objects")
-        equal(chart.backPlot, beforeChart.backPlot, "reset must reuse plot buffers")
-        assert(chart.plotRoot == beforeChart.plot or chart.backPlot.plotRoot == beforeChart.plot)
+        equal(chart.columnRenderer, beforeChart.renderer, "reset must reuse the visible layer's columns")
+        equal(chart.plotRoot, beforeChart.plot, "reset must reuse the visible plot root")
+        assert(
+            not chart.columnRenderer or next(chart.columnRenderer.visible) == nil,
+            "reset must hide the old recording's columns"
+        )
+        local hidden = chart.auto and chart.auto.hidden
+        equal(hidden, beforeChart.hidden, "reset must reuse the hidden layer")
+        if hidden then
+            hiddenLayers = hiddenLayers + 1
+            equal(rawget(hidden, "plotRoot"), beforeChart.hiddenPlot, "reset must reuse the hidden plot root")
+            local renderer = rawget(hidden, "columnRenderer")
+            equal(renderer, beforeChart.hiddenRenderer, "reset must reuse the hidden layer's columns")
+            assert(
+                hidden.recycle or not renderer or next(renderer.visible) == nil,
+                "the hidden layer must drop the old recording's columns"
+            )
+            assert(chart.auto.job == nil or chart.auto.job.kind ~= "range", "no layer may keep old bounds")
+        end
         equal(chart.series[1].name.properties.text, beforeChart.caption, "reset must retain chart captions")
         equal(chart.session.elapsed, 0, "a paused chart must reset its timeline")
         equal(chart.series[1].feed.count, 0, "a paused chart must discard all old samples")
@@ -129,6 +154,7 @@ for index, context in ipairs({ first, second }) do
         equal(chart.series[1].feed.max, nil)
     end
 end
+assert(hiddenLayers > 0, "the reset must cover a prepared hidden layer")
 for object, state in pairs(objects) do
     equal(object.cleared, state.cleared, "reset must not clear LVGL objects")
     equal(object.invalid, state.invalid, "reset must not delete LVGL objects")
@@ -149,15 +175,15 @@ for _, context in ipairs({ first, second }) do
     end
 end
 
-untilState(function()
-    local chart = first.panels[1].instance
-    return chart.framePhase == "traces" and chart.pending ~= nil
-end)
+-- Reset while telemetry is queued but has not yet been appended.
+local queued = first.panels[1].instance
+queued.columnConsumers[1]:sample(queued.session.elapsed, 99)
+assert(#queued.columnConsumers[1].pending > 0)
 local activeCharts, activeObjects = {}, {}
 local objectCount = #fixture.lvglMock.objects
 for _, context in ipairs({ first, second }) do
     for _, entry in ipairs(context.panels) do
-        activeCharts[entry.instance] = entry.instance.backPlot
+        activeCharts[entry.instance] = entry.instance.columnRenderer
     end
     for _, object in ipairs(fixture.lvglMock.objects) do
         activeObjects[object] = { cleared = object.cleared, invalid = object.invalid }
@@ -167,9 +193,8 @@ for _, context in ipairs({ first, second }) do
     untilState(settled)
     equal(#fixture.lvglMock.objects, objectCount, "reset must not allocate replacement display objects")
     for chart, buffer in pairs(activeCharts) do
-        equal(chart.backPlot, buffer, "a mid-frame reset must retain both display buffers")
-        equal(chart.framePhase, nil, "a mid-frame reset must cancel the old snapshot")
-        equal(chart.pending, nil, "a mid-frame reset must discard the old projection job")
+        equal(chart.columnRenderer, buffer, "reset must retain existing native columns")
+        equal(#chart.columnConsumers[1].pending, 0, "reset must discard pre-reset telemetry")
         equal(chart.series[1].feed.count, 0)
     end
     for object, state in pairs(activeObjects) do

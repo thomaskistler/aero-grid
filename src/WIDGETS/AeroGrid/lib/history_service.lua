@@ -2,20 +2,25 @@
 
 --- Connected, error-bounded recordings of cumulative recording time.
 local history = { RUNTIME_API = 1, CAPACITY = 6144, FLIGHT_CAPACITY = 64 }
+history.updateCost = 0
 history.__index = history
 
 local TAU = { off = 0, light = 50, medium = 100, strong = 200 }
 local NUMBER_FORMAT, INTEGER_FORMAT, CHUNK = "<I4n", "<I4j", 64
-local SIZES = { 256, 64, 16, 4 }
 local BROKEN, INTEGER = 0x80000000, 0x40000000
 local BYTES = math.max(string.packsize(NUMBER_FORMAT), string.packsize(INTEGER_FORMAT))
 NUMBER_FORMAT = NUMBER_FORMAT .. string.rep("x", BYTES - string.packsize(NUMBER_FORMAT))
 INTEGER_FORMAT = INTEGER_FORMAT .. string.rep("x", BYTES - string.packsize(INTEGER_FORMAT))
 local ROUNDING = (string.packsize("n") == 4 and 2 ^ -23 or 2 ^ -52) * 32
+local abs, min, max, huge = math.abs, math.min, math.max, math.huge
+local EPSILON = {}
+for precision = 0, 3 do
+    EPSILON[precision] = 0.5 * 10 ^ -precision
+end
 history.BYTES_PER_POINT = BYTES
 
 local function finite(value)
-    return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
+    return type(value) == "number" and value == value and value ~= huge and value ~= -huge
 end
 
 local function location(index)
@@ -43,7 +48,8 @@ end
 
 local function write(entry, at, value, broken, resumed)
     local index = entry.last + 1
-    local chunk, offset = location(index)
+    local slot = (index - 1) % history.CAPACITY
+    local chunk, offset = slot // CHUNK + 1, slot % CHUNK * BYTES + 1
     -- Preserve native integers too: float32 cannot represent every int32.
     -- Never round a synthesized endpoint again when committing it.
     local integer = math.type(value) == "integer"
@@ -54,33 +60,9 @@ local function write(entry, at, value, broken, resumed)
     entry.last = index
     if broken then
         -- Only broken knots need a reason; one bit per ring slot stays bounded.
-        local slot = (index - 1) % history.CAPACITY
         local bucket, bit = slot // 32 + 1, 1 << (slot % 32)
         local flags = entry.resumeBits[bucket] or 0
         entry.resumeBits[bucket] = resumed and flags | bit or flags & ~bit
-    end
-    for level, size in ipairs(SIZES) do
-        local relative = (index - 1) % size
-        if relative == 0 then
-            entry.lows[level], entry.highs[level] = value, value
-            entry.bounds[level] = 0
-        end
-        local bounds = entry.bounds[level]
-        if value < entry.lows[level] then
-            entry.lows[level], bounds = value, bounds & 0x3ff00 | relative
-        end
-        if value > entry.highs[level] then
-            entry.highs[level], bounds = value, bounds & 0x300ff | relative << 8
-        end
-        if broken and index > 1 then
-            bounds = bounds | 0x10000
-            if not resumed then
-                bounds = bounds | 0x20000
-            end
-        end
-        entry.bounds[level] = bounds
-        local block = math.floor(((index - 1) % history.CAPACITY) / size) + 1
-        entry.blocks[level][block] = bounds
     end
 end
 
@@ -197,8 +179,7 @@ function history:resetSession(now, index)
             return
         end
         local state = entry.state
-        entry.chunks, entry.resumeBits, entry.blocks = {}, {}, { {}, {}, {}, {} }
-        entry.lows, entry.highs, entry.bounds = {}, {}, {}
+        entry.chunks, entry.resumeBits = {}, {}
         entry.last, entry.anchorAt, entry.lastAt = 0, 0, 0
         entry.anchor, entry.endpoint, entry.low, entry.high = nil, nil, nil, nil
         entry.segment, entry.filtered, entry.sampledAt, entry.gap = nil, nil, nil, true
@@ -207,11 +188,37 @@ function history:resetSession(now, index)
         state.first, state.last, state.count = 1, 0, 0
         state.window = entry.mode == "growing" and 6000 or state.window
         state.revision, state.plotRevision = state.revision + 1, state.plotRevision + 1
+        if entry.observers then
+            for _, observer in ipairs(entry.observers) do
+                observer:reset()
+            end
+        end
     end
     return index + 1
 end
 
-local function advance(session, now, flight)
+--- Editing on any AeroGrid widget of this radio stops recording time, as a
+--- disarm would; recording resumes with an ordinary pause when editing ends.
+local function editing(service, now)
+    if service.editingAt == now then
+        return service.editingValue
+    end
+    local host = service.runtime.host
+    local value = host ~= nil and (host.editorUi ~= nil or host.modelSettingsUi ~= nil)
+    local members = not value and host and host.flightFactory and host.flightFactory.members
+    if members then
+        for member in pairs(members) do
+            if member.editorUi or member.modelSettingsUi then
+                value = true
+                break
+            end
+        end
+    end
+    service.editingAt, service.editingValue = now, value
+    return value
+end
+
+local function advance(session, now, flight, frozen)
     if session.lastTime == now and (not flight or not flight.epoch or session.epoch == flight.epoch) then
         return
     end
@@ -237,7 +244,7 @@ local function advance(session, now, flight)
         and now >= updatedAt
         and now - updatedAt <= 100
     local associated = flight and flight.armKey == session.name
-    local recording = associated and flight.active or available and value == true or false
+    local recording = not frozen and (associated and flight.active or available and value == true) or false
     if available then
         if session.armed ~= nil and session.armed ~= value and state.segment > 0 then
             state.armLast = state.armLast + 1
@@ -400,8 +407,9 @@ function history:advance(now)
     self.now = now
     local flight = self.runtime.byId.flight
     self.flightState = flight and flight:state()
+    local frozen = editing(self, now)
     for _, session in ipairs(self.sessions) do
-        advance(session, now, self.flightState)
+        advance(session, now, self.flightState, frozen)
     end
 end
 
@@ -476,12 +484,6 @@ function history:preview()
         local key = recordingKey(condition(options.armSwitch), source, window, mode, smoothing, precision)
         return owner.names[key] and owner.names[key].view or empty
     end
-    function facade:point(view, index, retainedFirst)
-        return owner:point(view, index, retainedFirst)
-    end
-    function facade:block(view, index, finish, before)
-        return owner:block(view, index, finish, before)
-    end
     function facade:flight(view, index)
         return owner:flight(view, index)
     end
@@ -522,15 +524,12 @@ function history:subscribe(source, options)
         view = self.support.snapshot(state),
         chunks = {},
         resumeBits = {},
-        blocks = { {}, {}, {}, {} },
-        lows = {},
-        highs = {},
-        bounds = {},
         last = 0,
         anchorAt = 0,
         lastAt = 0,
         mode = mode,
         precision = precision,
+        epsilon = precision and EPSILON[precision],
         tau = TAU[smoothing],
         gap = true,
         session = session,
@@ -568,26 +567,30 @@ function history:point(view, index, retainedFirst)
     return read(entry, index)
 end
 
---- Skip sealed blocks only when they fit in one screen column. These summaries
---- accelerate projection; they never replace or recompress the stored knots.
-function history:block(view, index, finish, before)
-    if (index - 1) % 4 ~= 0 then
-        return nil
+--- Observe the chart's filtered samples without polling again or changing knots.
+--- Observers reset with their recording; consumers must detach when destroyed.
+function history:observeSamples(view, observer)
+    local entry = assert(self.views[view], "unknown history subscription")
+    assert(type(observer.sample) == "function" and type(observer.reset) == "function", "invalid sample observer")
+    entry.observers = entry.observers or {}
+    for _, existing in ipairs(entry.observers) do
+        assert(existing ~= observer, "sample observer already registered")
     end
-    local entry = self.views[view]
-    if not entry or index < entry.state.first then
-        return nil
-    end
-    for level, size in ipairs(SIZES) do
-        local last = index + size - 1
-        if (index - 1) % size == 0 and last <= entry.last and last <= finish then
-            local bounds = entry.blocks[level][math.floor(((index - 1) % history.CAPACITY) / size) + 1]
-            if read(entry, last) < before then
-                local low, high = index + (bounds & 0xff), index + (bounds >> 8 & 0xff)
-                return last, math.min(low, high), math.max(low, high), bounds & 0x10000 ~= 0, bounds & 0x20000 == 0
+    entry.observers[#entry.observers + 1] = observer
+end
+
+function history:unobserveSamples(view, observer)
+    local entry = assert(self.views[view], "unknown history subscription")
+    for index, existing in ipairs(entry.observers or {}) do
+        if existing == observer then
+            table.remove(entry.observers, index)
+            if #entry.observers == 0 then
+                entry.observers = nil
             end
+            return
         end
     end
+    error("sample observer is not registered")
 end
 
 local function record(entry, value, at, epsilon, segment)
@@ -612,13 +615,13 @@ local function record(entry, value, at, epsilon, segment)
         write(entry, at, value, true, entry.segment ~= nil and entry.segment ~= segment)
         entry.anchorAt, entry.anchor = at, value
         entry.lastAt, entry.endpoint = at, value
-        entry.low, entry.high = -math.huge, math.huge
+        entry.low, entry.high = -huge, huge
     else
         for attempt = 1, 2 do
             local elapsed = at - entry.anchorAt
-            local tolerance = epsilon - math.max(math.abs(value), math.abs(entry.anchor), epsilon) * ROUNDING
-            local low = math.max(entry.low, (value - entry.anchor - tolerance) / elapsed)
-            local high = math.min(entry.high, (value - entry.anchor + tolerance) / elapsed)
+            local tolerance = epsilon - max(abs(value), abs(entry.anchor), epsilon) * ROUNDING
+            local low = max(entry.low, (value - entry.anchor - tolerance) / elapsed)
+            local high = min(entry.high, (value - entry.anchor + tolerance) / elapsed)
             local endpoint = entry.anchor + (low / 2 + high / 2) * elapsed
             local slope = (endpoint - entry.anchor) / elapsed
             if tolerance > 0 and finite(endpoint) and low <= slope and slope <= high then
@@ -650,8 +653,9 @@ function history:sample(reading, now)
     if not entries then
         return
     end
+    local frozen = editing(self, now)
     for _, entry in ipairs(entries) do
-        advance(entry.session, now, self.flightState)
+        advance(entry.session, now, self.flightState, frozen)
         local session = entry.session.state
         if session.recording then
             local state = entry.state
@@ -672,16 +676,32 @@ function history:sample(reading, now)
                 end
                 entry.sampledAt = now
                 state.value = value
-                state.min = state.min and math.min(state.min, value) or value
-                state.max = state.max and math.max(state.max, value) or value
+                state.min = state.min and min(state.min, value) or value
+                state.max = state.max and max(state.max, value) or value
                 state.unitText, state.precision = reading.unitText, reading.precision
                 state.available, state.stale = true, false
-                local precision = entry.precision or (reading.precisionKnown == false and 3 or reading.precision or 0)
-                precision = math.min(3, math.max(0, precision))
-                record(entry, entry.filtered, session.elapsed, 0.5 * 10 ^ -precision, session.segment)
+                local epsilon = entry.epsilon
+                if not epsilon then
+                    local precision = reading.precisionKnown == false and 3 or reading.precision or 0
+                    precision = min(3, max(0, precision))
+                    epsilon = EPSILON[precision] or (0.5 * 10 ^ -precision)
+                end
+                local resumed = entry.segment ~= nil and entry.segment ~= session.segment
+                local broken = entry.gap or entry.segment ~= session.segment or session.elapsed <= entry.lastAt
+                record(entry, entry.filtered, session.elapsed, epsilon, session.segment)
+                if entry.observers and not state.full then
+                    for _, observer in ipairs(entry.observers) do
+                        observer:sample(session.elapsed, entry.filtered, broken, resumed)
+                    end
+                end
                 state.revision = state.revision + 1
             else
                 entry.gap = true
+                if entry.observers and not entry.state.full then
+                    for _, observer in ipairs(entry.observers) do
+                        observer:sample(session.elapsed, nil, true)
+                    end
+                end
                 if not state.stale then
                     state.stale = state.available
                     state.revision = state.revision + 1

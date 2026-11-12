@@ -41,7 +41,7 @@
 --- part of the set the arrangement was designed for.
 
 ---@class AeroGridDiagnosticsSettings
----@field section "identity"|"theme"|"panels"|"sources"|"log"
+---@field section "identity"|"theme"|"panels"|"sources"|"log"|"scheduler"
 ---@field maxEntries? integer Shared log retention, 1 to 256.
 ---@field label? string Panel title; defaults to the section name.
 ---@field accent? string
@@ -62,7 +62,7 @@ local diagnostics = {
             label = "Section",
             type = "string",
             default = "identity",
-            choices = { "identity", "theme", "panels", "sources", "log" },
+            choices = { "identity", "theme", "panels", "sources", "log", "scheduler" },
         },
         {
             key = "maxEntries",
@@ -86,6 +86,234 @@ local diagnostics = {
 
 --- Most lines any section will draw, whatever its span.
 local MAX_LINES = 12
+
+local function schedulerStats(context)
+    if context.host and not context.preview then
+        context.schedulerActive = true
+    end
+    if context.host and not context.preview and not context.host.schedulerStats then
+        context.host.schedulerStats = {
+            started = getTime(),
+            callbacks = 0,
+            used = 0,
+            requested = 0,
+            denied = 0,
+            revision = 0,
+            utilization = 0,
+            deferrals = 0,
+        }
+    end
+    return context.host and context.host.schedulerStats
+end
+
+--- Named consumers stacked in the scheduler graph; the rest share one layer.
+local CONSUMERS = 5
+
+local function consumerName(owner)
+    if owner == "flight" then
+        return "flight detector"
+    elseif owner.placement then
+        return tostring(owner.placement.id) .. " " .. tostring(owner.placement.type)
+    end
+    return tostring(owner.id) .. " service"
+end
+
+local function schedulerGraph(context, rect, area)
+    if context.graph then
+        for _, column in ipairs(context.graph.columns) do
+            for _, segment in ipairs(column) do
+                lvgl.hide(segment)
+            end
+        end
+        for _, line in ipairs(context.graph.lines) do
+            lvgl.hide(line)
+        end
+    else
+        local root = lvgl.box(context.panel.root, { x = 0, y = 0, w = rect.w, h = rect.h })
+        context.graph = {
+            root = root,
+            -- Created first so the deferral line and cursor draw over the stack.
+            stack = lvgl.box(root, { x = 0, y = 0, w = rect.w, h = rect.h }),
+            overlay = lvgl.box(root, { x = 0, y = 0, w = rect.w, h = rect.h }),
+            columns = {},
+            lines = {},
+            references = {},
+            rank = {},
+            owners = {},
+        }
+    end
+    local graph, color, chart = context.graph, context.theme.color, context.theme.chartColor
+    graph.colors = { chart.cyan, color.blue, chart.green, chart.amber, color.critical, color.track }
+    for _, box in ipairs({ graph.root, graph.stack, graph.overlay }) do
+        box:set({ w = rect.w, h = rect.h })
+    end
+    graph.legend = math.min(CONSUMERS + 1, math.max(1, area.lines - 2))
+    graph.x, graph.y = area.pad, area.top + area.lineHeight * graph.legend
+    graph.width, graph.height = math.max(2, area.content // 1), math.max(1, rect.h - graph.y - area.frame.bottom)
+    graph.index, graph.previous = 0, nil
+    graph.revision = context.host and context.host.schedulerStats and context.host.schedulerStats.revision or 0
+    local cursor = {
+        x = graph.x,
+        y = graph.y,
+        w = 1,
+        h = graph.height,
+        color = color.textFaint,
+    }
+    if graph.cursor then
+        graph.cursor:set(cursor)
+    else
+        graph.cursor = lvgl.vline(graph.overlay, cursor)
+    end
+    for index, percent in ipairs({ 0, 100 }) do
+        local options = {
+            x = graph.x,
+            y = graph.y + (100 - percent) * graph.height / 100,
+            w = graph.width,
+            h = 1,
+            color = color.textFaint,
+        }
+        if graph.references[index] then
+            graph.references[index]:set(options)
+        else
+            graph.references[index] = lvgl.hline(graph.overlay, options)
+        end
+    end
+    for index = 1, MAX_LINES do
+        if index <= graph.legend and index <= area.lines then
+            lvgl.show(context.rows[index])
+        else
+            lvgl.hide(context.rows[index])
+        end
+    end
+    context.texts[1] = "Requests deferred"
+    context.rows[1]:set({ text = context.texts[1], color = chart.orange })
+    for slot = 1, graph.legend - 1 do
+        context.texts[slot + 1] = nil
+        context.rows[slot + 1]:set({ color = graph.colors[slot] })
+    end
+end
+
+--- Keep each busy consumer in one color while it stays among the busiest; a
+--- smoothed rate ranks consumers, and the legend shows the last second's rate.
+local function rankConsumers(context, stats)
+    local graph = context.graph
+    local rank, owners, slots = graph.rank, graph.owners, stats.consumers or {}
+    local seconds = stats.seconds and stats.seconds > 0 and stats.seconds or 1
+    for owner, rate in pairs(rank) do
+        rank[owner] = rate * 0.8
+    end
+    for owner, used in pairs(slots) do
+        rank[owner] = (rank[owner] or 0) + used / seconds * 0.2
+    end
+    local order = {}
+    for owner, rate in pairs(rank) do
+        if rate < 0.05 then
+            rank[owner] = nil
+        else
+            order[#order + 1] = owner
+        end
+    end
+    table.sort(order, function(a, b)
+        return rank[a] > rank[b]
+    end)
+    local busiest = {}
+    for index = 1, math.min(CONSUMERS, #order) do
+        busiest[order[index]] = true
+    end
+    for slot = 1, CONSUMERS do
+        local owner = owners[slot]
+        if owner and busiest[owner] then
+            busiest[owner] = nil
+        else
+            owners[slot] = nil
+        end
+    end
+    for index = 1, math.min(CONSUMERS, #order) do
+        local owner = order[index]
+        if busiest[owner] then
+            for slot = 1, CONSUMERS do
+                if not owners[slot] then
+                    owners[slot] = owner
+                    break
+                end
+            end
+        end
+    end
+    for slot = 1, graph.legend - 1 do
+        local owner = owners[slot]
+        local text = owner and string.format("%.1f %s", (slots[owner] or 0) / seconds, consumerName(owner)) or ""
+        if context.texts[slot + 1] ~= text then
+            context.texts[slot + 1] = text
+            context.rows[slot + 1]:set({ text = text })
+        end
+    end
+    return slots
+end
+
+local function refreshScheduler(context)
+    local stats, graph = schedulerStats(context), context.graph
+    if not stats or stats.revision == graph.revision then
+        return
+    end
+    local consecutive = stats.revision == graph.revision + 1
+    graph.revision = stats.revision
+    local index = graph.index
+    local slots = rankConsumers(context, stats)
+    local capacity = stats.capacity and stats.capacity > 0 and stats.capacity or nil
+    local column = graph.columns[index + 1]
+    if not column then
+        column = {}
+        graph.columns[index + 1] = column
+    end
+    local function boundary(percent)
+        return graph.y + math.floor((100 - percent) * graph.height / 100 + 0.5)
+    end
+    local named, bottom = 0, boundary(0)
+    for layer = 1, CONSUMERS + 1 do
+        if layer <= CONSUMERS then
+            local owner = graph.owners[layer]
+            named = named + (owner and capacity and (slots[owner] or 0) * 100 / capacity or 0)
+        else
+            named = math.max(named, stats.utilization)
+        end
+        local top = boundary(math.min(100, named))
+        local segment = column[layer]
+        if bottom > top then
+            local options = { x = graph.x + index, y = top, w = 1, h = bottom - top, color = graph.colors[layer] }
+            if segment then
+                segment:set(options)
+                lvgl.show(segment)
+            else
+                column[layer] = lvgl.vline(graph.stack, options)
+            end
+        elseif segment then
+            lvgl.hide(segment)
+        end
+        bottom = top
+    end
+    local y = boundary(stats.deferrals)
+    local previous = consecutive and index > 0 and graph.previous or y
+    local options = { pts = { { graph.x + math.max(0, index - 1), previous }, { graph.x + index, y } } }
+    local line = graph.lines[index + 1]
+    if line then
+        line:set(options)
+        lvgl.show(line)
+    else
+        options.color = context.theme.chartColor.orange
+        options.thickness = 1
+        graph.lines[index + 1] = lvgl.line(graph.overlay, options)
+    end
+    local following = (index + 1) % graph.width + 1
+    for _, segment in ipairs(graph.columns[following] or {}) do
+        lvgl.hide(segment)
+    end
+    if graph.lines[following] then
+        lvgl.hide(graph.lines[following])
+    end
+    graph.previous = y
+    graph.cursor:set({ x = graph.x + index })
+    graph.index = (index + 1) % graph.width
+end
 
 function diagnostics.validateSettings(settings)
     local limit = settings.maxEntries
@@ -454,12 +682,21 @@ function diagnostics.create(parent, rect, settings, services)
     end
 
     context.visibleLines = area.lines
+    if section == "scheduler" then
+        context.refreshCost = 0
+        schedulerStats(context)
+        schedulerGraph(context, rect, area)
+    end
     return context
 end
 
 --- Repaint only the lines whose text changed.
 ---@param context table
 function diagnostics.refresh(context)
+    if context.section == "scheduler" then
+        refreshScheduler(context)
+        return
+    end
     local lines = diagnostics.lines(context.host, context.section, context.visibleLines)
     local start = context.section == "log" and math.max(1, #lines - context.visibleLines + 1) or 1
     local changed = 0
@@ -505,6 +742,21 @@ function diagnostics.update(context, rect)
     end
 
     context.visibleLines = area.lines
+    if context.section == "scheduler" then
+        schedulerGraph(context, rect, area)
+    end
+end
+
+function diagnostics.destroy(context)
+    if context.section == "scheduler" and context.host and not context.preview then
+        context.schedulerActive = false
+        for _, entry in ipairs(context.host.panels or {}) do
+            if entry.instance and entry.instance ~= context and entry.instance.schedulerActive then
+                return
+            end
+        end
+        context.host.schedulerStats = nil
+    end
 end
 
 return diagnostics

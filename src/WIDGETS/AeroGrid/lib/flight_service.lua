@@ -153,7 +153,14 @@ function flight.advance(context, now)
     end
     local link = context.link
     local live = link.updatedAt and now >= link.updatedAt and now - link.updatedAt <= 100 and link.live
-    if not (armed and motorLive and (motor + 1024) * 100 / 2048 > context.settings.minMotorPercent and live) then
+    if
+        not (
+            armed
+            and motorLive
+            and (motor + 1024) * 100 / 2048 > context.settings.minMotorPercent
+            and (context.settings.requireReceiver == false or live)
+        )
+    then
         context.phase, context.startedAt = "ground", nil
         context.altitudeSince, context.speedSince = nil, nil
         return

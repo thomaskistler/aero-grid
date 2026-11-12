@@ -9,6 +9,8 @@ The legend shows each recorded value and its minimum and maximum.
 Wide layouts keep the legend on the right. Square and tall layouts put it above
 the full-width plot, with two or three metrics arranged left to right. Each metric
 uses two lines: its name and value, then its minimum and maximum.
+Live readings do not change the plot width. Legend text shrinks to fit; values
+that still cannot fit show `...` instead of a truncated number.
 Use separate panels for separate charts.
 Select **Arm switch** in **AeroGrid → Model settings**; changes save automatically.
 Until model arming has been saved, an existing panel arm switch remains in use
@@ -17,14 +19,13 @@ disables recording rather than restoring the fallback.
 
 ## Settings
 
-![Chart panel settings with rolling time range selected](../assets/editor/chart-settings.png)
+![Chart panel settings with the default Auto window](../assets/editor/chart-settings.png)
 
 | Setting | Default | What it does |
 | --- | --- | --- |
 | **Label** | empty | Optional chart heading. Clear it to hide the heading. |
 | **Metrics** | none | Up to three readings. Tap **+** to add one, or tap an entry to edit it. |
-| **Time range** | growing | **growing** keeps the recording from the start; **rolling** shows the latest fixed window. |
-| **Window duration** | 1 minute | **30 seconds**, **1 minute**, **2 minutes**, **5 minutes**, or **10 minutes**. Shown only when **Time range** is **rolling**. |
+| **Window minutes** | Auto | **Auto** grows the window as recording continues. A whole number of minutes from 1 to 60 fixes it. Step below 1 to select **Auto**. |
 | **Series scales** | shared | **shared** uses one vertical scale; **independent** gives each metric its own scale, useful for unlike units. Independent trace heights are not directly comparable. |
 | **Line smoothing** | off | **off**, **light**, **medium**, or **strong**. Smooths the line only, not the recorded value or extrema. |
 | **Accent** | cyan | Panel stripe color: **cyan**, **green**, **amber**, or **orange**. Does not change trace colors. |
@@ -39,7 +40,7 @@ Tap a reading under **Metrics** to open its settings.
 | --- | --- | --- |
 | **Label** | source name | Name in the legend. Clear it to use the source name. |
 | **Source** | required | Numeric EdgeTX source to record. |
-| **Range min**, **Range max** | Auto | Optional lower and upper vertical bounds, in steps of 0.1. Step below the lowest numeric value to select **Auto**. If both are set, maximum must exceed minimum. |
+| **Range min**, **Range max** | Auto | Tap to type a fixed lower or upper vertical bound. Negative numbers and decimals are accepted. If both are set, maximum must exceed minimum. Clear the text for **Auto**. |
 | **Unit** | sensor unit | Unit text beside the value. Changes the label, not the number. |
 | **Precision** | Sensor | Decimal places, 0 to 3. Step below 0 to select **Sensor**, using the source's precision. |
 | **Color** | by entry order | Trace and legend color: **cyan**, **green**, **orange**, or **amber**. Defaults to cyan, orange, then green; cyan uses blue ink in Modern Light. An explicit choice keeps that color. |
@@ -64,26 +65,33 @@ mid-flight shades only the recorded portion.
 Upward triangles on the bottom axis mark arming; downward triangles mark disarming.
 The first arming that starts recording is not marked.
 Pausing simply stops the traces, without a label or stop marker.
-Resuming inserts a gap; dotted lines
+Resuming inserts a gap; faint lines in each trace's color
 connect the last recorded values to the resumed values.
-The gap indicates omitted time, not the length of the pause.
+The gap is 24 pixels wide in a fixed window and narrows as an **Auto** window grows.
+It indicates omitted time, not the length of the pause, and uses space in the window.
 Missing telemetry breaks the traces without adding a pause gap or connector.
-Readouts freeze when recording pauses. Minimum and maximum cover all recorded
-periods, even in rolling mode.
+Consecutive valid readings are connected: each screen column shows its minimum
+and maximum and joins the previous column's last value. When readings arrive less
+often than once per column, the trace holds the last value until the next reading.
+Readouts freeze when recording pauses. Minimum and maximum cover all recorded periods.
 
-**Growing** starts at one minute and expands in whole-minute steps as
-cumulative recording time increases. **Rolling** drops plot history outside
-**Window duration**, but keeps the recorded minimum and maximum.
+The horizontal axis starts at recording time zero. With **Auto**, the window
+starts at 1 minute; when the plot is full it compresses to 2, 3, 4, 6, 8, 12, 16,
+24, 32 minutes and so on, keeping all earlier data on screen. When a fixed window
+is full, it slides left by 1 minute; the oldest minute leaves the plot. Resizing
+the panel or resetting the session clears the plot. Earlier saved
+growing/rolling choices are ignored; saved durations that are not whole minutes
+round up, and longer ones are limited to 60 minutes.
 Faint solid grid lines mark recording-time intervals; the bottom-right label shows
-the recording-time window. Very dense pause gaps can push older points out of view.
+the recording-time window. Pause gaps can fill the window sooner.
 
-Each vertical bound can be fixed independently: set only **Range min** to
-anchor the bottom, only **Range max** to fix the top, or both for a fixed
-range. **Auto** follows recorded extrema with some padding. With **shared**
-scales, the lowest configured minimum and highest configured maximum apply
-to all traces; an unset side follows all metrics automatically. With
-**independent** scales, each metric uses its own bounds. Fixed bounds clip
-the plot, not recorded values or extrema.
+An **Auto** bound starts close to the first reading. When drawn data leaves the
+range, the plot is redrawn at a wider range, typically within a second: the range
+at least doubles and fits the data with some headroom. Auto bounds only grow until
+the panel is resized or the session is reset. With **shared** scales, the lowest
+configured minimum and highest configured maximum apply to all traces, and Auto
+sides follow all traces. With **independent** scales, each metric uses its own
+bounds. Fixed bounds clip the plot, not recorded values or extrema.
 
 Smoothing reduces short-term fluctuations in the line. **Light**,
 **medium**, and **strong** respond over approximately 0.5, 1, and 2 seconds.
@@ -92,12 +100,19 @@ recording a false zero; a fresh numeric zero is valid.
 
 If **HISTORY FULL** appears, existing plot history is preserved and new plot
 samples stop for the full series. Readouts and extrema continue
-updating. Rolling mode frees space as old history leaves the window.
+updating.
 
 History is held in RAM, not saved to the SD card. It continues while the
 dashboard receives background updates. Reloading or restarting the dashboard,
 including applying editor changes that rebuild it, clears history.
-Editor previews reuse compatible recorded history without starting new recordings.
+Each append consumes telemetry received since the previous append, summarizes
+the affected pixel columns, and draws only those columns.
+Charts do not reconstruct traces from stored history. Opening or resizing a
+chart starts an empty plot at the current recording time; only later telemetry
+is drawn. A fixed window starts where sliding would have placed it.
+Recording time stops while the editor or Model settings is open, even during a
+flight; charts show a pause gap when it resumes. Charts do not draw while the
+editor is open. Editor previews do not replay history or record new data.
 New sources show an explicit no-data preview until saved.
 Flight overlays retain the latest 64 intervals; missing earlier boundaries are
 not guessed.
@@ -116,5 +131,5 @@ extrema, and markers across all dashboards.
 | **NO DATA** | Recording, but no configured source has supplied a valid numeric sample. |
 | **HISTORY N/A** | History is unavailable; consult [Host diagnostics](host-diagnostics.md). |
 | **HISTORY FULL** | A series has stopped adding plot samples to preserve its recording; readouts and extrema still update. |
-| **PREVIEW** | An edited chart displaying compatible existing history without changing recording. |
+| **PREVIEW** | An edited chart whose recording already exists; the preview does not draw its traces or change recording. |
 | **PREVIEW: NO DATA** | A new or incompatible recording configuration; sampling starts after saving. |

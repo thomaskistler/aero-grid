@@ -268,35 +268,6 @@ equal(select(2, bounded:preview():armBoundary(boundedSession, boundedSession.arm
 assert(#bounded.entries[1].resumeBits <= historyModule.CAPACITY // 32, "break reasons must use a bounded bitset")
 equal(select(4, bounded:point(boundedFeed, boundedFeed.last)), true, "resume bits survive physical ring reuse")
 
-local summarized, _, summaryFeed, summaryPoll = harness()
-for _, sample in ipairs({
-    { 0, 1, 5 },
-    { 10, 1, 5 },
-    { 20, 0, 5 },
-    { 30, 1, 5 },
-    { 40, 1, 5 },
-    { 50, 0, 5 },
-    { 60, 1, 5 },
-    { 70, 1 },
-    { 80, 1, 5 },
-    { 90, 1, 5 },
-    { 100, 0, 5 },
-    { 110, 1, 5 },
-    { 120, 1, 5 },
-    { 130, 0, 5 },
-    { 140, 1, 5 },
-}) do
-    summaryPoll(sample[1], sample[2], sample[3])
-end
-local last, _, _, interrupted, resumesOnly = summarized:block(summaryFeed, 1, 4, math.huge)
-equal(last, 4)
-equal(interrupted, true)
-equal(resumesOnly, true, "same-pixel block summaries distinguish recording pauses")
-last, _, _, interrupted, resumesOnly = summarized:block(summaryFeed, 5, 8, math.huge)
-equal(last, 8)
-equal(interrupted, true)
-equal(resumesOnly, false, "a mixed block must preserve a real telemetry-gap marker")
-
 local smoothed, _, smoothFeed, smoothPoll = harness({ smoothing = "medium", windowSeconds = 30 })
 smoothPoll(0, 1, 0)
 smoothPoll(100, 1, 10)
@@ -429,10 +400,8 @@ for index = historyModule.CAPACITY * 3 - 6000, historyModule.CAPACITY * 3 do
     ringOriginals[#ringOriginals + 1] = { index * 10, index % 2 == 0 and -100 or 100 }
 end
 accuracy(ring, ringFeed, ringOriginals, 0.0005)
-local lastBlock = ring:block(ringFeed, (math.floor((ringFeed.first - 1) / 256) + 1) * 256 + 1, ringFeed.last, math.huge)
-assert(lastBlock, "projection summaries must remain valid after ring wrap")
-local lastAt, lastValue = ring:point(ringFeed, lastBlock)
-assert(lastAt and lastValue)
+local lastAt, lastValue = ring:point(ringFeed, ringFeed.last)
+assert(lastAt and lastValue, "knots must remain readable after ring wrap")
 
 local pending, pendingFeed, pendingSample, pendingReading = recorder()
 pendingReading.precision, pendingReading.precisionKnown = 0, false

@@ -15,9 +15,10 @@ local fields = {
         label = "Motor channel",
         kind = "source",
         section = "Flight detection",
-        description = "Detects when a flight begins and ends using live telemetry data.",
+        description = "Detects when a flight begins and ends.",
     },
     { key = "motorReversed", label = "Reverse motor", kind = "toggle" },
+    { key = "requireReceiver", label = "Require receiver", kind = "toggle" },
     { key = "minMotorPercent", label = "Motor threshold (%)", kind = "numberEdit", min = 0, max = 99 },
     { key = "minFlightDuration", label = "Start detection window (s)", kind = "numberEdit", min = 1, max = 3600 },
     {

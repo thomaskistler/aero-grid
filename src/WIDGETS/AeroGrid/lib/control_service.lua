@@ -41,6 +41,7 @@
 ---@field state "normal"|"unavailable"
 
 local controlService = { RUNTIME_API = 1 }
+controlService.updateCost = 0
 controlService.__index = controlService
 
 --- Ticks of 10ms between ordinary control subscription updates.

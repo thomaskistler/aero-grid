@@ -102,16 +102,16 @@ It supports 2x1, 3x1, 4x1, 2x2, 3x2, 4x2, 3x3, 4x3, and 4x4.
 | `source`, `unit`, `precision` | Per-metric source name, optional unit override, and integer precision 0–3 (default sensor precision). |
 | `accent` | Per-metric trace color or panel stripe: cyan, green, orange, amber. Traces default to cyan, orange, green in order. Modern Light renders the cyan trace with blue ink. |
 | `rangeMin`, `rangeMax` | Optional per-metric finite bounds. Omit either key for Auto on that side; zero is an explicit bound. If both are set, maximum must exceed minimum. Shared scales use the lowest configured minimum and highest configured maximum; a side with no configured bound follows all recorded series automatically. |
-| `timeRange` | `growing` (default) or `rolling`. |
-| `duration` | `30s`, `1m` (default), `2m`, `5m`, `10m`. Fixed Rolling window; ignored in Growing mode. |
+| `timeRange` | Obsolete (`growing` / `rolling`), accepted for compatibility but ignored. |
+| `duration` | Omitted (default) grows the window automatically; whole minutes `1` to `60` fix it. Earlier values such as `30s` or `5m` round up to whole minutes. In the drawer, **Window minutes** below 1 is **Auto**. |
 | `scaling` | `shared` (default) or `independent`. Select independent explicitly for unlike units. |
 | `range` | Obsolete preview setting (`auto` / `fixed`), accepted for compatibility but ignored. Only the presence of `rangeMin` / `rangeMax` determines fixed versus automatic bounds. |
 | `smoothing` | `off` (default), `light`, `medium`, `strong`; line-only EMA with approximately 0.5/1/2-second response. |
 
 Each metric also accepts `label`. The title is above the shared plot, with each
 metric's name/value and raw min/max grouped in a right-hand legend.
-Automatic bounds use raw lifetime recorded extrema with padding and rounding.
-For example, `rangeMin: 0` with no `rangeMax` anchors the bottom at zero and
+Automatic bounds start near the first drawn reading and only grow: when drawn
+data leaves them, they at least double. For example, `rangeMin: 0` with no `rangeMax` anchors the bottom at zero and
 automatically adjusts the top; omit both keys for a fully automatic range.
 
 Set **Arm switch** in **AeroGrid → Model settings**; changes save automatically. A retained panel `armSwitch`
@@ -119,20 +119,21 @@ is used only before model arming has been saved. A qualified shared flight with
 the same effective arm condition keeps recording through disarm grace until
 confirmed flight end. Otherwise disarming pauses immediately. Rearming during
 grace does not break or duplicate a flight; rearming after a pause resumes the
-same history with a gap and dotted connectors. The horizontal axis counts cumulative
+same history with a gap and faint connectors. The horizontal axis counts cumulative
 recording time, including retained grace samples. Neutral background bands
 show actual flight times; bottom-axis triangles mark arming and disarming
 except the first arming. No logical-switch
-output or Flight counter panel is needed. Growing starts at one minute and expands to
-the next whole minute when exceeded; its duration is not configurable. Rolling
-keeps only the latest plot window but retains raw lifetime min/max. History is
+output or Flight counter panel is needed. Without `duration`, the window starts
+at one minute and grows to 2, 3, 4, 6, 8, 12, 16 minutes and so on as the plot
+fills, keeping all data on screen. A fixed `duration` slides left by one minute
+when full. History is
 RAM-only and clears on dashboard reload or model-wide session reset. Connected linear compression bounds
 error to half a step of each metric's `precision` (sensor precision when omitted);
 with smoothing, this bound applies to the filtered signal. Each distinct
 source/options recording holds 6,144 knots, covering at least 10 minutes at 10 Hz
 even without compression savings. At capacity, **HISTORY FULL** preserves existing
 plot history and stops new plot samples, but raw readouts/extrema keep updating.
-Rolling mode reuses expired storage. No older data is recompressed more loosely.
+No older data is recompressed more loosely.
 Recordings share history only when their armed switch, source, and recording
 options match.
 
@@ -150,7 +151,6 @@ panels:
     rowSpan: 2
     config:
       label: Power
-      timeRange: growing
       scaling: independent
       smoothing: light
       metrics:
@@ -250,7 +250,7 @@ Drawer title: **Host diagnostics** · [drawer settings and behavior](../panels/h
 | Key | Type | Default | Allowed values | Drawer label | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `label` | string | `""` | Any string | Label | Blank derives the heading from the selected section. |
-| `section` | string | `identity` | `identity`, `theme`, `panels`, `sources`, `log` | Section | Selects which host diagnostics to show. |
+| `section` | string | `identity` | `identity`, `theme`, `panels`, `sources`, `log`, `scheduler` | Section | Selects which host diagnostics to show. |
 | `maxEntries` | number | `64` | Integer 1–256 | Maximum log entries | Shown for `log`. Largest live log panel setting determines shared retention. |
 | `accent` | string | `cyan` | `cyan`, `green`, `amber`, `orange` | Accent | |
 
@@ -325,8 +325,8 @@ Drawer title: **Metric** · [drawer settings and behavior](../panels/metric.md) 
 | `unit` | string | Unset | Any string | Unit | Nested in `metrics[]`; unset follows the sensor unit, while `""` suppresses the unit. |
 | `precision` | number | Unset | Integer `0`–`3`, or drawer's empty value `Sensor` | Precision | Nested in `metrics[]`; unset/empty follows sensor precision. |
 | `direction` | string | `auto` | `auto`, `rising`, `falling` | Direction | Nested in `metrics[]`; `auto` infers falling only when both thresholds are active and Critical is below Warning; otherwise it is rising. |
-| `rangeMin` | number | `0` | Finite number; drawer step `0.1` | Range min | Nested in `metrics[]`; scale minimum, not a clamp on the displayed value. |
-| `rangeMax` | number | `100` | Finite number; drawer step `0.1` | Range max | Nested in `metrics[]`; scale maximum. |
+| `rangeMin` | number | `0` | Finite number; drawer keyboard entry, blank restores the default | Range min | Nested in `metrics[]`; scale minimum, not a clamp on the displayed value. |
+| `rangeMax` | number | `100` | Finite number; drawer keyboard entry, blank restores the default | Range max | Nested in `metrics[]`; scale maximum. |
 | `warning` | number | Unset | Finite number; drawer step `0.1`; Off when outside the range | Warning | Nested in `metrics[]`; a threshold outside `rangeMin`–`rangeMax` is ignored as Off. |
 | `critical` | number | Unset | Finite number; drawer step `0.1`; Off when outside the range | Critical | Nested in `metrics[]`; a threshold outside `rangeMin`–`rangeMax` is ignored as Off. |
 | `visual` | string | `none` | `bar`, `radial`, `none` | Visualization | Draws the primary reading's visual only when it fits. |

@@ -153,6 +153,66 @@ local function fixture(cadence)
 end
 
 do
+    local owner, radio, step = fixture()
+    radio.rssi, radio.arms[1] = 0, true
+    step(20)
+    equal(radio.writes, 0, "a receiver is required by default")
+    equal(owner.view.phase, "ground")
+    radio.rssi = 80
+    step(3)
+    equal(owner.view.phase, "starting")
+    radio.rssi = 0
+    step(10)
+    equal(owner.view.phase, "ground", "link loss resets an unqualified start")
+    radio.rssi = 80
+    step(3)
+    equal(radio.writes, 0, "link recovery must start a fresh detection window")
+    step(15)
+    equal(radio.writes, 1)
+end
+
+for _, smart in ipairs({ false, true }) do
+    local owner, radio, step = fixture()
+    local settings = config.resolve(owner.document.flight)
+    settings.requireReceiver, settings.smartDetection = false, smart
+    assert(
+        config.key(settings) ~= config.key(owner.document.flight),
+        "receiver policy is part of configuration identity"
+    )
+    owner:setDocument({ revision = 2, flight = settings })
+    radio.rssi, radio.motor = 0, 1024
+    step(15)
+    equal(radio.writes, 0, "receiver opt-out still requires arming")
+    radio.arms[1], radio.motor = true, -512
+    step(15)
+    equal(radio.writes, 0, "receiver opt-out still requires motor output strictly above the threshold")
+    radio.motor = 0
+    step(3)
+    equal(radio.writes, 0, "receiver opt-out still requires the full start detection window")
+    step(15)
+    equal(owner.session.link.live, false, "test must qualify without a live telemetry link")
+    equal(owner.view.active, true)
+    equal(owner.view.reason, "standard", "missing Smart sensors do not block standard offline detection")
+    equal(radio.writes, 1)
+    step(15)
+    equal(radio.writes, 1, "offline qualification counts exactly once")
+    settings = config.resolve(settings)
+    settings.requireReceiver = true
+    owner:setDocument({ revision = 3, flight = settings })
+    step(15)
+    equal(owner.view.active, true, "changing receiver policy does not end an active flight")
+    radio.arms[1] = false
+    step(2)
+    equal(owner.view.active, true, "offline flights retain the end detection window")
+    step(15)
+    equal(owner.view.active, false)
+    equal(radio.commands[#radio.commands], false, "offline completion releases the flight status output")
+    radio.arms[1] = true
+    step(20)
+    equal(radio.writes, 1, "re-enabling the receiver requirement blocks the next offline flight")
+end
+
+do
     local owner, radio, step, first, second = fixture()
     radio.arms[3] = true
     owner:setDocument({ revision = 2, flight = owner.document.flight, sessionReset = "L03" })

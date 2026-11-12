@@ -57,7 +57,7 @@ class CaptureRecipeTests(unittest.TestCase):
                     self.assertEqual(document["flight"]["disarmDuration"], 3)
                     self.assertNotIn("history", document["flight"])
                     self.assertIn("confirmed", readiness(recipe))
-                    self.assertIn("instance.framePhase", readiness(recipe))
+                    self.assertIn("instance.columnsDecorating", readiness(recipe))
                     self.assertIn('if name == "ch3"', fixture_inputs(recipe))
                 self.assertTrue((widget / "panels" / f"{recipe['panel']}.lua").is_file())
                 self.assertTrue((widget / "lib/panel_host.lua").is_file())
@@ -121,7 +121,8 @@ class CaptureRecipeTests(unittest.TestCase):
                 panel = layout["panels"][0]
                 self.assertEqual(panel["type"], "chart")
                 self.assertEqual(panel["config"], capture.PANEL_DRAWER_CONFIG["chart"])
-                self.assertEqual(panel["config"]["timeRange"], "rolling")
+                self.assertNotIn("timeRange", panel["config"])
+                self.assertNotIn("duration", panel["config"], "the drawer shows the default Auto window")
                 self.assertNotIn("armSwitch", panel["config"])
                 self.assertNotIn("session", layout)
                 self.assertEqual(panel["config"]["metrics"][0]["source"], "gvar1")
@@ -184,6 +185,13 @@ class CaptureRecipeTests(unittest.TestCase):
             else:
                 self.assertEqual(list(recipe["panels"]), ["1x2", "2x1", "2x2"])
                 self.assertIn("feed", readiness(recipe))
+
+    def test_scheduler_variant_recipe(self):
+        recipe = load_recipe(RECIPE_DIR / "variants/host-diagnostics-scheduler.yaml")
+        self.assertEqual(recipe["panel"], "host-diagnostics")
+        self.assertEqual(recipe["config"]["section"], "scheduler")
+        self.assertIn("graph.index", readiness(recipe))
+        self.assertNotIn("graph.index", readiness(load_recipe(RECIPE_DIR / "host-diagnostics.yaml")))
 
     def test_chart_recording_capture(self):
         recipe = load_recipe(RECIPE_DIR / "chart.yaml")

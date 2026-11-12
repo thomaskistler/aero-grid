@@ -18,6 +18,8 @@ local subscriptions = history.count
 local telemetry = context.serviceRuntime.byId.telemetry
 local controls = context.serviceRuntime.byId.control
 local telemetryCount, controlCount = telemetry.count, controls.count
+local retiredOwner = fixture.entryById(context, "power")
+context.refreshOwner = retiredOwner
 
 local function preview(edit)
     context.editorController.openEditor(context)
@@ -53,9 +55,15 @@ local draft, handlers = preview(function(config)
 end)
 local compatible = fixture.instanceOf(context, "power")
 assert(compatible.preview and not compatible.previewMissing)
+assert(context.refreshOwner ~= retiredOwner, "retiring a preview chart must release its dispatcher ownership")
 equal(compatible.series[1].feed, feed)
-fixture.pump(context, 100)
-assert(compatible.series[1].runs[1].line, "compatible visual edits retain the recorded plot in the editor")
+assert(
+    fixture.pumpUntil(context, function()
+        return compatible.columnRenderer and compatible.columnRenderer.published[1]
+    end, 2500),
+    "editor preview did not initialize its empty presentation"
+)
+assert(next(compatible.columnConsumers[1].map.kinds) == nil, "previews must not reconstruct recorded history")
 equal(history.count, subscriptions)
 equal(telemetry.count, telemetryCount)
 equal(controls.count, controlCount)
@@ -66,6 +74,11 @@ equal(compatible.history, history)
 equal(compatible.preview, false)
 equal(compatible.session, session)
 equal(compatible.series[1].feed, feed)
+fixture.pump(context, 200)
+assert(
+    not compatible.columnConsumers[1].readonly and compatible.columnConsumers[1].history == history,
+    "saving a compatible preview must attach observers for new telemetry"
+)
 
 fixture.radio.fields.NewChart = { id = 5100, name = "NewChart", unit = 1 }
 fixture.radio.values[5100] = 55

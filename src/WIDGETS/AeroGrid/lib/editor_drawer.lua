@@ -9,7 +9,10 @@ local function current(state, field)
         value = type(value) == "table" and value[key] or nil
     end
     if value == nil then
-        return field.value
+        if field.path then
+            return field.value
+        end
+        return field.default
     end
     return value
 end
@@ -699,6 +702,24 @@ local function addControl(context, state, field, index)
         end
     elseif leaf == "timer" then
         kind, options.get, options.set = "timer", get, set
+    elseif field.type == "number" and (leaf == "rangeMin" or leaf == "rangeMax") then
+        kind, options.value, options.length = "textEdit", tostring(get() or ""), 32
+        options.set = function(text)
+            if string.match(text, "^%s*$") then
+                set(nil)
+                return
+            end
+            local value = tonumber(text)
+            if not value or value ~= value or value == math.huge or value == -math.huge then
+                queue({
+                    action = "error",
+                    message = field.label .. " must be a finite number",
+                    control = field.control,
+                })
+                return
+            end
+            set(value)
+        end
     elseif field.type == "number" then
         kind = "numberEdit"
         local scale = field.step and field.step < 1 and math.floor(1 / field.step + 0.5) or 1

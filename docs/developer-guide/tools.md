@@ -55,8 +55,8 @@ Recipes can override the border.
 Chart omits the unsupported 1x2 placement. Its adapter generates varying
 synthetic readings through the real telemetry/history services, records for
 two flights separated by a recording pause, and waits for confirmed completion
-and finished projection before capturing. This shows neutral flight bands,
-arm/disarm triangles, and a resume gap with dotted connectors.
+and finished drawing before capturing. This shows neutral flight bands,
+arm/disarm triangles, and a resume gap with faint connectors.
 Its recipe requires `armSwitch: SFv`; the adapter supplies that condition and
 a motor channel through the real services, with isolated model flight settings.
 
@@ -86,6 +86,12 @@ name/start/remaining seconds, signed stored trim values, TX voltage, and
 `sample.sources` with exact sensor names, values, EdgeTX units, and precision.
 Cells use a voltage list; GPS uses coordinates including pilot position.
 Every configured source needs a sample.
+
+Recipes in `tools/capture-recipes/variants/` capture extra documented views
+and run only with `--recipe`. The Host diagnostics scheduler view uses
+`variants/host-diagnostics-scheduler.yaml`; its optional `companions` list adds
+uncropped panels whose work the view measures. Publish its crop and provenance
+as `scheduler-2x2.png` and `scheduler-provenance.json`.
 
 `tools/capture_recipes.py` owns recipe validation, model setup, synthetic
 inputs, and readiness adapters. `capture-panels.py` handles preparation,
@@ -141,7 +147,7 @@ the panel reference pages. Use `--help` for supported scene names.
 Panel drawer scenes save **SFv** as the model-wide Arm switch, so obsolete
 panel arm controls are not shown. The Chart scenes use a native GV1 source
 labeled **Reading**.
-`chart-settings` selects **rolling** to include **Window duration**;
+`chart-settings` shows the default **Auto** window;
 `chart-metric-entry` opens Chart's own entry drawer, not Metric's.
 The `aero-menu`, `model-settings`, `model-settings-reset`, and
 `model-settings-bottom` scenes show the shared model menu and settings.

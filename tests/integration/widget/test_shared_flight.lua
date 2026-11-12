@@ -411,3 +411,43 @@ assert(second.modelSettingsUi.revision == fresh.revision, "reopening must reload
 assert(second.modelSettingsUi.values.minMotorPercent == 31, "reopening must show the latest persisted values")
 changeModel(second, "minMotorPercent", 32, third)
 assert(owner.document.flight.minMotorPercent == 32, "saving after reopen must not report a false revision conflict")
+
+assert(second.modelSettingsUi.controls.requireReceiver.properties.get() == 1)
+changeModel(second, "requireReceiver", 0, third)
+changeModel(second, "minFlightDuration", 1, third)
+assert(owner.store:load(owner.filename).flight.requireReceiver == false, "receiver opt-out must persist on the model")
+definition.refresh(second, EVT_VIRTUAL_EXIT)
+untilState(second, function()
+    return not second.modelSettingsUi and owner.session.settings.requireReceiver == false and not owner.readyAfterDisarm
+end, third)
+fixture.radio.rssi, smartSamples[900] = 0, nil
+pump(second, 20, third)
+assert(owner.session.link.live == false, "offline test must not have a live receiver")
+fixture.radio.values[305] = 1024
+untilState(second, function()
+    return owner.view.active
+end, third)
+assert(model.getGlobalVariable(8, 0) == 4, "offline flight must count once across both dashboards")
+assert(owner.view.reason == "standard" and writes[#writes] == true)
+second.aeroMenuHandlers.modelSettings()
+untilState(second, function()
+    return second.modelSettingsUi and not second.modelSettingsUi.build
+end, third)
+assert(second.modelSettingsUi.controls.requireReceiver.properties.get() == 0, "reopening retains receiver opt-out")
+changeModel(second, "requireReceiver", 1, third)
+assert(
+    owner.view.active and owner.session.settings.requireReceiver == false,
+    "an active flight keeps its pinned policy"
+)
+definition.refresh(second, EVT_VIRTUAL_EXIT)
+fixture.radio.values[305] = -1024
+untilState(second, function()
+    return not second.modelSettingsUi and not owner.view.active and not owner.output
+end, third)
+assert(writes[#writes] == false, "offline flight completion releases the output")
+fixture.radio.values[305] = 1024
+pump(second, 60, third)
+assert(
+    not owner.view.active and model.getGlobalVariable(8, 0) == 4,
+    "re-enabled receiver requirement blocks offline starts"
+)

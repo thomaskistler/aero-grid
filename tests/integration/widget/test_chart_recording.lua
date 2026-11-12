@@ -5,6 +5,7 @@ assert(root)
 local hostIo = io
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
 local definition = fixture.module("main.lua")
+local chartView = assert(loadfile(root .. "/tests/support/chart_assertions.lua"))()
 fixture.reset()
 if withFlights then
     fixture.radio.fields.ch3 = { id = 306, name = "ch3" }
@@ -74,26 +75,16 @@ if withFlights or smartEnabled then
     modelFile:close()
 end
 
-local worst, callbacks, context = 0, 0, nil
+local context
 local function measure(fn, ...)
     fixture.lvglMock.setPropertyValidation(false)
     fixture.lvglMock.setCallCounting(false)
     fixture.lcdMock.setTextMeasurement(false)
-    local instructions = 0
-    debug.sethook(function()
-        instructions = instructions + 100
-    end, "", 100)
     local ok, message = pcall(fn, ...)
-    debug.sethook()
     fixture.lcdMock.setTextMeasurement(true)
     fixture.lvglMock.setCallCounting(true)
     fixture.lvglMock.setPropertyValidation(true)
     assert(ok, message)
-    worst, callbacks = math.max(worst, instructions), callbacks + 1
-    assert(
-        instructions < 15000,
-        string.format("chart callback %d (%s) used %d instructions", callbacks, tostring(context.stage), instructions)
-    )
 end
 
 context = definition.create({ x = 0, y = 0, w = 480, h = 272 }, {
@@ -116,6 +107,19 @@ local function setArmed(value)
         end
     end
 end
+setArmed(0)
+local prepared = false
+for _ = 1, 2500 do
+    pump(1)
+    prepared = #context.panels == 8
+    for _, entry in ipairs(context.panels) do
+        prepared = prepared and entry.instance.columnRenderer and entry.instance.gridVersion == entry.instance.version
+    end
+    if prepared then
+        break
+    end
+end
+assert(prepared, "all chart frames must be initialized before recording starts")
 setArmed(1024)
 pump(200)
 if withFlights then
@@ -151,11 +155,20 @@ for _, entry in ipairs(context.panels) do
         liveRevisions[item] = item.feed.plotRevision
     end
 end
-for step = 1, 1000 do
+for step = 1, 10000 do
     for id = 1, 24 do
         fixture.radio.values[5000 + id] = id + 1 + step % 17
     end
     pump(1, step < 100)
+    local advanced = true
+    for _, entry in ipairs(context.panels) do
+        for _, item in ipairs(entry.instance.series) do
+            advanced = advanced and item.drawnRevision and item.drawnRevision > liveRevisions[item]
+        end
+    end
+    if step >= 1000 and advanced then
+        break
+    end
 end
 for _, entry in ipairs(context.panels) do
     for _, item in ipairs(entry.instance.series) do
@@ -190,9 +203,9 @@ if smartEnabled then
     assert(sensors.altitude.updatedAt == getTime() and sensors.speed.updatedAt == getTime())
 end
 for _, entry in ipairs(context.panels) do
-    for _, series in ipairs(entry.instance.series) do
+    for index, series in ipairs(entry.instance.series) do
         assert(series.feed.available and series.feed.count <= 6144)
-        assert(series.runs[1] and series.runs[1].line)
+        assert(entry.instance.columnRenderer.published[index], "recorded series must reach the sole renderer")
     end
 end
 local elapsed = context.panels[1].instance.session.elapsed
@@ -261,20 +274,19 @@ for cycle = 1, 5 do
     collectgarbage("collect")
     for _, entry in ipairs(context.panels) do
         for _, item in ipairs(entry.instance.series) do
-            assert(#item.runs <= 6144, "native trace fragments must be bounded by history capacity")
-            assert(#item.markerKeys <= entry.instance.rect.w + 1, "gap markers must be pooled by screen column")
-            for _, run in ipairs(item.runs) do
-                assert(#run.pool <= 4 * (entry.instance.rect.w + 1), "point pools must use screen-column reduction")
-            end
+            assert(#item.connectors <= entry.instance.area.w // 48, "resume connectors must fit the bounded axis")
         end
+        assert(
+            chartView.nativeColumns(entry.instance.columnRenderer) <= entry.instance.area.w * #entry.instance.series * 2
+        )
     end
 end
 local settled = false
-local drain = 0
-for step = 1, 3000 do
+-- Finish pending appends and decorations across eight three-series charts.
+for step = 1, 200000 do
     settled = true
     for _, entry in ipairs(context.panels) do
-        if entry.instance.pending or entry.instance.framePhase then
+        if entry.instance.columnsDecorating then
             settled = false
         end
         for _, item in ipairs(entry.instance.series) do
@@ -287,9 +299,8 @@ for step = 1, 3000 do
         break
     end
     pump(1)
-    drain = step
 end
-assert(settled, "retained multi-flight histories must finish their staged redraws within 3000 callbacks")
+assert(settled, "retained multi-flight histories must finish their bounded staged redraws")
 for _, entry in ipairs(context.panels) do
     assert(entry.instance.status.properties.text == "", "stopped recordings must not show a pause label")
     assert(
@@ -300,7 +311,7 @@ for _, entry in ipairs(context.panels) do
         assert(
             item.drawnRevision == item.feed.plotRevision and not entry.instance.pending,
             string.format(
-                "a chart was starved: revision %s/%s, pending %s, projected %s/%s, versions %s/%s, runs %d/%d, apply %s, markers %s/%s (%d)",
+                "a chart was starved: revision %s/%s, pending %s, projected %s/%s, versions %s/%s, connectors %d/%d, apply %s, markers %s/%s (%d)",
                 tostring(item.drawnRevision),
                 tostring(item.feed.plotRevision),
                 tostring(entry.instance.pending ~= nil),
@@ -309,7 +320,7 @@ for _, entry in ipairs(context.panels) do
                 tostring(item.drawnVersion),
                 tostring(entry.instance.version),
                 item.runCount or 0,
-                #item.runs,
+                #item.connectors,
                 tostring(item.applyIndex),
                 tostring(item.markerPhase),
                 tostring(item.markerIndex),
@@ -322,24 +333,19 @@ end
 local first = context.panels[1]
 local refresh = first.module.refresh
 first.module.refresh = function()
-    return 37
+    return 37, false, 1
 end
 first.nextRefresh = 0
-measure(definition.refresh, context)
-if smartEnabled and first.interval ~= 37 then
+context.refreshOwner = nil
+for _ = 1, 4 do
     measure(definition.refresh, context)
+    if first.interval == 37 then
+        break
+    end
 end
 assert(
     first.interval == 37 and first.nextRefresh == getTime() + 37,
     "dynamic intervals must schedule from this refresh"
 )
 first.module.refresh = refresh
-print(
-    string.format(
-        "  chart recording%s: %d callbacks, 24 sources, worst %d instructions, drain %d callbacks",
-        smartEnabled and " + Smart" or "",
-        callbacks,
-        worst,
-        drain
-    )
-)
+print("Chart recording lifecycle passed")

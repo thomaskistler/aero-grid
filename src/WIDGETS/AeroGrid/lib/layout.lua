@@ -17,7 +17,24 @@ local layout = { RUNTIME_API = 1 }
 
 layout.VERSION = 5
 
+--- Chart windows are whole minutes from 1 to 60; earlier "30s"/"5m" strings
+--- and fractional values round up, and larger values clamp to 60.
+local function chartMinutes(duration)
+    local minutes = duration
+    if type(duration) == "string" then
+        local amount, unit = string.match(duration, "^%s*(%d+%.?%d*)%s*([sm]?)%s*$")
+        minutes = amount and tonumber(amount) / (unit == "s" and 60 or 1)
+    end
+    if type(minutes) ~= "number" or minutes ~= minutes then
+        return duration
+    end
+    return math.max(1, math.min(60, math.ceil(minutes)))
+end
+
 function layout.normalizePanel(panel)
+    if panel.type == "chart" and type(panel.config) == "table" and panel.config.duration ~= nil then
+        panel.config.duration = chartMinutes(panel.config.duration)
+    end
     if panel.type == "link-status" and type(panel.config) == "table" and panel.config.extrema == "flight" then
         -- Flight-session minimums were removed; EdgeTX's own minimum replaces them.
         panel.config.extrema = "source"

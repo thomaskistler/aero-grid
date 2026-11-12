@@ -191,16 +191,14 @@ for index, context in ipairs({ first, second }) do
     equal(chart.session, session, "charts must use the reset recording session")
     equal(chart.series[1].feed, history:subscribe("Alt"), "chart previews must observe reset recordings too")
     assert(chart.session.elapsed < chartElapsed[index], "chart timelines must restart after reset")
-    equal(chart.series[1].feed.min, 50, "chart readouts must discard pre-reset extrema")
-    equal(chart.series[1].feed.max, 50)
-    for point = chart.series[1].feed.first, chart.series[1].feed.last do
-        local _, value = history:point(chart.series[1].feed, point)
-        equal(value, 50, "chart traces must contain only post-reset samples")
-    end
+    -- Recording time stays frozen while the editor is open.
+    equal(session.recording, false, "editing must pause recording on every dashboard")
+    equal(chart.series[1].feed.min, nil, "chart readouts must discard pre-reset extrema")
+    equal(chart.series[1].feed.count, 0, "chart traces must discard pre-reset samples")
     equal(session.flightLast, 0)
     equal(session.armLast, 0)
     equal(session.resumeLast, 0)
-    equal(history:subscribe("Alt").min, 50, "recorded extrema must not retain old samples")
+    equal(history:subscribe("Alt").min, nil, "recorded extrema must not retain old samples")
     equal(panel(context, "home").feed.homeStatus, "waiting", "custom home requires a new arm edge")
     assert(not panel(context, "home").feed.home)
     assert(panel(context, "radio-home").feed.home, "EdgeTX home is never reset")
@@ -217,6 +215,19 @@ untilState(function()
     return panel(second, "battery").estimatedCells == 2
 end)
 secondVisible = false
+pump(40)
+for _, context in ipairs({ first, second }) do
+    local history = context.serviceRuntime.byId.history
+    local chart = panel(context, "chart")
+    assert(history:session().recording, "recording resumes once the editor closes")
+    equal(chart.series[1].feed.min, 50, "chart readouts contain only post-reset samples")
+    equal(chart.series[1].feed.max, 50)
+    for point = chart.series[1].feed.first, chart.series[1].feed.last do
+        local _, value = history:point(chart.series[1].feed, point)
+        equal(value, 50, "chart traces must contain only post-reset samples")
+    end
+    equal(history:subscribe("Alt").min, 50, "recorded extrema must not retain old samples")
+end
 equal(model.getTimer(0).value, timer, "radio-owned timers are untouched")
 equal(owner.epoch, epoch + 1, "holding the input resets once")
 equal(writes, 1, "a reset while armed cannot count the same flight again")

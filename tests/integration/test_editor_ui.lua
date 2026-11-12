@@ -497,15 +497,17 @@ do
     warning.set(800)
     settleDrawer()
     equal(draftEntry().warning, 80, "an in-range threshold is stored")
-    control("metrics", "rangeMax").properties.set(500)
+    equal(control("metrics", "rangeMax").kind, "textEdit", "range bounds use keyboard entry")
+    control("metrics", "rangeMax").properties.set("50")
     settleDrawer()
     equal(warning.display(warning.get()), "Off", "a threshold left outside a narrowed range shows Off")
     warning.set(-1)
     settleDrawer()
     equal(draftEntry().warning, nil, "one step below Range min turns the threshold off")
-    control("metrics", "rangeMax").properties.set(1000)
+    control("metrics", "rangeMax").properties.set("")
     settleDrawer()
-    draftEntry().rangeMax = nil
+    equal(draftEntry().rangeMax, nil, "clearing a metric bound removes the override")
+    equal(control("metrics", "rangeMax").properties.value, "100", "cleared metric bound shows its default")
 end
 local staleSource = control("metrics", "source")
 staleSource.properties.set(999)
@@ -1891,8 +1893,8 @@ local function chartDrawerOrder()
 end
 equal(
     chartDrawerOrder(),
-    "Label,Arm switch position,Metrics,Alt,+,Time range,Series scales,Line smoothing,Accent,Remove panel",
-    "Growing chart drawer follows the guide, with add after entries and remove last"
+    "Label,Arm switch position,Metrics,Alt,+,Window minutes,Series scales,Line smoothing,Accent,Remove panel",
+    "Fixed chart drawer exposes duration without a time-range selector"
 )
 equal(control("armSwitch").kind, "switch", "Chart must use the native switch-position picker")
 equal(control("armSwitch").properties.get(), getSwitchIndex("SA" .. CHAR_DOWN), "legacy Chart switch remains visible")
@@ -1911,54 +1913,76 @@ equal(
     "Label,Source,Range min,Range max,Unit,Precision,Color,Remove entry",
     "chart metric drawer puts limits before display options and color, with remove last"
 )
+local rangeMin, rangeMax = control("metrics", "rangeMin"), control("metrics", "rangeMax")
+equal(rangeMin.kind, "textEdit", "chart minimum uses the native keyboard")
+equal(rangeMax.kind, "textEdit", "chart maximum uses the native keyboard")
+equal(rangeMin.properties.value, "", "automatic minimum starts blank")
+rangeMin.properties.set("-1000.5")
+settleDrawer()
+rangeMax.properties.set("1000")
+settleDrawer()
+local chartMetric = context.editorSession.draft.panels[1].config.metrics[1]
+equal(chartMetric.rangeMin, -1000.5, "keyboard accepts negative decimal bounds without stepping")
+equal(chartMetric.rangeMax, 1000, "keyboard accepts large bounds without stepping")
+equal(rangeMax.properties.value, "1000", "accepted numeric bound remains visible")
+for _, invalid in ipairs({ "not a number", "1e9999" }) do
+    rangeMax.properties.set(invalid)
+    settleDrawer()
+    equal(chartMetric.rangeMax, 1000, "invalid numeric text preserves the existing bound")
+    assert(control("metrics", "rangeMax") == rangeMax, "invalid entry keeps the same control")
+    assert(string.find(state.status, "must be a finite number", 1, true), "invalid numeric text reports a useful error")
+end
+rangeMax.properties.set("2000")
+settleDrawer()
+equal(chartMetric.rangeMax, 2000, "valid input can correct an invalid entry")
+rangeMin.properties.set("")
+settleDrawer()
+rangeMax.properties.set("   ")
+settleDrawer()
+equal(chartMetric.rangeMin, nil, "clearing the minimum restores Auto")
+equal(chartMetric.rangeMax, nil, "clearing the maximum restores Auto")
+equal(rangeMin.properties.value, "", "cleared minimum stays blank")
+equal(rangeMax.properties.value, "", "cleared maximum stays blank")
 back()
-equal(drawerRow("duration").row.hidden, true, "Growing must hide the rolling duration control")
-equal(drawerRow("duration").field.label, "Window duration", "duration must describe only the rolling window")
-equal(
-    drawerRow("scaling").row.properties.y - drawerRow("timeRange").row.properties.y,
-    36,
-    "hidden duration must reclaim its drawer row"
-)
-control("timeRange").properties.set(2)
+action("item", "metrics").properties.press()
 settleDrawer()
-equal(
-    chartDrawerOrder(),
-    "Label,Arm switch position,Metrics,Alt,+,Time range,Window duration,Series scales,Line smoothing,Accent,Remove panel",
-    "Rolling keeps its window duration beside the time-range selector"
-)
-equal(drawerRow("duration").row.hidden, false, "Rolling must reveal its fixed window control")
-equal(
-    context.editorSession.draft.panels[1].config.duration,
-    "5m",
-    "switching modes must preserve saved rolling choices"
-)
-control("duration").properties.set(3)
-settleDrawer()
-equal(context.editorSession.draft.panels[1].config.duration, "2m", "rolling window must remain editable")
-control("timeRange").properties.set(1)
-settleDrawer()
-equal(drawerRow("duration").row.hidden, true, "returning to Growing must hide duration again")
-equal(
-    context.editorSession.draft.panels[1].config.duration,
-    "2m",
-    "Growing must preserve the hidden rolling preference"
-)
+equal(control("metrics", "rangeMin").properties.value, "", "reopened minimum retains Auto")
+equal(control("metrics", "rangeMax").properties.value, "", "reopened maximum retains Auto")
 back()
-equal(context.panels[1].instance.window, 6000, "Growing preview must ignore the saved rolling duration")
+equal(drawerRow("duration").row.hidden, false, "fixed window duration must always be visible")
+equal(drawerRow("duration").field.label, "Window minutes", "duration labels the fixed window")
+equal(context.editorSession.draft.panels[1].config.duration, 5, "saved durations load as whole minutes")
+local durationControl = control("duration").properties
+durationControl.set(durationControl.min)
+settleDrawer()
+equal(context.editorSession.draft.panels[1].config.duration, nil, "Auto removes a previously saved fixed window")
+equal(durationControl.get(), durationControl.min, "cleared window must not read back the saved fixed value")
+equal(durationControl.display(durationControl.get()), "Auto", "confirmed Auto remains displayed")
+back()
+equal(context.panels[1].settings.duration, nil, "Auto preview must not retain the fixed window")
+equal(context.panels[1].instance.window, 6000, "Auto preview starts with a one-minute window")
+rect = state.controls[1].rect
+tap(rect.x + rect.w - 12, rect.y + 12)
+settleDrawer()
+durationControl = control("duration").properties
+equal(durationControl.get(), durationControl.min, "reopening the drawer retains Auto")
+control("duration").properties.set(2)
+settleDrawer()
+equal(context.editorSession.draft.panels[1].config.duration, 2, "fixed window must remain editable")
+back()
+equal(context.panels[1].instance.window, 12000, "fixed preview must use the selected duration")
 equal(context.panels[1].settings.armSwitch, "SAv", "preview rebuilds must preserve the panel's arm switch")
 rect = state.controls[1].rect
 tap(rect.x + rect.w - 12, rect.y + 12)
 settleDrawer()
-control("timeRange").properties.set(2)
-settleDrawer()
-equal(drawerRow("duration").row.hidden, false, "reopening Rolling must restore the duration control")
+equal(drawerRow("duration").row.hidden, false, "reopening must retain the duration control")
 equal(
     control("armSwitch").properties.get(),
     getSwitchIndex("SA" .. CHAR_DOWN),
     "reopening the drawer must restore the selected physical switch position"
 )
 back()
-equal(context.panels[1].instance.window, 12000, "Rolling preview must use its saved fixed window")
+equal(context.panels[1].instance.window, 12000, "preview must use its saved fixed window")
 exitWith("Discard changes")
 widget.lvglMock.setFullScreen(false)
 

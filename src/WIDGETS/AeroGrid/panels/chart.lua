@@ -5,7 +5,8 @@ local chart = {
     apiVersion = 1,
     supportedSpans = { "2x1", "3x1", "4x1", "2x2", "3x2", "4x2", "3x3", "4x3", "4x4" },
     refreshInterval = 20,
-    refreshCost = 6,
+    refreshCost = "variable",
+    independentRefresh = true,
     settings = {
         { key = "label", label = "Label", type = "string", default = "" },
         { key = "armSwitch", label = "Arm switch position", type = "string", default = "", legacyArm = true },
@@ -39,17 +40,20 @@ local chart = {
             key = "timeRange",
             label = "Time range",
             type = "string",
-            default = "growing",
-            choices = { "growing", "rolling" },
+            default = "fixed",
+            visibleWhen = function()
+                return false
+            end,
         },
         {
+            -- Whole minutes; unset grows automatically (see layout.normalizePanel).
             key = "duration",
-            label = "Window duration",
-            type = "string",
-            default = "1m",
-            choices = { "30s", "1m", "2m", "5m", "10m" },
-            choiceLabels = { "30 seconds", "1 minute", "2 minutes", "5 minutes", "10 minutes" },
-            visibleWhen = { key = "timeRange", value = "rolling" },
+            label = "Window minutes",
+            type = "number",
+            min = 1,
+            max = 60,
+            step = 1,
+            empty = "Auto",
         },
         {
             key = "scaling",
@@ -86,18 +90,12 @@ local chart = {
     },
 }
 
-local DURATIONS = { ["30s"] = 30, ["1m"] = 60, ["2m"] = 120, ["5m"] = 300, ["10m"] = 600 }
 local COLORS = { "cyan", "orange", "green" }
 local LEGEND_FONTS = { MIDSIZE, 0, SMLSIZE }
-local PROJECTION_CAP = 7
-local BREAK_WIDTH = 24
 local textCache = setmetatable({}, { __mode = "k" })
 
-local function timeWindow(settings, elapsed)
-    if settings.timeRange == "rolling" then
-        return (DURATIONS[settings.duration] or 60) * 100
-    end
-    return math.max(6000, math.ceil(elapsed / 6000) * 6000)
+local function timeWindow(settings)
+    return (type(settings.duration) == "number" and settings.duration or 1) * 6000
 end
 
 local function finite(value)
@@ -150,6 +148,10 @@ function chart.validateSettings(settings, _, _, modelArmed)
                 sharedMax = sharedMax and math.max(sharedMax, entry.rangeMax) or entry.rangeMax
             end
         end
+    end
+    local duration = settings.duration
+    if duration ~= nil and not (finite(duration) and duration % 1 == 0 and duration >= 1 and duration <= 60) then
+        warnings[#warnings + 1] = "duration must be whole minutes from 1 to 60, or unset for automatic"
     end
     if count > 3 or #settings.metrics ~= count then
         warnings[#warnings + 1] = "metrics must contain a contiguous list of up to 3 sources"
@@ -208,8 +210,118 @@ local function label(context, color, font)
 end
 
 local GRID_CAP = 12
+local SLOT_INSTRUCTIONS = 1600
+local CALLBACK_RESERVE = 900
+
+local function instructionAllowance(slots)
+    return math.max(0, slots * SLOT_INSTRUCTIONS - CALLBACK_RESERVE)
+end
+
+local function consumedSlots(instructions)
+    return math.max(1, math.ceil((instructions + CALLBACK_RESERVE) / SLOT_INSTRUCTIONS))
+end
+
+-- Plot state owned by one layer. Auto windows prepare the next window in a
+-- hidden layer with the same staged pipeline, then swap the layers.
+local LAYER_KEYS = {
+    "layerHost",
+    "plotRoot",
+    "flightRoot",
+    "gapRoot",
+    "gridRoot",
+    "columnConsumers",
+    "columnRenderer",
+    "axis",
+    "axisWork",
+    "window",
+    "start",
+    "pixelStart",
+    "version",
+    "frameThrough",
+    "columnsDecorating",
+    "connectorWork",
+    "grid",
+    "gridCursor",
+    "gridVersion",
+    "gridLayoutVersion",
+    "gridStep",
+    "gridFirst",
+    "flightBands",
+    "flightKeys",
+    "flightCursor",
+    "flightSlots",
+    "flightPassRevision",
+    "flightPassVersion",
+    "flightDrawnRevision",
+    "flightDrawnVersion",
+    "flightDrawnElapsed",
+    "flightOpenIndex",
+    "flightOpenLeft",
+    "flightOpenRight",
+    "armMarkers",
+    "resumeMarkers",
+    "paintedVersion",
+    "paintedArmRevision",
+    "paintedResumeRevision",
+    "paintedFlightRevision",
+}
+local ITEM_KEYS = {
+    "connectors",
+    "markers",
+    "markerKeys",
+    "job",
+    "markerIndex",
+    "markerPhase",
+    "marked",
+    "drawnBreakMap",
+    "drawnBreak",
+    "drawnBreakVersion",
+    "paintedBreakMap",
+    "paintedBreak",
+    "drawnRevision",
+    "drawnVersion",
+    "drawnResumeRevision",
+    "low",
+    "high",
+}
+local LAYER_KEY, ITEM_KEY = {}, {}
+for _, key in ipairs(LAYER_KEYS) do
+    LAYER_KEY[key] = true
+end
+for _, key in ipairs(ITEM_KEYS) do
+    ITEM_KEY[key] = true
+end
+
+--- A hidden layer reads shared chart state through `context` but keeps its own
+--- plot state; writes always stay on the view.
+local function layerView(context, view)
+    setmetatable(view, {
+        __index = function(_, key)
+            if LAYER_KEY[key] then
+                return nil
+            end
+            return context[key]
+        end,
+    })
+    local series = rawget(view, "series") or {}
+    rawset(view, "series", series)
+    for index, item in ipairs(context.series) do
+        series[index] = setmetatable(series[index] or { connectors = {}, markers = {}, markerKeys = {} }, {
+            __index = function(_, key)
+                if ITEM_KEY[key] then
+                    return nil
+                end
+                return item[key]
+            end,
+        })
+    end
+    return view
+end
 
 local function axisPosition(axis, at, before)
+    if axis.map then
+        return axis.x + axis.map:pixel(at, before)
+    end
     local low, high = 1, #axis.breaks
     while low <= high do
         local middle = (low + high) // 2
@@ -224,78 +336,44 @@ local function axisPosition(axis, at, before)
 end
 
 local function timeX(context, at, before)
-    if context.axis and #context.axis.breaks > 0 then
+    if context.axis and (context.axis.map or #context.axis.breaks > 0) then
         return math.floor(axisPosition(context.axis, at, before) + 0.5)
     end
     return context.area.x + math.floor((at - context.start) / context.window * context.area.w + 0.5)
 end
 
-local function prepareAxis(context)
+local function prepareAxis(context, allowance)
     local session, area = context.session, context.area
-    local window = timeWindow(context.settings, session.elapsed)
-    local start = context.settings.timeRange == "rolling" and math.max(0, session.elapsed - window) or 0
+    local window, start = context.window, context.start
     local axis = context.axis
-    if
-        axis
-        and axis.revision == session.resumeRevision
-        and axis.baseStart == start
-        and axis.window == window
-        and axis.geometryVersion == context.geometryVersion
-    then
-        return true
-    end
-    local work = context.axisWork
-    if not work then
-        work = { index = session.resumeLast or 0, reverse = {}, start = start }
-        context.axisWork = work
-    end
-    -- Keep room for recorded data when fixed-width breaks crowd the axis.
-    local capacity = math.max(1, area.w // (BREAK_WIDTH * 2))
-    for _ = 1, 32 do
-        if work.index < (session.resumeFirst or 1) or not context.history.recordingBreak then
-            work.done = true
-            break
-        end
-        local at = context.history:recordingBreak(context.liveSession or session, work.index)
-        work.index = work.index - 1
-        if at and at < start then
-            work.done = true
-            break
-        end
-        if at and at <= start + window and at ~= work.reverse[#work.reverse] then
-            if #work.reverse == capacity then
-                work.start, work.done = work.reverse[#work.reverse], true
-                break
+    local owner = context.columnConsumers and context.columnConsumers[1]
+    if owner and owner.map.recording then
+        local map = owner.map
+        if not axis or axis.map ~= map or axis.geometryVersion ~= context.geometryVersion then
+            context.axis = {
+                map = map,
+                x = area.x,
+                gap = area.w >= map.breakWidth and map.breakWidth or 0,
+                scale = area.w / window,
+                start = start,
+                baseStart = start,
+                window = window,
+                breaks = {},
+                revision = session.resumeRevision,
+                geometryVersion = context.geometryVersion,
+            }
+        else
+            if axis.revision ~= session.resumeRevision then
+                context.gridVersion, context.gridLayoutVersion = nil, nil
+                for _, line in ipairs(context.grid) do
+                    line.version = nil
+                end
             end
-            work.reverse[#work.reverse + 1] = at
+            axis.revision = session.resumeRevision
         end
+        return true, 0
     end
-    if not work.done then
-        return false
-    end
-    local breaks = {}
-    for index = #work.reverse, 1, -1 do
-        breaks[#breaks + 1] = work.reverse[index]
-    end
-    local gap = math.min(BREAK_WIDTH, area.w // 2)
-    if gap == 0 then
-        breaks = {}
-    end
-    context.axis = {
-        breaks = breaks,
-        start = work.start,
-        baseStart = start,
-        window = window,
-        x = area.x,
-        gap = gap,
-        revision = session.resumeRevision,
-        geometryVersion = context.geometryVersion,
-    }
-    axis = context.axis
-    axis.scale = (area.w - #breaks * axis.gap) / math.max(1, start + window - axis.start)
-    context.axisWork = nil
-    context.version = context.version + 1
-    return true
+    return true, 0
 end
 
 function chart.gridInterval(window, pixels)
@@ -311,7 +389,7 @@ function chart.gridInterval(window, pixels)
     end
 end
 
-local function updateGrid(context)
+local function updateGrid(context, allowance)
     local area, start, window = context.area, context.start, context.window
     if context.gridLayoutVersion ~= context.version then
         context.gridStep = chart.gridInterval(window, area.w)
@@ -319,10 +397,26 @@ local function updateGrid(context)
             * context.gridStep
         context.gridLayoutVersion = context.version
     end
-    -- Fill a fixed pool gradually, behind the traces, and limit native changes.
-    for _ = 1, #context.grid < GRID_CAP and 1 or 3 do
+    local remaining, used = allowance, 0
+    -- Fill the reusable pool behind the traces without exceeding the grant.
+    while remaining >= 100 do
         local index = context.gridCursor
         local line = context.grid[index]
+        local cost = line and 100 or 600
+        if line and line.version ~= context.version then
+            local at = context.gridFirst + (index - 1) * context.gridStep
+            local x = timeX(context, at)
+            local visible = at < start + window and x > area.x and x < area.x + area.w
+            if visible and (line.x ~= x or line.geometryVersion ~= context.geometryVersion) then
+                cost = cost + 350
+            end
+            if visible and not line.visible or not visible and line.visible then
+                cost = cost + 150
+            end
+        end
+        if remaining < cost then
+            break
+        end
         if not line then
             line = {
                 object = lvgl.vline(context.gridRoot, {
@@ -358,12 +452,17 @@ local function updateGrid(context)
             context.gridVersion = context.version
         end
         context.gridCursor = index % GRID_CAP + 1
+        remaining, used = remaining - cost, used + cost
+        if context.gridVersion == context.version then
+            return true, used
+        end
     end
+    return false, used
 end
 
 local function updateHeader(context)
     local builder, area = context.themeBuilder, context.area
-    local duration = chart.durationText(context.window or timeWindow(context.settings, 0))
+    local duration = chart.durationText(context.window or timeWindow(context.settings))
     if context.headerGeometry == context.geometryVersion and context.durationText == duration then
         return
     end
@@ -402,33 +501,12 @@ local function updateHeader(context)
     context.headerGeometry, context.durationText = context.geometryVersion, duration
 end
 
-local function updateFlights(context)
+--- Place, resize, show or hide the band for flight `index` in `slot` within
+--- `remaining` estimated instructions; returns the cost, or nil when it does not fit.
+---@return integer?
+local function drawFlight(context, slot, index, remaining)
     local session, historyService = context.session, context.history
-    if
-        not session
-        or not historyService
-        or not historyService.flight
-        or (session.flightLast or 0) == 0 and not context.flightBands
-    then
-        return false
-    end
-    local elapsed = session.flightActive and (context.frameThrough or session.elapsed) or 0
-    if
-        context.flightDrawnRevision == session.flightRevision
-        and context.flightDrawnVersion == context.version
-        and context.flightDrawnElapsed == elapsed
-    then
-        return false
-    end
-    context.flightBands = context.flightBands or {}
-    local first, last = session.flightFirst, session.flightLast
-    if context.flightPassRevision ~= session.flightRevision or context.flightPassVersion ~= context.version then
-        context.flightCursor = 1
-        context.flightPassRevision, context.flightPassVersion = session.flightRevision, context.version
-    end
-    local slot = context.flightCursor or 1
-    local index = first + (slot - 1 - (first - 1) % historyService.FLIGHT_CAPACITY) % historyService.FLIGHT_CAPACITY
-    local band = context.flightBands[slot]
+    local band, drawn = context.flightBands[slot], context.flightKeys[slot]
     local at, finish = historyService:flight(context.liveSession or session, index)
     finish = math.min(finish or session.elapsed, context.frameThrough or session.elapsed)
     local area, start, window = context.area, context.start, context.window
@@ -436,9 +514,23 @@ local function updateFlights(context)
         and finish > at
         and finish > (context.axis and context.axis.start or start)
         and at < start + window
+    local left, right, key
+    local cost = 200
     if visible then
-        local left = math.max(area.x, math.min(area.x + area.w - 1, timeX(context, at)))
-        local right = math.max(area.x, math.min(area.x + area.w, timeX(context, finish, true)))
+        left = math.max(area.x, math.min(area.x + area.w - 1, timeX(context, at)))
+        right = math.max(area.x, math.min(area.x + area.w, timeX(context, finish, true)))
+        key = table.concat({ left, right, area.y, area.h }, ":")
+        cost = cost + (band and drawn == key and 100 or 500)
+        if not band then
+            cost = cost + 500
+        end
+    elseif band and drawn then
+        cost = cost + 200
+    end
+    if remaining < cost then
+        return nil
+    end
+    if visible then
         if not band then
             band = lvgl.rectangle(context.flightRoot, {
                 x = left,
@@ -453,23 +545,89 @@ local function updateFlights(context)
             context.flightBands[slot] = band
             context.flightSlots = math.max(context.flightSlots or 0, slot)
         end
-        local key = table.concat({ left, right, area.y, area.h }, ":")
-        if context.flightKeys[slot] ~= key then
+        if drawn ~= key then
             band:set({ x = left, y = area.y, w = math.max(1, right - left), h = area.h })
+            if drawn == nil then
+                lvgl.show(band)
+            end
             context.flightKeys[slot] = key
         end
-        lvgl.show(band)
-    elseif band then
+    elseif band and drawn then
         lvgl.hide(band)
+        context.flightKeys[slot] = nil
     end
-    local slots = math.max(context.flightSlots or 0, math.min(historyService.FLIGHT_CAPACITY, last))
-    context.flightCursor = slot < slots and slot + 1 or 1
-    if context.flightCursor == 1 then
-        context.flightDrawnRevision = session.flightRevision
-        context.flightDrawnVersion = context.version
+    if index == session.flightLast then
+        -- Where the open flight's band starts, so growing it only moves its right edge.
+        context.flightOpenIndex = visible and session.flightActive and index or nil
+        context.flightOpenLeft, context.flightOpenRight = left, right
+    end
+    return cost
+end
+
+local function updateFlights(context, allowance)
+    local session, historyService = context.session, context.history
+    if
+        not session
+        or not historyService
+        or not historyService.flight
+        or (session.flightLast or 0) == 0 and not context.flightBands
+    then
+        return true, 0
+    end
+    local elapsed = session.flightActive and (context.frameThrough or session.elapsed) or 0
+    local first, last = session.flightFirst, session.flightLast
+    if context.flightDrawnRevision == session.flightRevision and context.flightDrawnVersion == context.version then
+        if context.flightDrawnElapsed == elapsed then
+            return true, 0
+        end
+        -- Only time advanced: earlier bands stay put and the open flight's band grows.
+        local cost = 0
+        local slot = (last - 1) % historyService.FLIGHT_CAPACITY + 1
+        if context.flightOpenIndex == last and session.flightActive then
+            local area = context.area
+            local finish = math.min(session.elapsed, context.frameThrough or session.elapsed)
+            local right = math.max(area.x, math.min(area.x + area.w, timeX(context, finish, true)))
+            cost = 60
+            if right ~= context.flightOpenRight then
+                local left = context.flightOpenLeft
+                context.flightBands[slot]:set({ w = math.max(1, right - left) })
+                context.flightKeys[slot] = left .. ":" .. right .. ":" .. area.y .. ":" .. area.h
+                context.flightOpenRight, cost = right, 160
+            end
+        elseif session.flightActive and last >= first then
+            local band = drawFlight(context, slot, last, allowance)
+            if not band then
+                return false, 0
+            end
+            cost = band
+        end
         context.flightDrawnElapsed = elapsed
+        return true, cost
     end
-    return true
+    context.flightBands = context.flightBands or {}
+    if context.flightPassRevision ~= session.flightRevision or context.flightPassVersion ~= context.version then
+        context.flightCursor = 1
+        context.flightPassRevision, context.flightPassVersion = session.flightRevision, context.version
+    end
+    local remaining, used = allowance, 0
+    while true do
+        local slot = context.flightCursor or 1
+        local slots = math.max(context.flightSlots or 0, math.min(historyService.FLIGHT_CAPACITY, last))
+        if slot > slots then
+            context.flightCursor = 1
+            context.flightDrawnRevision = session.flightRevision
+            context.flightDrawnVersion = context.version
+            context.flightDrawnElapsed = elapsed
+            return true, used
+        end
+        local index = first + (slot - 1 - (first - 1) % historyService.FLIGHT_CAPACITY) % historyService.FLIGHT_CAPACITY
+        local cost = drawFlight(context, slot, index, remaining)
+        if not cost then
+            return false, used
+        end
+        context.flightCursor = slot + 1
+        remaining, used = remaining - cost, used + cost
+    end
 end
 
 local applyMarkers
@@ -482,10 +640,25 @@ local function markBoundary(context, item, pass, at, armed)
     if item.style == "resume" and context.axis.gap == 0 then
         return
     end
-    if not at or at < (context.axis and context.axis.start or context.start) or at > context.start + context.window then
+    local fixed = context.axis and context.axis.map
+    if
+        not at
+        or not fixed
+            and (at < (context.axis and context.axis.start or context.start) or at > context.start + context.window)
+    then
         return
     end
     local x = timeX(context, at, item.style == "resume" or item.style == "arm" and not armed)
+    if
+        fixed
+        and (
+            x >= context.area.x + context.area.w
+            or x + (item.style == "resume" and context.axis.gap or 0) < context.area.x
+            or item.style == "resume" and x + context.axis.gap == context.area.x
+        )
+    then
+        return
+    end
     local column = x - context.area.x + 1
     local key = item.style == "arm" and not armed and -column or column
     if not pass.marked[key] then
@@ -494,17 +667,17 @@ local function markBoundary(context, item, pass, at, armed)
     end
 end
 
-local function updateSessionMarkers(context, item, first, last, revision, readBoundary)
+local function updateSessionMarkers(context, item, first, last, revision, readBoundary, allowance)
     local session, service = context.session, context.history
     if not service or not readBoundary then
-        return true
+        return true, 0
     end
     if
         item.drawnRevision == revision
         and item.drawnVersion == context.version
         and item.drawnResumeRevision == session.resumeRevision
     then
-        return true
+        return true, 0
     end
     if not item.job then
         item.job = {
@@ -517,21 +690,25 @@ local function updateSessionMarkers(context, item, first, last, revision, readBo
         item.markerIndex, item.markerPhase = 1, "hide"
     end
     local pass = item.job
-    for _ = 1, 64 do
-        if pass.index > (last or 0) then
-            if applyMarkers(context, item) then
-                item.drawnRevision, item.drawnVersion = revision, context.version
-                item.drawnResumeRevision = session.resumeRevision
-                item.marked = pass.marked
-                return true
-            end
-            return false
-        end
+    local remaining, used = allowance, 0
+    while pass.index <= (last or 0) and remaining >= 250 do
         local at, armed = readBoundary(service, context.liveSession or session, pass.index)
         markBoundary(context, item, pass, at, armed)
         pass.index = pass.index + 1
+        remaining, used = remaining - 250, used + 250
     end
-    return false
+    if pass.index <= (last or 0) then
+        return false, used
+    end
+    local complete, markerUsed = applyMarkers(context, item, remaining)
+    used = used + markerUsed
+    if complete then
+        item.drawnRevision, item.drawnVersion = revision, context.version
+        item.drawnResumeRevision = session.resumeRevision
+        item.marked = pass.marked
+        item.job = nil
+    end
+    return complete, used
 end
 
 local function extremaFont(font)
@@ -545,12 +722,30 @@ local function symbolSize(builder, font)
     return math.max(4, math.floor(builder.fontHeight(font) / 3))
 end
 
+local function overflowText(builder, font, width)
+    return builder.measureText(font, "...") <= width and "..." or ""
+end
+
+local function measuredText(context, item, key, font, value)
+    local cache = item.textMeasurements
+    if not cache then
+        cache = {}
+        item.textMeasurements = cache
+    end
+    local saved = cache[key]
+    if not saved or saved.font ~= font or saved.text ~= value then
+        saved = { font = font, text = value, width = context.themeBuilder.measureText(font, value) }
+        cache[key] = saved
+    end
+    return saved.width
+end
+
 local function extremaWidth(context, item, font)
     local builder = context.themeBuilder
     return 2
             * math.max(
-                builder.measureText(font, item.minimumText or "--"),
-                builder.measureText(font, item.maximumText or "--")
+                measuredText(context, item, "minimum", font, item.minimumText or "--"),
+                measuredText(context, item, "maximum", font, item.maximumText or "--")
             )
         + 2 * symbolSize(builder, font)
         + 14
@@ -562,8 +757,10 @@ local function positionExtrema(context, item, y)
     local size = symbolSize(builder, font)
     local available = math.max(0, legendW - 2 * size - 14)
     local budget = math.floor(available / 2)
-    local minimumWidth = math.min(budget, builder.measureText(font, item.minimumText or "--"))
-    local maximumWidth = math.min(available - budget, builder.measureText(font, item.maximumText or "--"))
+    local measuredMinimum = measuredText(context, item, "minimum", font, item.minimumText or "--")
+    local measuredMaximum = measuredText(context, item, "maximum", font, item.maximumText or "--")
+    local minimumWidth = math.min(budget, measuredMinimum)
+    local maximumWidth = math.min(available - budget, measuredMaximum)
     local groupWidth = minimumWidth + maximumWidth + 2 * size + 14
     local left = legendX + math.floor((legendW - groupWidth) * (item.legendAlignment or 1))
     local minimumX = left + size + 3
@@ -572,6 +769,17 @@ local function positionExtrema(context, item, y)
     local top = y + math.floor((builder.fontAscent(font) - height) / 2)
     item.extrema:set({ x = minimumX, y = y, w = minimumWidth })
     item.maximum:set({ x = maximumX, y = y, w = maximumWidth })
+    local minimum, maximum = item.minimumText or "--", item.maximumText or "--"
+    if measuredMinimum > minimumWidth then
+        minimum = overflowText(builder, font, minimumWidth)
+    end
+    if measuredMaximum > maximumWidth then
+        maximum = overflowText(builder, font, maximumWidth)
+    end
+    if item.minimumText then
+        text(item.extrema, minimum, context.theme.color.textFaint)
+        text(item.maximum, maximum, context.theme.color.textFaint)
+    end
     item.minSymbol:set({
         pts = {
             { left, top },
@@ -595,9 +803,9 @@ local function readingWidths(context, font)
     local nameLimit = math.floor(builder.fontHeight(font) * 2.5)
     local value, unit, name, row = 0, 0, 0, 0
     for _, item in ipairs(context.series) do
-        local valueWidth = builder.measureText(font, item.valueText or "--")
-        local unitWidth = builder.measureText(font, item.unitText or "")
-        local nameWidth = math.min(nameLimit, builder.measureText(font, item.caption))
+        local valueWidth = measuredText(context, item, "value", font, item.valueText or "--")
+        local unitWidth = measuredText(context, item, "unit", font, item.unitText or "")
+        local nameWidth = math.min(nameLimit, measuredText(context, item, "caption", font, item.caption))
         value = math.max(value, valueWidth)
         unit = math.max(unit, unitWidth)
         name = math.max(name, nameWidth)
@@ -609,10 +817,11 @@ end
 local function positionReading(context, item, y)
     local area, builder, font = context.area, context.themeBuilder, context.legendFont
     local legendX, legendW = item.legendX or area.legendX, item.legendW or area.legendW
-    local width = builder.measureText(font, item.valueText or "--")
+    local width = measuredText(context, item, "value", font, item.valueText or "--")
+    local measuredValue, measuredUnit = width, measuredText(context, item, "unit", font, item.unitText or "")
     local unitWidth = math.min(
         context.topLegend and math.max(0, legendW - math.min(width, legendW)) or context.unitWidth,
-        builder.measureText(font, item.unitText or "")
+        measuredUnit
     )
     width = math.min(context.topLegend and legendW - unitWidth or context.valueWidth, width)
     local alignment = item.legendAlignment or 1
@@ -631,7 +840,7 @@ local function positionReading(context, item, y)
             lvgl.show(item.name)
         end
     end
-    local nameWidth = math.min(nameBudget, builder.measureText(font, item.nameText or ""))
+    local nameWidth = math.min(nameBudget, measuredText(context, item, "name", font, item.nameText or ""))
     local nameX = x - 4 - nameWidth
     if context.topLegend then
         local gap = nameWidth > 0 and 4 or 0
@@ -650,6 +859,17 @@ local function positionReading(context, item, y)
     if item.nameX ~= nameX or item.nameY ~= y or item.nameWidth ~= nameWidth then
         item.name:set({ x = nameX, y = y, w = nameWidth })
         item.nameX, item.nameY, item.nameWidth = nameX, y, nameWidth
+    end
+    local value, unit = item.valueText or "--", item.unitText or ""
+    if measuredValue > width then
+        value = overflowText(builder, font, width)
+    end
+    if measuredUnit > unitWidth then
+        unit = overflowText(builder, font, unitWidth)
+    end
+    if item.valueText then
+        text(item.value, value, item.readingColor or context.theme.color.text)
+        text(item.unit, unit, item.readingColor or context.theme.color.text)
     end
 end
 
@@ -695,6 +915,7 @@ function chart.geometry(context, rect)
     end
     local fontLimit =
         math.max(builder.fontHeight(SMLSIZE), math.floor(rect.h / (context.topLegend and 6 or math.max(6, count * 3))))
+    local legendLimit = context.plotWidth and math.max(0, content - context.plotWidth - gap) or math.floor(content / 2)
     local font, required
     -- Readout growth can step down the font; resizing restarts the ladder.
     for index = count == 0 and #LEGEND_FONTS or context.legendIndex or 1, #LEGEND_FONTS do
@@ -711,7 +932,7 @@ function chart.geometry(context, rect)
             if candidate == context.legendFont then
                 width = math.max(width, context.legendWidth or 0)
             end
-            if width <= (context.topLegend and cellWidth or math.floor(content / 2)) or candidate == SMLSIZE then
+            if width <= (context.topLegend and cellWidth or legendLimit) or candidate == SMLSIZE then
                 font, required, context.legendIndex = candidate, width, index
                 break
             end
@@ -719,13 +940,17 @@ function chart.geometry(context, rect)
     end
     context.legendFont, context.legendWidth = font, required
     context.extremaFont = extremaFont(font)
-    local legend = math.min(required, context.topLegend and cellWidth or math.max(24, content - 28))
+    local legend = math.min(
+        required,
+        context.topLegend and cellWidth or context.plotWidth and legendLimit or math.max(24, content - 28)
+    )
     local valueWidth, unitWidth = readingWidths(context, font)
     context.requiredValueWidth, context.requiredUnitWidth = valueWidth, unitWidth
     context.unitWidth = math.min(unitWidth, math.max(0, legend - 27))
     context.valueWidth = math.min(valueWidth, math.max(0, legend - context.unitWidth - 4))
     local nameWidth = math.max(0, legend - context.valueWidth - context.unitWidth - 4)
-    local width = context.topLegend and content or math.max(1, content - legend - gap)
+    local width = context.topLegend and content or context.plotWidth or math.max(1, content - legend - gap)
+    context.plotWidth = width
     local lineHeight = builder.fontHeight(font)
     if context.topLegend and count > 0 then
         top = first + lineHeight + (showExtrema and builder.fontAscent(context.extremaFont) or 0) + gap
@@ -774,8 +999,9 @@ function chart.geometry(context, rect)
             item.legendW = legend
             item.legendX = legendX + math.floor((legendContent - legend) * alignment)
             y = first
-            local value = math.min(builder.measureText(font, item.valueText or "--"), legend)
-            local unit = math.min(builder.measureText(font, item.unitText or ""), math.max(0, legend - value))
+            local value = math.min(measuredText(context, item, "value", font, item.valueText or "--"), legend)
+            local unit =
+                math.min(measuredText(context, item, "unit", font, item.unitText or ""), math.max(0, legend - value))
             itemNameWidth = math.max(0, legend - value - unit - 4)
         end
         local name = builder.fitHeading(item.caption, itemNameWidth, font, font)
@@ -810,40 +1036,26 @@ function chart.geometry(context, rect)
     updateHeader(context)
 end
 
-local function normalRange(low, high)
-    if not finite(low) or not finite(high) then
-        return 0, 1
-    end
-    local span = math.max(high - low, math.abs(high) * 0.02, 0.1)
-    local step = 10 ^ math.floor(math.log(span) / math.log(10) - 1)
-    return math.floor((low - span * 0.08) / step) * step, math.ceil((high + span * 0.08) / step) * step
-end
-
-local function valueRange(low, high, minimum, maximum)
-    local autoLow, autoHigh = normalRange(low, high)
-    low, high = minimum or autoLow, maximum or autoHigh
+local function valueRange(minimum, maximum)
+    local low, high = minimum or -1000, maximum or 1000
     if high <= low then
         if minimum ~= nil and maximum == nil then
-            high = low + math.max(math.abs(low) * 0.02, 0.1)
+            high = low + 100
         elseif maximum ~= nil and minimum == nil then
-            low = high - math.max(math.abs(high) * 0.02, 0.1)
+            low = high - 100
         end
     end
     return low, high
 end
 
 function chart.ranges(context)
-    local sharedLow, sharedHigh, minimum, maximum
+    local minimum, maximum
     local independent = context.settings.scaling == "independent"
     for _, item in ipairs(context.series) do
-        local feed, settings = item.feed, item.settings
+        local settings = item.settings
         if independent then
-            item.low, item.high = valueRange(feed and feed.min, feed and feed.max, settings.rangeMin, settings.rangeMax)
+            item.fixedLow, item.fixedHigh = settings.rangeMin, settings.rangeMax
         else
-            if feed and feed.available then
-                sharedLow = sharedLow and math.min(sharedLow, feed.min) or feed.min
-                sharedHigh = sharedHigh and math.max(sharedHigh, feed.max) or feed.max
-            end
             if settings.rangeMin ~= nil then
                 minimum = minimum and math.min(minimum, settings.rangeMin) or settings.rangeMin
             end
@@ -852,271 +1064,118 @@ function chart.ranges(context)
             end
         end
     end
-    if not independent then
-        local low, high = valueRange(sharedLow, sharedHigh, minimum, maximum)
+    for _, item in ipairs(context.series) do
+        if not independent then
+            item.fixedLow, item.fixedHigh = minimum, maximum
+        end
+        if not item.rangeSeeded or not item.low then
+            -- Provisional until the first reading seeds automatic bounds.
+            item.low, item.high = valueRange(item.fixedLow, item.fixedHigh)
+        else
+            item.low, item.high = item.fixedLow or item.low, item.fixedHigh or item.high
+        end
+    end
+end
+
+--- Grow automatic bounds to fit `dataLow`..`dataHigh` with headroom: the span at
+--- least doubles and covers the data with 25% to spare. Configured sides stay.
+function chart.growRange(low, high, dataLow, dataHigh, fixedLow, fixedHigh)
+    if fixedLow and fixedHigh then
+        return fixedLow, fixedHigh
+    end
+    local needLow = fixedLow or math.min(low or dataLow, dataLow)
+    local needHigh = fixedHigh or math.max(high or dataHigh, dataHigh)
+    local need = math.max(0, needHigh - needLow)
+    local span =
+        math.max(2 * (low and high - low or 0), 1.25 * need, math.abs(needLow) * 0.1, math.abs(needHigh) * 0.1, 0.1)
+    local extra = span - need
+    if fixedLow then
+        needHigh = needHigh + extra
+    elseif fixedHigh then
+        needLow = needLow - extra
+    else
+        needLow, needHigh = needLow - extra / 2, needHigh + extra / 2
+    end
+    local step = 10 ^ (math.floor(math.log(span, 10)) - 1)
+    return fixedLow or math.floor(needLow / step) * step, fixedHigh or math.ceil(needHigh / step) * step
+end
+
+local function outside(item, low, high, map)
+    return map.minimum ~= nil and (not item.fixedLow and map.minimum < low or not item.fixedHigh and map.maximum > high)
+end
+
+--- Seed automatic bounds from the first readings, before anything is drawn, and
+--- request a background rescale once drawn data leaves the current bounds.
+local function checkRange(context, series, map)
+    local consumers, auto = context.columnConsumers, context.auto
+    local resets = 0
+    for _, owner in ipairs(consumers) do
+        resets = resets + (owner.resets or 0)
+    end
+    if context.rangeResets ~= resets then
+        -- A session reset or resize clears the plot, so bounds are seeded again.
+        context.rangeResets = resets
         for _, item in ipairs(context.series) do
-            item.low, item.high = low, high
+            item.rangeSeeded = nil
         end
     end
-end
-
-local function runFor(item, index)
-    local run = item.runs[index]
-    if not run then
-        run = { pts = {}, pool = {}, size = 0, changes = {} }
-        item.runs[index] = run
-    end
-    run.size, run.column, run.dotted = 0, nil, false
-    run.dotIndex, run.dotCount = 1, nil
-    return run
-end
-
-local function pixel(job, at, value, x)
-    local area = job.area
-    x = x
-        or (
-            job.axis and math.floor(axisPosition(job.axis, at, job.resumeAt ~= at) + 0.5)
-            or area.x + math.floor((at - job.start) / job.window * area.w + 0.5)
-        )
-    local fraction = math.max(0, math.min(1, (value - job.low) / (job.high - job.low)))
-    local y = area.y + math.floor((1 - fraction) * area.h + 0.5)
-    return x, y
-end
-
-local function appendPixel(run, x, y)
-    local last = run.pts[run.size]
-    if last and last[1] == x and last[2] == y then
+    local item = context.series[series]
+    if map.minimum == nil or item.fixedLow and item.fixedHigh then
         return
     end
-    run.size = run.size + 1
-    local point = run.pool[run.size] or {}
-    run.pool[run.size], run.pts[run.size] = point, point
-    point[1], point[2] = x, y
-end
-
-local function flushColumn(run)
-    local column = run.column
-    if column then
-        appendPixel(run, column.x, column.first)
-        if column.lowAt < column.highAt then
-            appendPixel(run, column.x, column.low)
-            appendPixel(run, column.x, column.high)
-        else
-            appendPixel(run, column.x, column.high)
-            appendPixel(run, column.x, column.low)
+    if not item.rangeSeeded then
+        local independent = context.settings.scaling == "independent"
+        for index, other in ipairs(context.series) do
+            if independent and index == series or not independent and not other.rangeSeeded then
+                other.low, other.high =
+                    chart.growRange(nil, nil, map.minimum, map.maximum, other.fixedLow, other.fixedHigh)
+                other.rangeSeeded = true
+            end
         end
-        appendPixel(run, column.x, column.last)
-        run.column = nil
+    elseif auto and not (auto.job and auto.job.kind == "range") and outside(item, item.low, item.high, map) then
+        -- A rebuild in progress checks its own targets against new data.
+        auto.rangeRequest = true
     end
 end
 
-local function addPoint(job, run, at, value, x, y)
-    if at < job.start or at > job.finish then
-        return
-    end
-    if not x then
-        x, y = pixel(job, at, value)
-    end
-    local column = run.column
-    if not column or column.x ~= x then
-        flushColumn(run)
-        column = run.columnPool or {}
-        run.columnPool, run.column = column, column
-        column.x, column.first, column.last = x, y, y
-        column.low, column.high, column.lowAt, column.highAt = y, y, at, at
-    else
-        if y < column.low then
-            column.low, column.lowAt = y, at
-        end
-        if y > column.high then
-            column.high, column.highAt = y, at
-        end
-        column.last = y
-    end
-end
-
-local function finishRun(run)
-    flushColumn(run)
-    if run.size == 1 then
-        local first = run.pts[1]
-        local second = run.pool[2] or {}
-        second[1], second[2] = first[1], first[2]
-        run.pool[2], run.pts[2], run.size = second, second, 2
-    end
-    for index = #run.pts, run.size + 1, -1 do
-        run.pts[index] = nil
-    end
-end
-
-local function prepare(context, item)
-    local run = runFor(item, 1)
-    run.boundary = nil
-    local feed = item.feed
-    local job = item.job or {}
-    item.job = job
-    job.index, job.last = feed.first, feed.last
-    if item.snapshot then
-        job.tailAt, job.tailValue, job.tailBroken, job.tailResumed =
-            item.tailAt, item.tailValue, item.tailBroken, item.tailResumed
-    else
-        job.tailAt, job.tailValue, job.tailBroken, job.tailResumed = context.history:point(feed, feed.last)
-    end
-    job.runIndex, job.previousAt, job.previousValue, job.resumeAt = 1, nil, nil, nil
-    job.start, job.window, job.area = context.start, context.window, context.area
-    job.finish = job.start + job.window
-    job.axis = context.axis and #context.axis.breaks > 0 and context.axis or nil
-    if job.axis then
-        job.start = job.axis.start
-        job.window = job.finish - job.start
-    end
-    job.seekLow, job.seekHigh = nil, nil
-    if job.start > 0 and feed.last - feed.first > 16 then
-        job.seekLow, job.seekHigh = feed.first, feed.last
-    end
-    job.version, job.geometryVersion = context.version, context.geometryVersion
-    job.low, job.high, job.revision = item.low, item.high, feed.plotRevision
-    job.marked, job.markerColumns = {}, {}
-    job.projecting = true
-end
-
-local function projectPoint(job, item, at, value, broken, resumed, x, y)
-    if resumed then
-        job.resumeAt = at
-    end
-    if not y then
-        x, y = pixel(job, at, value, x)
-    end
-    local run = item.runs[job.runIndex]
-    if broken and job.previousAt then
-        local coincident = x == job.previousX and y == job.previousY and job.previousAt >= job.start
-        if at >= job.start and at <= job.finish and not resumed then
-            local column = x - job.area.x + 1
-            if not job.marked[column] then
-                job.marked[column] = true
-                job.markerColumns[#job.markerColumns + 1] = column
+--- Bounds the hidden layer is drawn at for a range rescale.
+local function rangeTargets(context, consumers)
+    local targets, independent = {}, context.settings.scaling == "independent"
+    local low, high
+    for index, item in ipairs(context.series) do
+        local map = consumers[index].map
+        if independent then
+            local from, to = item.low, item.high
+            if outside(item, from, to, map) then
+                from, to = chart.growRange(from, to, map.minimum, map.maximum, item.fixedLow, item.fixedHigh)
             end
-        end
-        -- Coincident endpoints add no connector pixels. Sharing their native
-        -- line avoids an object per arm cycle, while retaining every gap marker.
-        if not coincident and (run.size > 0 or run.column) then
-            finishRun(run)
-            job.runIndex = job.runIndex + 1
-            run = runFor(item, job.runIndex)
-            if resumed and job.previousAt >= job.start and at <= job.finish then
-                run.dotted = true
-                appendPixel(run, job.previousX, job.previousY)
-                appendPixel(run, x, y)
-                finishRun(run)
-                job.runIndex = job.runIndex + 1
-                run = runFor(item, job.runIndex)
-            end
-        end
-        run.boundary = at
-        job.previousAt, job.previousValue = nil, nil
-    end
-    if job.previousAt and job.previousAt < job.start and at >= job.start then
-        local fraction = (job.start - job.previousAt) / (at - job.previousAt)
-        addPoint(job, run, job.start, job.previousValue * (1 - fraction) + value * fraction)
-    end
-    local finish = job.finish
-    if job.previousAt and job.previousAt <= finish and at > finish then
-        local fraction = (finish - job.previousAt) / (at - job.previousAt)
-        addPoint(job, run, finish, job.previousValue * (1 - fraction) + value * fraction)
-    end
-    addPoint(job, run, at, value, x, y)
-    job.previousAt, job.previousValue = at, value
-    job.previousX, job.previousY = x, y
-end
-
-local function project(context, item, limit)
-    local job, feed = item.job, item.feed
-    if job.geometryVersion ~= context.geometryVersion or job.index < feed.first then
-        prepare(context, item)
-    end
-    if job.seekLow then
-        for _ = 1, limit do
-            if job.seekLow > job.seekHigh then
-                job.index = math.max(feed.first, job.seekLow - 1)
-                job.seekLow, job.seekHigh = nil, nil
-                break
-            end
-            local middle = (job.seekLow + job.seekHigh) // 2
-            local at = context.history:point(item.liveFeed or feed, middle, feed.first)
-            if not at then
-                context.frameExpired = true
-                return false
-            elseif at < job.start then
-                job.seekLow = middle + 1
-            else
-                job.seekHigh = middle - 1
-            end
-        end
-        return false
-    end
-    for _ = 1, limit do
-        if job.index > job.last then
-            finishRun(item.runs[job.runIndex])
-            item.runCount, item.applyIndex = job.runIndex, 1
-            item.markerIndex, item.markerPhase = 1, "hide"
-            item.drawnRevision, item.drawnVersion = job.revision, job.version
-            item.drawnLow, item.drawnHigh = job.low, job.high
-            job.projecting = false
-            return true
-        end
-        local index = job.index
-        local at, value, broken, resumed
-        if index == job.last then
-            at, value, broken, resumed = job.tailAt, job.tailValue, job.tailBroken, job.tailResumed
-        else
-            at, value, broken, resumed = context.history:point(item.liveFeed or feed, index, feed.first)
-        end
-        if not at then
-            context.frameExpired = true
-            return false
-        end
-        local column = math.floor((at - job.start) / job.window * job.area.w + 0.5)
-        local before = job.start + (column + 0.5) * job.window / job.area.w
-        if job.axis then
-            if resumed then
-                job.resumeAt = at
-            end
-            local raw, nextBreak = axisPosition(job.axis, at, job.resumeAt ~= at)
-            column = math.floor(raw + 0.5) - job.area.x
-            before = at + (job.area.x + column + 0.5 - raw) / job.axis.scale
-            if nextBreak and before >= nextBreak then
-                before = nextBreak - 0.001
-            end
-        end
-        local last, firstExtreme, lastExtreme, interrupted, resumesOnly =
-            context.history:block(item.liveFeed or feed, index, job.last - 1, before)
-        projectPoint(job, item, at, value, broken, resumed, job.area.x + column)
-        if last and at >= job.start then
-            local firstAt, firstValue = context.history:point(item.liveFeed or feed, firstExtreme, feed.first)
-            local lastAt, lastValue = context.history:point(item.liveFeed or feed, lastExtreme, feed.first)
-            local firstX, firstY = pixel(job, firstAt, firstValue)
-            local lastX, lastY = pixel(job, lastAt, lastValue)
-            if not interrupted or firstY == lastY then
-                if firstY ~= lastY or interrupted and job.previousY ~= firstY then
-                    projectPoint(job, item, firstAt, firstValue, false, false, firstX, firstY)
-                    projectPoint(job, item, lastAt, lastValue, false, false, lastX, lastY)
-                end
-                local endAt, endValue = context.history:point(item.liveFeed or feed, last, feed.first)
-                projectPoint(job, item, endAt, endValue, interrupted, resumesOnly)
-                job.index = last + 1
-            else
-                job.index = index + 1
-            end
-        else
-            job.index = index + 1
+            targets[index] = { from, to }
+        elseif map.minimum then
+            low = low and math.min(low, map.minimum) or map.minimum
+            high = high and math.max(high, map.maximum) or map.maximum
         end
     end
-    return false
+    if not independent then
+        local item = context.series[1]
+        local from, to = item.low, item.high
+        if low then
+            from, to = chart.growRange(from, to, low, high, item.fixedLow, item.fixedHigh)
+        end
+        for index in ipairs(context.series) do
+            targets[index] = { from, to }
+        end
+    end
+    return targets
 end
 
 local function positionBreak(context, marker, job, column)
     local area = job.area
     local width = context.axis.gap
     local x = math.max(area.x, math.min(area.x + area.w - width, area.x + column - 1))
+    if context.axis.map then
+        x = math.max(area.x, area.x + column - 1)
+        width = math.min(area.x + area.w, area.x + column - 1 + width) - x
+    end
     local options = { x = x, y = area.y, w = width, h = area.h }
     if marker then
         marker.object:set(options)
@@ -1132,25 +1191,41 @@ local function showMarker(marker)
     marker.active = true
 end
 
-applyMarkers = function(context, item)
+applyMarkers = function(context, item, allowance)
     local job = item.job
-    local changes = 0
-    for _ = 1, 16 do
+    local remaining, used = allowance, 0
+    while remaining >= 100 do
         local keys = item.markerPhase == "hide" and item.markerKeys or job.markerColumns
         local key = keys[item.markerIndex]
+        local cost = 100
         if not key then
             if item.markerPhase == "show" then
-                return true
+                return true, used
             end
             item.markerPhase, item.markerIndex = "show", 1
         else
-            local column = math.abs(key)
+            local column = item.style == "arm" and math.abs(key) or key
             local marker = item.markers[key]
             if item.markerPhase == "hide" then
-                if marker.active and not job.marked[key] then
+                if marker and marker.active and not job.marked[key] then
+                    cost = cost + 200
+                end
+            elseif
+                not marker
+                or marker.geometryVersion ~= job.geometryVersion
+                or item.style == "arm" and marker.footerLeft ~= context.durationLeft
+            then
+                cost = cost + 500
+            elseif not marker.active then
+                cost = cost + 150
+            end
+            if remaining < cost then
+                return false, used
+            end
+            if item.markerPhase == "hide" then
+                if marker and marker.active and not job.marked[key] then
                     lvgl.hide(marker.object)
                     marker.active = false
-                    changes = changes + 1
                 end
             elseif
                 not marker
@@ -1208,114 +1283,37 @@ applyMarkers = function(context, item)
                 showMarker(marker)
                 marker.geometryVersion = job.geometryVersion
                 marker.footerLeft = context.durationLeft
-                changes = changes + 1
             elseif not marker.active then
                 showMarker(marker)
-                changes = changes + 1
             end
             item.markerIndex = item.markerIndex + 1
         end
-        if changes == (item.style == "resume" and 2 or 4) then
-            break
+        if key then
+            remaining, used = remaining - cost, used + cost
+        else
+            remaining, used = remaining - 100, used + 100
         end
     end
-    return false
+    return false, used
 end
 
-local function applyConnector(context, item, run)
-    if run.line and run.visible then
-        lvgl.hide(run.line)
-        run.visible = false
-    end
-    if not run.connector then
-        run.connector = lvgl.box(context.plotRoot, { x = 0, y = 0, w = context.rect.w, h = context.rect.h })
-        run.dots = {}
-    elseif run.dotIndex == 1 then
-        run.connector:set({ w = context.rect.w, h = context.rect.h })
-    end
-    local first, last = run.pts[1], run.pts[run.size]
-    if not run.dotCount then
-        run.dotCount = math.max(1, math.ceil(math.sqrt((last[1] - first[1]) ^ 2 + (last[2] - first[2]) ^ 2) / 3)) + 1
-    end
-    for _ = 1, 3 do
-        local index = run.dotIndex
-        if index > math.max(run.dotCount, #run.dots) then
-            lvgl.show(run.connector)
-            return true
-        end
-        local dot = run.dots[index]
-        if index <= run.dotCount then
-            local fraction = (index - 1) / (run.dotCount - 1)
-            local options = {
-                x = math.floor(first[1] + (last[1] - first[1]) * fraction + 0.5),
-                y = math.floor(first[2] + (last[2] - first[2]) * fraction + 0.5),
-                w = 1,
-                h = 1,
-                color = item.color,
-            }
-            if dot then
-                dot:set(options)
-                lvgl.show(dot)
-            else
-                options.filled, options.thickness = true, 0
-                run.dots[index] = lvgl.rectangle(run.connector, options)
-            end
-        else
-            lvgl.hide(dot)
-        end
-        run.dotIndex = index + 1
-    end
-    return false
-end
+-- Pause connectors are one faint solid line in the series color.
+local CONNECTOR_OPACITY = 128
 
-local function applyRuns(context, item)
-    local limit = math.max(item.runCount, #item.runs)
-    local changes = 0
-    for _ = 1, 16 do
-        local index = item.applyIndex
-        if index > limit then
-            return applyMarkers(context, item)
-        end
-        local run = item.runs[index]
-        if index <= item.runCount and run.size >= 2 and run.dotted then
-            if not applyConnector(context, item, run) then
-                return false
-            end
-            changes = changes + 1
-        elseif index <= item.runCount and run.size >= 2 then
-            if run.connector then
-                lvgl.hide(run.connector)
-            end
-            if run.line then
-                run.changes.pts, run.changes.color = run.pts, item.color
-                run.line:set(run.changes)
-                if not run.visible then
-                    lvgl.show(run.line)
-                end
-            else
-                run.line = lvgl.line(context.plotRoot, { pts = run.pts, color = item.color, thickness = 1 })
-            end
-            run.visible = true
-            changes = changes + 1
-        else
-            if run.connector then
-                lvgl.hide(run.connector)
-            end
-            if run.line and run.visible then
-                lvgl.hide(run.line)
-                run.visible = false
-                changes = changes + 1
-            end
-        end
-        item.applyIndex = index + 1
-        if changes == 4 then
-            break
-        end
+local function applyConnector(context, item, run, allowance)
+    local cost = run.connector and 200 or 300
+    if allowance < cost then
+        return false, 0
     end
-    if item.applyIndex > limit then
-        return applyMarkers(context, item)
+    local options = { pts = { run.pts[1], run.pts[run.size] }, color = item.color, opacity = CONNECTOR_OPACITY }
+    if run.connector then
+        run.connector:set(options)
+        lvgl.show(run.connector)
+    else
+        options.thickness = 1
+        run.connector = lvgl.line(context.plotRoot, options)
     end
-    return false
+    return true, cost
 end
 
 function chart.intervalFor(window, pixels, sources)
@@ -1324,7 +1322,8 @@ function chart.intervalFor(window, pixels, sources)
 end
 
 function chart.render(context)
-    local changed = context.readingGeometry ~= context.geometryVersion
+    local geometryChanged = context.readingGeometry ~= context.geometryVersion
+    local changed = geometryChanged
     for _, item in ipairs(context.series) do
         local feed = item.feed
         if
@@ -1344,6 +1343,7 @@ function chart.render(context)
     local builder = context.themeBuilder
     local font = context.legendFont
     local width = 64
+    local visibleChanged = geometryChanged
     for _, item in ipairs(context.series) do
         local feed = item.feed
         item.readingRevision = feed and feed.revision
@@ -1354,22 +1354,53 @@ function chart.render(context)
             unit = feed and feed.unitText or ""
         end
         local value = chart.format(feed and feed.value, precision)
-        item.valueText, item.unitText = value, value ~= "--" and unit or ""
+        local unitText = value ~= "--" and unit or ""
+        local color = feed and feed.stale and context.theme.color.textFaint or context.theme.color.text
+        visibleChanged = visibleChanged
+            or item.valueText ~= value
+            or item.unitText ~= unitText
+            or item.readingColor ~= color
+            or item.rangeMinimum ~= (feed and feed.min)
+            or item.rangeMaximum ~= (feed and feed.max)
+        item.rangeMinimum, item.rangeMaximum = feed and feed.min, feed and feed.max
+        item.valueText, item.unitText = value, unitText
         item.readout = value .. item.unitText
         local minimumText = chart.format(feed and feed.min, precision)
         local maximumText = chart.format(feed and feed.max, precision)
         if item.minimumText ~= minimumText or item.maximumText ~= maximumText then
             item.extremaDirty = true
+            visibleChanged = true
         end
         item.minimumText, item.maximumText = minimumText, maximumText
-        width = math.max(width, context.showExtrema and extremaWidth(context, item, context.extremaFont) or 0)
-        local color = feed and feed.stale and context.theme.color.textFaint or context.theme.color.text
-        text(item.value, value, color)
-        text(item.unit, item.unitText, color)
-        if context.showExtrema then
-            text(item.extrema, minimumText, context.theme.color.textFaint)
-            text(item.maximum, maximumText, context.theme.color.textFaint)
+        item.readingColor = color
+    end
+    if not visibleChanged then
+        return false
+    end
+    local textOnly = not geometryChanged
+    for _, item in ipairs(context.series) do
+        local measurements = item.textMeasurements
+        local previousValue = measurements and measurements.value
+        local previousUnit = measurements and measurements.unit
+        local valueWidth = previousValue and previousValue.width
+        local unitWidth = previousUnit and previousUnit.width
+        textOnly = textOnly
+            and not item.extremaDirty
+            and valueWidth == measuredText(context, item, "value", font, item.valueText or "--")
+            and unitWidth == measuredText(context, item, "unit", font, item.unitText or "")
+            and item.valueText ~= "--"
+            and valueWidth <= item.valueWidth
+            and unitWidth <= item.unitWidth
+    end
+    if textOnly then
+        for _, item in ipairs(context.series) do
+            text(item.value, item.valueText, item.readingColor)
+            text(item.unit, item.unitText, item.readingColor)
         end
+        return true, true
+    end
+    for _, item in ipairs(context.series) do
+        width = math.max(width, context.showExtrema and extremaWidth(context, item, context.extremaFont) or 0)
     end
     local valueWidth, unitWidth, nameWidth, rowWidth = readingWidths(context, font)
     width = math.max(width, context.topLegend and rowWidth or valueWidth + unitWidth + nameWidth + 4)
@@ -1391,266 +1422,58 @@ function chart.render(context)
     return true
 end
 
-local function refreshPlot(context, creating)
-    local session = context.session
-    local hasFlights = not creating and (session.flightLast or 0) > 0
-    local elapsed = session and session.elapsed or 0
-    local window = timeWindow(context.settings, elapsed)
-    local start = context.settings.timeRange == "rolling" and math.max(0, elapsed - window) or 0
-    local pixelStart = math.floor(start / window * context.area.w)
-    if context.window ~= window or context.pixelStart ~= pixelStart then
-        context.window, context.start, context.pixelStart = window, start, pixelStart
-        context.version = context.version + 1
+local function plotStatus(context)
+    if not context.history or context.history.failed then
+        return "HISTORY N/A"
+    elseif context.preview then
+        return context.previewMissing and "PREVIEW: NO DATA" or "PREVIEW"
+    elseif not context.session.configured then
+        return "SET ARM SOURCE"
+    elseif #context.series == 0 then
+        return "ADD METRICS"
     end
-    local version = context.version
-    -- Stable readings also keep their ranges, leaving room for more projection.
-    -- Reserve the next non-overlay callback for projection after updating live
-    -- readings, so a continuous telemetry stream cannot starve the traces.
-    local readingsChanged = not context.projectionTurn and chart.render(context)
-    context.projectionTurn = false
-    local projectionCap = readingsChanged and PROJECTION_CAP or 8
-    if
-        hasFlights
-        and (context.history.sampledAt == context.clock() or context.history.boundaryAt == context.clock())
-    then
-        projectionCap = math.min(projectionCap, 9)
-    end
-    local reflowed = version ~= context.version
-    if context.axis and context.axis.geometryVersion ~= context.geometryVersion then
-        context.framePhase, context.pending = "axis", nil
-        return 5
-    end
-    updateHeader(context)
-    if not creating then
-        updateGrid(context)
-    end
-    local status = ""
-    local full = false
+    local available, full = false, false
     for _, item in ipairs(context.series) do
+        available = available or item.feed and item.feed.available
         full = full or item.feed and item.feed.full
     end
-    if not context.history or context.history.failed then
-        status = "HISTORY N/A"
-    elseif context.preview then
-        status = context.previewMissing and "PREVIEW: NO DATA" or "PREVIEW"
-    elseif not session.configured then
-        status = "SET ARM SOURCE"
-    elseif #context.series == 0 then
-        status = "ADD METRICS"
-    elseif full then
-        status = "HISTORY FULL"
-    elseif not session.available and not session.recording then
-        status = "ARM N/A"
-    else
-        local available = false
-        for _, item in ipairs(context.series) do
-            available = available or item.feed.available
-        end
-        if not available then
-            status = session.recording and "NO DATA" or "WAITING FOR ARM"
-        end
+    if full then
+        return "HISTORY FULL"
+    elseif not context.session.available and not context.session.recording then
+        return "ARM N/A"
+    elseif not available then
+        return context.session.recording and "NO DATA" or "WAITING FOR ARM"
     end
-    text(context.status, status, context.theme.color.textFaint)
-    if status ~= "" and status ~= "HISTORY FULL" and status ~= "PREVIEW" and status ~= "PREVIEW: NO DATA" then
-        if readingsChanged then
-            context.rangesReady = false
-        end
-        return 20
-    end
-    if readingsChanged or not context.rangesReady then
-        chart.ranges(context)
-        context.rangesReady = true
-    end
-    if reflowed or readingsChanged and hasFlights then
-        context.projectionTurn = true
-        return 5
-    end
-    if context.pending then
-        local item = context.pending
-        if item.job.geometryVersion ~= context.geometryVersion then
-            prepare(context, item)
-        end
-        if item.job.projecting then
-            project(context, item, projectionCap)
-            return 5
-        end
-        if applyRuns(context, item) then
-            context.pending = nil
-        end
-        return 5
-    end
-    for offset = 0, #context.series - 1 do
-        local index = (context.cursor + offset - 1) % #context.series + 1
-        local item = context.series[index]
-        if
-            item.feed
-            and (
-                item.drawnVersion ~= context.version
-                or item.drawnRevision ~= item.feed.plotRevision
-                or item.drawnLow ~= item.low
-                or item.drawnHigh ~= item.high
-            )
-        then
-            prepare(context, item)
-            project(context, item, projectionCap)
-            context.pending = item
-
-            context.cursor = index % #context.series + 1
-            break
-        end
-    end
-    return context.pending and 5 or chart.intervalFor(window, context.area.w, #context.series)
+    return ""
 end
 
-local PLOT_FIELDS = {
-    "axis",
-    "plotRoot",
-    "flightRoot",
-    "gapRoot",
-    "gridRoot",
-    "baseline",
-    "grid",
-    "gridCursor",
-    "gridVersion",
-    "gridLayoutVersion",
-    "flightBands",
-    "flightKeys",
-    "flightSlots",
-    "flightCursor",
-    "flightPassRevision",
-    "flightPassVersion",
-    "flightDrawnRevision",
-    "flightDrawnVersion",
-    "flightDrawnElapsed",
-    "armMarkers",
-    "resumeMarkers",
-}
-local SERIES_FIELDS = {
-    "runs",
-    "markers",
-    "markerKeys",
-    "job",
-    "runCount",
-    "applyIndex",
-    "markerIndex",
-    "markerPhase",
-    "drawnRevision",
-    "drawnVersion",
-    "drawnLow",
-    "drawnHigh",
-}
-local FEED_FIELDS = {
-    "available",
-    "stale",
-    "value",
-    "min",
-    "max",
-    "precision",
-    "unitText",
-    "revision",
-    "plotRevision",
-    "first",
-    "last",
-    "full",
-}
-local SESSION_FIELDS = {
-    "configured",
-    "available",
-    "recording",
-    "stoppedAt",
-    "elapsed",
-    "segment",
-    "revision",
-    "flightFirst",
-    "flightLast",
-    "flightRevision",
-    "flightActive",
-    "armFirst",
-    "armLast",
-    "armRevision",
-    "resumeFirst",
-    "resumeLast",
-    "resumeRevision",
-}
-
-local function exchange(target, buffer, fields)
-    for _, key in ipairs(fields) do
-        target[key], buffer[key] = buffer[key], target[key]
+--- Retire the current native presentation within `allowance` estimated
+--- instructions per turn; returns the instructions used and whether done.
+local function resetPresentation(context, allowance)
+    context.metadataReady = nil
+    local auto = context.auto
+    if auto then
+        auto.wakeAt = nil
     end
-end
-
-local function copyFields(source, target, fields)
-    for _, key in ipairs(fields) do
-        target[key] = source[key]
-    end
-end
-
-local function newPlot(context)
-    local rect = context.rect
-    local plot = {
-        grid = {},
-        gridCursor = 1,
-        flightKeys = {},
-        armMarkers = markerPool("arm"),
-        resumeMarkers = markerPool("resume"),
-        series = {},
-    }
-    plot.plotRoot = lvgl.box(context.plotHost, { x = 0, y = 0, w = rect.w, h = rect.h })
-    lvgl.hide(plot.plotRoot)
-    plot.flightRoot = lvgl.box(plot.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
-    plot.gapRoot = lvgl.box(plot.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
-    plot.gridRoot = lvgl.box(plot.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
-    plot.baseline = lvgl.hline(plot.plotRoot, { x = 0, y = 0, w = 1, h = 1, color = context.theme.chartColor.grid })
-    for index = 1, #context.series do
-        plot.series[index] = { runs = {}, markers = {}, markerKeys = {} }
-    end
-    return plot
-end
-
-local function needsFrame(context)
-    local session, drawn = context.session, context.frameSession
-    local window = timeWindow(context.settings, session.elapsed)
-    local start = context.settings.timeRange == "rolling" and math.max(0, session.elapsed - window) or 0
-    if window ~= context.window or math.floor(start / window * context.area.w) ~= context.pixelStart then
-        return true
-    end
-    if not drawn or context.frameGeometry ~= context.geometryVersion then
-        return true
-    end
-    for _, key in ipairs(SESSION_FIELDS) do
-        if drawn[key] ~= session[key] then
-            return true
-        end
-    end
-    for _, item in ipairs(context.series) do
-        if
-            item.feed
-            and (
-                not item.snapshot
-                or item.snapshot.revision ~= item.feed.revision
-                or item.readingRevision ~= item.feed.revision
-                or item.snapshot.plotRevision ~= item.feed.plotRevision
-            )
-        then
-            return true
-        end
-    end
-    return false
-end
-
---- Retain both plot buffers and retire old traces in bounded batches.
-function chart.resetSession(context)
     local reset = context.resetWork
     if not reset then
-        if context.framePhase then
-            exchange(context, context.backPlot, PLOT_FIELDS)
-            for index, item in ipairs(context.series) do
-                exchange(item, context.backPlot.series[index], SERIES_FIELDS)
+        if auto then
+            -- A layer prepared for the old recording is swept and prepared again.
+            auto.job = nil
+            if auto.hidden then
+                auto.hidden.recycle = true
             end
         end
-        context.framePhase, context.frameSession, context.frameExpired = nil, nil, nil
-        context.pending, context.axisWork, context.projectionTurn, context.rangesReady = nil, nil, nil, false
-        reset = { groups = {}, group = 1, index = 1 }
+        if context.columnRenderer then
+            context.columnRenderer.published = {}
+        end
+        context.columnsDecorating, context.frameThrough = nil, nil
+        context.connectorWork, context.axis, context.axisWork = nil, nil, nil
+        context.rangesReady = false
+        context.flightPassRevision, context.flightDrawnRevision = nil, nil
+        -- Hidden bands are shown again by the next pass.
+        context.flightKeys = {}
+        reset = { groups = {}, group = 1, index = 1, columns = context.columnRenderer }
         context.resetWork = reset
         local function markers(pool)
             if pool then
@@ -1658,42 +1481,47 @@ function chart.resetSession(context)
                 reset.groups[#reset.groups + 1] = { pool = pool, kind = "markers", keys = pool.markerKeys }
             end
         end
-        local function plot(buffer, series)
-            if not buffer then
-                return
-            end
-            buffer.axis = nil
-            buffer.flightPassRevision, buffer.flightDrawnRevision = nil, nil
-            reset.groups[#reset.groups + 1] = { kind = "flights", keys = buffer.flightBands or {} }
-            markers(buffer.armMarkers)
-            markers(buffer.resumeMarkers)
-            for _, item in ipairs(series) do
-                item.job, item.drawnRevision, item.drawnVersion = nil, nil, nil
-                reset.groups[#reset.groups + 1] = { kind = "runs", keys = item.runs }
-                markers(item)
-            end
+        reset.groups[#reset.groups + 1] = { kind = "flights", keys = context.flightBands or {} }
+        markers(context.armMarkers)
+        markers(context.resumeMarkers)
+        for _, item in ipairs(context.series) do
+            reset.groups[#reset.groups + 1] = { kind = "connectors", keys = item.connectors }
         end
-        plot(context, context.series)
-        plot(context.backPlot, context.backPlot and context.backPlot.series)
     end
-    for _ = 1, 8 do
+    local remaining, used = allowance, 0
+    if reset.columns then
+        local visited, complete = reset.columns:sweep(remaining // 20)
+        remaining, used = remaining - visited * 20, used + visited * 20
+        if not complete then
+            return used, false
+        end
+        reset.columns = nil
+    end
+    while remaining >= 100 do
         local group = reset.groups[reset.group]
         if not group then
             context.resetWork = nil
-            return
+            return used, true
         end
         local value = group.keys[reset.index]
         if value then
-            if group.kind == "runs" then
-                if value.line and value.visible then
-                    lvgl.hide(value.line)
-                    value.visible = false
-                end
+            local marker, cost
+            if group.kind == "connectors" then
+                cost = value.connector and 150 or 50
+            elseif group.kind == "markers" then
+                marker = group.pool.markers[value]
+                cost = marker.active and 150 or 50
+            else
+                cost = 150
+            end
+            if remaining < cost then
+                break
+            end
+            if group.kind == "connectors" then
                 if value.connector then
                     lvgl.hide(value.connector)
                 end
             elseif group.kind == "markers" then
-                local marker = group.pool.markers[value]
                 if marker.active then
                     lvgl.hide(marker.object)
                     marker.active = false
@@ -1702,132 +1530,840 @@ function chart.resetSession(context)
                 lvgl.hide(value)
             end
             reset.index = reset.index + 1
+            remaining, used = remaining - cost, used + cost
         else
             reset.group, reset.index = reset.group + 1, 1
         end
     end
-    return nil, true
+    return used, false
 end
 
-function chart.refresh(context, creating)
-    if creating or not context.history or context.history.failed then
-        return refreshPlot(context, true)
+-- Reset turns are bounded on their own: the host passes a timestamp, not a grant.
+local RESET_ALLOWANCE = instructionAllowance(2)
+
+--- Retire the current native presentation in bounded batches.
+function chart.resetSession(context)
+    local used, complete = resetPresentation(context, RESET_ALLOWANCE)
+    return nil, not complete, consumedSlots(used)
+end
+
+local function publishColumns(context)
+    context.metadataReady = nil
+    -- Native dashed lines shift their phase under partial invalidation.
+    -- Only changed overlays need a complete invalidation, not ordinary appends.
+    local session = context.session
+    local invalidate = context.paintedVersion ~= context.version
+        or not (context.axis and context.axis.map) and (context.paintedArmRevision ~= session.armRevision or context.paintedResumeRevision ~= session.resumeRevision)
+        or context.paintedFlightRevision ~= session.flightRevision
+    for _, item in ipairs(context.series) do
+        invalidate = invalidate or item.paintedBreakMap ~= item.drawnBreakMap or item.paintedBreak ~= item.drawnBreak
+        item.paintedBreakMap, item.paintedBreak = item.drawnBreakMap, item.drawnBreak
     end
-    if not context.framePhase then
-        if not needsFrame(context) then
-            return chart.intervalFor(context.window, context.area.w, #context.series)
+    if invalidate then
+        lvgl.hide(context.plotRoot)
+        lvgl.show(context.plotRoot)
+    end
+    context.paintedVersion = context.version
+    context.paintedArmRevision, context.paintedResumeRevision, context.paintedFlightRevision =
+        session.armRevision, session.resumeRevision, session.flightRevision
+    context.columnsDecorating, context.frameThrough = nil, nil
+    return chart.intervalFor(context.window, context.area.w, #context.series)
+end
+
+local function finishColumns(context, allowance)
+    local remaining, used = allowance, 0
+    for series = 1, #context.series do
+        if not context.columnRenderer.published[series] then
+            context.columnsDecorating, context.frameThrough = nil, nil
+            return 1, true, 0
         end
-        context.backPlot = context.backPlot or newPlot(context)
-        context.displayRoot = context.plotRoot
-        exchange(context, context.backPlot, PLOT_FIELDS)
-        context.armMarkers = context.armMarkers or markerPool("arm")
+    end
+    if not context.frameThrough then
+        context.frameThrough = context.session.elapsed
+        for series, job in ipairs(context.columnRenderer.published) do
+            local feed = context.series[series].feed
+            if feed.available and not feed.stale and job.at then
+                context.frameThrough =
+                    math.min(context.frameThrough, job.at + context.columnConsumers[series].startedAt)
+            end
+        end
+    end
+    local complete, stageUsed = updateFlights(context, remaining)
+    remaining, used = remaining - stageUsed, used + stageUsed
+    if not complete then
+        return 1, true, used
+    end
+    context.armMarkers = context.armMarkers or markerPool("arm")
+    complete, stageUsed = updateSessionMarkers(
+        context,
+        context.armMarkers,
+        context.session.armFirst,
+        context.session.armLast,
+        context.session.armRevision,
+        context.history.armBoundary,
+        remaining
+    )
+    remaining, used = remaining - stageUsed, used + stageUsed
+    if not complete then
+        return 1, true, used
+    end
+    for series, item in ipairs(context.series) do
+        local map = context.columnRenderer.published[series].map
+        if
+            item.drawnBreakMap ~= map
+            or item.drawnBreak ~= map.breakLast
+            or item.drawnBreakVersion ~= context.version
+        then
+            if not item.job then
+                item.job = {
+                    index = map.breakFirst,
+                    marked = {},
+                    markerColumns = {},
+                    geometryVersion = context.geometryVersion,
+                    area = context.area,
+                }
+                item.markerIndex, item.markerPhase = 1, "hide"
+            end
+            local pass = item.job
+            while pass.index <= map.breakLast and remaining >= 250 do
+                markBoundary(context, item, pass, map.breaks[pass.index])
+                pass.index = pass.index + 1
+                remaining, used = remaining - 250, used + 250
+            end
+            if pass.index <= map.breakLast then
+                return 1, true, used
+            end
+            complete, stageUsed = applyMarkers(context, item, remaining)
+            remaining, used = remaining - stageUsed, used + stageUsed
+            if complete then
+                item.drawnBreakMap, item.drawnBreak, item.drawnBreakVersion = map, map.breakLast, context.version
+                item.job = nil
+            else
+                return 1, true, used
+            end
+        end
+    end
+    if context.axis then
         context.resumeMarkers = context.resumeMarkers or markerPool("resume")
-        for index, item in ipairs(context.series) do
-            exchange(item, context.backPlot.series[index], SERIES_FIELDS)
-            item.liveFeed = item.feed
-            if item.feed then
-                item.snapshot = item.snapshot or {}
-                copyFields(item.feed, item.snapshot, FEED_FIELDS)
-                if item.feed.available then
-                    item.tailAt, item.tailValue, item.tailBroken, item.tailResumed =
-                        context.history:point(item.feed, item.feed.last)
+        complete, stageUsed = updateSessionMarkers(
+            context,
+            context.resumeMarkers,
+            context.session.resumeFirst,
+            context.session.resumeLast,
+            context.session.resumeRevision,
+            context.history.recordingBreak,
+            remaining
+        )
+        remaining, used = remaining - stageUsed, used + stageUsed
+        if not complete then
+            return 1, true, used
+        end
+    else
+        if remaining < 250 then
+            return 1, true, used
+        end
+        return publishColumns(context), false, used + 250
+    end
+    local work = context.connectorWork
+    if not work then
+        work = { series = 1, index = 1 }
+        context.connectorWork = work
+    end
+    while work.series <= #context.series do
+        local item = context.series[work.series]
+        local published = context.columnRenderer.published[work.series]
+        local source = published and (published.connectors or published.map.connectors) or {}
+        local saved = item.connectors[work.index]
+        local values = source[work.index]
+        if values then
+            local key = table.concat(
+                { values[1], values[2], values[3], values[4], published.low, published.high, context.geometryVersion },
+                ":"
+            )
+            if saved and saved.key == key then
+                work.index, work.prepared = work.index + 1, nil
+            else
+                if not work.prepared then
+                    if remaining < 150 then
+                        return 1, true, used
+                    end
+                    saved = saved or {}
+                    item.connectors[work.index] = saved
+                    local function y(value)
+                        local fraction =
+                            math.max(0, math.min(1, (value - published.low) / (published.high - published.low)))
+                        return context.area.y + math.floor((1 - fraction) * context.area.h + 0.5)
+                    end
+                    saved.pts = {
+                        { context.area.x + math.floor(values[1] + 0.5), y(values[2]) },
+                        { context.area.x + math.floor(values[3] + 0.5), y(values[4]) },
+                    }
+                    saved.size = 2
+                    saved.key = nil
+                    work.prepared = true
+                    remaining, used = remaining - 150, used + 150
+                end
+                complete, stageUsed = applyConnector(context, item, saved, remaining)
+                remaining, used = remaining - stageUsed, used + stageUsed
+                if not complete then
+                    return 1, true, used
+                end
+                saved.key = key
+                work.index, work.prepared = work.index + 1, nil
+            end
+        elseif saved then
+            if saved.connector and remaining >= 150 then
+                lvgl.hide(saved.connector)
+                used, remaining = used + 150, remaining - 150
+            elseif saved.connector then
+                return 1, true, used
+            end
+            work.index = work.index + 1
+        elseif values == nil and saved == nil then
+            work.series, work.index = work.series + 1, 1
+        end
+    end
+    if remaining < 250 then
+        return 1, true, used
+    end
+    context.connectorWork = nil
+    return publishColumns(context), false, used + 250
+end
+
+-- Measured cost of painting one hidden column through the layer view.
+local PAINT_COST = 120
+-- Estimated work per extra slot; per-call overhead brings the measured cost to about one slot.
+local BACKGROUND_ALLOWANCE = 1100
+-- Estimated cost of appending one queued sample, without and with painting.
+local APPEND_COST, HIDDEN_APPEND_COST = 150, 250
+-- Preparation still advances while a backlog is appended, so it always finishes.
+local MIN_PREPARATION = 300
+
+local function newLayer(context)
+    local rect = context.rect
+    local layerHost = lvgl.box(context.plotHost, { x = 0, y = 0, w = rect.w, h = rect.h })
+    lvgl.hide(layerHost)
+    local root = lvgl.box(layerHost, { x = 0, y = 0, w = rect.w, h = rect.h })
+    return layerView(context, {
+        layerHost = layerHost,
+        plotRoot = root,
+        flightRoot = lvgl.box(root, { x = 0, y = 0, w = rect.w, h = rect.h }),
+        gapRoot = lvgl.box(root, { x = 0, y = 0, w = rect.w, h = rect.h }),
+        gridRoot = lvgl.box(root, { x = 0, y = 0, w = rect.w, h = rect.h }),
+        grid = {},
+        gridCursor = 1,
+        flightKeys = {},
+        armMarkers = markerPool("arm"),
+        resumeMarkers = markerPool("resume"),
+        version = 0,
+    })
+end
+
+local function overflowed(consumers)
+    for _, owner in ipairs(consumers) do
+        if owner.map.overflowed then
+            return true
+        end
+    end
+    return false
+end
+
+--- Whether the hidden layer's overlays still match the session's pauses, arms
+--- and flights and the pause connectors of its columns.
+local function decorationCurrent(auto, session)
+    local job, hidden = auto.job, auto.hidden
+    local seen = job and job.decorated
+    if not seen then
+        return false
+    end
+    local seams = 0
+    for _, owner in ipairs(rawget(hidden, "columnConsumers") or {}) do
+        seams = seams + #owner.map.seams
+    end
+    return seen.resume == session.resumeRevision
+        and seen.arm == session.armRevision
+        and seen.flight == session.flightRevision
+        and seen.seams == seams
+end
+
+local function decorationStamp(auto, session)
+    local seams = 0
+    for _, owner in ipairs(rawget(auto.hidden, "columnConsumers") or {}) do
+        seams = seams + #owner.map.seams
+    end
+    return {
+        resume = session.resumeRevision,
+        arm = session.armRevision,
+        flight = session.flightRevision,
+        seams = seams,
+    }
+end
+
+local function slideShift(map)
+    return map:slideShift()
+end
+
+--- A slid plot keeps only columns after the first minute, so preparation waits
+--- for them; a one-minute window slides to an empty plot prepared halfway, as
+--- does an empty plot whose first sample is already beyond it.
+local function slideDue(auto)
+    local map = auto.consumers[1].map
+    return auto.slide == true
+        and (
+            (map.last or -1) >= math.min(slideShift(map), map.width // 2)
+            or map.last == nil and map.overflowed == true
+        )
+end
+
+--- Columns a hidden layer merges: fine columns for the next auto window, or the
+--- visible columns themselves for a fixed window sliding by a minute.
+local function jobSource(job, consumer)
+    return job.kind == "slide" and consumer.map or consumer.fine
+end
+
+--- Completed columns a hidden layer has yet to take; new bounds repaint the
+--- visible columns in place.
+local function behind(job, owner, consumer)
+    if job.kind == "range" then
+        return (owner.map.last or -1) - (owner.next or 1) + 1
+    end
+    return (jobSource(job, consumer).last or 0) - (owner.map.cursor or 0)
+end
+
+local function hiddenLagging(auto)
+    local owners = auto.job and auto.hidden and rawget(auto.hidden, "columnConsumers")
+    for index, owner in ipairs(owners or {}) do
+        if
+            behind(auto.job, owner, auto.consumers[index]) > 2
+            or #owner.map.dirtyList > 2 and auto.job.kind ~= "range"
+        then
+            return true
+        end
+    end
+    return false
+end
+
+local function autoPending(auto, session)
+    local consumers = auto and auto.consumers
+    if not consumers then
+        return false
+    end
+    local job = auto.job
+    if not job then
+        return auto.rangeRequest == true
+            or slideDue(auto)
+            or auto.window and not auto.stopped and consumers[1].step < auto.limit
+    end
+    return not job.ready
+        or job.kind == "range"
+        or overflowed(consumers)
+        or not decorationCurrent(auto, session)
+        or hiddenLagging(auto)
+end
+
+local function forgetMarkers(markers)
+    for _, marker in pairs(markers or {}) do
+        marker.geometryVersion = nil
+    end
+end
+
+--- Show the prepared layer. Plot state moves once; nothing is redrawn.
+local function swapLayers(context, auto, job)
+    local hidden = auto.hidden
+    local previous = { series = {} }
+    for _, key in ipairs(LAYER_KEYS) do
+        previous[key] = context[key]
+        context[key] = rawget(hidden, key)
+    end
+    for index, item in ipairs(context.series) do
+        local saved, loaded = {}, rawget(hidden, "series")[index]
+        for _, key in ipairs(ITEM_KEYS) do
+            saved[key] = item[key]
+            item[key] = rawget(loaded, key)
+        end
+        previous.series[index] = saved
+    end
+    for index, owner in ipairs(auto.consumers) do
+        owner:adopt(context.columnConsumers[index].map, job.target or owner.step)
+    end
+    context.columnConsumers = auto.consumers
+    context.columnRenderer.context = context
+    lvgl.show(context.layerHost)
+    lvgl.hide(previous.layerHost)
+    previous.columnConsumers, previous.recycle = nil, true
+    auto.hidden, auto.job = layerView(context, previous), nil
+    previous.columnRenderer.context = auto.hidden
+    context.metadataReady, context.columnsDecorating, context.frameThrough = nil, nil, nil
+end
+
+--- Halve each fine store into one at `level` across turns, keeping the progress
+--- in `work`; the stores switch once every one has caught up.
+---@return boolean complete
+---@return integer used
+local function coarsen(Columns, work, consumers, level, allowance)
+    local remaining, used = allowance, 0
+    work.fines = work.fines or {}
+    local complete = true
+    for index, owner in ipairs(consumers) do
+        local fine = owner.fine
+        work.fines[index] = work.fines[index] or Columns.fine(owner.width, level, owner.recording)
+        local done, stage = work.fines[index]:absorb(fine, 2, (fine.last or 0) - 1, remaining)
+        remaining, used = remaining - stage, used + stage
+        complete = complete and done
+        if not done then
+            break
+        end
+    end
+    -- The newest fine column can still grow, so it moves with the switch.
+    if not complete or remaining < 150 * #consumers then
+        return false, used
+    end
+    for index, owner in ipairs(consumers) do
+        -- Breaks still to copy come along too.
+        local _, stage = work.fines[index]:absorb(owner.fine, 2, owner.fine.last or -1, math.huge)
+        used = used + stage
+        owner.fine = work.fines[index]
+    end
+    work.fines = nil
+    return true, used
+end
+
+--- Prepare the next auto window within `allowance` estimated instructions:
+--- coarsen fine stores when needed, build the hidden layer from them, decorate
+--- it with the ordinary staged pipeline, and swap once the visible plot is full.
+local function background(context, allowance)
+    local auto = context.auto
+    local consumers = auto and auto.consumers
+    if not consumers or context.columnSetup or not context.columnRenderer then
+        return 0
+    end
+    local Columns, remaining, used = context.columnModule, allowance, 0
+    local resets = 0
+    for _, owner in ipairs(consumers) do
+        resets = resets + owner.resets
+    end
+    if auto.resets ~= resets or auto.geometry ~= context.geometryVersion then
+        auto.resets, auto.geometry, auto.job, auto.stopped = resets, context.geometryVersion, nil, nil
+        if auto.hidden then
+            auto.hidden.recycle = true
+        end
+    end
+    if auto.window and not auto.stopped then
+        for _, owner in ipairs(consumers) do
+            if owner.fine.overflowed then
+                -- Too many pauses for the fine store: keep the plot fixed at its edge.
+                auto.stopped = true
+                if auto.job and auto.job.kind ~= "range" then
+                    auto.job = nil
                 end
             end
         end
-        context.liveSession = context.session
-        context.frameSession = context.frameSession or {}
-        copyFields(context.session, context.frameSession, SESSION_FIELDS)
-        context.frameThrough = context.frameSession.elapsed
-        for _, item in ipairs(context.series) do
-            if item.snapshot and item.snapshot.available and not item.snapshot.stale then
-                context.frameThrough = math.min(context.frameThrough, item.tailAt)
-            end
-        end
-        context.framePhase = "axis"
-        context.axisWork = nil
-        context.armMarkers.job, context.resumeMarkers.job = nil, nil
-        context.frameGeometry = context.geometryVersion
-        context.plotRoot:set({ w = context.rect.w, h = context.rect.h })
-        context.flightRoot:set({ w = context.rect.w, h = context.rect.h })
-        context.gapRoot:set({ w = context.rect.w, h = context.rect.h })
-        context.gridRoot:set({ w = context.rect.w, h = context.rect.h })
-        local area = context.area
-        context.baseline:set({ x = area.x, y = area.y + area.h, w = area.w, h = 1 })
-        return 1, true
     end
-
-    context.session = context.frameSession
-    for _, item in ipairs(context.series) do
-        item.feed = item.snapshot
-    end
-    local done = false
-    if context.framePhase == "axis" then
-        if prepareAxis(context) then
-            context.framePhase = "traces"
+    local job = auto.job
+    if auto.rangeRequest and (not job or job.kind ~= "range") then
+        -- New bounds take priority; the next window is prepared again afterwards.
+        job = { kind = "range", phase = "layer" }
+        auto.job, auto.rangeRequest = job, nil
+        if auto.hidden then
+            auto.hidden.recycle = true
         end
-    elseif context.framePhase == "traces" then
-        refreshPlot(context)
-        done = not context.pending and context.gridVersion == context.version
-        for _, item in ipairs(context.series) do
-            if item.feed and item.feed.available then
-                done = done
-                    and item.drawnVersion == context.version
-                    and item.drawnRevision == item.feed.plotRevision
-                    and item.drawnLow == item.low
-                    and item.drawnHigh == item.high
-            end
-        end
-        if done then
-            context.framePhase = "flights"
-        end
-        done = false
-    elseif context.framePhase == "flights" then
-        if not updateFlights(context) then
-            context.framePhase = "resumes"
-        end
-    elseif context.framePhase == "arms" then
-        done = updateSessionMarkers(
-            context,
-            context.armMarkers,
-            context.session.armFirst,
-            context.session.armLast,
-            context.session.armRevision,
-            context.history.armBoundary
-        )
-    else
-        if
-            updateSessionMarkers(
-                context,
-                context.resumeMarkers,
-                context.session.resumeFirst,
-                context.session.resumeLast,
-                context.session.resumeRevision,
-                context.history.recordingBreak
-            )
-        then
-            context.framePhase = "arms"
-        end
-    end
-    context.session = context.liveSession
-    for _, item in ipairs(context.series) do
-        item.feed = item.liveFeed
-    end
-    if context.frameExpired then
-        exchange(context, context.backPlot, PLOT_FIELDS)
+    elseif job and job.kind == "range" and job.targets then
         for index, item in ipairs(context.series) do
-            exchange(item, context.backPlot.series[index], SERIES_FIELDS)
+            local bounds = job.targets[index]
+            if outside(item, bounds[1], bounds[2], consumers[index].map) then
+                -- Data left the bounds being prepared; prepare wider ones.
+                job = { kind = "range", phase = "layer" }
+                auto.job = job
+                auto.hidden.recycle = true
+                break
+            end
         end
-        context.frameExpired, context.framePhase, context.frameSession, context.pending = nil, nil, nil, nil
-        return 1, true
     end
-    if done then
-        lvgl.hide(context.displayRoot)
-        lvgl.show(context.plotRoot)
-        context.framePhase = nil
-        context.frameGeometry = context.geometryVersion
-        return chart.intervalFor(context.window, context.area.w, #context.series)
+    if not job then
+        if auto.slide then
+            if not slideDue(auto) then
+                return used
+            end
+            -- Fixed windows slide by a minute once the plot is full.
+            job = { kind = "slide", phase = "layer" }
+        elseif not auto.window or auto.stopped or consumers[1].step >= Columns.AUTO_STEPS then
+            -- The longest auto window stops at the right edge.
+            return used
+        else
+            job = { target = consumers[1].step + 1, phase = "halve" }
+        end
+        auto.job = job
     end
-    return 1, true
+    local target = job.target
+    if job.phase == "halve" then
+        local level = Columns.autoLevel(target)
+        if consumers[1].fine.level >= level then
+            job.phase = "layer"
+        else
+            local _, stage = coarsen(Columns, job, consumers, level, remaining)
+            return used + stage
+        end
+    end
+    local hidden = auto.hidden
+    if job.phase == "layer" then
+        if not hidden then
+            auto.hidden = newLayer(context)
+            return used + 1500
+        end
+        if not hidden.columnRenderer then
+            hidden.columnRenderer = context.columnRendererModule.new(hidden)
+            return used + 800
+        end
+        if hidden.recycle then
+            if hidden.recycle == true then
+                forgetMarkers(hidden.armMarkers and hidden.armMarkers.markers)
+                forgetMarkers(hidden.resumeMarkers and hidden.resumeMarkers.markers)
+                for _, item in ipairs(hidden.series) do
+                    forgetMarkers(item.markers)
+                end
+                hidden.recycle = "sweep"
+            end
+            local visited, complete = hidden.columnRenderer:sweep(math.max(1, remaining // 20))
+            used = used + visited * 20
+            if not complete then
+                return used
+            end
+            hidden.recycle = nil
+        end
+        local owners, window, gap, offset, start = {}, nil, nil, nil, nil
+        if job.kind == "range" then
+            job.targets, job.factor = rangeTargets(context, consumers), 1
+            window, gap = consumers[1].map.window, consumers[1].map.breakWidth
+        elseif job.kind == "slide" then
+            local map = consumers[1].map
+            offset = map.offset + slideShift(map)
+            start = offset * map.window // map.pixels
+            window, gap, job.factor = map.window, map.breakWidth, 1
+        else
+            local minutes, level = Columns.autoMinutes(target), Columns.autoLevel(target)
+            window, gap, job.factor = minutes * 6000, Columns.autoGap(target), minutes >> level
+        end
+        for index, owner in ipairs(consumers) do
+            -- New bounds repaint the visible columns themselves; a new window merges fine ones.
+            owners[index] = {
+                map = job.kind == "range" and owner.map or Columns.new(owner.width, window, owner.recording, {
+                    breakWidth = gap,
+                    offset = offset,
+                    start = start,
+                }),
+                startedAt = 0,
+            }
+            local item, bounds = hidden.series[index], job.targets and job.targets[index]
+            item.low = bounds and bounds[1] or context.series[index].low
+            item.high = bounds and bounds[2] or context.series[index].high
+        end
+        hidden.columnConsumers, hidden.window, hidden.start = owners, window, start or context.start or 0
+        hidden.version, hidden.axis = (hidden.version or 0) + 1, nil
+        hidden.gridVersion, hidden.gridLayoutVersion = nil, nil
+        hidden.connectorWork, hidden.columnsDecorating, hidden.frameThrough = nil, nil, nil
+        job.phase = "build"
+        return used + 100 * #consumers
+    end
+    local swapCost
+    -- New bounds show as soon as they are ready; a new window waits for a full plot.
+    if job.ready and (job.kind == "range" or overflowed(consumers)) then
+        swapCost = 1000
+        for index, owner in ipairs(hidden.columnConsumers) do
+            local pending = math.max(0, behind(job, owner, consumers[index]) + 1)
+            if job.kind == "range" then
+                swapCost = swapCost + pending * PAINT_COST
+            else
+                swapCost = swapCost + pending * 100 + (#owner.map.dirtyList > 2 and math.huge or 0)
+            end
+        end
+    end
+    -- The newest fine column can still grow, so the final catch-up and the swap
+    -- happen in one turn of at most one slot. A few unpainted columns are left to
+    -- the next ordinary append; otherwise keep catching up first.
+    -- Swap only with overlays drawn for every pause, arm and flight so far.
+    local current = job.ready and decorationCurrent(auto, context.session)
+    if swapCost and current and swapCost <= math.max(remaining, SLOT_INSTRUCTIONS) and used == 0 then
+        if job.kind == "range" then
+            local painted = hidden.columnRenderer:paintSlots(math.huge, 1, true)
+            used = used + painted * PAINT_COST
+            -- Every column is now drawn at the new bounds; later changes mark again.
+            for _, owner in ipairs(hidden.columnConsumers) do
+                owner.map.dirtyColumns, owner.map.dirtyList = {}, {}
+            end
+        else
+            for index, owner in ipairs(hidden.columnConsumers) do
+                local source = jobSource(job, consumers[index])
+                local _, stage = owner.map:absorb(source, job.factor, source.last or -1, math.huge)
+                used = used + stage
+            end
+        end
+        -- The open flight's band grew while the layer waited; extend it before it shows.
+        hidden.frameThrough = nil
+        local _, stage = updateFlights(hidden, math.huge)
+        used = used + stage
+        swapLayers(context, auto, job)
+        return used + 800
+    end
+    -- Catch up when the hidden columns lag; otherwise spend the turn on overlays,
+    -- which resume across turns, so one-slot grants still finish decorating.
+    local lagging = hiddenLagging(auto)
+    local decorating = rawget(hidden, "columnsDecorating")
+    -- Long overlay passes alternate with catch-up so neither starves.
+    job.alternate = lagging and decorating and not job.alternate
+    if lagging and (not decorating or job.alternate) or not decorating and current then
+        -- Paint absorbed columns before absorbing more, so no backlog reaches the swap.
+        local owners = hidden.columnConsumers
+        job.rotation = (job.rotation or 0) % #owners + 1
+        if job.kind == "range" then
+            local painted = hidden.columnRenderer:paintSlots(remaining // PAINT_COST, job.rotation)
+            return used + painted * PAINT_COST
+        end
+        local painted = hidden.columnRenderer:paint(remaining // PAINT_COST, job.rotation)
+        remaining, used = remaining - painted * PAINT_COST, used + painted * PAINT_COST
+        for offset = 0, #owners - 1 do
+            if remaining < 120 then
+                break
+            end
+            local index = (job.rotation + offset - 1) % #owners + 1
+            local source = jobSource(job, consumers[index])
+            local _, stage = owners[index].map:absorb(source, job.factor, (source.last or 0) - 1, remaining)
+            remaining, used = remaining - stage, used + stage
+        end
+        painted = hidden.columnRenderer:paint(math.max(0, remaining // PAINT_COST), job.rotation)
+        return used + painted * PAINT_COST
+    end
+    if remaining < 300 then
+        return used
+    end
+    prepareAxis(hidden, remaining)
+    if hidden.gridVersion ~= hidden.version then
+        local gridDone, stage = updateGrid(hidden, remaining)
+        remaining, used = remaining - stage, used + stage
+        if not gridDone or remaining < 300 then
+            return used
+        end
+    end
+    if not rawget(hidden, "columnsDecorating") then
+        -- Changes during a multi-turn pass leave the result stale.
+        job.stamp = decorationStamp(auto, context.session)
+    end
+    hidden.columnsDecorating = true
+    -- A pass that made no progress gets up to one slot, so the largest overlay
+    -- item always fits without inflating ordinary turns.
+    local allowed = job.stalled and used == 0 and math.max(remaining, SLOT_INSTRUCTIONS) or remaining
+    local _, unfinished, stage = finishColumns(hidden, allowed)
+    job.stalled = unfinished and stage == 0
+    if not unfinished then
+        job.phase, job.ready, job.decorated = "ready", true, job.stamp
+    end
+    return used + stage
+end
+
+local function refreshColumns(context, slots)
+    local remaining, used = instructionAllowance(slots), 0
+    if not context.columnRenderer then
+        context.columnRenderer = context.columnRendererModule.new(context)
+        return 1, true, 1
+    end
+    if context.columnsDecorating then
+        local interval, unfinished, stageUsed = finishColumns(context, remaining)
+        return interval, unfinished, consumedSlots(used + stageUsed)
+    end
+    if not context.metadataReady then
+        chart.render(context)
+        if not context.rangesReady then
+            chart.ranges(context)
+            context.rangesReady = true
+        end
+        updateHeader(context)
+        text(context.status, plotStatus(context), context.theme.color.textFaint)
+        context.metadataReady = true
+        return 1, true, 1
+    end
+    if remaining < 1 then
+        return 1, true, consumedSlots(used)
+    end
+    remaining, used = remaining - 1, used + 1
+    local owner = context.columnConsumers[1]
+    local window, start = owner.map.window, owner.map.start
+    if context.window ~= window or context.start ~= start then
+        context.window, context.start = window, start
+        context.axis = nil
+        context.version = context.version + 1
+    end
+    if owner.map.recording or (context.session.resumeLast or 0) > 0 then
+        local axisReady, stageUsed = prepareAxis(context, remaining)
+        remaining, used = remaining - stageUsed, used + stageUsed
+        if not axisReady then
+            return 1, true, consumedSlots(used)
+        end
+    end
+    if context.gridVersion ~= context.version then
+        local complete, stageUsed = updateGrid(context, remaining)
+        remaining, used = remaining - stageUsed, used + stageUsed
+        if not complete then
+            return 1, true, consumedSlots(used)
+        end
+    end
+    if used > 1 then
+        return 1, true, consumedSlots(used)
+    end
+    context.columnRenderer:append()
+    context.metadataReady = nil
+    context.columnsDecorating, context.frameThrough = true, nil
+    return 1, false, 1
+end
+
+local function refreshChart(context, creating, slots)
+    if
+        context.columnsReadonly
+        and not context.preview
+        and context.history.observeSamples
+        and context.columnConsumers
+        and context.columnConsumers[1].history ~= context.history
+    then
+        for _, owner in ipairs(context.columnConsumers) do
+            owner:destroy()
+        end
+        context.columnConsumers, context.columnsReadonly, context.columnSetupIndex = nil, nil, nil
+        context.columnSetup = context.columnModule
+        if context.columnRenderer then
+            resetPresentation(context, 0)
+        end
+    end
+    if context.columnSetup then
+        local used = 0
+        if not context.columnSetupIndex then
+            chart.geometry(context, context.rect)
+            context.columnConsumers, context.columnSetupIndex = {}, 1
+            used = 1
+        end
+        while context.columnSetupIndex <= #context.series and used < slots do
+            local index = context.columnSetupIndex
+            local item = context.series[index]
+            context.columnConsumers[index] =
+                context.columnSetup.attach(context.history, item.feed, context.area.w // 1, {
+                    window = timeWindow(context.settings),
+                    preview = context.preview,
+                    recording = { history = context.history, session = context.session },
+                    auto = context.autoWanted,
+                    slide = not context.autoWanted,
+                    elapsed = context.session.elapsed,
+                })
+            context.columnsReadonly = context.columnsReadonly or context.columnConsumers[index].readonly
+            context.columnSetupIndex, used = index + 1, used + 1
+        end
+        if context.columnSetupIndex > #context.series then
+            context.columnSetup, context.columnSetupIndex = nil, nil
+            -- Live charts prepare rescaled layers: the next auto window, or new bounds.
+            context.auto = not context.columnConsumers[1].readonly
+                    and {
+                        consumers = context.columnConsumers,
+                        hidden = context.auto and context.auto.hidden,
+                        limit = context.columnModule.AUTO_STEPS,
+                        window = context.columnConsumers[1].auto,
+                        slide = context.columnConsumers[1].slide,
+                    }
+                or nil
+        end
+        return 1, true, used
+    end
+    if creating or not context.history or context.history.failed or #context.series == 0 then
+        chart.render(context)
+        updateHeader(context)
+        text(context.status, plotStatus(context), context.theme.color.textFaint)
+        return 20
+    end
+    return refreshColumns(context, slots)
+end
+
+function chart.refresh(context, creating, slots)
+    slots = slots or 8
+    if context.resetWork and not creating then
+        -- Old columns and overlays are hidden before anything new is drawn.
+        local used, complete = resetPresentation(context, instructionAllowance(slots))
+        return 1, not complete, math.min(slots, consumedSlots(used))
+    end
+    local host = context.host
+    if
+        host
+        and host.editorUi
+        and not context.preview
+        and not creating
+        and context.columnRenderer
+        and not context.columnSetup
+    then
+        -- Recording time stops while editing, so only samples queued before the
+        -- editor opened are taken; nothing is drawn until it closes.
+        for _, owner in ipairs(context.columnConsumers or {}) do
+            owner:append()
+        end
+        return 25, false, 1
+    end
+    local auto = context.auto
+    local ready = auto and auto.consumers and not creating and context.columnRenderer and not context.columnSetup
+    local rescaling = auto and (auto.rangeRequest or auto.job and auto.job.kind == "range")
+    local full = ready and (auto.window or auto.slide) and overflowed(auto.consumers)
+    if ready and (rescaling or full and autoPending(auto, context.session)) then
+        -- A full or wrongly scaled plot gains little from readout, overlay or column
+        -- refreshes: samples are appended and the rest of the ordinary slot, plus
+        -- the extra slot when granted, finishes the rescaled layer. Columns left
+        -- unpainted are drawn by the layer that replaces this one.
+        -- Only samples actually taken count: a full sliding plot keeps the rest
+        -- queued for the layer this preparation finishes.
+        local appended = context.columnRenderer:append(true) * APPEND_COST
+        local extra = slots >= 2 and BACKGROUND_ALLOWANCE or 0
+        background(context, math.max(MIN_PREPARATION, BACKGROUND_ALLOWANCE - appended) + extra)
+        return 1, true, extra > 0 and 2 or 1
+    end
+    if auto and auto.wakeAt and ready then
+        local now = context.clock()
+        -- A bounded run of preparation turns never starves ordinary refreshes.
+        if now < auto.wakeAt and (auto.backgroundTurns or 0) < 4 then
+            auto.backgroundTurns = (auto.backgroundTurns or 0) + 1
+            -- Between ordinary refreshes only the rescaled layer is prepared.
+            background(context, BACKGROUND_ALLOWANCE)
+            local interval = autoPending(auto, context.session) and 1 or auto.wakeAt - now
+            -- The visible plot still owes its next refresh.
+            return math.max(1, math.min(6000, interval)), true, 1
+        end
+    end
+    local interval, unfinished, consumed = refreshChart(context, creating, slots)
+    consumed = consumed or 1
+    if auto then
+        auto.backgroundTurns = 0
+    end
+    if auto and auto.consumers and context.auto == auto and not creating then
+        -- A cycle ends when decorations publish, not when the append returns.
+        local idle = not unfinished and not context.columnsDecorating and not context.metadataReady
+        local pending = autoPending(auto, context.session)
+        -- At most one extra slot per refresh goes to a rescaled layer.
+        if slots > consumed and not context.columnsDecorating and (pending or idle and auto.job ~= nil) then
+            background(context, BACKGROUND_ALLOWANCE)
+            consumed = consumed + 1
+            pending = autoPending(auto, context.session)
+        end
+        auto.wakeAt = idle and pending and context.clock() + interval or nil
+        if pending then
+            interval = 1
+        end
+    end
+    return interval, unfinished, consumed
+end
+
+--- While the dashboard is hidden, keep columns current so returning to it
+--- draws only overlays; a rescale in progress continues with what is left.
+function chart.background(context)
+    local renderer = context.columnRenderer
+    if not renderer or context.columnSetup or not context.columnConsumers or context.resetWork then
+        return
+    end
+    local auto = context.auto
+    local rescaling = auto and (auto.rangeRequest or auto.job and auto.job.kind == "range")
+    local appended = renderer:append(rescaling or auto and (auto.window or auto.slide) and overflowed(auto.consumers))
+    if auto then
+        background(context, math.max(MIN_PREPARATION, BACKGROUND_ALLOWANCE - appended * HIDDEN_APPEND_COST))
+    end
 end
 
 function chart.create(parent, rect, settings, services)
@@ -1839,6 +2375,9 @@ function chart.create(parent, rect, settings, services)
         primitives = services.primitives,
         settings = settings,
         history = services.history and (services.preview and services.history:preview() or services.history),
+        host = services.host,
+        columnModule = services.chartColumns,
+        columnRendererModule = services.chartColumnsRenderer,
         preview = services.preview == true,
         clock = services.clock or getTime,
         series = {},
@@ -1850,11 +2389,16 @@ function chart.create(parent, rect, settings, services)
         grid = {},
         gridCursor = 1,
         flightKeys = {},
+        armMarkers = markerPool("arm"),
+        resumeMarkers = markerPool("resume"),
     }
     local presentation = services.state("normal", settings.accent or "cyan")
     context.panel = context.primitives.panel(parent, rect, context.theme, presentation)
     context.plotHost = lvgl.box(context.panel.root, { x = 0, y = 0, w = rect.w, h = rect.h })
-    context.plotRoot = lvgl.box(context.plotHost, { x = 0, y = 0, w = rect.w, h = rect.h })
+    context.baseline =
+        lvgl.hline(context.plotHost, { x = 0, y = 0, w = 1, h = 1, color = context.theme.chartColor.grid })
+    context.layerHost = lvgl.box(context.plotHost, { x = 0, y = 0, w = rect.w, h = rect.h })
+    context.plotRoot = lvgl.box(context.layerHost, { x = 0, y = 0, w = rect.w, h = rect.h })
     context.flightRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
     context.gapRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
     context.gridRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
@@ -1868,7 +2412,7 @@ function chart.create(parent, rect, settings, services)
         local item = {
             settings = entry,
             color = color,
-            runs = {},
+            connectors = {},
             markers = {},
             markerKeys = {},
             caption = string.upper(caption(entry)),
@@ -1876,8 +2420,8 @@ function chart.create(parent, rect, settings, services)
         if context.history then
             item.feed = context.history:subscribe(entry.source, {
                 armSwitch = settings.armSwitch,
-                windowSeconds = timeWindow(settings, 0) / 100,
-                timeRange = settings.timeRange or "growing",
+                windowSeconds = timeWindow(settings) / 100,
+                timeRange = "growing",
                 smoothing = settings.smoothing or "off",
                 precision = entry.precision,
             })
@@ -1910,10 +2454,15 @@ function chart.create(parent, rect, settings, services)
         filled = true,
     })
     context.title, context.duration, context.status = label(context), label(context), label(context)
-    context.baseline =
-        lvgl.hline(context.plotRoot, { x = 0, y = 0, w = 1, h = 1, color = context.theme.chartColor.grid })
-    context.window, context.start, context.pixelStart = timeWindow(settings, 0), 0, 0
-    chart.geometry(context, rect)
+    context.window, context.start, context.pixelStart = timeWindow(settings), 0, 0
+    if context.history and #context.series > 0 then
+        context.autoWanted = settings.duration == nil and not context.preview
+        context.checkRange = checkRange
+        context.columnSetup = assert(services.chartColumns, "chart column runtime unavailable")
+        assert(context.columnRendererModule, "chart column renderer runtime unavailable")
+    else
+        chart.geometry(context, rect)
+    end
     text(
         context.status,
         not context.history and "HISTORY N/A"
@@ -1926,20 +2475,83 @@ function chart.create(parent, rect, settings, services)
 end
 
 function chart.update(context, rect)
+    context.metadataReady = nil
+    if context.auto then
+        context.auto.wakeAt = nil
+    end
+    context.rangesReady = false
+    if context.columnSetup then
+        if context.columnSetupIndex then
+            for _, owner in ipairs(context.columnConsumers) do
+                owner:destroy()
+            end
+            context.columnConsumers, context.columnSetupIndex, context.columnsReadonly = nil, nil, nil
+        end
+    end
+    local resized = rect.w ~= context.rect.w or rect.h ~= context.rect.h
+    if resized then
+        context.plotWidth = nil
+    end
     context.rect = rect
     context.legendFont, context.legendIndex, context.legendWidth = nil, nil, nil
     context.primitives.resizePanel(context.panel, rect)
     context.plotHost:set({ w = rect.w, h = rect.h })
+    context.layerHost:set({ w = rect.w, h = rect.h })
     context.plotRoot:set({ w = rect.w, h = rect.h })
     context.flightRoot:set({ w = rect.w, h = rect.h })
     context.gapRoot:set({ w = rect.w, h = rect.h })
     context.gridRoot:set({ w = rect.w, h = rect.h })
     chart.geometry(context, rect)
-    if context.framePhase then
-        context.framePhase, context.pending, context.axisWork = "axis", nil, nil
-        context.armMarkers.job, context.resumeMarkers.job = nil, nil
+    local hidden = context.auto and context.auto.hidden
+    if resized and hidden then
+        -- Resizing clears the chart; the next auto window is prepared again.
+        for _, key in ipairs({ "layerHost", "plotRoot", "flightRoot", "gapRoot", "gridRoot" }) do
+            hidden[key]:set({ w = rect.w, h = rect.h })
+        end
+        if hidden.columnRenderer then
+            hidden.columnRenderer:destroy()
+            hidden.columnRenderer = nil
+        end
+        hidden.recycle, context.auto.job = true, nil
     end
-    chart.refresh(context)
+    if resized and context.columnConsumers then
+        if context.columnRenderer then
+            context.columnRenderer:destroy()
+            context.columnRenderer = nil
+        end
+        if context.resetWork then
+            -- Destroyed columns need no sweep.
+            context.resetWork.columns = nil
+        end
+        context.columnsDecorating, context.frameThrough = nil, nil
+        for _, consumer in ipairs(context.columnConsumers) do
+            consumer:resize(context.area.w // 1)
+        end
+    end
+    context.connectorWork = nil
+    if context.armMarkers then
+        context.armMarkers.job = nil
+    end
+    if context.resumeMarkers then
+        context.resumeMarkers.job = nil
+    end
+    if not resized then
+        chart.refresh(context)
+    end
+end
+
+function chart.destroy(context)
+    context.columnsDecorating, context.frameThrough = nil, nil
+    if context.columnRenderer then
+        context.columnRenderer:destroy()
+        context.columnRenderer = nil
+    end
+    if context.columnConsumers then
+        for _, consumer in ipairs(context.columnConsumers) do
+            consumer:destroy()
+        end
+        context.columnConsumers = nil
+    end
 end
 
 return chart

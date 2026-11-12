@@ -279,3 +279,43 @@ equal(#legacy.sessions, sessions, "draft-only arms must not create live sessions
 equal(#legacy.runtime.byId.control.entries, controls, "draft arms must not create live control pollers")
 equal(preview.sample, nil)
 equal(preview.boundaries, nil)
+
+-- Editing on any widget freezes recording time, even during an active flight;
+-- recording resumes with one ordinary pause when editing ends.
+state.armKey, state.status, state.active, state.flightId, state.startedAt = "L01", "ready", true, 77, 20000
+local frozen, frozenSession, frozenFeed, frozenPoll = harness()
+local host = {}
+frozen.runtime.host = host
+frozenPoll(20000, true, 1, false)
+frozenPoll(20100, true, 2, false)
+equal(frozenSession.recording, true)
+local resumes, segments = frozenSession.resumeLast, frozenSession.segment
+host.editorUi = {}
+frozenPoll(20200, true, 3, false)
+local frozenAt = frozenSession.elapsed
+for now = 20300, 26000, 100 do
+    -- Disarming inside the flight changes nothing while time is frozen.
+    frozenPoll(now, now < 23000, now // 100, false)
+    equal(frozenSession.recording, false, "editing must pause recording during a flight")
+    equal(frozenSession.elapsed, frozenAt, "recording time must not advance while editing")
+end
+equal(frozenFeed.value, 2, "no samples are recorded while editing")
+equal(frozenSession.flightActive, true, "the flight itself stays open")
+host.editorUi, host.modelSettingsUi = nil, {}
+frozenPoll(26100, false, 5, false)
+equal(frozenSession.recording, false, "model settings freeze recording time too")
+host.modelSettingsUi = nil
+local other = { editorUi = {} }
+host.flightFactory = { members = { [host] = {}, [other] = {} } }
+frozenPoll(26200, false, 6, false)
+equal(frozenSession.recording, false, "editing on another widget freezes recording time too")
+other.editorUi = nil
+frozenPoll(26300, false, 7, false)
+equal(frozenSession.recording, true, "recording resumes for the active flight after editing")
+equal(frozenSession.resumeLast, resumes + 1, "the frozen period becomes one pause")
+equal(frozenSession.segment, segments + 1)
+equal(frozenSession.elapsed, frozenAt)
+frozenPoll(26400, false, 8, false)
+equal(frozenFeed.value, 8)
+equal(frozenSession.elapsed, frozenAt + 100)
+print("History recording time freezes while editing, including during flights")

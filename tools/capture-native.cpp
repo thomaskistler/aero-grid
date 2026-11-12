@@ -7,7 +7,15 @@
 #include <array>
 #include <fstream>
 #include <sstream>
+#include <cstdint>
 #include <unistd.h>
+
+// LVGL v8.3 monitor ABI used by the EdgeTX 2.12 simulator.
+struct NativeHeap {
+    std::uint32_t total_size, free_count, free_size, largest_free, used_count, peak_used;
+    std::uint8_t used_percent, fragmented_percent;
+};
+static_assert(sizeof(NativeHeap) == 28, "Unexpected LVGL monitor ABI");
 
 template<typename T> T symbol(void* library, const char* name) {
     auto value = reinterpret_cast<T>(dlsym(library, name));
@@ -19,11 +27,12 @@ template<typename T> T symbol(void* library, const char* name) {
 
 int main(int argc, char** argv) {
     if (argc != 5 && argc != 6) {
-        std::fprintf(stderr, "Usage: capture-native LIBRARY ISOLATED_SD OUTPUT_RGB565 REGIONS [fullscreen|actions=FILE]\n");
+        std::fprintf(stderr, "Usage: capture-native LIBRARY ISOLATED_SD OUTPUT_RGB565 REGIONS [fullscreen|actions=FILE|trace]\n");
         return 2;
     }
     bool fullscreen = argc == 6 && std::strcmp(argv[5], "fullscreen") == 0;
     bool scripted = argc == 6 && std::strncmp(argv[5], "actions=", 8) == 0;
+    bool tracing = argc == 6 && std::strcmp(argv[5], "trace") == 0;
     std::vector<std::array<int, 4>> actions;
     if (scripted) {
         std::ifstream script(argv[5] + 8);
@@ -31,7 +40,7 @@ int main(int argc, char** argv) {
         while (script >> action[0] >> action[1] >> action[2] >> action[3]) actions.push_back(action);
         if (actions.empty() || !script.eof()) return 2;
     }
-    if (argc == 6 && !fullscreen && !scripted) {
+    if (argc == 6 && !fullscreen && !scripted && !tracing) {
         std::fprintf(stderr, "Unknown capture mode\n");
         return 2;
     }
@@ -70,17 +79,29 @@ int main(int argc, char** argv) {
     auto flush = symbol<void(*)()>(library, "lcdFlushed");
     auto buffer = symbol<unsigned char**>(library, "simuLcdBuf");
     auto changed = symbol<bool*>(library, "simuLcdRefresh");
+    auto clock = tracing ? symbol<std::uint32_t*>(library, "g_tmr10ms") : nullptr;
+    auto monitor = tracing ? symbol<void(*)(NativeHeap*)>(library, "lv_mem_monitor") : nullptr;
     auto touchDown = fullscreen || scripted ? symbol<void(*)(short, short)>(library, "_Z14touchPanelDownss") : nullptr;
     auto touchUp = fullscreen || scripted ? symbol<void(*)()>(library, "_Z12touchPanelUpv") : nullptr;
     if (!init || !start || !stop || !flush || !buffer || !changed) {
         return 1;
     }
     if ((fullscreen || scripted) && (!touchDown || !touchUp)) return 1;
+    if (tracing && (!clock || !monitor)) return 1;
+    std::ofstream trace;
+    if (tracing) {
+        trace.open(std::string(argv[3]) + ".trace", std::ios::binary);
+        if (!trace) {
+            std::fprintf(stderr, "Cannot open native framebuffer trace\n");
+            return 1;
+        }
+    }
     const size_t bytes = 480 * 272 * 2;
     std::vector<unsigned char> previous(bytes), image(bytes);
     std::string ready = std::string(argv[2]) + "/capture-ready.txt";
     int stable = 0;
     bool captured = false;
+    std::uint32_t phase = 0, submitted = 0;
     init();
     start(false, argv[2], argv[2]);
     for (int tick = 0; tick < 3000; ++tick) {
@@ -94,9 +115,29 @@ int main(int argc, char** argv) {
         }
         if (*buffer) {
             std::memcpy(image.data(), *buffer, bytes);
+            bool refreshed = *changed;
             if (*changed) {
                 *changed = false;
                 flush();
+            }
+            if (tracing) {
+                std::ifstream request(std::string(argv[2]) + "/paint-phase.txt");
+                std::uint32_t next = 0, started = 0, finished = 0;
+                if (request >> next >> started >> finished) {
+                    if (next && (refreshed || next != phase || submitted != finished)) {
+                        std::uint32_t stamp = *clock * 10;
+                        trace.write(reinterpret_cast<const char*>(&next), sizeof(next));
+                        trace.write(reinterpret_cast<const char*>(&stamp), sizeof(stamp));
+                        trace.write(reinterpret_cast<const char*>(image.data()), bytes);
+                        if (!trace) {
+                            std::fprintf(stderr, "Cannot write native framebuffer trace\n");
+                            stop();
+                            return 1;
+                        }
+                    }
+                    phase = next;
+                    submitted = finished;
+                }
             }
             if (access(ready.c_str(), F_OK) == 0
                 && (!scripted || tick > actions.back()[0] + 100)) {
@@ -119,6 +160,18 @@ int main(int argc, char** argv) {
         usleep(10000);
     }
     stop();
+    if (tracing) {
+        // Shutdown frees widgets. Only the lifetime high-water mark measures the workload.
+        NativeHeap heap{};
+        monitor(&heap);
+        std::ofstream memory(std::string(argv[3]) + ".heap.json");
+        memory << "{\"lvgl_total_bytes\":" << heap.total_size
+               << ",\"lvgl_peak_used_bytes\":" << heap.peak_used << "}\n";
+        if (!memory) {
+            std::fprintf(stderr, "Cannot write native allocator snapshot\n");
+            return 1;
+        }
+    }
     if (!captured) {
         std::fprintf(stderr, "Timed out waiting for verified content and stable frames\n");
         return 1;

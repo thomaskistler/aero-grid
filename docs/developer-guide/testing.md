@@ -89,6 +89,12 @@ It fails at **15,000 instructions or more**, reserving headroom against EdgeTX's
 callback budget. Read the printed `budget headroom` and `steady state` results
 when changing scheduling or rendering.
 
+Chart performance is evaluated on the real radio. Automated chart tests check
+functional behavior, including pixel columns, gaps, fixed axes and right-edge
+preservation; they do not establish hardware responsiveness. The chart timing
+benchmarks, native simulator performance gates and instruction profiler have
+been removed.
+
 The resource suites check reload collectibility, object counts, sustained
 updates, and font callback retention. They cannot measure native LVGL/bitmap
 memory, firmware GC cadence, or radio timing. A short green mock run is not

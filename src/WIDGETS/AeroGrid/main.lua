@@ -641,6 +641,8 @@ local function create(zone, widgetOptions, path)
             end
         end
         context.panelHost = runtimeModule("lib/panel_host.lua")
+        context.chartColumns = runtimeModule("lib/chart_columns.lua")
+        context.chartColumnsRenderer = runtimeModule("lib/chart_columns_renderer.lua")
         local typography = runtimeModule("lib/typography.lua")
         local panelLayout = runtimeModule("lib/panel_layout.lua")
         local reading = runtimeModule("lib/reading.lua")
@@ -927,58 +929,124 @@ local function event(context, widgetEvent, touchState)
     return false
 end
 
---- Refresh slots per frame; expensive panels may consume multiple slots.
---- Phase staggering normally keeps the number well below this; the cap is a
---- guarantee for layouts that defeat staggering, such as many panels all
---- asking to refresh every frame.
-local REFRESH_CAP = 6
-
---- Dispatch `refresh` to the panels that are due, newest cursor first.
+--- Dispatch due services and panels in one round-robin work queue.
 --- Returns the number dispatched so tests can observe the scheduling.
 ---@param context AeroGridContext
 ---@return integer dispatched
-local function dispatchDue(context)
+local function dispatchDue(context, hidden)
     local panels = context.panels
-    local count = #panels
+    local registry, support = context.serviceRuntime, context.servicesModule
+    if not registry or not support then
+        return 0
+    end
+    local serviceCount = #registry.order
+    local count = serviceCount + #panels
     if count == 0 then
         return 0
     end
 
     local now = getTime()
-    local cursor = context.refreshCursor or 1
+    local cursor = context.workCursor or 1
     if cursor > count then
         cursor = 1
     end
 
-    local dispatched, failures, examined, work = 0, false, 0, 0
+    local dispatched, failures, examined, deferred = 0, false, 0, nil
+    local stats = context.schedulerStats
+    local requested, denied = 0, 0
+    local window = stats and stats.window
+    if stats and not window then
+        window = {}
+        stats.window = window
+    end
+    -- Slots already spent this callback belong to the flight detector.
+    local flight = window and support.SLOTS - context.remainingSlots
+    if flight and flight > 0 then
+        window.flight = (window.flight or 0) + flight
+    end
 
-    while examined < count and work < REFRESH_CAP do
-        local entry = panels[cursor]
+    while examined < count do
         examined = examined + 1
-
-        local owner = context.refreshOwner
-        local waiting = owner and entry ~= owner and entry.module.id == owner.module.id
-        if entry and not entry.failed and not waiting and now >= (entry.nextRefresh or 0) then
-            local cost = rawget(entry.module, "refreshCost") or 1
-            if work + cost > REFRESH_CAP then
-                break
+        if cursor <= serviceCount then
+            local service = registry.order[cursor]
+            local due = stats and not service.failed and service.count ~= 0 and now >= service.due
+            local allowance = deferred and 0 or context.remainingSlots
+            local id, message, used = support.dispatch(registry, service, now, allowance)
+            if due and service.updateCost ~= 0 then
+                requested = requested + 1
+                if not id and used == 0 then
+                    denied = denied + 1
+                end
             end
-            work = work + cost
-            dispatched = dispatched + 1
-
-            local ok, dispatchError, _, unfinished = context.panelHost.dispatch(entry, "refresh")
-            -- Advance from now, without accumulating missed deadlines.
-            entry.nextRefresh = now + entry.interval
-            if not ok and dispatchError then
-                addError(context, entry.placement.id .. ": refresh: " .. dispatchError)
-                failures = true
+            if not id and used == 0 then
+                deferred = deferred or cursor
             end
-            -- Serialize staged panels of the same type, without starving
-            -- unrelated panels or the data services between their turns.
-            if ok and unfinished then
-                context.refreshOwner = entry
-            elseif context.refreshOwner == entry then
-                context.refreshOwner = nil
+            if id then
+                context.remainingSlots = context.remainingSlots - used
+                if window and used > 0 then
+                    window[service] = (window[service] or 0) + used
+                end
+                if message then
+                    addError(context, id .. ": " .. message)
+                    failures = true
+                end
+            end
+        else
+            local entry = panels[cursor - serviceCount]
+            local owner = context.refreshOwner
+            local waiting = not hidden and owner and entry ~= owner and entry.module.id == owner.module.id
+            local eventName = hidden and "background" or "refresh"
+            if
+                entry
+                and not entry.failed
+                and not waiting
+                and (hidden or now >= (entry.nextRefresh or 0))
+                and type(rawget(entry.module, eventName)) == "function"
+            then
+                local cost = hidden and 1
+                    or rawget(entry.instance, "refreshCost")
+                    or rawget(entry.module, "refreshCost")
+                    or 1
+                local granted = support.grant(cost, deferred and 0 or context.remainingSlots)
+                if stats and cost ~= 0 then
+                    requested = requested + 1
+                    if granted == 0 then
+                        denied = denied + 1
+                    end
+                end
+                if granted == 0 and cost ~= 0 then
+                    deferred = deferred or cursor
+                else
+                    local ok, message, _, unfinished, used =
+                        context.panelHost.dispatch(entry, eventName, false, granted)
+                    if cost ~= "variable" then
+                        used = granted
+                    end
+                    if ok and not support.consumption(used, granted) then
+                        ok, message = false, "refresh consumption must be whole slots within the grant"
+                        entry.failed, entry.error = true, message
+                    end
+                    local spent = ok and used or granted
+                    context.remainingSlots = context.remainingSlots - spent
+                    if window and spent > 0 then
+                        window[entry] = (window[entry] or 0) + spent
+                    end
+                    dispatched = dispatched + 1
+                    if not hidden then
+                        entry.nextRefresh = now + entry.interval
+                    end
+                    if not ok and message then
+                        addError(context, entry.placement.id .. ": " .. eventName .. ": " .. message)
+                        failures = true
+                    end
+                    if not hidden then
+                        if ok and unfinished and not rawget(entry.module, "independentRefresh") then
+                            context.refreshOwner = entry
+                        elseif context.refreshOwner == entry then
+                            context.refreshOwner = nil
+                        end
+                    end
+                end
             end
         end
 
@@ -986,7 +1054,20 @@ local function dispatchDue(context)
     end
 
     -- Resume from where we stopped so every panel is served in turn.
-    context.refreshCursor = cursor
+    context.workCursor = deferred or cursor
+    if stats then
+        stats.callbacks = stats.callbacks + 1
+        stats.used = stats.used + support.SLOTS - context.remainingSlots
+        stats.requested, stats.denied = stats.requested + requested, stats.denied + denied
+        if now - stats.started >= 100 then
+            stats.utilization = stats.used * 100 / (stats.callbacks * support.SLOTS)
+            stats.deferrals = stats.requested > 0 and stats.denied * 100 / stats.requested or 0
+            stats.revision = stats.revision + 1
+            stats.consumers, stats.window = window, nil
+            stats.capacity, stats.seconds = stats.callbacks * support.SLOTS, (now - stats.started) / 100
+            stats.started, stats.callbacks, stats.used, stats.requested, stats.denied = now, 0, 0, 0, 0
+        end
+    end
     if failures then
         showErrors(context)
     end
@@ -994,11 +1075,7 @@ local function dispatchDue(context)
     return dispatched
 end
 
---- Advance the shared data services by at most one service per callback.
---- Services are charged to the same instruction budget as everything else, so
---- polling all five every cycle is not affordable. Each service declares its
---- own interval and caps how much it reads in one update, and the registry
---- serves whichever due service is next in rotation.
+--- Give one due service the remaining allowance during modal UI work.
 ---@param context AeroGridContext
 ---@return string? id Service updated, for tests and error reporting.
 local function updateServices(context)
@@ -1007,8 +1084,10 @@ local function updateServices(context)
         return nil
     end
 
-    registry.byId.telemetry.pollCap = context.flightPolled and 4 or nil
-    local id, serviceError = context.servicesModule.update(registry, getTime())
+    local id, serviceError, used = context.servicesModule.update(registry, getTime(), context.remainingSlots)
+    if used then
+        context.remainingSlots = context.remainingSlots - used
+    end
     if serviceError then
         addError(context, id .. ": " .. serviceError)
         showErrors(context)
@@ -1094,6 +1173,9 @@ pumpFlight = function(context, inputPending)
         end
     end
     local ok, message = pcall(owner.tick, owner, now, filename)
+    if context.remainingSlots then
+        context.remainingSlots = math.max(0, context.remainingSlots - 1)
+    end
     if not ok then
         owner:error("detection", message)
     end
@@ -1409,6 +1491,7 @@ end
 ---@param widgetEvent? number Fullscreen input supplied by EdgeTX.
 ---@param touchState? table
 local function refresh(context, widgetEvent, touchState)
+    context.remainingSlots = 8
     if pumpFlight(context, widgetEvent ~= nil and widgetEvent ~= 0) then
         return
     end
@@ -1588,7 +1671,6 @@ local function refresh(context, widgetEvent, touchState)
     end
 
     if context.editorUi then
-        updateServices(context)
         dispatchDue(context)
         return
     end
@@ -1633,9 +1715,6 @@ local function refresh(context, widgetEvent, touchState)
         return
     end
 
-    -- Services are refreshed before panels so every panel rendering this
-    -- cycle sees the same set of readings.
-    updateServices(context)
     dispatchDue(context)
 end
 
@@ -1644,6 +1723,7 @@ end
 --- a hole whenever the pilot looks at another screen.
 ---@param context AeroGridContext
 local function background(context)
+    context.remainingSlots = 8
     if pumpFlight(context) then
         return
     end
@@ -1674,8 +1754,7 @@ local function background(context)
     elseif context.reflowIndex then
         return
     end
-    updateServices(context)
-    dispatchAll(context, "background")
+    dispatchDue(context, true)
 end
 
 return {

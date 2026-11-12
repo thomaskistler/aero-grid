@@ -141,6 +141,8 @@ function module.new(dependencies)
             armed = byId.armed,
             navigation = byId.navigation,
             history = byId.history,
+            chartColumns = context.chartColumns,
+            chartColumnsRenderer = context.chartColumnsRenderer,
             flight = byId.flight,
         }
     end

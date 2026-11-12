@@ -38,6 +38,7 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
     env = env or {}
     local writer = env.verifiedFile or dependency(widgetPath, "verified_file")
     local config = env.flightConfig or dependency(widgetPath, "flight_config")
+    local flightDefaults = config.defaults()
     local armed = env.armedConfig or dependency(widgetPath, "armed_service")
     local operations = writer.operations(fileOps)
     local instance = {}
@@ -89,9 +90,8 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
             end
             document.flight.announcements = nil
             document.flight.history = nil
-            local defaults = config.defaults()
             for key in pairs(document.flight) do
-                if defaults[key] == nil then
+                if flightDefaults[key] == nil then
                     return nil, "Unknown flight setting: " .. tostring(key)
                 end
             end

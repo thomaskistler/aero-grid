@@ -152,7 +152,7 @@ def load_recipe(path):
     except yaml.YAMLError as error:
         raise ValueError(f"Invalid YAML recipe {path}: {error}") from error
     fields(recipe, ("version", "panel", "theme", "border", "panels", "config", "sample"),
-           ("hide_bottom_bar", "brighten_supporting_text"))
+           ("hide_bottom_bar", "brighten_supporting_text", "companions"))
     if "hide_bottom_bar" in recipe and type(recipe["hide_bottom_bar"]) is not bool:
         raise ValueError("hide_bottom_bar must be a boolean")
     if "brighten_supporting_text" in recipe and type(recipe["brighten_supporting_text"]) is not bool:
@@ -192,6 +192,28 @@ def load_recipe(path):
         if cells & occupied:
             raise ValueError(f"Panel {name} overlaps another panel")
         occupied |= cells
+    # Uncropped panels sharing the dashboard, such as work for a scheduler view.
+    companions = recipe.get("companions", [])
+    if not isinstance(companions, list) or len(companions) > 8:
+        raise ValueError("companions must be a list of at most 8 panels")
+    for companion in companions:
+        fields(companion, ("type", "col", "row", "colSpan", "rowSpan", "config"))
+        if companion["type"] not in PANELS:
+            raise ValueError(f"Unsupported companion type: {companion['type']}")
+        for key in ("col", "row"):
+            integer(companion[key], 0, 3, key)
+        integer(companion["colSpan"], 1, 4, "colSpan")
+        integer(companion["rowSpan"], 1, 2, "rowSpan")
+        cells = {(x, y) for x in range(companion["col"], companion["col"] + companion["colSpan"])
+                 for y in range(companion["row"], companion["row"] + companion["rowSpan"])}
+        if companion["col"] + companion["colSpan"] > 4 or companion["row"] + companion["rowSpan"] > 4:
+            raise ValueError("Companion exceeds the grid")
+        if cells & occupied:
+            raise ValueError("Companion overlaps another panel")
+        occupied |= cells
+        if not isinstance(companion["config"], dict):
+            raise ValueError("companion config must be a mapping")
+        config_value(companion["config"])
     config, sample = recipe["config"], recipe["sample"]
     if not isinstance(config, dict):
         raise ValueError("config must be a mapping")
@@ -336,14 +358,17 @@ def readiness(recipe):
     if recipe["panel"] == "chart":
         return """            local instance = entry.instance
             if not instance.session or instance.session.elapsed < 1500 or instance.session.recording
-                or instance.pending or instance.framePhase or instance.gridVersion ~= instance.version then return end
+                or instance.columnSetup or instance.columnsDecorating or not instance.columnRenderer
+                or instance.gridVersion ~= instance.version then return end
             if instance.session.flightLast ~= 2 or not instance.flightBands
                 or not instance.flightBands[1]
                 or instance.flightDrawnRevision ~= instance.session.flightRevision then return end
             local _, finish, _, confirmed = instance.history:flight(instance.session, 2)
             if not finish or not confirmed then return end
-            for _, item in ipairs(instance.series) do
-                if not item.feed.available or not item.runs[1] or not item.runs[1].line
+            for index, item in ipairs(instance.series) do
+                local owner = instance.columnConsumers[index]
+                if not item.feed.available or #owner.pending > 0 or #owner.map.dirtyList > 0
+                    or not item.connectors[1] or not item.connectors[1].connector
                     or item.drawnRevision ~= item.feed.plotRevision
                     or item.drawnVersion ~= instance.version then return end
             end
@@ -402,6 +427,11 @@ def readiness(recipe):
         return f"""            local feed = entry.instance.feed
             if not feed or not feed.available or feed.name ~= {json.dumps(sample['name'])} then return end
 """ + extra
+    if recipe["panel"] == "host-diagnostics" and recipe["config"].get("section") == "scheduler":
+        # Enough one-second columns to show the stacked consumers.
+        return """            local graph = entry.instance and entry.instance.graph
+            if not graph or graph.index < 16 then return end
+"""
     if recipe["panel"] in ("host-diagnostics", "service-probe"):
         return """            if not entry.instance then return end
 """
