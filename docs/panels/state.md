@@ -14,9 +14,8 @@ Switch positions describe transmitter controls, not confirmed aircraft state.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| **Entries** | one entry, `SW1` | One to three readings. The first is the headline; the others are supporting readings. Each row shows its label and a summary of its conditions. Tap **+** to copy the last entry, including its states. |
-| **Accent** | cyan | Color used for the normal state: **cyan**, **green**, **amber**, or **orange**. The main entry's winning **Background** can override it. |
-| **Remove panel** | | Deletes the panel from the screen. |
+| **Entries** | One entry, `SW1` | One to three readings. The first is the main reading; the others are supporting readings. Each row shows its label and a summary of its conditions. Tap **+** to copy the last entry, including its states. |
+| **Accent** | cyan | Normal panel accent; the main entry's **Background** can override it. |
 
 ### State entry
 
@@ -28,7 +27,9 @@ Tap a reading under **Entries** to open its settings.
 | --- | --- | --- |
 | **Label** | `SW1` | Panel heading for the main reading; caption for supporting readings. Required, nonempty single-line text. New entries copy the last entry's label. |
 | **States** | three SA positions | One to three ordered conditions. The initial entry maps `SA^` to `UP`, `SA-` to `MID`, and `SAv` to `DOWN`. Tap **+** to append a state with **When** set to `SA^` and **Text** set to `UP`, rather than copying the last state. |
-| **Remove entry** | | Deletes this reading. At least one entry must remain. |
+
+Use **Remove entry** in the entry's settings dialog to delete a reading.
+At least one entry must remain.
 
 ### State condition
 
@@ -41,7 +42,9 @@ Tap a condition under **States** to open its settings.
 | **When** | `SA^` for a new state | Physical switch position, such as `SF^`, `SA-`, or `SFv`, or logical switch, such as `L01`. The first true condition wins. |
 | **Text** | `UP` for a new state | Exact text displayed when this condition wins. Required, nonempty single-line text. |
 | **Background** | normal | Main entry's whole-panel presentation: **normal**, **active**, **warning**, or **critical**. Supporting entries do not control the panel presentation. |
-| **Remove state** | | Deletes this condition. At least one state must remain in the entry. |
+
+Use **Remove state** in the condition's settings dialog to delete it.
+At least one condition must remain in each entry.
 
 ## Behavior
 

@@ -16,7 +16,7 @@ labels. The information comes from EdgeTX, not telemetry.
 | **Label** | MODEL | Panel heading when no picture is drawn. With a picture, the model name becomes the heading. A custom label cannot be combined with **Show** set to **image** or **both**; the default MODEL is allowed. |
 | **Show** | auto | **name** requests the model name alone. **image** and **both** request a picture with the name in the heading. **auto** requests the name below four grid cells and a picture with the name at four or more. |
 | **Show model labels** | off | Shows the model's configured labels in a supporting row where space permits. |
-| **Accent** | cyan | Normal accent stripe: **cyan**, **green**, **amber**, or **orange**. |
+| **Accent** | cyan | Normal panel accent. |
 
 ## Behavior
 

@@ -1,8 +1,14 @@
 # AeroGrid Project Specification
 
+> Historical design baseline, not the current product reference. Status,
+> examples, and proposed features below reflect earlier development. Use the
+> [user guide](../docs/user-guide/add-dashboard.md),
+> [YAML reference](../docs/reference-guide/yaml.md), and
+> [architecture guide](../docs/developer-guide/architecture.md) for current behavior.
+
 ## Status
 
-- Draft specification
+- Archived draft specification
 - Date: 2026-09-07
 - Status last updated: 2026-10-04
 - EdgeTX source: `../edgetx`

@@ -2,11 +2,8 @@
 
 Choose a panel below for visual examples, its settings, and how it behaves.
 
-Display preferences are best-effort: panels silently hide optional information
-that does not fit, preserving the settings so it can return when space permits.
-Limited space does not produce a configuration warning. Invalid settings still
-produce errors, and warning, critical, stale and unavailable state indications
-remain active.
+Panels hide optional information that does not fit and restore it when enlarged.
+This does not change saved settings or disable alarms.
 
 | Panel | Purpose |
 | --- | --- |
@@ -43,7 +40,7 @@ The controls behave the same way in every panel:
 | Text | Opens the keyboard. Clearing an optional text restores its default, such as the source name. |
 | Source, Switch, Timer | Opens the standard EdgeTX picker. Sources that Lua cannot read are rejected with a message. |
 | Entry rows | Panels with lists, such as Metric, show one row per entry with a short summary. Tap a row to open that entry's settings. |
-| **+** | Adds an entry at the bottom, copied from the last entry. It is unavailable when the list is full. |
+| **+** | Adds an entry at the bottom. It is unavailable when the list is full. Individual panel pages describe how new entries are initialized. |
 | **Remove entry** | Inside an entry, deletes it. A panel keeps at least its minimum number of entries. |
 | **Remove panel** | Deletes the panel from the screen. |
 
@@ -54,4 +51,24 @@ To add a screen, see [Add a dashboard](../user-guide/add-dashboard.md).
 To arrange panels, see [Edit a dashboard on the radio](../user-guide/edit-dashboard.md).
 Arming, flight detection, session reset, and flight-status output are
 [Model settings](../user-guide/model-settings.md), not normal panel settings.
-Legacy panel arm controls may still appear on older layouts until model arming is saved.
+For legacy panel controls, see [Older layouts](../user-guide/model-settings.md#older-layouts).
+
+## Common display states
+
+| Condition | Presentation |
+| --- | --- |
+| Normal | Reading with the selected **Accent**, without an alarm badge. |
+| Warning | Warning colors and usually a `WARN` badge. |
+| Critical | Critical colors and usually a `CRIT` badge. |
+| Stale | Last reading retained with muted styling and a `STALE` badge. |
+| Unavailable | A missing-reading marker such as `--` and usually an `N/A` badge, not a measured zero. |
+
+**Accent** choices are **cyan**, **green**, **amber**, and **orange**. State colors
+override that choice. Panel pages describe specific messages and exceptions;
+diagnostic panels report problems in text without changing their colors.
+
+In settings tables, **Blank** means empty text, **Not set** means no source
+or optional value has been selected, and **No entries** means an empty list.
+Words such as **Off**, **Auto**, **Sensor**, and **Radio** are the controls'
+displayed fallback choices. A derived default such as “Source name” follows
+the selected source.

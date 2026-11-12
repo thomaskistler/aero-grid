@@ -1,5 +1,9 @@
 # Pre-generated panel screenshots
 
+> Historical capture-delivery plan. For current capture commands, panel
+> coverage, and publishing instructions, see
+> [Project tools](../docs/developer-guide/tools.md#panel-screenshots).
+
 Implementation plan for [issue #107](https://github.com/thomaskistler/aero-grid/issues/107).
 This is a scoped documentation delivery plan, not a change to the frozen runtime
 specification.

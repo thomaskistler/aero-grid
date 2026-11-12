@@ -16,13 +16,9 @@ make check
 beneath `tests/`, excluding support modules. Each Lua suite gets a fresh
 `lupa.lua53.LuaRuntime` and the repository root as its chunk argument.
 
-The runner captures console lines beginning with `[AeroGrid] ERROR ` so expected
-negative cases do not clutter successful runs. Other output, including progress
-and performance measurements, remains visible. If a suite fails, its captured
-logs and file path are printed to stderr before the original traceback, and the
-run stops with a non-zero exit status. Logs from earlier passing suites are
-discarded. This affects only `tests/run.py`; production logging is unchanged.
-Tests that replace `print` themselves still own the output they intercept.
+Expected `[AeroGrid] ERROR ` lines are hidden for passing suites. On failure,
+the runner prints that suite's captured errors, file path, and traceback, then
+stops. Other output remains visible.
 
 Every suite runs once with the string metatable removed to resemble EdgeTX.
 Runtime code should use
@@ -51,29 +47,11 @@ make check LUA_COMPILER=/absolute/path/to/edgetx-luac
 | Installing panels from the editor | `tests/integration/test_panel_installation.lua`. |
 | Shared rendering or reflow | Builder-matrix, panel-reflow, font-callback, and resource-stability integration suites. |
 
-The runtime suite under `tests/unit/runtime/` is split into
-contracts/settings/documentation, palette/state, service behavior, and
-typography/geometry suites. `tests/support/runtime_fixture.lua` preserves the
-minimal constants/LCD surface: these tests deliberately do not install LVGL or
-radio APIs. The full-widget integration suite remains intact so budgeting,
-cross-panel agreement, and deferred cleanup are still exercised together.
-
-`test_module_composition.lua` checks direct API references, per-instance state,
-and reading/unit reconciliation. `test_service_subscriptions.lua` checks stable
-subscription identity across domain services. `test_runtime_modules.lua` checks
-missing/incompatible coordination and visual dependencies, including error
-visibility after resizing.
-
-Reuse `tests/support/widget_fixture.lua` to load a host with mocked APIs.
-The installation suite iterates the production editor catalog (not a separate
-test registry). Each panel starts on an empty 4x4 grid, allowing the editor to
-choose a supported span, and passes through the native picker, configuration,
-live preview, Save/apply, and a fresh widget load of the persisted layout.
-Metric additionally appends its first blank entry, evaluates its summary, and
-selects a real source before saving. Display-property callbacks are evaluated
-alongside widget refreshes; retained failures and caught `[AeroGrid] ERROR` logs
-fail this positive-path suite without forbidding expected errors in other tests.
-This is desktop mock coverage, not a native LVGL or hardware installation test.
+Use `tests/support/runtime_fixture.lua` for pure runtime helpers without LVGL,
+and `tests/support/widget_fixture.lua` for a host with mocked firmware APIs.
+The installation integration suite exercises every editor-selectable panel
+from an empty grid through configuration, preview, save, and reload; it fails
+on retained or caught errors. This is mock coverage, not native UI evidence.
 
 Use `tests/support/edgetx.lua` for firmware behavior and LVGL object inspection
 instead of inventing another mock. That module separates **firmware claims**
@@ -90,10 +68,8 @@ callback budget. Read the printed `budget headroom` and `steady state` results
 when changing scheduling or rendering.
 
 Chart performance is evaluated on the real radio. Automated chart tests check
-functional behavior, including pixel columns, gaps, fixed axes and right-edge
-preservation; they do not establish hardware responsiveness. The chart timing
-benchmarks, native simulator performance gates and instruction profiler have
-been removed.
+functional behavior, including gaps, axes, and right-edge preservation;
+they do not establish hardware responsiveness.
 
 The resource suites check reload collectibility, object counts, sustained
 updates, and font callback retention. They cannot measure native LVGL/bitmap
@@ -219,22 +195,20 @@ or switch unavailable. Each event records `now`, availability, freshness,
 stale state, value, `updatedAt`, reported delay, and coordinate validity,
 never coordinates. Inputs describe GPS for capture attempts or the arm
 switch for switch-unavailable events; inapplicable fields appear as `nil`.
-Timestamps are 10 ms ticks; delay is seconds.
+Timestamps are 10 ms ticks; GPS `delay` uses **160 ms units**.
 Calculate poll age as `now - updatedAt` and combined age as
-`delay * 100 + now - updatedAt`. Capture policy is not relaxed for diagnosis. **Maximum log
+`delay * 16 + now - updatedAt`. First-arm capture requires an arm observation
+no older than 100 ticks (1 second) and combined GPS age no greater than
+1,000 ticks (10 seconds). Capture policy is not relaxed for diagnosis. **Maximum log
 entries** defaults to 64 (1–256); the largest active log panel setting wins.
 In widget fullscreen, tap the log panel and use drag/wheel scrolling to read
 a stable snapshot; Close/RTN dismisses it. Reopen for newer events. Removing
 all log panels stops recording. The buffer is never saved to the SD card
 and is lost when the radio restarts or the widget script unloads.
 
-The unit and widget-integration `test_diagnostics_log.lua` suites,
-`test_host_diagnostics.lua`, and the Navigation service suite cover
-retention, multi-host activation, hidden-screen capture
-logging, viewer interaction, wrapping, and the strict 15,000-instruction
-callback ceiling. These are mocked checks, not evidence of radio timing or
-native LVGL behavior; reproduce the original symptom on hardware with the
-log enabled to obtain that evidence.
+Diagnostic-log, Host diagnostics, and Navigation suites cover retention,
+cross-dashboard capture, viewer interaction, and callback budgets. Reproduce
+timing or native UI problems on hardware with logging enabled.
 
 The native capture tools already redirect simulator output to
 `build/doc-capture/<panel>/simulator.log` or

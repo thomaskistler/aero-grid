@@ -19,7 +19,6 @@ shows two decimals, not a promise of sensor accuracy or resolution.
 | **Voltage source** | Cels | EdgeTX source supplying individual cells or total pack voltage. The panel detects which kind of reading it receives. |
 | **Cell count (0 = auto)** | 0 | Series count for a numeric pack source: 0 estimates it; 1 to 16 sets it explicitly. Steps of 1. Cells monitors supply their own count and ignore this setting. |
 | **Primary reading** | cell | **cell** shows the lowest monitored cell, or the calculated average for a numeric pack source. **pack** shows total pack voltage. |
-| **Voltage levels** | | Per-cell voltage settings. |
 | **Full (V/cell)** | 4.2 | Full end of the battery or bar scale, and the voltage used to estimate series count. 0 to 10, in steps of 0.01. Shown only when **Visualization** is **battery** or **bar**. |
 | **Warning (V/cell)** | 3.6 | Warning at or below this per-cell voltage. 0 to 10, in steps of 0.01. |
 | **Critical (V/cell)** | 3.4 | Critical at or below this per-cell voltage, taking priority over warning. 0 to 10, in steps of 0.01. |
@@ -28,7 +27,7 @@ shows two decimals, not a promise of sensor accuracy or resolution.
 | **Show alt reading** | on | Requests pack voltage when **Primary reading** is **cell**, or average cell voltage when it is **pack**. Shown only when **Visualization** is **bar** or **details**. |
 | **Show cell count** | on | Requests the measured, configured, or estimated series count. Shown only when **Visualization** is **bar** or **details**. |
 | **Show cell delta** | off | Requests highest minus lowest individual cell voltage. Only a cells monitor with no rejected cell readings can supply it. Shown only when **Visualization** is **bar** or **details**. |
-| **Accent** | cyan | Color used for the normal state: **cyan**, **green**, **amber**, or **orange**. Alarm and stale states use the shared state colors instead. |
+| **Accent** | cyan | Normal panel accent. |
 
 ## Behavior
 
@@ -65,10 +64,8 @@ empty or full while the number still shows the actual voltage.
 ### Visualization and details
 
 **battery** never shows supporting readings. **bar** and **details** show
-enabled, available details only when they fit: cell count has priority over
-cell delta, which has priority over the alternate reading. Both a footer
-and a side stack are tried before details are dropped. If delta cannot fit,
-a shorter alternate reading can still use the remaining room.
+available details when they fit, prioritizing cell count, then cell delta,
+then the alternate reading.
 
 **Show cell delta** displays the difference to two decimals with a delta
 symbol. **Show alt reading** displays pack voltage to one decimal, or

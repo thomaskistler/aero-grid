@@ -48,17 +48,11 @@ run history. `--all` runs recipes sequentially, so a failure leaves earlier
 successful panels updated. A failed run keeps diagnostics, raises an error,
 and does not publish documentation assets.
 
-Default panel captures use a 480 x 272 Modern Dark/App-mode dashboard with
-placements outside the menu overlay. Crops are unscaled; a 10-pixel border
-gives output dimensions of 137 x 154, 258 x 85, and 258 x 154 respectively.
-Recipes can override the border.
-Chart omits the unsupported 1x2 placement. Its adapter generates varying
-synthetic readings through the real telemetry/history services, records for
-two flights separated by a recording pause, and waits for confirmed completion
-and finished drawing before capturing. This shows neutral flight bands,
-arm/disarm triangles, and a resume gap with faint connectors.
-Its recipe requires `armSwitch: SFv`; the adapter supplies that condition and
-a motor channel through the real services, with isolated model flight settings.
+Default captures use a 480 x 272 Modern Dark/App-mode dashboard, unscaled
+crops, and a 10-pixel border. Recipes can override the border.
+Chart omits its unsupported 1x2 placement and records two synthetic flights
+with a pause to show flight bands, arm/disarm markers, and resume connectors.
+Its recipe requires `armSwitch: SFv` and isolated motor/detection settings.
 
 The runner waits for recipe-specific readiness, not just a fixed delay.
 Timer, trim, flight-mode, and model-image samples use isolated firmware model
@@ -127,11 +121,12 @@ recipes/adapters, then inspect the resulting frame and provenance.
 ### Editor and setup screenshots
 
 ```sh
-python3 tools/capture-editor.py
-python3 tools/capture-editor.py --scene select-layout
-python3 tools/capture-editor.py --scene navigation-location
-python3 tools/capture-editor.py --scene chart-settings
-python3 tools/capture-editor.py --scene chart-metric-entry
+make capture-setup
+build/capture-venv/bin/python tools/capture-editor.py
+build/capture-venv/bin/python tools/capture-editor.py --scene select-layout
+build/capture-venv/bin/python tools/capture-editor.py --scene navigation-location
+build/capture-venv/bin/python tools/capture-editor.py --scene chart-settings
+build/capture-venv/bin/python tools/capture-editor.py --scene chart-metric-entry
 ```
 
 The `navigation-location` scene enters fullscreen and taps the navigation
@@ -140,7 +135,7 @@ twice before capturing the frozen Google Maps QR code.
 
 This tool uses the same native capture runner; panel-drawer scenes also need
 PyYAML from `make capture-setup`. It covers setup/widget/layout choices,
-editor overview, Metric/State settings, entry dialogs, exit, and Save As. Every other panel has a
+editor overview, Metric/State settings, entry dialogs, exit, and **Save as...**. Every other panel has a
 `<panel>-settings` scene (for example `--scene flight-timer-settings`) that
 captures its full settings drawer from the panel's capture recipe config, for
 the panel reference pages. Use `--help` for supported scene names.
@@ -156,9 +151,9 @@ It also captures the telemetry-free **Palette** layout with real production
 primitives. These scenes are opt-in and do not open the editor:
 
 ```sh
-python3 tools/capture-editor.py --scene theme-modern-dark
-python3 tools/capture-editor.py --scene theme-modern-light
-python3 tools/capture-editor.py --scene theme-custom
+build/capture-venv/bin/python tools/capture-editor.py --scene theme-modern-dark
+build/capture-venv/bin/python tools/capture-editor.py --scene theme-modern-light
+build/capture-venv/bin/python tools/capture-editor.py --scene theme-custom
 ```
 
 The custom scene uses a fixed blue-gray palette with warm text and green
@@ -191,7 +186,7 @@ since it reflects only one page.
 ### Full dashboard screenshot
 
 ```sh
-python3 tools/capture-editor.py --scene dashboard
+build/capture-venv/bin/python tools/capture-editor.py --scene dashboard
 ```
 
 This opt-in scene captures the entire 480 x 272 display, not a composition of

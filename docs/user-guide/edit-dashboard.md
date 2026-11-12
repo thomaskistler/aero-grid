@@ -7,8 +7,8 @@
 
 [Add a dashboard](add-dashboard.md) first, then customize its panels on the radio.
 
-1. Long-press the dashboard to enter fullscreen. The native EdgeTX menu stays
-   unchanged in App mode; fullscreen shows a same-sized AeroGrid icon instead.
+1. Long-press the dashboard to enter widget fullscreen. An AeroGrid icon
+   appears in the top-left corner.
 2. Tap **AeroGrid → UI setup** to start editing, even on an Empty dashboard.
    You can also long-press a panel again.
    **Enter** also starts editing. A **gear**
@@ -44,19 +44,15 @@ Moving and resizing require touch.
 Use the native choices, toggles, number controls, and text keyboard in the
 settings dialog. Sources, switches, and timers use EdgeTX pickers.
 
-Panel titles use the full header width when no state badge is shown. When a
-badge appears, only its displayed width and a small gap are set aside. Titles
-never use a smaller font than their badges; a title that still does not fit is
-shortened, or hidden if too little room remains. The full title returns when
-space allows, without moving the title or the panel's reading.
+Long titles may be shortened or hidden. Widen the panel or use a shorter label.
 
 ![Metric panel settings with named summary rows and an add-entry button](../assets/editor/settings.png)
 
-Metrics and State entries appear as named rows with a summary of their settings.
+Metric and State entries appear as named rows with a summary of their settings.
 Tap a row to edit it, or tap the full-width **+** row to add an entry.
 In a metric entry, choose **Source** to change the reading.
 
-In a State entry, open a state to edit **When**, **Text**, and **Background**.
+In a State entry, open a state condition to edit **When**, **Text**, and **Background**.
 The first true condition wins. Each entry supports up to three conditions;
 **+** appends one at the bottom. Delete and recreate a condition to change
 its priority. Background choices are **normal**, **active**, **warning**, and
@@ -74,10 +70,8 @@ your draft.
 If settings cannot be previewed, a **Panel preview failed** message appears.
 Open its details to read the full panel-specific explanation, then correct
 the settings. The short status line clears when the preview succeeds.
-In Companion's simulator, caught errors also appear in **View > Debug Output**
-(**F6**), with repeated messages suppressed. See
-[Simulator logs and caught errors](../developer-guide/testing.md#simulator-logs-and-caught-errors)
-for console filters and persistent logging.
+For simulator debugging, see
+[Simulator logs and caught errors](../developer-guide/testing.md#simulator-logs-and-caught-errors).
 
 ## Save or discard changes
 
@@ -90,9 +84,12 @@ Otherwise choose an action:
 | **Save as...** | Asks for a name and saves a separate layout. |
 | **Discard changes** | Exits editing and restores the saved layout. |
 
+**Empty** offers only **Save as...** and **Discard changes**; the blank
+starting layout cannot be overwritten.
+
 ![Unsaved changes menu offering Save, Save as, and Discard changes](../assets/editor/exit.png)
 
-Save As suggests `<model name>-L<number>`, using the first unused number
+**Save as...** suggests `<model name>-L<number>`, using the first unused number
 starting at 1, such as `Sonic-L1` or `My-Glider-L1`.
 You can change the suggestion using letters, digits, `-`, and `_` (at most
 24 characters). An existing name requires overwrite confirmation.
@@ -101,17 +98,12 @@ your draft.
 
 ![Save layout as dialog with Sonic1 entered as the new name](../assets/editor/save-as.png)
 
-**After Save As, restart the radio and select the new name in the widget's
-Layout setting.** The widget cannot change its own settings, so it continues
+**After Save as..., restart the radio and select the new name in the widget's
+Layout setting.** The dashboard continues
 showing its previous layout until you select the new one.
 
-Layout picker positions are retained in `/AEROGRID/layout-registry.txt`.
-If upgrading an existing installation with `/AEROGRID/registry.txt`, rename
-that file to `layout-registry.txt` before starting the radio to preserve saved
-Layout selections. Do not edit or reorder its entries.
-
 Wait for saving to finish before powering off. A save error keeps your draft
-so you can retry; the previous saved file is retained as `.bak`.
+so you can retry.
 
 See [Understand layouts](add-dashboard.md#understand-layouts) for where saved
 layouts live and how multiple dashboards share them.

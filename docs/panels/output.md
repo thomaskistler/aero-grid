@@ -18,7 +18,7 @@ No aircraft telemetry is required.
 | **Channel count** | Auto | Number of consecutive channels to show, from 1 to 32. Step below 1 to return to **Auto**, which fills the available rows. |
 | **Show channel names** | on | Show up to three letters of the channel name when space permits. |
 | **Show trim** | on | Show the corresponding effective stick-trim arrow when it can be identified. |
-| **Accent** | cyan | Color used for the normal state and output fill: **cyan**, **green**, **amber**, or **orange**. |
+| **Accent** | cyan | Normal panel accent and output fill. |
 
 ## Behavior
 

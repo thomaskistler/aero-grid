@@ -20,7 +20,7 @@ use the radio's trim controls to change a trim. No aircraft telemetry is needed.
 | **Trim 4** | trim-rud | Trim source shown as rudder on the bottom bar. Enter its EdgeTX source name as text, such as `trim-rud`. |
 | **Scale** | auto | **auto** starts with standard travel and widens to extended travel when needed. **standard** or **extended** keeps the range fixed. |
 | **Readout** | percent | **percent** shows signed percentages; **raw** shows stored trim units; **none** hides numeric readouts. Detected three-position trims show named positions instead of numbers. |
-| **Accent** | cyan | Panel accent: **cyan**, **green**, **amber**, or **orange**. Available trim fills stay green. |
+| **Accent** | cyan | Normal panel accent; available trim fills stay green. |
 
 ## Behavior
 

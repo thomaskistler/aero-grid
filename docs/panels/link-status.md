@@ -16,14 +16,14 @@ aggregate health percentage or issue voice or haptic alerts.
 | --- | --- | --- |
 | **Label** | LINK | Panel heading. |
 | **RSSI source** | RSSI | Signal-strength source, such as `RSSI` or receiver-side `1RSS`. |
-| **Link quality source** | none | Measured link-quality source, such as receiver-side `RQly`. Quality alarms require a source reporting percent. |
-| **RF mode source** | none | RF mode source, such as `RFMD`. Enables rate decoding and margin calculation with **Protocol mapping** set to **elrs4**. |
-| **SNR source** | none | Optional signal-to-noise reading, such as `RSNR`. It does not trigger alarms. |
-| **Transmit power source** | none | Optional transmit-power reading, such as `TPWR`. It does not trigger alarms. |
+| **Link quality source** | Not set | Measured link-quality source, such as receiver-side `RQly`. Quality alarms require a source reporting percent. |
+| **RF mode source** | Not set | RF mode source, such as `RFMD`. Enables rate decoding and margin calculation with **Protocol mapping** set to **elrs4**. |
+| **SNR source** | Not set | Optional signal-to-noise reading, such as `RSNR`. It does not trigger alarms. |
+| **Transmit power source** | Not set | Optional transmit-power reading, such as `TPWR`. It does not trigger alarms. |
 | **Protocol mapping** | generic | **generic** preserves source units and the raw RF mode. **elrs4** decodes ExpressLRS 4.x RF modes and estimates RSSI margin above nominal receiver sensitivity. |
 | **Primary reading** | auto | **rssi** or **quality** selects the headline. **auto** prefers available quality, including a retained stale reading, and falls back to RSSI. |
 | **Minimum tracked** | none | **none** shows the other reading as supporting detail. **source** shows EdgeTX's own minimum. Layouts that used the removed **flight** option load as **source**. |
-| **Minimum source** | automatic | Explicit EdgeTX minimum source for **Minimum tracked** set to **source**. With none selected, uses the tracked source's minimum, such as `RSSI-`. |
+| **Minimum source** | Tracked source minimum | Explicit EdgeTX minimum source for **Minimum tracked** set to **source**. With none selected, uses the tracked source's minimum, such as `RSSI-`. |
 | **Warning quality %** | Off | Low-quality warning threshold, 0 to 100 percent. Steps of 1. Requires **Link quality source**. |
 | **Critical quality %** | Off | Low-quality critical threshold, 0 to 100 percent. Steps of 1. Requires **Link quality source**. |
 | **Warning RSSI margin dB** | Off | Low-margin warning threshold, 0 to 60 dB. Steps of 1. Requires **Protocol mapping** set to **elrs4**, **RSSI source**, and **RF mode source**. |
@@ -33,7 +33,7 @@ aggregate health percentage or issue voice or haptic alerts.
 | **Bar minimum** | 0 | Primary-reading value at which the bar is empty, in the source's units. Steps of 1. |
 | **Bar maximum** | 100 | Primary-reading value at which the bar is full, in the source's units. Steps of 1. |
 | **Visualization** | bar | **bar** shows the primary reading's level; **none** hides it. |
-| **Accent** | green | Color used for the normal state: **cyan**, **green**, **amber**, or **orange**. Alarm and stale states use the shared state colors instead. |
+| **Accent** | green | Normal panel accent. |
 
 The six alarm thresholds start at **Off**; step below the lowest value to
 turn one off again.

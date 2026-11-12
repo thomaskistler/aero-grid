@@ -1,11 +1,9 @@
 # AeroGrid Design Guide
 
-This document is for someone building a panel or a layout, and it answers two
-questions: what does the dashboard look like, and why does it look like that. It is
-deliberately separate from `aerogrid-spec.md`, which is an architecture document
-carrying firmware constraints, fixture discipline and milestone state. Where the two
-overlap the specification is authoritative on behaviour and this document is
-authoritative on appearance.
+> Historical design decisions, not an authoritative description of today's
+> appearance or behavior. Use the [panel reference](../docs/reference-guide/index.md)
+> and [architecture guide](../docs/developer-guide/architecture.md) for current
+> guidance. Examples and rejection notes below describe their original context.
 
 It records rejections with the same weight as decisions. Every rejection here cost
 real time to establish, and a guide that lists only the winners invites someone to

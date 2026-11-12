@@ -17,14 +17,14 @@ heading, transmitter orientation, or a return-home instruction.
 | **Label** | NAV | Panel heading. |
 | **GPS source** | GPS | EdgeTX GPS source supplying the model's coordinates. It must return a coordinate table. |
 | **Home position** | edgetx | **edgetx** uses EdgeTX home; **first-arm** captures home using the effective armed condition. |
-| **Satellite count source** | none | Optional source reporting a plain nonnegative integer count of locked satellites, not a packed GPS-status value. |
+| **Satellite count source** | Not set | Optional source reporting a plain nonnegative integer count of locked satellites, not a packed GPS-status value. |
 | **Warn below satellites** | 8 | Warns when the satellite count is strictly below this value. Nonnegative integers, steps of 1. Requires **Satellite count source**. |
 | **Critical below satellites** | 4 | Critical alarm when the satellite count is strictly below this value. Nonnegative integers, steps of 1; must not exceed **Warn below satellites**. Requires **Satellite count source**. |
 | **Show tape** | off | Replaces bearing text with a scrolling direction tape where space permits. |
 | **Bearing format** | degrees | **degrees** shows numeric azimuth; **quadrant** shows notation such as `N29°E`. Shown only when **Show tape** is off. |
 | **Show coordinates** | off | Shows the model's latitude and longitude where space permits, independently of **Show tape**. |
 | **Show satellites** | on | Shows the satellite icon and locked-satellite count in the header where space permits. Requires **Satellite count source**; turning it off does not disable satellite alerts. |
-| **Accent** | cyan | Color used for the normal state: **cyan**, **green**, **amber**, or **orange**. Alarm and stale states use the shared state colors instead. |
+| **Accent** | cyan | Normal panel accent. |
 
 ## Behavior
 
@@ -49,10 +49,9 @@ control home capture, and distance never triggers an alarm.
 With **Home position** set to **edgetx**, home comes from EdgeTX.
 Selecting **first-arm** captures a separate AeroGrid home without
 changing EdgeTX home or the flight controller's return-home position.
-It uses **Arm switch** in **AeroGrid → Model settings**, falling back to an existing
-panel switch only before model arming has been saved. Saving **None** disables
-first-arm capture rather than restoring the fallback. Older layouts with a home arm
-switch retain first-arm behavior; those without one retain EdgeTX home.
+It uses **Arm switch** in **AeroGrid → Model settings**. Saving **None** disables
+first-arm capture. For legacy switches, see
+[Older layouts](../user-guide/model-settings.md#older-layouts).
 AeroGrid must observe disarmed, then armed; opening the widget already armed
 does not capture home.
 
@@ -70,27 +69,17 @@ Changing the model's Arm switch clears retained AeroGrid homes on every dashboar
 The [Session reset switch](../user-guide/model-settings.md#session-reset) also clears
 these homes; observe a new disarm/arm transition to capture again. EdgeTX home is unchanged.
 
-To investigate `HOME NOT SET`, first add a **Host diagnostics** panel and
-select its **log** section on any AeroGrid screen. The shared in-memory log
-records captured/missed or switch unavailable, together with the inputs used
-for the decision: current time, availability, freshness, stale state, value,
-update time, reported delay, and coordinate validity. These are GPS inputs
-for capture attempts, or switch inputs for switch-unavailable events.
-Times are 10 ms ticks; GPS delay is seconds. Poll age is
-`now - updatedAt`; combined age is `delay * 100 + now - updatedAt`.
-Missing values appear as `nil`. No coordinates are logged.
-The capture gates and first-transition-only timing are unchanged. The log
-cannot recover an attempt made before logging was enabled; reproduce it in a
-new widget session. See [Host diagnostics](host-diagnostics.md#shared-log) for
-retention settings and the fullscreen history viewer.
+If `HOME NOT SET` appears, check for a live GPS fix before disarming and
+rearming. Capture requires a recent position; later GPS recovery alone does
+not capture home. To investigate further, enable
+[Host diagnostics → log](host-diagnostics.md#shared-log) before repeating the
+attempt, then tap that panel in widget fullscreen to read the outcome.
 
 ### Bearing display
 
 **Show tape** places the tape below distance in square and tall panels, and
-beside it in wide panels. Resizing updates this arrangement. It spans 210
-degrees beneath a fixed pointer, with `N`, `E`, `S`, and `W` labels, major
-ticks every 30 degrees, and minor ticks every 10 degrees. Its tint follows
-the panel state. When bearing is unavailable, the tape shows the reason
+beside it in wide panels. Compass directions scroll beneath a fixed pointer.
+When bearing is unavailable, the tape shows the reason
 instead of a pointer and scale that could imply due north.
 
 With **Show tape** off, **Bearing format** selects numeric azimuth or
@@ -100,13 +89,13 @@ the last bearing with the panel's `STALE` indication.
 
 ### Location details
 
-In fullscreen, tap the panel to open a QR code linking to Google Maps at the
+In widget fullscreen, tap the panel to open a QR code linking to Google Maps at the
 model's GPS coordinates, not home. The code and coordinates are frozen when
 opened; close and reopen for a newer position. A stale fix is marked
 `LAST KNOWN POSITION`. Without a valid position, tapping does nothing.
 
-Tap anywhere or press **RTN/Back/Exit** to return. Location details are
-unavailable outside fullscreen and while editing. The radio generates the
+Tap anywhere or press **RTN** (Back/Exit on other radios) to return. Location details are
+unavailable outside widget fullscreen and while editing. The radio generates the
 QR code without a network connection; following it on a phone uses Google Maps.
 
 ## States

@@ -49,7 +49,8 @@ Lua naming follows these conventions:
 
 | Element | Convention |
 | --- | --- |
-| Module and test filenames | kebab-case |
+| Library modules and test filenames | snake_case; tests start with `test_` |
+| Panel module filenames | kebab-case |
 | Panel IDs and layout types | kebab-case; match the panel filename |
 | Lua locals, functions, fields, and settings keys | camelCase |
 | Constants | `UPPER_SNAKE_CASE`; keep implementation details local and expose a module field only when callers or tests use it |
@@ -100,7 +101,12 @@ make check
 make lint
 stylua --check src/WIDGETS tests
 make build BUILD_DIR=build/package-check
-diff -r src/WIDGETS/AeroGrid build/package-check/sdcard/WIDGETS/AeroGrid
+diff -r src/WIDGETS/AeroGrid build/package-check/sdcard/WIDGETS/AeroGrid \
+  --exclude='review-*.yaml' --exclude='services*.yaml' \
+  --exclude='sim*.yaml' --exclude='states.yaml'
+for layout in tests/fixtures/layouts/development/*.yaml; do
+  cmp "$layout" "build/package-check/sdcard/WIDGETS/AeroGrid/layouts/$(basename "$layout")"
+done
 ```
 
 Inspect formatting changes before committing. Run the

@@ -1,5 +1,10 @@
 # UI responsiveness plan
 
+> Historical investigation. Projection algorithms, task costs, and test names
+> below may have been replaced. See the current
+> [architecture](../docs/developer-guide/architecture.md) and
+> [performance guidance](../docs/developer-guide/testing.md#performance-and-resource-regressions).
+
 Goal: make the chart and channel-output panels show visibly fresher data without
 exceeding the EdgeTX callback instruction budget (tests enforce under 15,000 of 20,000).
 

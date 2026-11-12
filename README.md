@@ -2,29 +2,23 @@
 
 **[📖 Documentation](https://thomaskistler.github.io/aero-grid/)** · **[Releases](https://github.com/thomaskistler/aero-grid/releases)**
 
-AeroGrid is a customizable dashboard widget for EdgeTX color-screen radios, arranging flight, telemetry, battery, navigation, model, output, trim, and switch-state information into configurable panels. It supports multiple model-specific layouts and an on-radio editor, with a consistent visual language throughout so readings, alerts, and controls feel like part of one cohesive dashboard.
-## ![Full AeroGrid dashboard in Modern Dark](docs/assets/dashboard/dashboard.png)
+AeroGrid is a customizable dashboard for EdgeTX color-screen radios. Choose
+flight, telemetry, battery, navigation, and control panels, then arrange them
+with the on-radio editor. Save multiple layouts and choose a dark or light theme.
+
+![Full AeroGrid dashboard in Modern Dark](docs/assets/dashboard/dashboard.png)
 
 ## Why AeroGrid?
 
-EdgeTX is open source, exceptionally configurable, and a great foundation for
-RC radios. Its dashboards have not always felt as modern or cohesive: many
-widgets look dated, and combining widgets from different authors often produces
-inconsistent typography, colors, spacing, and alarm styles.
-
-LVGL makes it easier to build flexible interfaces around a shared design system.
-Kyle Stacy's [KSE Dashboards for Rotorflight helicopters](https://github.com/kylestacy2/KSE-Dashboards)
-show the potential of focused dashboards, while similarly flexible, modern
-options for fixed-wing pilots remain limited.
-
-AeroGrid aims to fill that gap with **configurable, modern-looking dashboards
-and panels**: choose your information, arrange it using the built-in editor, and get a consistent
-visual language across the whole dashboard.
+Keep the information that matters to your model together, with consistent
+readings, colors, and alerts across the dashboard.
 
 ## Download
 
-Download the latest installation ZIP from [GitHub Releases](https://github.com/thomaskistler/aero-grid/releases). Extract the ZIP file, and copy `WIDGETS/AeroGrid/` into the SD card's
-`/WIDGETS/` directory. 
+AeroGrid requires a color-screen radio running EdgeTX 2.11.0 or later.
+Follow [Install and upgrade](https://thomaskistler.github.io/aero-grid/user-guide/installation/)
+for USB installation or manual SD-card copying. Upgrading replaces the old
+widget folder; your saved layouts and model settings stay in `/AEROGRID/`.
 
 ## Video walkthroughs
 
@@ -38,4 +32,6 @@ Select a thumbnail to watch the walkthrough on YouTube.
 
 ## Documentation
 
-You can find the full [**documentation**](https://thomaskistler.github.io/aero-grid/) for the User Guide, panel Reference Guide, and Developer Guide [here](https://thomaskistler.github.io/aero-grid/).
+See the [User Guide](https://thomaskistler.github.io/aero-grid/user-guide/add-dashboard/),
+[panel reference](https://thomaskistler.github.io/aero-grid/reference-guide/), and
+[Developer Guide](https://thomaskistler.github.io/aero-grid/developer-guide/build/).
