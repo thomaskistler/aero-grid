@@ -2,10 +2,10 @@
   "version": 1,
   "id": "model-settings",
   "initial": "default-dashboard",
-  "ticks": 24370,
+  "ticks": 25340,
   "warmup_ticks": 500,
   "trim_start": 0,
-  "duration": 238.7,
+  "duration": 248.4,
   "actions": "model-settings.actions.txt",
   "narration": [
     {
@@ -82,85 +82,85 @@
     },
     {
       "start": 120.5,
-      "end": 131.5,
+      "end": 133.0,
       "text": "Let's set that up. First we need a logical switch. Leave AeroGrid for a moment and open Logical Switches in your model settings.",
       "rate": 0
     },
     {
-      "start": 131.5,
-      "end": 142.0,
+      "start": 133.0,
+      "end": 144.0,
       "text": "Add L01 and make it Sticky. Leave everything else empty. AeroGrid turns it on and off for you.",
       "rate": 0
     },
     {
-      "start": 142.0,
-      "end": 156.5,
+      "start": 144.0,
+      "end": 163.5,
       "text": "Now go to Special Functions. Add one that runs on L01 and plays a sound.",
       "rate": 0
     },
     {
-      "start": 156.5,
-      "end": 161.0,
+      "start": 163.5,
+      "end": 169.5,
       "text": "Pick whatever you like.",
       "rate": 0
     },
     {
-      "start": 161.0,
-      "end": 168.4,
+      "start": 169.5,
+      "end": 176.9,
       "text": "Set it to play once, so you don't hear it every time you turn on the radio.",
       "rate": 0
     },
     {
-      "start": 168.4,
-      "end": 171.4,
+      "start": 176.9,
+      "end": 179.9,
       "text": "Then turn it on with Enable.",
       "rate": 0
     },
     {
-      "start": 171.4,
-      "end": 186.3,
+      "start": 179.9,
+      "end": 194.8,
       "text": "Want a sound when the flight ends, too? Add a second one on not L01.",
       "rate": 0
     },
     {
-      "start": 186.3,
-      "end": 196.5,
+      "start": 194.8,
+      "end": 205.0,
       "text": "Back in AeroGrid's Model settings, set Flight status switch to L01.",
       "rate": 0
     },
     {
-      "start": 196.5,
-      "end": 202.3,
+      "start": 205.0,
+      "end": 210.8,
       "text": "Keep L01 just for this. Don't use it for arming or session reset.",
       "rate": 0
     },
     {
-      "start": 202.3,
-      "end": 208.5,
+      "start": 210.8,
+      "end": 217.0,
       "text": "Next is Session reset. It's handy when you want to start fresh between flights.",
       "rate": 0
     },
     {
-      "start": 208.5,
-      "end": 217.1,
+      "start": 217.0,
+      "end": 225.6,
       "text": "Pick a switch that isn't your arm switch.",
       "rate": 0
     },
     {
-      "start": 217.1,
-      "end": 224.1,
+      "start": 225.6,
+      "end": 232.6,
       "text": "When you flip it, AeroGrid clears your charts and the navigation home it captured at arming.",
       "rate": 0
     },
     {
-      "start": 224.1,
-      "end": 229.9,
+      "start": 232.6,
+      "end": 238.4,
       "text": "You might want to use the same switch to reset your timer, too.",
       "rate": 0
     },
     {
-      "start": 229.9,
-      "end": 238.7,
+      "start": 238.4,
+      "end": 248.4,
       "text": "And that's it. Your model is set up, and all of your AeroGrid dashboards are ready to go.",
       "rate": 0
     }
