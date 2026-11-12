@@ -1,6 +1,6 @@
 # AeroGrid
 
-**[📖 Documentation](https://thomaskistler.github.io/aero-grid/)** · **[Install over USB](https://thomaskistler.github.io/aero-grid/user-guide/installation/)** · **[Releases](https://github.com/thomaskistler/aero-grid/releases)**
+**[📖 Documentation](https://thomaskistler.github.io/aero-grid/)** · **[Releases](https://github.com/thomaskistler/aero-grid/releases)**
 
 AeroGrid is a customizable dashboard widget for EdgeTX color-screen radios, arranging flight, telemetry, battery, navigation, model, output, trim, and switch-state information into configurable panels. It supports multiple model-specific layouts and an on-radio editor, with a consistent visual language throughout so readings, alerts, and controls feel like part of one cohesive dashboard.
 ## ![Full AeroGrid dashboard in Modern Dark](docs/assets/dashboard/dashboard.png)
