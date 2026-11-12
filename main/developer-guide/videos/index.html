@@ -219,15 +219,17 @@ build/video-venv/bin/python tools/video.py --help
 build/video-venv/bin/python tools/video.py validate
 build/video-venv/bin/python tools/video.py capture
 </code></pre>
-<p>The default recipe is <code>add-move-resize-panel.json</code>. Select the other tutorial
-with <code>--recipe tools/video-recipes/create-empty-dashboard.json</code> on <strong>each</strong>
+<p>The default recipe is <code>add-move-resize-panel.json</code>. Select another tutorial,
+such as <code>--recipe tools/video-recipes/model-settings.json</code>, on <strong>each</strong>
 command. <code>--output build/video/my-run</code> selects a different working directory.
 <code>compile</code> only builds the recorder; <code>prepare</code> only creates an SD card.
 <code>capture</code> does both, then records. Preparation refuses an existing SD card:
 use a new output directory for another capture. It never replaces your
 development SD image.</p>
 <p>Capture uses <code>capture-editor.py</code>'s SD preparation and the current checkout's
-widget source, including uncommitted changes. All editor interactions go
+widget source, including uncommitted changes. The demo model is named
+<strong>Crack Yak</strong>, and the radio backlight stays on: after a backlight timeout,
+the firmware treats the next touch as a wake-up and drops it. All editor interactions go
 through genuine simulator touch/key input. No panel code is rewritten.
 The editing recipe explicitly injects demonstration telemetry <strong>only in its
 isolated widget copy</strong>: registered <code>GSpd</code>/maximum sensor, values 48/72, RSSI
@@ -344,7 +346,8 @@ Review the whole video for correct navigation, drag, save behavior, voice
 alignment, source units, and photo placement before publishing.</p>
 <h2 id="recipe-format-and-reproducibility">Recipe format and reproducibility</h2>
 <p>Version 1 is validated before execution; unknown fields are rejected.
-Recipes require <code>id</code>, <code>initial</code> (<code>fresh-model</code> or <code>empty-dashboard</code>), <code>ticks</code>,
+Recipes require <code>id</code>, <code>initial</code> (<code>fresh-model</code>, <code>empty-dashboard</code>, or
+<code>default-dashboard</code>), <code>ticks</code>,
 <code>warmup_ticks</code>, <code>trim_start</code>, <code>duration</code>, recipe-relative <code>actions</code>,
 <code>narration</code>, <code>radio</code>, and <code>provenance</code>. Optional <code>sample_telemetry: true</code>
 is supported only for the editing fixture. Tick totals/warmup are multiples
@@ -373,6 +376,12 @@ of its first long-press; check intro timing. The last second is a held frame.
 Radio restart and selecting the new layout after Save as are <strong>narrated
 instructions</strong>, not automated or demonstrated steps. Panel unit appearance
 comes from production source, never simulator-only rendering patches.</p>
+<p><strong>Model settings:</strong> a native replay starting from the Default dashboard. It
+sets the arm switch, shows the flight detection defaults, creates a Sticky
+<strong>L01</strong> logical switch with a Play Sound special function, selects L01 as the
+Flight status switch, and sets a Session reset switch. Motor channel stays
+at its CH3 default; its picker is not opened. The flight-end sound on <code>!L01</code>
+is narrated, not demonstrated.</p>
 <p>Fixed-coordinate/realtime scripts can change behavior with firmware,
 machine load, or widget changes. There is no UI-state assertion or automatic
 recovery. Keep the approved published videos separately; recipes are
