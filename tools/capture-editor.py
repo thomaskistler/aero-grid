@@ -710,20 +710,19 @@ def capture(executable, library, directory, scene, shift=0):
             # activating UI setup when the gesture ends.
             script += "1100 288 120 1\n1110 300 122 1\n1120 300 122 0\n"
         if scene in ("model-settings-reset", "model-settings-bottom", "model-settings-switch", "model-settings-switch-select"):
-            ticks = (1350, 1550) if scene == "model-settings-reset" else (1350, 1550, 1750, 1950, 2150, 2350)
-            if scene == "model-settings-bottom":
-                ticks = (1350, 1550, 1750)
+            ticks = (1350, 1550, 1750) if scene == "model-settings-reset" else (1350, 1550)
             for tick in ticks:
                 script += (f"{tick} 390 220 1\n{tick + 20} 390 170 1\n"
                            f"{tick + 40} 390 110 1\n{tick + 60} 390 65 1\n"
                            f"{tick + 80} 390 65 0\n")
+            if scene != "model-settings-reset":
+                # Keeps Smart detection and the whole Flight status switch row in view.
+                script += "1750 390 220 1\n1770 390 190 1\n1790 390 160 1\n1810 390 130 1\n1830 390 130 0\n"
             if scene == "model-settings-reset":
-                script += "1750 390 220 1\n1770 390 200 1\n1790 390 180 1\n1810 390 160 1\n1830 390 160 0\n"
-            if scene == "model-settings-bottom":
-                # A short drag past the Require receiver row keeps the Flight status section in view.
+                # A short drag past the Flight status switch keeps the Session reset section in view.
                 script += "1950 390 220 1\n1970 390 200 1\n1990 390 180 1\n2010 390 160 1\n2030 390 160 0\n"
             if scene.startswith("model-settings-switch"):
-                script += "2600 320 62 1\n2620 320 62 0\n"
+                script += "2600 330 206 1\n2620 330 206 0\n"
             if scene == "model-settings-switch-select":
                 script += "2770 220 170 1\n2790 220 170 0\n"
         if scene in ("model-settings-autosave", "model-settings-exit", "model-settings-motor"):

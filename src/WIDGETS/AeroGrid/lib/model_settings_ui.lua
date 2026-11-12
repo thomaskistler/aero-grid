@@ -30,18 +30,17 @@ local fields = {
     },
     { key = "smartDetection", label = "Smart detection", kind = "toggle" },
     {
+        key = "flightSwitch",
+        label = "Flight status switch",
+        kind = "choice",
+        description = "On during a detected flight. Use for your own special functions. Choose a dedicated Sticky logical switch, or None.",
+    },
+    {
         key = "sessionReset",
         label = "Session reset switch",
         kind = "switch",
         section = "Session reset",
         description = "Clears session data across all dashboards. Keeps flight totals and radio data.",
-    },
-    {
-        key = "flightSwitch",
-        label = "Flight status switch",
-        kind = "choice",
-        section = "Flight status output",
-        description = "On during a detected flight. Use for your own special functions. Choose a dedicated Sticky logical switch, or None.",
     },
 }
 
@@ -161,11 +160,13 @@ function ui.open(context, document, handlers)
         end,
     })
     lvgl.hide(state.status)
+    local _, lineHeight = lcd.sizeText("Ag", SMLSIZE)
+    state.smartStatusHeight = (lineHeight + 2) * 3
     state.smartStatus = lvgl.label(state.dialog, {
         x = 4,
         y = 4,
         w = state.width,
-        h = state.height * 3,
+        h = state.smartStatusHeight,
         text = function()
             if not state.values.smartDetection then
                 return "Smart off: standard motor detection."
@@ -223,6 +224,8 @@ local function buildField(context, state, field)
             end,
         })
         state.nextY = state.nextY + state.height
+        description(state, field.description)
+    elseif field.description then
         description(state, field.description)
     end
     local row = lvgl.setting(state.dialog, {
@@ -355,11 +358,14 @@ function ui.advance(context)
         local field = fields[state.build]
         if field then
             buildField(context, state, field)
+            if field.key == "smartDetection" then
+                state.smartStatus:set({ y = state.nextY })
+                lvgl.show(state.smartStatus)
+                state.nextY = state.nextY + state.smartStatusHeight + 4
+            end
             state.build = state.build + 1
         else
-            state.smartStatus:set({ y = state.nextY })
-            lvgl.show(state.smartStatus)
-            state.nextY = state.nextY + state.height * 3 + 8
+            state.nextY = state.nextY + 12
             state.status:set({ y = state.nextY })
             lvgl.show(state.status)
             state.build = nil
