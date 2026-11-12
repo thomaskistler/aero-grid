@@ -1030,8 +1030,10 @@ for index = 0, 60 do
     syntheticSample()
 end
 finishDrawing(clipped)
-equal(clipped.start, 0, "late input must not scroll the fixed window")
-equal(#chartView.rectangles(clipped, 1), 0, "input beyond the right edge must not replace the prefix")
+local newest = clipped.session.elapsed
+assert(clipped.start > 0 and clipped.start <= newest, "a late fixed window must start where sliding would have put it")
+assert(newest < clipped.start + clipped.window, "a late fixed window must show its newest input")
+equal(#chartView.rectangles(clipped, 1), 0, "a late chart must not replay retained history")
 
 local empty = fixture.createLoaded(nil, { Layout = "Empty", Theme = "modern-dark" })
 local built, message = empty.dashboardLoader.buildPanel(empty, {

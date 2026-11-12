@@ -52,12 +52,21 @@ assert(column[1].properties.y == boundary(50) and column[1].properties.h == bott
 assert(column[2].properties.y == boundary(60) and column[3].properties.y == boundary(65))
 assert(column[6].properties.y == boundary(70) and column[6].properties.h == boundary(65) - boundary(70))
 assert(column[1].properties.color == graph.colors[1] and column[6].properties.color == graph.colors[6])
-assert(graph.legend >= 3 and panel.rows[2].properties.text == "16.0 c1 chart")
-assert(panel.rows[3].properties.text == "3.2 telemetry service")
+assert(
+    graph.legend >= 3 and panel.rows[2].properties.text == "80.0 c1 chart",
+    "the legend shows measured slots per second"
+)
+assert(panel.rows[3].properties.text == "16.0 telemetry service")
 for _ = 1, 10 do
     sample(70, 0, { [chart] = 8, [telemetry] = 104 })
 end
 assert(graph.owners[1] == chart and graph.owners[2] == telemetry, "ranking changes must not recolor consumers")
+assert(panel.rows[2].properties.text == "8.0 c1 chart" and panel.rows[3].properties.text == "104.0 telemetry service")
+stats.revision = stats.revision + 1
+stats.utilization, stats.deferrals = 70, 0
+stats.consumers, stats.capacity, stats.seconds = { [chart] = 16, [telemetry] = 30 }, 320, 2
+diagnostics.refresh(panel)
+assert(panel.rows[2].properties.text == "8.0 c1 chart", "rates divide by the measured interval")
 local crowd = {}
 for index = 1, 6 do
     crowd[{ id = "s" .. index }] = 20

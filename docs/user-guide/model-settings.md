@@ -5,6 +5,7 @@ appears in the top-left corner. Tap it, then choose **Model settings**.
 
 Settings apply to every AeroGrid dashboard for the selected model, not to an individual panel
 or layout. Each confirmed change saves automatically; Back closes the page.
+Chart recording time stops while this page is open and resumes with a pause gap.
 
 ![AeroGrid menu with Model settings and UI setup](../assets/editor/aero-menu.png)
 

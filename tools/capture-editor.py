@@ -16,8 +16,7 @@ SCENES = ("overview", "settings", "state-settings", "state-entry", "state-condit
 # Configuration drawers captured as full-height images rather than one screen.
 # Settings drawers of the remaining panels, one per panel page.
 PANEL_DRAWER_CONFIG = {
-    "chart": {"label": "CHART", "timeRange": "rolling",
-              "metrics": [{"source": "gvar1", "label": "Reading"}]},
+    "chart": {"label": "CHART", "metrics": [{"source": "gvar1", "label": "Reading"}]},
     "host-diagnostics": {"label": "Host", "section": "identity"},
     "service-probe": {"service": "telemetry", "source": "RxBt", "label": "Probe"},
 }
@@ -720,6 +719,9 @@ def capture(executable, library, directory, scene, shift=0):
                            f"{tick + 80} 390 65 0\n")
             if scene == "model-settings-reset":
                 script += "1750 390 220 1\n1770 390 200 1\n1790 390 180 1\n1810 390 160 1\n1830 390 160 0\n"
+            if scene == "model-settings-bottom":
+                # A short drag past the Require receiver row keeps the Flight status section in view.
+                script += "1950 390 220 1\n1970 390 200 1\n1990 390 180 1\n2010 390 160 1\n2030 390 160 0\n"
             if scene.startswith("model-settings-switch"):
                 script += "2600 320 62 1\n2620 320 62 0\n"
             if scene == "model-settings-switch-select":

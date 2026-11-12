@@ -7,7 +7,6 @@ history.__index = history
 
 local TAU = { off = 0, light = 50, medium = 100, strong = 200 }
 local NUMBER_FORMAT, INTEGER_FORMAT, CHUNK = "<I4n", "<I4j", 64
-local SIZES = { 256, 64, 16, 4 }
 local BROKEN, INTEGER = 0x80000000, 0x40000000
 local BYTES = math.max(string.packsize(NUMBER_FORMAT), string.packsize(INTEGER_FORMAT))
 NUMBER_FORMAT = NUMBER_FORMAT .. string.rep("x", BYTES - string.packsize(NUMBER_FORMAT))
@@ -64,31 +63,6 @@ local function write(entry, at, value, broken, resumed)
         local bucket, bit = slot // 32 + 1, 1 << (slot % 32)
         local flags = entry.resumeBits[bucket] or 0
         entry.resumeBits[bucket] = resumed and flags | bit or flags & ~bit
-    end
-    local lows, highs, summaries, blocks = entry.lows, entry.highs, entry.bounds, entry.blocks
-    for level = 1, #SIZES do
-        local size = SIZES[level]
-        -- CAPACITY is a multiple of every block size, including after ring wrap.
-        local relative = slot % size
-        if relative == 0 then
-            lows[level], highs[level] = value, value
-            summaries[level] = 0
-        end
-        local bounds = summaries[level]
-        if value < lows[level] then
-            lows[level], bounds = value, bounds & 0x3ff00 | relative
-        end
-        if value > highs[level] then
-            highs[level], bounds = value, bounds & 0x300ff | relative << 8
-        end
-        if broken and index > 1 then
-            bounds = bounds | 0x10000
-            if not resumed then
-                bounds = bounds | 0x20000
-            end
-        end
-        summaries[level] = bounds
-        blocks[level][slot // size + 1] = bounds
     end
 end
 
@@ -205,8 +179,7 @@ function history:resetSession(now, index)
             return
         end
         local state = entry.state
-        entry.chunks, entry.resumeBits, entry.blocks = {}, {}, { {}, {}, {}, {} }
-        entry.lows, entry.highs, entry.bounds = {}, {}, {}
+        entry.chunks, entry.resumeBits = {}, {}
         entry.last, entry.anchorAt, entry.lastAt = 0, 0, 0
         entry.anchor, entry.endpoint, entry.low, entry.high = nil, nil, nil, nil
         entry.segment, entry.filtered, entry.sampledAt, entry.gap = nil, nil, nil, true
@@ -224,7 +197,28 @@ function history:resetSession(now, index)
     return index + 1
 end
 
-local function advance(session, now, flight)
+--- Editing on any AeroGrid widget of this radio stops recording time, as a
+--- disarm would; recording resumes with an ordinary pause when editing ends.
+local function editing(service, now)
+    if service.editingAt == now then
+        return service.editingValue
+    end
+    local host = service.runtime.host
+    local value = host ~= nil and (host.editorUi ~= nil or host.modelSettingsUi ~= nil)
+    local members = not value and host and host.flightFactory and host.flightFactory.members
+    if members then
+        for member in pairs(members) do
+            if member.editorUi or member.modelSettingsUi then
+                value = true
+                break
+            end
+        end
+    end
+    service.editingAt, service.editingValue = now, value
+    return value
+end
+
+local function advance(session, now, flight, frozen)
     if session.lastTime == now and (not flight or not flight.epoch or session.epoch == flight.epoch) then
         return
     end
@@ -250,7 +244,7 @@ local function advance(session, now, flight)
         and now >= updatedAt
         and now - updatedAt <= 100
     local associated = flight and flight.armKey == session.name
-    local recording = associated and flight.active or available and value == true or false
+    local recording = not frozen and (associated and flight.active or available and value == true) or false
     if available then
         if session.armed ~= nil and session.armed ~= value and state.segment > 0 then
             state.armLast = state.armLast + 1
@@ -413,8 +407,9 @@ function history:advance(now)
     self.now = now
     local flight = self.runtime.byId.flight
     self.flightState = flight and flight:state()
+    local frozen = editing(self, now)
     for _, session in ipairs(self.sessions) do
-        advance(session, now, self.flightState)
+        advance(session, now, self.flightState, frozen)
     end
 end
 
@@ -489,12 +484,6 @@ function history:preview()
         local key = recordingKey(condition(options.armSwitch), source, window, mode, smoothing, precision)
         return owner.names[key] and owner.names[key].view or empty
     end
-    function facade:point(view, index, retainedFirst)
-        return owner:point(view, index, retainedFirst)
-    end
-    function facade:block(view, index, finish, before)
-        return owner:block(view, index, finish, before)
-    end
     function facade:flight(view, index)
         return owner:flight(view, index)
     end
@@ -535,10 +524,6 @@ function history:subscribe(source, options)
         view = self.support.snapshot(state),
         chunks = {},
         resumeBits = {},
-        blocks = { {}, {}, {}, {} },
-        lows = {},
-        highs = {},
-        bounds = {},
         last = 0,
         anchorAt = 0,
         lastAt = 0,
@@ -608,28 +593,6 @@ function history:unobserveSamples(view, observer)
     error("sample observer is not registered")
 end
 
---- Skip sealed blocks only when they fit in one screen column. These summaries
---- accelerate projection; they never replace or recompress the stored knots.
-function history:block(view, index, finish, before)
-    if (index - 1) % 4 ~= 0 then
-        return nil
-    end
-    local entry = self.views[view]
-    if not entry or index < entry.state.first then
-        return nil
-    end
-    for level, size in ipairs(SIZES) do
-        local last = index + size - 1
-        if (index - 1) % size == 0 and last <= entry.last and last <= finish then
-            local bounds = entry.blocks[level][math.floor(((index - 1) % history.CAPACITY) / size) + 1]
-            if read(entry, last) < before then
-                local low, high = index + (bounds & 0xff), index + (bounds >> 8 & 0xff)
-                return last, math.min(low, high), math.max(low, high), bounds & 0x10000 ~= 0, bounds & 0x20000 == 0
-            end
-        end
-    end
-end
-
 local function record(entry, value, at, epsilon, segment)
     local state = entry.state
     if state.full then
@@ -690,8 +653,9 @@ function history:sample(reading, now)
     if not entries then
         return
     end
+    local frozen = editing(self, now)
     for _, entry in ipairs(entries) do
-        advance(entry.session, now, self.flightState)
+        advance(entry.session, now, self.flightState, frozen)
         local session = entry.session.state
         if session.recording then
             local state = entry.state

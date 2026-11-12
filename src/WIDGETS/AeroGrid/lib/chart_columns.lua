@@ -78,7 +78,7 @@ function columns:reset()
     end
     self.seams, self.breaks = {}, {}
     self.dirtyColumns, self.dirtyList = {}, {}
-    self.breakFirst, self.breakLast = 1, 0
+    self.breakFirst, self.breakLast, self.breakColumn = 1, 0, nil
     self.at, self.bucket, self.value, self.missing, self.last = nil, nil, nil, nil, nil
     self.cursor, self.breakSource, self.overflowed = nil, nil, nil
     self.minimum, self.maximum = nil, nil
@@ -127,11 +127,16 @@ function columns:seamConnectors()
     return self.seams
 end
 
+--- Breaks are kept in time order, at most one per marker column, so storage
+--- stays within the plot width however dense the dropouts.
 function columns:breakAt(at)
-    if self:pixel(at) >= self.width then
+    local pixel = self:pixel(at)
+    -- Markers round to the nearest column.
+    local column = math.floor(pixel + 0.5)
+    if pixel < 0 or pixel >= self.width or column == self.breakColumn then
         return
     end
-    self.breakLast = self.breakLast + 1
+    self.breakLast, self.breakColumn = self.breakLast + 1, column
     self.breaks[self.breakLast] = at
 end
 
@@ -256,15 +261,16 @@ function columns:absorb(source, factor, through, allowance)
     end
     self.cursor = cursor
     local index = self.breakSource or source.breakFirst
-    while index <= source.breakLast do
+    while index <= source.breakLast and used + 40 <= allowance do
         self:breakAt(source.breaks[index])
         index, used = index + 1, used + 40
     end
     self.breakSource = index
-    if cursor > through then
+    local complete = cursor > through and index > source.breakLast
+    if complete then
         self.at = source.at
     end
-    return cursor > through, used
+    return complete, used
 end
 
 function columns:summary(bucket)
@@ -308,13 +314,47 @@ function columns.attach(history, feed, width, options)
     return self
 end
 
+--- Pixels a fixed window slides: a whole-pixel minute keeps the slid columns
+--- an exact shift of the visible ones.
+function columns.slideShift(map)
+    return math.max(1, (6000 * map.pixels + map.window // 2) // map.window)
+end
+
+--- An empty sliding map placed where continuous sliding would have put it at
+--- `at`: the first whole number of one-minute slides that shows `at`. Pauses
+--- can crowd a short window; it never starts after `at`.
+local function placed(self, at)
+    local map = columns.new(self.width, self.window, self.recording, { breakWidth = self.breakWidth })
+    local shift = columns.slideShift(map)
+    local slides = math.max(0, ((math.tointeger(at) or at) * map.pixels // map.window - map.width) // shift + 1)
+    while true do
+        if slides > 0 then
+            local offset = slides * shift
+            map = columns.new(self.width, self.window, self.recording, {
+                breakWidth = self.breakWidth,
+                offset = offset,
+                start = offset * map.window // map.pixels,
+            })
+        end
+        -- Pauses since the window start take room too.
+        if map:bucketOf(at, map:gapCount(at)) < map.width or (slides + 1) * shift * map.window // map.pixels > at then
+            return map
+        end
+        slides = slides + 1
+    end
+end
+
 function consumer:restart(elapsed)
     if self.auto then
         self.step = columns.autoStep(elapsed)
         self.window, self.breakWidth = columns.autoMinutes(self.step) * 6000, columns.autoGap(self.step)
         self.fine = columns.fine(self.width, columns.autoLevel(self.step), self.recording)
     end
-    self.map = columns.new(self.width, self.window, self.recording, { breakWidth = self.breakWidth })
+    if self.slide and (elapsed or 0) > 0 then
+        self.map = placed(self, elapsed)
+    else
+        self.map = columns.new(self.width, self.window, self.recording, { breakWidth = self.breakWidth })
+    end
     self.map.historyRevision = self.feed.plotRevision
     self.hadValue, self.tail, self.pending = false, nil, {}
     self.resets = self.resets + 1
@@ -335,6 +375,7 @@ function consumer:sample(at, value, broken, resumed)
     end
 end
 
+--- Returns the number of queued samples taken.
 function consumer:append()
     if self.readonly then
         self.map.historyRevision = self.feed.plotRevision
@@ -350,9 +391,16 @@ function consumer:append()
         local sample = pending[count + 1]
         local at, value, broken, resumed = sample[1], sample[2], sample[3], sample[4]
         if self.slide and self.map:bucketOf(at, sample[6]) >= self.map.width then
-            -- A full sliding plot keeps later samples for the slid window.
-            self.map.overflowed = true
-            break
+            local moved = self.map.last == nil and placed(self, at)
+            if not moved or moved.offset == self.map.offset then
+                -- A full sliding plot keeps later samples for the slid window.
+                self.map.overflowed = true
+                break
+            end
+            -- Nothing is drawn yet, so the window moves to the sample at once.
+            moved.historyRevision = self.map.historyRevision
+            self.map = moved
+            self.resets = self.resets + 1
         end
         count = count + 1
         -- A full auto plot cannot show later samples; only the fine store needs them.
@@ -372,15 +420,13 @@ function consumer:append()
         self.hadValue = self.hadValue or value ~= nil
     end
     table.move(pending, count + 1, #pending + count, 1)
+    return count
 end
 
+--- A new recording starts at zero; the reset count tells a layer being
+--- prepared for the old one to start over.
 function consumer:reset()
-    if self.auto then
-        self:restart(0)
-    else
-        self.map:reset()
-        self.hadValue, self.tail, self.pending = false, nil, {}
-    end
+    self:restart(0)
 end
 
 function consumer:resize(width)

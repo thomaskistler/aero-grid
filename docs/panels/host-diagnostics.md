@@ -46,13 +46,15 @@ reports can still extend beyond that limit.
 
 ### Scheduler
 
+![Host diagnostics scheduler view at 2x2](../assets/panels/host-diagnostics/scheduler-2x2.png)
+
 Select **scheduler** to show slot use on a fixed 0–100% scale. Each one-second
 column stacks the slots used by the five busiest consumers in cyan, blue,
 green, amber, and red. The rest is gray. The top of the stack is total
-utilization. The legend lists each color's slots per second and consumer: a
-panel's ID and type, a service, or the flight detector. A consumer keeps its
-color while it remains among the five busiest. Enlarge the panel to see the
-full legend.
+utilization. The legend lists each color's slots used in the latest second and
+its consumer: a panel's ID and type, a service, or the flight detector. Busiest
+is judged over the last several seconds, so a consumer keeps its color while it
+remains among the five busiest. Enlarge the panel to see the full legend.
 
 The orange line is the percentage of due work requests deferred because slots
 were unavailable. A request still waiting on another callback counts again.

@@ -158,7 +158,8 @@ History and extrema key sessions by the effective condition. A configured
 model Armed unifies their arm inputs; absent model arming retains independent legacy
 switches. Each chart arm configuration has its own cumulative session.
 It pauses on disarm unless a matching shared flight is still active, including
-its disarm grace, and resumes the same recording;
+its disarm grace. It also pauses while the layout editor or Model settings is
+open on any AeroGrid widget. A pause resumes the same recording;
 geometry reflow keeps it, while rebuilding the service runtime clears it.
 Each source/options subscription stores at most 6,144 connected linear knots.
 A fixed-anchor slope corridor chooses synthesized shared endpoints within half
@@ -176,22 +177,20 @@ per-knot snapshot tables. Growing history freezes at capacity without relaxing
 accuracy; rolling expiration reuses ring slots while retaining an interpolation
 anchor. Raw readouts/extrema continue even when plot storage is full.
 
-The chart has one mipmap renderer with a single native column-object pool.
-Each touched pixel column is data, hold, missing, or pause and draws at most one
-rectangle: data spans its extrema and the previous column's last value, and a hold
-spans skipped columns at that value. Missing and pause columns draw nothing.
-Live growing consumers maintain eleven bounded extrema/gap rings with 4:3 time
-spans; rolling consumers maintain one ring at the configured duration. Selecting
-a coarser span avoids rebinning the existing view, but changed coordinates still
-require bounded native projection/application. Fine rings retire only after
-replacement publication. Raw knots and other consumers remain independent.
+Charts draw typed pixel columns appended from live samples; they never
+reconstruct traces from recorded history. Each touched pixel column is data,
+hold, missing, or pause and draws at most one rectangle: data spans its extrema
+and the previous column's last value, and a hold spans skipped columns at that
+value. Missing and pause columns draw nothing. A chart owns a visible layer and
+a hidden layer, each with its own native column pool. Rescaled views are
+prepared in the hidden layer and swapped in once complete: the next Auto window
+from a fine column store, a fixed window slid left by one minute, or wider Auto
+bounds repainted from the visible columns.
 
-Late attachment, resize, and read-only previews rebuild envelopes from connected
-history knots in bounded batches, preserving the recording compression tolerance
-rather than claiming exact observed extrema. Sealed blocks may skip knots inside
-one column. Reconstruction yields dispatcher ownership between callbacks.
-Resume-axis views use the same renderer, with fixed-width gaps and faint
-connectors. Missing telemetry remains a break, not a resume connector.
+Late attachment, resize, and read-only previews start an empty plot; a fixed
+window starts where continuous sliding would have placed it. Resume-axis views
+use pause gaps and faint solid connectors. Missing telemetry remains a break,
+not a resume connector.
 
 History consumes at most one flight journal record per service turn, keyed by
 the event's pinned `armKey`, never by the optional Sticky output or the current
@@ -200,19 +199,18 @@ to the cumulative recording axis; qualification/confirmation receipt times do
 not place boundaries. Grace samples remain after the mapped end. A 64-interval
 ring supplies scalar `history:flight(sessionView, index)` reads, independent of
 metric subscriptions. Shaded flight bands are staged in a bounded native-object
-pool behind the grid and traces. Reconstructed views pin their input horizon;
-the single native pool applies replacement columns progressively without a
-second legacy plot buffer.
+pool behind the grid and traces; while a flight is open, only its band's right
+edge moves.
 Arm/disarm triangles use a bounded directional transition journal.
 A separate resume journal drives fixed-width axis gaps and faint trace connectors;
 the same projection maps traces, flight bands, grid lines, and axis markers.
 Crowded gaps evict the oldest visible section rather than narrowing the gaps.
 During normal sampling, flight bands clip to the recorded telemetry horizon.
-Pool preparation/reset, reconstruction, axes, projection, grid, markers, flight
-bands, and connectors each consume work scaled to the chart's granted slots.
-Charts budget 1,700 instructions per nominal 2,000-instruction slot and reserve
-500 per callback for uncharged overhead. These costs are estimates; the native
-callback gate verifies the hard instruction bound.
+Appends, hidden-layer preparation, session reset, axes, grid, markers, flight
+bands, and connectors each consume work bounded by the chart's granted slots;
+preparation takes at most one extra slot per callback. Charts estimate 1,600
+instructions per nominal 2,000-instruction slot and reserve 900 per callback.
+These are estimates, not a measured callback bound.
 
 Journal loss sets the session's `flightLost` flag and closes an unmatched open
 band at its last observed recording time rather than extending it into later
@@ -271,14 +269,8 @@ conservatively fall back to standard detection.
 The Smart poller is due every 100ms and shares the same slot allowance as
 dashboard work. Telemetry polls at most eight sources per turn, experimentally
 charging one slot per two sources, including their synchronous observers.
-Charts use their granted slots for bounded projection/reconstruction batches.
-The experimental projection accounting shares one allowance across all series,
-reserving 500 estimated instructions per drawing turn, then charging 25 for
-empty/hide columns and 75 for populated columns, with 2,000 estimated instructions
-per slot. Initial layout/attachment requires three slots; changed readouts,
-layout and ranges use one slot and yield before projection. Finishing projection
-can also enter decoration; further decoration uses separate turns. These weights are not a measured
-callback bound and have not passed native safety validation.
+Charts use their granted slots for bounded append, drawing, and preparation
+batches with the estimates described under chart history.
 Charts use this allowance rather than selecting quotas based on which service ran. Both pollers retain
 round-robin progress. Selected metadata is compared directly rather than
 rebuilding identity strings on every poll. Expensive loading/editor work

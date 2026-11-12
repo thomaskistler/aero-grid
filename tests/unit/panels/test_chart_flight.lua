@@ -262,7 +262,6 @@ function history:point(_, index)
         return samples[index][1], samples[index][2], false
     end
 end
-function history:block() end
 function history:flight(_, index)
     if index == 1 then
         return 100, confirmedEnd
@@ -412,7 +411,6 @@ do
     function pausedHistory:point(_, index)
         return table.unpack(points[index])
     end
-    function pausedHistory:block() end
     function pausedHistory:armBoundary(_, index)
         if arms[index] then
             return table.unpack(arms[index])
@@ -546,11 +544,12 @@ do
     finishFrame(pausedPanel)
     equal(#activeSeams(pausedPanel), 1, "expired journal boundaries must be hidden")
     pauseSettings.timeRange, pauseSettings.duration = "rolling", 1
-    recording.elapsed = 7000
+    recording.elapsed = 4000
     chart.destroy(pausedPanel)
     pausedPanel = chart.create(host.page, { x = 0, y = 0, w = 472, h = 196 }, pauseSettings, services)
     finishFrame(pausedPanel)
-    equal(#activeSeams(pausedPanel), 1, "fixed windows retain earlier recording seams")
+    equal(pausedPanel.start, 0)
+    equal(#activeSeams(pausedPanel), 1, "a new fixed window shows earlier recording seams within it")
     recording.elapsed = 3500
     finishFrame(pausedPanel)
     chart.update(pausedPanel, { x = 0, y = 0, w = 238, h = 65 })

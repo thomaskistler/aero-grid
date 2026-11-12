@@ -1447,16 +1447,25 @@ local function plotStatus(context)
     return ""
 end
 
---- Retire the current native presentation in bounded batches.
-function chart.resetSession(context, slots)
+--- Retire the current native presentation within `allowance` estimated
+--- instructions per turn; returns the instructions used and whether done.
+local function resetPresentation(context, allowance)
     context.metadataReady = nil
-    if context.auto then
-        context.auto.wakeAt = nil
+    local auto = context.auto
+    if auto then
+        auto.wakeAt = nil
     end
     local reset = context.resetWork
     if not reset then
+        if auto then
+            -- A layer prepared for the old recording is swept and prepared again.
+            auto.job = nil
+            if auto.hidden then
+                auto.hidden.recycle = true
+            end
+        end
         if context.columnRenderer then
-            context.columnRenderer:reset()
+            context.columnRenderer.published = {}
         end
         context.columnsDecorating, context.frameThrough = nil, nil
         context.connectorWork, context.axis, context.axisWork = nil, nil, nil
@@ -1464,7 +1473,7 @@ function chart.resetSession(context, slots)
         context.flightPassRevision, context.flightDrawnRevision = nil, nil
         -- Hidden bands are shown again by the next pass.
         context.flightKeys = {}
-        reset = { groups = {}, group = 1, index = 1 }
+        reset = { groups = {}, group = 1, index = 1, columns = context.columnRenderer }
         context.resetWork = reset
         local function markers(pool)
             if pool then
@@ -1479,12 +1488,20 @@ function chart.resetSession(context, slots)
             reset.groups[#reset.groups + 1] = { kind = "connectors", keys = item.connectors }
         end
     end
-    local remaining, used = instructionAllowance(slots or 1), 0
+    local remaining, used = allowance, 0
+    if reset.columns then
+        local visited, complete = reset.columns:sweep(remaining // 20)
+        remaining, used = remaining - visited * 20, used + visited * 20
+        if not complete then
+            return used, false
+        end
+        reset.columns = nil
+    end
     while remaining >= 100 do
         local group = reset.groups[reset.group]
         if not group then
             context.resetWork = nil
-            return nil, nil, consumedSlots(used)
+            return used, true
         end
         local value = group.keys[reset.index]
         if value then
@@ -1518,7 +1535,16 @@ function chart.resetSession(context, slots)
             reset.group, reset.index = reset.group + 1, 1
         end
     end
-    return nil, true, consumedSlots(used)
+    return used, false
+end
+
+-- Reset turns are bounded on their own: the host passes a timestamp, not a grant.
+local RESET_ALLOWANCE = instructionAllowance(2)
+
+--- Retire the current native presentation in bounded batches.
+function chart.resetSession(context)
+    local used, complete = resetPresentation(context, RESET_ALLOWANCE)
+    return nil, not complete, consumedSlots(used)
 end
 
 local function publishColumns(context)
@@ -1600,7 +1626,7 @@ local function finishColumns(context, allowance)
             end
             local pass = item.job
             while pass.index <= map.breakLast and remaining >= 250 do
-                markBoundary(context, item, pass, map.breaks[(pass.index - 1) % map.width + 1])
+                markBoundary(context, item, pass, map.breaks[pass.index])
                 pass.index = pass.index + 1
                 remaining, used = remaining - 250, used + 250
             end
@@ -1708,6 +1734,10 @@ end
 local PAINT_COST = 120
 -- Estimated work per extra slot; per-call overhead brings the measured cost to about one slot.
 local BACKGROUND_ALLOWANCE = 1100
+-- Estimated cost of appending one queued sample, without and with painting.
+local APPEND_COST, HIDDEN_APPEND_COST = 150, 250
+-- Preparation still advances while a backlog is appended, so it always finishes.
+local MIN_PREPARATION = 300
 
 local function newLayer(context)
     local rect = context.rect
@@ -1769,17 +1799,20 @@ local function decorationStamp(auto, session)
     }
 end
 
---- Pixels a fixed window slides: a whole-pixel minute keeps the slid columns
---- an exact shift of the visible ones.
 local function slideShift(map)
-    return math.max(1, (6000 * map.pixels + map.window // 2) // map.window)
+    return map:slideShift()
 end
 
 --- A slid plot keeps only columns after the first minute, so preparation waits
---- for them; a one-minute window slides to an empty plot prepared halfway.
+--- for them; a one-minute window slides to an empty plot prepared halfway, as
+--- does an empty plot whose first sample is already beyond it.
 local function slideDue(auto)
     local map = auto.consumers[1].map
-    return auto.slide == true and (map.last or -1) >= math.min(slideShift(map), map.width // 2)
+    return auto.slide == true
+        and (
+            (map.last or -1) >= math.min(slideShift(map), map.width // 2)
+            or map.last == nil and map.overflowed == true
+        )
 end
 
 --- Columns a hidden layer merges: fine columns for the next auto window, or the
@@ -1863,6 +1896,38 @@ local function swapLayers(context, auto, job)
     context.metadataReady, context.columnsDecorating, context.frameThrough = nil, nil, nil
 end
 
+--- Halve each fine store into one at `level` across turns, keeping the progress
+--- in `work`; the stores switch once every one has caught up.
+---@return boolean complete
+---@return integer used
+local function coarsen(Columns, work, consumers, level, allowance)
+    local remaining, used = allowance, 0
+    work.fines = work.fines or {}
+    local complete = true
+    for index, owner in ipairs(consumers) do
+        local fine = owner.fine
+        work.fines[index] = work.fines[index] or Columns.fine(owner.width, level, owner.recording)
+        local done, stage = work.fines[index]:absorb(fine, 2, (fine.last or 0) - 1, remaining)
+        remaining, used = remaining - stage, used + stage
+        complete = complete and done
+        if not done then
+            break
+        end
+    end
+    -- The newest fine column can still grow, so it moves with the switch.
+    if not complete or remaining < 150 * #consumers then
+        return false, used
+    end
+    for index, owner in ipairs(consumers) do
+        -- Breaks still to copy come along too.
+        local _, stage = work.fines[index]:absorb(owner.fine, 2, owner.fine.last or -1, math.huge)
+        used = used + stage
+        owner.fine = work.fines[index]
+    end
+    work.fines = nil
+    return true, used
+end
+
 --- Prepare the next auto window within `allowance` estimated instructions:
 --- coarsen fine stores when needed, build the hidden layer from them, decorate
 --- it with the ordinary staged pipeline, and swap once the visible plot is full.
@@ -1935,28 +2000,8 @@ local function background(context, allowance)
         if consumers[1].fine.level >= level then
             job.phase = "layer"
         else
-            job.fines = job.fines or {}
-            local complete = true
-            for index, owner in ipairs(consumers) do
-                local fine = owner.fine
-                job.fines[index] = job.fines[index] or Columns.fine(owner.width, level, owner.recording)
-                local done, stage = job.fines[index]:absorb(fine, 2, (fine.last or 0) - 1, remaining)
-                remaining, used = remaining - stage, used + stage
-                complete = complete and done
-                if not done then
-                    break
-                end
-            end
-            -- The newest fine column can still grow, so it moves with the switch.
-            if complete and remaining >= 150 * #consumers then
-                for index, owner in ipairs(consumers) do
-                    local _, stage = job.fines[index]:absorb(owner.fine, 2, owner.fine.last or -1, remaining)
-                    used = used + stage
-                    owner.fine = job.fines[index]
-                end
-                job.phase, job.fines = "layer", nil
-            end
-            return used
+            local _, stage = coarsen(Columns, job, consumers, level, remaining)
+            return used + stage
         end
     end
     local hidden = auto.hidden
@@ -2183,8 +2228,7 @@ local function refreshChart(context, creating, slots)
         context.columnConsumers, context.columnsReadonly, context.columnSetupIndex = nil, nil, nil
         context.columnSetup = context.columnModule
         if context.columnRenderer then
-            context.columnRenderer:reset()
-            context.columnsDecorating = nil
+            resetPresentation(context, 0)
         end
     end
     if context.columnSetup then
@@ -2235,6 +2279,11 @@ end
 
 function chart.refresh(context, creating, slots)
     slots = slots or 8
+    if context.resetWork and not creating then
+        -- Old columns and overlays are hidden before anything new is drawn.
+        local used, complete = resetPresentation(context, instructionAllowance(slots))
+        return 1, not complete, math.min(slots, consumedSlots(used))
+    end
     local host = context.host
     if
         host
@@ -2244,8 +2293,8 @@ function chart.refresh(context, creating, slots)
         and context.columnRenderer
         and not context.columnSetup
     then
-        -- While editing, keep telemetry flowing into the columns but draw nothing,
-        -- so the editor stays responsive; drawing catches up afterwards.
+        -- Recording time stops while editing, so only samples queued before the
+        -- editor opened are taken; nothing is drawn until it closes.
         for _, owner in ipairs(context.columnConsumers or {}) do
             owner:append()
         end
@@ -2260,13 +2309,11 @@ function chart.refresh(context, creating, slots)
         -- refreshes: samples are appended and the rest of the ordinary slot, plus
         -- the extra slot when granted, finishes the rescaled layer. Columns left
         -- unpainted are drawn by the layer that replaces this one.
-        local appended = 0
-        for _, owner in ipairs(auto.consumers) do
-            appended = appended + #owner.pending * 150
-        end
-        context.columnRenderer:append(true)
+        -- Only samples actually taken count: a full sliding plot keeps the rest
+        -- queued for the layer this preparation finishes.
+        local appended = context.columnRenderer:append(true) * APPEND_COST
         local extra = slots >= 2 and BACKGROUND_ALLOWANCE or 0
-        background(context, math.max(0, BACKGROUND_ALLOWANCE - appended) + extra)
+        background(context, math.max(MIN_PREPARATION, BACKGROUND_ALLOWANCE - appended) + extra)
         return 1, true, extra > 0 and 2 or 1
     end
     if auto and auto.wakeAt and ready then
@@ -2308,18 +2355,14 @@ end
 --- draws only overlays; a rescale in progress continues with what is left.
 function chart.background(context)
     local renderer = context.columnRenderer
-    if not renderer or context.columnSetup or not context.columnConsumers then
+    if not renderer or context.columnSetup or not context.columnConsumers or context.resetWork then
         return
     end
     local auto = context.auto
-    local appended = 0
-    for _, owner in ipairs(context.columnConsumers) do
-        appended = appended + #(owner.pending or {}) * 250
-    end
     local rescaling = auto and (auto.rangeRequest or auto.job and auto.job.kind == "range")
-    renderer:append(rescaling or auto and (auto.window or auto.slide) and overflowed(auto.consumers))
+    local appended = renderer:append(rescaling or auto and (auto.window or auto.slide) and overflowed(auto.consumers))
     if auto then
-        background(context, math.max(0, BACKGROUND_ALLOWANCE - appended))
+        background(context, math.max(MIN_PREPARATION, BACKGROUND_ALLOWANCE - appended * HIDDEN_APPEND_COST))
     end
 end
 
@@ -2475,6 +2518,10 @@ function chart.update(context, rect)
         if context.columnRenderer then
             context.columnRenderer:destroy()
             context.columnRenderer = nil
+        end
+        if context.resetWork then
+            -- Destroyed columns need no sweep.
+            context.resetWork.columns = nil
         end
         context.columnsDecorating, context.frameThrough = nil, nil
         for _, consumer in ipairs(context.columnConsumers) do

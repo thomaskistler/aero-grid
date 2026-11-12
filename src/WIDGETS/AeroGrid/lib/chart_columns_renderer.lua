@@ -19,13 +19,6 @@ function renderer.new(context)
     return self
 end
 
-function renderer:reset()
-    for _, object in pairs(self.objects) do
-        lvgl.hide(object)
-    end
-    self.visible, self.published = {}, {}
-end
-
 function renderer:destroy()
     lvgl.hide(self.root)
     self.root:clear()
@@ -89,10 +82,12 @@ end
 
 --- Append new samples and draw changed columns; `deferPaint` keeps them pending
 --- for a layer about to replace this one.
+---@return integer appended Queued samples taken across all series.
 function renderer:append(deferPaint)
     local context = self.context
+    local appended = 0
     for series, owner in ipairs(context.columnConsumers) do
-        owner:append()
+        appended = appended + owner:append()
         local map = owner.map
         if context.checkRange then
             -- Lets the chart seed or grow automatic bounds before columns are drawn.
@@ -112,6 +107,7 @@ function renderer:append(deferPaint)
         end
         publish(self, series, map)
     end
+    return appended
 end
 
 --- Paint at most `limit` pending columns of maps filled without live samples,
@@ -163,7 +159,8 @@ function renderer:paintSlots(limit, first, final)
     return painted, complete
 end
 
---- Hide previously drawn columns, at most `limit` objects per call.
+--- Hide previously drawn columns, at most `limit` objects per call; a reset
+--- sweeps the old columns away in bounded steps.
 ---@return integer visited
 ---@return boolean complete
 function renderer:sweep(limit)

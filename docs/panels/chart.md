@@ -19,13 +19,13 @@ disables recording rather than restoring the fallback.
 
 ## Settings
 
-![Chart panel settings with rolling time range selected](../assets/editor/chart-settings.png)
+![Chart panel settings with the default Auto window](../assets/editor/chart-settings.png)
 
 | Setting | Default | What it does |
 | --- | --- | --- |
 | **Label** | empty | Optional chart heading. Clear it to hide the heading. |
 | **Metrics** | none | Up to three readings. Tap **+** to add one, or tap an entry to edit it. |
-| **Window minutes** | Auto | **Auto** grows the window as recording continues. A whole number of minutes from 1 to 60 fixes it. |
+| **Window minutes** | Auto | **Auto** grows the window as recording continues. A whole number of minutes from 1 to 60 fixes it. Step below 1 to select **Auto**. |
 | **Series scales** | shared | **shared** uses one vertical scale; **independent** gives each metric its own scale, useful for unlike units. Independent trace heights are not directly comparable. |
 | **Line smoothing** | off | **off**, **light**, **medium**, or **strong**. Smooths the line only, not the recorded value or extrema. |
 | **Accent** | cyan | Panel stripe color: **cyan**, **green**, **amber**, or **orange**. Does not change trace colors. |
@@ -108,8 +108,11 @@ including applying editor changes that rebuild it, clears history.
 Each append consumes telemetry received since the previous append, summarizes
 the affected pixel columns, and draws only those columns.
 Charts do not reconstruct traces from stored history. Opening or resizing a
-chart starts an empty plot; only subsequent telemetry is drawn in the fixed
-recording-time window. Editor previews do not replay history or record new data.
+chart starts an empty plot at the current recording time; only later telemetry
+is drawn. A fixed window starts where sliding would have placed it.
+Recording time stops while the editor or Model settings is open, even during a
+flight; charts show a pause gap when it resumes. Charts do not draw while the
+editor is open. Editor previews do not replay history or record new data.
 New sources show an explicit no-data preview until saved.
 Flight overlays retain the latest 64 intervals; missing earlier boundaries are
 not guessed.
@@ -128,5 +131,5 @@ extrema, and markers across all dashboards.
 | **NO DATA** | Recording, but no configured source has supplied a valid numeric sample. |
 | **HISTORY N/A** | History is unavailable; consult [Host diagnostics](host-diagnostics.md). |
 | **HISTORY FULL** | A series has stopped adding plot samples to preserve its recording; readouts and extrema still update. |
-| **PREVIEW** | An edited chart displaying compatible existing history without changing recording. |
+| **PREVIEW** | An edited chart whose recording already exists; the preview does not draw its traces or change recording. |
 | **PREVIEW: NO DATA** | A new or incompatible recording configuration; sampling starts after saving. |

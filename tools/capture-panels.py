@@ -119,6 +119,11 @@ view: 0
         layout += (f"  - id: subject-{name}\n    type: {panel}\n"
                    f"    col: {col}\n    row: {row}\n    colSpan: {cols}\n    rowSpan: {rows}\n"
                    "    config:\n" + config_yaml(recipe["config"]))
+    for index, companion in enumerate(recipe.get("companions", []), 1):
+        layout += (f"  - id: companion-{index}\n    type: {companion['type']}\n"
+                   f"    col: {companion['col']}\n    row: {companion['row']}\n"
+                   f"    colSpan: {companion['colSpan']}\n    rowSpan: {companion['rowSpan']}\n"
+                   "    config:\n" + (config_yaml(companion["config"]) if companion["config"] else "      {}\n"))
     (widget / "layouts/capture-panels.yaml").write_text(layout)
     main = widget / "main.lua"
     source = main.read_text()
@@ -156,8 +161,8 @@ end
         refresh(context)
         if #context.errors > 0 then error(table.concat(context.errors, "\\n")) end
         if context.stage or #context.panels ~= PANEL_COUNT then return end
-        for _, entry in ipairs(context.panels) do
-""".replace("PANEL_COUNT", str(len(recipe["panels"]))) + ("""
+        local function ready(entry)
+""".replace("PANEL_COUNT", str(len(recipe["panels"]) + len(recipe.get("companions", [])))) + ("""
             local instance = entry.instance
             if instance.bar then
                 instance.showVisual = false
@@ -167,6 +172,11 @@ end
 """ if recipe.get("hide_bottom_bar", False) else "") + readiness(recipe) + """
             if entry.instance.stateName == "unavailable" or entry.instance.stateName == "stale" then return end
             if entry.instance.text == "--" or entry.instance.text == "--:--" then return end
+            return true
+        end
+        for _, entry in ipairs(context.panels) do
+            -- Only cropped subjects need verified content.
+            if string.sub(entry.placement.id, 1, 8) == "subject-" and not ready(entry) then return end
         end
         if not context.captureReady then
             local file = assert(io.open("/capture-ready.txt", "w"))

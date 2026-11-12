@@ -193,7 +193,8 @@ local function schedulerGraph(context, rect, area)
     end
 end
 
---- Keep each busy consumer in one color while it stays among the busiest.
+--- Keep each busy consumer in one color while it stays among the busiest; a
+--- smoothed rate ranks consumers, and the legend shows the last second's rate.
 local function rankConsumers(context, stats)
     local graph = context.graph
     local rank, owners, slots = graph.rank, graph.owners, stats.consumers or {}
@@ -240,7 +241,7 @@ local function rankConsumers(context, stats)
     end
     for slot = 1, graph.legend - 1 do
         local owner = owners[slot]
-        local text = owner and string.format("%.1f %s", rank[owner], consumerName(owner)) or ""
+        local text = owner and string.format("%.1f %s", (slots[owner] or 0) / seconds, consumerName(owner)) or ""
         if context.texts[slot + 1] ~= text then
             context.texts[slot + 1] = text
             context.rows[slot + 1]:set({ text = text })

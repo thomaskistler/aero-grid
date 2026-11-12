@@ -101,8 +101,45 @@ for at = 18000, 20000, 100 do
     local slot = slid:bucketOf(at, slid:gapCount(at)) + 1
     assert(slid.low[slot] == -at and slid.high[slot] == -at and slid.ends[slot] == -at, "slid columns lost samples")
 end
-assert(first.series[1].feed.value == -20000, "right-edge stop froze readouts")
+assert(first.series[1].feed.value == -20000, "sliding froze readouts")
 assert(first.columnRenderer.spare == nil and owner.map.levels == nil)
+
+-- A chart attached or resized after the window filled starts where sliding
+-- would have put it and draws new samples at once.
+local function drawsNewest(current, at, message)
+    local map = current.columnConsumers[1].map
+    assert(#current.columnConsumers[1].pending == 0, message .. ": samples stayed queued")
+    assert(current.start <= at and at < current.start + current.window, message .. ": window misses the newest sample")
+    local slot = map:bucketOf(at, map:gapCount(at)) + 1
+    assert(map.kinds[slot] == "data" and map.ends[slot] == -at, message .. ": newest sample missing")
+    assert(#view.rectangles(current, 1) > 0, message .. ": nothing drawn")
+end
+local attached = panel()
+settle(attached)
+assert(attached.start == 18000, "a late fixed window starts where sliding would have put it")
+for at = 20100, 21000, 100 do
+    record.sample(at, { -at })
+    settle(first)
+    settle(attached, 1)
+end
+drawsNewest(attached, 21000, "late attachment")
+assert(attached.start == first.start, "late and continuous charts show the same window")
+chart.update(attached, { x = 0, y = 0, w = 320, h = 134 })
+settle(attached, 1)
+for at = 21100, 22000, 100 do
+    record.sample(at, { -at })
+    settle(first)
+    settle(attached, 1)
+end
+drawsNewest(attached, 22000, "resize after overflow")
+for at = 22100, 26000, 100 do
+    record.sample(at, { -at })
+    settle(first)
+    settle(attached, 1)
+end
+assert(attached.start > 18000, "a late fixed window keeps sliding")
+drawsNewest(attached, 26000, "late window after sliding")
+chart.destroy(attached)
 
 local triple = recorder(3)
 services.history = triple.history
@@ -140,4 +177,6 @@ chart.destroy(first)
 chart.destroy(first)
 chart.destroy(second)
 assert(record.history.views[record.feeds[1]].observers == nil)
-print("Append-only charts keep fixed axes, finish each append in one slot and never reconstruct history")
+print(
+    "Fixed charts slide, start late or resized windows in place, finish each append in one slot and never reconstruct history"
+)

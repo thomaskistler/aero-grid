@@ -173,7 +173,7 @@ for _, owner in ipairs(context.columnConsumers) do
     assert(owner.map:summary(owner.map:pixel(owner.map.at) // 1).from == nil, "missing data reconnected a trace")
     owner:reset()
 end
-renderer:reset()
+renderer:sweep(math.huge)
 renderer:append()
 assert(next(renderer.visible) == nil)
 for _, owner in ipairs(context.columnConsumers) do
@@ -249,5 +249,40 @@ for _, step in ipairs({ 2, 3, 4, 5, 6, 7, 8, 10 }) do
             end
         end
     end
+end
+-- Dense dropouts keep at most one break per column, in time order, so marker
+-- passes read them directly; copying them is staged within the allowance.
+do
+    local width = 40
+    local dense = Columns.new(width, 6000)
+    for at = 0, 5990, 10 do
+        dense:sample(at, at % 7)
+        dense:breakAt(at)
+    end
+    assert(dense.breakLast <= width + 1 and dense.breakLast >= width, "breaks must be bounded by the plot width")
+    for index = 2, dense.breakLast do
+        local previous, current = dense.breaks[index - 1], dense.breaks[index]
+        assert(current > previous, "breaks must stay in time order")
+        assert(math.floor(dense:pixel(current) + 0.5) > math.floor(dense:pixel(previous) + 0.5), "one break per column")
+    end
+    assert(dense:pixel(dense.breaks[dense.breakLast]) >= width - 1, "the newest break must be kept")
+    local target = Columns.new(width, 12000)
+    local done, used = target:absorb(dense, 2, -1, 0)
+    assert(not done and used == 0 and target.breakLast == 0, "a zero allowance must copy nothing")
+    done, used = target:absorb(dense, 2, -1, 40)
+    assert(not done and used == 40 and target.breakLast == 1, "one break fits a one-break allowance")
+    local turns = 1
+    while not done do
+        local stage
+        done, stage = target:absorb(dense, 2, -1, 200)
+        assert(stage <= 200, "break copying must stay within the allowance")
+        turns = turns + 1
+    end
+    assert(turns > 2 and target.breakSource == dense.breakLast + 1, "every break must be copied across turns")
+    local last = target.breaks[target.breakLast]
+    assert(
+        target.breakLast <= width // 2 + 1 and target:pixel(last) >= width // 2 - 1,
+        "coarser columns keep one break each"
+    )
 end
 print("Append-only typed columns consume new telemetry, summarize once, hold skipped columns and never replay history")
