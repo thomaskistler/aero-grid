@@ -462,7 +462,7 @@ end
 
 local function updateHeader(context)
     local builder, area = context.themeBuilder, context.area
-    local duration = chart.durationText(context.window or timeWindow(context.settings, 0))
+    local duration = chart.durationText(context.window or timeWindow(context.settings))
     if context.headerGeometry == context.geometryVersion and context.durationText == duration then
         return
     end
@@ -2420,7 +2420,7 @@ function chart.create(parent, rect, settings, services)
         if context.history then
             item.feed = context.history:subscribe(entry.source, {
                 armSwitch = settings.armSwitch,
-                windowSeconds = timeWindow(settings, 0) / 100,
+                windowSeconds = timeWindow(settings) / 100,
                 timeRange = "growing",
                 smoothing = settings.smoothing or "off",
                 precision = entry.precision,
@@ -2454,7 +2454,7 @@ function chart.create(parent, rect, settings, services)
         filled = true,
     })
     context.title, context.duration, context.status = label(context), label(context), label(context)
-    context.window, context.start, context.pixelStart = timeWindow(settings, 0), 0, 0
+    context.window, context.start, context.pixelStart = timeWindow(settings), 0, 0
     if context.history and #context.series > 0 then
         context.autoWanted = settings.duration == nil and not context.preview
         context.checkRange = checkRange

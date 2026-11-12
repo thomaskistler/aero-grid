@@ -5,7 +5,6 @@ local columns = { RUNTIME_API = 1, BREAK_WIDTH = 24, AUTO_STEPS = 18, APPEND_LIM
 columns.__index = columns
 local consumer = {}
 consumer.__index = consumer
-local fields = { "kinds", "low", "high", "ends", "froms", "widths", "starts", "counts" }
 
 --- Auto windows in minutes: 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, ...
 function columns.autoMinutes(step)
@@ -73,9 +72,8 @@ function columns.fine(width, level, recording)
 end
 
 function columns:reset()
-    for _, field in ipairs(fields) do
-        self[field] = {}
-    end
+    self.kinds, self.low, self.high, self.ends = {}, {}, {}, {}
+    self.froms, self.widths, self.starts, self.counts = {}, {}, {}, {}
     self.seams, self.breaks = {}, {}
     self.dirtyColumns, self.dirtyList = {}, {}
     self.breakFirst, self.breakLast, self.breakColumn = 1, 0, nil
