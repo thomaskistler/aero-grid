@@ -40,7 +40,7 @@ Choose **Modern Dark** or **Modern Light** for **Theme**.
 Press **RTN** to close the settings and leave setup. Your dashboard is now
 on the new screen. Repeat these steps to add another dashboard.
 
-In fullscreen, tap **AeroGrid → Model settings** and set **Arm switch**
+In widget fullscreen, tap **AeroGrid → Model settings** and set **Arm switch**
 to the physical position or logical switch that means armed. Changes save
 automatically across the model's dashboards. Arming is not a widget option
 beside Layout and Theme.
@@ -68,7 +68,8 @@ them untouched.
 **Save** updates the current layout. For a bundled layout it creates your
 copy in `/AEROGRID/layouts/` under the same name, leaving the bundled original
 untouched.
-**Save as...** creates a separately named layout.
+**Save as...** creates a separately named layout. Empty always requires
+**Save as...**.
 
 Several dashboards, even on different models, can select the same layout.
 They share all panel settings, so check that the sources and switches suit
@@ -78,14 +79,17 @@ when they next reload.
 Restart the radio after saving a new name so it appears in the **Layout**
 picker. A missing layout falls back to **Default**.
 
-## App mode and Full screen
+## App mode and Full screen layout
 
-| Layout | What you see |
+The EdgeTX **Full screen** layout is different from **widget fullscreen**,
+which you enter by long-pressing a dashboard to use its menu and editor.
+
+| Screen layout | What you see |
 | --- | --- |
 | **App mode** | A dashboard covering the display, without the EdgeTX top bar, flight-mode label, sliders, or trims. The menu button remains in the top-left corner. |
 | **Full screen (`1 x 1`)** | One dashboard widget, with the option to keep EdgeTX's top bar, flight-mode label, sliders, and trims. |
 
-Use App mode for a clean dashboard, or Full screen to keep the radio's
+Use App mode for a clean dashboard, or the Full screen layout to keep the radio's
 standard information alongside it. In App mode, a wider top-left panel
 leaves more room beside the menu button.
 

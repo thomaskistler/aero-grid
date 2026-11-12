@@ -1,5 +1,8 @@
 # Test Reorganization Plan
 
+> Historical reorganization plan. Proposed paths and counts below are not a
+> current inventory; see [Test and debug](../docs/developer-guide/testing.md).
+
 ## Goals
 
 1. Keep tests as simple and readable as possible.

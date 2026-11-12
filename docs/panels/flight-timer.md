@@ -17,7 +17,7 @@ time display.
 | **Model timer** | Timer 1 | The EdgeTX model timer to show: Timer 1, Timer 2, or Timer 3. |
 | **Warning seconds** | Off | Time threshold for the warning state, in whole seconds from 0. Step below 0 to reach **Off**. |
 | **Critical seconds** | Off | Time threshold for the critical state, in whole seconds from 0. Step below 0 to reach **Off**. |
-| **Accent** | cyan | Color used for the normal state: **cyan**, **green**, **amber**, or **orange**. Alarm states use the shared state colors instead. |
+| **Accent** | cyan | Normal panel accent. |
 
 ## Behavior
 

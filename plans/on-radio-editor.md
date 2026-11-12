@@ -1,9 +1,13 @@
 # Phase-two on-radio layout editor
 
-This is the dedicated implementation and evolving UX plan for
+> Historical editor plan. For the current workflow and storage behavior, see
+> [Edit a dashboard](../docs/user-guide/edit-dashboard.md) and
+> [Editor and persistence](../docs/developer-guide/architecture.md#editor-and-persistence).
+
+This records the original implementation and UX plan for
 [issue #111](https://github.com/thomaskistler/aero-grid/issues/111).
-Implementation is in
-[draft PR #126](https://github.com/thomaskistler/aero-grid/pull/126).
+Original implementation:
+[PR #126](https://github.com/thomaskistler/aero-grid/pull/126).
 The AeroGrid specification is a frozen design baseline; record subsequent
 editor decisions here rather than changing `plans/aerogrid-spec.md`.
 
@@ -347,7 +351,8 @@ mock test suite, or native simulator runs.
 - Layout and Theme pickers, stable layout registry, and user storage outside
   the widget package.
 - Text-only empty-dashboard guidance with native centred alignment.
-- [Add, configure and edit a dashboard](../docs/user-guide/dashboards.md), with
+- [Add a dashboard](../docs/user-guide/add-dashboard.md) and
+  [edit it on the radio](../docs/user-guide/edit-dashboard.md), with
   native TX16S simulator captures of adding a screen, choosing App mode,
   selecting AeroGrid and its layout, editing, metric configuration, the exit
   menu, and Save As. Bundled layout names are Empty, Default, and Host.

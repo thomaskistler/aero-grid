@@ -5,7 +5,7 @@
   <p><a href="https://www.youtube.com/watch?v=VtwC9R3lhOQ">Watch the model settings walkthrough on YouTube</a>.</p>
 </div>
 
-Long-press the AeroGrid dashboard to enter fullscreen. The AeroGrid icon
+Long-press the AeroGrid dashboard to enter widget fullscreen. The AeroGrid icon
 appears in the top-left corner. Tap it, then choose **Model settings**.
 
 Settings apply to every AeroGrid dashboard for the selected model, not to an individual panel
@@ -18,17 +18,15 @@ Chart recording time stops while this page is open and resumes with a pause gap.
 
 Arming tells AeroGrid when your model is armed, using the switch condition
 you select. It starts Chart recording, captures Navigation's **first-arm**
-home, starts flight-session minimum tracking, and enables flight detection.
+home, and enables flight detection.
 It only observes your model's state; it does not arm the aircraft or control
 the motor.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| **Arm switch** | none | Physical switch position or logical switch (including inverted logical switches) that means armed. |
+| **Arm switch** | None | Physical switch position or logical switch (including inverted logical switches) that means armed. |
 
 Saving **None** for Arm switch disables arming across all dashboards.
-Older layouts retain their panel/session arm switches only until model arming
-is saved. Those legacy controls disappear once model arming takes precedence.
 Numeric sources such as `ch5` or `sa` are not arm conditions.
 
 ## Flight detection
@@ -43,6 +41,12 @@ running through the end-detection window, and drives the optional
 [Flight status output](#flight-status-output) for your sounds or announcements.
 It runs across the model's dashboards even without a Flight counter panel.
 
+**Reserve GV9 for AeroGrid:** use flight mode 0, precision 0, and limits
+allowing 0-999. Configure other flight modes to inherit GV9 from flight mode 0.
+The existing total is kept. Do not also run EdgeTX Flights or another GV9
+counter. At the limit or if the total cannot be saved, AeroGrid reports an error
+rather than wrapping the count.
+
 ![Complete Model settings drawer](../assets/editor/model-settings.png)
 
 | Setting | Default | What it does |
@@ -53,12 +57,32 @@ It runs across the model's dashboards even without a Flight counter panel.
 | **Motor threshold (%)** | 25 | Motor output must be strictly above this percentage to qualify a flight. Set from 0 to 99 in whole-percent steps. |
 | **Start detection window (s)** | 30 | How long the start conditions must hold continuously to confirm flight start. |
 | **End detection window (s)** | 10 | Continuous disarming required to confirm flight end. Rearming within this window keeps the flight open. |
-| **Smart detection** | off | Also allows sustained altitude or GPS groundspeed evidence to confirm takeoff earlier. See [Flight counter](../panels/flight-counter.md#behavior). |
+| **Smart detection** | off | Also allows supported altitude or GPS groundspeed readings to confirm takeoff earlier. See [Smart detection](#smart-detection). |
 
 Flight detection does not arm the aircraft. With **Require receiver** off,
 bench tests can increment the real flight total and activate the Flight status switch.
 Both detection windows can be set from 1 to 3600 seconds in whole-second steps.
 Flight timestamps use the beginning of each window, not the later confirmation.
+Interrupted start conditions restart the start window. A callback gap longer
+than a second restarts a pending start or end window rather than assuming
+the condition held.
+
+### Smart detection
+
+Smart can confirm takeoff after **more than 3 metres of altitude gain** from
+the arming reference, or **more than 10 mph GPS groundspeed**, held for
+**2 seconds**. Both paths still require arming, motor output above the
+threshold, and live telemetry when **Require receiver** is on.
+
+Supported CRSF/ELRS and FrSky S.Port sensors are discovered automatically.
+Model settings shows sensor readiness and any reason for falling back to
+standard detection. Missing, stale, or unsupported sensors never block the
+standard start window.
+
+Altitude requires a recent reading before or at the observed arm transition;
+opening AeroGrid already armed does not establish a reference. Smart is a
+takeoff aid, not a guarantee that every short hop will count or that fast
+taxiing will not count.
 
 ### Flight status output
 
@@ -83,7 +107,8 @@ Use **L01** in an EdgeTX Special Function to play your chosen sound when a
 flight starts; use **!L01** for an action when it ends. Configure the Special
 Function's startup and repeat options to avoid unwanted announcements.
 Do not also use this switch as the Arm switch or Session reset switch, or
-share it with another script. It is not a safety interlock.
+share it with another script. It is not a safety interlock: stopped scripts,
+model changes, and radio restarts cannot guarantee output cleanup.
 
 ## Session reset
 
@@ -109,3 +134,14 @@ Disarm before another flight can be counted. Flight totals, radio timers,
 radio telemetry minima/maxima, EdgeTX home, saved settings/layouts, and
 unsaved editor changes are preserved. The dashboard stays on screen; only
 session-dependent content is redrawn.
+
+## Older layouts
+
+Until you save model arming, older panels can retain their own Arm switch.
+Saving **None** explicitly disables these fallbacks. The obsolete layout
+`session.armSource` setting is ignored.
+
+Older Flight counters retain their detection settings until you change
+Model settings. Choose the intended configuration explicitly if dashboards
+disagree, and save it before removing the last legacy counter. Once saved,
+model settings apply across the model's dashboards.

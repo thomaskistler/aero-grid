@@ -1,6 +1,8 @@
 # YAML reference
 
-This page is the complete layout-file reference for people writing AeroGrid layouts by hand, often with an AI agent. Use it to produce a file that the widget can load; for what each option means in the on-radio settings drawer, see the relevant [panel page](../panels/metric.md) (each panel section below links to its own page). Panel setting keys are documented here only.
+Use this reference to write layout YAML by hand or with an AI agent. For
+on-radio settings and behavior, see the [panel reference](index.md).
+For custom palettes, see [Theme files](#theme-files).
 
 ## File locations
 
@@ -20,7 +22,7 @@ A new layout should use version 5 and exactly a 4 × 4 grid. `col` and `row` are
 | `version` | integer | yes | Layout schema version. Write `5`. |
 | `grid` | mapping | yes | Must contain `columns: 4` and `rows: 4`. Other grid dimensions are rejected. |
 | `panels` | sequence of mappings | yes | Ordered panel placements. Use `[]` for an empty layout. |
-| `session` | mapping | no | Dashboard-wide flight-session options; see [Session](#session). |
+| `session` | mapping | no | Legacy compatibility only; see [Session](#session). |
 | `theme` | mapping | no | **Not supported.** A layout that has this key is reported as invalid. Choose a theme in widget settings instead. |
 
 Each `panels` entry has these placement keys:
@@ -47,18 +49,11 @@ Panel IDs and types are case-sensitive. Unknown top-level keys and extra placeme
 | --- | --- | --- | --- |
 | `armSource` | string | unset | Accepted so existing layouts load, but no longer used. Configure **Arm switch** in Model settings instead. |
 
-Configure **Arm switch** in **AeroGrid → Model settings**, not in layout YAML.
-It is saved once per model and overrides `session.armSource` and panel
-`armSwitch` values on every dashboard. Before model arming is saved, each
-consumer retains its own nonblank legacy switch; differing legacy settings
-are allowed, but conflicting flight detector proposals stop new flight detection.
-Existing panel arm fields are shown only while their fallback is active;
-overridden values survive layout Save. Saving **None** disables arming model-wide,
-not restoring fallbacks. Old widget Armed selections are not automatically
-imported or used to guess a model condition. Custom State conditions remain independent.
-
-**Session reset switch** and flight detection/output are also
-[Model settings](../user-guide/model-settings.md), not layout keys.
+Configure arming, session reset, and flight detection/output in
+[Model settings](../user-guide/model-settings.md), not layout YAML.
+For compatibility behavior, see
+[Older layouts](../user-guide/model-settings.md#older-layouts).
+Custom State conditions remain independent.
 
 ## Validation and errors
 
@@ -66,7 +61,13 @@ The loader parses and validates a candidate before building panels. Unsupported 
 
 An invalid panel entry is rejected without preventing other valid entries from loading. This includes a non-mapping entry, an unsafe or duplicate ID, an unknown panel type, invalid placement values, a placement outside the grid, an overlap, or a span the panel does not support. The failed panel is dropped and its reason is reported. When overlaps occur, the earlier accepted entry remains.
 
-For a top-level setting, a missing or wrong-typed value falls back to its declared default (or remains unset if it has no default). A string outside a setting's declared choice list also falls back to its default. These issues are reported with the panel ID; they do not by themselves drop the panel. Nested list-entry fields are not generically defaulted or type-checked by the settings resolver: panel-specific validation reports malformed nested values instead. Panel-specific cross-field checks may also report warnings. During normal display these are reported while loading and the host attempts to build the panel; if the panel rejects the settings during construction, that panel is dropped. An editor preview rejects a panel as soon as any warning is found. Ranges and steps listed in the panel tables are checked only by the on-radio editor: an out-of-range or off-step value loads and displays, but the editor refuses to save the layout until it is corrected. For reliable authoring, correct every warning rather than relying on fallback behavior.
+Missing or wrong-typed panel settings and invalid choice values fall back to
+their defaults, with a warning where appropriate. Nested entries and
+cross-field rules receive panel-specific validation. A panel that cannot be
+constructed is dropped. The editor rejects previews with warnings and refuses
+to save invalid settings. Numeric bounds and steps are editor constraints
+unless runtime validation is explicitly noted below. Correct every warning
+rather than relying on fallback behavior.
 
 Unknown `config` keys are kept in the resolved configuration but reported as “is not a setting of this panel”; they are not silently discarded. This catches typos. A non-mapping `config` is normalized to an empty mapping, so always use the mapping form. Unknown top-level keys and extra panel-entry keys are retained without a setting warning; do not rely on them having meaning to this version of AeroGrid.
 
@@ -91,51 +92,36 @@ Omitted settings use their listed defaults. “Unset” means the setting has no
 
 ### `chart`
 
-Use a separate Chart panel for recorded telemetry, not a live Metric sparkline.
-It supports 2x1, 3x1, 4x1, 2x2, 3x2, 4x2, 3x3, 4x3, and 4x4.
+Drawer title: **Chart** · [drawer settings and behavior](../panels/chart.md) · Supported spans: `2x1`, `3x1`, `4x1`, `2x2`, `3x2`, `4x2`, `3x3`, `4x3`, `4x4`.
 
-| Key | Values and defaults |
-| --- | --- |
-| `label` | Optional title; omitted or empty hides the title and reclaims header space for the plot. |
-| `armSwitch` | Legacy physical-position or logical-switch fallback, blank by default. Used and shown only before model arming has been saved. With neither condition, recording is disabled. |
-| `metrics` | Contiguous list of zero to three numeric sources. Empty is valid for editor setup. |
-| `source`, `unit`, `precision` | Per-metric source name, optional unit override, and integer precision 0–3 (default sensor precision). |
-| `accent` | Per-metric trace color or panel stripe: cyan, green, orange, amber. Traces default to cyan, orange, green in order. Modern Light renders the cyan trace with blue ink. |
-| `rangeMin`, `rangeMax` | Optional per-metric finite bounds. Omit either key for Auto on that side; zero is an explicit bound. If both are set, maximum must exceed minimum. Shared scales use the lowest configured minimum and highest configured maximum; a side with no configured bound follows all recorded series automatically. |
-| `timeRange` | Obsolete (`growing` / `rolling`), accepted for compatibility but ignored. |
-| `duration` | Omitted (default) grows the window automatically; whole minutes `1` to `60` fix it. Earlier values such as `30s` or `5m` round up to whole minutes. In the drawer, **Window minutes** below 1 is **Auto**. |
-| `scaling` | `shared` (default) or `independent`. Select independent explicitly for unlike units. |
-| `range` | Obsolete preview setting (`auto` / `fixed`), accepted for compatibility but ignored. Only the presence of `rangeMin` / `rangeMax` determines fixed versus automatic bounds. |
-| `smoothing` | `off` (default), `light`, `medium`, `strong`; line-only EMA with approximately 0.5/1/2-second response. |
+| Key | Type | Default | Allowed values | Drawer label | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `label` | string | `""` | Any string | Label | Blank hides the heading. |
+| `armSwitch` | string | `""` | Physical position or logical switch | Arm switch position | Legacy fallback before model arming is saved. |
+| `metrics` | sequence | `[]` | 0-3 contiguous entries | Metrics | Entry fields follow. |
+| `duration` | number | Unset (drawer: `Auto`) | Whole minutes `1`-`60` | Window minutes | Omit for a growing window. Earlier strings such as `30s` or `5m` round up to whole minutes; values above 60 are limited to 60. |
+| `scaling` | string | `shared` | `shared`, `independent` | Series scales | Independent scales suit unlike units. |
+| `smoothing` | string | `off` | `off`, `light`, `medium`, `strong` | Line smoothing | Changes the line, not raw readouts or extrema. |
+| `accent` | string | `cyan` | `cyan`, `green`, `orange`, `amber` | Accent | Panel accent only. |
+| `timeRange` | string | `fixed` | Any string | Not shown | Obsolete and ignored. |
+| `range` | string | `auto` | `auto`, `fixed` | Not shown | Obsolete and ignored. |
 
-Each metric also accepts `label`. The title is above the shared plot, with each
-metric's name/value and raw min/max grouped in a right-hand legend.
-Automatic bounds start near the first drawn reading and only grow: when drawn
-data leaves them, they at least double. For example, `rangeMin: 0` with no `rangeMax` anchors the bottom at zero and
-automatically adjusts the top; omit both keys for a fully automatic range.
+#### Metric entry (`metrics[]`)
 
-Set **Arm switch** in **AeroGrid → Model settings**; changes save automatically. A retained panel `armSwitch`
-is used only before model arming has been saved. A qualified shared flight with
-the same effective arm condition keeps recording through disarm grace until
-confirmed flight end. Otherwise disarming pauses immediately. Rearming during
-grace does not break or duplicate a flight; rearming after a pause resumes the
-same history with a gap and faint connectors. The horizontal axis counts cumulative
-recording time, including retained grace samples. Neutral background bands
-show actual flight times; bottom-axis triangles mark arming and disarming
-except the first arming. No logical-switch
-output or Flight counter panel is needed. Without `duration`, the window starts
-at one minute and grows to 2, 3, 4, 6, 8, 12, 16 minutes and so on as the plot
-fills, keeping all data on screen. A fixed `duration` slides left by one minute
-when full. History is
-RAM-only and clears on dashboard reload or model-wide session reset. Connected linear compression bounds
-error to half a step of each metric's `precision` (sensor precision when omitted);
-with smoothing, this bound applies to the filtered signal. Each distinct
-source/options recording holds 6,144 knots, covering at least 10 minutes at 10 Hz
-even without compression savings. At capacity, **HISTORY FULL** preserves existing
-plot history and stops new plot samples, but raw readouts/extrema keep updating.
-No older data is recompressed more loosely.
-Recordings share history only when their armed switch, source, and recording
-options match.
+| Key | Type | Default | Allowed values | Drawer label | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `source` | string | Unset | Numeric EdgeTX source name | Source | Required by the editor for an entry. |
+| `label` | string | Source name | Any string | Label | Legend caption. |
+| `unit` | string | Sensor unit | Any string | Unit | Label only; no conversion. |
+| `precision` | number | Unset (drawer: `Sensor`) | Integer `0`-`3` | Precision | Omit to use sensor precision. |
+| `rangeMin` | number | Unset (drawer: `Auto`) | Finite number | Range min | Optional lower bound. |
+| `rangeMax` | number | Unset (drawer: `Auto`) | Finite number | Range max | Must exceed minimum when both are set. |
+| `accent` | string | By entry order | `cyan`, `green`, `orange`, `amber` | Color | Defaults to cyan, orange, then green. |
+
+With shared scales, the lowest fixed minimum and highest fixed maximum apply
+to all traces; an unset side follows all traces automatically. For example,
+`rangeMin: 0` anchors the bottom at zero while an omitted `rangeMax` grows.
+The legend sits beside wide plots and above square or tall plots.
 
 ```yaml
 version: 5
@@ -180,7 +166,8 @@ and `disarmDuration` fields remain readable for
 legacy migration. Do not remove the last legacy counter before saving Model
 settings. Flight tracking then continues independently of counter placement.
 The obsolete `announcements` and `history` fields are ignored; configure sounds using the
-flight-active logical switch and EdgeTX Special Functions.
+flight-active logical switch and EdgeTX Special Functions. See
+[Older layouts](../user-guide/model-settings.md#older-layouts) for migration.
 
 ```yaml
 - id: flights
@@ -320,6 +307,13 @@ Drawer title: **Metric** · [drawer settings and behavior](../panels/metric.md) 
 | Key | Type | Default | Allowed values | Drawer label | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `metrics` | sequence | `[]` | 0–3 entries | Metrics | Ordered readings: first is primary, remaining readings are supporting. Each item is a mapping; its fields follow. |
+| `visual` | string | `none` | `bar`, `radial`, `none` | Visualization | Draws the main reading's visual only when it fits. |
+| `accent` | string | `cyan` | `cyan`, `green`, `amber`, `orange` | Accent | |
+
+#### Metric entry (`metrics[]`)
+
+| Key | Type | Default | Allowed values | Drawer label | Notes |
+| --- | --- | --- | --- | --- | --- |
 | `source` | string | Unset | EdgeTX numeric source name | Source | Nested in `metrics[]`; required by the drawer for a configured entry. An omitted or blank source renders unavailable rather than causing YAML validation to fail. |
 | `label` | string | Unset | Any string | Label | Nested in `metrics[]`; fallback caption is the source name, or “Metric” if no source. |
 | `unit` | string | Unset | Any string | Unit | Nested in `metrics[]`; unset follows the sensor unit, while `""` suppresses the unit. |
@@ -329,8 +323,6 @@ Drawer title: **Metric** · [drawer settings and behavior](../panels/metric.md) 
 | `rangeMax` | number | `100` | Finite number; drawer keyboard entry, blank restores the default | Range max | Nested in `metrics[]`; scale maximum. |
 | `warning` | number | Unset | Finite number; drawer step `0.1`; Off when outside the range | Warning | Nested in `metrics[]`; a threshold outside `rangeMin`–`rangeMax` is ignored as Off. |
 | `critical` | number | Unset | Finite number; drawer step `0.1`; Off when outside the range | Critical | Nested in `metrics[]`; a threshold outside `rangeMin`–`rangeMax` is ignored as Off. |
-| `visual` | string | `none` | `bar`, `radial`, `none` | Visualization | Draws the primary reading's visual only when it fits. |
-| `accent` | string | `cyan` | `cyan`, `green`, `amber`, `orange` | Accent | |
 
 Cross-field and list rules:
 
@@ -511,12 +503,22 @@ Drawer title: **State** · [drawer settings and behavior](../panels/state.md) ·
 | Key | Type | Default | Allowed values | Drawer label | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `entries` | sequence | One default entry | 1–3 contiguous entries | Entries | Each entry is a mapping with a label and an ordered state-condition list. |
+| `accent` | string | `cyan` | `cyan`, `green`, `amber`, `orange` | Accent | |
+
+#### State entry (`entries[]`)
+
+| Key | Type | Default | Allowed values | Drawer label | Notes |
+| --- | --- | --- | --- | --- | --- |
 | `label` | string | `SW1` | Nonempty, single-line string | Label | Nested in `entries[]`; required. |
 | `states` | sequence | Three default conditions | 1–3 contiguous conditions | States | Nested in `entries[]`; evaluated in order and the first active condition wins. |
+
+#### State condition (`entries[].states[]`)
+
+| Key | Type | Default | Allowed values | Drawer label | Notes |
+| --- | --- | --- | --- | --- | --- |
 | `switch` | string | `SA^` in default example; required otherwise | Switch position such as `SF^`, `SA-`, `SFv`, or logical switch `L01` | When | Nested in `entries[].states[]`; required. |
 | `text` | string | `UP` in default example; required otherwise | Nonempty, single-line string | Text | Nested in `entries[].states[]`; displayed when the condition matches. |
 | `background` | string | `normal` | `normal`, `active`, `warning`, `critical` | Background | Nested in `entries[].states[]`; omitted uses `normal`. |
-| `accent` | string | `cyan` | `cyan`, `green`, `amber`, `orange` | Accent | |
 
 Cross-field and list rules:
 
@@ -688,3 +690,36 @@ panels:
 - Honor nested sequence constraints and all cross-field rules, especially source requirements and threshold ordering.
 - Verify EdgeTX source/switch names on the target radio. A syntactically valid name may still be unavailable on that model.
 - Stick to the supported YAML subset: two-space indentation, no tabs, anchors, tags or non-empty flow collections.
+
+## Theme files
+
+Themes use separate `.yml` files, not a layout-level `theme` key.
+Copy a complete shipped theme from `/WIDGETS/AeroGrid/themes/` to
+`/AEROGRID/themes/<name>.yml`; user themes override shipped names.
+
+| Key | Required | Meaning |
+| --- | --- | --- |
+| `version` | yes | Write `1`. |
+| `name` | yes | Filename stem using letters, digits, `-`, and `_`. |
+| `label` | yes | Nonempty name shown in the Theme picker. |
+| `accent` | yes | Default accent: `cyan`, `green`, `amber`, or `orange`. |
+| `colors` | yes | Complete color mapping copied from a shipped theme. Values use `0xRRGGBB`. |
+| `spacing` | yes | Complete spacing mapping copied from a shipped theme; nonnegative integers. |
+| `light` | no | Light-palette alert defaults; defaults to `false`. |
+| `tintSeparation` | no | Alert-surface separation target, at least 1. |
+| `correctForContrast` | no | Adjust colors for readability; defaults to `true` when omitted. Both shipped themes explicitly set it to `false`. |
+
+Optional entries in `colors`:
+
+| Key | Meaning |
+| --- | --- |
+| `warningBg`, `criticalBg`, `activeBg` | Explicit panel backgrounds for those states; otherwise derived. |
+| `chartCyan`, `chartGreen`, `chartAmber`, `chartOrange` | Chart trace and legend colors; otherwise use the matching semantic accent. |
+| `chartGrid` | Chart time grid and baseline; otherwise uses `border`. |
+
+With contrast correction enabled, chart inks are adjusted to at least 4.5:1
+contrast against the panel surface; the chart grid is unchanged. With correction
+disabled, explicit colors are preserved and you must check readability.
+Omitted alert backgrounds still use contrast-checked derived tints.
+Unknown fields and invalid values are rejected. Preview every state in
+**Palette** on the radio before using a custom theme.

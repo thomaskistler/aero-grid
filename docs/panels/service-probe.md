@@ -2,10 +2,8 @@
 
 ![Service probe at 2x2](../assets/panels/service-probe/2x2.png)
 
-Displays label-and-value rows from one shared AeroGrid data service.
-This developer diagnostic panel helps check normalized values, units,
-precision, availability, and navigation calculations independently of the
-flight panels that use them.
+Helps investigate readings supplied to panels by AeroGrid's data services.
+Use it to check values, units, availability, and navigation data.
 
 The panel needs at least 2x2 cells to fit its rows.
 
@@ -17,30 +15,40 @@ The panel needs at least 2x2 cells to fit its rows.
 | --- | --- | --- |
 | **Label** | service name | Panel heading. Clear it to use the selected **Service**. |
 | **Service** | telemetry | Service to inspect: **telemetry**, **model**, **control**, or **navigation**. |
-| **Source** | none | EdgeTX source picker. Select the reading for **telemetry**, GPS source for **navigation**, or trim source for **control**. Unused by **model**. |
-| **Index** | 0 | Zero-based timer index for **model** (0 to 2) or global variable index for **control** (0 to 8). Unused by the other services. The number control steps by 1 from -100000 to 100000, not just the useful index range, and has no empty option. |
-| **Accent** | cyan | Panel accent: **cyan**, **green**, **amber**, or **orange**. Reported service states do not change the panel color. |
-| **Remove panel** | | Deletes the panel from the screen. |
+| **Source** | Not set | EdgeTX source picker. Select the reading for **telemetry**, GPS source for **navigation**, or trim source for **control**. Unused by **model**. |
+| **Index** | 0 | Zero-based timer index for **model** (0 to 2) or global variable index for **control** (0 to 8). Unused by the other services. |
+| **Accent** | cyan | Normal panel accent. Reported service states do not change it. |
 
 All settings remain visible for every **Service**, including those it does not
 use.
 
 ## Behavior
 
-**telemetry** reports the selected source name, state, formatted value, unit,
-precision, reading age, and link status. **navigation** reports the GPS source,
-fix and home availability, latitude, longitude, distance, and bearing.
+Rows refresh about twice per second. Up to eight rows are shown, limited by
+panel size; enlarge the panel to reveal more. Diagnostic state text does not
+change the panel's colors.
 
-**model** requests model identity, flight mode, transmitter voltage, and the
-selected timer. **control** requests the selected trim, when **Source** is not
-empty, and the selected global variable in the current flight mode.
-These services report shared subscriptions, so rows requested by other panels
-can appear too.
+### Telemetry
 
-Rows are left-aligned in two columns and refresh about twice per second.
-Only the rows that fit are shown, up to eight. Enlarge the panel to reveal
-more; any remaining rows are omitted. Service state text is diagnostic output,
-not a panel alarm or stale badge.
+Select **telemetry** to inspect the chosen source's value, unit, precision,
+age, availability, and link status.
+
+### Model
+
+Select **model** to inspect model identity, flight mode, transmitter voltage,
+and the timer chosen by **Index** (0-2).
+
+### Control
+
+Select **control** to inspect the trim chosen by **Source** and the global
+variable chosen by **Index** (0-8) in the current flight mode.
+
+### Navigation
+
+Select **navigation** to inspect the GPS source, fix and home availability,
+coordinates, distance, and bearing.
+
+Model and control reports can also include readings requested by other panels.
 
 ## States
 

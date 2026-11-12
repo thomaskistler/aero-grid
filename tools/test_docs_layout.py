@@ -182,6 +182,28 @@ class DocumentationLayoutTests(unittest.TestCase):
                 finally:
                     page.close()
 
+    def test_user_guide_links_share_a_destination_separate_from_installation(self):
+        destination = f"{self.url}/user-guide/add-dashboard/"
+        for path in ("", "user-guide/add-dashboard/", "user-guide/installation/"):
+            with self.subTest(path=path):
+                page = self.new_page()
+                try:
+                    page.goto(f"{self.url}/{path}")
+                    rail = page.get_by_role("navigation", name="Main navigation", exact=True)
+                    guide = rail.get_by_role("link", name="User Guide", exact=True)
+                    self.assertEqual(guide.evaluate("link => link.href"), destination)
+                    install = rail.get_by_role("link", name="Install / Upgrade", exact=True)
+                    self.assertEqual(install.evaluate("link => link.href"),
+                                     f"{self.url}/user-guide/installation/")
+                    sidebar = page.locator(".ag-guide-nav")
+                    if path == "user-guide/installation/":
+                        self.assertEqual(sidebar.count(), 0)
+                    else:
+                        guide = sidebar.get_by_role("link", name="User Guide", exact=True)
+                        self.assertEqual(guide.evaluate("link => link.href"), destination)
+                finally:
+                    page.close()
+
     def test_tables_stay_inside_page(self):
         for width in (320, 375, 768, 1024, 1440):
             for path in PAGES:

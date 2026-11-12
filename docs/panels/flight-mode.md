@@ -14,7 +14,7 @@ Shows the transmitter's current EdgeTX flight mode by name.
 | --- | --- | --- |
 | **Label** | MODE | Panel heading. Clear it to restore the default. Longer headings need a wider panel. |
 | **Show mode number** | off | Show the EdgeTX flight mode number beneath the name when space permits. Single-row panels hide it. |
-| **Accent** | green | Color used for the normal state: **cyan**, **green**, **amber**, or **orange**. |
+| **Accent** | green | Normal panel accent. |
 
 ## Behavior
 

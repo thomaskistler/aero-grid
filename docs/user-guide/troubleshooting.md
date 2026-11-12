@@ -18,7 +18,11 @@ A missing reading does not mean the value is zero.
 
 ## Check layouts and themes
 
-Use the **Diagnostics** layout to check loaded components and errors.
+The **Diagnostics** layout reports its own dashboard, not another dashboard's
+errors. To inspect a failing dashboard, add a **Host diagnostics** panel there
+and select **panels**. Use **identity**, **theme**, or **sources** to check its
+version, selected files, or source bindings.
+
 Check the selected **Layout** and **Theme** in the widget settings, and
 restart the radio or simulator after adding a new layout or theme.
 

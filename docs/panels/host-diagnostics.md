@@ -2,10 +2,9 @@
 
 ![Host diagnostics at 2x2](../assets/panels/host-diagnostics/2x2.png)
 
-Displays facts read from the running AeroGrid host: loaded files, theme,
-panel failures, source bindings, or a shared event log. This diagnostic panel is for developers
-and users investigating a dashboard that behaves unexpectedly, rather than
-for monitoring a flight.
+Helps investigate dashboard loading, panel failures, and missing sources.
+Reports describe the dashboard containing this panel; the shared log can
+include events from other AeroGrid dashboards.
 
 The panel needs at least 2x2 cells to fit its rows.
 
@@ -18,91 +17,64 @@ The panel needs at least 2x2 cells to fit its rows.
 | **Label** | section name | Panel heading. Clear it to use the selected **Section**. |
 | **Section** | identity | Report to show: **identity**, **theme**, **panels**, **sources**, **log**, or **scheduler**. |
 | **Maximum log entries** | 64 | Shown for **log**. Retains 1–256 messages radio-wide. When several log panels exist, the largest requested limit applies. |
-| **Accent** | cyan | Panel accent: **cyan**, **green**, **amber**, or **orange**. Diagnostic messages do not change the panel color. |
-| **Remove panel** | | Deletes the panel from the screen. |
+| **Accent** | cyan | Normal panel accent. Diagnostic messages do not change it. |
 
 ## Behavior
 
-**identity** reports the package version, main script size and modification
-time when available, whether compiled bytecode is present, the layout selection
-and resolved path, and the model filename. `RUNNING main.luac` warns that
-EdgeTX can prefer the compiled file over the source; the source timestamp
-alone does not prove which code is executing.
+Reports refresh about twice per second and show up to twelve lines, limited
+by panel size. Enlarge the panel if rows are hidden.
 
-**theme** reports the resolved theme, where its selection came from, any fallback
-from a requested theme, and host notices. **panels** reports the panel count,
-failure count, and each panel's identifier, type, and span. Rejected and failed
-panels appear before healthy ones, with their error text.
+### Identity
 
-**sources** reports the shared telemetry subscriptions: the requested source
-names, binding identifiers and states. Unbound sources appear first. An unbound
-name may be misspelled or absent on the radio; the report cannot distinguish
-the two.
+Select **identity** to see the AeroGrid version, selected layout and file path,
+model filename, and main-script information. `RUNNING main.luac` warns that
+compiled code is present and may be preferred over the source.
 
-Reports read the live host context rather than resolving the layout or theme
-again. Lines are left-aligned and refresh about twice per second. The panel
-shows only the lines that fit, up to twelve; enlarge it to reveal more. Long
-reports can still extend beyond that limit.
+### Theme
+
+Select **theme** to see the selected theme, any fallback, and related notices.
+
+### Panels
+
+Select **panels** to see panel IDs, types, sizes, and failures. Rejected and
+failed panels appear first, with their error text.
+
+### Sources
+
+Select **sources** to see requested telemetry sources and whether they bind.
+Unbound names appear first; check their spelling and the radio's Telemetry page.
+
+### Shared log
+
+Select **log** before reproducing a problem. A live log panel on any AeroGrid
+dashboard enables shared recording, even when hidden; editor previews do not.
+Navigation records first-arm capture outcomes and unavailable arm switches,
+without GPS coordinates.
+
+In widget fullscreen, tap the panel to read retained messages. Drag down or
+turn the wheel left for older lines; drag up or turn right for newer lines.
+The viewer freezes its contents until reopened. **Close** or **RTN** returns
+to the dashboard.
+
+**Maximum log entries** controls retention; the largest live panel setting
+applies across dashboards. Oldest messages are dropped when full. Removing all
+log panels stops recording. Logs are not saved and are lost after restarting.
+For raw-field interpretation, see
+[Simulator logs and caught errors](../developer-guide/testing.md#simulator-logs-and-caught-errors).
 
 ### Scheduler
 
 ![Host diagnostics scheduler view at 2x2](../assets/panels/host-diagnostics/scheduler-2x2.png)
 
-Select **scheduler** to show slot use on a fixed 0–100% scale. Each one-second
-column stacks the slots used by the five busiest consumers in cyan, blue,
-green, amber, and red. The rest is gray. The top of the stack is total
-utilization. The legend lists each color's slots used in the latest second and
-its consumer: a panel's ID and type, a service, or the flight detector. Busiest
-is judged over the last several seconds, so a consumer keeps its color while it
-remains among the five busiest. Enlarge the panel to see the full legend.
+Select **scheduler** to see scheduled-work utilization from 0 to 100%.
+Each column covers one second. Colors identify the five busiest consumers;
+gray groups the rest. The orange line shows the percentage of due requests
+deferred because no slots were available.
 
-The orange line is the percentage of due work requests deferred because slots
-were unavailable. A request still waiting on another callback counts again.
-Zero-slot work is excluded from request counts.
-
-The cursor marks the newest point. At the right edge, drawing resumes on the
-left and overwrites the oldest points without connecting across the wrap.
-One horizontal pixel represents one second; resizing starts a new sweep.
-The display measures the current widget's accounted slots, not actual CPU usage.
-The scheduler view consumes zero scheduler slots, but still uses a small amount
-of CPU. Measurement runs only while a live scheduler view exists, including
-on hidden screens; editor previews do not enable it.
-
-### Shared log
-
-Select **log** on at least one Host diagnostics panel before reproducing a
-problem. Recording is enabled only while a live log panel exists on any
-AeroGrid screen; it need not be the visible screen. Other sections and editor
-previews do not enable recording. Background callbacks keep Navigation running
-on hidden screens.
-
-The in-memory buffer is shared by all AeroGrid widget instances. Each entry
-contains uptime (`hh:mm:ss`), originating layout and runtime host number
-(`layout#host`), panel ID, and message. The host number distinguishes two
-instances using the same layout; it is not an EdgeTX screen number.
-Navigation currently records first-arm captured/missed outcomes and switch
-availability failures, along with raw decision inputs: current tick,
-availability/freshness/stale state/value/update tick, delay in seconds, and
-coordinate validity (not coordinates). Inputs describe GPS for capture
-attempts, or the arm switch for switch-unavailable events.
-Missing values appear as `nil`. It does not log every
-refresh, retry capture, or change the one-second capture policy.
-
-The dashboard shows the newest messages that fit, clipped to one row each.
-History shifts repaint newest rows first in small batches.
-Enter widget fullscreen,
-then tap the log panel to open a full-height viewer. Drag down or turn the
-scroll wheel left for older lines; drag up or turn right for newer lines.
-Long messages wrap. The viewer opens at the newest messages and freezes a
-snapshot so new events cannot move text while it is being read. Close and
-reopen to see newer events. **Close** or **RTN** returns to the dashboard.
-Touch is unavailable outside widget fullscreen in EdgeTX.
-
-Oldest entries are evicted at the configured limit. Removing the panel with
-the largest limit trims history to the remaining panels' limit on the next
-read or event. Removing all log panels stops recording but keeps existing
-history in memory. Nothing is written to the SD card; restarting the radio
-or unloading the widget script loses the log.
+The cursor marks the newest column and wraps to the left when full.
+Resizing clears the graph. The view measures this widget's accounted work,
+**not actual CPU usage**. Measurement continues on hidden screens but is not
+enabled by editor previews.
 
 ## States
 

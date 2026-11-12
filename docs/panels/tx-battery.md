@@ -21,7 +21,7 @@ against the radio's battery meter range or an explicit override.
 | **Critical volts** | Off | Whole-pack voltage at or below which critical triggers, taking priority over warning. |
 | **Visualization** | battery | **battery** prioritizes the battery glyph; **bar** adds a bar to the voltage; **none** shows voltage without a visual. |
 | **Show estimate** | off | Requests a voltage-based percentage, shown only when a usable range and enough space are available. |
-| **Accent** | cyan | Color used for the normal state: **cyan**, **green**, **amber**, or **orange**. Alarm and stale states use the shared state colors instead. |
+| **Accent** | cyan | Normal panel accent. |
 
 The four voltages range from 3 to 20 V in steps of 0.01 V. Step below 3 V to
 return to **Radio**, which uses the radio's own battery range, or to **Off**.

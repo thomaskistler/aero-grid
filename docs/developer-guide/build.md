@@ -159,7 +159,9 @@ connections and metadata, `radio-installer.mjs` handles releases and verified
 widget replacement, `radio-panel.mjs` drives the installation UI, and
 `radio-connection-help.mjs` adds connection help.
 
-The site mirrors **published stable releases**, not the current source tree.
+The site mirrors **published stable releases** and the rolling **dev** release,
+not the current source tree. The installer hides dev until
+**Show developer releases** is selected; beta/RC releases are excluded.
 Downloads are verified before replacement and installed files are checked afterward.
 Only `WIDGETS/AeroGrid` is replaced; user data, maps, other widgets, settings, and
 firmware are preserved. There is no backup or rollback.
