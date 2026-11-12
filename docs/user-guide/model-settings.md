@@ -91,7 +91,6 @@ including hidden screens:
 | Panel or service | What resets |
 | --- | --- |
 | Chart | Recordings, recorded extrema, flight shading, and arm/resume markers. |
-| Link status / Extrema Service probe | Flight-session minima, maxima, and session timing. |
 | Navigation | First-arm captured home; a new disarm/arm transition is needed to capture again. |
 | RX battery | Automatic cell estimate; fresh voltage supplies the next estimate. |
 | Flight counter / detection | Pending or active detection and its flight-status output, not the flight total. |

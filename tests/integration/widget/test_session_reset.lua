@@ -21,7 +21,7 @@ local layout = {
     grid = { columns = 4, rows = 4 },
     panels = {
         placement("chart", "chart", 0, 0, 2, { metrics = { { source = "Alt" } } }),
-        placement("link", "link-status", 2, 0, 1, { extrema = "flight", reading = "quality", qualitySource = "RQly" }),
+        placement("link", "link-status", 2, 0, 1, { reading = "quality", qualitySource = "RQly" }),
         placement("counter", "flight-counter", 2, 1, 1, {}),
         placement("home", "navigation", 0, 2, 1, { homeMode = "first-arm" }),
         placement("radio-home", "navigation", 2, 2, 1, { homeMode = "edgetx" }),
@@ -128,7 +128,6 @@ untilState(function()
         if
             context.serviceRuntime.byId.history:session().elapsed == 0
             or not panel(context, "home").feed.home
-            or not panel(context, "link").sessionExtrema.available
             or panel(context, "battery").estimatedCells ~= 4
         then
             return false
@@ -143,13 +142,11 @@ assert(owner.view.active and sticky)
 for _, context in ipairs({ first, second }) do
     assert(context.serviceRuntime.byId.history:session().elapsed > 0)
     assert(panel(context, "home").feed.home)
-    assert(panel(context, "link").sessionExtrema.available)
     equal(panel(context, "battery").estimatedCells, 4)
 end
 fixture.radio.rssi = 25
 fixture.radio.values[fixture.radio.fields.RQly.id] = 25
 pump(200)
-equal(panel(first, "link").sessionExtrema.min, 25)
 local chartElapsed = {}
 for index, context in ipairs({ first, second }) do
     local chart = panel(context, "chart")
@@ -205,7 +202,6 @@ for index, context in ipairs({ first, second }) do
     equal(panel(context, "home").feed.homeStatus, "waiting", "custom home requires a new arm edge")
     assert(not panel(context, "home").feed.home)
     assert(panel(context, "radio-home").feed.home, "EdgeTX home is never reset")
-    equal(panel(context, "link").sessionExtrema.min, 80)
 end
 first.editorUiModule.close(first, false)
 first.editorSession, first.editorStash = nil, nil

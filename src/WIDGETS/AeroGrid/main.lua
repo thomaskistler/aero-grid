@@ -262,6 +262,30 @@ local function joinPath(base, relative)
     return base .. "/" .. relative
 end
 
+-- Every instance shares one copy of each compiled module (about 1 MiB of
+-- bytecode) instead of loading its own; EdgeTX's Lua heap is capped at 6 MiB.
+-- Only the compiled chunk is shared. Each instance still runs it to get fresh
+-- module state. The cost is that edited files are not re-read until EdgeTX
+-- restarts this Lua state.
+local chunkCache = {}
+
+--- Load a compiled module chunk once per Lua state; failures are not cached.
+---@param filename string
+---@return function? chunk
+---@return string? error
+local function loadChunk(filename)
+    local chunk = chunkCache[filename]
+    if chunk then
+        return chunk
+    end
+    local loadError
+    chunk, loadError = loadScript(filename)
+    if chunk then
+        chunkCache[filename] = chunk
+    end
+    return chunk, loadError
+end
+
 --- Load and execute a Lua module while containing compile/runtime failures.
 ---@param base string
 ---@param relative string
@@ -270,7 +294,7 @@ end
 ---@return table? module
 ---@return string? error
 local function loadModule(base, relative, runtimeApi, ...)
-    local chunk, loadError = loadScript(joinPath(base, relative))
+    local chunk, loadError = loadChunk(joinPath(base, relative))
     if not chunk then
         return nil, loadError
     end
@@ -1695,7 +1719,7 @@ local function refresh(context, widgetEvent, touchState)
 end
 
 --- Keep panels updated while the dashboard screen is not visible.
---- Services keep running here too, so flight extrema and timers do not develop
+--- Services keep running here too, so flight timers do not develop
 --- a hole whenever the pilot looks at another screen.
 ---@param context AeroGridContext
 local function background(context)

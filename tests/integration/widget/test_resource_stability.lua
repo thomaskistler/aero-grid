@@ -143,6 +143,7 @@ for cycle = 1, 22 do
         local memory = collectgarbage("count")
         assert(fixture.lvglMock.replacedFontRefCount() == 0, dashboard .. " replaced font callbacks during reflow")
         peakObjects = math.max(peakObjects, fullObjects)
+        -- The first cycle loads every dashboard's module code, which then stays shared.
         if cycle == 2 then
             baseline[dashboard] = { memory = memory, objects = fullObjects }
         elseif cycle > 2 then

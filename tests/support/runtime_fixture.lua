@@ -82,7 +82,6 @@ local services = loadModule("lib/services.lua")
 local telemetryService = loadModule("lib/telemetry_service.lua")
 local modelService = loadModule("lib/model_service.lua")
 local controlService = loadModule("lib/control_service.lua")
-local extremaService = loadModule("lib/extrema_service.lua")
 local navigationService = loadModule("lib/navigation_service.lua")
 
 local function assertEqual(actual, expected, message)
@@ -179,7 +178,6 @@ return {
     telemetryService = telemetryService,
     modelService = modelService,
     controlService = controlService,
-    extremaService = extremaService,
     navigationService = navigationService,
     assertEqual = assertEqual,
     assertFont = assertFont,

@@ -71,7 +71,7 @@ panels:
       barMax: 100
       qualityWarning: 50
       qualityCritical: 30
-      extrema: flight
+      extrema: source
       accent: green
   # Timer 1 exactly as EdgeTX configured it. AeroGrid never runs a timer of
   # its own; it only presents the one the model already owns.
@@ -171,8 +171,6 @@ panels:
       readout: percent
       accent: cyan
 
-# One dashboard, one flight. The extrema service subscribes to this once and
-# every panel that tracks a flight extreme observes the same session,
-# which is why the switch is named here rather than in each of them.
+# Retained session block; layouts that still carry one must keep loading.
 session:
   armSource: SFv

@@ -113,7 +113,6 @@ separately charged.
 | `armed_service.lua` | Saved model Armed precedence, legacy switch fallback, and immutable effective arm views over shared Control polls. |
 | `flight_service.lua` | Shared model-flight detection, once-only count, optional Sticky output, and timestamped boundaries. |
 | `smart_flight.lua` | Optional protocol-identified flight sensors with per-sensor receipt/freshness and SI units. |
-| `extrema_service.lua` | Sensor extrema and dashboard flight-session tracking. |
 | `navigation_service.lua` | GPS fix, pilot/home position, distance, and north-up bearing. |
 | `history_service.lua` | Error-bounded chart recordings, cumulative recording time, flight boundaries, raw extrema, line-only smoothing, and bounded rolling expiration. |
 | `services.lua` | Environment/snapshots, subscription registration, and bounded scheduling/update dispatch. |
@@ -154,7 +153,7 @@ The resolver owns no separate polling work: Control still reads each switch
 once per runtime. Configuration is model-wide; each dashboard publishes its
 own view over that same condition.
 
-History and extrema key sessions by the effective condition. A configured
+History keys sessions by the effective condition. A configured
 model Armed unifies their arm inputs; absent model arming retains independent legacy
 switches. Each chart arm configuration has its own cumulative session.
 It pauses on disarm unless a matching shared flight is still active, including

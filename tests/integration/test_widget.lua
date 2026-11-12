@@ -415,12 +415,10 @@ end
 --- The flight session is configured by the layout, not by a panel.
 ---
 --- `armSource` used to be a setting on `metric` and on `link-status`, so a
---- dashboard with both could name two switches. `extremaService:flight`
---- documents that the first caller establishes the source, which meant the
---- second panel's switch was read from the layout, accepted by the host,
---- and then silently discarded. Moving it to the layout's `session` block
---- makes that contradiction unstatable. This checks the block is what does
---- the arming, by building the same dashboard with and without it.
+--- dashboard with both could name two switches, and all but the first were
+--- silently discarded. Moving it to the layout's `session` block makes that
+--- contradiction unstatable. This checks the block is what does the arming,
+--- by building the same dashboard with and without it.
 local function testSessionArmsTheFlight()
     local function dashboard(sessionBlock)
         return table.concat({
@@ -439,7 +437,6 @@ local function testSessionArmsTheFlight()
             "      label: Link",
             "      reading: rssi",
             "      rssiSource: RSSI",
-            "      extrema: flight",
             sessionBlock,
         }, "\n") .. "\n"
     end
@@ -450,9 +447,9 @@ local function testSessionArmsTheFlight()
         local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widget)
         assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
         local registry = context.serviceRuntime
-        local extrema = registry and registry.byId and registry.byId.extrema
-        assert(extrema, "the dashboard built no extrema service")
-        return extrema:flight(context.session.armSource)
+        local armed = registry and registry.byId and registry.byId.armed
+        assert(armed, "the dashboard built no armed service")
+        return armed:state(context.session.armSource)
     end
 
     -- Configured is the service's own word for "an arm source was supplied",
@@ -462,6 +459,37 @@ local function testSessionArmsTheFlight()
 
     local unarmed = flightOf(dashboard("# no session block"))
     assertEqual(unarmed.configured, false, "a dashboard that names no arm switch reported one anyway")
+end
+
+--- `extrema: flight` no longer exists; saved layouts that use it must still
+--- load and show EdgeTX's own minimum of the leading source instead.
+local function testRemovedFlightMinimumLoadsAsSource()
+    local yaml = table.concat({
+        "version: 5",
+        "grid:",
+        "  columns: 4",
+        "  rows: 4",
+        "panels:",
+        "  - id: peak",
+        "    type: link-status",
+        "    col: 0",
+        "    row: 0",
+        "    colSpan: 2",
+        "    rowSpan: 1",
+        "    config:",
+        "      label: Kept",
+        "      reading: rssi",
+        "      rssiSource: RSSI",
+        "      extrema: flight",
+    }, "\n") .. "\n"
+    resetRadio()
+    local widget = makeWidget("flight-minimum", yaml)
+    local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widget)
+    assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+    local link = entryById(context, "peak").instance
+    assertEqual(link.settings.extrema, "source")
+    assertEqual(link.settings.label, "Kept")
+    assertEqual(link.minimumFeed.name, "RSSI-")
 end
 
 --- The single-cell gallery has to contain the catalogue, or it is not a
@@ -799,6 +827,7 @@ end
 local function testShippedLayout()
     testAllLayoutsLoad()
     testSessionArmsTheFlight()
+    testRemovedFlightMinimumLoadsAsSource()
     testSpanGalleryIsComplete()
     testStatesCoverBothPalettes()
     testScreensReachEveryShippedLayout()
@@ -5590,14 +5619,14 @@ local function testInstructionBudget()
     end
 
     --- Every service, exercised at the largest layout the schema permits.
-    --- The five services are spread across sixteen single-cell diagnostic
+    --- The four services are spread across sixteen single-cell diagnostic
     --- panels, each subscribing to something different, so the measurement
     --- covers the whole service layer rather than telemetry alone.
     local PROBE_SPECS = {
-        { service = "navigation", source = "GPS", extra = "Dist" },
+        { service = "navigation", source = "GPS" },
         { service = "model", index = 0 },
         { service = "control", source = "trim-ail", index = 0 },
-        { service = "extrema", source = "S4", extra = "SAv" },
+        { service = "telemetry", source = "RxBt" },
     }
 
     --- Build a layout that fills the grid with service diagnostic panels.
@@ -5616,9 +5645,6 @@ local function testInstructionBudget()
             lines[#lines + 1] = "      label: Probe " .. i
             if spec.source then
                 lines[#lines + 1] = "      source: " .. spec.source
-            end
-            if spec.extra then
-                lines[#lines + 1] = "      extra: " .. spec.extra
             end
             lines[#lines + 1] = "      index: " .. (spec.index or 0)
         end
@@ -5740,13 +5766,13 @@ local function testInstructionBudget()
         },
         {
             type = "link-status",
-            services = { "telemetry", "extrema" },
+            services = { "telemetry" },
             config = function(index)
                 return {
                     "rssiSource: " .. (index % 2 == 0 and "RSSI" or "1RSS"),
                     "qualitySource: RQly",
                     "reading: " .. (index % 2 == 0 and "auto" or "rssi"),
-                    "extrema: flight",
+                    "extrema: source",
                 }
             end,
         },
@@ -5883,7 +5909,7 @@ local function testInstructionBudget()
         return context
     end
 
-    exercise("gallery", galleryPath, 10, { "telemetry", "model", "control", "extrema", "navigation" })
+    exercise("gallery", galleryPath, 10, { "telemetry", "model", "control", "navigation" })
     exercise("full grid", makeWidget("budget-16", fullGridLayout(16)), 16, { "telemetry" })
     local linkReview = assert(hostIo.open(developmentLayoutsPath .. "review-link-status.yaml", "r"))
     local linkReviewYaml = linkReview:read("a")
@@ -5929,7 +5955,7 @@ local function testInstructionBudget()
         "service probes",
         makeWidget("budget-probes", probeGridLayout()),
         4,
-        { "telemetry", "model", "control", "extrema", "navigation" }
+        { "telemetry", "model", "control", "navigation" }
     )
 
     -- Four 2x2 diagnostics panels, which is the worst case for the view that
@@ -6251,7 +6277,7 @@ local function testServiceDiagnostics()
     assertEqual(navigation.BRG, "9 deg")
 
     local second = page("services2")
-    assertEqual(#second.panels, 3)
+    assertEqual(#second.panels, 2)
 
     local modelRows = probeRows(entryById(second, "model").instance)
     assertEqual(modelRows.MODEL, "Test Model")
@@ -6263,10 +6289,6 @@ local function testServiceDiagnostics()
     local control = probeRows(entryById(second, "control").instance)
     assertEqual(control["TRIM-AIL"], "30 23%")
     assertEqual(control.RATES, "4.5")
-
-    local extrema = probeRows(entryById(second, "extrema").instance)
-    assertEqual(extrema.ARM, "ARMED")
-    assert(string.match(extrema.FLIGHT, "^#1 "), extrema.FLIGHT)
 
     assertEqual(#second.errors, 0, table.concat(second.errors, "\n"))
 end

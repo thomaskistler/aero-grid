@@ -13,9 +13,8 @@
 --- cannot fit rather than drawing past its container.
 
 ---@class AeroGridProbeSettings
----@field service "telemetry"|"model"|"control"|"extrema"|"navigation"
+---@field service "telemetry"|"model"|"control"|"navigation"
 ---@field source? string Primary source name, where the service takes one.
----@field extra? string Arm switch for flight-session tracking.
 ---@field index? number Timer or global variable index.
 ---@field label? string Panel title; defaults to the service name.
 ---@field accent? string
@@ -33,10 +32,9 @@ local probe = {
             label = "Service",
             type = "string",
             default = "telemetry",
-            choices = { "telemetry", "model", "control", "extrema", "navigation" },
+            choices = { "telemetry", "model", "control", "navigation" },
         },
         { key = "source", label = "Source", type = "string", default = "" },
-        { key = "extra", label = "Second source", type = "string", default = "" },
         { key = "index", label = "Index", type = "number", default = 0 },
         -- An empty label is not an absent one: it means derive the heading at
         -- runtime, here from the name of the service being probed. A
@@ -67,7 +65,6 @@ local VALUE_SHARE = 0.55
 ---@return any subject Per-subscription view, where the service has one.
 local function subscribe(service, name, settings)
     local source = settings.source
-    local extra = settings.extra
     local index = settings.index
 
     if name == "telemetry" then
@@ -90,14 +87,6 @@ local function subscribe(service, name, settings)
         service:globalVariable(index)
         return nil
     end
-    if name == "extrema" then
-        service:flight(extra)
-        if source ~= "" then
-            service:sessionExtrema(source, extra)
-        end
-        return nil
-    end
-
     return nil
 end
 
