@@ -432,11 +432,11 @@ It supports 2x1, 3x1, 4x1, 2x2, 3x2, 4x2, 3x3, 4x3, and 4x4.</p>
 </tr>
 <tr>
 <td><code>timeRange</code></td>
-<td><code>growing</code> (default) or <code>rolling</code>.</td>
+<td>Obsolete (<code>growing</code> / <code>rolling</code>), accepted for compatibility but ignored.</td>
 </tr>
 <tr>
 <td><code>duration</code></td>
-<td><code>30s</code>, <code>1m</code> (default), <code>2m</code>, <code>5m</code>, <code>10m</code>. Fixed Rolling window; ignored in Growing mode.</td>
+<td>Omitted (default) grows the window automatically; whole minutes <code>1</code> to <code>60</code> fix it. Earlier values such as <code>30s</code> or <code>5m</code> round up to whole minutes. In the drawer, <strong>Window minutes</strong> below 1 is <strong>Auto</strong>.</td>
 </tr>
 <tr>
 <td><code>scaling</code></td>
@@ -454,28 +454,29 @@ It supports 2x1, 3x1, 4x1, 2x2, 3x2, 4x2, 3x3, 4x3, and 4x4.</p>
 </table>
 <p>Each metric also accepts <code>label</code>. The title is above the shared plot, with each
 metric's name/value and raw min/max grouped in a right-hand legend.
-Automatic bounds use raw lifetime recorded extrema with padding and rounding.
-For example, <code>rangeMin: 0</code> with no <code>rangeMax</code> anchors the bottom at zero and
+Automatic bounds start near the first drawn reading and only grow: when drawn
+data leaves them, they at least double. For example, <code>rangeMin: 0</code> with no <code>rangeMax</code> anchors the bottom at zero and
 automatically adjusts the top; omit both keys for a fully automatic range.</p>
 <p>Set <strong>Arm switch</strong> in <strong>AeroGrid → Model settings</strong>; changes save automatically. A retained panel <code>armSwitch</code>
 is used only before model arming has been saved. A qualified shared flight with
 the same effective arm condition keeps recording through disarm grace until
 confirmed flight end. Otherwise disarming pauses immediately. Rearming during
 grace does not break or duplicate a flight; rearming after a pause resumes the
-same history with a gap and dotted connectors. The horizontal axis counts cumulative
+same history with a gap and faint connectors. The horizontal axis counts cumulative
 recording time, including retained grace samples. Neutral background bands
 show actual flight times; bottom-axis triangles mark arming and disarming
 except the first arming. No logical-switch
-output or Flight counter panel is needed. Growing starts at one minute and expands to
-the next whole minute when exceeded; its duration is not configurable. Rolling
-keeps only the latest plot window but retains raw lifetime min/max. History is
+output or Flight counter panel is needed. Without <code>duration</code>, the window starts
+at one minute and grows to 2, 3, 4, 6, 8, 12, 16 minutes and so on as the plot
+fills, keeping all data on screen. A fixed <code>duration</code> slides left by one minute
+when full. History is
 RAM-only and clears on dashboard reload or model-wide session reset. Connected linear compression bounds
 error to half a step of each metric's <code>precision</code> (sensor precision when omitted);
 with smoothing, this bound applies to the filtered signal. Each distinct
 source/options recording holds 6,144 knots, covering at least 10 minutes at 10 Hz
 even without compression savings. At capacity, <strong>HISTORY FULL</strong> preserves existing
 plot history and stops new plot samples, but raw readouts/extrema keep updating.
-Rolling mode reuses expired storage. No older data is recompressed more loosely.
+No older data is recompressed more loosely.
 Recordings share history only when their armed switch, source, and recording
 options match.</p>
 <pre><code class="language-yaml">version: 5
@@ -491,7 +492,6 @@ panels:
     rowSpan: 2
     config:
       label: Power
-      timeRange: growing
       scaling: independent
       smoothing: light
       metrics:
@@ -697,7 +697,7 @@ flight-active logical switch and EdgeTX Special Functions.</p>
 <td><code>section</code></td>
 <td>string</td>
 <td><code>identity</code></td>
-<td><code>identity</code>, <code>theme</code>, <code>panels</code>, <code>sources</code>, <code>log</code></td>
+<td><code>identity</code>, <code>theme</code>, <code>panels</code>, <code>sources</code>, <code>log</code>, <code>scheduler</code></td>
 <td>Section</td>
 <td>Selects which host diagnostics to show.</td>
 </tr>
@@ -988,7 +988,7 @@ flight-active logical switch and EdgeTX Special Functions.</p>
 <td><code>rangeMin</code></td>
 <td>number</td>
 <td><code>0</code></td>
-<td>Finite number; drawer step <code>0.1</code></td>
+<td>Finite number; drawer keyboard entry, blank restores the default</td>
 <td>Range min</td>
 <td>Nested in <code>metrics[]</code>; scale minimum, not a clamp on the displayed value.</td>
 </tr>
@@ -996,7 +996,7 @@ flight-active logical switch and EdgeTX Special Functions.</p>
 <td><code>rangeMax</code></td>
 <td>number</td>
 <td><code>100</code></td>
-<td>Finite number; drawer step <code>0.1</code></td>
+<td>Finite number; drawer keyboard entry, blank restores the default</td>
 <td>Range max</td>
 <td>Nested in <code>metrics[]</code>; scale maximum.</td>
 </tr>

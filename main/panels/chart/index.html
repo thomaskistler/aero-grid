@@ -255,13 +255,15 @@ The legend shows each recorded value and its minimum and maximum.
 Wide layouts keep the legend on the right. Square and tall layouts put it above
 the full-width plot, with two or three metrics arranged left to right. Each metric
 uses two lines: its name and value, then its minimum and maximum.
+Live readings do not change the plot width. Legend text shrinks to fit; values
+that still cannot fit show <code>...</code> instead of a truncated number.
 Use separate panels for separate charts.
 Select <strong>Arm switch</strong> in <strong>AeroGrid → Model settings</strong>; changes save automatically.
 Until model arming has been saved, an existing panel arm switch remains in use
 and visible. Saved model arming overrides it on every dashboard; saved <strong>None</strong>
 disables recording rather than restoring the fallback.</p>
 <h2 id="settings">Settings</h2>
-<p><img alt="Chart panel settings with rolling time range selected" src="../../assets/editor/chart-settings.png" /></p>
+<p><img alt="Chart panel settings with the default Auto window" src="../../assets/editor/chart-settings.png" /></p>
 <table>
 <thead>
 <tr>
@@ -282,14 +284,9 @@ disables recording rather than restoring the fallback.</p>
 <td>Up to three readings. Tap <strong>+</strong> to add one, or tap an entry to edit it.</td>
 </tr>
 <tr>
-<td><strong>Time range</strong></td>
-<td>growing</td>
-<td><strong>growing</strong> keeps the recording from the start; <strong>rolling</strong> shows the latest fixed window.</td>
-</tr>
-<tr>
-<td><strong>Window duration</strong></td>
-<td>1 minute</td>
-<td><strong>30 seconds</strong>, <strong>1 minute</strong>, <strong>2 minutes</strong>, <strong>5 minutes</strong>, or <strong>10 minutes</strong>. Shown only when <strong>Time range</strong> is <strong>rolling</strong>.</td>
+<td><strong>Window minutes</strong></td>
+<td>Auto</td>
+<td><strong>Auto</strong> grows the window as recording continues. A whole number of minutes from 1 to 60 fixes it. Step below 1 to select <strong>Auto</strong>.</td>
 </tr>
 <tr>
 <td><strong>Series scales</strong></td>
@@ -333,7 +330,7 @@ disables recording rather than restoring the fallback.</p>
 <tr>
 <td><strong>Range min</strong>, <strong>Range max</strong></td>
 <td>Auto</td>
-<td>Optional lower and upper vertical bounds, in steps of 0.1. Step below the lowest numeric value to select <strong>Auto</strong>. If both are set, maximum must exceed minimum.</td>
+<td>Tap to type a fixed lower or upper vertical bound. Negative numbers and decimals are accepted. If both are set, maximum must exceed minimum. Clear the text for <strong>Auto</strong>.</td>
 </tr>
 <tr>
 <td><strong>Unit</strong></td>
@@ -373,35 +370,49 @@ mid-flight shades only the recorded portion.</p>
 <p>Upward triangles on the bottom axis mark arming; downward triangles mark disarming.
 The first arming that starts recording is not marked.
 Pausing simply stops the traces, without a label or stop marker.
-Resuming inserts a gap; dotted lines
+Resuming inserts a gap; faint lines in each trace's color
 connect the last recorded values to the resumed values.
-The gap indicates omitted time, not the length of the pause.
+The gap is 24 pixels wide in a fixed window and narrows as an <strong>Auto</strong> window grows.
+It indicates omitted time, not the length of the pause, and uses space in the window.
 Missing telemetry breaks the traces without adding a pause gap or connector.
-Readouts freeze when recording pauses. Minimum and maximum cover all recorded
-periods, even in rolling mode.</p>
-<p><strong>Growing</strong> starts at one minute and expands in whole-minute steps as
-cumulative recording time increases. <strong>Rolling</strong> drops plot history outside
-<strong>Window duration</strong>, but keeps the recorded minimum and maximum.
+Consecutive valid readings are connected: each screen column shows its minimum
+and maximum and joins the previous column's last value. When readings arrive less
+often than once per column, the trace holds the last value until the next reading.
+Readouts freeze when recording pauses. Minimum and maximum cover all recorded periods.</p>
+<p>The horizontal axis starts at recording time zero. With <strong>Auto</strong>, the window
+starts at 1 minute; when the plot is full it compresses to 2, 3, 4, 6, 8, 12, 16,
+24, 32 minutes and so on, keeping all earlier data on screen. When a fixed window
+is full, it slides left by 1 minute; the oldest minute leaves the plot. Resizing
+the panel or resetting the session clears the plot. Earlier saved
+growing/rolling choices are ignored; saved durations that are not whole minutes
+round up, and longer ones are limited to 60 minutes.
 Faint solid grid lines mark recording-time intervals; the bottom-right label shows
-the recording-time window. Very dense pause gaps can push older points out of view.</p>
-<p>Each vertical bound can be fixed independently: set only <strong>Range min</strong> to
-anchor the bottom, only <strong>Range max</strong> to fix the top, or both for a fixed
-range. <strong>Auto</strong> follows recorded extrema with some padding. With <strong>shared</strong>
-scales, the lowest configured minimum and highest configured maximum apply
-to all traces; an unset side follows all metrics automatically. With
-<strong>independent</strong> scales, each metric uses its own bounds. Fixed bounds clip
-the plot, not recorded values or extrema.</p>
+the recording-time window. Pause gaps can fill the window sooner.</p>
+<p>An <strong>Auto</strong> bound starts close to the first reading. When drawn data leaves the
+range, the plot is redrawn at a wider range, typically within a second: the range
+at least doubles and fits the data with some headroom. Auto bounds only grow until
+the panel is resized or the session is reset. With <strong>shared</strong> scales, the lowest
+configured minimum and highest configured maximum apply to all traces, and Auto
+sides follow all traces. With <strong>independent</strong> scales, each metric uses its own
+bounds. Fixed bounds clip the plot, not recorded values or extrema.</p>
 <p>Smoothing reduces short-term fluctuations in the line. <strong>Light</strong>,
 <strong>medium</strong>, and <strong>strong</strong> respond over approximately 0.5, 1, and 2 seconds.
 Missing or stale readings leave gaps and dim the last value rather than
 recording a false zero; a fresh numeric zero is valid.</p>
 <p>If <strong>HISTORY FULL</strong> appears, existing plot history is preserved and new plot
 samples stop for the full series. Readouts and extrema continue
-updating. Rolling mode frees space as old history leaves the window.</p>
+updating.</p>
 <p>History is held in RAM, not saved to the SD card. It continues while the
 dashboard receives background updates. Reloading or restarting the dashboard,
 including applying editor changes that rebuild it, clears history.
-Editor previews reuse compatible recorded history without starting new recordings.
+Each append consumes telemetry received since the previous append, summarizes
+the affected pixel columns, and draws only those columns.
+Charts do not reconstruct traces from stored history. Opening or resizing a
+chart starts an empty plot at the current recording time; only later telemetry
+is drawn. A fixed window starts where sliding would have placed it.
+Recording time stops while the editor or Model settings is open, even during a
+flight; charts show a pause gap when it resumes. Charts do not draw while the
+editor is open. Editor previews do not replay history or record new data.
 New sources show an explicit no-data preview until saved.
 Flight overlays retain the latest 64 intervals; missing earlier boundaries are
 not guessed.
@@ -447,7 +458,7 @@ extrema, and markers across all dashboards.</p>
 </tr>
 <tr>
 <td><strong>PREVIEW</strong></td>
-<td>An edited chart displaying compatible existing history without changing recording.</td>
+<td>An edited chart whose recording already exists; the preview does not draw its traces or change recording.</td>
 </tr>
 <tr>
 <td><strong>PREVIEW: NO DATA</strong></td>

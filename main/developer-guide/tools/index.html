@@ -259,8 +259,8 @@ Recipes can override the border.
 Chart omits the unsupported 1x2 placement. Its adapter generates varying
 synthetic readings through the real telemetry/history services, records for
 two flights separated by a recording pause, and waits for confirmed completion
-and finished projection before capturing. This shows neutral flight bands,
-arm/disarm triangles, and a resume gap with dotted connectors.
+and finished drawing before capturing. This shows neutral flight bands,
+arm/disarm triangles, and a resume gap with faint connectors.
 Its recipe requires <code>armSwitch: SFv</code>; the adapter supplies that condition and
 a motor channel through the real services, with isolated model flight settings.</p>
 <p>The runner waits for recipe-specific readiness, not just a fixed delay.
@@ -283,6 +283,11 @@ name/start/remaining seconds, signed stored trim values, TX voltage, and
 <code>sample.sources</code> with exact sensor names, values, EdgeTX units, and precision.
 Cells use a voltage list; GPS uses coordinates including pilot position.
 Every configured source needs a sample.</p>
+<p>Recipes in <code>tools/capture-recipes/variants/</code> capture extra documented views
+and run only with <code>--recipe</code>. The Host diagnostics scheduler view uses
+<code>variants/host-diagnostics-scheduler.yaml</code>; its optional <code>companions</code> list adds
+uncropped panels whose work the view measures. Publish its crop and provenance
+as <code>scheduler-2x2.png</code> and <code>scheduler-provenance.json</code>.</p>
 <p><code>tools/capture_recipes.py</code> owns recipe validation, model setup, synthetic
 inputs, and readiness adapters. <code>capture-panels.py</code> handles preparation,
 native invocation, cropping, borders, and provenance. Add an adapter, not
@@ -329,7 +334,7 @@ the panel reference pages. Use <code>--help</code> for supported scene names.
 Panel drawer scenes save <strong>SFv</strong> as the model-wide Arm switch, so obsolete
 panel arm controls are not shown. The Chart scenes use a native GV1 source
 labeled <strong>Reading</strong>.
-<code>chart-settings</code> selects <strong>rolling</strong> to include <strong>Window duration</strong>;
+<code>chart-settings</code> shows the default <strong>Auto</strong> window;
 <code>chart-metric-entry</code> opens Chart's own entry drawer, not Metric's.
 The <code>aero-menu</code>, <code>model-settings</code>, <code>model-settings-reset</code>, and
 <code>model-settings-bottom</code> scenes show the shared model menu and settings.</p>

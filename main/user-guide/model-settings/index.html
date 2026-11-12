@@ -195,7 +195,8 @@
 <p>Long-press the AeroGrid dashboard to enter fullscreen. The AeroGrid icon
 appears in the top-left corner. Tap it, then choose <strong>Model settings</strong>.</p>
 <p>Settings apply to every AeroGrid dashboard for the selected model, not to an individual panel
-or layout. Each confirmed change saves automatically; Back closes the page.</p>
+or layout. Each confirmed change saves automatically; Back closes the page.
+Chart recording time stops while this page is open and resumes with a pause gap.</p>
 <p><img alt="AeroGrid menu with Model settings and UI setup" src="../../assets/editor/aero-menu.png" /></p>
 <h2 id="arming">Arming</h2>
 <p>Arming tells AeroGrid when your model is armed, using the switch condition
@@ -225,8 +226,8 @@ is saved. Those legacy controls disappear once model arming takes precedence.
 Numeric sources such as <code>ch5</code> or <code>sa</code> are not arm conditions.</p>
 <h2 id="flight-detection">Flight detection</h2>
 <p>Flight detection distinguishes a flight from simply being armed. It observes
-the armed condition, motor output, and live telemetry to confirm a flight
-start, then confirms its end after sustained disarming.</p>
+the armed condition, motor output, and (by default) live telemetry to confirm
+a flight start, then confirms its end after sustained disarming.</p>
 <p>Each confirmed start increments the model's flight total once, shown by
 Flight counter. Detection also supplies Chart flight shading, keeps recording
 running through the end-detection window, and drives the optional
@@ -253,6 +254,11 @@ It runs across the model's dashboards even without a Flight counter panel.</p>
 <td>Enable when the motor channel runs from high at idle to low at full power.</td>
 </tr>
 <tr>
+<td><strong>Require receiver</strong></td>
+<td>on</td>
+<td>Require a live receiver telemetry connection to confirm flight start. Turn off to test without a receiver; arming, motor threshold, and detection windows still apply.</td>
+</tr>
+<tr>
 <td><strong>Motor threshold (%)</strong></td>
 <td>25</td>
 <td>Motor output must be strictly above this percentage to qualify a flight. Set from 0 to 99 in whole-percent steps.</td>
@@ -260,7 +266,7 @@ It runs across the model's dashboards even without a Flight counter panel.</p>
 <tr>
 <td><strong>Start detection window (s)</strong></td>
 <td>30</td>
-<td>Continuous armed state, sufficient motor output, and live telemetry required to confirm flight start.</td>
+<td>How long the start conditions must hold continuously to confirm flight start.</td>
 </tr>
 <tr>
 <td><strong>End detection window (s)</strong></td>
@@ -274,7 +280,8 @@ It runs across the model's dashboards even without a Flight counter panel.</p>
 </tr>
 </tbody>
 </table>
-<p>Flight detection observes live telemetry; it does not arm the aircraft.
+<p>Flight detection does not arm the aircraft. With <strong>Require receiver</strong> off,
+bench tests can increment the real flight total and activate the Flight status switch.
 Both detection windows can be set from 1 to 3600 seconds in whole-second steps.
 Flight timestamps use the beginning of each window, not the later confirmation.</p>
 <h3 id="flight-status-output">Flight status output</h3>
