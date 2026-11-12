@@ -83,7 +83,10 @@ local function fixture(width)
     assert(not state.build and not state.save and not state.cancel, "no draft-form buttons")
     local smart = state.controls.smartDetection.parent.properties
     assert(state.smartStatus.properties.y >= smart.y + smart.h, "Smart status follows Smart detection")
-    assert(state.smartStatus.properties.y + state.smartStatus.properties.h < state.controls.flightSwitch.parent.properties.y)
+    assert(
+        state.smartStatus.properties.y + state.smartStatus.properties.h
+            < state.controls.flightSwitch.parent.properties.y
+    )
     assert(not state.smartStatus.hidden)
     local headings = {}
     for _, object in ipairs(mock.objects) do
