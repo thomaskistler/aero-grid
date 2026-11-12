@@ -288,11 +288,6 @@ shows two decimals, not a promise of sensor accuracy or resolution.</p>
 <td><strong>cell</strong> shows the lowest monitored cell, or the calculated average for a numeric pack source. <strong>pack</strong> shows total pack voltage.</td>
 </tr>
 <tr>
-<td><strong>Voltage levels</strong></td>
-<td></td>
-<td>Per-cell voltage settings.</td>
-</tr>
-<tr>
 <td><strong>Full (V/cell)</strong></td>
 <td>4.2</td>
 <td>Full end of the battery or bar scale, and the voltage used to estimate series count. 0 to 10, in steps of 0.01. Shown only when <strong>Visualization</strong> is <strong>battery</strong> or <strong>bar</strong>.</td>
@@ -335,7 +330,7 @@ shows two decimals, not a promise of sensor accuracy or resolution.</p>
 <tr>
 <td><strong>Accent</strong></td>
 <td>cyan</td>
-<td>Color used for the normal state: <strong>cyan</strong>, <strong>green</strong>, <strong>amber</strong>, or <strong>orange</strong>. Alarm and stale states use the shared state colors instead.</td>
+<td>Normal panel accent.</td>
 </tr>
 </tbody>
 </table>
@@ -368,10 +363,8 @@ headroom, not remaining capacity. Values outside the range keep the visual
 empty or full while the number still shows the actual voltage.</p>
 <h3 id="visualization-and-details">Visualization and details</h3>
 <p><strong>battery</strong> never shows supporting readings. <strong>bar</strong> and <strong>details</strong> show
-enabled, available details only when they fit: cell count has priority over
-cell delta, which has priority over the alternate reading. Both a footer
-and a side stack are tried before details are dropped. If delta cannot fit,
-a shorter alternate reading can still use the remaining room.</p>
+available details when they fit, prioritizing cell count, then cell delta,
+then the alternate reading.</p>
 <p><strong>Show cell delta</strong> displays the difference to two decimals with a delta
 symbol. <strong>Show alt reading</strong> displays pack voltage to one decimal, or
 average cell voltage to two decimals. Captions shorten when needed. Small

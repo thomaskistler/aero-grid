@@ -237,11 +237,8 @@
 
 <h1 id="panel-reference">Panel reference</h1>
 <p>Choose a panel below for visual examples, its settings, and how it behaves.</p>
-<p>Display preferences are best-effort: panels silently hide optional information
-that does not fit, preserving the settings so it can return when space permits.
-Limited space does not produce a configuration warning. Invalid settings still
-produce errors, and warning, critical, stale and unavailable state indications
-remain active.</p>
+<p>Panels hide optional information that does not fit and restore it when enlarged.
+This does not change saved settings or disable alarms.</p>
 <table>
 <thead>
 <tr>
@@ -352,7 +349,7 @@ The controls behave the same way in every panel:</p>
 </tr>
 <tr>
 <td><strong>+</strong></td>
-<td>Adds an entry at the bottom, copied from the last entry. It is unavailable when the list is full.</td>
+<td>Adds an entry at the bottom. It is unavailable when the list is full. Individual panel pages describe how new entries are initialized.</td>
 </tr>
 <tr>
 <td><strong>Remove entry</strong></td>
@@ -370,7 +367,46 @@ stay in your draft until you save the layout.</p>
 To arrange panels, see <a href="../user-guide/edit-dashboard/">Edit a dashboard on the radio</a>.
 Arming, flight detection, session reset, and flight-status output are
 <a href="../user-guide/model-settings/">Model settings</a>, not normal panel settings.
-Legacy panel arm controls may still appear on older layouts until model arming is saved.</p>
+For legacy panel controls, see <a href="../user-guide/model-settings/#older-layouts">Older layouts</a>.</p>
+<h2 id="common-display-states">Common display states</h2>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Presentation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Normal</td>
+<td>Reading with the selected <strong>Accent</strong>, without an alarm badge.</td>
+</tr>
+<tr>
+<td>Warning</td>
+<td>Warning colors and usually a <code>WARN</code> badge.</td>
+</tr>
+<tr>
+<td>Critical</td>
+<td>Critical colors and usually a <code>CRIT</code> badge.</td>
+</tr>
+<tr>
+<td>Stale</td>
+<td>Last reading retained with muted styling and a <code>STALE</code> badge.</td>
+</tr>
+<tr>
+<td>Unavailable</td>
+<td>A missing-reading marker such as <code>--</code> and usually an <code>N/A</code> badge, not a measured zero.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Accent</strong> choices are <strong>cyan</strong>, <strong>green</strong>, <strong>amber</strong>, and <strong>orange</strong>. State colors
+override that choice. Panel pages describe specific messages and exceptions;
+diagnostic panels report problems in text without changing their colors.</p>
+<p>In settings tables, <strong>Blank</strong> means empty text, <strong>Not set</strong> means no source
+or optional value has been selected, and <strong>No entries</strong> means an empty list.
+Words such as <strong>Off</strong>, <strong>Auto</strong>, <strong>Sensor</strong>, and <strong>Radio</strong> are the controls'
+displayed fallback choices. A derived default such as “Source name” follows
+the selected source.</p>
       </article>
     </div>
   </div>

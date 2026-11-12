@@ -253,7 +253,7 @@
 </tbody>
 </table>
 <p>Displays up to three independently configured numeric EdgeTX sources.
-The first reading is the headline; the other two are supporting readings.
+The first is the main reading; the other two are supporting readings.
 Sensor minimum and maximum readings are ordinary sources, such as <code>GAlt-</code>
 and <code>GAlt+</code>. The panel does not derive measurements or convert units.
 AeroGrid's Session reset switch does not clear these EdgeTX-owned minima or maxima.</p>
@@ -270,18 +270,18 @@ AeroGrid's Session reset switch does not clear these EdgeTX-owned minima or maxi
 <tbody>
 <tr>
 <td><strong>Metrics</strong></td>
-<td>none</td>
-<td>Up to three readings. The first is the headline; the others are supporting readings. Each row shows the entry's label (or source) and a summary; unnamed readings use <strong>Metric 1</strong>, <strong>Metric 2</strong>, and so on. Tap <strong>+</strong> to add a reading; the first one starts blank, later ones copy the last entry.</td>
+<td>No entries</td>
+<td>Up to three readings. The first is the main reading; the others are supporting readings. Tap a named row to edit it. <strong>+</strong> starts the first entry blank and copies the last entry for later additions.</td>
 </tr>
 <tr>
 <td><strong>Visualization</strong></td>
 <td>none</td>
-<td>How the headline reading is drawn: <strong>bar</strong>, <strong>radial</strong>, or <strong>none</strong>.</td>
+<td>How the main reading is drawn: <strong>bar</strong>, <strong>radial</strong>, or <strong>none</strong>.</td>
 </tr>
 <tr>
 <td><strong>Accent</strong></td>
 <td>cyan</td>
-<td>Color used for the normal state: <strong>cyan</strong>, <strong>green</strong>, <strong>amber</strong>, or <strong>orange</strong>. Alarm and stale states use the shared state colors instead.</td>
+<td>Normal panel accent.</td>
 </tr>
 </tbody>
 </table>
@@ -299,8 +299,8 @@ AeroGrid's Session reset switch does not clear these EdgeTX-owned minima or maxi
 <tbody>
 <tr>
 <td><strong>Label</strong></td>
-<td>source name</td>
-<td>Panel heading for the headline reading; caption for supporting readings. Clear it to use the source name.</td>
+<td>Source name</td>
+<td>Panel heading for the main reading; caption for supporting readings. Clear it to use the source name.</td>
 </tr>
 <tr>
 <td><strong>Source</strong></td>
@@ -309,7 +309,7 @@ AeroGrid's Session reset switch does not clear these EdgeTX-owned minima or maxi
 </tr>
 <tr>
 <td><strong>Unit</strong></td>
-<td>sensor unit</td>
+<td>Sensor unit</td>
 <td>Unit text shown beside the value. It only changes the label, not the number. Clear it to use the sensor's unit.</td>
 </tr>
 <tr>
@@ -342,24 +342,20 @@ AeroGrid's Session reset switch does not clear these EdgeTX-owned minima or maxi
 <td>Off</td>
 <td>Value that triggers the critical state, in the source's units, between <strong>Range min</strong> and <strong>Range max</strong>. Steps of 0.1. One step below <strong>Range min</strong> is <strong>Off</strong>.</td>
 </tr>
-<tr>
-<td><strong>Remove entry</strong></td>
-<td></td>
-<td>Deletes this reading.</td>
-</tr>
 </tbody>
 </table>
+<p>Use <strong>Remove entry</strong> in the entry's settings dialog to delete a reading.</p>
 <h2 id="behavior">Behavior</h2>
 <p>The first metric is the main reading; the others show their captions and
 values. Each has its own unit and precision. Missing readings show <code>--</code>.
-When a headline unit is visible, the number and unit are centered together.
+When the main reading's unit is visible, the number and unit are centered together.
 New Metric panels inherit the selected sensor's unit. Enlarging a compact panel
 reveals the unit when it fits.</p>
-<p>Only the headline reading drives the bar or radial and the panel alarm
+<p>Only the main reading drives the bar or radial and the panel alarm
 state. The bar or radial is empty at <strong>Range min</strong> and full at <strong>Range max</strong>.
 Values outside that range keep the visual empty or full, but the number
 still shows the actual value.</p>
-<p>Set <strong>Warning</strong> or <strong>Critical</strong> on the headline reading to enable alarms.
+<p>Set <strong>Warning</strong> or <strong>Critical</strong> on the main reading to enable alarms.
 Thresholds include the boundary value, and critical takes priority. A
 threshold only counts inside the range, so set <strong>Range min</strong> and <strong>Range max</strong>
 to cover your alarm values even when <strong>Visualization</strong> is <strong>none</strong>. Narrowing
@@ -376,15 +372,15 @@ too, but have no effect there.</p>
 </thead>
 <tbody>
 <tr>
-<td>Live primary, no crossed thresholds</td>
+<td>Live main reading, no crossed thresholds</td>
 <td>Value and normal accent.</td>
 </tr>
 <tr>
-<td>Primary crosses warning or critical</td>
+<td>Main reading crosses warning or critical</td>
 <td><code>WARN</code> or <code>CRIT</code> badge and state color.</td>
 </tr>
 <tr>
-<td>Primary becomes stale</td>
+<td>Main reading becomes stale</td>
 <td>Last value retained, <code>STALE</code> badge and muted presentation.</td>
 </tr>
 <tr>
@@ -392,8 +388,8 @@ too, but have no effect there.</p>
 <td><code>METRIC</code> heading and <code>--</code>.</td>
 </tr>
 <tr>
-<td>Primary unavailable</td>
-<td><code>--</code>, <code>N/A</code> badge, no unit beside the sentinel.</td>
+<td>Main reading unavailable</td>
+<td><code>--</code>, <code>N/A</code> badge, no unit.</td>
 </tr>
 <tr>
 <td>Supporting source unavailable</td>
@@ -401,7 +397,7 @@ too, but have no effect there.</p>
 </tr>
 <tr>
 <td>Supporting source stale</td>
-<td>Last value retained; it does not change the primary state.</td>
+<td>Last value retained; it does not change the panel's state.</td>
 </tr>
 </tbody>
 </table>

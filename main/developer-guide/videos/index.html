@@ -280,17 +280,10 @@ The original retrieved image was 1000×1000; the prototypes used a
 <strong>user-supplied 4000×4000 upscale</strong>. The tool does not download or upscale
 it. Confirm usage rights and retain attribution to RadioMaster when
 publishing; the repository's GPL does not license that photograph.</p>
-<p>For that upscale, recipes crop <code>[width,height,x,y] = [2080,1000,960,2700]</code>,
-scale to 1560×750, place the 930×532 simulator screen at (317,80), and place
-RTN feedback at (147,507). The generated bezel mask keeps dark irregular
-screen edges: inside the screen rectangle, average RGB brightness 80–120
-ramps from opaque photo to transparent opening. Inspect the result; a
-different photo requires different geometry/thresholds.</p>
-<p>Feedback is a 15%-opacity ring with transparent interior, expanding and
-fading over 1.2 seconds. Its color adapts to the local framebuffer luminance;
-drag contacts follow their scripted points. RTN uses a white ring on the
-dark physical key; other keys have no invented photo coordinates.
-No titles or subtitle track are burned in.</p>
+<p>Recipe <code>radio</code> geometry fits that upscale; a different photograph needs
+different crop, screen, and mask settings. Inspect the bezel and alignment.
+Feedback rings show touch/drag input and RTN on the physical key. No titles
+or subtitles are burned in.</p>
 <p>Outputs include:</p>
 <table>
 <thead>
@@ -359,21 +352,15 @@ a drag, terminated by a release. Contacts cannot overlap.</p>
 Radio entries contain <code>crop</code>, even-sized <code>canvas</code>, <code>[x,y,width,height]</code>
 <code>screen</code>, <code>[x,y]</code> <code>return_button</code>, <code>[low,high]</code> <code>mask_threshold</code>, and <code>source</code>.
 Provenance requires <code>status</code> and <code>notes</code>.</p>
-<p><strong>Create Empty dashboard:</strong> a clean native replay starting from a fresh
-model with no configured screens. It replaces the default screen with an
-App-mode AeroGrid widget using the Empty layout (tapped at (220,85)) and
-Modern Dark, then presses RTN three times. No recorded frames are edited.
-The firmware dropped the first scripted touch of a fresh simulator session
-in earlier attempts, desynchronizing every later step. The action script
-therefore primes input before recorded frames start: a center tap opens the
-EdgeTX menu and RTN closes it (ticks 100–220), so the video begins on the
-unchanged main view. Two consecutive Companion 2.12 captures were visually
-verified before rendering the published 54.7-second video.</p>
+<p><strong>Create Empty dashboard:</strong> starts from a fresh model, adds an App-mode
+AeroGrid widget with Empty and Modern Dark, then returns to the dashboard.
+A menu-open/close sequence before recorded frames primes firmware input;
+keep it when updating the script to avoid dropping the first recorded touch.</p>
 <p><strong>Add/move/resize panel:</strong> the recipe preserves the prototype's real touch
 script, current/maximum speed configuration, movement, resizing, and save
 interaction. Nine seconds are trimmed from the raw capture, including most
 of its first long-press; check intro timing. The last second is a held frame.
-Radio restart and selecting the new layout after Save as are <strong>narrated
+Radio restart and selecting the new layout after <strong>Save as...</strong> are <strong>narrated
 instructions</strong>, not automated or demonstrated steps. Panel unit appearance
 comes from production source, never simulator-only rendering patches.</p>
 <p><strong>Model settings:</strong> a native replay starting from the Default dashboard. It

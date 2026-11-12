@@ -359,8 +359,8 @@ History and control declare zero slots: they retain their due intervals and
 run at most once per callback, even when charged work exhausts the allowance.
 Flight polling runs first and consumes one slot when it ticks. Slot costs are
 initial approximations, not live instruction measurements; the whole callback
-must remain below 16,000 instructions. Callback/scheduler overhead is not
-separately charged.</p>
+has a nominal target below 16,000 instructions; regression tests enforce the
+stricter 15,000-instruction ceiling. Callback/scheduler overhead is not separately charged.</p>
 <table>
 <thead>
 <tr>
@@ -452,55 +452,33 @@ a displayed precision step of every observed value (filtered values if EMA is
 enabled). Numerical margin is reserved before accepting a segment; when that
 margin consumes the tolerance, exact native values are retained. Unknown sensor
 precision uses the strictest supported tolerance until discovery completes.</p>
-<p>Knots use chunked <code>&lt;I4n</code> / <code>&lt;I4j</code> packing: cumulative recording ticks with gap/type
-bits and a lossless native Lua float or integer. Payload is 48 KiB per full recording on float32
-firmware, or 72 KiB on double-precision hosts, excluding string/table/index and
-rendering overhead. Matching armed-switch/source/options subscriptions share storage.
-Absolute <code>first</code>/<code>last</code> sequence IDs and scalar <code>history:point</code> reads avoid
-per-knot snapshot tables. Growing history freezes at capacity without relaxing
-accuracy; rolling expiration reuses ring slots while retaining an interpolation
-anchor. Raw readouts/extrema continue even when plot storage is full.</p>
-<p>Charts draw typed pixel columns appended from live samples; they never
-reconstruct traces from recorded history. Each touched pixel column is data,
-hold, missing, or pause and draws at most one rectangle: data spans its extrema
-and the previous column's last value, and a hold spans skipped columns at that
-value. Missing and pause columns draw nothing. A chart owns a visible layer and
-a hidden layer, each with its own native column pool. Rescaled views are
-prepared in the hidden layer and swapped in once complete: the next Auto window
-from a fine column store, a fixed window slid left by one minute, or wider Auto
-bounds repainted from the visible columns.</p>
+<p>Packed knots retain native precision. Matching condition/source/options
+subscriptions share storage; scalar <code>history:point</code> reads avoid snapshot tables.
+Growing history freezes at capacity without relaxing accuracy; rolling
+expiration reuses storage. Raw readouts/extrema continue when plot storage is full.</p>
+<p>Charts append pixel columns from live samples; they never reconstruct traces
+from recorded history. Columns preserve extrema and continuity, holding the
+last reading between updates and leaving missing/pause columns empty.
+Rescaled views are prepared in a hidden native-object layer and swapped in
+when complete.</p>
 <p>Late attachment, resize, and read-only previews start an empty plot; a fixed
 window starts where continuous sliding would have placed it. Resume-axis views
 use pause gaps and faint solid connectors. Missing telemetry remains a break,
 not a resume connector.</p>
-<p>History consumes at most one flight journal record per service turn, keyed by
-the event's pinned <code>armKey</code>, never by the optional Sticky output or the current
-broker arm. Per effective arm, 128 recording spans map wall-clock <code>at</code> timestamps
-to the cumulative recording axis; qualification/confirmation receipt times do
-not place boundaries. Grace samples remain after the mapped end. A 64-interval
-ring supplies scalar <code>history:flight(sessionView, index)</code> reads, independent of
-metric subscriptions. Shaded flight bands are staged in a bounded native-object
-pool behind the grid and traces; while a flight is open, only its band's right
-edge moves.
-Arm/disarm triangles use a bounded directional transition journal.
-A separate resume journal drives fixed-width axis gaps and faint trace connectors;
-the same projection maps traces, flight bands, grid lines, and axis markers.
-Crowded gaps evict the oldest visible section rather than narrowing the gaps.
-During normal sampling, flight bands clip to the recorded telemetry horizon.
-Appends, hidden-layer preparation, session reset, axes, grid, markers, flight
-bands, and connectors each consume work bounded by the chart's granted slots;
-preparation takes at most one extra slot per callback. Charts estimate 1,600
-instructions per nominal 2,000-instruction slot and reserve 900 per callback.
-These are estimates, not a measured callback bound.</p>
-<p>Journal loss sets the session's <code>flightLost</code> flag and closes an unmatched open
-band at its last observed recording time rather than extending it into later
-flights.
-Late attachment can recover the current active interval only from its recorded
-portion; old completed flights do not create new history. Model epochs clear
-intervals and mapping spans. Draft chart previews read compatible live views
-through a read-only facade and make no live subscriptions. Compatible previews
-can become live panels after saving without losing history; new or incompatible
-subscriptions require a post-save rebuild.</p>
+<p>History consumes at most one flight journal record per turn, keyed by its pinned
+<code>armKey</code>, never the Sticky output. Recording spans map actual boundary times
+to the cumulative axis; confirmation receipt times do not place boundaries.
+Grace samples remain after the mapped end. A 64-interval ring supplies scalar
+<code>history:flight(sessionView, index)</code> reads independently of metric subscriptions.
+Journal loss closes an unmatched band at its last observed time rather than
+extending it into later flights; model epochs clear intervals and mappings.</p>
+<p>Traces, bands, grid, markers, and resume connectors share the same axis.
+All drawing, preparation, and reset work is bounded by granted slots. Charts
+estimate 1,600 instructions per nominal 2,000-instruction slot and reserve 900
+per callback; these are estimates, not measured bounds.</p>
+<p>Draft previews read compatible live views without subscriptions. Compatible
+previews can become live panels after saving without losing history; new or
+incompatible subscriptions require a rebuild.</p>
 <h2 id="shared-flight-tracking">Shared flight tracking</h2>
 <p>The factory-scoped broker in <code>flight_service.lua</code> owns a separate non-UI
 Control/Telemetry runtime and optional Smart sensor poller. Any live widget callback can pump it. Dashboard
@@ -522,7 +500,7 @@ Start <code>at</code> is the motor candidate start; end <code>at</code> is the f
 <code>observedAt</code> is qualification or
 completion, so duration excludes the disarm grace. Consumers must reconcile a
 gap or changed epoch; they must never read Sticky output as their event bus.
-Smart shortcuts use the same qualification/effect path; they do not move the
+Smart shortcuts use the same qualification/effect path without moving the
 candidate timestamp. The standard timer remains an independent OR path.</p>
 <p>Model <code>flight.smartDetection</code> defaults false. Smart requires EdgeTX
 <a href="https://github.com/EdgeTX/edgetx/blob/2.11/radio/src/lua/api_general.cpp"><code>getSourceValue</code></a>
@@ -540,15 +518,10 @@ streams without treating the short fresh flag as a minimum update rate.
 Receipt age remains bounded evidence, not an exact timestamp or instant
 stopped-stream detector. Callbacks too infrequent to observe fresh flags
 conservatively fall back to standard detection.</p>
-<p>The Smart poller is due every 100ms and shares the same slot allowance as
-dashboard work. Telemetry polls at most eight sources per turn, experimentally
-charging one slot per two sources, including their synchronous observers.
-Charts use their granted slots for bounded append, drawing, and preparation
-batches with the estimates described under chart history.
-Charts use this allowance rather than selecting quotas based on which service ran. Both pollers retain
-round-robin progress. Selected metadata is compared directly rather than
-rebuilding identity strings on every poll. Expensive loading/editor work
-still gets separate, per-widget fair slices, and pending input takes priority.
+<p>The Smart poller is due every 100ms and shares dashboard slots. Telemetry polls
+at most eight sources per turn, charging one slot per two sources including
+observers. Both retain round-robin progress. Loading/editor work gets separate
+per-widget slices, and pending input takes priority.
 Discovery uses numeric <code>telemN</code> sources and custom
 sensor metadata from <code>model.getSensor</code>, never names or units alone. Supported
 single-module families are CRSF (including ELRS) and native FrSky S.Port;
@@ -694,8 +667,8 @@ resolution; <code>layout_registry.lua</code> maintains name-to-choice positions.
 Keep these boundaries intact when changing save behavior.
 Panel settings drawers, including entry subdrawers, put <strong>Label</strong> first when
 declared, preserving the declaration order of all remaining controls.</p>
-<p>Editing does not overwrite bundled layouts. Save writes to <code>/AEROGRID/layouts/</code>,
-and Save As creates a named user layout. The layout registry is initialized
+<p>Editing does not overwrite bundled layouts. <strong>Save</strong> writes to <code>/AEROGRID/layouts/</code>,
+and <strong>Save as...</strong> creates a named user layout. The layout registry is initialized
 at script load, so new names require a restart before appearing in the native
 Layout picker. Save errors must preserve the draft and report failure.
 Test persistence through the store/editor suites, not just the visible dialog.</p>

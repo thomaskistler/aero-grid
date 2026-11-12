@@ -147,8 +147,27 @@
       <article class="ag-article" role="main">
         
 
-<h1 id="install-over-usb">Install over USB</h1>
-<p>Install the latest stable AeroGrid on your radio, or choose a previous release. Your layouts, maps, and radio settings stay in place.</p>
+<h1 id="install-and-upgrade">Install and upgrade</h1>
+<p>AeroGrid requires a color-screen radio running EdgeTX 2.11.0 or later.
+Install over USB below, or use <a href="#manual-installation">manual installation</a>.
+Your saved layouts, themes, and model settings in <code>/AEROGRID/</code> stay in place.</p>
+<p>Back up your SD card before making changes. Both installation methods replace
+<code>/WIDGETS/AeroGrid/</code>, discarding any files you added or changed there.
+The USB installer does not provide a backup or rollback; if replacement fails,
+retry the complete installation before using AeroGrid.</p>
+<p>If upgrading from a version that used <code>/AEROGRID/registry.txt</code>, rename it to
+<code>layout-registry.txt</code> before starting AeroGrid to preserve Layout selections.
+Do not edit or reorder its entries.</p>
+<h2 id="install-over-usb">Install over USB</h2>
+<ol>
+<li>Use desktop <strong>Chrome or Edge</strong>. Power on the radio, connect its data USB
+   port with a data cable, and choose <strong>USB Storage</strong> if prompted.</li>
+<li>Select <strong>Connect Radio</strong> below and choose the SD-card root: the folder
+   containing <code>RADIO</code>, <code>MODELS</code>, and <code>WIDGETS</code>, not <code>WIDGETS</code> itself.</li>
+<li>Choose a release, review the compatibility message, and confirm installation.</li>
+</ol>
+<p>Latest stable is selected by default. <strong>Show developer releases</strong> includes the
+rolling development build; beta and RC releases require manual installation.</p>
 <div class="ag-install-workspace">
 <div class="ag-radio" data-radio-installer>
   <div class="ag-radio-header">
@@ -219,26 +238,21 @@
   <span>Do not close this page or let another application write to the card. Afterwards, disconnect in the page, safely eject the drive through your operating system, then unplug the USB data cable.</span>
 </div>
 
-<h2 id="manual-installation" class="ag-install-section-title">Manual installation</h2>
-
-<h3 id="install-on-an-sd-card">Install on an SD card</h3>
+<h2 id="manual-installation">Manual installation</h2>
+<h3 id="first-installation">First installation</h3>
 <p>Download an installation ZIP from <a href="https://github.com/thomaskistler/aero-grid/releases">GitHub Releases</a>
 (beta versions appear as prereleases). Extract it and copy <code>WIDGETS/AeroGrid/</code>
-into the radio's <code>/WIDGETS/</code> directory, then select <strong>AeroGrid</strong> in an App mode
-screen.</p>
+into the radio's <code>/WIDGETS/</code> directory. Restart the radio, then
+<a href="../add-dashboard/">add an AeroGrid dashboard</a>.</p>
 <h3 id="upgrade">Upgrade</h3>
-<p>If you changed or added files in <code>/WIDGETS/AeroGrid/</code>, back them up first:
-the update discards those changes.</p>
 <ol>
 <li>Remove the old <code>/WIDGETS/AeroGrid/</code> folder from the SD card rather than
-   merging new files into the old installation. This also removes stale
-   compiled Lua files.</li>
+   merging new files into the old installation.</li>
 <li>Copy the complete new <code>AeroGrid</code> folder into <code>/WIDGETS/</code>.</li>
 <li>Restart the radio and check your dashboards.</li>
 </ol>
-<p>Your layouts, themes, model settings, and layout list live in <code>/AEROGRID/</code>,
-outside the widget folder. Leave that folder untouched: there is no need to back up and restore layouts
-as part of an upgrade.</p>
+<p>Leave <code>/AEROGRID/</code> untouched, apart from the legacy registry rename described
+above. There is no need to restore saved layouts after an upgrade.</p>
 <details class="ag-install-details">
 <summary>Watch the installation walkthrough</summary>
 <div class="ag-video">

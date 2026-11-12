@@ -268,7 +268,11 @@ and directly related documentation together. Runtime code and tests use SPDX
 </thead>
 <tbody>
 <tr>
-<td>Module and test filenames</td>
+<td>Library modules and test filenames</td>
+<td>snake_case; tests start with <code>test_</code></td>
+</tr>
+<tr>
+<td>Panel module filenames</td>
 <td>kebab-case</td>
 </tr>
 <tr>
@@ -326,7 +330,12 @@ make check
 make lint
 stylua --check src/WIDGETS tests
 make build BUILD_DIR=build/package-check
-diff -r src/WIDGETS/AeroGrid build/package-check/sdcard/WIDGETS/AeroGrid
+diff -r src/WIDGETS/AeroGrid build/package-check/sdcard/WIDGETS/AeroGrid \
+  --exclude='review-*.yaml' --exclude='services*.yaml' \
+  --exclude='sim*.yaml' --exclude='states.yaml'
+for layout in tests/fixtures/layouts/development/*.yaml; do
+  cmp &quot;$layout&quot; &quot;build/package-check/sdcard/WIDGETS/AeroGrid/layouts/$(basename &quot;$layout&quot;)&quot;
+done
 </code></pre>
 <p>Inspect formatting changes before committing. Run the
 <a href="../testing/#python-tooling-tests">tooling tests</a> if changing Python tools,

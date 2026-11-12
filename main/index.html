@@ -158,7 +158,7 @@
   </a>
   <div class="ag-guide-pages">
     
-    <a class="ag-guide-link" href="user-guide/installation/">User Guide</a>
+    <a class="ag-guide-link" href="user-guide/add-dashboard/">User Guide</a>
     <a class="ag-guide-link" href="reference-guide/">Reference Guide</a>
     <a class="ag-guide-link" href="developer-guide/build/">Developer Guide</a>
   
@@ -171,9 +171,9 @@
         
 
 <h1 id="aerogrid">AeroGrid</h1>
-<p>AeroGrid is a configurable 4 x 4 glass-cockpit dashboard for EdgeTX color radios.
-YAML layouts combine telemetry, model timers, flight tracking, switch states,
-trim positions, and model images in responsive panels.</p>
+<p>AeroGrid is a customizable dashboard for EdgeTX color-screen radios.
+Choose flight, telemetry, battery, navigation, and control panels, then
+arrange them on a 4 x 4 grid with the on-radio editor.</p>
 <p>Use <strong>Documentation version</strong> in the header to match your installed release.
 <strong>main (unreleased)</strong> describes the development version.</p>
 <section class="ag-home-start" aria-label="Get started with AeroGrid">
@@ -214,10 +214,7 @@ trim positions, and model images in responsive panels.</p>
 </div>
 
 <p><img alt="Full AeroGrid Default dashboard in Modern Dark, showing telemetry, flight timer, flight count, switch state, and a model image" src="assets/dashboard/dashboard.png" /></p>
-<p>The complete Default layout at native 480 x 272 resolution, captured in the
-EdgeTX TX16S simulator using the production Modern Dark theme. Telemetry,
-transmitter voltage, and switch positions are sample inputs; the timer and
-global variables use isolated firmware model settings.</p>
+<p>The Default layout in Modern Dark, with illustrative readings.</p>
 <div class="ag-photo-gallery">
   <figure>
     <a href="assets/photos/aero-grid.jpg"><img src="assets/photos/aero-grid.jpg" alt="AeroGrid running on a RadioMaster TX16S beside a fixed-wing model aircraft on grass"></a>
@@ -234,23 +231,9 @@ global variables use isolated firmware model settings.</p>
 </div>
 
 <h2 id="why-aerogrid">Why AeroGrid?</h2>
-<p>EdgeTX is an excellent foundation: open source, remarkably configurable, and
-flexible enough to support a wide range of radios and aircraft. AeroGrid builds
-on those strengths rather than replacing them.</p>
-<p>The dashboard experience has not always matched that flexibility. Many widgets
-have a dated appearance, and mixing widgets from different authors often means
-mixing different fonts, colors, spacing, and alarm styles. Individually useful
-widgets do not necessarily add up to a coherent interface.</p>
-<p>Earlier graphics APIs made polished, consistent interfaces harder to build.
-With LVGL, EdgeTX now offers a more flexible foundation for a shared UI design
-system. Projects such as Kyle Stacy's
-<a href="https://github.com/kylestacy2/KSE-Dashboards">KSE Dashboards for Rotorflight helicopters</a>
-show what focused dashboards can offer. For fixed-wing pilots, however, options
-for a modern, cohesive dashboard that can be freely rearranged remain limited.</p>
-<p>AeroGrid's goal is to provide <strong>flexible, configurable, modern-looking dashboards
-and panels</strong>, with a consistent visual language throughout. Choose the information
-that matters to your model, arrange it in a YAML-defined grid, and keep the same
-typography, spacing, colors, and state indicators across the dashboard.</p>
+<p>Keep the information that matters to your model together, with consistent
+readings, colors, and alerts. Save multiple layouts and choose a dark or light
+theme to suit your radio.</p>
 <h2 id="how-to-use">How to use</h2>
 <p>Follow these four short walkthroughs to install
 <a href="user-guide/installation/">AeroGrid</a>, create a dashboard, customize it, and
@@ -369,5 +352,5 @@ set it up for your model.</p>
 
 <!--
 MkDocs version : 1.6.1
-Build Date UTC : 2026-11-12 05:42:46.344632+00:00
+Build Date UTC : 2026-11-12 06:50:11.367794+00:00
 -->

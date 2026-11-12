@@ -283,7 +283,7 @@ heading, transmitter orientation, or a return-home instruction.</p>
 </tr>
 <tr>
 <td><strong>Satellite count source</strong></td>
-<td>none</td>
+<td>Not set</td>
 <td>Optional source reporting a plain nonnegative integer count of locked satellites, not a packed GPS-status value.</td>
 </tr>
 <tr>
@@ -319,7 +319,7 @@ heading, transmitter orientation, or a return-home instruction.</p>
 <tr>
 <td><strong>Accent</strong></td>
 <td>cyan</td>
-<td>Color used for the normal state: <strong>cyan</strong>, <strong>green</strong>, <strong>amber</strong>, or <strong>orange</strong>. Alarm and stale states use the shared state colors instead.</td>
+<td>Normal panel accent.</td>
 </tr>
 </tbody>
 </table>
@@ -341,10 +341,9 @@ control home capture, and distance never triggers an alarm.</p>
 <p>With <strong>Home position</strong> set to <strong>edgetx</strong>, home comes from EdgeTX.
 Selecting <strong>first-arm</strong> captures a separate AeroGrid home without
 changing EdgeTX home or the flight controller's return-home position.
-It uses <strong>Arm switch</strong> in <strong>AeroGrid → Model settings</strong>, falling back to an existing
-panel switch only before model arming has been saved. Saving <strong>None</strong> disables
-first-arm capture rather than restoring the fallback. Older layouts with a home arm
-switch retain first-arm behavior; those without one retain EdgeTX home.
+It uses <strong>Arm switch</strong> in <strong>AeroGrid → Model settings</strong>. Saving <strong>None</strong> disables
+first-arm capture. For legacy switches, see
+<a href="../../user-guide/model-settings/#older-layouts">Older layouts</a>.
 AeroGrid must observe disarmed, then armed; opening the widget already armed
 does not capture home.</p>
 <p>With an effective armed switch, AeroGrid captures the home position when
@@ -359,37 +358,27 @@ instances have independent homes.
 Changing the model's Arm switch clears retained AeroGrid homes on every dashboard.
 The <a href="../../user-guide/model-settings/#session-reset">Session reset switch</a> also clears
 these homes; observe a new disarm/arm transition to capture again. EdgeTX home is unchanged.</p>
-<p>To investigate <code>HOME NOT SET</code>, first add a <strong>Host diagnostics</strong> panel and
-select its <strong>log</strong> section on any AeroGrid screen. The shared in-memory log
-records captured/missed or switch unavailable, together with the inputs used
-for the decision: current time, availability, freshness, stale state, value,
-update time, reported delay, and coordinate validity. These are GPS inputs
-for capture attempts, or switch inputs for switch-unavailable events.
-Times are 10 ms ticks; GPS delay is seconds. Poll age is
-<code>now - updatedAt</code>; combined age is <code>delay * 100 + now - updatedAt</code>.
-Missing values appear as <code>nil</code>. No coordinates are logged.
-The capture gates and first-transition-only timing are unchanged. The log
-cannot recover an attempt made before logging was enabled; reproduce it in a
-new widget session. See <a href="../host-diagnostics/#shared-log">Host diagnostics</a> for
-retention settings and the fullscreen history viewer.</p>
+<p>If <code>HOME NOT SET</code> appears, check for a live GPS fix before disarming and
+rearming. Capture requires a recent position; later GPS recovery alone does
+not capture home. To investigate further, enable
+<a href="../host-diagnostics/#shared-log">Host diagnostics → log</a> before repeating the
+attempt, then tap that panel in widget fullscreen to read the outcome.</p>
 <h3 id="bearing-display">Bearing display</h3>
 <p><strong>Show tape</strong> places the tape below distance in square and tall panels, and
-beside it in wide panels. Resizing updates this arrangement. It spans 210
-degrees beneath a fixed pointer, with <code>N</code>, <code>E</code>, <code>S</code>, and <code>W</code> labels, major
-ticks every 30 degrees, and minor ticks every 10 degrees. Its tint follows
-the panel state. When bearing is unavailable, the tape shows the reason
+beside it in wide panels. Compass directions scroll beneath a fixed pointer.
+When bearing is unavailable, the tape shows the reason
 instead of a pointer and scale that could imply due north.</p>
 <p>With <strong>Show tape</strong> off, <strong>Bearing format</strong> selects numeric azimuth or
 quadrant notation. Bearing text and <strong>Show coordinates</strong> are displayed only
 where they fit; a tape that cannot fit yields to distance. Stale data retains
 the last bearing with the panel's <code>STALE</code> indication.</p>
 <h3 id="location-details">Location details</h3>
-<p>In fullscreen, tap the panel to open a QR code linking to Google Maps at the
+<p>In widget fullscreen, tap the panel to open a QR code linking to Google Maps at the
 model's GPS coordinates, not home. The code and coordinates are frozen when
 opened; close and reopen for a newer position. A stale fix is marked
 <code>LAST KNOWN POSITION</code>. Without a valid position, tapping does nothing.</p>
-<p>Tap anywhere or press <strong>RTN/Back/Exit</strong> to return. Location details are
-unavailable outside fullscreen and while editing. The radio generates the
+<p>Tap anywhere or press <strong>RTN</strong> (Back/Exit on other radios) to return. Location details are
+unavailable outside widget fullscreen and while editing. The radio generates the
 QR code without a network connection; following it on a phone uses Google Maps.</p>
 <h2 id="states">States</h2>
 <table>

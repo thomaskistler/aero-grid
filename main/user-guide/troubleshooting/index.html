@@ -207,8 +207,11 @@
 </ol>
 <p>A missing reading does not mean the value is zero.</p>
 <h2 id="check-layouts-and-themes">Check layouts and themes</h2>
-<p>Use the <strong>Diagnostics</strong> layout to check loaded components and errors.
-Check the selected <strong>Layout</strong> and <strong>Theme</strong> in the widget settings, and
+<p>The <strong>Diagnostics</strong> layout reports its own dashboard, not another dashboard's
+errors. To inspect a failing dashboard, add a <strong>Host diagnostics</strong> panel there
+and select <strong>panels</strong>. Use <strong>identity</strong>, <strong>theme</strong>, or <strong>sources</strong> to check its
+version, selected files, or source bindings.</p>
+<p>Check the selected <strong>Layout</strong> and <strong>Theme</strong> in the widget settings, and
 restart the radio or simulator after adding a new layout or theme.</p>
 <p>Saved files in <code>/AEROGRID/layouts/</code> and <code>/AEROGRID/themes/</code> override bundled
 files with the same name. Check whether an override explains an unexpected

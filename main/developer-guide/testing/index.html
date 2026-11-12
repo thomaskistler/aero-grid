@@ -207,13 +207,9 @@ make check
 <p><code>make test</code> checks the Python test runner, then executes every <code>test_*.lua</code>
 beneath <code>tests/</code>, excluding support modules. Each Lua suite gets a fresh
 <code>lupa.lua53.LuaRuntime</code> and the repository root as its chunk argument.</p>
-<p>The runner captures console lines beginning with <code>[AeroGrid] ERROR</code> so expected
-negative cases do not clutter successful runs. Other output, including progress
-and performance measurements, remains visible. If a suite fails, its captured
-logs and file path are printed to stderr before the original traceback, and the
-run stops with a non-zero exit status. Logs from earlier passing suites are
-discarded. This affects only <code>tests/run.py</code>; production logging is unchanged.
-Tests that replace <code>print</code> themselves still own the output they intercept.</p>
+<p>Expected <code>[AeroGrid] ERROR</code> lines are hidden for passing suites. On failure,
+the runner prints that suite's captured errors, file path, and traceback, then
+stops. Other output remains visible.</p>
 <p>Every suite runs once with the string metatable removed to resemble EdgeTX.
 Runtime code should use
 <code>string.sub(value, ...)</code>, not assume <code>value:sub(...)</code> works on the radio.</p>
@@ -267,27 +263,11 @@ Mock behavior tests still do not replace firmware compiler validation. Install t
 </tr>
 </tbody>
 </table>
-<p>The runtime suite under <code>tests/unit/runtime/</code> is split into
-contracts/settings/documentation, palette/state, service behavior, and
-typography/geometry suites. <code>tests/support/runtime_fixture.lua</code> preserves the
-minimal constants/LCD surface: these tests deliberately do not install LVGL or
-radio APIs. The full-widget integration suite remains intact so budgeting,
-cross-panel agreement, and deferred cleanup are still exercised together.</p>
-<p><code>test_module_composition.lua</code> checks direct API references, per-instance state,
-and reading/unit reconciliation. <code>test_service_subscriptions.lua</code> checks stable
-subscription identity across domain services. <code>test_runtime_modules.lua</code> checks
-missing/incompatible coordination and visual dependencies, including error
-visibility after resizing.</p>
-<p>Reuse <code>tests/support/widget_fixture.lua</code> to load a host with mocked APIs.
-The installation suite iterates the production editor catalog (not a separate
-test registry). Each panel starts on an empty 4x4 grid, allowing the editor to
-choose a supported span, and passes through the native picker, configuration,
-live preview, Save/apply, and a fresh widget load of the persisted layout.
-Metric additionally appends its first blank entry, evaluates its summary, and
-selects a real source before saving. Display-property callbacks are evaluated
-alongside widget refreshes; retained failures and caught <code>[AeroGrid] ERROR</code> logs
-fail this positive-path suite without forbidding expected errors in other tests.
-This is desktop mock coverage, not a native LVGL or hardware installation test.</p>
+<p>Use <code>tests/support/runtime_fixture.lua</code> for pure runtime helpers without LVGL,
+and <code>tests/support/widget_fixture.lua</code> for a host with mocked firmware APIs.
+The installation integration suite exercises every editor-selectable panel
+from an empty grid through configuration, preview, save, and reload; it fails
+on retained or caught errors. This is mock coverage, not native UI evidence.</p>
 <p>Use <code>tests/support/edgetx.lua</code> for firmware behavior and LVGL object inspection
 instead of inventing another mock. That module separates <strong>firmware claims</strong>
 (with source-file/symbol citations) from invented test <strong>scaffold</strong> values.
@@ -300,10 +280,8 @@ It fails at <strong>15,000 instructions or more</strong>, reserving headroom aga
 callback budget. Read the printed <code>budget headroom</code> and <code>steady state</code> results
 when changing scheduling or rendering.</p>
 <p>Chart performance is evaluated on the real radio. Automated chart tests check
-functional behavior, including pixel columns, gaps, fixed axes and right-edge
-preservation; they do not establish hardware responsiveness. The chart timing
-benchmarks, native simulator performance gates and instruction profiler have
-been removed.</p>
+functional behavior, including gaps, axes, and right-edge preservation;
+they do not establish hardware responsiveness.</p>
 <p>The resource suites check reload collectibility, object counts, sustained
 updates, and font callback retention. They cannot measure native LVGL/bitmap
 memory, firmware GC cadence, or radio timing. A short green mock run is not
@@ -394,21 +372,19 @@ or switch unavailable. Each event records <code>now</code>, availability, freshn
 stale state, value, <code>updatedAt</code>, reported delay, and coordinate validity,
 never coordinates. Inputs describe GPS for capture attempts or the arm
 switch for switch-unavailable events; inapplicable fields appear as <code>nil</code>.
-Timestamps are 10 ms ticks; delay is seconds.
+Timestamps are 10 ms ticks; GPS <code>delay</code> uses <strong>160 ms units</strong>.
 Calculate poll age as <code>now - updatedAt</code> and combined age as
-<code>delay * 100 + now - updatedAt</code>. Capture policy is not relaxed for diagnosis. <strong>Maximum log
+<code>delay * 16 + now - updatedAt</code>. First-arm capture requires an arm observation
+no older than 100 ticks (1 second) and combined GPS age no greater than
+1,000 ticks (10 seconds). Capture policy is not relaxed for diagnosis. <strong>Maximum log
 entries</strong> defaults to 64 (1–256); the largest active log panel setting wins.
 In widget fullscreen, tap the log panel and use drag/wheel scrolling to read
 a stable snapshot; Close/RTN dismisses it. Reopen for newer events. Removing
 all log panels stops recording. The buffer is never saved to the SD card
 and is lost when the radio restarts or the widget script unloads.</p>
-<p>The unit and widget-integration <code>test_diagnostics_log.lua</code> suites,
-<code>test_host_diagnostics.lua</code>, and the Navigation service suite cover
-retention, multi-host activation, hidden-screen capture
-logging, viewer interaction, wrapping, and the strict 15,000-instruction
-callback ceiling. These are mocked checks, not evidence of radio timing or
-native LVGL behavior; reproduce the original symptom on hardware with the
-log enabled to obtain that evidence.</p>
+<p>Diagnostic-log, Host diagnostics, and Navigation suites cover retention,
+cross-dashboard capture, viewer interaction, and callback budgets. Reproduce
+timing or native UI problems on hardware with logging enabled.</p>
 <p>The native capture tools already redirect simulator output to
 <code>build/doc-capture/&lt;panel&gt;/simulator.log</code> or
 <code>build/editor-capture/&lt;scene&gt;/simulator.log</code>; these are separate from an

@@ -327,7 +327,9 @@ site never launches a simulator.</p>
 connections and metadata, <code>radio-installer.mjs</code> handles releases and verified
 widget replacement, <code>radio-panel.mjs</code> drives the installation UI, and
 <code>radio-connection-help.mjs</code> adds connection help.</p>
-<p>The site mirrors <strong>published stable releases</strong>, not the current source tree.
+<p>The site mirrors <strong>published stable releases</strong> and the rolling <strong>dev</strong> release,
+not the current source tree. The installer hides dev until
+<strong>Show developer releases</strong> is selected; beta/RC releases are excluded.
 Downloads are verified before replacement and installed files are checked afterward.
 Only <code>WIDGETS/AeroGrid</code> is replaced; user data, maps, other widgets, settings, and
 firmware are preserved. There is no backup or rollback.</p>

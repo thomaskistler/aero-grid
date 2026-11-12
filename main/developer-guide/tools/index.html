@@ -252,17 +252,11 @@ probe utility panels, have bundled recipes.</p>
 run history. <code>--all</code> runs recipes sequentially, so a failure leaves earlier
 successful panels updated. A failed run keeps diagnostics, raises an error,
 and does not publish documentation assets.</p>
-<p>Default panel captures use a 480 x 272 Modern Dark/App-mode dashboard with
-placements outside the menu overlay. Crops are unscaled; a 10-pixel border
-gives output dimensions of 137 x 154, 258 x 85, and 258 x 154 respectively.
-Recipes can override the border.
-Chart omits the unsupported 1x2 placement. Its adapter generates varying
-synthetic readings through the real telemetry/history services, records for
-two flights separated by a recording pause, and waits for confirmed completion
-and finished drawing before capturing. This shows neutral flight bands,
-arm/disarm triangles, and a resume gap with faint connectors.
-Its recipe requires <code>armSwitch: SFv</code>; the adapter supplies that condition and
-a motor channel through the real services, with isolated model flight settings.</p>
+<p>Default captures use a 480 x 272 Modern Dark/App-mode dashboard, unscaled
+crops, and a 10-pixel border. Recipes can override the border.
+Chart omits its unsupported 1x2 placement and records two synthetic flights
+with a pause to show flight bands, arm/disarm markers, and resume connectors.
+Its recipe requires <code>armSwitch: SFv</code> and isolated motor/detection settings.</p>
 <p>The runner waits for recipe-specific readiness, not just a fixed delay.
 Timer, trim, flight-mode, and model-image samples use isolated firmware model
 settings. Other recipes use capture-only firmware API inputs passed through
@@ -316,18 +310,19 @@ add capture-specific behavior to production modules.</p>
 <p>Run the <a href="../testing/#python-tooling-tests">capture-recipe tests</a> after changing
 recipes/adapters, then inspect the resulting frame and provenance.</p>
 <h3 id="editor-and-setup-screenshots">Editor and setup screenshots</h3>
-<pre><code class="language-sh">python3 tools/capture-editor.py
-python3 tools/capture-editor.py --scene select-layout
-python3 tools/capture-editor.py --scene navigation-location
-python3 tools/capture-editor.py --scene chart-settings
-python3 tools/capture-editor.py --scene chart-metric-entry
+<pre><code class="language-sh">make capture-setup
+build/capture-venv/bin/python tools/capture-editor.py
+build/capture-venv/bin/python tools/capture-editor.py --scene select-layout
+build/capture-venv/bin/python tools/capture-editor.py --scene navigation-location
+build/capture-venv/bin/python tools/capture-editor.py --scene chart-settings
+build/capture-venv/bin/python tools/capture-editor.py --scene chart-metric-entry
 </code></pre>
 <p>The <code>navigation-location</code> scene enters fullscreen and taps the navigation
 panel using native touch input. It closes and reopens the location overlay
 twice before capturing the frozen Google Maps QR code.</p>
 <p>This tool uses the same native capture runner; panel-drawer scenes also need
 PyYAML from <code>make capture-setup</code>. It covers setup/widget/layout choices,
-editor overview, Metric/State settings, entry dialogs, exit, and Save As. Every other panel has a
+editor overview, Metric/State settings, entry dialogs, exit, and <strong>Save as...</strong>. Every other panel has a
 <code>&lt;panel&gt;-settings</code> scene (for example <code>--scene flight-timer-settings</code>) that
 captures its full settings drawer from the panel's capture recipe config, for
 the panel reference pages. Use <code>--help</code> for supported scene names.
@@ -340,9 +335,9 @@ The <code>aero-menu</code>, <code>model-settings</code>, <code>model-settings-re
 <code>model-settings-bottom</code> scenes show the shared model menu and settings.</p>
 <p>It also captures the telemetry-free <strong>Palette</strong> layout with real production
 primitives. These scenes are opt-in and do not open the editor:</p>
-<pre><code class="language-sh">python3 tools/capture-editor.py --scene theme-modern-dark
-python3 tools/capture-editor.py --scene theme-modern-light
-python3 tools/capture-editor.py --scene theme-custom
+<pre><code class="language-sh">build/capture-venv/bin/python tools/capture-editor.py --scene theme-modern-dark
+build/capture-venv/bin/python tools/capture-editor.py --scene theme-modern-light
+build/capture-venv/bin/python tools/capture-editor.py --scene theme-custom
 </code></pre>
 <p>The custom scene uses a fixed blue-gray palette with warm text and green
 default accents. To experiment interactively, add a <code>.yml</code> file in the user
@@ -368,7 +363,7 @@ them into one taller PNG. Hidden rows are used instead of scrolling because the
 native dialog keeps its focused row in view. The scrollbar is painted over,
 since it reflects only one page.</p>
 <h3 id="full-dashboard-screenshot">Full dashboard screenshot</h3>
-<pre><code class="language-sh">python3 tools/capture-editor.py --scene dashboard
+<pre><code class="language-sh">build/capture-venv/bin/python tools/capture-editor.py --scene dashboard
 </code></pre>
 <p>This opt-in scene captures the entire 480 x 272 display, not a composition of
 panel crops. It uses the shipped <strong>Default</strong> layout and <strong>Modern Dark</strong> theme

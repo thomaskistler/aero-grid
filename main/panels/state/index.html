@@ -268,18 +268,13 @@ Switch positions describe transmitter controls, not confirmed aircraft state.</p
 <tbody>
 <tr>
 <td><strong>Entries</strong></td>
-<td>one entry, <code>SW1</code></td>
-<td>One to three readings. The first is the headline; the others are supporting readings. Each row shows its label and a summary of its conditions. Tap <strong>+</strong> to copy the last entry, including its states.</td>
+<td>One entry, <code>SW1</code></td>
+<td>One to three readings. The first is the main reading; the others are supporting readings. Each row shows its label and a summary of its conditions. Tap <strong>+</strong> to copy the last entry, including its states.</td>
 </tr>
 <tr>
 <td><strong>Accent</strong></td>
 <td>cyan</td>
-<td>Color used for the normal state: <strong>cyan</strong>, <strong>green</strong>, <strong>amber</strong>, or <strong>orange</strong>. The main entry's winning <strong>Background</strong> can override it.</td>
-</tr>
-<tr>
-<td><strong>Remove panel</strong></td>
-<td></td>
-<td>Deletes the panel from the screen.</td>
+<td>Normal panel accent; the main entry's <strong>Background</strong> can override it.</td>
 </tr>
 </tbody>
 </table>
@@ -305,13 +300,10 @@ Switch positions describe transmitter controls, not confirmed aircraft state.</p
 <td>three SA positions</td>
 <td>One to three ordered conditions. The initial entry maps <code>SA^</code> to <code>UP</code>, <code>SA-</code> to <code>MID</code>, and <code>SAv</code> to <code>DOWN</code>. Tap <strong>+</strong> to append a state with <strong>When</strong> set to <code>SA^</code> and <strong>Text</strong> set to <code>UP</code>, rather than copying the last state.</td>
 </tr>
-<tr>
-<td><strong>Remove entry</strong></td>
-<td></td>
-<td>Deletes this reading. At least one entry must remain.</td>
-</tr>
 </tbody>
 </table>
+<p>Use <strong>Remove entry</strong> in the entry's settings dialog to delete a reading.
+At least one entry must remain.</p>
 <h3 id="state-condition">State condition</h3>
 <p>Tap a condition under <strong>States</strong> to open its settings.</p>
 <p><img alt="State condition settings" src="../../assets/editor/state-condition.png" /></p>
@@ -339,13 +331,10 @@ Switch positions describe transmitter controls, not confirmed aircraft state.</p
 <td>normal</td>
 <td>Main entry's whole-panel presentation: <strong>normal</strong>, <strong>active</strong>, <strong>warning</strong>, or <strong>critical</strong>. Supporting entries do not control the panel presentation.</td>
 </tr>
-<tr>
-<td><strong>Remove state</strong></td>
-<td></td>
-<td>Deletes this condition. At least one state must remain in the entry.</td>
-</tr>
 </tbody>
 </table>
+<p>Use <strong>Remove state</strong> in the condition's settings dialog to delete it.
+At least one condition must remain in each entry.</p>
 <h2 id="behavior">Behavior</h2>
 <p>Conditions are evaluated in insertion order. The first true condition wins.
 An unknown, unavailable, or stale earlier condition stops evaluation rather

@@ -252,16 +252,10 @@
 </table>
 <p>Records up to three numeric EdgeTX sources on one chart while armed or in flight.
 The legend shows each recorded value and its minimum and maximum.
-Wide layouts keep the legend on the right. Square and tall layouts put it above
-the full-width plot, with two or three metrics arranged left to right. Each metric
-uses two lines: its name and value, then its minimum and maximum.
-Live readings do not change the plot width. Legend text shrinks to fit; values
-that still cannot fit show <code>...</code> instead of a truncated number.
-Use separate panels for separate charts.
+It sits on the right in wide panels and above the plot in square or tall panels.
+Values that cannot fit show <code>...</code> rather than a truncated number.
 Select <strong>Arm switch</strong> in <strong>AeroGrid → Model settings</strong>; changes save automatically.
-Until model arming has been saved, an existing panel arm switch remains in use
-and visible. Saved model arming overrides it on every dashboard; saved <strong>None</strong>
-disables recording rather than restoring the fallback.</p>
+For legacy switches, see <a href="../../user-guide/model-settings/#older-layouts">Older layouts</a>.</p>
 <h2 id="settings">Settings</h2>
 <p><img alt="Chart panel settings with the default Auto window" src="../../assets/editor/chart-settings.png" /></p>
 <table>
@@ -275,12 +269,12 @@ disables recording rather than restoring the fallback.</p>
 <tbody>
 <tr>
 <td><strong>Label</strong></td>
-<td>empty</td>
+<td>Blank</td>
 <td>Optional chart heading. Clear it to hide the heading.</td>
 </tr>
 <tr>
 <td><strong>Metrics</strong></td>
-<td>none</td>
+<td>No entries</td>
 <td>Up to three readings. Tap <strong>+</strong> to add one, or tap an entry to edit it.</td>
 </tr>
 <tr>
@@ -301,7 +295,7 @@ disables recording rather than restoring the fallback.</p>
 <tr>
 <td><strong>Accent</strong></td>
 <td>cyan</td>
-<td>Panel stripe color: <strong>cyan</strong>, <strong>green</strong>, <strong>amber</strong>, or <strong>orange</strong>. Does not change trace colors.</td>
+<td>Normal panel accent; does not change trace colors.</td>
 </tr>
 </tbody>
 </table>
@@ -319,7 +313,7 @@ disables recording rather than restoring the fallback.</p>
 <tbody>
 <tr>
 <td><strong>Label</strong></td>
-<td>source name</td>
+<td>Source name</td>
 <td>Name in the legend. Clear it to use the source name.</td>
 </tr>
 <tr>
@@ -334,7 +328,7 @@ disables recording rather than restoring the fallback.</p>
 </tr>
 <tr>
 <td><strong>Unit</strong></td>
-<td>sensor unit</td>
+<td>Sensor unit</td>
 <td>Unit text beside the value. Changes the label, not the number.</td>
 </tr>
 <tr>
@@ -347,84 +341,59 @@ disables recording rather than restoring the fallback.</p>
 <td>by entry order</td>
 <td>Trace and legend color: <strong>cyan</strong>, <strong>green</strong>, <strong>orange</strong>, or <strong>amber</strong>. Defaults to cyan, orange, then green; cyan uses blue ink in Modern Light. An explicit choice keeps that color.</td>
 </tr>
-<tr>
-<td><strong>Remove entry</strong></td>
-<td></td>
-<td>Deletes this reading.</td>
-</tr>
 </tbody>
 </table>
+<p>Use <strong>Remove entry</strong> in the entry's settings dialog to delete a reading.</p>
 <h2 id="behavior">Behavior</h2>
-<p>Recording starts when the effective armed condition is active. When shared
-flight detection uses that same condition, recording continues through the
-disarm grace until flight end is confirmed, even while the chart is hidden.
-Rearming during grace keeps one uninterrupted flight. Without a qualified,
-matching flight, disarming pauses recording immediately.</p>
-<p>A neutral background band identifies each flight behind the grid and telemetry
-traces: lighter in dark themes, darker in light themes.
-Its edges use the actual flight times, not the later
-qualification or confirmation times; an active flight's band grows with the
-recording. Grace-period samples remain on the chart beyond the band's end.
-No Flight counter panel or logical-switch output is required. A chart opened
-mid-flight shades only the recorded portion.</p>
+<h3 id="recording-and-pauses">Recording and pauses</h3>
+<p>Recording starts while armed. A confirmed flight using the same arm condition
+keeps recording through the disarm grace period, including on hidden dashboards.
+Otherwise, disarming pauses immediately. Readouts freeze when recording pauses;
+minimum and maximum cover all recorded periods.</p>
+<p>Recording also pauses while the editor or Model settings is open on any
+AeroGrid dashboard. Resuming adds a gap with faint connectors between the
+last and resumed values. The gap indicates omitted time, not the pause's length.
+Missing or stale telemetry breaks traces without recording a false zero;
+a fresh numeric zero is valid.</p>
+<h3 id="flight-markers">Flight markers</h3>
+<p>A neutral band shades each confirmed flight, using its actual start and end
+times rather than the later confirmation times. Samples recorded during
+disarm grace remain beyond the band's end. No Flight counter panel or logical
+switch output is needed. A chart opened mid-flight shades only its recorded portion.</p>
 <p>Upward triangles on the bottom axis mark arming; downward triangles mark disarming.
-The first arming that starts recording is not marked.
-Pausing simply stops the traces, without a label or stop marker.
-Resuming inserts a gap; faint lines in each trace's color
-connect the last recorded values to the resumed values.
-The gap is 24 pixels wide in a fixed window and narrows as an <strong>Auto</strong> window grows.
-It indicates omitted time, not the length of the pause, and uses space in the window.
-Missing telemetry breaks the traces without adding a pause gap or connector.
-Consecutive valid readings are connected: each screen column shows its minimum
-and maximum and joins the previous column's last value. When readings arrive less
-often than once per column, the trace holds the last value until the next reading.
-Readouts freeze when recording pauses. Minimum and maximum cover all recorded periods.</p>
+The first arming that starts recording is not marked. The latest 64 flight
+intervals are retained for shading.</p>
+<h3 id="time-window-and-scales">Time window and scales</h3>
 <p>The horizontal axis starts at recording time zero. With <strong>Auto</strong>, the window
-starts at 1 minute; when the plot is full it compresses to 2, 3, 4, 6, 8, 12, 16,
-24, 32 minutes and so on, keeping all earlier data on screen. When a fixed window
-is full, it slides left by 1 minute; the oldest minute leaves the plot. Resizing
-the panel or resetting the session clears the plot. Earlier saved
-growing/rolling choices are ignored; saved durations that are not whole minutes
-round up, and longer ones are limited to 60 minutes.
-Faint solid grid lines mark recording-time intervals; the bottom-right label shows
-the recording-time window. Pause gaps can fill the window sooner.</p>
+starts at 1 minute and expands as recording continues, keeping earlier data
+on screen. A full fixed window slides left by 1 minute, dropping the oldest
+minute. The bottom-right label shows the recording-time window; pause gaps
+also use space in it.</p>
 <p>An <strong>Auto</strong> bound starts close to the first reading. When drawn data leaves the
-range, the plot is redrawn at a wider range, typically within a second: the range
-at least doubles and fits the data with some headroom. Auto bounds only grow until
+range, the scale expands to fit it. Auto bounds only grow until
 the panel is resized or the session is reset. With <strong>shared</strong> scales, the lowest
 configured minimum and highest configured maximum apply to all traces, and Auto
 sides follow all traces. With <strong>independent</strong> scales, each metric uses its own
 bounds. Fixed bounds clip the plot, not recorded values or extrema.</p>
-<p>Smoothing reduces short-term fluctuations in the line. <strong>Light</strong>,
-<strong>medium</strong>, and <strong>strong</strong> respond over approximately 0.5, 1, and 2 seconds.
-Missing or stale readings leave gaps and dim the last value rather than
-recording a false zero; a fresh numeric zero is valid.</p>
+<p>Smoothing changes the line, not readouts or extrema. <strong>Light</strong>, <strong>medium</strong>, and
+<strong>strong</strong> respond over approximately 0.5, 1, and 2 seconds.</p>
+<h3 id="clearing-and-limits">Clearing and limits</h3>
 <p>If <strong>HISTORY FULL</strong> appears, existing plot history is preserved and new plot
 samples stop for the full series. Readouts and extrema continue
 updating.</p>
-<p>History is held in RAM, not saved to the SD card. It continues while the
-dashboard receives background updates. Reloading or restarting the dashboard,
-including applying editor changes that rebuild it, clears history.
-Each append consumes telemetry received since the previous append, summarizes
-the affected pixel columns, and draws only those columns.
-Charts do not reconstruct traces from stored history. Opening or resizing a
-chart starts an empty plot at the current recording time; only later telemetry
-is drawn. A fixed window starts where sliding would have placed it.
-Recording time stops while the editor or Model settings is open, even during a
-flight; charts show a pause gap when it resumes. Charts do not draw while the
-editor is open. Editor previews do not replay history or record new data.
-New sources show an explicit no-data preview until saved.
-Flight overlays retain the latest 64 intervals; missing earlier boundaries are
-not guessed.
-Use <strong>Session reset switch</strong> in
+<p>History is not saved to the SD card. Restarting or rebuilding the dashboard
+clears recordings. Opening or resizing a chart starts an empty plot at the
+current recording time; earlier traces are not restored. Editor previews do
+not record or replay traces. New sources show a no-data preview until saved.</p>
+<p>Use <strong>Session reset switch</strong> in
 <a href="../../user-guide/model-settings/#session-reset">Model settings</a> to clear recordings,
 extrema, and markers across all dashboards.</p>
 <h2 id="states">States</h2>
 <table>
 <thead>
 <tr>
-<th>Message</th>
-<th>Meaning</th>
+<th>Condition</th>
+<th>Presentation</th>
 </tr>
 </thead>
 <tbody>

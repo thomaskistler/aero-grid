@@ -237,10 +237,8 @@
 
 <h1 id="service-probe">Service probe</h1>
 <p><img alt="Service probe at 2x2" src="../../assets/panels/service-probe/2x2.png" /></p>
-<p>Displays label-and-value rows from one shared AeroGrid data service.
-This developer diagnostic panel helps check normalized values, units,
-precision, availability, and navigation calculations independently of the
-flight panels that use them.</p>
+<p>Helps investigate readings supplied to panels by AeroGrid's data services.
+Use it to check values, units, availability, and navigation data.</p>
 <p>The panel needs at least 2x2 cells to fit its rows.</p>
 <h2 id="settings">Settings</h2>
 <p><img alt="Service probe panel settings" src="../../assets/editor/service-probe-settings.png" /></p>
@@ -265,41 +263,40 @@ flight panels that use them.</p>
 </tr>
 <tr>
 <td><strong>Source</strong></td>
-<td>none</td>
+<td>Not set</td>
 <td>EdgeTX source picker. Select the reading for <strong>telemetry</strong>, GPS source for <strong>navigation</strong>, or trim source for <strong>control</strong>. Unused by <strong>model</strong>.</td>
 </tr>
 <tr>
 <td><strong>Index</strong></td>
 <td>0</td>
-<td>Zero-based timer index for <strong>model</strong> (0 to 2) or global variable index for <strong>control</strong> (0 to 8). Unused by the other services. The number control steps by 1 from -100000 to 100000, not just the useful index range, and has no empty option.</td>
+<td>Zero-based timer index for <strong>model</strong> (0 to 2) or global variable index for <strong>control</strong> (0 to 8). Unused by the other services.</td>
 </tr>
 <tr>
 <td><strong>Accent</strong></td>
 <td>cyan</td>
-<td>Panel accent: <strong>cyan</strong>, <strong>green</strong>, <strong>amber</strong>, or <strong>orange</strong>. Reported service states do not change the panel color.</td>
-</tr>
-<tr>
-<td><strong>Remove panel</strong></td>
-<td></td>
-<td>Deletes the panel from the screen.</td>
+<td>Normal panel accent. Reported service states do not change it.</td>
 </tr>
 </tbody>
 </table>
 <p>All settings remain visible for every <strong>Service</strong>, including those it does not
 use.</p>
 <h2 id="behavior">Behavior</h2>
-<p><strong>telemetry</strong> reports the selected source name, state, formatted value, unit,
-precision, reading age, and link status. <strong>navigation</strong> reports the GPS source,
-fix and home availability, latitude, longitude, distance, and bearing.</p>
-<p><strong>model</strong> requests model identity, flight mode, transmitter voltage, and the
-selected timer. <strong>control</strong> requests the selected trim, when <strong>Source</strong> is not
-empty, and the selected global variable in the current flight mode.
-These services report shared subscriptions, so rows requested by other panels
-can appear too.</p>
-<p>Rows are left-aligned in two columns and refresh about twice per second.
-Only the rows that fit are shown, up to eight. Enlarge the panel to reveal
-more; any remaining rows are omitted. Service state text is diagnostic output,
-not a panel alarm or stale badge.</p>
+<p>Rows refresh about twice per second. Up to eight rows are shown, limited by
+panel size; enlarge the panel to reveal more. Diagnostic state text does not
+change the panel's colors.</p>
+<h3 id="telemetry">Telemetry</h3>
+<p>Select <strong>telemetry</strong> to inspect the chosen source's value, unit, precision,
+age, availability, and link status.</p>
+<h3 id="model">Model</h3>
+<p>Select <strong>model</strong> to inspect model identity, flight mode, transmitter voltage,
+and the timer chosen by <strong>Index</strong> (0-2).</p>
+<h3 id="control">Control</h3>
+<p>Select <strong>control</strong> to inspect the trim chosen by <strong>Source</strong> and the global
+variable chosen by <strong>Index</strong> (0-8) in the current flight mode.</p>
+<h3 id="navigation">Navigation</h3>
+<p>Select <strong>navigation</strong> to inspect the GPS source, fix and home availability,
+coordinates, distance, and bearing.</p>
+<p>Model and control reports can also include readings requested by other panels.</p>
 <h2 id="states">States</h2>
 <table>
 <thead>
