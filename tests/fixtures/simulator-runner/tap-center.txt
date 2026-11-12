@@ -1,0 +1,3 @@
+# Deliver a short native TX16S touch gesture at the center of the display.
+500 touch 200 140 down
+510 touch 200 140 up
