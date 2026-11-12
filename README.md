@@ -1,5 +1,7 @@
 # AeroGrid
 
+**[📖 Documentation](https://thomaskistler.github.io/aero-grid/)** · **[Install over USB](https://thomaskistler.github.io/aero-grid/user-guide/installation/)** · **[Releases](https://github.com/thomaskistler/aero-grid/releases)**
+
 AeroGrid is a customizable dashboard widget for EdgeTX color-screen radios, arranging flight, telemetry, battery, navigation, model, output, trim, and switch-state information into configurable panels. It supports multiple model-specific layouts and an on-radio editor, with a consistent visual language throughout so readings, alerts, and controls feel like part of one cohesive dashboard.
 ## ![Full AeroGrid dashboard in Modern Dark](docs/assets/dashboard/dashboard.png)
 
@@ -28,9 +30,11 @@ Download the latest installation ZIP from [GitHub Releases](https://github.com/t
 
 Select a thumbnail to watch the walkthrough on YouTube.
 
-| Install AeroGrid | Create an Empty dashboard | Add, move, and resize panels |
-| --- | --- | --- |
-| [![Watch the installation walkthrough](https://img.youtube.com/vi/JgGA676uW7E/hqdefault.jpg)](https://www.youtube.com/watch?v=JgGA676uW7E) | [![Watch the dashboard setup walkthrough](https://img.youtube.com/vi/Z-_Z-rtot8U/hqdefault.jpg)](https://www.youtube.com/watch?v=Z-_Z-rtot8U) | [![Watch the panel editing walkthrough](https://img.youtube.com/vi/hJtvJaOf7YY/hqdefault.jpg)](https://www.youtube.com/watch?v=hJtvJaOf7YY) |
+| Install AeroGrid | Create an Empty dashboard |
+| --- | --- |
+| [![Watch the installation walkthrough](https://img.youtube.com/vi/JgGA676uW7E/hqdefault.jpg)](https://www.youtube.com/watch?v=JgGA676uW7E) | [![Watch the dashboard setup walkthrough](https://img.youtube.com/vi/Z-_Z-rtot8U/hqdefault.jpg)](https://www.youtube.com/watch?v=Z-_Z-rtot8U) |
+| **Add, move, and resize panels** | **Set up model settings** |
+| [![Watch the panel editing walkthrough](https://img.youtube.com/vi/hJtvJaOf7YY/hqdefault.jpg)](https://www.youtube.com/watch?v=hJtvJaOf7YY) | [![Watch the model settings walkthrough](https://img.youtube.com/vi/VtwC9R3lhOQ/hqdefault.jpg)](https://www.youtube.com/watch?v=VtwC9R3lhOQ) |
 
 ## Documentation
 
