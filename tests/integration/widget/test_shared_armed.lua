@@ -61,7 +61,11 @@ local function measured(callback, context, draining)
     assert(instructions < 15000, "model Armed callback exceeded budget: " .. instructions)
     if not draining then
         for _ = 1, 20 do
-            if not (context.hostTask and context.hostTask.refused == context.scheduler.callbacks) then
+            local uiTask = context.uiTasks and context.uiTasks[context.uiRequest]
+            if
+                not (context.hostTask and context.hostTask.refused == context.scheduler.callbacks)
+                and not (context.uiRequest and (not uiTask or uiTask.ran ~= context.scheduler.callbacks))
+            then
                 break
             end
             measured(callback, context, true)

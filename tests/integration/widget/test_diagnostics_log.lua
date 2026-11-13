@@ -103,6 +103,13 @@ local function input(event, touch, draining)
             if
                 not diagnostics.inputQueue
                 and not (diagnostics.hostTask and diagnostics.hostTask.refused == diagnostics.scheduler.callbacks)
+                and not (
+                    diagnostics.menuTask
+                    and (
+                        diagnostics.menuTask.ran == diagnostics.scheduler.callbacks
+                        or diagnostics.menuTask.refused == diagnostics.scheduler.callbacks
+                    )
+                )
             then
                 break
             end

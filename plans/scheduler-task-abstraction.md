@@ -276,3 +276,26 @@ Foreground input and due long-press handling can preempt those tasks.
 Retirement/reconstruction phases do not request same-callback continuations.
 Hidden callbacks can load and reload, but do not advance reflow or App-mode
 reconstruction. Other UI work still runs in the combined host task.
+
+Model-settings input/build/save/close and log preparation now have separate
+full-capacity tasks. Settings advance in foreground or hidden callbacks;
+log preparation is foreground-only and yields to retained input and modal
+transitions. Log preparation requests `again` while wrapping remains pending.
+Settings phases keep native callback separation instead of requesting another
+pass. Closed modals are released from cached tasks. Menu actions, log opening,
+scrolling/closing and editor work remain in the combined host task or native
+routes and still need extraction.
+
+Editor build/drawer/save/preview advancement now has a separate full-capacity
+task. Each existing stage retains its native callback boundary; it does not
+request `again`, including preview retirement/reconstruction. Hidden callbacks
+only advance saves already in progress. Saves required by arming-driven
+suspension finish before reset or editor teardown. Editor entry, exit/restore
+transitions, and exported/native input routes still need extraction.
+
+Menu module loading, chrome visibility/geometry, popup preparation and pending
+actions now run in a dedicated full-capacity task. Idle menus enroll no task;
+hidden callbacks do not advance menus. Menu construction and actions retain
+input until the host route receives its own grant. Input handling still records
+menu commands through the host/exported event path and needs native-route
+conversion.

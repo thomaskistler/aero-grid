@@ -1360,7 +1360,7 @@ local function openModelSettings(context)
     end
 end
 
-local function prepareAeroMenu(context, widgetEvent)
+local function prepareAeroMenu(context)
     if context.editorUi and context.aeroMenuModal == true and isFullScreen() then
         return false
     end
@@ -1446,7 +1446,7 @@ end
 local function suspendArmingEditor(context)
     if context.modelArmingReload then
         if context.editorUi and context.editorUi.saving then
-            context.editorController.advanceEditor(context)
+            context.uiRequest = "editor"
             return true
         end
         context.modelArmingReload = nil
@@ -1543,13 +1543,8 @@ local function advanceForeground(context, widgetEvent, touchState)
     if suspendArmingEditor(context) then
         return
     end
-    if prepareAeroMenu(context, widgetEvent) then
-        return
-    end
     if context.modelSettingsUi then
-        context.modelSettingsUiModule.handle(context, widgetEvent, touchState)
-        context.inputHandled = true
-        context.modelSettingsUiModule.advance(context)
+        context.uiRequest = "model settings"
         return
     end
     if context.aeroMenuModule and context.aeroMenuModule.handle(context, widgetEvent, touchState) then
@@ -1680,7 +1675,7 @@ local function advanceForeground(context, widgetEvent, touchState)
             or context.editorUi.previewRefresh
         )
     then
-        context.editorController.advanceEditor(context)
+        context.uiRequest = "editor"
         return
     end
 
@@ -1708,7 +1703,7 @@ local function advanceForeground(context, widgetEvent, touchState)
 
     if context.logViewer then
         if context.logViewer.prepareIndex then
-            context.logViewerModule.advance(context)
+            context.uiRequest = "log viewer"
         end
         return
     end
@@ -1768,11 +1763,11 @@ local function advanceHidden(context)
         return
     end
     if context.modelSettingsUi then
-        context.modelSettingsUiModule.advance(context)
+        context.uiRequest = "model settings"
         return
     end
     if context.editorUi and context.editorUi.saving then
-        context.editorController.advanceEditor(context)
+        context.uiRequest = "editor"
         return
     end
     if context.reloadState == "clear" then
@@ -1786,6 +1781,132 @@ local function advanceHidden(context)
         return
     elseif context.reflowIndex then
         return
+    end
+end
+
+local function menuWorkNeeded(context, fullscreen)
+    local editor, menu = context.editorUi, context.aerogridMenu
+    if context.chromeRoot and context.menuVisibleFullscreen ~= fullscreen then
+        return true
+    end
+    if context.runtimeFailed or context.stage or context.reloadState then
+        return false
+    end
+    if editor and context.aeroMenuModal == true and fullscreen then
+        return false
+    end
+    local modal = context.modelSettingsUi ~= nil
+        or context.locationDetails ~= nil
+        or context.logViewer ~= nil
+        or editor ~= nil
+    return context.theme
+        and (
+            not context.aeroMenuModule
+            or fullscreen and not context.chromeRoot
+            or context.chromeRoot and (context.aeroMenuParent ~= context.root or context.aeroMenuHeight ~= buttonHeight() or context.aeroMenuWidth ~= context.zone.w or context.aeroMenuZoneHeight ~= context.zone.h or context.aeroMenuFullscreen ~= fullscreen or context.aeroMenuModal ~= modal)
+            or menu
+                and (menu.pending or menu.action or menu.dismiss or menu.selectionDirty or context.flightFactory and context.flightFactory.broker and menu.modelFilename ~= context.flightFactory.broker.filename)
+        )
+end
+
+local function menuReady(task, _, hidden)
+    local context = task.host
+    return not hidden
+        and not context.modelArmingReload
+        and not context.sessionResetPending
+        and menuWorkNeeded(context, isFullScreen())
+end
+
+local function menuStep(task)
+    prepareAeroMenu(task.host)
+    task.host.menuVisibleFullscreen = isFullScreen()
+end
+
+local function editorWorkNeeded(state)
+    return state
+        and (
+            state.buildStage
+            or state.saving
+            or state.drawerBuild ~= nil
+            or state.drawerPending
+            or state.exitCommand
+            or state.previewPending
+            or state.previewRefresh
+        )
+end
+
+local function uiField(kind)
+    if kind == "model settings" then
+        return "modelSettingsUi"
+    elseif kind == "editor" then
+        return "editorUi"
+    end
+    return "logViewer"
+end
+
+local function uiReady(task, _, hidden)
+    local context = task.host
+    if task.kind == "editor" then
+        local state = context.editorUi
+        if not state or state ~= task.ui or not editorWorkNeeded(state) then
+            return false
+        end
+        if context.modelArmingReload then
+            return state.saving ~= nil
+        end
+        return not (context.sessionResetPending and not (context.stage or context.reloadState))
+            and not context.modelSettingsUi
+            and (hidden and state.saving ~= nil or not hidden and (isFullScreen() or state.saving ~= nil))
+            and (hidden or not menuWorkNeeded(context, isFullScreen()))
+    end
+    if
+        context.modelArmingReload
+        or context.sessionResetPending and not (context.stage or context.reloadState)
+        or not hidden and menuWorkNeeded(context, isFullScreen())
+    then
+        return false
+    end
+    if task.kind == "model settings" then
+        return task.ui ~= nil and context.modelSettingsUi == task.ui
+    end
+    local viewer = context.logViewer
+    return not hidden
+        and not context.inputPending
+        and not context.modelSettingsUi
+        and not context.stage
+        and not context.reloadState
+        and isFullScreen()
+        and viewer ~= nil
+        and viewer == task.ui
+        and viewer.width == context.zone.w - 16
+        and viewer.height == context.zone.h
+        and viewer.prepareIndex ~= nil
+end
+
+local function uiStep(task, _, _, hidden)
+    local context = task.host
+    context.uiRequest = nil
+    if task.kind == "editor" then
+        context.editorController.advanceEditor(context)
+        if editorWorkNeeded(context.editorUi) then
+            context.uiRequest = task.kind
+        end
+    elseif task.kind == "model settings" then
+        if not hidden then
+            context.modelSettingsUiModule.handle(context, context.widgetEvent, context.touchState)
+            context.inputHandled = true
+        end
+        context.modelSettingsUiModule.advance(context)
+        local state = context.modelSettingsUi
+        if state and (state.build or state.pending or state.closing) then
+            context.uiRequest = task.kind
+        end
+    else
+        context.logViewerModule.advance(context)
+        if context.logViewer and context.logViewer.prepareIndex then
+            context.uiRequest = task.kind
+            return nil, true
+        end
     end
 end
 
@@ -1873,6 +1994,7 @@ end
 local function hostWorkNeeded(context, hidden, widgetEvent, fullscreen)
     if
         context.lifecycleRequest
+        or context.uiRequest
         or context.modelArmingReload
         or context.sessionResetPending and not (context.stage or context.reloadState)
         or context.reloadState
@@ -1920,20 +2042,7 @@ local function hostWorkNeeded(context, hidden, widgetEvent, fullscreen)
             return true
         end
     end
-    local menu = context.aerogridMenu
-    local modal = context.modelSettingsUi ~= nil
-        or context.locationDetails ~= nil
-        or context.logViewer ~= nil
-        or editor ~= nil
-    if
-        context.theme
-        and (
-            fullscreen and not context.chromeRoot
-            or context.chromeRoot and (context.aeroMenuParent ~= context.root or context.aeroMenuHeight ~= buttonHeight() or context.aeroMenuWidth ~= context.zone.w or context.aeroMenuZoneHeight ~= context.zone.h or context.aeroMenuFullscreen ~= fullscreen or context.aeroMenuModal ~= modal)
-            or menu
-                and (menu.pending or menu.action or menu.dismiss or menu.selectionDirty or context.flightFactory and context.flightFactory.broker and menu.modelFilename ~= context.flightFactory.broker.filename)
-        )
-    then
+    if menuWorkNeeded(context, fullscreen) then
         return true
     end
     local hint = context.emptyHint
@@ -1964,12 +2073,6 @@ local function advanceHost(task, _, _, hidden)
         advanceHidden(context)
     else
         advanceForeground(context, context.widgetEvent, context.touchState)
-    end
-    if not hidden and context.inputQueue and context.inputHandled then
-        table.remove(context.inputQueue, 1)
-        if #context.inputQueue == 0 then
-            context.inputQueue = nil
-        end
     end
     context.scheduledServices, context.scheduledPanels = false, false
 end
@@ -2046,8 +2149,22 @@ local function runCallback(context, hidden, widgetEvent, touchState)
                 context.sessionResetTask = hostTask
             end
         else
+            if not hidden and not context.modelArmingReload and menuWorkNeeded(context, fullscreen) then
+                hostTask = context.menuTask
+                if not hostTask then
+                    hostTask = {
+                        name = "menu",
+                        owner = "menu",
+                        host = context,
+                        hostWork = true,
+                        step = menuStep,
+                        ready = menuReady,
+                    }
+                    context.menuTask = hostTask
+                end
+            end
             local kind = context.lifecycleRequest
-            if kind then
+            if not hostTask and kind then
                 local tasks = context.lifecycleTasks
                 if not tasks then
                     tasks = {}
@@ -2072,6 +2189,36 @@ local function runCallback(context, hidden, widgetEvent, touchState)
                     context.lifecycleRequest = nil
                 end
             end
+            if not hostTask and context.uiRequest then
+                local kind = context.uiRequest
+                local tasks = context.uiTasks
+                if not tasks then
+                    tasks = {}
+                    context.uiTasks = tasks
+                end
+                local ui = context[uiField(kind)]
+                local task = tasks[kind]
+                if ui and (not task or task.ui ~= ui) then
+                    task = {
+                        name = kind,
+                        owner = kind,
+                        kind = kind,
+                        ui = ui,
+                        host = context,
+                        hostWork = true,
+                        step = uiStep,
+                        ready = uiReady,
+                    }
+                    tasks[kind] = task
+                elseif task and task.ui ~= ui then
+                    task.ui = nil
+                end
+                if ui and uiReady(task, nil, hidden) then
+                    hostTask = task
+                else
+                    context.uiRequest = nil
+                end
+            end
             hostTask = hostTask or context.hostTask
             if not hostTask then
                 hostTask = {
@@ -2087,6 +2234,20 @@ local function runCallback(context, hidden, widgetEvent, touchState)
         hostTask.cost = scheduler.capacity
     end
     runTasks(context, hidden, flightTask, hostTask)
+    if context.uiTasks then
+        for kind, task in pairs(context.uiTasks) do
+            local ui = context[uiField(kind)]
+            if task.ui ~= ui then
+                task.ui = nil
+            end
+        end
+    end
+    if not hidden and context.inputQueue and context.inputHandled then
+        table.remove(context.inputQueue, 1)
+        if #context.inputQueue == 0 then
+            context.inputQueue = nil
+        end
+    end
     if input then
         context.widgetEvent, context.touchState, context.inputPending, context.inputTime = nil, nil, nil, nil
     end

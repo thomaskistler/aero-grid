@@ -336,7 +336,11 @@ changeModel(second, "smartDetection", 1)
 assert(owner.document.flight.smartDetection)
 definition.refresh(second, EVT_VIRTUAL_EXIT)
 untilState(second, function()
-    return not second.modelSettingsUi and owner.session.smart and owner.session.smart.altitude.fresh
+    return not second.modelSettingsUi
+        and owner.session.smart
+        and owner.session.smart.altitude.fresh
+        and owner.view.smartStatus
+        and string.find(owner.view.smartStatus, "baro ready", 1, true)
 end)
 persisted = assert(owner.store:load(owner.filename))
 assert(persisted.revision == 8 and persisted.flight.smartDetection)

@@ -121,10 +121,13 @@ local function refresh(event, touch, draining)
     if not draining then
         for _ = 1, 10 do
             local lifecycleTask = context.lifecycleTasks and context.lifecycleTasks[context.lifecycleRequest]
+            local uiTask = context.uiTasks and context.uiTasks[context.uiRequest]
             if
                 not context.inputQueue
                 and not (context.hostTask and context.hostTask.refused == context.scheduler.callbacks)
+                and not (context.menuTask and (context.menuTask.ran == context.scheduler.callbacks or context.menuTask.refused == context.scheduler.callbacks))
                 and not (lifecycleTask and lifecycleTask.refused == context.scheduler.callbacks)
+                and not (context.uiRequest and (not uiTask or uiTask.ran ~= context.scheduler.callbacks))
             then
                 break
             end
@@ -164,6 +167,13 @@ local function exitWith(choice)
         if value == choice then
             menu.set(index)
             refresh()
+            for _ = 1, 20 do
+                if not state.exitCommand then
+                    break
+                end
+                refresh(nil, nil, true)
+            end
+            assert(not state.exitCommand, "editor exit command did not receive a grant")
             return
         end
     end

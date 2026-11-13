@@ -56,7 +56,7 @@ Host coordination has three boundaries:
 | --- | --- |
 | `dashboard_loader.lua` | Layout recovery, staged parsing, service/panel construction, and placement-local services. |
 | `dashboard_lifecycle.lua` | Empty-page decoration, batched reflow, fullscreen-to-App rebuilds, and page retirement/replacement. |
-| `scheduler.lua` | Fair slot scheduling of flight, session reset, loading, reload, reflow, staged UI work, panel refreshes and service updates. |
+| `scheduler.lua` | Fair slot scheduling of flight, session reset, loading, reload, reflow, menu work, model settings, log preparation, editor advancement, panel refreshes and service updates. |
 | `editor_controller.lua` | Editor activation, staged advancement, dashboard previews, draft restoration, and adoption after saving. |
 
 Their `new` functions bind host operations once per widget. They do not capture
