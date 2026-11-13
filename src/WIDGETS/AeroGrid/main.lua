@@ -55,6 +55,7 @@
 ---@field tokens? table Tokens held between the tokenize and parse steps.
 ---@field pending? table[] Validated placements still awaiting construction.
 ---@field pendingIndex? integer Next placement to build.
+---@field scheduler table Slot scheduler that runs panels and services.
 ---@field dashboardLoader table Staged layout and panel construction.
 ---@field dashboardLifecycle table Page retirement, reflow, and rebuild.
 ---@field editorController table Dashboard preview and editor coordination.
@@ -684,6 +685,28 @@ local function create(zone, widgetOptions, path)
                 readThemeDefinition = readThemeDefinition,
             }, { "beginLoad", "advanceLoad", "panelRect", "buildPanel" })
         end
+        local schedulerModule = runtimeModule("lib/scheduler.lua")
+        if schedulerModule then
+            context.scheduler = bindHost(schedulerModule, "lib/scheduler.lua", {
+                fail = function(task, message)
+                    local owner = task.owner
+                    if task.service then
+                        owner.failed = true
+                    elseif not owner.failed then
+                        owner.failed, owner.error = true, message
+                    end
+                    addError(context, task.name .. ": " .. message)
+                    context.schedulerFailed = true
+                end,
+                charge = function(task, spent)
+                    local stats = context.schedulerStats
+                    local window = stats and stats.window
+                    if window then
+                        window[task.owner] = (window[task.owner] or 0) + spent
+                    end
+                end,
+            }, { "add", "clear", "run" })
+        end
         if context.dashboardLoader then
             context.dashboardLifecycle = bindHost(lifecycle, "lib/dashboard_lifecycle.lua", {
                 addError = addError,
@@ -762,6 +785,7 @@ local function create(zone, widgetOptions, path)
         or not context.configureFlight
         or not context.aeroMenuModule
         or not context.panelHost
+        or not context.scheduler
         or not context.themeBuilder
         or not context.primitives
         or not context.dashboardLoader
@@ -929,31 +953,142 @@ local function event(context, widgetEvent, touchState)
     return false
 end
 
---- Dispatch due services and panels in one round-robin work queue.
---- Returns the number dispatched so tests can observe the scheduling.
+--- Task steps that adapt the panel and service contracts to the scheduler.
+--- Each task's `owner` is the service instance or panel entry it runs for.
+local function serviceReady(task)
+    local instance = task.owner
+    return not instance.failed and instance.count ~= 0
+end
+
+local function serviceStep(task, now, slots)
+    local instance, registry = task.owner, task.registry
+    instance.due = now + instance.interval
+    registry.updates = registry.updates + 1
+    local used = instance:update(now, slots)
+    if instance.updateCost == "variable" and not task.host.servicesModule.consumption(used, slots) then
+        error("update consumption must be whole slots within the grant", 0)
+    end
+    instance.revision = instance.revision + 1
+    return used
+end
+
+local function refreshReady(task, _, hidden)
+    local entry, owner = task.owner, task.host.refreshOwner
+    return not hidden and not entry.failed and not (owner and entry ~= owner and entry.module.id == owner.module.id)
+end
+
+local function backgroundReady(task, _, hidden)
+    return hidden and not task.owner.failed
+end
+
+local function panelStep(task, now, granted)
+    local context, entry, eventName = task.host, task.owner, task.event
+    local ok, message, _, unfinished, used = context.panelHost.dispatch(entry, eventName, false, granted)
+    if task.cost ~= "variable" then
+        used = granted
+    end
+    if ok and not context.servicesModule.consumption(used, granted) then
+        ok, message = false, "refresh consumption must be whole slots within the grant"
+        entry.failed, entry.error = true, message
+    end
+    if eventName == "refresh" then
+        entry.nextRefresh = now + entry.interval
+        if ok and unfinished and not rawget(entry.module, "independentRefresh") then
+            context.refreshOwner = entry
+        elseif context.refreshOwner == entry then
+            context.refreshOwner = nil
+        end
+    end
+    if not ok then
+        error(message or "panel failed", 0)
+    end
+    return used
+end
+
+--- Enrol the live services and panels, in that order, for one run.
+--- Membership is read from the host's own tables on every callback, so a panel
+--- added, replaced or retired by the loader or editor needs no registration.
 ---@param context AeroGridContext
----@return integer dispatched
-local function dispatchDue(context, hidden)
+local function enrolTasks(context, registry)
+    local scheduler = context.scheduler
+    local order = registry.order
+    for index = 1, #order do
+        local instance = order[index]
+        local task = instance.task
+        if not task or task.registry ~= registry then
+            task = {
+                name = instance.id,
+                verb = "update",
+                owner = instance,
+                service = true,
+                registry = registry,
+                host = context,
+                step = serviceStep,
+                ready = serviceReady,
+            }
+            instance.task = task
+        end
+        task.cost, task.due, task.failed = instance.updateCost, instance.due, instance.failed
+        scheduler.add(task)
+    end
     local panels = context.panels
+    for index = 1, #panels do
+        local entry = panels[index]
+        local module = entry.module
+        if type(rawget(module, "refresh")) == "function" then
+            local task = entry.refreshTask
+            if not task then
+                task = {
+                    name = entry.placement.id .. ": refresh",
+                    owner = entry,
+                    host = context,
+                    event = "refresh",
+                    step = panelStep,
+                    ready = refreshReady,
+                }
+                entry.refreshTask = task
+            end
+            task.cost = rawget(entry.instance, "refreshCost") or rawget(module, "refreshCost") or 1
+            task.due, task.failed = entry.nextRefresh or 0, entry.failed
+            scheduler.add(task)
+        end
+        if type(rawget(module, "background")) == "function" then
+            local task = entry.backgroundTask
+            if not task then
+                task = {
+                    name = entry.placement.id .. ": background",
+                    owner = entry,
+                    host = context,
+                    event = "background",
+                    cost = 1,
+                    step = panelStep,
+                    ready = backgroundReady,
+                }
+                entry.backgroundTask = task
+            end
+            task.failed = entry.failed
+            scheduler.add(task)
+        end
+    end
+end
+
+--- Run due services and panels through the scheduler's fair work queue.
+---@param context AeroGridContext
+---@param hidden? boolean True while the dashboard is not visible.
+local function dispatchDue(context, hidden)
     local registry, support = context.serviceRuntime, context.servicesModule
     if not registry or not support then
-        return 0
+        return
     end
-    local serviceCount = #registry.order
-    local count = serviceCount + #panels
-    if count == 0 then
-        return 0
+    if #registry.order + #context.panels == 0 then
+        return
     end
+    local scheduler = context.scheduler
+    scheduler.clear()
+    enrolTasks(context, registry)
 
     local now = getTime()
-    local cursor = context.workCursor or 1
-    if cursor > count then
-        cursor = 1
-    end
-
-    local dispatched, failures, examined, deferred = 0, false, 0, nil
     local stats = context.schedulerStats
-    local requested, denied = 0, 0
     local window = stats and stats.window
     if stats and not window then
         window = {}
@@ -965,96 +1100,10 @@ local function dispatchDue(context, hidden)
         window.flight = (window.flight or 0) + flight
     end
 
-    while examined < count do
-        examined = examined + 1
-        if cursor <= serviceCount then
-            local service = registry.order[cursor]
-            local due = stats and not service.failed and service.count ~= 0 and now >= service.due
-            local allowance = deferred and 0 or context.remainingSlots
-            local id, message, used = support.dispatch(registry, service, now, allowance)
-            if due and service.updateCost ~= 0 then
-                requested = requested + 1
-                if not id and used == 0 then
-                    denied = denied + 1
-                end
-            end
-            if not id and used == 0 then
-                deferred = deferred or cursor
-            end
-            if id then
-                context.remainingSlots = context.remainingSlots - used
-                if window and used > 0 then
-                    window[service] = (window[service] or 0) + used
-                end
-                if message then
-                    addError(context, id .. ": " .. message)
-                    failures = true
-                end
-            end
-        else
-            local entry = panels[cursor - serviceCount]
-            local owner = context.refreshOwner
-            local waiting = not hidden and owner and entry ~= owner and entry.module.id == owner.module.id
-            local eventName = hidden and "background" or "refresh"
-            if
-                entry
-                and not entry.failed
-                and not waiting
-                and (hidden or now >= (entry.nextRefresh or 0))
-                and type(rawget(entry.module, eventName)) == "function"
-            then
-                local cost = hidden and 1
-                    or rawget(entry.instance, "refreshCost")
-                    or rawget(entry.module, "refreshCost")
-                    or 1
-                local granted = support.grant(cost, deferred and 0 or context.remainingSlots)
-                if stats and cost ~= 0 then
-                    requested = requested + 1
-                    if granted == 0 then
-                        denied = denied + 1
-                    end
-                end
-                if granted == 0 and cost ~= 0 then
-                    deferred = deferred or cursor
-                else
-                    local ok, message, _, unfinished, used =
-                        context.panelHost.dispatch(entry, eventName, false, granted)
-                    if cost ~= "variable" then
-                        used = granted
-                    end
-                    if ok and not support.consumption(used, granted) then
-                        ok, message = false, "refresh consumption must be whole slots within the grant"
-                        entry.failed, entry.error = true, message
-                    end
-                    local spent = ok and used or granted
-                    context.remainingSlots = context.remainingSlots - spent
-                    if window and spent > 0 then
-                        window[entry] = (window[entry] or 0) + spent
-                    end
-                    dispatched = dispatched + 1
-                    if not hidden then
-                        entry.nextRefresh = now + entry.interval
-                    end
-                    if not ok and message then
-                        addError(context, entry.placement.id .. ": " .. eventName .. ": " .. message)
-                        failures = true
-                    end
-                    if not hidden then
-                        if ok and unfinished and not rawget(entry.module, "independentRefresh") then
-                            context.refreshOwner = entry
-                        elseif context.refreshOwner == entry then
-                            context.refreshOwner = nil
-                        end
-                    end
-                end
-            end
-        end
+    local used, requested, denied = scheduler.run(now, context.remainingSlots, hidden or false)
+    scheduler.clear()
+    context.remainingSlots = context.remainingSlots - used
 
-        cursor = cursor % count + 1
-    end
-
-    -- Resume from where we stopped so every panel is served in turn.
-    context.workCursor = deferred or cursor
     if stats then
         stats.callbacks = stats.callbacks + 1
         stats.used = stats.used + support.SLOTS - context.remainingSlots
@@ -1068,11 +1117,10 @@ local function dispatchDue(context, hidden)
             stats.started, stats.callbacks, stats.used, stats.requested, stats.denied = now, 0, 0, 0, 0
         end
     end
-    if failures then
+    if context.schedulerFailed then
+        context.schedulerFailed = nil
         showErrors(context)
     end
-
-    return dispatched
 end
 
 --- Give one due service the remaining allowance during modal UI work.

@@ -13,6 +13,7 @@ end
 for _, relative in ipairs({
     "lib/dashboard_loader.lua",
     "lib/dashboard_lifecycle.lua",
+    "lib/scheduler.lua",
     "lib/editor_controller.lua",
     "lib/typography.lua",
     "lib/panel_layout.lua",
