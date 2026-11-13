@@ -56,7 +56,7 @@ Host coordination has three boundaries:
 | --- | --- |
 | `dashboard_loader.lua` | Layout recovery, staged parsing, service/panel construction, and placement-local services. |
 | `dashboard_lifecycle.lua` | Empty-page decoration, batched reflow, fullscreen-to-App rebuilds, and page retirement/replacement. |
-| `scheduler.lua` | Fair slot scheduling of panel refreshes and service updates. |
+| `scheduler.lua` | Fair slot scheduling of flight, staged host work, panel refreshes and service updates. |
 | `editor_controller.lua` | Editor activation, staged advancement, dashboard previews, draft restoration, and adoption after saving. |
 
 Their `new` functions bind host operations once per widget. They do not capture
@@ -102,7 +102,9 @@ is eight 2,000-instruction slots, configured by `SLOTS` and
 slots and report consumption, leaving unused slots available to later tasks.
 History and control declare zero slots: they retain their due intervals and
 run at most once per callback, even when charged work exhausts the allowance.
-Flight polling runs first and consumes one slot when it ticks. Slot costs are
+Flight polling requests one slot from the same queue; model document loading
+reserves the full capacity. Staged host work also reserves the full capacity
+until its individual operations are split. Slot costs are
 initial approximations, not live instruction measurements; the whole callback
 has a nominal target below 16,000 instructions; regression tests enforce the
 stricter 15,000-instruction ceiling. Callback/scheduler overhead is not separately charged.

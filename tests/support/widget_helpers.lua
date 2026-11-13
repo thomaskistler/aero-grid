@@ -15,7 +15,7 @@ function helpers.createLoaded(definition, zone, options, path)
     while context.stage do
         definition.refresh(context)
         guard = guard + 1
-        assert(guard < 200, "staged load never finished")
+        assert(guard < 400, "staged load never finished")
     end
     return context
 end

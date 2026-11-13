@@ -17,6 +17,7 @@ loadScript = function(filename)
     return chunk, message
 end
 local context = fixture.createLoaded(nil, { Layout = "Empty", Theme = "modern-dark" })
+fixture.pump(context, 6)
 loadScript = originalLoadScript
 local definition = fixture.module("main.lua")
 assert(context.scheduler.capacity == 12)

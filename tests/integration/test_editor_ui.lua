@@ -90,7 +90,7 @@ end
 local definition = widget.module("main.lua")
 local context
 local worst = 0
-local function refresh(event, touch)
+local function refresh(event, touch, draining)
     widget.lvglMock.setPropertyValidation(false)
     widget.lvglMock.setCallCounting(false)
     widget.lcdMock.setTextMeasurement(false)
@@ -118,6 +118,18 @@ local function refresh(event, touch)
             .. tostring(context.stage)
     )
     widget.lvglMock.settle()
+    if not draining then
+        for _ = 1, 10 do
+            if
+                not context.inputQueue
+                and not (context.hostTask and context.hostTask.refused == context.scheduler.callbacks)
+            then
+                break
+            end
+            refresh(nil, nil, true)
+        end
+        assert(not context.inputQueue, "queued input did not receive a grant")
+    end
 end
 local function settle()
     for _ = 1, 60 do

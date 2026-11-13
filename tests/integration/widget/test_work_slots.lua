@@ -6,6 +6,8 @@ fixture.reset()
 local definition = fixture.module("main.lua")
 local support = fixture.module("lib/services.lua")
 local context = fixture.createLoaded(nil, { Layout = "Empty", Theme = "modern-dark" })
+fixture.pump(context, 6)
+context.document.panels, context.emptyHint = { {} }, nil
 context.flightFactory = nil
 context.serviceRuntime = support.runtime({})
 context.panels = {}

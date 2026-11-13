@@ -623,6 +623,8 @@ do
 end
 
 local scheduler = fixture.createLoaded(nil, { Layout = "Empty", Theme = "modern-dark" })
+fixture.pump(scheduler, 10)
+scheduler.document.panels, scheduler.emptyHint = { {} }, nil
 local turns = {}
 local function scheduled(id, kind)
     return {
@@ -648,6 +650,8 @@ equal(turns.first, 3)
 equal(turns.second, 1, "the next chart starts once the preceding frame is complete")
 
 local fair = fixture.createLoaded(nil, { Layout = "Empty", Theme = "modern-dark" })
+fixture.pump(fair, 10)
+fair.document.panels, fair.emptyHint = { {} }, nil
 local progressing = {}
 for index = 1, 2 do
     local entry = scheduled("independent-" .. index, "chart")

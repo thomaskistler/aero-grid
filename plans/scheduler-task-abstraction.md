@@ -11,7 +11,7 @@ The chart retains a 20% per-slot safety margin and its callback reserve.
 Changing slot capacity does not change EdgeTX's hard instruction limit, and
 outside-queue work must still be migrated before higher limits are safe.
 
-Today only panel refreshes and service updates are slotted, in `dispatchDue`
+At the start of this effort only panel refreshes and service updates were slotted, in `dispatchDue`
 (`main.lua`). Flight polling, session reset, loading, reflow, the menu, model
 settings, the log viewer, the editor and input handling run outside it, and
 nothing in the queue can run twice in one callback.
@@ -151,14 +151,112 @@ Existing panels and services move first with no behavior change: adapters map
 `unfinished` to the existing `refreshOwner` behavior and return `again = false`.
 Multi-step is then adopted per task, starting with the loader.
 
+## Bypass inventory after the abstraction migration
+
+This inventory records the baseline before flight/callback migration.
+Only `dispatchDue` enrolled work then. Its service updates, panel refreshes and
+hidden panel backgrounds are queued; the paths below are not. "Exclusive"
+means the host returns without calling `dispatchDue`, not that the path
+currently reserves slots. Conditions and order are taken from `main.lua`'s
+`refresh`, `background`, `event`, `create` and `update`.
+
+| Work outside the queue | When it runs | What follows today | Direct service update |
+| --- | --- | --- | --- |
+| Flight identity/reset and model document/store loading (`pumpFlight`) | First in foreground/hidden callbacks when a broker exists; document loading when not loaded. Also called from `configureFlight`. | Document/store load attempts return exclusively. Identity errors and ordinary no-work gates fall through. | No; the broker is called directly. |
+| Flight reset polling and detection tick (`pumpFlight`) | After the document is loaded; subject to dormant, construction and Smart timing/input gates. | Ordinary ticks deduct one slot afterward, then fall through. Smart ticks reserve construction/modal/reflow callbacks and return exclusively; `flightDashboardDue` yields the next turn to dashboard work. | No; `pollReset` and `tick` bypass service dispatch. |
+| Arming-driven editor suspension (`suspendArmingEditor`) | `modelArmingReload` set. | An in-progress save advances exclusively. Otherwise editor close/preview restore falls through. | No. |
+| Session reset (`pumpSessionReset`) | Reset pending, but not during loading/reload. | Exclusive, including the completion callback. Up to eight reset items for one service, or one panel reset turn. | Direct `resetSession` calls, not normal updates. |
+| Menu preparation (`prepareAeroMenu`) | Foreground callbacks; chrome visibility checked even before dashboard readiness. | Module load or new mask construction without input is exclusive. Ensure/reposition/advance normally falls through; `menu.advance`'s busy result is ignored. | No. |
+| Menu input (`aeroMenuModule.handle`) | Foreground callback before normal input, and again through `event`. | Consumed foreground input returns exclusively. State changes can be processed by a later menu advance. | No. |
+| Menu actions/model settings open (`menu.advance`, `openModelSettings`) | Pending menu action during preparation. | Can read the model store, replace the broker document, suspend the editor and open a modal in the same callback; subsequent modal branch returns exclusively. | No. |
+| Model settings handle/build/save/close | Modal present. | Foreground handle then advance is exclusive. If advance reports no work, one legacy service update runs. Hidden callbacks advance exclusively with no service update. | Foreground only, through `updateServices`. |
+| Runtime-failure geometry/error presentation | Foreground and runtime incomplete. | Exclusive; no scheduler may exist. | No. |
+| Location-details close | Foreground, overlay present and leaving fullscreen or reloading. | Falls through. | No. |
+| Log-viewer close | Foreground, viewer present and leaving fullscreen, reloading or resizing. | Exclusive. | No. |
+| Editor leave/resume and preview restore | Foreground fullscreen transition with editor/draft present. | Falls through unless resulting editor work takes an exclusive branch. | No. |
+| Reload retirement | `reloadState == "clear"`, foreground or hidden. | Exclusive: destroys all panels and clears/hides the page or root. | No. |
+| Reload reconstruction and `beginLoad` | `reloadState == "rebuild"`, foreground or hidden. | Exclusive: constructs the new page and initializes staged loading. | No. |
+| Loader stage | `context.stage`, foreground or hidden. | Exclusive even when the stage finishes. Theme/layout read, validation/migration, services and panel construction are staged internally. The last stage calls `configureFlight`, which currently calls `pumpFlight` synchronously. | Service construction/registration only; flight configuration can pump directly. |
+| Empty-dashboard hint | Loaded foreground callback. Also called when opening the editor. | Falls through; may create/update/hide LVGL objects. | No. |
+| Long-press editor entry | Loaded foreground, fullscreen, no modal; held touch crosses the threshold. | Opening the editor returns exclusively. | No. |
+| Editor build/drawer/save/exit/preview advancement | Foreground editor has pending work; hidden editor has a save running. | Exclusive. Preview work calls panel create/update/destroy directly; panel construction performs its initial refresh. Saved-layout adoption calls `configureFlight`, which can pump directly. | No normal service update. |
+| Fullscreen input (`event`) | Nonzero foreground input, plus exported `event` entry point. | Directly handles modal/editor input, opens log/location overlays, or dispatches panel events. Reload/editor/log input returns exclusively; log input runs one legacy service update. Other input may fall through to queued panel/service work. | Log-viewer input only, through `updateServices`. |
+| Log preparation/rendering | Foreground viewer open. | One legacy service update, then optional wrapping/preparation; exclusive. Hidden callbacks do not prepare the log and can reach `dispatchDue`. | Yes, through `updateServices`. |
+| Geometry/reflow | Loaded foreground zone/fullscreen changed, or reflow pending. | Begin reflow and one batch of panel `update` calls; exclusive even on completion. Hidden callbacks with reflow pending return without advancing it. | No. |
+| App-mode panel rebuild | Loaded foreground discovers a fullscreen-built panel, or rebuild pending. | One retire or build step, exclusive. Hidden callbacks do not advance it. | No. |
+| Native `create` | Widget instantiation. | Loads mandatory runtime modules, registers shared flight membership, creates root/page/canvas and initializes loading before returning the context. | No. |
+| Native `update` | Host options change. | May close editor/restore preview, change shared flight membership and request reload; returns directly to EdgeTX. | No. |
+| Native LVGL callbacks | Firmware invokes object callbacks, independently of the host's queue. | Some callbacks only record commands; others do work immediately. For example, the log viewer's Close button directly hides/clears its overlay. These must be audited with the input conversion, not treated as already queued. | No central slot gate. |
+
+`updateServices` is a separate bypass, not an adapter into the new scheduler:
+it calls `services.update` directly using the remaining allowance. Its three
+foreground call sites are idle model settings, log input (open/current/just
+closed), and the normal log-viewer branch. It is never called by the hidden
+callback. Removing it must preserve these modal service opportunities through
+task readiness rather than suppressing them.
+
+### Migration constraints exposed by the inventory
+
+- Flight must move first. A full-capacity reservation cannot fit after its
+  current outside-queue one-slot deduction. Both the callback pump and the
+  synchronous pump in `configureFlight` (loader completion and saved-layout
+  adoption) must be removed as bypasses.
+- Keep the existing Smart input/timing and dashboard-turn gates when introducing
+  pre-grants. Shared broker ownership across widgets is not a per-widget task
+  reset.
+- Loader, reload, reflow, rebuild and editor tasks initially reserve the whole
+  configured capacity, not a literal eight. Flight document loading likewise
+  starts with a whole-capacity reservation; ordinary flight ticks start at one
+  slot. These are reservations, not measured instruction claims.
+- Do not return `again` across an LVGL retirement/reconstruction barrier.
+  Repeated scheduler passes occur inside the same native callback and therefore
+  do not perform firmware deferred cleanup. Page and panel rebuild phases must
+  retain their cross-callback separation.
+- Re-enrol or gate live work using current host state after transitions. A modal,
+  reload or retired panel must not accidentally allow stale dashboard tasks
+  later in the same callback.
+- Native callbacks should record intent; host tasks perform input/UI operations.
+  Creation still needs a minimal bootstrap to instantiate the scheduler and
+  return a valid context; defer substantive initialization after that bootstrap.
+- Include location-details UI, empty hints, error presentation and editor
+  suspension/restore in the relevant UI/lifecycle conversions. They are not
+  covered merely by moving the large `advance` calls.
+
 ## Risks
 
-- **Capacity seen by large tasks.** While the flight pump is still outside the
-  queue and deducts a slot first, a `cost = capacity` task never fits. Either
-  the pump converts first, or the host passes the full capacity and the
-  outside charge separately.
+- **Native entry points.** `create`, `update`, exported `event` and native LVGL
+  callbacks still need intent-only conversion. Runtime-failure presentation
+  must work when the scheduler itself could not be created.
 - **Runaway tasks.** See "No special loop guard".
 - **Memory.** One more module and one task table per panel, service and host
   task; check Lua memory on a radio.
 - **Lua width.** `scheduler.lua` and its tests must work on int32 Lua and be
   ASCII only.
+
+## Flight and callback migration
+
+Foreground and hidden callbacks now run one ring: flight, pending host work,
+then live services/panels when no host mutation is pending. The existing host
+flow is a conservative full-capacity task; it does not request another pass.
+This preserves reload/rebuild cleanup barriers and prevents stale owners from
+running after a host transition. Individual host paths still need extraction
+and smaller measured costs before multiple loader/UI steps can share a callback.
+
+Flight identity, reset polling and ticks request one slot. Document/store
+loading requests the full capacity. A model identity change discovered during
+a one-slot turn requests a full-capacity continuation for document loading.
+The synchronous pump in `configureFlight` is removed. Smart timing/input and
+dashboard-turn gates remain inside the flight task.
+
+Fullscreen refresh input is copied with its arrival tick and retained until
+handled; deferred turns must neither drop releases nor turn scheduling delay
+into a long press. Native/exported input routes remain a later conversion.
+
+`updateServices` is removed. Idle foreground model settings and log viewers
+allow normal queued service turns without panel refreshes. Their pending UI
+work initially reserves the full capacity. Hidden model settings and pending
+reflow retain their previous suppression of ordinary dashboard work.
+
+Navigation previews defer their initial drawing to the next editor preview
+turn so the newly charged callback routing stays within the existing ceiling.
+Production navigation construction is unchanged.

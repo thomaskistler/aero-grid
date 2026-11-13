@@ -183,6 +183,15 @@ local function pump(context, count, step)
     widgetHelpers.pump(context, count, step, tick, definition.refresh)
 end
 
+local function reflowDone(context)
+    return context.width == context.zone.w
+        and context.height == context.zone.h
+        and context.left == (context.zone.xabs or 0)
+        and context.top == (context.zone.yabs or 0)
+        and context.fullScreen == lvgl.isFullScreen()
+        and not context.reflowIndex
+end
+
 --- Create a host and pump refresh until the staged loader finishes.
 --- EdgeTX budgets instructions per callback, so loading is spread over
 --- consecutive refreshes rather than completed inside create().
@@ -1342,7 +1351,7 @@ panels:
         definition.refresh(context)
         passes = passes + 1
         assert(passes < 100, "reflow never finished")
-    until not context.reflowIndex
+    until reflowDone(context)
 
     local selected = themeModule.state(context.theme, "selected")
     primitivesModule.stylePanel(panel, selected)
@@ -1470,7 +1479,7 @@ panels:
         definition.refresh(context)
         passes = passes + 1
         assert(passes < 100, "reflow never finished")
-    until not context.reflowIndex
+    until reflowDone(context)
 
     local bounds = boundsOf(entry)
     assertEqual(panel.topArc.centreY, spacing.radius, "the top band moved during a reflow")
@@ -1944,7 +1953,7 @@ local function testReflowAndLifecycle()
         definition.refresh(appContext)
         passes = passes + 1
         assert(passes < 100, "reflow never finished")
-    until not appContext.reflowIndex
+    until appContext.width == zone.w and appContext.height == zone.h and not appContext.reflowIndex
 
     assertEqual(appContext.root.properties.w, 320)
     assertEqual(appContext.root.properties.h, 240)
@@ -1965,6 +1974,16 @@ local function testReflowAndLifecycle()
 end
 
 --- Changing Dashboard ID or Theme tears down and restages without leaking.
+local function hostTurn(context)
+    for _ = 1, 20 do
+        definition.refresh(context)
+        if context.hostTask and context.hostTask.ran == context.scheduler.callbacks then
+            return
+        end
+    end
+    error("host work never received a grant")
+end
+
 local function testOptionReload()
     definition.update(appContext, { Layout = "alternate", Theme = "modern-dark" })
 
@@ -1972,15 +1991,15 @@ local function testOptionReload()
     -- fresh child of the root, which is never cleared. The clearing callback
     -- must create nothing, because EdgeTX may collect the clear much later.
     local discarded = appContext.page
-    definition.refresh(appContext)
-    assertEqual(discarded.cleared, true, "first callback did not discard the page")
+    hostTurn(appContext)
+    assertEqual(discarded.cleared, true, "retirement turn did not discard the page")
     assertEqual(appContext.root.cleared, false, "the root must never be cleared")
     assertEqual(appContext.reloadState, "rebuild", "reload did not defer its rebuild")
     assertEqual(appContext.page, nil, "page was recreated in the clearing callback")
     assertEqual(appContext.canvas, nil, "canvas was recreated in the clearing callback")
     assertEqual(appContext.stage, nil, "loading started before the rebuild")
 
-    definition.refresh(appContext)
+    hostTurn(appContext)
     assert(appContext.page, "rebuild did not create a new page")
     assert(appContext.page ~= discarded, "rebuild reused the discarded page")
     assert(appContext.canvas, "rebuild did not recreate the canvas")
@@ -2144,7 +2163,7 @@ panels:
 
     zone.w = 240
     zone.h = 160
-    definition.refresh(context)
+    hostTurn(context)
 
     local resized = dial.instance.radial.arc
     local newBounds = boundsOf(dial)
@@ -3970,7 +3989,7 @@ local function testBadgesEndFlushWithTheirPanel()
             definition.refresh(context)
             passes = passes + 1
             assert(passes < 200, "reflow never finished")
-        until not context.reflowIndex
+        until reflowDone(context)
         pump(context, 40)
         local moved = false
         for _, entry in ipairs(context.panels) do
@@ -5480,8 +5499,9 @@ panels:
     )
     local stageCounts, steps = {}, 0
     while context.stage do
-        stageCounts[context.stage] = (stageCounts[context.stage] or 0) + 1
-        definition.refresh(context)
+        local stage = context.stage
+        hostTurn(context)
+        stageCounts[stage] = (stageCounts[stage] or 0) + 1
         steps = steps + 1
         assert(steps < 200, "legacy migration load did not finish")
     end
@@ -5905,7 +5925,7 @@ local function testInstructionBudget()
             record(label .. " refresh/reflow", measure(definition.refresh, context))
             passes = passes + 1
             assert(passes < 400, label .. ": reflow never finished")
-        until not context.reflowIndex
+        until reflowDone(context)
         return context
     end
 
@@ -6132,7 +6152,7 @@ panels:
             definition.refresh(context)
             passes = passes + 1
             assert(passes < 100, "reflow never finished")
-        until not context.reflowIndex
+        until reflowDone(context)
     end
 
     -- Shrink until the panel can no longer afford the optional rows.
@@ -6308,7 +6328,7 @@ local function testDiagnosticsFitTheirPanels()
             definition.refresh(context)
             passes = passes + 1
             assert(passes < 100, "reflow never finished")
-        until not context.reflowIndex
+        until reflowDone(context)
     end
 
     local function assertContained(what)
@@ -7599,7 +7619,7 @@ panels:
         definition.refresh(context)
         passes = passes + 1
         assert(passes < 100, "reflow never finished")
-    until not context.reflowIndex
+    until reflowDone(context)
     settle(context, 20)
 
     assertEqual(tall.showDetail, false, "a shortened panel kept a supporting row it has no space for")
@@ -7624,7 +7644,7 @@ panels:
         definition.refresh(context)
         passes = passes + 1
         assert(passes < 100, "reflow never finished")
-    until not context.reflowIndex
+    until reflowDone(context)
     settle(context, 20)
 
     assertEqual(tall.showDetail, true, "the supporting row never came back")
@@ -8194,7 +8214,7 @@ panels:
             definition.refresh(context)
             passes = passes + 1
             assert(passes < 100, "reflow never finished")
-        until not context.reflowIndex
+        until reflowDone(context)
         settle(context, 60)
     end
 
@@ -8598,7 +8618,7 @@ panels:
             definition.refresh(context)
             passes = passes + 1
             assert(passes < 100, "reflow never finished")
-        until not context.reflowIndex
+        until reflowDone(context)
         settle(context, 60)
     end
 
@@ -9332,7 +9352,7 @@ panels:
         definition.refresh(context)
         passes = passes + 1
         assert(passes < 100, "reflow never finished")
-    until not context.reflowIndex
+    until reflowDone(context)
     settle(context, 20)
 
     assertEqual(panel.label.lines, 1, "the heading wrapped after a reflow narrowed its column")
@@ -9467,7 +9487,7 @@ panels:
             definition.refresh(context)
             passes = passes + 1
             assert(passes < 100, "reflow never finished")
-        until not context.reflowIndex
+        until reflowDone(context)
         settle(context, 60)
     end
 
@@ -9620,7 +9640,7 @@ panels:
         definition.refresh(context)
         passes = passes + 1
         assert(passes < 100, "reflow never finished")
-    until not context.reflowIndex
+    until reflowDone(context)
     settle(context)
 
     assertEqual(trims.showCaption, false, "a narrowed trim panel kept captions it has no room for")
@@ -9654,7 +9674,7 @@ panels:
         definition.refresh(context)
         passes = passes + 1
         assert(passes < 100, "reflow never finished")
-    until not context.reflowIndex
+    until reflowDone(context)
     settle(context)
 
     assertEqual(
@@ -9697,7 +9717,7 @@ panels:
         definition.refresh(context)
         passes = passes + 1
         assert(passes < 100, "reflow never finished")
-    until not context.reflowIndex
+    until reflowDone(context)
 
     -- Widening again must bring the text back with its wording, not with
     -- whatever it held when it was shed.
@@ -9708,7 +9728,7 @@ panels:
         definition.refresh(context)
         passes = passes + 1
         assert(passes < 100, "reflow never finished")
-    until not context.reflowIndex
+    until reflowDone(context)
     settle(context)
 
     assertEqual(trims.showCaption, true, "captions never came back")
@@ -9729,7 +9749,7 @@ panels:
         definition.refresh(context)
         passes = passes + 1
         assert(passes < 100, "reflow never finished")
-    until not context.reflowIndex
+    until reflowDone(context)
     settle(context)
 
     assertEqual(trims.showCaption, true, "a mild narrowing shed captions that still fit")
@@ -9773,7 +9793,7 @@ panels:
         definition.refresh(narrow)
         passes = passes + 1
         assert(passes < 100, "reflow never finished")
-    until not narrow.reflowIndex
+    until reflowDone(narrow)
     settle(narrow)
 
     assertEqual(born.showCaption, true, "a widened panel never found room")
@@ -10145,7 +10165,7 @@ panels:
             definition.refresh(context)
             passes = passes + 1
             assert(passes < 100, "reflow never finished")
-        until not context.reflowIndex
+        until reflowDone(context)
     end
 
     assert(instance.unit, "this test needs a panel that built a unit")
@@ -10329,7 +10349,7 @@ local function testCorePanelsReflow()
             definition.refresh(context)
             passes = passes + 1
             assert(passes < 200, "reflow never finished")
-        until not context.reflowIndex
+        until reflowDone(context)
     end
 
     --- Assert every visible object sits inside the container it belongs to.
@@ -10607,7 +10627,7 @@ panels:
             definition.refresh(context)
             passes = passes + 1
             assert(passes < 200, "reflow never finished")
-        until not context.reflowIndex
+        until reflowDone(context)
     end
 
     local nav = entryById(context, "nav").instance
@@ -11066,7 +11086,7 @@ local function testTelemetryPanelsReflow()
             definition.refresh(context)
             passes = passes + 1
             assert(passes < 200, "reflow never finished")
-        until not context.reflowIndex
+        until reflowDone(context)
     end
 
     --- Assert every visible object sits inside the container it belongs to.
