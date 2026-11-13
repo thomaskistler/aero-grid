@@ -120,9 +120,11 @@ local function refresh(event, touch, draining)
     widget.lvglMock.settle()
     if not draining then
         for _ = 1, 10 do
+            local lifecycleTask = context.lifecycleTasks and context.lifecycleTasks[context.lifecycleRequest]
             if
                 not context.inputQueue
                 and not (context.hostTask and context.hostTask.refused == context.scheduler.callbacks)
+                and not (lifecycleTask and lifecycleTask.refused == context.scheduler.callbacks)
             then
                 break
             end

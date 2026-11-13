@@ -260,3 +260,19 @@ reflow retain their previous suppression of ordinary dashboard work.
 Navigation previews defer their initial drawing to the next editor preview
 turn so the newly charged callback routing stays within the existing ceiling.
 Production navigation construction is unchanged.
+
+Session reset now has its own full-capacity task instead of running inside
+the combined host task. Each turn retains the existing slice: up to eight
+items of one service, one panel reset step, or job completion. The task requests
+`again` while the job remains pending; at the default capacity that next step
+cannot fit until another callback. Loading/reload and arming-driven editor
+suspension take precedence. Foreground and hidden turns share the same job,
+and dashboard work resumes only after the completion callback.
+
+Loading, page retirement/reconstruction, reflow and App-mode reconstruction
+now have distinct full-capacity tasks. The host routes eligible work to them;
+loading and reflow request `again` while their existing stages remain pending.
+Foreground input and due long-press handling can preempt those tasks.
+Retirement/reconstruction phases do not request same-callback continuations.
+Hidden callbacks can load and reload, but do not advance reflow or App-mode
+reconstruction. Other UI work still runs in the combined host task.

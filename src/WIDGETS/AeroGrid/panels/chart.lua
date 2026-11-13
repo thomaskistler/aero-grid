@@ -1835,9 +1835,11 @@ end
 
 local function hiddenLagging(auto)
     local owners = auto.job and auto.hidden and rawget(auto.hidden, "columnConsumers")
+    local renderer = auto.hidden and rawget(auto.hidden, "columnRenderer")
     for index, owner in ipairs(owners or {}) do
         if
-            behind(auto.job, owner, auto.consumers[index]) > 2
+            renderer and not renderer.published[index]
+            or behind(auto.job, owner, auto.consumers[index]) > 2
             or #owner.map.dirtyList > 2 and auto.job.kind ~= "range"
         then
             return true

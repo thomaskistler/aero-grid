@@ -1519,6 +1519,20 @@ local function pumpSessionReset(context)
     return true
 end
 
+local function sessionResetReady(task)
+    local context = task.host
+    return context.sessionResetPending
+        and not context.stage
+        and not context.reloadState
+        and not context.modelArmingReload
+end
+
+local function sessionResetStep(task)
+    local context = task.host
+    pumpSessionReset(context)
+    return nil, context.sessionResetPending == true
+end
+
 --- Advance the staged loader, then keep geometry and panels synchronized.
 --- At most one loading step runs per call, so the instruction budget is never
 --- exceeded no matter how large the layout is.
@@ -1527,9 +1541,6 @@ end
 ---@param touchState? table
 local function advanceForeground(context, widgetEvent, touchState)
     if suspendArmingEditor(context) then
-        return
-    end
-    if pumpSessionReset(context) then
         return
     end
     if prepareAeroMenu(context, widgetEvent) then
@@ -1614,18 +1625,17 @@ local function advanceForeground(context, widgetEvent, touchState)
     -- ones created after the clear in the same callback. Anything rebuilt here
     -- would therefore be swept before it was ever drawn.
     if context.reloadState == "clear" then
-        context.dashboardLifecycle.retirePage(context)
+        context.lifecycleRequest = "retire"
         return
     end
 
     if context.reloadState == "rebuild" then
-        context.dashboardLifecycle.rebuildPage(context)
-        context.dashboardLoader.beginLoad(context)
+        context.lifecycleRequest = "rebuild"
         return
     end
 
     if context.stage then
-        context.dashboardLoader.advanceLoad(context)
+        context.lifecycleRequest = "load"
         return
     end
 
@@ -1728,10 +1738,11 @@ local function advanceForeground(context, widgetEvent, touchState)
         or context.top ~= (context.zone.yabs or 0)
         or context.fullScreen ~= isFullScreen()
     then
-        context.dashboardLifecycle.beginReflow(context)
+        context.lifecycleRequest = "reflow"
+        return
     end
     if context.reflowIndex then
-        context.dashboardLifecycle.advanceReflow(context)
+        context.lifecycleRequest = "reflow"
         return
     end
     if not context.appRebuild and not isFullScreen() and not context.editorUi then
@@ -1743,7 +1754,7 @@ local function advanceForeground(context, widgetEvent, touchState)
         end
     end
     if context.appRebuild then
-        context.dashboardLifecycle.advanceAppRebuild(context)
+        context.lifecycleRequest = "app rebuild"
         return
     end
 end
@@ -1756,9 +1767,6 @@ local function advanceHidden(context)
     if suspendArmingEditor(context) then
         return
     end
-    if pumpSessionReset(context) then
-        return
-    end
     if context.modelSettingsUi then
         context.modelSettingsUiModule.advance(context)
         return
@@ -1768,17 +1776,95 @@ local function advanceHidden(context)
         return
     end
     if context.reloadState == "clear" then
-        context.dashboardLifecycle.retirePage(context)
+        context.lifecycleRequest = "retire"
         return
     elseif context.reloadState == "rebuild" then
-        context.dashboardLifecycle.rebuildPage(context)
-        context.dashboardLoader.beginLoad(context)
+        context.lifecycleRequest = "rebuild"
         return
     elseif context.stage then
-        context.dashboardLoader.advanceLoad(context)
+        context.lifecycleRequest = "load"
         return
     elseif context.reflowIndex then
         return
+    end
+end
+
+local function lifecycleReady(task, _, hidden)
+    local context, kind = task.host, task.kind
+    if
+        context.modelArmingReload
+        or context.sessionResetPending and not (context.stage or context.reloadState)
+        or context.modelSettingsUi
+        or context.editorUi and (hidden and context.editorUi.saving or not hidden)
+        or not hidden
+            and (context.inputPending or context.editorPress and getTime() - context.editorPress.started >= 60)
+    then
+        return false
+    end
+    if not hidden then
+        local fullscreen, menu = isFullScreen(), context.aerogridMenu
+        if
+            menu and (menu.pending or menu.action or menu.dismiss or menu.selectionDirty)
+            or context.locationDetails and (not fullscreen or context.reloadState)
+            or context.logViewer and (not fullscreen or context.reloadState or context.logViewer.width ~= context.zone.w - 16 or context.logViewer.height ~= context.zone.h)
+            or context.editorStash and fullscreen and context.document and not (context.stage or context.reloadState)
+            or not fullscreen
+                and not context.reloadState
+                and (context.pageBuiltFullscreen or context.rootBuiltFullscreen or context.nativeDialogsCreated)
+        then
+            return false
+        end
+    end
+    if kind == "retire" then
+        return context.reloadState == "clear"
+    elseif kind == "rebuild" then
+        return context.reloadState == "rebuild"
+    elseif kind == "load" then
+        return not context.reloadState and context.stage ~= nil
+    elseif kind == "reflow" then
+        return not hidden and not context.reloadState and not context.stage and not context.logViewer
+    end
+    return not hidden and not context.reloadState and not context.stage and context.appRebuild ~= nil
+end
+
+local function lifecycleStep(task)
+    local context, kind = task.host, task.kind
+    context.lifecycleRequest = nil
+    if kind == "retire" then
+        context.dashboardLifecycle.retirePage(context)
+        context.lifecycleRequest = "rebuild"
+    elseif kind == "rebuild" then
+        context.dashboardLifecycle.rebuildPage(context)
+        context.dashboardLoader.beginLoad(context)
+        context.lifecycleRequest = "load"
+    elseif kind == "load" then
+        context.dashboardLoader.advanceLoad(context)
+        if context.stage then
+            context.lifecycleRequest = "load"
+            return nil, true
+        end
+    elseif kind == "reflow" then
+        if
+            context.width ~= context.zone.w
+            or context.height ~= context.zone.h
+            or context.left ~= (context.zone.xabs or 0)
+            or context.top ~= (context.zone.yabs or 0)
+            or context.fullScreen ~= isFullScreen()
+        then
+            context.dashboardLifecycle.beginReflow(context)
+        end
+        if context.reflowIndex then
+            context.dashboardLifecycle.advanceReflow(context)
+        end
+        if context.reflowIndex then
+            context.lifecycleRequest = "reflow"
+            return nil, true
+        end
+    else
+        context.dashboardLifecycle.advanceAppRebuild(context)
+        if context.appRebuild then
+            context.lifecycleRequest = "app rebuild"
+        end
     end
 end
 
@@ -1786,7 +1872,8 @@ end
 --- their existing staged flow. Idle callbacks only inspect state here.
 local function hostWorkNeeded(context, hidden, widgetEvent, fullscreen)
     if
-        context.modelArmingReload
+        context.lifecycleRequest
+        or context.modelArmingReload
         or context.sessionResetPending and not (context.stage or context.reloadState)
         or context.reloadState
         or context.stage
@@ -1940,16 +2027,62 @@ local function runCallback(context, hidden, widgetEvent, touchState)
     end
     local hostTask
     if hostNeeded then
-        hostTask = context.hostTask
-        if not hostTask then
-            hostTask = {
-                name = "host",
-                owner = "host",
-                host = context,
-                hostWork = true,
-                step = advanceHost,
-            }
-            context.hostTask = hostTask
+        if
+            context.sessionResetPending
+            and not context.stage
+            and not context.reloadState
+            and not context.modelArmingReload
+        then
+            hostTask = context.sessionResetTask
+            if not hostTask then
+                hostTask = {
+                    name = "session reset",
+                    owner = "session reset",
+                    host = context,
+                    hostWork = true,
+                    step = sessionResetStep,
+                    ready = sessionResetReady,
+                }
+                context.sessionResetTask = hostTask
+            end
+        else
+            local kind = context.lifecycleRequest
+            if kind then
+                local tasks = context.lifecycleTasks
+                if not tasks then
+                    tasks = {}
+                    context.lifecycleTasks = tasks
+                end
+                local task = tasks[kind]
+                if not task then
+                    task = {
+                        name = kind,
+                        owner = kind,
+                        kind = kind,
+                        host = context,
+                        hostWork = true,
+                        step = lifecycleStep,
+                        ready = lifecycleReady,
+                    }
+                    tasks[kind] = task
+                end
+                if lifecycleReady(task, nil, hidden) then
+                    hostTask = task
+                else
+                    context.lifecycleRequest = nil
+                end
+            end
+            hostTask = hostTask or context.hostTask
+            if not hostTask then
+                hostTask = {
+                    name = "host",
+                    owner = "host",
+                    host = context,
+                    hostWork = true,
+                    step = advanceHost,
+                }
+                context.hostTask = hostTask
+            end
         end
         hostTask.cost = scheduler.capacity
     end
