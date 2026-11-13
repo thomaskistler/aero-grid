@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local renderer = { RUNTIME_API = 1, PAINT_LIMIT = 12 }
+local renderer = { RUNTIME_API = 1, PAINT_LIMIT = 10 }
 renderer.__index = renderer
 
 function renderer.new(context)

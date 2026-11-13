@@ -136,6 +136,7 @@ local function drawerReady()
         local state = assert(context.editorUi, "editor closed unexpectedly")
         return not state.buildStage
             and not state.drawerPending
+            and not state.nativeInput
             and not state.drawerBuild
             and not state.previewPending
             and not state.previewRefresh

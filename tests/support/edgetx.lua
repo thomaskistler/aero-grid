@@ -1528,6 +1528,7 @@ function support.radio(hostIo)
 
     local radio = {
         logicalSwitches = {},
+        logicalSwitchDefinitions = {},
         rssi = 80,
         --- The model's name, which is whatever the pilot typed into Model Setup.
         --- It lives here rather than being a constant because it is radio state
@@ -1814,6 +1815,10 @@ function support.radio(hostIo)
     end
 
     CHAR_UP, CHAR_DOWN = string.char(192), string.char(193)
+    function getSourceIndex(name)
+        local field = radio.fields[name]
+        return field and field.id or 0
+    end
     CHAR_DELTA = firmware.CHAR_DELTA
     local switchPositions = {}
     function getSwitchIndex(name)
@@ -1928,6 +1933,9 @@ function support.radio(hostIo)
         getSensor = function(index)
             return radio.sensors[index]
         end,
+        getLogicalSwitch = function(index)
+            return radio.logicalSwitchDefinitions[index]
+        end,
         getGlobalVariable = function(index, flightMode)
             local perMode = radio.globalsByMode[index]
             local value = perMode and perMode[flightMode]
@@ -2007,6 +2015,7 @@ function support.radio(hostIo)
     --- Reset the radio to the state every test starts from.
     function handle.reset()
         radio.logicalSwitches = {}
+        radio.logicalSwitchDefinitions = {}
         indexFields()
         radio.modelName = scaffold.MODEL_NAME
         radio.rssi = 80

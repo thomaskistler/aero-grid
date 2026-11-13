@@ -55,13 +55,13 @@ assert(context.lifecycleTasks.load.spent - spentBefore == 3 * context.scheduler.
 context.stage = "probe"
 local loadTask = context.lifecycleTasks.load
 context.inputPending = true
-assert(not loadTask.ready(loadTask, getTime(), false), "retained input takes priority over loader work")
+assert(loadTask.ready(loadTask, getTime(), false), "loading must finish before retained dashboard input can run")
 assert(loadTask.ready(loadTask, getTime(), true), "hidden loading does not consume foreground input")
 context.inputPending = false
 context.editorPress = { started = getTime() }
 assert(loadTask.ready(loadTask, getTime(), false))
 fixture.tick(60)
-assert(not loadTask.ready(loadTask, getTime(), false), "a due hold must return to input routing")
+assert(loadTask.ready(loadTask, getTime(), false), "a due hold cannot block the loading it needs")
 context.editorPress = nil
 local previousMenu = context.aerogridMenu
 context.aerogridMenu = { action = "probe" }

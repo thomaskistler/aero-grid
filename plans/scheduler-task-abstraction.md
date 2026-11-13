@@ -318,3 +318,68 @@ Hidden callbacks retain settings entry without opening UI. Same-model entry
 waits for an arming reload to finish; model identity changes, native option
 changes and fullscreen exit cancel it. Native `create` and input/LVGL
 routes still need conversion.
+
+Log opening now has a full-capacity task for module loading, snapshot reading
+and overlay construction. Entry is cancelled when its page/model changes or
+fullscreen ends. Log input records copied coordinates in the viewer's queue;
+the viewer task scrolls or closes on a separate grant, before more wrapping.
+The native Close button only records closing intent, and callbacks from a
+retired viewer cannot close its replacement. Geometry/reload/fullscreen
+cancellation also closes through the viewer task. Opening, preparation and
+closing retain native callback boundaries; hidden callbacks do not mutate the
+overlay. General input routing and other native LVGL handlers remain to convert.
+
+Fullscreen input now has its own full-capacity task. Both `refresh` input and
+the exported `event` helper append to one FIFO with copied firmware touch fields
+and arrival ticks. `event` returns acceptance, not synchronous consumption;
+App-mode input is rejected. One granted turn handles one event, preserving
+panel consumption order, duplicate-tap suppression and hold timing. Hidden
+callbacks retain input; fullscreen exit discards it. Editor work already in
+progress completes before input is handled, and editor activation remains a
+separate transition grant. Loading completes before queued dashboard input;
+Model settings input can still close the modal before its pending reload.
+
+Firmware routing was verified against EdgeTX 2.12:
+[`LuaWidget::refresh` and `LuaEventHandler`](https://github.com/EdgeTX/edgetx/blob/2.12/radio/src/lua/lua_widget.cpp)
+forward buffered fullscreen events to `refresh(context, event, touch)`.
+[`luaLoadWidgetCallback`](https://github.com/EdgeTX/edgetx/blob/2.12/radio/src/lua/widgets.cpp)
+does not register an exported `event` function.
+[`LvglWidgetObjectBase` callbacks](https://github.com/EdgeTX/edgetx/blob/2.12/radio/src/lua/lua_lvgl_widget.cpp)
+invoke property functions directly, and `foreground` calls dynamic references
+after `refresh`. Those other native callbacks still require intent-only
+conversion; this input migration does not claim they are queued.
+
+Location-details input now records opening/closing transitions. The input
+grant copies the tapped GPS fix; a separate full-capacity task loads the module
+and constructs the overlay/QR code from that snapshot. Close input and
+fullscreen/reload cancellation request a separate transition grant. Hidden
+callbacks retain transitions without mutating the overlay. Deferred entry is
+tied to its page/model, and stale close requests cannot clear a replacement.
+
+Native creation now bootstraps only the context and scheduler. A full-capacity
+initialization task loads the remaining runtime, constructs the root/page and
+enrolls flight membership; panel loading starts on later grants. Options received
+before initialization remain queued. Bootstrap failure constructs only the error
+page directly because no scheduler is available. Initialization exceptions also
+leave a complete error page so later foreground resizing is safe.
+
+Native editor and model-settings setters record raw commands. Conversion,
+validation and source/switch resolution occur during granted UI advancement.
+Model-settings normalization and persistence use separate grants; accepted edits
+survive native Return. Closed/generation-stale editor controls cannot retain
+commands. Native control getters, editor entry summaries and logical-switch
+choice filters use cached values prepared by scheduled work.
+
+Native dialog Return must still clear wrappers and unregister dynamic references
+synchronously: EdgeTX deletes the window before the later dynamic-reference pass.
+Deferring that cleanup would let firmware dereference a deleted window. Constant
+presentation callbacks and bounded intent/owner checks are not charged tasks.
+Error-only rendering when the scheduler/runtime is unavailable remains a minimal
+fallback. These exceptions must be explicit in the upcoming no-bypass checks.
+Full-capacity reservations still need measurement and splitting; this migration
+does not establish that every step fits one 2,000-instruction slot.
+
+Chart append painting now handles at most ten changed columns per series,
+down from twelve. The combined host exposed a 16,643-instruction chart reentry
+callback against its unchanged 16,000-instruction regression ceiling; bounding
+that paint batch leaves the remaining columns for later appends.

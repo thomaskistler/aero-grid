@@ -2,6 +2,33 @@
 
 local drawer = { RUNTIME_API = 1 }
 
+local function deferredSetter(context, state, generation, apply)
+    return function(value)
+        if context.editorUi == state and generation == state.drawerGeneration and not state.nativeInput then
+            state.nativeInput = { apply = apply, value = value, generation = generation }
+        end
+    end
+end
+
+function drawer.applyNative(context, state)
+    local command = state.nativeInput
+    state.nativeInput = nil
+    if command and context.editorUi == state and command.generation == state.drawerGeneration then
+        local pending = state.drawerPending
+        state.drawerPending = nil
+        state.applyingNative = true
+        command.apply(command.value)
+        state.applyingNative = nil
+        if pending then
+            if state.drawerPending then
+                state.drawerDismiss = pending
+            else
+                state.drawerPending = pending
+            end
+        end
+    end
+end
+
 local function current(state, field)
     local placement = state.session.draft.panels[state.session.selected]
     local value = placement and placement.config and placement.config[field.key]
@@ -44,7 +71,7 @@ end
 
 local function enqueue(state, action, generation)
     if
-        state.nativeDrawer
+        (state.nativeDrawer or state.applyingNative)
         and (not generation or generation == state.drawerGeneration)
         and not state.drawerPending
         and not state.drawerBuild
@@ -107,6 +134,7 @@ local function hostedDialog(context, state, properties)
         error(failure, 0)
     end
     if not attempted then
+        attempted = true
         -- Firmware without construction-time probes registers dialogs at top
         -- level; only the host-wide reload on App return can retire those.
         host:clear()
@@ -122,6 +150,7 @@ function drawer.close(state)
     closeDialog(state)
     state.drawerPending = nil
     state.drawerDismiss = nil
+    state.nativeInput = nil
 end
 
 local function firmwareSwitchName(name)
@@ -161,8 +190,7 @@ local function entrySummary(state, key, index, defaults, path)
         return switchSummary(item.switch) .. ": " .. item.text .. " (" .. (item.background or "normal") .. ")"
     end
     local source = item.source
-    -- A newly added entry has no source yet, and the firmware's getFieldInfo
-    -- raises on nil inside this per-frame text callback.
+    -- A newly added entry has no source yet; getFieldInfo raises on nil.
     if
         (type(source) == "string" and source ~= "" or type(source) == "number")
         and type(getFieldInfo) == "function"
@@ -229,10 +257,11 @@ local function fieldsFor(state, listKey, itemIndex, itemPath, groupKey)
                 end
                 local path = editor.clone(field.path or {})
                 path[#path + 1] = index
+                local summary = entrySummary(state, field.key, index, config, field.path)
                 result[#result + 1] = {
                     label = tostring(title),
                     text = function()
-                        return entrySummary(state, field.key, index, config, field.path)
+                        return summary
                     end,
                     action = "item",
                     key = field.key,
@@ -285,12 +314,12 @@ function drawer.open(context, state, mode, listKey, itemIndex, itemPath, groupKe
             get = function()
                 return 1
             end,
-            set = function(index)
+            set = deferredSetter(context, state, generation, function(index)
                 if context.editorUi == state and generation == state.drawerGeneration and not state.drawerPending then
                     local item = assert(catalog[index], "invalid panel selection")
                     state.drawerPending = { action = "add", panelType = item.type }
                 end
-            end,
+            end),
         })
         return
     end
@@ -392,9 +421,9 @@ function drawer.openExit(context, state)
         get = function()
             return 1
         end,
-        set = function(index)
+        set = deferredSetter(context, state, generation, function(index)
             exitCommand(context, state, generation, { action = assert(actions[index], "invalid exit choice") })
-        end,
+        end),
     })
 end
 
@@ -529,6 +558,9 @@ local function refreshVisibility(state)
     relayout(state)
     local editor = state.handlers.editor
     for _, entry in ipairs(state.drawerControls or {}) do
+        if entry.readNative then
+            entry.readNative()
+        end
         if entry.field.drawerGroup then
             entry.object:set({ text = editor.drawerSummary(state.session, entry.field.drawerGroup) })
         end
@@ -644,6 +676,9 @@ local function addControl(context, state, field, index)
         end
         options.get = function()
             local value = get()
+            if value == nil or value == "" then
+                return 0
+            end
             if kind == "switch" and type(value) == "string" then
                 value = firmwareSwitchName(value)
             end
@@ -797,6 +832,20 @@ local function addControl(context, state, field, index)
             set(value)
         end
     end
+    if options.set then
+        options.set = deferredSetter(context, state, generation, options.set)
+    end
+    local readNative
+    if options.get then
+        local getValue = options.get
+        local value = getValue()
+        options.get = function()
+            return value
+        end
+        readNative = function()
+            value = getValue()
+        end
+    end
     control = assert(lvgl[kind](row, options), "cannot create native " .. kind)
     local errorLabel = lvgl.label(state.nativeDrawer, {
         x = 12,
@@ -815,6 +864,7 @@ local function addControl(context, state, field, index)
         errorLabel = errorLabel,
         field = field,
         kind = kind,
+        readNative = readNative,
     }
     field.control = state.drawerControls[index]
     relayout(state)

@@ -173,6 +173,9 @@ function uiModule.advance(context)
     if not state then
         return false
     end
+    if state.nativeInput then
+        context.editorDrawerModule.applyNative(context, state)
+    end
     if state.previewPending then
         state.previewPending = nil
         state.previewRefresh = state.handlers.startPreview(state.session.draft)
@@ -520,6 +523,7 @@ function uiModule.handle(context, event, touch)
         or state.previewPending
         or state.previewRefresh
         or state.exitCommand
+        or state.nativeInput
     then
         return false
     end

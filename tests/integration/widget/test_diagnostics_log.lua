@@ -102,6 +102,8 @@ local function input(event, touch, draining)
         for _ = 1, 100 do
             if
                 not diagnostics.inputQueue
+                and not diagnostics.logOpenRequest
+                and not (diagnostics.logViewer and (diagnostics.logViewer.inputs or diagnostics.logViewer.closing))
                 and not (diagnostics.hostTask and diagnostics.hostTask.refused == diagnostics.scheduler.callbacks)
                 and not (
                     diagnostics.menuTask
@@ -192,6 +194,8 @@ tap()
 state = assert(diagnostics.logViewer)
 state.closeButton.properties.press()
 fixture.lvglMock.settle()
+assert(diagnostics.logViewer == state and state.closing, "native Close must only record intent")
+input(nil)
 assert(not diagnostics.logViewer, "native Close button must dismiss")
 tap()
 diagnostics.zone.w = 320

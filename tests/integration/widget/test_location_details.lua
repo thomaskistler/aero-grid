@@ -18,6 +18,7 @@ local function input(event, touch)
     for _ = 1, 100 do
         if
             not context.inputQueue
+            and not context.locationRequest
             and not (context.hostTask and context.hostTask.refused == context.scheduler.callbacks)
             and not (
                 context.menuTask

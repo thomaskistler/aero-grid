@@ -125,9 +125,10 @@ local function refresh(event, touch, draining)
             if
                 not context.inputQueue
                 and not context.editorTransitionRequest
+                and not (context.inputTask and context.inputTask.refused == context.scheduler.callbacks)
                 and not (context.hostTask and context.hostTask.refused == context.scheduler.callbacks)
                 and not (context.menuTask and (context.menuTask.ran == context.scheduler.callbacks or context.menuTask.refused == context.scheduler.callbacks))
-                and not (lifecycleTask and lifecycleTask.refused == context.scheduler.callbacks)
+                and not (context.lifecycleRequest and (not lifecycleTask or lifecycleTask.ran ~= context.scheduler.callbacks))
                 and not (context.uiRequest and (not uiTask or uiTask.ran ~= context.scheduler.callbacks))
             then
                 break
@@ -191,6 +192,7 @@ local function settleDrawer()
         assert(context.editorUi, "drawer failed: " .. table.concat(context.errors, "; "))
         if
             not context.editorUi.drawerPending
+            and not context.editorUi.nativeInput
             and context.editorUi.drawerBuild == nil
             and not context.editorUi.previewPending
             and not context.editorUi.previewRefresh
@@ -607,6 +609,7 @@ equal(pickSource(UNREADABLE_SOURCE), "RSSI", "a source Lua cannot read leaves th
 assert(string.find(state.status, "Lua cannot read source SW1", 1, true), "unreadable source explains why")
 local legacy = context.editorSession.draft.panels[1].config.metrics[1]
 legacy.source = "GV1"
+state.drawerControls[errorIndex].readNative()
 equal(control("metrics", "source").properties.get(), 330, "a menu-name source still reopens on its entry")
 legacy.source = "RSSI"
 pickSource(getFieldInfo(validSource).id)

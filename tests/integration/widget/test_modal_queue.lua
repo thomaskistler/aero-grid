@@ -46,7 +46,8 @@ definition.refresh(context)
 definition.refresh(context)
 assert(steps == 3 and not context.uiRequest and not context.modelSettingsUi.build)
 definition.refresh(context, 991)
-assert(context.inputQueue and steps == 3, "modal input stays queued until its task receives capacity")
+assert(not context.inputQueue and steps == 3 and context.modelSettingsUi.closing)
+assert(context.inputTask.ran == context.scheduler.callbacks, "modal input gets a separate input grant")
 definition.refresh(context)
 assert(not context.modelSettingsUi and not context.inputQueue and steps == 4)
 assert(not modelTask.ui, "closed modal objects must not stay reachable through a cached task")
@@ -98,3 +99,12 @@ definition.refresh(context)
 definition.refresh(context)
 assert(steps == 7 and not context.uiRequest)
 assert(not viewerTask.ui, "a native close must release the cached viewer reference")
+
+context.modelSettingsUi, context.reloadState = {}, "clear"
+definition.refresh(context, 991)
+assert(not context.inputQueue and context.modelSettingsUi.closing, "settings Exit precedes its pending reload")
+definition.refresh(context)
+assert(
+    not context.modelSettingsUi and context.reloadState == "clear",
+    "modal close has its own grant before retirement"
+)

@@ -45,7 +45,9 @@ setStickySwitch = function(index, value)
     return false
 end
 model.getLogicalSwitch = function(index)
-    assert(index == 19)
+    if index ~= 19 then
+        return nil
+    end
     return { func = 17, v1 = 0, v2 = 0, v3 = 0, ["and"] = 0, delay = 0, duration = 0 }
 end
 playTone = function(frequency)

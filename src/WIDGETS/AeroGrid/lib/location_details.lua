@@ -130,7 +130,7 @@ end
 
 function details.handle(context, event)
     if event == _G.EVT_VIRTUAL_EXIT or event == _G.EVT_EXIT_BREAK or event == _G.EVT_TOUCH_TAP then
-        details.close(context)
+        context.locationRequest = { kind = "close", state = context.locationDetails }
     end
     return true
 end

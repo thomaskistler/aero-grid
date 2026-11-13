@@ -1968,9 +1968,9 @@ local function testReflowAndLifecycle()
     definition.background(appContext)
     assertEqual(pulse.instance.backgroundTicks, 1, "background was not dispatched")
 
-    -- Events reach panels; an unconsumed event is reported as unconsumed.
+    -- EdgeTX supplies widget input only in fullscreen.
     assertEqual(definition.event(appContext, 32), false)
-    assertEqual(pulse.instance.events, 1, "event was not dispatched")
+    assertEqual(pulse.instance.events, 0, "App-mode input cannot reach panels")
 end
 
 --- Changing Dashboard ID or Theme tears down and restages without leaking.
@@ -5304,10 +5304,19 @@ return eater
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
     assertEqual(#context.panels, 2)
 
-    assertEqual(definition.event(context, 32), true, "event was not consumed")
+    lvglMock.setFullScreen(true)
+    assertEqual(definition.event(context, 32), true, "event was not accepted")
+    assertEqual(entryById(context, "eater").instance.seen, 0, "native entry cannot dispatch synchronously")
+    for _ = 1, 30 do
+        definition.refresh(context)
+        if not context.inputQueue then
+            break
+        end
+    end
     assertEqual(entryById(context, "eater").instance.seen, 1)
     -- The later panel must never see a consumed event.
     assertEqual(entryById(context, "pulse").instance.events, 0)
+    lvglMock.setFullScreen(false)
 end
 
 --- Contract, span, and module-resolution failures are visible and survivable.
@@ -6218,6 +6227,7 @@ local function testRuntimeFailureIsContained()
 
     local context = definition.create({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
 
+    definition.refresh(context)
     assertEqual(context.runtimeFailed, true)
     assertEqual(context.stage, nil, "a broken runtime must not stage a load")
     assert(string.match(table.concat(context.errors, "\n"), "runtime module failed"))
