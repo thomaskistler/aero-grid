@@ -124,6 +124,7 @@ local function refresh(event, touch, draining)
             local uiTask = context.uiTasks and context.uiTasks[context.uiRequest]
             if
                 not context.inputQueue
+                and not context.editorTransitionRequest
                 and not (context.hostTask and context.hostTask.refused == context.scheduler.callbacks)
                 and not (context.menuTask and (context.menuTask.ran == context.scheduler.callbacks or context.menuTask.refused == context.scheduler.callbacks))
                 and not (lifecycleTask and lifecycleTask.refused == context.scheduler.callbacks)

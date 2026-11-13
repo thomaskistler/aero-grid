@@ -825,19 +825,27 @@ local function update(context, widgetOptions)
     end
 
     if name ~= context.layoutName or themeMode ~= context.themeMode then
-        local member = context.flightFactory.members[context]
-        member.pending = true
-        context.flightFactory.revision = (context.flightFactory.revision or 0) + 1
-        context.editorStash = nil
-        if context.editorUi then
-            context.editorUiModule.close(context, true)
-            context.editorController.restorePreview(context)
-            context.editorSession = nil
-        end
-        context.layoutName = name
-        context.themeMode = themeMode
-        context.reloadState = "clear"
+        context.optionsRequest = { layoutName = name, themeMode = themeMode }
+    else
+        context.optionsRequest = nil
     end
+end
+
+local function optionsStep(task)
+    local context = task.host
+    local request = context.optionsRequest
+    context.optionsRequest = nil
+    local member = context.flightFactory.members[context]
+    member.pending = true
+    context.flightFactory.revision = (context.flightFactory.revision or 0) + 1
+    context.editorStash, context.editorTransitionRequest, context.modelSettingsRequest = nil, nil, nil
+    if context.editorUi then
+        context.editorUiModule.close(context, true)
+        context.editorController.restorePreview(context)
+        context.editorSession = nil
+    end
+    context.layoutName, context.themeMode = request.layoutName, request.themeMode
+    context.reloadState = "clear"
 end
 --- Translate compact native option keys into user-facing labels.
 ---@param name string
@@ -876,7 +884,7 @@ local function event(context, widgetEvent, touchState)
         return context.logViewerModule.handle(context, widgetEvent, touchState)
     end
     if context.editorController.editorEntryHit(context, widgetEvent, touchState) then
-        context.editorController.openEditor(context)
+        context.editorTransitionRequest = "open"
         return true
     end
 
@@ -1395,10 +1403,10 @@ local function prepareAeroMenu(context)
                 return info and info.filename
             end,
             modelSettings = function()
-                openModelSettings(context)
+                context.modelSettingsRequest = { modelFilename = context.aeroMenuHandlers.modelFilename() }
             end,
             uiSetup = function()
-                context.editorController.openEditor(context)
+                context.editorTransitionRequest = "open"
             end,
             modal = function()
                 return context.modelSettingsUi ~= nil
@@ -1449,13 +1457,8 @@ local function suspendArmingEditor(context)
             context.uiRequest = "editor"
             return true
         end
-        context.modelArmingReload = nil
-        if context.editorUi then
-            context.editorStash = context.editorSession
-            context.editorUiModule.close(context, false)
-            context.editorController.restorePreview(context)
-            context.editorSession = nil
-        end
+        context.editorTransitionRequest = "suspend"
+        return true
     end
     return false
 end
@@ -1584,13 +1587,8 @@ local function advanceForeground(context, widgetEvent, touchState)
     -- torn down and a changed draft is set aside until fullscreen returns.
     -- A save already running finishes first, in `background`.
     if context.editorUi and not isFullScreen() and not context.editorUi.saving then
-        local session = context.editorSession
-        local keep = session and session.dirty and not context.editorUi.buildStage
-        context.editorUiModule.close(context, false)
-        context.editorController.restorePreview(context)
-        context.editorSession = nil
-        context.editorPreviewContainers = nil
-        context.editorStash = keep and session or nil
+        context.editorTransitionRequest = "leave"
+        return
     elseif
         context.editorStash
         and not context.editorUi
@@ -1599,7 +1597,8 @@ local function advanceForeground(context, widgetEvent, touchState)
         and not context.reloadState
         and context.document
     then
-        context.editorController.openEditor(context)
+        context.editorTransitionRequest = "open"
+        return
     end
 
     -- EdgeTX 2.12 only makes Lua boxes touch-transparent when constructing
@@ -1656,7 +1655,7 @@ local function advanceForeground(context, widgetEvent, touchState)
         then
             context.editorPress = nil
             context.inputHandled = true
-            context.editorController.openEditor(context)
+            context.editorTransitionRequest = "open"
             return
         end
     elseif not isFullScreen() then
@@ -1820,6 +1819,78 @@ end
 local function menuStep(task)
     prepareAeroMenu(task.host)
     task.host.menuVisibleFullscreen = isFullScreen()
+end
+
+local function modelSettingsOpenReady(task, _, hidden)
+    local context = task.host
+    return context.modelSettingsRequest
+        and not hidden
+        and isFullScreen()
+        and not context.modelArmingReload
+        and not context.sessionResetPending
+        and not context.stage
+        and not context.reloadState
+        and not context.modelSettingsUi
+        and not (context.editorUi and context.editorUi.saving)
+end
+
+local function modelSettingsOpenStep(task)
+    local context = task.host
+    local request, owner = context.modelSettingsRequest, context.flightFactory.broker
+    context.modelSettingsRequest = nil
+    if owner and (owner.filename ~= request.modelFilename or owner:identity() ~= request.modelFilename) then
+        return
+    end
+    openModelSettings(context)
+end
+
+local function editorTransitionReady(task, _, hidden)
+    local context = task.host
+    local request, state = context.editorTransitionRequest, context.editorUi
+    if request == "suspend" then
+        return context.modelArmingReload and not (state and state.saving)
+    end
+    if
+        hidden
+        or context.modelArmingReload
+        or context.sessionResetPending and not (context.stage or context.reloadState)
+        or context.modelSettingsUi
+    then
+        return false
+    end
+    if request == "leave" then
+        return state ~= nil and not state.saving and not isFullScreen()
+    end
+    return request == "open"
+        and not state
+        and not context.stage
+        and not context.reloadState
+        and not context.logViewer
+        and not context.locationDetails
+        and context.document ~= nil
+        and isFullScreen()
+end
+
+local function editorTransitionStep(task)
+    local context = task.host
+    local request, state = context.editorTransitionRequest, context.editorUi
+    context.editorTransitionRequest = nil
+    if request == "open" then
+        context.editorController.openEditor(context)
+    else
+        if state then
+            local session = context.editorSession
+            local keep = request == "suspend" or session and session.dirty and not state.buildStage
+            context.editorUiModule.close(context, false)
+            context.editorController.restorePreview(context)
+            context.editorSession = nil
+            context.editorPreviewContainers = nil
+            context.editorStash = keep and session or nil
+        end
+        if request == "suspend" then
+            context.modelArmingReload = nil
+        end
+    end
 end
 
 local function editorWorkNeeded(state)
@@ -1993,8 +2064,11 @@ end
 --- their existing staged flow. Idle callbacks only inspect state here.
 local function hostWorkNeeded(context, hidden, widgetEvent, fullscreen)
     if
-        context.lifecycleRequest
+        context.optionsRequest
+        or context.modelSettingsRequest
+        or context.lifecycleRequest
         or context.uiRequest
+        or context.editorTransitionRequest
         or context.modelArmingReload
         or context.sessionResetPending and not (context.stage or context.reloadState)
         or context.reloadState
@@ -2130,7 +2204,19 @@ local function runCallback(context, hidden, widgetEvent, touchState)
     end
     local hostTask
     if hostNeeded then
-        if
+        if context.optionsRequest then
+            hostTask = context.optionsTask
+            if not hostTask then
+                hostTask = {
+                    name = "native options",
+                    owner = "native options",
+                    host = context,
+                    hostWork = true,
+                    step = optionsStep,
+                }
+                context.optionsTask = hostTask
+            end
+        elseif
             context.sessionResetPending
             and not context.stage
             and not context.reloadState
@@ -2161,6 +2247,46 @@ local function runCallback(context, hidden, widgetEvent, touchState)
                         ready = menuReady,
                     }
                     context.menuTask = hostTask
+                end
+            end
+            if not hostTask and context.modelSettingsRequest then
+                local task = context.modelSettingsOpenTask
+                if not task then
+                    task = {
+                        name = "model settings open",
+                        owner = "model settings open",
+                        host = context,
+                        hostWork = true,
+                        step = modelSettingsOpenStep,
+                        ready = modelSettingsOpenReady,
+                    }
+                    context.modelSettingsOpenTask = task
+                end
+                if modelSettingsOpenReady(task, nil, hidden) then
+                    hostTask = task
+                elseif not hidden and (not fullscreen or context.modelSettingsUi) then
+                    context.modelSettingsRequest = nil
+                elseif context.editorUi and context.editorUi.saving then
+                    context.uiRequest = "editor"
+                end
+            end
+            if not hostTask and context.editorTransitionRequest then
+                local task = context.editorTransitionTask
+                if not task then
+                    task = {
+                        name = "editor transition",
+                        owner = "editor transition",
+                        host = context,
+                        hostWork = true,
+                        step = editorTransitionStep,
+                        ready = editorTransitionReady,
+                    }
+                    context.editorTransitionTask = task
+                end
+                if editorTransitionReady(task, nil, hidden) then
+                    hostTask = task
+                elseif not hidden then
+                    context.editorTransitionRequest = nil
                 end
             end
             local kind = context.lifecycleRequest

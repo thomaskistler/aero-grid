@@ -110,6 +110,7 @@ local function frame(event, touch, draining)
         for _ = 1, 100 do
             if
                 not context.inputQueue
+                and not context.editorTransitionRequest
                 and not (context.hostTask and context.hostTask.refused == context.scheduler.callbacks)
             then
                 break

@@ -22,7 +22,8 @@ local function finish()
         refresh()
         guard = guard + 1
         assert(guard < 200, "reload or reflow did not finish")
-    until not context.stage
+    until not context.optionsRequest
+        and not context.stage
         and not context.reloadState
         and not context.lifecycleRequest
         and not context.reflowIndex

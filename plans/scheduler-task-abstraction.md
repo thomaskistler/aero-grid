@@ -299,3 +299,22 @@ hidden callbacks do not advance menus. Menu construction and actions retain
 input until the host route receives its own grant. Input handling still records
 menu commands through the host/exported event path and needs native-route
 conversion.
+
+Editor entry from menu/input, fullscreen draft teardown/resumption, and
+arming-driven suspension now use a separate full-capacity transition task.
+Hidden callbacks retain entry intents without opening UI, but can suspend an
+editor after its save finishes. Entry, preview restore and subsequent editor
+construction keep separate native callback boundaries. Stale entry requests
+cannot open the editor after leaving fullscreen.
+
+Native `update` now records only the latest option selection. A dedicated
+full-capacity task changes shared membership, discards the old editor draft,
+restores the preview and requests reload. Reverting an ungranted selection
+cancels it; applying options and retiring/rebuilding the page stay separate.
+Model-settings menu actions likewise only record entry. A dedicated
+full-capacity opening task owns store loading, editor suspension/preview
+restoration and modal creation; an editor save already running finishes first.
+Hidden callbacks retain settings entry without opening UI. Same-model entry
+waits for an arming reload to finish; model identity changes, native option
+changes and fullscreen exit cancel it. Native `create` and input/LVGL
+routes still need conversion.

@@ -2034,14 +2034,15 @@ local function testOptionReload()
         definition.refresh(appContext)
         rounds = rounds + 1
         assert(rounds < 200, "second reload never finished")
-    until not appContext.stage and not appContext.reloadState
+    until not appContext.optionsRequest and not appContext.stage and not appContext.reloadState
     assertEqual(#appContext.panels, 5)
     assertEqual(#appContext.errors, 0, table.concat(appContext.errors, "\n"))
 
     -- Switching only the theme must also trigger a rebuild.
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, referencePath)
     definition.update(context, { Layout = "main", Theme = "custom" })
-    assertEqual(context.reloadState, "clear")
+    assertEqual(context.optionsRequest.themeMode, "custom")
+    assertEqual(context.reloadState, nil, "native options must wait for a scheduler grant")
 
     -- The radio stores Theme as a position: 1 is Modern Dark, 2 Modern Light,
     -- and a position from the retired longer list falls back to Modern Dark.
@@ -2077,7 +2078,7 @@ local function testReloadSurvivesLateCleanup()
         definition.refresh(context)
         guard = guard + 1
         assert(guard < 300, "reload never finished while cleanup was withheld")
-    until not context.stage and not context.reloadState
+    until not context.optionsRequest and not context.stage and not context.reloadState
 
     assert(context.page ~= firstPage, "reload reused the discarded page")
     assertEqual(#context.panels, 5)

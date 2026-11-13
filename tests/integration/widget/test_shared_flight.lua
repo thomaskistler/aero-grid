@@ -287,10 +287,11 @@ end)
 local layoutDraft = second.editorSession
 assert(second.editorModule.add(layoutDraft, "flight-timer"))
 second.aeroMenuHandlers.modelSettings()
-assert(not second.editorUi and second.editorStash == layoutDraft)
+assert(second.editorUi and second.modelSettingsRequest, "menu entry must only record the settings request")
 untilState(second, function()
     return second.modelSettingsUi and not second.modelSettingsUi.build
 end)
+assert(not second.editorUi and second.editorStash == layoutDraft)
 changeModel(second, "minMotorPercent", 26)
 assert(owner.document.flight.minMotorPercent == 26, "confirmed model changes apply before Exit")
 definition.refresh(second, EVT_VIRTUAL_EXIT)
