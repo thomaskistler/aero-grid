@@ -531,7 +531,7 @@ local function testSpanGalleryIsComplete()
 
     local compared = 0
     for _, stem in ipairs(stems) do
-        local module = assert(loadfile(sourcePath .. "panels/" .. stem .. ".lua"))()
+        local module = moduleLoader("panels/" .. stem .. ".lua")
         if panelHost.supportsSpan(module, 1, 1) then
             compared = compared + 1
             assert(
@@ -2811,7 +2811,7 @@ local function testSupportingWordingsStayDistinct()
     }
 
     for _, subject in ipairs(WORDED) do
-        local module = assert(loadfile(sourcePath .. "panels/" .. subject.type .. ".lua"))()
+        local module = moduleLoader("panels/" .. subject.type .. ".lua")
         local seen = {}
         for _, entry in ipairs(subject.states) do
             local variants = subject.variantsFor(module, entry[2])
@@ -6938,7 +6938,7 @@ local function testReadingsSitInTheirSlots()
 
     local panelHost = assert(loadfile(sourcePath .. "lib/panel_host.lua"))()
     for _, subject in ipairs(SLOTTED) do
-        local module = assert(loadfile(sourcePath .. "panels/" .. subject.type .. ".lua"))()
+        local module = moduleLoader("panels/" .. subject.type .. ".lua")
         local cases = {}
         local byVisual = {}
         for index, extra in ipairs(subject.variants) do
@@ -10011,7 +10011,7 @@ local function testUnitsAreNotDrawnBesideAnAbsentReading()
     local constructed = {}
     local built = 0
     for _, stem in ipairs(stems) do
-        local module = assert(loadfile(sourcePath .. "panels/" .. stem .. ".lua"))()
+        local module = moduleLoader("panels/" .. stem .. ".lua")
         for colSpan = 1, 4 do
             for rowSpan = 1, 4 do
                 if panelHost.supportsSpan(module, colSpan, rowSpan) then

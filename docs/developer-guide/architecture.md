@@ -96,8 +96,9 @@ They do not each poll EdgeTX or maintain their own telemetry cache.
 Subscriptions to the same source share polling, and an unsubscribed service
 does not consume scheduled work.
 
-Due services and panels share eight nominal 2,000-instruction slots in round-robin
-order. Ordinary tasks default to one slot. Variable tasks receive the remaining
+Due services and panels share nominal slots in round-robin order. The default
+is eight 2,000-instruction slots, configured by `SLOTS` and
+`INSTRUCTIONS_PER_SLOT` in `lib/scheduler.lua`. Ordinary tasks default to one slot. Variable tasks receive the remaining
 slots and report consumption, leaving unused slots available to later tasks.
 History and control declare zero slots: they retain their due intervals and
 run at most once per callback, even when charged work exhausts the allowance.
@@ -304,7 +305,7 @@ Use `panels/flight-mode.lua` as a small working example and
 | `id`, `apiVersion`, `supportedSpans` | Identify the module, check compatibility, and advertise valid grid sizes. |
 | `settings` | Typed fields, defaults, bounds, and choices used by validation and the editor. |
 | `refreshInterval` | Desired foreground interval in 10 ms ticks; work still shares the host budget. |
-| `refreshCost` | Number of nominal 2,000-instruction slots, 1–8 (default 1), or `"variable"` to receive the remaining allowance. |
+| `refreshCost` | Number of nominal slots, 0–scheduler capacity (default 1), or `"variable"` to receive the remaining allowance. |
 | `create(parent, rect, settings, services)` | Build LVGL objects, subscribe to data, and return private instance state. |
 | `refresh(context, creating, slots)` | Optional callback to update existing objects from snapshots; scheduled calls pass `false` for `creating`. May return a whole-number interval of 1–6000 ticks; nil preserves the current interval. A second result of `true` reserves subsequent turns among panels of the same type until the update completes; other panel types and services continue running. Variable tasks return consumed slots (0–grant) as a third result. |
 | `update(context, rect, settings, detailsOnly, placement)` | Optional geometry/configuration update. Host reflows and editor resizes pass the current grid placement as the fifth argument, leaving the internal `detailsOnly` argument unset. |

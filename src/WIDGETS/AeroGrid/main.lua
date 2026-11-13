@@ -706,6 +706,9 @@ local function create(zone, widgetOptions, path)
                     end
                 end,
             }, { "add", "clear", "run" })
+            if context.scheduler and context.panelHost then
+                context.panelHost.SLOTS = context.scheduler.capacity
+            end
         end
         if context.dashboardLoader then
             context.dashboardLifecycle = bindHost(lifecycle, "lib/dashboard_lifecycle.lua", {
@@ -1095,7 +1098,7 @@ local function dispatchDue(context, hidden)
         stats.window = window
     end
     -- Slots already spent this callback belong to the flight detector.
-    local flight = window and support.SLOTS - context.remainingSlots
+    local flight = window and scheduler.capacity - context.remainingSlots
     if flight and flight > 0 then
         window.flight = (window.flight or 0) + flight
     end
@@ -1106,14 +1109,14 @@ local function dispatchDue(context, hidden)
 
     if stats then
         stats.callbacks = stats.callbacks + 1
-        stats.used = stats.used + support.SLOTS - context.remainingSlots
+        stats.used = stats.used + scheduler.capacity - context.remainingSlots
         stats.requested, stats.denied = stats.requested + requested, stats.denied + denied
         if now - stats.started >= 100 then
-            stats.utilization = stats.used * 100 / (stats.callbacks * support.SLOTS)
+            stats.utilization = stats.used * 100 / (stats.callbacks * scheduler.capacity)
             stats.deferrals = stats.requested > 0 and stats.denied * 100 / stats.requested or 0
             stats.revision = stats.revision + 1
             stats.consumers, stats.window = window, nil
-            stats.capacity, stats.seconds = stats.callbacks * support.SLOTS, (now - stats.started) / 100
+            stats.capacity, stats.seconds = stats.callbacks * scheduler.capacity, (now - stats.started) / 100
             stats.started, stats.callbacks, stats.used, stats.requested, stats.denied = now, 0, 0, 0, 0
         end
     end
@@ -1539,7 +1542,7 @@ end
 ---@param widgetEvent? number Fullscreen input supplied by EdgeTX.
 ---@param touchState? table
 local function refresh(context, widgetEvent, touchState)
-    context.remainingSlots = 8
+    context.remainingSlots = context.scheduler and context.scheduler.capacity or 0
     if pumpFlight(context, widgetEvent ~= nil and widgetEvent ~= 0) then
         return
     end
@@ -1771,7 +1774,7 @@ end
 --- a hole whenever the pilot looks at another screen.
 ---@param context AeroGridContext
 local function background(context)
-    context.remainingSlots = 8
+    context.remainingSlots = context.scheduler and context.scheduler.capacity or 0
     if pumpFlight(context) then
         return
     end

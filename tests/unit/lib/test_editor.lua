@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 local root = (... and ... ~= "" and ...) or "."
+local moduleLoader = assert(loadfile(root .. "/tests/support/module_loader.lua"))(root)
 local editor = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/editor.lua"))()
 local grid = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/grid.lua"))()
 local layout = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/layout.lua"))()
@@ -220,7 +221,7 @@ end
 
 local function testCatalogPanelSizes()
     for _, entry in ipairs(editor.CATALOG) do
-        local module = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/" .. entry.type .. ".lua"))()
+        local module = moduleLoader("panels/" .. entry.type .. ".lua")
         modules[entry.type] = module
         local isChart = entry.type == "chart"
         local restricted = isChart or entry.type == "host-diagnostics" or entry.type == "service-probe"
@@ -739,7 +740,7 @@ local function testAllPanelDrawersStartWithLabel()
         ["trim-panel"] = { "label", "trim1", "trim2", "trim4", "scale", "readout", "accent" },
     }
     for _, entry in ipairs(editor.CATALOG) do
-        local module = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/" .. entry.type .. ".lua"))()
+        local module = moduleLoader("panels/" .. entry.type .. ".lua")
         modules[entry.type] = module
         local input = document()
         input.panels[1].type = entry.type
@@ -787,7 +788,7 @@ local function testDrawerLabelsFit()
         end
     end
     for _, entry in ipairs(editor.CATALOG) do
-        local module = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/" .. entry.type .. ".lua"))()
+        local module = moduleLoader("panels/" .. entry.type .. ".lua")
         check(entry.type, module.settings)
     end
 end
@@ -796,7 +797,7 @@ end
 --- without one, the drawer shows 0 and a cleared alarm cannot be restored.
 local function testOptionalNumbersCanBeCleared()
     for _, entry in ipairs(editor.CATALOG) do
-        local module = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/" .. entry.type .. ".lua"))()
+        local module = moduleLoader("panels/" .. entry.type .. ".lua")
         modules[entry.type] = module
         local input = document()
         input.panels[1].type = entry.type

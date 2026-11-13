@@ -4,6 +4,13 @@ Goal: every piece of widget work runs through one scheduler that grants it
 nominal slots (2,000 instructions each) and shares them fairly, so the
 per-callback budget can be raised in one place.
 
+The production budget is set by `SLOTS` and `INSTRUCTIONS_PER_SLOT` in
+`lib/scheduler.lua` (eight slots of 2,000 instructions by default). The host
+passes this budget to service and panel validation, chart work and diagnostics.
+The chart retains a 20% per-slot safety margin and its callback reserve.
+Changing slot capacity does not change EdgeTX's hard instruction limit, and
+outside-queue work must still be migrated before higher limits are safe.
+
 Today only panel refreshes and service updates are slotted, in `dispatchDue`
 (`main.lua`). Flight polling, session reset, loading, reflow, the menu, model
 settings, the log viewer, the editor and input handling run outside it, and

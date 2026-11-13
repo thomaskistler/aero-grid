@@ -17,7 +17,7 @@
 ---@field refreshInterval? integer Ticks of 10ms between refreshes. 0 or absent
 ---  means every frame. Telemetry rarely needs more than a few hertz, and the
 ---  host pays every panel's cost inside one instruction budget.
----@field refreshCost? integer|"variable" Nominal 2000-instruction slots, 0 to 8; defaults to 1.
+---@field refreshCost? integer|"variable" Nominal 2000-instruction slots, 0 to host capacity; defaults to 1.
 --- An instance may override refreshCost; zero-cost refreshes run when due even without remaining slots.
 ---@field settings? AeroGridPanelSetting[]
 ---@field create fun(parent: any, rect: table, settings: table, services: table): any
@@ -43,6 +43,7 @@
 ---@field error? string First lifecycle failure message.
 
 local panelHost = { RUNTIME_API = 1 }
+panelHost.SLOTS = 8
 
 --- Host-side panel API version. Modules declaring anything else are rejected.
 panelHost.API_VERSION = 1
@@ -123,9 +124,9 @@ function panelHost.validateModule(module, typeName)
     if
         cost ~= nil
         and cost ~= "variable"
-        and (type(cost) ~= "number" or cost < 0 or cost > 8 or cost ~= math.floor(cost))
+        and (type(cost) ~= "number" or cost < 0 or cost > panelHost.SLOTS or cost ~= math.floor(cost))
     then
-        return false, "refreshCost must be a whole number from 0 to 8 or variable"
+        return false, "refreshCost must be a whole number from 0 to " .. panelHost.SLOTS .. " or variable"
     end
 
     return true

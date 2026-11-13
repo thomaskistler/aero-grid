@@ -16,7 +16,7 @@
 ---@field pending? boolean Set by the scheduler while a step asked for another.
 ---@field spent? integer Slots charged so far.
 
-local scheduler = { RUNTIME_API = 1, SLOTS = 8 }
+local scheduler = { RUNTIME_API = 1, SLOTS = 8, INSTRUCTIONS_PER_SLOT = 2000 }
 
 --- Slots a task is granted, or nil when its cost is not valid.
 ---@param cost any
@@ -42,12 +42,17 @@ function scheduler.new(dependencies)
     dependencies = dependencies or {}
     local fail, charge = dependencies.fail, dependencies.charge
     local self = {
-        capacity = dependencies.capacity or scheduler.SLOTS,
+        capacity = dependencies.capacity == nil and scheduler.SLOTS or dependencies.capacity,
+        instructionsPerSlot = scheduler.INSTRUCTIONS_PER_SLOT,
         tasks = {},
         count = 0,
         cursor = 1,
         callbacks = 0,
     }
+    assert(
+        type(self.capacity) == "number" and self.capacity > 0 and self.capacity < math.huge and self.capacity % 1 == 0,
+        "capacity must be a positive whole number"
+    )
 
     --- Enrol one task for the coming run.
     function self.add(task)

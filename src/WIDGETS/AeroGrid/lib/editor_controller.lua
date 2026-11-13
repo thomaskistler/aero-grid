@@ -313,7 +313,7 @@ function module.new(dependencies)
             if type(typeName) ~= "string" or not string.match(typeName, "^[%w_-]+$") then
                 return nil, "invalid panel type"
             end
-            local panel, panelError = loadModule(context.path, "panels/" .. typeName .. ".lua")
+            local panel, panelError = loadModule(context.path, "panels/" .. typeName .. ".lua", nil, context.scheduler)
             if panel then
                 context.editorPanelCache[typeName] = panel
             end

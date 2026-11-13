@@ -1,5 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
+local budget = assert(..., "chart requires scheduler budget")
+
 local chart = {
     id = "chart",
     apiVersion = 1,
@@ -210,7 +212,8 @@ local function label(context, color, font)
 end
 
 local GRID_CAP = 12
-local SLOT_INSTRUCTIONS = 1600
+-- Leave 20% of each nominal slot for work outside the measured chart pipeline.
+local SLOT_INSTRUCTIONS = budget.instructionsPerSlot * 4 / 5
 local CALLBACK_RESERVE = 900
 
 local function instructionAllowance(slots)
@@ -2278,7 +2281,7 @@ local function refreshChart(context, creating, slots)
 end
 
 function chart.refresh(context, creating, slots)
-    slots = slots or 8
+    slots = slots or budget.capacity
     if context.resetWork and not creating then
         -- Old columns and overlays are hidden before anything new is drawn.
         local used, complete = resetPresentation(context, instructionAllowance(slots))
