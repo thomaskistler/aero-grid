@@ -13,7 +13,7 @@ context.serviceRuntime = context.servicesModule.runtime({})
 local calls, loadSteps, reflowSteps = {}, 0, 0
 local function record(kind)
     local task = assert(context.lifecycleTasks[kind])
-    assert(task.cost == context.scheduler.capacity)
+    assert(task.cost == (kind == "rebuild" and 1 or context.scheduler.capacity))
     calls[#calls + 1] = { kind = kind, callback = context.scheduler.callbacks }
 end
 context.dashboardLifecycle.retirePage = function()
@@ -36,8 +36,6 @@ context.dashboardLoader.advanceLoad = function()
 end
 context.reloadState = "clear"
 context.scheduler.cursor = 1
-definition.refresh(context)
-assert(#calls == 0 and context.lifecycleRequest == "retire", "host routing must not execute retirement")
 noGrant(context, fixture.lvglMock.objects, function()
     definition.refresh(context)
     definition.background(context)

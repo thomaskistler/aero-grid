@@ -112,6 +112,8 @@ local CONSUMERS = 5
 local function consumerName(owner)
     if owner == "flight" then
         return "flight detector"
+    elseif type(owner) == "string" then
+        return owner
     elseif owner.placement then
         return tostring(owner.placement.id) .. " " .. tostring(owner.placement.type)
     end

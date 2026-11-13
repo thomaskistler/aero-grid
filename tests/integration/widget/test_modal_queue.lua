@@ -37,8 +37,6 @@ context.modelSettingsUiModule = {
 }
 definition.refresh(context)
 assert(steps == 0 and context.menuTask.ran == context.scheduler.callbacks, "menu transition gets its own grant")
-definition.refresh(context)
-assert(steps == 0 and context.uiRequest == "model settings", "routing cannot advance the modal")
 noGrant(context, fixture.lvglMock.objects, function()
     definition.refresh(context)
     definition.background(context)

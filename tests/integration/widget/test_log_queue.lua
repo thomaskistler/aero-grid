@@ -89,6 +89,7 @@ untilState(function()
     return not context.logViewer
 end)
 assert(context.logOverlay.hidden and not task.ui and not task.pending)
+assert(task.cost == 1, "closing must not retain the viewer's full-budget reservation")
 
 -- Retired buttons cannot close a later viewer that reused the overlay.
 definition.event(context, EVT_TOUCH_FIRST, point)
@@ -132,7 +133,14 @@ end)
 assert(not context.logViewer, "stale entry cannot construct an overlay after fullscreen exit")
 
 fixture.lvglMock.setFullScreen(true)
-fixture.pump(context, 30)
+assert(fixture.pumpUntil(context, function()
+    return not context.stage and not context.reloadState and not context.lifecycleRequest
+end, 200))
+fixture.pump(context, 10)
+entry = assert(fixture.entryById(context, "sources"))
+entry.settings.section = "log"
+rect = context.dashboardLoader.panelRect(context, entry.placement)
+point = { x = rect.x + rect.w / 2, y = rect.y + rect.h / 2 }
 definition.event(context, EVT_TOUCH_FIRST, point)
 definition.event(context, EVT_TOUCH_TAP, point)
 untilState(function()

@@ -402,3 +402,56 @@ withheld-grant exercises do not invoke those paths.
 
 Pause after these checks for physical-radio testing at the existing limits,
 before collecting instruction measurements or splitting more task stages.
+
+## First measured reservation reductions
+
+Native-simulator samples found routing-only host work below 532 instructions,
+location close at 39, log close at 49 and page rebuild at 140. These are sample
+maxima, not universal bounds. The first optimization moves bounded request
+routing for loading, reload, modal advancement and fullscreen transitions into
+callback admission. It only records intent; actual work still requires a grant.
+Other host work, including empty-hint updates and geometry discovery, retains
+its full-capacity reservation.
+
+Location close, log close and page-rebuild setup now reserve one slot and can
+share a callback with flight. Opening/advancing those overlays retains its
+previous cost. Rebuilding still occurs after retirement on a later native
+callback, and loading starts on another grant. Generic input, loader stages,
+editor, model settings and reflow costs are unchanged. Limits are unchanged.
+
+A matched mocked callback-count comparison against `63b21dc1` (Default layout,
+480x272 fullscreen, 20 ticks per refresh) measured startup 121 -> 120, switching
+to Empty 46 -> 43, model-settings construction 28 -> 26 and settings close
+4 -> 2. These are callback counts, not physical-radio timings or native
+instruction bounds. The remaining full-capacity stages still dominate latency.
+
+The broader batch uses two slots for adjacent header/panel migrations and
+placement validation, four for service construction and theme validation, and
+three for ordinary model-settings controls and editor construction stages 1-9.
+Loader continuations recompute the next stage's cost before asking for another
+turn; a cheap validation grant cannot carry over to expensive panel construction.
+UI construction retains its existing callback separation.
+
+Switch-related settings fields retain the full reservation: mocked checks found
+11,700 instructions for the logical-output list and 6,800 for a switch field.
+Parsing, theme reads/builds, panel construction, final editor rendering, native
+commands, drawer construction, previews, saves and reflow keep their existing
+full reservations. Representative Default, navigation, chart, Diagnostics and
+Empty layouts exercise the reduced grants with mocked per-step instruction
+checks; these checks do not establish native worst-case instruction bounds.
+Service construction explicitly waits for the shared model document before
+creating the armed service; faster loader continuations must not capture an
+empty switch condition merely because flight initialization has not run yet.
+
+The same mocked comparison against `63b21dc1` now measures Default startup
+121 -> 58 callbacks, switching to Empty 46 -> 26, settings construction
+28 -> 18, settings close 4 -> 2 and editor construction 26 -> 17. These counts
+include completion conditions, with 20 mock ticks per callback; they are not
+physical-radio latency measurements.
+
+Radio comparison found similar total loading speed but a presentation regression:
+deferred background construction exposed the desktop before a blank canvas.
+Native `create` now runs a one-slot startup-background task to construct only
+the root, page and filled canvas before firmware paints its own menu control.
+Initialization reuses those objects; runtime loading and flight enrollment stay
+deferred. No loading label or synchronous runtime initialization is introduced.

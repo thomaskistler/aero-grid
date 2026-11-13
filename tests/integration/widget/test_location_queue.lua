@@ -81,12 +81,14 @@ untilState(function()
     return not context.locationDetails
 end)
 assert(context.locationOverlay.hidden and not context.locationRequest and not context.locationTask.pending)
+assert(context.locationTask.cost == 1, "location close only reserves one slot")
 
 requestOpen()
 untilState(function()
     return context.locationDetails ~= nil
 end)
 assert(context.locationDetails.latitude == -33 and context.locationDetails.longitude == 151)
+assert(context.locationTask.cost == context.scheduler.capacity, "reopening must restore the full opening cost")
 context.locationDetailsModule.handle(context, EVT_VIRTUAL_EXIT)
 local replacement = {}
 context.locationDetails = replacement

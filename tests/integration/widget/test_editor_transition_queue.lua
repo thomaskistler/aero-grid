@@ -79,8 +79,6 @@ context.editorUi, context.editorSession = {}, draft
 context.modelArmingReload = true
 context.sessionResetPending = true
 definition.background(context)
-assert(closed == 1 and context.editorTransitionRequest == "suspend", "arming routing cannot restore a preview")
-definition.background(context)
 assert(closed == 2 and restored == 2 and context.editorStash == draft)
 assert(not context.modelArmingReload and context.sessionResetPending, "suspension precedes session reset")
 context.sessionResetPending, context.editorStash = nil, nil

@@ -5514,17 +5514,27 @@ panels:
         { Layout = "Default", Theme = "modern-dark" },
         widgetPath
     )
-    local stageCounts, steps = {}, 0
+    definition.refresh(context)
+    local validator = assert(context.layoutValidator)
+    local headerStep, panelStep = validator.migrateHeaderStep, validator.migratePanelStep
+    local headers, panels, steps = 0, 0, 0
+    validator.migrateHeaderStep = function(...)
+        headers = headers + 1
+        return headerStep(...)
+    end
+    validator.migratePanelStep = function(...)
+        panels = panels + 1
+        return panelStep(...)
+    end
     while context.stage do
-        local stage = context.stage
         hostTurn(context)
-        stageCounts[stage] = (stageCounts[stage] or 0) + 1
         steps = steps + 1
         assert(steps < 200, "legacy migration load did not finish")
     end
+    validator.migrateHeaderStep, validator.migratePanelStep = headerStep, panelStep
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-    assertEqual(stageCounts["header-migrate"], 4, "each adjacent header step runs in its own loader callback")
-    assertEqual(stageCounts["panel-migrate"], 4, "each adjacent panel step runs in its own loader callback")
+    assertEqual(headers, 4, "each adjacent header migration still gets its own step")
+    assertEqual(panels, 4, "each adjacent panel migration still gets its own step")
     assertEqual(context.document.version, 5)
     local placement = context.document.panels[1]
     assertEqual(placement.type, "rx-battery")

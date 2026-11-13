@@ -637,6 +637,32 @@ local function create(zone, widgetOptions, path)
     else
         addError(context, "lib/scheduler.lua: " .. tostring(schedulerError or "module has no constructor"))
     end
+    if context.scheduler then
+        -- Construct the presentation shell before firmware paints its own menu.
+        -- Runtime loading remains deferred, but this bounded work is still charged.
+        context.scheduler.add({
+            name = "startup background",
+            owner = "startup background",
+            hostWork = true,
+            cost = 1,
+            step = function()
+                context.root = lvgl.box({ x = 0, y = 0, w = zone.w, h = zone.h })
+                context.rootBuiltFullscreen = isFullScreen()
+                context.page = lvgl.box(context.root, { x = 0, y = 0, w = zone.w, h = zone.h })
+                context.pageBuiltFullscreen = isFullScreen()
+                context.canvas = lvgl.rectangle(context.page, {
+                    x = 0,
+                    y = 0,
+                    w = zone.w,
+                    h = zone.h,
+                    color = lcd.RGB(0x101316),
+                    filled = true,
+                })
+            end,
+        })
+        context.scheduler.run(getTime(), context.scheduler.capacity, false)
+        context.scheduler.clear()
+    end
     if not context.scheduler then
         context.runtimeFailed = true
         context.root = lvgl.box({ x = 0, y = 0, w = zone.w, h = zone.h })
@@ -668,7 +694,7 @@ local function create(zone, widgetOptions, path)
 end
 
 initialize = function(context)
-    local path, zone, flightFactory = context.path, context.zone, context.flightFactory
+    local path, flightFactory = context.path, context.flightFactory
     context.stage = nil
     local package, packageError = loadModule(path, "lib/package.lua")
     if
@@ -806,13 +832,6 @@ initialize = function(context)
         end
     end
 
-    context.root = lvgl.box({
-        x = 0,
-        y = 0,
-        w = zone.w,
-        h = zone.h,
-    })
-    context.rootBuiltFullscreen = isFullScreen()
     local info = model and model.getInfo and model.getInfo()
     flightFactory.members[context] = {
         modelFilename = info and info.filename,
@@ -826,20 +845,9 @@ initialize = function(context)
     -- Everything the dashboard draws lives inside a page, so a reload can
     -- discard the page wholesale and build the next one somewhere the discarded
     -- one's deferred cleanup cannot reach. The root is normally retained.
-    context.page = lvgl.box(context.root, { x = 0, y = 0, w = zone.w, h = zone.h })
-    context.pageBuiltFullscreen = isFullScreen()
-
-    context.canvas = lvgl.rectangle(context.page, {
-        x = 0,
-        y = 0,
-        w = zone.w,
-        h = zone.h,
-        color = lcd.RGB(0x101316),
-        filled = true,
-    })
-
     if
-        not context.packageInfo
+        context.runtimeFailed
+        or not context.packageInfo
         or not context.grid
         or not context.yaml
         or not context.layoutValidator
@@ -1599,32 +1607,30 @@ local function sessionResetStep(task)
     return nil, context.sessionResetPending == true
 end
 
---- Advance the staged loader, then keep geometry and panels synchronized.
---- At most one loading step runs per call, so the instruction budget is never
---- exceeded no matter how large the layout is.
----@param context AeroGridContext
-local function advanceForeground(context)
+-- Routing records intent only; native work still needs its own task grant.
+local function routeHost(context, hidden)
     if suspendArmingEditor(context) then
-        return
+        return true
     end
     if context.modelSettingsUi then
         context.uiRequest = "model settings"
-        return
+        return true
     end
-    if context.runtimeFailed then
-        context.root:set({ w = context.zone.w, h = context.zone.h })
-        context.page:set({ w = context.zone.w, h = context.zone.h })
-        context.canvas:set({ w = context.zone.w, h = context.zone.h })
-        context.reserved = reservedCorner(context.zone)
-        if context.errorLabel then
-            context.errorLabel:set({ y = errorTop(context), w = math.max(1, context.zone.w - 16) })
+    if hidden then
+        if context.editorUi and context.editorUi.saving then
+            context.uiRequest = "editor"
+        elseif context.reloadState == "clear" then
+            context.lifecycleRequest = "retire"
+        elseif context.reloadState == "rebuild" then
+            context.lifecycleRequest = "rebuild"
+        elseif context.stage then
+            context.lifecycleRequest = "load"
         end
-        return
+        return true
     end
-
     if context.locationDetails and (not isFullScreen() or context.reloadState) then
         context.locationRequest = { kind = "close", state = context.locationDetails }
-        return
+        return true
     end
     if
         context.logViewer
@@ -1637,7 +1643,7 @@ local function advanceForeground(context)
     then
         context.logViewer.closing = true
         context.uiRequest = "log viewer"
-        return
+        return true
     end
 
     -- Leaving fullscreen neither saves nor discards. Editor boxes built in
@@ -1646,7 +1652,7 @@ local function advanceForeground(context)
     -- A save already running finishes first, in `background`.
     if context.editorUi and not isFullScreen() and not context.editorUi.saving then
         context.editorTransitionRequest = "leave"
-        return
+        return true
     elseif
         context.editorStash
         and not context.editorUi
@@ -1656,7 +1662,7 @@ local function advanceForeground(context)
         and context.document
     then
         context.editorTransitionRequest = "open"
-        return
+        return true
     end
 
     -- EdgeTX 2.12 only makes Lua boxes touch-transparent when constructing
@@ -1678,16 +1684,33 @@ local function advanceForeground(context)
     -- would therefore be swept before it was ever drawn.
     if context.reloadState == "clear" then
         context.lifecycleRequest = "retire"
-        return
+        return true
     end
 
     if context.reloadState == "rebuild" then
         context.lifecycleRequest = "rebuild"
-        return
+        return true
     end
 
     if context.stage then
         context.lifecycleRequest = "load"
+        return true
+    end
+    return false
+end
+
+local function advanceForeground(context)
+    if context.runtimeFailed then
+        context.root:set({ w = context.zone.w, h = context.zone.h })
+        context.page:set({ w = context.zone.w, h = context.zone.h })
+        context.canvas:set({ w = context.zone.w, h = context.zone.h })
+        context.reserved = reservedCorner(context.zone)
+        if context.errorLabel then
+            context.errorLabel:set({ y = errorTop(context), w = math.max(1, context.zone.w - 16) })
+        end
+        return
+    end
+    if routeHost(context, false) then
         return
     end
 
@@ -1772,29 +1795,7 @@ end
 --- a hole whenever the pilot looks at another screen.
 ---@param context AeroGridContext
 local function advanceHidden(context)
-    if suspendArmingEditor(context) then
-        return
-    end
-    if context.modelSettingsUi then
-        context.uiRequest = "model settings"
-        return
-    end
-    if context.editorUi and context.editorUi.saving then
-        context.uiRequest = "editor"
-        return
-    end
-    if context.reloadState == "clear" then
-        context.lifecycleRequest = "retire"
-        return
-    elseif context.reloadState == "rebuild" then
-        context.lifecycleRequest = "rebuild"
-        return
-    elseif context.stage then
-        context.lifecycleRequest = "load"
-        return
-    elseif context.reflowIndex then
-        return
-    end
+    routeHost(context, true)
 end
 
 local function menuWorkNeeded(context, fullscreen)
@@ -2146,11 +2147,25 @@ local function lifecycleReady(task, _, hidden)
     elseif kind == "rebuild" then
         return context.reloadState == "rebuild"
     elseif kind == "load" then
+        local broker = context.flightFactory and context.flightFactory.broker
+        if context.stage == "services" and broker and not broker.documentLoaded then
+            return false
+        end
         return not context.reloadState and context.stage ~= nil
     elseif kind == "reflow" then
         return not hidden and not context.reloadState and not context.stage and not context.logViewer
     end
     return not hidden and not context.reloadState and not context.stage and context.appRebuild ~= nil
+end
+
+local function loadCost(context)
+    local stage = context.stage
+    if stage == "header-migrate" or stage == "panel-migrate" or stage == "panel-validate" then
+        return math.min(2, context.scheduler.capacity)
+    elseif stage == "services" or stage == "theme-validate" then
+        return math.min(4, context.scheduler.capacity)
+    end
+    return context.scheduler.capacity
 end
 
 local function lifecycleStep(task)
@@ -2166,6 +2181,7 @@ local function lifecycleStep(task)
     elseif kind == "load" then
         context.dashboardLoader.advanceLoad(context)
         if context.stage then
+            task.cost = loadCost(context)
             context.lifecycleRequest = "load"
             return nil, true
         end
@@ -2337,6 +2353,15 @@ local function runCallback(context, hidden, widgetEvent, touchState)
     context.inputTime = input and input.now
     context.inputPending = not not input
     context.flightPolled = nil
+    if
+        not context.optionsRequest
+        and not context.lifecycleRequest
+        and not context.uiRequest
+        and not context.editorTransitionRequest
+        and not context.locationRequest
+    then
+        routeHost(context, hidden)
+    end
     local hostNeeded = hostWorkNeeded(context, hidden, context.widgetEvent, fullscreen)
     context.scheduledServices = not hostNeeded and not (hidden and context.reflowIndex)
     context.scheduledPanels = not hostNeeded
@@ -2581,6 +2606,35 @@ local function runCallback(context, hidden, widgetEvent, touchState)
             end
         end
         hostTask.cost = scheduler.capacity
+        if context.lifecycleTasks and hostTask == context.lifecycleTasks.load then
+            hostTask.cost = loadCost(context)
+        elseif context.uiTasks and hostTask == context.uiTasks["model settings"] then
+            if context.modelSettingsUiModule.cost then
+                hostTask.cost = context.modelSettingsUiModule.cost(context)
+            end
+        elseif context.uiTasks and hostTask == context.uiTasks.editor then
+            local state = context.editorUi
+            if
+                state.buildStage
+                and state.buildStage <= 9
+                and not state.nativeInput
+                and not state.previewPending
+                and not state.previewRefresh
+                and not state.exitCommand
+                and not state.drawerPending
+                and state.drawerBuild == nil
+                and not state.saving
+            then
+                hostTask.cost = math.min(3, scheduler.capacity)
+            end
+        end
+        if
+            hostTask == context.locationTask and context.locationRequest.kind == "close"
+            or context.lifecycleTasks and hostTask == context.lifecycleTasks.rebuild
+            or context.uiTasks and hostTask == context.uiTasks["log viewer"] and context.logViewer.closing
+        then
+            hostTask.cost = 1
+        end
     end
     runTasks(context, hidden, flightTask, hostTask)
     if context.uiTasks then

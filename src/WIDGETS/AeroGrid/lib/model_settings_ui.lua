@@ -354,6 +354,21 @@ local function buildField(context, state, field)
     state.nextY = state.nextY + state.height + 6
 end
 
+function ui.cost(context)
+    local state, capacity = context.modelSettingsUi, context.scheduler.capacity
+    local field = state and state.build and fields[state.build]
+    -- Switch controls resolve firmware names; the output list also builds 65 choices.
+    if
+        state
+        and state.build
+        and not state.closing
+        and not (field and (field.kind == "switch" or field.key == "flightSwitch"))
+    then
+        return math.min(3, capacity)
+    end
+    return capacity
+end
+
 function ui.advance(context)
     local state = context.modelSettingsUi
     if not state then

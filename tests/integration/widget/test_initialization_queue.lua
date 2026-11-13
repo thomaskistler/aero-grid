@@ -16,9 +16,12 @@ local context = definition.create({ x = 0, y = 0, w = 480, h = 272 }, {
     Theme = "modern-dark",
 }, root .. "/build/test-widget-fixture/")
 assert(context.scheduler and context.initializing and context.stage == "initialize")
-assert(not context.root and not context.page and not context.grid and not context.configureFlight)
+assert(context.root and context.page and context.canvas and not context.grid and not context.configureFlight)
 assert(not context.flightFactory.members[context], "native create cannot enroll substantive flight membership")
-assert(#fixture.lvglMock.objects == objects, "native create cannot construct dashboard objects")
+assert(#fixture.lvglMock.objects == objects + 3, "native create only constructs the charged background shell")
+assert(context.scheduler.callbacks == 1 and context.scheduler.count == 0)
+assert(context.canvas.properties.filled and context.canvas.properties.w == 480)
+local shellRoot, shellPage, shellCanvas = context.root, context.page, context.canvas
 for _, path in ipairs(loaded) do
     assert(string.match(path, "/lib/scheduler%.lua$"), "native create loaded more than its scheduler bootstrap")
 end
@@ -26,6 +29,7 @@ loadScript = originalLoadScript
 assert(context.initializationTask.cost == context.scheduler.capacity)
 definition.background(context)
 assert(not context.initializing and context.root and context.grid and context.configureFlight)
+assert(context.root == shellRoot and context.page == shellPage and context.canvas == shellCanvas)
 assert(context.flightFactory.members[context] and context.stage ~= "initialize")
 assert(context.remainingSlots == 0 and not context.initializationTask.pending)
 assert(context.initializationTask.spent == context.scheduler.capacity)
@@ -39,7 +43,7 @@ local second = definition.create({ x = 0, y = 0, w = 480, h = 272 }, {
     Theme = "modern-dark",
 }, context.path)
 definition.update(second, { Layout = "Empty", Theme = "modern-light" })
-assert(second.optionsRequest and not second.root)
+assert(second.optionsRequest and second.root)
 definition.background(second)
 assert(second.optionsRequest and second.layoutName == "Default")
 fixture.pump(second, 150)
@@ -47,15 +51,15 @@ assert(not second.stage and not second.optionsRequest and not second.reloadState
 assert(second.layoutName == "Empty" and second.themeMode == "modern-light")
 
 -- A failed first native allocation still leaves a usable error page.
-local failed = definition.create({ x = 0, y = 0, w = 480, h = 272 }, {
-    Layout = "Empty",
-    Theme = "modern-dark",
-}, context.path)
 local originalBox = lvgl.box
 lvgl.box = function()
     lvgl.box = originalBox
     error("initialization allocation failed")
 end
+local failed = definition.create({ x = 0, y = 0, w = 480, h = 272 }, {
+    Layout = "Empty",
+    Theme = "modern-dark",
+}, context.path)
 definition.refresh(failed)
 assert(not failed.initializing and failed.runtimeFailed and failed.schedulerFailed)
 assert(failed.root and failed.page and failed.canvas and failed.errorLabel)
@@ -64,10 +68,6 @@ failed.zone.w = 320
 definition.refresh(failed)
 assert(failed.page.properties.w == 320 and failed.canvas.properties.w == 320)
 
-local partial = definition.create({ x = 0, y = 0, w = 480, h = 272 }, {
-    Layout = "Empty",
-    Theme = "modern-dark",
-}, context.path)
 local allocations = 0
 lvgl.box = function(...)
     allocations = allocations + 1
@@ -77,6 +77,10 @@ lvgl.box = function(...)
     end
     return originalBox(...)
 end
+local partial = definition.create({ x = 0, y = 0, w = 480, h = 272 }, {
+    Layout = "Empty",
+    Theme = "modern-dark",
+}, context.path)
 definition.refresh(partial)
 local member = assert(partial.flightFactory.members[partial])
 assert(partial.runtimeFailed and not member.pending and member.error)

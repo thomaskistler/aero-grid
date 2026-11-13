@@ -110,6 +110,33 @@ assert(panel.graph.index == 0 and panel.graph.previous == nil, "resize starts a 
 assert(panel.graph.lines[1] == first and first.hidden, "resize hides and reuses existing lines")
 sample(25, 50)
 assert(panel.graph.lines[1] == first and not first.hidden, "resized sweep reuses native objects")
+-- Host tasks use string owners; EdgeTX does not provide a string metatable.
+for _, owner in ipairs({
+    "initialize",
+    "host",
+    "native options",
+    "session reset",
+    "menu",
+    "input",
+    "model settings open",
+    "editor transition",
+    "log open",
+    "location details",
+    "retire",
+    "rebuild",
+    "load",
+    "reflow",
+    "app rebuild",
+    "editor",
+    "model settings",
+    "log viewer",
+    "flight",
+}) do
+    graph.rank, graph.owners = {}, {}
+    sample(100, 0, { [owner] = 160 })
+    local label = owner == "flight" and "flight detector" or owner
+    assert(panel.rows[2].properties.text == "160.0 " .. label, "string task owners must have a usable legend")
+end
 diagnostics.destroy(panel)
 assert(dashboard.schedulerStats == nil)
 services.preview = true

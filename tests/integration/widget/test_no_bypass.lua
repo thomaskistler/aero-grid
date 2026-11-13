@@ -13,7 +13,7 @@ local context = definition.create({ x = 0, y = 0, w = 480, h = 272 }, {
 local enrolled = noGrant(context, fixture.lvglMock.objects, function()
     definition.refresh(context)
     definition.background(context)
-    assert(context.initializing and not context.root)
+    assert(context.initializing and context.root and context.canvas)
     assert(not context.flightFactory.members[context])
 end)
 assert(enrolled.initialize, "bootstrap must request an initialization task")
