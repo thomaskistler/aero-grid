@@ -2,6 +2,7 @@
 
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(root).new()
+local noGrant = assert(loadfile(root .. "/tests/support/no_grant.lua"))()
 fixture.reset()
 local definition = fixture.module("main.lua")
 local context = fixture.createLoaded(nil, { Layout = "Empty", Theme = "modern-dark" })
@@ -37,12 +38,25 @@ context.reloadState = "clear"
 context.scheduler.cursor = 1
 definition.refresh(context)
 assert(#calls == 0 and context.lifecycleRequest == "retire", "host routing must not execute retirement")
+noGrant(context, fixture.lvglMock.objects, function()
+    definition.refresh(context)
+    definition.background(context)
+    assert(#calls == 0 and context.reloadState == "clear" and context.lifecycleRequest == "retire")
+end)
 definition.refresh(context)
 assert(#calls == 1 and calls[1].kind == "retire" and context.lifecycleRequest == "rebuild")
 assert(not context.lifecycleTasks.retire.pending, "retirement must not ask for a same-callback rebuild")
+noGrant(context, fixture.lvglMock.objects, function()
+    definition.background(context)
+    assert(#calls == 1 and context.reloadState == "rebuild")
+end)
 definition.background(context)
 assert(#calls == 2 and calls[2].kind == "rebuild" and calls[2].callback > calls[1].callback)
 assert(context.stage == "probe" and context.lifecycleRequest == "load")
+noGrant(context, fixture.lvglMock.objects, function()
+    definition.background(context)
+    assert(loadSteps == 0 and context.stage == "probe")
+end)
 local spentBefore = context.lifecycleTasks.load and context.lifecycleTasks.load.spent or 0
 for index = 1, 3 do
     definition.background(context)

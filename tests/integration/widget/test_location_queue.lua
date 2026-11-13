@@ -2,6 +2,7 @@
 
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(root).new()
+local noGrant = assert(loadfile(root .. "/tests/support/no_grant.lua"))()
 fixture.reset()
 EVT_TOUCH_FIRST, EVT_TOUCH_TAP, EVT_VIRTUAL_EXIT = 9501, 9502, 9503
 fixture.lvglMock.setFullScreen(true)
@@ -46,6 +47,11 @@ assert(context.locationRequest.kind == "open" and not context.locationDetailsMod
 feed.latitude, feed.longitude = -33, 151
 definition.background(context)
 assert(context.locationRequest and not context.locationOverlay, "hidden callbacks retain entry without building")
+noGrant(context, fixture.lvglMock.objects, function()
+    definition.refresh(context)
+    definition.background(context)
+    assert(context.locationRequest and not context.locationOverlay)
+end)
 untilState(function()
     return not (context.aerogridMenu and context.aerogridMenu.selectionDirty)
 end)
@@ -67,6 +73,10 @@ assert(
 )
 definition.background(context)
 assert(context.locationDetails == state, "hidden callbacks cannot clear an overlay")
+noGrant(context, fixture.lvglMock.objects, function()
+    definition.refresh(context)
+    assert(context.locationDetails == state and not context.locationOverlay.hidden)
+end)
 untilState(function()
     return not context.locationDetails
 end)

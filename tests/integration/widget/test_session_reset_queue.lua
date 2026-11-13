@@ -2,6 +2,7 @@
 
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(root).new()
+local noGrant = assert(loadfile(root .. "/tests/support/no_grant.lua"))()
 fixture.reset()
 local definition = fixture.module("main.lua")
 local context = fixture.createLoaded(nil, { Layout = "Empty", Theme = "modern-dark" })
@@ -46,6 +47,11 @@ context.panels = {
     },
 }
 context.sessionResetPending = true
+noGrant(context, fixture.lvglMock.objects, function()
+    definition.refresh(context)
+    definition.background(context)
+    assert(items == 0 and panelTurns == 0 and liveTurns == 0 and not context.sessionResetJob)
+end)
 context.scheduler.cursor = 1
 definition.refresh(context)
 assert(items == 8 and panelTurns == 0 and liveTurns == 0)

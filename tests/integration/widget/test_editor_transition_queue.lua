@@ -2,6 +2,7 @@
 
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(root).new()
+local noGrant = assert(loadfile(root .. "/tests/support/no_grant.lua"))()
 fixture.reset()
 fixture.lvglMock.setFullScreen(true)
 local definition = fixture.module("main.lua")
@@ -36,6 +37,11 @@ context.flightTask = {
 }
 context.aeroMenuHandlers.uiSetup()
 assert(opened == 0 and context.editorTransitionRequest == "open", "menu action only records editor entry")
+noGrant(context, fixture.lvglMock.objects, function()
+    definition.refresh(context)
+    definition.background(context)
+    assert(opened == 0 and flightSteps == 0 and context.editorTransitionRequest == "open")
+end)
 definition.background(context)
 assert(opened == 0 and context.editorTransitionRequest == "open", "hidden callbacks retain pending entry")
 context.scheduler.cursor = 1

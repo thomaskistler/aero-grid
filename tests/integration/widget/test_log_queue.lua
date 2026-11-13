@@ -2,6 +2,7 @@
 
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(root).new()
+local noGrant = assert(loadfile(root .. "/tests/support/no_grant.lua"))()
 fixture.reset()
 EVT_TOUCH_FIRST, EVT_TOUCH_TAP, EVT_ROT_LEFT = 9201, 9202, 9203
 fixture.lvglMock.setFullScreen(true)
@@ -42,6 +43,11 @@ untilState(function()
 end)
 definition.background(context)
 assert(context.logOpenRequest and not context.logViewer, "hidden callbacks retain entry without constructing UI")
+noGrant(context, fixture.lvglMock.objects, function()
+    definition.refresh(context)
+    definition.background(context)
+    assert(context.logOpenRequest and not context.logViewer)
+end)
 context.scheduler.cursor = 1
 local before = flights
 definition.refresh(context)
@@ -73,6 +79,10 @@ assert(not state.inputs and task.cost == context.scheduler.capacity and not task
 
 state.closeButton.properties.press()
 assert(context.logViewer == state and state.closing and not context.logOverlay.hidden)
+noGrant(context, fixture.lvglMock.objects, function()
+    definition.refresh(context)
+    assert(context.logViewer == state and not context.logOverlay.hidden)
+end)
 definition.background(context)
 assert(context.logViewer == state, "hidden callbacks cannot mutate the log overlay")
 untilState(function()

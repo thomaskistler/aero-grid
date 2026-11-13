@@ -383,3 +383,22 @@ Chart append painting now handles at most ten changed columns per series,
 down from twelve. The combined host exposed a 16,643-instruction chart reentry
 callback against its unchanged 16,000-instruction regression ceiling; bounding
 that paint batch leaves the remaining columns for later appends.
+
+## No-grant checks and radio checkpoint
+
+The callback guard withholds every task and rejects script loading, file
+opening/writing, directory creation, native construction and native object
+mutation. It records attempted bypasses even when an inner `pcall` catches the
+failure, and restores its hooks afterward. These are admission checks, not
+instruction measurements or proof that tasks fit 2,000 instructions.
+
+Coverage includes initialization, steady-state flight/services/panels, input,
+options, menu actions, dashboard retirement/rebuild/loading/reflow, session
+reset, editor entry/build/save/native edits, model-settings opening/advancement/
+native edits/closing, and log/location opening and closing. Tests restore grants
+and verify queued work resumes. Minimal bootstrap, failed-runtime error rendering
+and firmware-required native Return cleanup remain explicit exceptions; the
+withheld-grant exercises do not invoke those paths.
+
+Pause after these checks for physical-radio testing at the existing limits,
+before collecting instruction measurements or splitting more task stages.

@@ -2,6 +2,7 @@
 
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(root).new()
+local noGrant = assert(loadfile(root .. "/tests/support/no_grant.lua"))()
 fixture.reset()
 fixture.lvglMock.setFullScreen(true)
 local definition = fixture.module("main.lua")
@@ -26,6 +27,11 @@ context.editorController.advanceEditor = function()
 end
 definition.refresh(context)
 assert(steps == 0 and context.uiRequest == "editor", "host routing must not perform editor advancement")
+noGrant(context, fixture.lvglMock.objects, function()
+    definition.refresh(context)
+    definition.background(context)
+    assert(steps == 0 and context.editorUi.buildStage == 1)
+end)
 definition.background(context)
 assert(steps == 0, "hidden callbacks must not build the editor")
 definition.refresh(context)
@@ -40,6 +46,10 @@ context.editorUi.saving = 2
 context.modelArmingReload = true
 context.uiRequest = "editor"
 context.sessionResetPending = true
+noGrant(context, fixture.lvglMock.objects, function()
+    definition.background(context)
+    assert(steps == 3 and context.editorUi.saving == 2)
+end)
 definition.background(context)
 assert(steps == 4 and context.editorUi.saving == 1, "arming-driven save takes precedence over reset")
 definition.refresh(context)
