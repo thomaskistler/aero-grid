@@ -41,7 +41,7 @@
 ---@field state "normal"|"unavailable"
 
 local controlService = { RUNTIME_API = 1 }
-controlService.updateCost = 0
+controlService.updateCost = 1
 controlService.__index = controlService
 
 --- Ticks of 10ms between ordinary control subscription updates.
@@ -50,6 +50,8 @@ local OUTPUT_INTERVAL = 10
 
 --- Subscriptions refreshed per update, served round robin.
 local POLL_CAP = 6
+local OUTPUT_BATCH = 8
+local CONTROL_BATCH = 2
 
 --- Ticks between attempts to resolve a source or switch the radio rejects.
 local RESOLVE_RETRY = 500
@@ -615,13 +617,32 @@ local function readEntry(service, entry, now)
 end
 
 function controlService:update(now)
-    for _, entry in ipairs(self.outputEntries) do
-        self:readOutputValue(entry)
+    if not self.outputIndex then
+        self.outputIndex = 1
+        self.outputLimit = #self.outputEntries
+        self.pollRemaining = 0
+        if self.outputLimit == 0 or now >= self.controlsDue then
+            self.controlsDue = now + INTERVAL
+            self.pollRemaining = math.min(POLL_CAP, #self.entries)
+        end
     end
-    if #self.outputEntries == 0 or now >= self.controlsDue then
-        self.controlsDue = now + INTERVAL
-        self.cursor = self.support.roundRobin(self.entries, self.cursor, POLL_CAP, readEntry, self, now)
+    local last = math.min(self.outputIndex + OUTPUT_BATCH - 1, self.outputLimit)
+    local used = self.outputIndex <= last
+    for index = self.outputIndex, last do
+        self:readOutputValue(self.outputEntries[index])
     end
+    self.outputIndex = last + 1
+    local polls = math.min(self.pollRemaining, CONTROL_BATCH)
+    if polls > 0 then
+        self.cursor = self.support.roundRobin(self.entries, self.cursor, polls, readEntry, self, now)
+        self.pollRemaining = self.pollRemaining - polls
+        used = true
+    end
+    local again = self.outputIndex <= self.outputLimit or self.pollRemaining > 0
+    if not again then
+        self.outputIndex, self.outputLimit, self.pollRemaining = nil, nil, nil
+    end
+    return used and 1 or 0, again
 end
 
 --- Round a signed percentage half away from zero.

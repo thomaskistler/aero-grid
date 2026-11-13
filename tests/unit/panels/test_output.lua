@@ -10,6 +10,13 @@ equal(settings.label, "CHANNEL OUTPUT")
 equal(settings.accent, "cyan")
 equal(settings.showNames, true)
 equal(settings.showTrim, true)
+equal(panel.refreshContinuation, true)
+equal(panel.independentRefresh, true)
+assert(host.validateModule(panel, "output"))
+local invalidContinuation = { id = "test", apiVersion = 1, create = function() end, refreshContinuation = "yes" }
+assert(not host.validateModule(invalidContinuation, "test"))
+local invalidIndependent = { id = "test", apiVersion = 1, create = function() end, independentRefresh = "yes" }
+assert(not host.validateModule(invalidIndependent, "test"))
 equal(settings.firstChannel, 1)
 equal(settings.channelCount, nil)
 for _, invalid in ipairs({ 0, 33, 1.5, math.huge, 0 / 0 }) do

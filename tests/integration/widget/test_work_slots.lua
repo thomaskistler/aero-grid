@@ -108,6 +108,52 @@ context.scheduler.cursor = 3
 fixture.tick(10)
 definition.refresh(context)
 assert(context.panels[1].failed and #context.errors == 2, "variable tasks must report consumption")
+context.panels = { panel("invalid-fixed", 2, 3) }
+context.scheduler.cursor = 3
+fixture.tick(10)
+definition.refresh(context)
+assert(context.panels[1].failed and #context.errors == 3, "invalid fixed consumption must be reported")
+
+-- Fixed reservations can return unused slots to later services and panels.
+context.serviceRuntime = support.runtime({})
+local partial = {
+    id = "partial",
+    interval = 0,
+    count = 1,
+    revision = 0,
+    updateCost = 8,
+    update = function(_, _, slots)
+        record("partial", slots)
+        return 1
+    end,
+}
+support.register(context.serviceRuntime, partial, 0)
+context.panels = { panel("partial-panel", 4, 1), panel("after", 6) }
+context.scheduler.cursor = 1
+calls = {}
+fixture.tick(10)
+definition.refresh(context)
+assert(#calls == 3 and calls[1].slots == 8 and calls[2].slots == 4 and calls[3].slots == 6)
+assert(context.remainingSlots == 0, "unused fixed reservations must be available to later work")
+
+local continuationTurns = 0
+partial.updateCost, partial.interval = 1, 100
+partial.update = function()
+    continuationTurns = continuationTurns + 1
+    return 1, continuationTurns < 9
+end
+context.panels = { panel("companion") }
+context.scheduler.cursor = 1
+fixture.tick(10)
+definition.refresh(context)
+assert(continuationTurns == 7 and partial.due > getTime())
+fixture.tick(1)
+definition.refresh(context)
+assert(continuationTurns == 9, "pending service work must resume despite its future deadline")
+
+context.serviceRuntime = support.runtime({})
+support.register(context.serviceRuntime, telemetry, 0)
+support.register(context.serviceRuntime, ordinary, 0)
 
 -- Hidden services share slots too; ordinary foreground refreshes stay dormant.
 context.panels = { panel("hidden") }
@@ -139,7 +185,7 @@ fixture.tick(10)
 definition.background(context)
 assert(#calls == 2 and calls[2].id == "service" and calls[2].slots == 0)
 assert(fixture.module("lib/history_service.lua").updateCost == 0)
-assert(fixture.module("lib/control_service.lua").updateCost == 0)
+assert(fixture.module("lib/control_service.lua").updateCost == 1)
 
 -- Free panels run even after charged work was deferred, without affecting demand.
 context.panels = { panel("blocked"), panel("diagnostic", 0) }

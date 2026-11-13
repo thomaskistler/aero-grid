@@ -1047,12 +1047,15 @@ local function serviceStep(task, now, slots)
     local instance, registry = task.owner, task.registry
     instance.due = now + instance.interval
     registry.updates = registry.updates + 1
-    local used = instance:update(now, slots)
-    if instance.updateCost == "variable" and not task.host.servicesModule.consumption(used, slots) then
+    local used, again = instance:update(now, slots)
+    if used == nil and instance.updateCost ~= "variable" then
+        used = slots
+    end
+    if not task.host.servicesModule.consumption(used, slots) then
         error("update consumption must be whole slots within the grant", 0)
     end
     instance.revision = instance.revision + 1
-    return used
+    return used, again
 end
 
 local function refreshReady(task, _, hidden)
@@ -1070,7 +1073,7 @@ end
 local function panelStep(task, now, granted)
     local context, entry, eventName = task.host, task.owner, task.event
     local ok, message, _, unfinished, used = context.panelHost.dispatch(entry, eventName, false, granted)
-    if task.cost ~= "variable" then
+    if used == nil and task.cost ~= "variable" then
         used = granted
     end
     if ok and not context.servicesModule.consumption(used, granted) then
@@ -1088,7 +1091,7 @@ local function panelStep(task, now, granted)
     if not ok then
         error(message or "panel failed", 0)
     end
-    return used
+    return used, eventName == "refresh" and unfinished and rawget(entry.module, "refreshContinuation") == true
 end
 
 --- Enrol the live services and panels, in that order, for one run.
@@ -1207,7 +1210,7 @@ local function pumpFlight(task, now, granted)
     local context, inputPending = task.host, task.host.inputPending
     local owner = context.flightFactory and context.flightFactory.broker
     if not owner then
-        return false
+        return
     end
     local identityOk, filename = pcall(owner.identity, owner)
     if not identityOk then
@@ -1218,7 +1221,7 @@ local function pumpFlight(task, now, granted)
             showErrors(context)
         end
         context.flightReportedRevision = nil
-        return false
+        return
     end
     if filename ~= owner.filename then
         owner:reset(filename)
@@ -1264,7 +1267,7 @@ local function pumpFlight(task, now, granted)
     end
     local resetConfigured = owner.document and owner.document.sessionReset and owner.document.sessionReset ~= ""
     if (context.stage or context.reloadState) and not owner.session and not resetConfigured then
-        return false
+        return
     end
     if resetConfigured or owner.resetRuntime or owner.errors.reset then
         local resetOk, resetError = pcall(owner.pollReset, owner, now)
@@ -1274,16 +1277,16 @@ local function pumpFlight(task, now, granted)
     end
     if not owner.session and owner.dormantRevision == context.flightFactory.revision then
         if not owner.state.resetError and not context.flightErrorText then
-            return false
+            return
         end
     end
     if owner.smartRuntime then
         if inputPending or context.flightDashboardDue then
             context.flightDashboardDue = nil
-            return false
+            return
         end
         if owner.lastTick and now >= owner.lastTick and now < (owner.nextPumpAt or 0) then
-            return false
+            return
         end
     end
     local ok, message = pcall(owner.tick, owner, now, filename)

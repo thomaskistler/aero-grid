@@ -50,6 +50,12 @@ local switches = control.new({
         return enabled
     end,
 }, support)
+local function pollSwitches(now)
+    local _, again
+    repeat
+        _, again = switches:update(now)
+    until not again
+end
 for _, pair in ipairs({
     { "SF^", "SF" .. string.char(192) },
     { "SA-", "SA-" },
@@ -57,14 +63,10 @@ for _, pair in ipairs({
     { "L01", "L01" },
 }) do
     local arm = switches:switch(pair[1])
-    switches:update(100)
+    pollSwitches(100)
     equal(selected, pair[2])
     enabled = true
-    switches:update(100)
-    -- Update each subscribed switch regardless of the service slice limit.
-    for _, entry in ipairs(switches.entries) do
-        entry.read(switches, entry, 100)
-    end
+    pollSwitches(100)
     equal(arm.value, true)
     equal(arm.updatedAt, 100)
     enabled = false
@@ -75,7 +77,7 @@ for _, pair in ipairs({
     equal(arm.fresh, true)
 end
 local missing = switches:switch("MISSING")
-switches:update(140)
+pollSwitches(140)
 assert(not missing.available and not missing.fresh, "unknown switch is unavailable, not disarmed")
 
 local model = modelService.new({

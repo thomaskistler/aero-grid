@@ -107,7 +107,18 @@ local function run()
     assert(services.dispatch(runtime, task, 10, 2) == nil)
     assert(task.due == 10, "deferral must not move the deadline")
     id, message, used = services.dispatch(runtime, task, 10, 3)
-    assert(id == "variable" and not message and used == 3)
+    assert(id == "variable" and not message and used == 2)
+    task.due = 11
+    task.update = function() end
+    id, message, used = services.dispatch(runtime, task, 11, 3)
+    assert(id == "variable" and not message and used == 3, "missing fixed consumption charges the full grant")
+    task.due = 12
+    task.update = function()
+        return 4
+    end
+    id, message, used = services.dispatch(runtime, task, 12, 3)
+    assert(id == "variable" and message and used == 3 and task.failed)
+    task.failed, task.due = nil, 20
     task.updateCost = "variable"
     task.update = function()
         return 9
@@ -125,6 +136,17 @@ local function run()
     end
     id, message, used = services.dispatch(runtime, task, 40, 8)
     assert(id == "variable" and not message and used == 0 and not task.failed)
+    task.updateCost, task.due = 2, 41
+    task.update = function()
+        return 1, true
+    end
+    id, message, used = services.dispatch(runtime, task, 41, 2)
+    assert(id == "variable" and not message and used == 1 and task.due == 41)
+    task.update = function()
+        return 0, false
+    end
+    id, message, used = services.dispatch(runtime, task, 41, 2)
+    assert(id == "variable" and not message and used == 0 and task.due == 51)
     for _, value in ipairs({ -1, 1.5, 9, math.huge, 0 / 0, "1" }) do
         assert(not services.consumption(value, 8))
     end

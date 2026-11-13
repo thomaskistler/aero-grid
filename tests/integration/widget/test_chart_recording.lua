@@ -155,11 +155,16 @@ for _, entry in ipairs(context.panels) do
         liveRevisions[item] = item.feed.plotRevision
     end
 end
+local maxSmartAge = 0
 for step = 1, 10000 do
     for id = 1, 24 do
         fixture.radio.values[5000 + id] = id + 1 + step % 17
     end
     pump(1, step < 100)
+    if smartEnabled then
+        local sensors = context.flightBroker.session.smart
+        maxSmartAge = math.max(maxSmartAge, getTime() - sensors.altitude.updatedAt, getTime() - sensors.speed.updatedAt)
+    end
     local advanced = true
     for _, entry in ipairs(context.panels) do
         for _, item in ipairs(entry.instance.series) do
@@ -200,7 +205,10 @@ if smartEnabled then
         assert(reading.value > id, "chart sources must continue receiving changing data")
     end
     local sensors = context.flightBroker.session.smart
-    assert(sensors.altitude.updatedAt == getTime() and sensors.speed.updatedAt == getTime())
+    assert(
+        sensors.altitude.fresh and sensors.speed.fresh and maxSmartAge <= 20,
+        "Smart samples must remain fresh within two callbacks, maximum age: " .. maxSmartAge
+    )
 end
 for _, entry in ipairs(context.panels) do
     for index, series in ipairs(entry.instance.series) do

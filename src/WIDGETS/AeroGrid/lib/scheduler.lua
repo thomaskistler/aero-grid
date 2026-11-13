@@ -6,8 +6,9 @@
 ---
 ---@class AeroGridTask
 ---@field name string Label used in error reports.
----@field step fun(task: AeroGridTask, now: integer, slots: integer, context: any): integer?, boolean? Returns slots used (variable tasks only) and whether more work is ready now.
+---@field step fun(task: AeroGridTask, now: integer, slots: integer, context: any): integer?, boolean? Returns slots used and whether more work is ready now.
 ---@field cost? integer|"variable" Slots one step needs, 0 to capacity. Defaults to 1. Read before every step.
+--- Fixed-cost steps may return fewer slots than granted, or nil to charge the full grant.
 ---@field due? integer Tick from which the task is eligible. Ignored while pending.
 ---@field ready? fun(task: AeroGridTask, now: integer, context: any): boolean Extra gate.
 ---@field verb? string Names the work in the consumption error message.
@@ -84,6 +85,8 @@ function scheduler.new(dependencies)
     --- another step runs again only after the rest of the ring has had its turn.
     --- The first task that does not fit keeps the next callback's first turn;
     --- nothing charged runs after it, though free tasks still do.
+    --- Consecutive zero-charge turns are limited to capacity per task per
+    --- callback; unfinished work resumes on the next callback.
     ---@param now integer
     ---@param slots integer Slots available to this callback.
     ---@param context any Passed through to `ready` and `step`.
@@ -137,7 +140,7 @@ function scheduler.new(dependencies)
                             local spent = granted
                             if not ok then
                                 failTask(task, tostring(used))
-                            elseif cost == "variable" then
+                            elseif used ~= nil or cost == "variable" then
                                 if type(used) == "number" and used >= 0 and used <= granted and used % 1 == 0 then
                                     spent = used
                                 else
@@ -148,12 +151,20 @@ function scheduler.new(dependencies)
                                     )
                                 end
                             end
+                            if spent == 0 then
+                                task.zeroTurns = task.ran == callback and (task.zeroTurns or 0) + 1 or 1
+                            else
+                                task.zeroTurns = 0
+                            end
                             task.ran = callback
                             task.spent = (task.spent or 0) + spent
                             remaining = remaining - spent
                             if ok and again then
                                 task.pending = true
                                 progressed = true
+                                if task.zeroTurns >= capacity then
+                                    task.refused = callback
+                                end
                             else
                                 task.pending = false
                             end

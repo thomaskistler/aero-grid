@@ -106,6 +106,46 @@ end
 
 do
     local queue, calls, task = fixture()
+    local reserved = task("reserved", 4)
+    reserved.step = function()
+        calls[#calls + 1] = "reserved"
+        return 1
+    end
+    task("other", 3)
+    local used, requested, denied = queue.run(0, 4)
+    assert(table.concat(calls, ",") == "reserved,other")
+    assert(used == 4 and requested == 2 and denied == 0 and reserved.spent == 1)
+end
+
+do
+    local queue, calls, task = fixture()
+    local reserved = task("reserved", 2)
+    reserved.step = function()
+        calls[#calls + 1] = "reserved"
+        return 0
+    end
+    task("other", 2)
+    assert(queue.run(0, 2) == 2)
+    assert(table.concat(calls, ",") == "reserved,other" and reserved.spent == 0)
+end
+
+do
+    local queue = module.new({ capacity = 2 })
+    local turns = 0
+    local reserved = {
+        cost = 1,
+        step = function()
+            turns = turns + 1
+            return 0, true
+        end,
+    }
+    queue.add(reserved)
+    assert(queue.run(0, 2) == 0 and turns == 2 and reserved.pending)
+    assert(queue.run(1, 2) == 0 and turns == 4 and reserved.pending)
+end
+
+do
+    local queue, calls, task = fixture()
     local a = task("A", 2, 2)
     a.step = function(self)
         calls[#calls + 1] = self.name
@@ -165,6 +205,17 @@ for _, invalid in ipairs({ false, -1, 1.5, 9, math.huge, 0 / 0, "1" }) do
     assert(queue.run(0, 8) == 8)
     assert(variable.failed and not variable.pending and variable.spent == 8)
     assert(variable.error == "step consumption must be whole slots within the grant")
+end
+
+for _, invalid in ipairs({ false, -1, 1.5, 3, math.huge, 0 / 0, "1" }) do
+    local queue, _, task = fixture()
+    local fixed = task("invalid", 2)
+    fixed.step = function()
+        return invalid, true
+    end
+    assert(queue.run(0, 8) == 2)
+    assert(fixed.failed and not fixed.pending and fixed.spent == 2)
+    assert(fixed.error == "step consumption must be whole slots within the grant")
 end
 
 do

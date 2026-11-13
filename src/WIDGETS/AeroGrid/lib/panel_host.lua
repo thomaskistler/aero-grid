@@ -19,14 +19,16 @@
 ---  host pays every panel's cost inside one instruction budget.
 ---@field refreshCost? integer|"variable" Nominal 2000-instruction slots, 0 to host capacity; defaults to 1.
 --- An instance may override refreshCost; zero-cost refreshes run when due even without remaining slots.
+---@field refreshContinuation? boolean Refreshes may request consecutive scheduler turns.
+---@field independentRefresh? boolean Refreshes do not block other instances of this panel type.
 ---@field settings? AeroGridPanelSetting[]
 ---@field create fun(parent: any, rect: table, settings: table, services: table): any
 ---@field update? fun(instance: any, rect: table, settings: table)
 ---@field refresh? fun(instance: any)
 --- A numeric refresh result selects the next interval in 10ms ticks.
 --- A second result of true requests consecutive turns until this update finishes.
---- Variable refreshes receive (instance, false, slots) and return consumed slots
---- as a third result.
+--- Refreshes receive (instance, false, slots) and may return consumed slots as
+--- a third result. Variable refreshes must report consumption.
 ---@field background? fun(instance: any)
 ---@field resetSession? fun(instance: any, now: integer) Second result true requests another reset turn.
 ---@field event? fun(instance: any, event: any): boolean
@@ -127,6 +129,14 @@ function panelHost.validateModule(module, typeName)
         and (type(cost) ~= "number" or cost < 0 or cost > panelHost.SLOTS or cost ~= math.floor(cost))
     then
         return false, "refreshCost must be a whole number from 0 to " .. panelHost.SLOTS .. " or variable"
+    end
+    local continuation = field(module, "refreshContinuation")
+    if continuation ~= nil and type(continuation) ~= "boolean" then
+        return false, "refreshContinuation must be a boolean"
+    end
+    local independent = field(module, "independentRefresh")
+    if independent ~= nil and type(independent) ~= "boolean" then
+        return false, "independentRefresh must be a boolean"
     end
 
     return true
@@ -286,7 +296,7 @@ end
 ---@return string? error Set only on the call that first fails.
 ---@return any result First value returned by the callback.
 ---@return boolean? unfinished Whether this staged refresh needs another turn.
----@return integer? consumed Nominal slots consumed by a variable refresh.
+---@return integer? consumed Nominal slots consumed by the refresh.
 function panelHost.dispatch(entry, event, ...)
     if type(entry) ~= "table" or entry.failed then
         return false

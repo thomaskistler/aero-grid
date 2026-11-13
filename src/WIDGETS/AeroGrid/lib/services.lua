@@ -10,7 +10,7 @@
 ---    service with no subscriptions is skipped entirely, so a dashboard of
 ---    metrics never pays for GPS, trims, or global variables.
 --- 2. Services share the host's work slots with panels. Ordinary updates cost
----    one slot; variable updates receive the remaining slots and report usage.
+---    one slot; updates may report a smaller whole-slot charge than their grant.
 ---
 --- Panels receive immutable views. The service mutates its own state table
 --- in place, which costs no allocation per cycle, and hands out a proxy whose
@@ -24,7 +24,7 @@
 ---@field count integer Number of live subscriptions.
 ---@field failed? boolean Set after an update raises, which retires the service.
 ---@field updateCost? integer|"variable" Nominal 2000-instruction slots; defaults to 1.
----@field update fun(self: AeroGridServiceInstance, now: integer, slots: integer): integer?
+---@field update fun(self: AeroGridServiceInstance, now: integer, slots: integer): integer?, boolean? Slots used and whether more work is ready.
 ---@field resetSession? fun(self: AeroGridServiceInstance, now: integer, index: integer): integer? Next reset item, or nil when finished.
 
 local services = { RUNTIME_API = 1 }
@@ -169,14 +169,17 @@ function services.dispatch(runtime, instance, now, remaining)
     end
     instance.due = now + instance.interval
     runtime.updates = runtime.updates + 1
-    local ok, result = pcall(instance.update, instance, now, granted)
+    local ok, result, again = pcall(instance.update, instance, now, granted)
     if not ok then
         instance.failed = true
         return instance.id, tostring(result), granted
     end
     local used = result
-    if instance.updateCost ~= "variable" then
+    if used == nil and instance.updateCost ~= "variable" then
         used = granted
+    end
+    if again then
+        instance.due = now
     end
     if type(used) ~= "number" or not services.consumption(used, granted) then
         instance.failed = true
