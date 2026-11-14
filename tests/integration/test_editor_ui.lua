@@ -90,7 +90,7 @@ end
 local definition = widget.module("main.lua")
 local context
 local worst = 0
-local function refresh(event, touch)
+local function refresh(event, touch, draining)
     widget.lvglMock.setPropertyValidation(false)
     widget.lvglMock.setCallCounting(false)
     widget.lcdMock.setTextMeasurement(false)
@@ -118,6 +118,25 @@ local function refresh(event, touch)
             .. tostring(context.stage)
     )
     widget.lvglMock.settle()
+    if not draining then
+        for _ = 1, 10 do
+            local lifecycleTask = context.lifecycleTasks and context.lifecycleTasks[context.lifecycleRequest]
+            local uiTask = context.uiTasks and context.uiTasks[context.uiRequest]
+            if
+                not context.inputQueue
+                and not context.editorTransitionRequest
+                and not (context.inputTask and context.inputTask.refused == context.scheduler.callbacks)
+                and not (context.hostTask and context.hostTask.refused == context.scheduler.callbacks)
+                and not (context.menuTask and (context.menuTask.ran == context.scheduler.callbacks or context.menuTask.refused == context.scheduler.callbacks))
+                and not (context.lifecycleRequest and (not lifecycleTask or lifecycleTask.ran ~= context.scheduler.callbacks))
+                and not (context.uiRequest and (not uiTask or uiTask.ran ~= context.scheduler.callbacks))
+            then
+                break
+            end
+            refresh(nil, nil, true)
+        end
+        assert(not context.inputQueue, "queued input did not receive a grant")
+    end
 end
 local function settle()
     for _ = 1, 60 do
@@ -150,6 +169,13 @@ local function exitWith(choice)
         if value == choice then
             menu.set(index)
             refresh()
+            for _ = 1, 20 do
+                if not state.exitCommand then
+                    break
+                end
+                refresh(nil, nil, true)
+            end
+            assert(not state.exitCommand, "editor exit command did not receive a grant")
             return
         end
     end
@@ -166,6 +192,7 @@ local function settleDrawer()
         assert(context.editorUi, "drawer failed: " .. table.concat(context.errors, "; "))
         if
             not context.editorUi.drawerPending
+            and not context.editorUi.nativeInput
             and context.editorUi.drawerBuild == nil
             and not context.editorUi.previewPending
             and not context.editorUi.previewRefresh
@@ -582,6 +609,7 @@ equal(pickSource(UNREADABLE_SOURCE), "RSSI", "a source Lua cannot read leaves th
 assert(string.find(state.status, "Lua cannot read source SW1", 1, true), "unreadable source explains why")
 local legacy = context.editorSession.draft.panels[1].config.metrics[1]
 legacy.source = "GV1"
+state.drawerControls[errorIndex].readNative()
 equal(control("metrics", "source").properties.get(), 330, "a menu-name source still reopens on its entry")
 legacy.source = "RSSI"
 pickSource(getFieldInfo(validSource).id)

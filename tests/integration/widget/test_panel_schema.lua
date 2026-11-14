@@ -15,6 +15,7 @@ for _, source in ipairs({
         { Layout = "Default", Theme = "modern-dark" },
         root .. "/src/WIDGETS/AeroGrid/"
     )
+    definition.refresh(context)
     context.source = source
     context.tokens = {}
     context.readPosition = 1

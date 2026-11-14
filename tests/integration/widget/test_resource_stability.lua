@@ -22,7 +22,13 @@ local function finish()
         refresh()
         guard = guard + 1
         assert(guard < 200, "reload or reflow did not finish")
-    until not context.stage and not context.reloadState and not context.reflowIndex
+    until not context.optionsRequest
+        and not context.stage
+        and not context.reloadState
+        and not context.lifecycleRequest
+        and not context.reflowIndex
+        and context.width == zone.w
+        and context.height == zone.h
     for _ = 1, 10 do
         refresh()
     end
@@ -48,19 +54,22 @@ local function finish()
         assert(output.rows[1].feed.available, "output service was not exercised")
     end
     if fixture.instanceOf(context, "power") then
+        local mounted = {}
         local ready = false
         for _ = 1, 2500 do
             refresh()
             ready = true
-            for _, entry in ipairs(context.panels) do
+            for index, entry in ipairs(context.panels) do
                 local panel = entry.instance
-                ready = ready and #panel.grid == 12 and chartAssertions.finished(panel)
+                -- Live charts need not finish the same changing sample together.
+                mounted[index] = mounted[index] or #panel.grid == 12 and chartAssertions.finished(panel)
+                ready = ready and mounted[index]
             end
             if ready then
                 break
             end
         end
-        assert(ready, "the sole chart pool must finish mounting before resource measurement")
+        assert(ready, "the chart pools must finish mounting before resource measurement")
         for _, entry in ipairs(context.panels) do
             local panel = entry.instance
             assert(chartAssertions.nativeColumns(panel.columnRenderer) <= panel.area.w * #panel.series * 2)
@@ -76,6 +85,13 @@ local function chartCells()
     for _, entry in ipairs(context.panels) do
         if entry.instance.columnRenderer then
             count = count + chartAssertions.nativeColumns(entry.instance.columnRenderer)
+        end
+        -- Gap markers are also lazy data objects; their arrival depends on the
+        -- simulated clock, not the geometry change being measured.
+        for _, object in ipairs(fixture.lvglMock.objects) do
+            if entry.instance.gapRoot and object.parent == entry.instance.gapRoot then
+                count = count + 1
+            end
         end
         -- Auto charts prepare their next window in a lazily built hidden layer.
         local hidden = entry.instance.auto and entry.instance.auto.hidden

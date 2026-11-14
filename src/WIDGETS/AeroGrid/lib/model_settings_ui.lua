@@ -120,6 +120,7 @@ local function dialog(context, state)
         end,
     })
     if not attempted then
+        attempted = true
         retireHost(state)
         context.nativeDialogsCreated = true
         result = lvgl.dialog(properties)
@@ -270,14 +271,14 @@ local function buildField(context, state, field)
             return value
         end,
         set = function(value)
-            if not active(context, state) then
-                return
+            local function commit(command)
+                state.pending = command
             end
             if field.kind == "switch" then
                 local ok, name = pcall(state.armedConfig.name, value, state.armControl)
                 if ok then
-                    queue(context, state, { key = field.key, value = name })
-                else
+                    commit({ key = field.key, value = name })
+                elseif state.dialog then
                     state.status:set({ text = "Choose a physical switch position or logical switch (L01-L64)" })
                 end
                 return
@@ -292,7 +293,9 @@ local function buildField(context, state, field)
                     or value > 65
                     or not outputAvailable(value)
                 then
-                    state.status:set({ text = "Choose a configured logical switch (L01-L64), or None" })
+                    if state.dialog then
+                        state.status:set({ text = "Choose a configured logical switch (L01-L64), or None" })
+                    end
                     return
                 end
                 value = value == 1 and "" or string.format("L%02d", value - 1)
@@ -307,14 +310,16 @@ local function buildField(context, state, field)
                     end
                 end
                 if not name then
-                    state.status:set({ text = "Cannot resolve selected motor channel" })
+                    if state.dialog then
+                        state.status:set({ text = "Cannot resolve selected motor channel" })
+                    end
                     return
                 end
                 value = string.lower(name)
             elseif field.kind == "numberEdit" then
                 value = math.floor(value + 0.5)
             end
-            queue(context, state, { key = field.key, value = value })
+            commit({ key = field.key, value = value })
         end,
     }
     if field.kind == "source" then
@@ -323,13 +328,45 @@ local function buildField(context, state, field)
         -- EdgeTX's switch toolbar overlaps on short lists; outputs need no inversion.
         properties.title = field.label
         properties.values = { "None" }
+        local available = { true }
         for number = 1, 64 do
             properties.values[number + 1] = string.format("L%02d", number)
+            available[number + 1] = outputAvailable(number + 1)
         end
-        properties.filter = outputAvailable
+        properties.filter = function(index)
+            return available[index] == true
+        end
+    end
+    local apply = properties.set
+    properties.set = function(value)
+        queue(context, state, { apply = apply, value = value })
+    end
+    local getValue = properties.get
+    local value = getValue()
+    properties.get = function()
+        return value
+    end
+    state.readControls = state.readControls or {}
+    state.readControls[field.key] = function()
+        value = getValue()
     end
     state.controls[field.key] = lvgl[field.kind](row, properties)
     state.nextY = state.nextY + state.height + 6
+end
+
+function ui.cost(context)
+    local state, capacity = context.modelSettingsUi, context.scheduler.capacity
+    local field = state and state.build and fields[state.build]
+    -- Switch controls resolve firmware names; the output list also builds 65 choices.
+    if
+        state
+        and state.build
+        and not state.closing
+        and not (field and (field.kind == "switch" or field.key == "flightSwitch"))
+    then
+        return math.min(3, capacity)
+    end
+    return capacity
 end
 
 function ui.advance(context)
@@ -377,6 +414,10 @@ function ui.advance(context)
         return false
     end
     state.pending = nil
+    if command.apply then
+        command.apply(command.value)
+        return true
+    end
     local values, armed, sessionReset = state.config.resolve(state.values), state.armed, state.sessionReset
     if command.key == "sessionReset" then
         sessionReset = command.value
@@ -405,6 +446,7 @@ function ui.advance(context)
         state.values, state.armed, state.revision =
             state.config.resolve(result.flight or values), armed, result.revision
         state.sessionReset = sessionReset
+        state.readControls[command.key]()
         if state.dialog then
             state.status:set({ text = "" })
         end

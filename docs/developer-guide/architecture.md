@@ -56,6 +56,7 @@ Host coordination has three boundaries:
 | --- | --- |
 | `dashboard_loader.lua` | Layout recovery, staged parsing, service/panel construction, and placement-local services. |
 | `dashboard_lifecycle.lua` | Empty-page decoration, batched reflow, fullscreen-to-App rebuilds, and page retirement/replacement. |
+| `scheduler.lua` | Fair slot scheduling of initialization, flight, native option changes, fullscreen input, session reset, loading, reload, reflow, menu work, model settings, log/location overlays, editor transitions/advancement, panel refreshes and service updates. |
 | `editor_controller.lua` | Editor activation, staged advancement, dashboard previews, draft restoration, and adoption after saving. |
 
 Their `new` functions bind host operations once per widget. They do not capture
@@ -95,12 +96,18 @@ They do not each poll EdgeTX or maintain their own telemetry cache.
 Subscriptions to the same source share polling, and an unsubscribed service
 does not consume scheduled work.
 
-Due services and panels share eight nominal 2,000-instruction slots in round-robin
-order. Ordinary tasks default to one slot. Variable tasks receive the remaining
-slots and report consumption, leaving unused slots available to later tasks.
-History and control declare zero slots: they retain their due intervals and
-run at most once per callback, even when charged work exhausts the allowance.
-Flight polling runs first and consumes one slot when it ticks. Slot costs are
+Due services and panels share nominal slots in round-robin order. The default
+callback capacity is eight 2,000-instruction slots, configured by `SLOTS` and
+`INSTRUCTIONS_PER_SLOT` in `lib/scheduler.lua`. Every task turn is capped at
+eight slots, even if a callback has a larger capacity. Fixed tasks reserve
+their declared cost; variable tasks declare a minimum and receive between that
+minimum and eight slots when enough remain. Each task turn reports its charged
+slots and whether it requests another turn in the same callback. Panels opt in
+to same-callback refresh continuation with `refreshContinuation`; other staged
+refreshes resume on their next due callback. Unused slots are released to later
+tasks, and pending work remains subject to the scheduler's fair rotation. A
+task's `due` time controls its next eligibility independently of same-callback
+continuation. Slot costs are
 initial approximations, not live instruction measurements; the whole callback
 has a nominal target below 16,000 instructions; regression tests enforce the
 stricter 15,000-instruction ceiling. Callback/scheduler overhead is not separately charged.
@@ -303,7 +310,7 @@ Use `panels/flight-mode.lua` as a small working example and
 | `id`, `apiVersion`, `supportedSpans` | Identify the module, check compatibility, and advertise valid grid sizes. |
 | `settings` | Typed fields, defaults, bounds, and choices used by validation and the editor. |
 | `refreshInterval` | Desired foreground interval in 10 ms ticks; work still shares the host budget. |
-| `refreshCost` | Number of nominal 2,000-instruction slots, 1–8 (default 1), or `"variable"` to receive the remaining allowance. |
+| `refreshCost` | Number of nominal slots, 0–scheduler capacity (default 1), or `"variable"` to receive the remaining allowance. |
 | `create(parent, rect, settings, services)` | Build LVGL objects, subscribe to data, and return private instance state. |
 | `refresh(context, creating, slots)` | Optional callback to update existing objects from snapshots; scheduled calls pass `false` for `creating`. May return a whole-number interval of 1–6000 ticks; nil preserves the current interval. A second result of `true` reserves subsequent turns among panels of the same type until the update completes; other panel types and services continue running. Variable tasks return consumed slots (0–grant) as a third result. |
 | `update(context, rect, settings, detailsOnly, placement)` | Optional geometry/configuration update. Host reflows and editor resizes pass the current grid placement as the fifth argument, leaving the internal `detailsOnly` argument unset. |

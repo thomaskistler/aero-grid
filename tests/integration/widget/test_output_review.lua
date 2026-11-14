@@ -33,6 +33,7 @@ model.getOutput = function(index)
 end
 local context = fixture.createLoaded(nil, { Layout = "review-output", Theme = "modern-dark" })
 local worst = 0
+local requireVisible = false
 local function measured(callback)
     local count = 0
     debug.sethook(function()
@@ -50,6 +51,9 @@ local function pump()
         measured(function()
             definition.refresh(context)
         end)
+        if requireVisible then
+            assert(not fixture.instanceOf(context, "outputs").rowsRoot.hidden, "mode changes must not clear rows")
+        end
         if initialCaptions then
             local instance = fixture.instanceOf(context, "outputs")
             if instance then
@@ -58,13 +62,14 @@ local function pump()
                     if row.captionText and row.captionText ~= "" then
                         labeled = labeled + 1
                         local name = sourceNames[index]
-                        equal(row.captionText, "CH" .. index .. (name and ": " .. name or ""))
+                        local fallback = "CH" .. index
+                        assert(
+                            row.captionText == fallback or row.captionText == fallback .. (name and ": " .. name or ""),
+                            "initial captions must use either a channel number or a resolved name"
+                        )
                     end
                 end
-                assert(
-                    labeled == 0 or labeled == instance.area.count,
-                    "initial captions must appear together with resolved names"
-                )
+                assert(labeled == 0 or labeled == instance.area.count, "initial captions must appear together")
             end
         end
     end
@@ -76,6 +81,125 @@ initialCaptions = false
 resolvingNames = false
 pump()
 local panel = assert(fixture.instanceOf(context, "outputs"))
+local outputEntry = assert(fixture.entryById(context, "outputs"))
+assert(outputEntry.module.refreshContinuation)
+equal(outputEntry.refreshTask.cost, 1, "output refresh uses one nominal scheduler slot per step")
+local originalRefresh = outputEntry.module.refresh
+local refreshSteps = 0
+outputEntry.module.refresh = function(instance, ...)
+    refreshSteps = refreshSteps + 1
+    return originalRefresh(instance, ...)
+end
+outputEntry.nextRefresh = 0
+fixture.tick(20)
+definition.refresh(context)
+outputEntry.module.refresh = originalRefresh
+assert(refreshSteps > 1, "unfinished output work should use consecutive scheduler turns")
+equal(#context.errors, 0, table.concat(context.errors, "\n"))
+pump()
+-- A slow metadata scan must not delay a five-channel panel's first display.
+local controlEnv = context.serviceRuntime.byId.control.env
+local savedOutput, savedMix = controlEnv.getOutput, controlEnv.getMix
+local firstOutput = context.serviceRuntime.byId.control.outputEntries[1].state
+local firstEntry = context.serviceRuntime.byId.control.outputEntries[1]
+controlEnv.getOutput = function(index)
+    if index == 0 then
+        return { name = "" }
+    end
+    return savedOutput(index)
+end
+controlEnv.getMix = function(index, line)
+    if index == 0 and line < 64 then
+        return { source = 5001, carryTrim = false, weight = 100 }
+    end
+    return savedMix(index, line)
+end
+firstOutput.nameReady, firstEntry.scan = false, nil
+local fiveSettings = {}
+for key, value in pairs(panel.settings) do
+    fiveSettings[key] = value
+end
+fiveSettings.channelCount = 5
+local originalSettings = panel.settings
+outputEntry.module.update(panel, { x = 0, y = 0, w = panel.panel.width, h = panel.panel.height }, fiveSettings)
+for _ = 1, 10 do
+    fixture.tick(10)
+    measured(function()
+        definition.refresh(context)
+    end)
+    if not panel.rowsRoot.hidden then
+        break
+    end
+end
+assert(not panel.rowsRoot.hidden, "five rows must appear within one second despite unresolved metadata")
+assert(not firstOutput.nameReady and panel.rows[1].captionText == "CH1")
+controlEnv.getOutput, controlEnv.getMix = savedOutput, savedMix
+outputEntry.module.update(panel, { x = 0, y = 0, w = panel.panel.width, h = panel.panel.height }, originalSettings)
+pump()
+-- Initial rows appear with channel numbers while names are still resolving,
+-- then update in place as those names become available.
+firstOutput.nameReady = false
+outputEntry.module.update(panel, { x = 0, y = 0, w = panel.panel.width, h = panel.panel.height }, panel.settings)
+local shown = false
+for _ = 1, 1000 do
+    local _, unfinished = outputEntry.module.refresh(panel)
+    if not panel.rowsRoot.hidden then
+        shown = true
+        for index = 1, panel.area.count do
+            assert(panel.rows[index].captionText ~= "", "all captions must be ready when rows appear")
+        end
+        assert(panel.rows[1].captionText == "CH1", "unresolved names must use the channel number")
+    else
+        assert(not shown, "rows must not disappear again during initial layout")
+    end
+    if shown and not unfinished then
+        break
+    end
+end
+assert(shown, "rows must appear without waiting for metadata")
+firstOutput.name, firstOutput.nameReady = "NEW", true
+for _ = 1, 1000 do
+    local _, unfinished = outputEntry.module.refresh(panel)
+    assert(not panel.rowsRoot.hidden, "resolving a name must not hide the rows")
+    if not unfinished and panel.phase == "idle" then
+        break
+    end
+end
+equal(panel.rows[1].captionText, "CH1: NEW", "resolved names must update the visible rows")
+pump()
+-- A caption-width change after startup must update visible rows without
+-- hiding the panel or leaving a row's fill at its previous geometry.
+local control = context.serviceRuntime.byId.control
+local function changeCaptions(name)
+    for index = 1, panel.area.count do
+        control.outputEntries[index].state.name = name
+    end
+    panel.phase, panel.liveIndex = "idle", 1
+    local reflowed = false
+    for _ = 1, 1000 do
+        local _, unfinished = outputEntry.module.refresh(panel)
+        reflowed = reflowed or panel.phase == "reflow"
+        assert(not panel.rowsRoot.hidden, "metadata reflow must not clear visible output rows")
+        for index = 1, panel.area.count do
+            local current = panel.rows[index]
+            if current.available and not current.fill.hidden then
+                assert(current.fill.properties.y == current.y, "reflow must keep fill and track together")
+                assert(
+                    current.fill.properties.x >= current.x
+                        and current.fill.properties.x + current.fill.properties.w <= current.x + current.width,
+                    "reflow must keep the fill within its new track"
+                )
+            end
+        end
+        if not unfinished and panel.phase == "idle" then
+            break
+        end
+    end
+    return reflowed
+end
+changeCaptions("I")
+assert(changeCaptions("WWW"), "caption-width change must exercise visible reflow")
+pump()
 local function checkGeometry()
     local area = panel.area
     local widestCaption = 0
@@ -127,7 +251,6 @@ pump()
 equal(panel.rows[1].captionText, "CH1: ail", "unnamed outputs use their mix source")
 names[1] = "AIL"
 pump()
-local controlEnv = context.serviceRuntime.byId.control.env
 local originalMode = controlEnv.getFlightMode
 local mode = 0
 controlEnv.getFlightMode = function()
@@ -158,6 +281,22 @@ for _, nextMode in ipairs({ 1, 0 }) do
     end
     equal(panel.rows[3].text, mode == 1 and "+100%" or "+80%", "changed motor output must still redraw")
 end
+local modeMix = controlEnv.getMix
+controlEnv.getMix = function(index, line)
+    if index == 0 and line == 0 then
+        return { source = 5001, name = mode == 1 and "WWW" or "i", carryTrim = false, weight = 100 }
+    end
+    return modeMix(index, line)
+end
+requireVisible = true
+for _, nextMode in ipairs({ 1, 0 }) do
+    mode = nextMode
+    pump()
+    equal(panel.rows[1].captionText, mode == 1 and "CH1: WWW" or "CH1: i")
+end
+controlEnv.getMix = modeMix
+pump()
+requireVisible = false
 local percentWrites = panel.rows[1].value.writes
 values[1] = 52
 pump()

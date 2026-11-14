@@ -225,6 +225,16 @@ function module.new(dependencies)
         if not action then
             return true
         end
+        if action.initialRefresh then
+            local entry = action.initialRefresh
+            local ok, message = context.panelHost.dispatch(entry, "refresh", false, context.scheduler.capacity)
+            if not ok then
+                return true, entry.placement.id .. ": preview refresh: " .. tostring(message)
+            end
+            entry.instance.initialRefresh = nil
+            job.index = job.index + 1
+            return false
+        end
         if not action.retired then
             context.editorPreviewChanged = true
             local entry = action.entry
@@ -258,13 +268,17 @@ function module.new(dependencies)
         local container = table.remove(pool)
         local placement = context.editorModule.clone(action.placement)
         local entry, buildError, failedContainer = buildPanel(context, placement, container, true)
-        job.index = job.index + 1
         if not entry then
             if failedContainer or container then
                 context.editorPreviewContainers = pool
                 pool[#pool + 1] = failedContainer or container
             end
             return true, placement.id .. ": preview: " .. tostring(buildError)
+        end
+        if entry.instance.initialRefresh then
+            action.initialRefresh = entry
+        else
+            job.index = job.index + 1
         end
         return false
     end
@@ -313,7 +327,7 @@ function module.new(dependencies)
             if type(typeName) ~= "string" or not string.match(typeName, "^[%w_-]+$") then
                 return nil, "invalid panel type"
             end
-            local panel, panelError = loadModule(context.path, "panels/" .. typeName .. ".lua")
+            local panel, panelError = loadModule(context.path, "panels/" .. typeName .. ".lua", nil, context.scheduler)
             if panel then
                 context.editorPanelCache[typeName] = panel
             end

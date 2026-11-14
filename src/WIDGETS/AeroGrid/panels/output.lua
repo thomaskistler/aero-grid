@@ -3,8 +3,10 @@
 local output = {
     id = "output",
     apiVersion = 1,
+    refreshContinuation = true,
     supportedSpans = { "any" },
     refreshInterval = 10,
+    independentRefresh = true,
     settings = {
         { key = "label", label = "Label", type = "string", default = "CHANNEL OUTPUT" },
         { key = "firstChannel", label = "First channel", type = "number", default = 1, min = 1, max = 32, step = 1 },
@@ -96,46 +98,31 @@ function output.regionsFor(context, rect)
     }
 end
 
-local function layoutCaptions(context)
-    local area, builder = context.area, context.themeBuilder
-    local names = context.layoutNames
-    local changed = names == nil
-    for index = 1, area.count do
-        local feed = context.rows[index].feed
-        if context.settings.showNames ~= false and feed and not feed.nameReady then
-            return false
-        end
-        if names and names[index] ~= (context.settings.showNames ~= false and feed and feed.name or "") then
-            changed = true
+local function setCaption(context, row, name, ready)
+    local caption = ""
+    if ready then
+        local prefix = "CH" .. row.channel
+        caption = context.area.showNames and name ~= "" and prefix .. ": " .. string.sub(name, 1, 3) or prefix
+        if context.themeBuilder.measureText(context.area.font, caption) > context.area.captionWidth then
+            caption = prefix
         end
     end
-    if changed then
-        names = names or {}
-        local prefixWidth, namedWidth = 0, 0
-        for index = 1, area.count do
-            local feed = context.rows[index].feed
-            local name = context.settings.showNames ~= false and feed and feed.name or ""
-            names[index] = name
-            local prefix = "CH" .. (area.firstChannel + index - 1)
-            local caption = name ~= "" and prefix .. ": " .. string.sub(name, 1, 3) or prefix
-            prefixWidth = math.max(prefixWidth, builder.measureText(area.font, prefix))
-            namedWidth = math.max(namedWidth, builder.measureText(area.font, caption))
-        end
-        context.layoutNames = names
-        if not area.stacked then
-            local showNames = context.settings.showNames ~= false
-                and area.frame.content - namedWidth - area.valueWidth - area.gutters >= 64
-            local captionWidth = showNames and namedWidth or prefixWidth
-            if captionWidth ~= area.captionWidth or showNames ~= area.showNames then
-                area.showNames, area.captionWidth = showNames, captionWidth
-                area.barX = area.frame.pad + captionWidth + GUTTER
-                area.barWidth = area.frame.content - captionWidth - area.valueWidth - area.gutters
-                context.nextRow = 1
-                context.rendered = nil
-            end
-        end
+    row.captionsReady, row.pendingCaption = ready, caption
+    if not context.releaseCaptions then
+        row.captionText = caption
     end
-    return true
+    if row.drawnCaption ~= caption then
+        row.drawnCaption = caption
+        row.caption:set({ text = caption })
+    end
+end
+
+local function beginLayout(context)
+    context.phase = "layout"
+    context.layoutIndex = 1
+    context.pendingNames = {}
+    context.pendingPrefixWidth = 0
+    context.pendingNamedWidth = 0
 end
 
 local function rectangle(parent, color, rounded)
@@ -152,7 +139,7 @@ end
 
 local function createRow(context, index)
     local theme, primitives = context.theme, context.primitives
-    local root = lvgl.box(context.panel.root, { x = 0, y = 0, w = 1, h = 1 })
+    local root = lvgl.box(context.rowsRoot, { x = 0, y = 0, w = 1, h = 1 })
     lvgl.hide(root)
     local row = { root = root, dots = {} }
     row.caption = primitives.label(root, theme, { x = 0, y = 0, text = "", font = context.area.font })
@@ -207,28 +194,12 @@ local function placeRow(context, row, index)
     lvgl.show(row.root)
 end
 
-local function paintRow(context, row, index, drawn)
+local function paintRow(context, row, name, available, fraction, trimFraction, captionsReady)
     local builder = context.themeBuilder
-    local available = drawn["available" .. index]
-    local name = drawn["name" .. index]
-    local fraction = drawn["fraction" .. index]
-    local trimFraction = drawn["trim" .. index]
-    if row.text == nil or row.name ~= name or row.captionsReady ~= drawn.captionsReady then
-        local prefix = "CH" .. row.channel
-        local caption = context.area.showNames and name ~= "" and prefix .. ": " .. string.sub(name, 1, 3) or prefix
-        if builder.measureText(context.area.font, caption) > context.area.captionWidth then
-            caption = prefix
-        end
-        if not drawn.captionsReady then
-            caption = ""
-        end
-        row.captionsReady, row.captionText = drawn.captionsReady, caption
-        if row.drawnCaption ~= caption then
-            row.drawnCaption = caption
-            row.caption:set({ text = caption })
-        end
-    end
     local placed = row.text == nil
+    if placed or row.name ~= name or row.captionsReady ~= captionsReady then
+        setCaption(context, row, name, captionsReady)
+    end
     local text = available and percentText(fraction) or "--"
     if context.area.showValues and (placed or row.text ~= text) then
         local textWidth = builder.measureText(context.area.font, text)
@@ -275,6 +246,7 @@ function output.create(parent, rect, settings, services)
         control = services.control,
         settings = settings,
         rows = {},
+        rowDraw = {},
     }
     local builder, surface = context.themeBuilder, context.theme.rgb.surface
     local light = builder.contrast(surface, 0x000000) > builder.contrast(surface, 0xFFFFFF)
@@ -288,41 +260,22 @@ function output.create(parent, rect, settings, services)
         parent,
         rect,
         context.theme,
-        context.state("normal", settings.accent),
+        context.state("unavailable", settings.accent),
         context.area.frame,
         context.fonts,
         settings.label,
         context.themeBuilder
     )
-    output.refresh(context)
+    context.stateName = "unavailable"
+    context.rowsRoot = lvgl.box(context.panel.root, { x = 0, y = 0, w = rect.w, h = rect.h })
+    context.primitives.reconcile(context.rowsRoot, false)
+    context.phase = "mount"
+    context.mountIndex = 1
+    context.releaseCaptions = true
     return context
 end
 
-function output.render(context, out)
-    out.state = "unavailable"
-    out.captionsReady = context.showRows == context.area.count
-    for index = 1, context.showRows do
-        local feed = context.rows[index].feed
-        local available = feed ~= nil and feed.available == true
-        if context.settings.showNames ~= false and feed and not feed.nameReady then
-            out.captionsReady = false
-        end
-        out["available" .. index] = available
-        out["name" .. index] = context.settings.showNames ~= false and feed and feed.name or ""
-        out["fraction" .. index] = available and feed.fraction or 0
-        local trim = context.settings.showTrim ~= false and available and feed.trim
-        out["trim" .. index] = trim and trim.available and trim.fraction or nil
-        if available then
-            out.state = "normal"
-        end
-    end
-end
-
-function output.apply(context, drawn)
-    for index = 1, context.showRows do
-        paintRow(context, context.rows[index], index, drawn)
-    end
-    local state = drawn.state
+local function setPanelState(context, state)
     if context.stateName ~= state then
         context.stateName = state
         local presentation = context.state(state, context.settings.accent)
@@ -340,38 +293,220 @@ function output.apply(context, drawn)
     end
 end
 
-function output.refresh(context)
-    local area = context.area
-    context.showRows = context.showRows or 0
-    -- Subscribe before measuring captions, so no provisional column reaches the screen.
-    if #context.rows < area.count then
-        createRow(context, #context.rows + 1)
-        return
+local function rowValues(context, row)
+    local feed = row.feed
+    local available = feed ~= nil and feed.available == true
+    local fraction = available and feed.fraction or 0
+    local trim = context.settings.showTrim ~= false and available and feed.trim
+    local trimFraction = trim and trim.available and trim.fraction or nil
+    return available, fraction, trimFraction
+end
+
+function output.render(context, out, index)
+    if index > context.showRows then
+        return false
     end
-    for index = 1, area.count do
-        local row = context.rows[index]
-        local channel = area.firstChannel + index - 1
-        if row.channel ~= channel then
-            row.channel = channel
-            row.feed = context.control and context.control:output(channel - 1)
+    local row = context.rows[index]
+    out.name = context.settings.showNames ~= false and row.feed and row.feed.nameReady and row.feed.name or ""
+    out.available, out.fraction, out.trimFraction = rowValues(context, row)
+    out.captionsReady = context.captionsReady
+    return true
+end
+
+local function revealRows(context)
+    setPanelState(context, context.availableCount > 0 and "normal" or "unavailable")
+    if context.releaseCaptions then
+        for index = 1, context.showRows do
+            context.rows[index].captionText = context.rows[index].pendingCaption
+        end
+        context.releaseCaptions = false
+    end
+    lvgl.show(context.rowsRoot)
+end
+
+local function finishPaint(context)
+    context.phase = "live"
+    context.liveIndex = 1
+    revealRows(context)
+end
+
+local function finishLayout(context)
+    local area = context.area
+    context.layoutNames = context.pendingNames
+    context.captionsReady = true
+    context.layoutPending = false
+    if not area.stacked then
+        local showNames = context.settings.showNames ~= false
+            and area.frame.content - context.pendingNamedWidth - area.valueWidth - area.gutters >= 64
+        local captionWidth = showNames and context.pendingNamedWidth or context.pendingPrefixWidth
+        if captionWidth ~= area.captionWidth or showNames ~= area.showNames then
+            area.showNames, area.captionWidth = showNames, captionWidth
+            area.barX = area.frame.pad + captionWidth + GUTTER
+            area.barWidth = area.frame.content - captionWidth - area.valueWidth - area.gutters
+            context.visibleReflow = not context.releaseCaptions
+            context.phase = "reflow"
+            context.mountIndex = 1
+            if context.visibleReflow then
+                context.availableCount = 0
+            end
+            return
         end
     end
-    if not layoutCaptions(context) then
+    context.phase = "paint"
+    context.paintIndex = 1
+    context.availableCount = 0
+end
+
+function output.refresh(context)
+    local area = context.area
+    local phase = context.phase
+    if phase == "mount" then
+        local index = context.mountIndex
+        if index <= area.count then
+            local row = context.rows[index]
+            if not row then
+                createRow(context, index)
+            else
+                local channel = area.firstChannel + index - 1
+                if row.channel ~= channel then
+                    row.channel = channel
+                    row.feed = context.control and context.control:output(channel - 1)
+                end
+                placeRow(context, row, index)
+                context.mountIndex = index + 1
+            end
+            return nil, true
+        end
+        if index <= #context.rows then
+            context.primitives.reconcile(context.rows[index].root, false)
+            context.mountIndex = index + 1
+            return nil, true
+        end
+        context.showRows = area.count
+        if area.count == 0 then
+            context.phase = "idle"
+            context.availableCount = 0
+            setPanelState(context, "unavailable")
+            lvgl.show(context.rowsRoot)
+            return
+        end
+        beginLayout(context)
+        return nil, true
+    elseif phase == "reflow" then
+        local index = context.mountIndex
+        if index <= area.count then
+            local row = context.rows[index]
+            placeRow(context, row, index)
+            if context.visibleReflow then
+                local available, fraction, trimFraction = rowValues(context, row)
+                paintRow(context, row, context.layoutNames[index], available, fraction, trimFraction, true)
+                if available then
+                    context.availableCount = context.availableCount + 1
+                end
+            end
+            context.mountIndex = index + 1
+            return nil, true
+        end
+        if context.visibleReflow then
+            context.visibleReflow = false
+            finishPaint(context)
+            return nil, true
+        end
+        context.phase = "paint"
+        context.paintIndex = 1
+        context.availableCount = 0
+        return nil, true
+    elseif phase == "layout" then
+        local index = context.layoutIndex
+        if index <= area.count then
+            local row, feed = context.rows[index], context.rows[index].feed
+            local name = context.settings.showNames ~= false and feed and feed.nameReady and feed.name or ""
+            context.pendingNames[index] = name
+            local prefix = "CH" .. row.channel
+            local caption = name ~= "" and prefix .. ": " .. string.sub(name, 1, 3) or prefix
+            context.pendingPrefixWidth =
+                math.max(context.pendingPrefixWidth, context.themeBuilder.measureText(area.font, prefix))
+            context.pendingNamedWidth =
+                math.max(context.pendingNamedWidth, context.themeBuilder.measureText(area.font, caption))
+            context.layoutIndex = index + 1
+            if index == area.count then
+                finishLayout(context)
+            end
+            return nil, true
+        end
+        finishLayout(context)
+        return nil, true
+    elseif phase == "paint" then
+        local index = context.paintIndex
+        if index <= area.count then
+            local row = context.rows[index]
+            output.render(context, context.rowDraw, index)
+            paintRow(
+                context,
+                row,
+                context.layoutNames[index],
+                context.rowDraw.available,
+                context.rowDraw.fraction,
+                context.rowDraw.trimFraction,
+                context.rowDraw.captionsReady
+            )
+            if context.rowDraw.available then
+                context.availableCount = context.availableCount + 1
+            end
+            context.paintIndex = index + 1
+            if index == area.count then
+                finishPaint(context)
+            end
+            return nil, true
+        end
+        finishPaint(context)
+        return nil, true
+    elseif phase == "live" then
+        local index = context.liveIndex
+        if index <= area.count then
+            local row = context.rows[index]
+            local oldAvailable = row.available
+            output.render(context, context.rowDraw, index)
+            local name = context.rowDraw.name
+            local available, fraction, trimFraction =
+                context.rowDraw.available, context.rowDraw.fraction, context.rowDraw.trimFraction
+            paintRow(
+                context,
+                row,
+                context.layoutNames and context.layoutNames[index] or "",
+                available,
+                fraction,
+                trimFraction,
+                context.captionsReady
+            )
+            if oldAvailable ~= available then
+                context.availableCount = context.availableCount + (available and 1 or -1)
+            end
+            if name ~= (context.layoutNames and context.layoutNames[index] or "") then
+                context.layoutPending = true
+            end
+            context.liveIndex = index + 1
+            if index == area.count then
+                revealRows(context)
+                if context.layoutPending then
+                    beginLayout(context)
+                else
+                    context.phase = "idle"
+                end
+            end
+            return nil, context.phase ~= "idle"
+        end
+        context.phase = "idle"
         return
     end
-    -- Mount at most one new row per callback, keeping tall panels within the
-    -- firmware instruction budget. Existing rows are reused through reflows.
-    local pending = context.nextRow or 1
-    if pending <= area.count then
-        local row = context.rows[pending] or createRow(context, pending)
-        placeRow(context, row, pending)
-        context.nextRow = pending + 1
-        context.rendered = nil
-    end
-    context.showRows = math.min((context.nextRow or 1) - 1, area.count)
-    local changed, drawn = context.primitives.changed(context, output.render)
-    if changed then
-        output.apply(context, drawn)
+    if phase == "idle" then
+        if area.count == 0 then
+            setPanelState(context, "unavailable")
+            return
+        end
+        context.phase = "live"
+        context.liveIndex = 1
+        return nil, true
     end
 end
 
@@ -379,15 +514,15 @@ function output.update(context, rect, settings)
     context.settings = settings
     context.area = output.regionsFor(context, rect)
     context.primitives.resizeHeader(context, rect, context.area.frame, settings.label)
-    for _, row in ipairs(context.rows) do
-        context.primitives.reconcile(row.root, false)
-    end
-    context.nextRow = 1
+    context.rowsRoot:set({ x = 0, y = 0, w = rect.w, h = rect.h })
+    context.primitives.reconcile(context.rowsRoot, false)
     context.layoutNames = nil
+    context.captionsReady = false
     context.showRows = 0
-    context.stateName = nil
-    context.rendered = nil
-    output.refresh(context)
+    setPanelState(context, "unavailable")
+    context.phase = "mount"
+    context.mountIndex = 1
+    context.releaseCaptions = true
 end
 
 return output

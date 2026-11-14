@@ -15,6 +15,25 @@ EVT_VIRTUAL_EXIT = 9106
 local function input(event, touch)
     definition.refresh(context, event, touch)
     fixture.lvglMock.settle()
+    for _ = 1, 100 do
+        if
+            not context.inputQueue
+            and not context.locationRequest
+            and not (context.hostTask and context.hostTask.refused == context.scheduler.callbacks)
+            and not (
+                context.menuTask
+                and (
+                    context.menuTask.ran == context.scheduler.callbacks
+                    or context.menuTask.refused == context.scheduler.callbacks
+                )
+            )
+        then
+            break
+        end
+        definition.refresh(context)
+        fixture.lvglMock.settle()
+    end
+    assert(not context.inputQueue, "queued location input did not receive a grant")
 end
 local function tap()
     local entry = fixture.entryById(context, "compass")

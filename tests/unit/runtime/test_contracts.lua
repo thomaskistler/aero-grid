@@ -543,7 +543,7 @@ local function checkLayoutExample(body, label)
         local where = label .. ": " .. placement.id
         local chunk = loadfile(root .. "/src/WIDGETS/AeroGrid/panels/" .. placement.type .. ".lua")
         assert(chunk, where .. ": no panel file for type " .. placement.type)
-        local module = chunk()
+        local module = chunk(fixture.loadModule("lib/scheduler.lua").new())
 
         local valid, moduleError = panelHost.validateModule(module, placement.type)
         assert(valid, where .. ": " .. tostring(moduleError))

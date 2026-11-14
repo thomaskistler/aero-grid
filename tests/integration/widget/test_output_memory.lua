@@ -60,6 +60,13 @@ local function checkpoint()
     assert(#panel.rows == 32, "all channel slots must be warmed before measurement")
     assert(panel.rows[1].captionText == "CH1: AIL", "named captions did not recover")
     assert(not panel.rows[1].trim.hidden, "trim associations did not recover")
+    -- Compare checkpoints with the same number of in-progress metadata scans.
+    local control = context.serviceRuntime.byId.control
+    for _, entry in ipairs(control.outputEntries) do
+        while entry.scan do
+            control:readOutput(entry)
+        end
+    end
     fixture.lvglMock.releaseClearedObjects()
     assert(fixture.lvglMock.replacedFontRefCount() == 0, "output reflow replaced firmware font callbacks")
     collectgarbage("collect")

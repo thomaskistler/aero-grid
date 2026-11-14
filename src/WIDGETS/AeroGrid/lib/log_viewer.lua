@@ -128,7 +128,10 @@ function viewer.open(host)
         h = 30,
         text = "Close",
         press = function()
-            viewer.close(host)
+            if host.logViewer == state then
+                state.closing = true
+                host.uiRequest = "log viewer"
+            end
         end,
     })
     for index = 1, math.max(1, math.floor((height - 40) / state.lineHeight)) do
@@ -175,7 +178,7 @@ function viewer.advance(host)
     end
 end
 
-function viewer.handle(host, event, touch)
+local function applyInput(host, event, touch)
     local state = host.logViewer
     if matches(event, "EVT_VIRTUAL_EXIT") or matches(event, "EVT_EXIT_BREAK") then
         viewer.close(host)
@@ -207,6 +210,35 @@ function viewer.handle(host, event, touch)
         render(state)
     end
     return true
+end
+
+--- Native and host input only records work for a later scheduler grant.
+function viewer.handle(host, event, touch)
+    local state = host.logViewer
+    if not state then
+        return false
+    end
+    local input = { event = event }
+    if touch then
+        input.touch = { x = touch.x, y = touch.y }
+    end
+    state.inputs = state.inputs or {}
+    state.inputs[#state.inputs + 1] = input
+    host.uiRequest = "log viewer"
+    return true
+end
+
+function viewer.advanceInput(host)
+    local state = host.logViewer
+    if state.closing then
+        viewer.close(host)
+        return
+    end
+    local input = table.remove(state.inputs, 1)
+    if #state.inputs == 0 then
+        state.inputs = nil
+    end
+    applyInput(host, input.event, input.touch)
 end
 
 return viewer

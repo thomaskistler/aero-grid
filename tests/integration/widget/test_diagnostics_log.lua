@@ -85,8 +85,10 @@ assert(string.find(logEntry.instance.texts[logEntry.instance.visibleLines], "eve
 EVT_TOUCH_FIRST, EVT_TOUCH_SLIDE, EVT_TOUCH_TAP, EVT_TOUCH_BREAK = 9101, 9102, 9103, 9104
 EVT_VIRTUAL_EXIT, EVT_ROT_LEFT, EVT_ROT_RIGHT = 9106, 9107, 9108
 local worst = 0
-local function input(event, touch)
-    fixture.tick(20)
+local function input(event, touch, draining)
+    if not draining then
+        fixture.tick(20)
+    end
     local instructions = 0
     debug.sethook(function()
         instructions = instructions + 100
@@ -96,10 +98,31 @@ local function input(event, touch)
     worst = math.max(worst, instructions)
     assert(instructions < 15000, "log viewer callback exceeded budget: " .. instructions)
     fixture.lvglMock.settle()
+    if not draining then
+        for _ = 1, 100 do
+            if
+                not diagnostics.inputQueue
+                and not diagnostics.logOpenRequest
+                and not (diagnostics.logViewer and (diagnostics.logViewer.inputs or diagnostics.logViewer.closing))
+                and not (diagnostics.hostTask and diagnostics.hostTask.refused == diagnostics.scheduler.callbacks)
+                and not (
+                    diagnostics.menuTask
+                    and (
+                        diagnostics.menuTask.ran == diagnostics.scheduler.callbacks
+                        or diagnostics.menuTask.refused == diagnostics.scheduler.callbacks
+                    )
+                )
+            then
+                break
+            end
+            input(nil, nil, true)
+        end
+        assert(not diagnostics.inputQueue, "queued log input did not receive a grant")
+    end
 end
 local point = { x = 360, y = 80 }
 local function finishWrapping()
-    for _ = 1, 20 do
+    for _ = 1, 40 do
         if not diagnostics.logViewer or not diagnostics.logViewer.prepareIndex then
             break
         end
@@ -171,6 +194,8 @@ tap()
 state = assert(diagnostics.logViewer)
 state.closeButton.properties.press()
 fixture.lvglMock.settle()
+assert(diagnostics.logViewer == state and state.closing, "native Close must only record intent")
+input(nil)
 assert(not diagnostics.logViewer, "native Close button must dismiss")
 tap()
 diagnostics.zone.w = 320
@@ -189,6 +214,12 @@ fixture.lvglMock.setFullScreen(false)
 input(nil)
 assert(not diagnostics.logViewer, "leaving fullscreen must dismiss")
 fixture.pump(diagnostics, 50)
+assert(
+    fixture.pumpUntil(diagnostics, function()
+        return not diagnostics.stage and not diagnostics.reloadState
+    end, 200),
+    "dashboard must finish its queued reload"
+)
 assert(not diagnostics.logOverlay, "page retirement must drop the overlay")
 assert(#diagnostics.errors == 0, table.concat(diagnostics.errors, "\n"))
 local count = log.count

@@ -69,6 +69,14 @@ equal(widgets[2].serviceRuntime, nil)
 equal(widgets[3].serviceRuntime, nil)
 
 definition.background(widgets[2])
+assert(not widgets[2].initializing, "the first hidden grant initializes the host")
+for _ = 1, 50 do
+    if owner.documentLoaded then
+        break
+    end
+    fixture.tick(20)
+    definition.background(widgets[2])
+end
 assert(owner.documentLoaded and not owner.loadError, "a hidden layout must initialize the shared model settings")
 equal(owner.document.armed, "SFv")
 equal(owner.document.sessionReset, "L52")

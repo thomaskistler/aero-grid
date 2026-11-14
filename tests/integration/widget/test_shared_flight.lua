@@ -45,7 +45,9 @@ setStickySwitch = function(index, value)
     return false
 end
 model.getLogicalSwitch = function(index)
-    assert(index == 19)
+    if index ~= 19 then
+        return nil
+    end
     return { func = 17, v1 = 0, v2 = 0, v3 = 0, ["and"] = 0, delay = 0, duration = 0 }
 end
 playTone = function(frequency)
@@ -287,10 +289,11 @@ end)
 local layoutDraft = second.editorSession
 assert(second.editorModule.add(layoutDraft, "flight-timer"))
 second.aeroMenuHandlers.modelSettings()
-assert(not second.editorUi and second.editorStash == layoutDraft)
+assert(second.editorUi and second.modelSettingsRequest, "menu entry must only record the settings request")
 untilState(second, function()
     return second.modelSettingsUi and not second.modelSettingsUi.build
 end)
+assert(not second.editorUi and second.editorStash == layoutDraft)
 changeModel(second, "minMotorPercent", 26)
 assert(owner.document.flight.minMotorPercent == 26, "confirmed model changes apply before Exit")
 definition.refresh(second, EVT_VIRTUAL_EXIT)
@@ -336,7 +339,11 @@ changeModel(second, "smartDetection", 1)
 assert(owner.document.flight.smartDetection)
 definition.refresh(second, EVT_VIRTUAL_EXIT)
 untilState(second, function()
-    return not second.modelSettingsUi and owner.session.smart and owner.session.smart.altitude.fresh
+    return not second.modelSettingsUi
+        and owner.session.smart
+        and owner.session.smart.altitude.fresh
+        and owner.view.smartStatus
+        and string.find(owner.view.smartStatus, "baro ready", 1, true)
 end)
 persisted = assert(owner.store:load(owner.filename))
 assert(persisted.revision == 8 and persisted.flight.smartDetection)

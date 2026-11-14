@@ -78,8 +78,10 @@ local function healthy()
     end
 end
 
-local function frame(event, touch)
-    fixture.tick(20)
+local function frame(event, touch, draining)
+    if not draining then
+        fixture.tick(20)
+    end
     definition.refresh(context, event, touch)
     fixture.lvglMock.settle()
     -- The mock stores dynamic LVGL properties but does not run callRefs.
@@ -104,6 +106,19 @@ local function frame(event, touch)
         end
     end
     healthy()
+    if not draining then
+        for _ = 1, 100 do
+            if
+                not context.inputQueue
+                and not context.editorTransitionRequest
+                and not (context.hostTask and context.hostTask.refused == context.scheduler.callbacks)
+            then
+                break
+            end
+            frame(nil, nil, true)
+        end
+        assert(not context.inputQueue, "queued input did not receive a grant")
+    end
 end
 
 local function untilReady(predicate, message)
@@ -121,6 +136,7 @@ local function drawerReady()
         local state = assert(context.editorUi, "editor closed unexpectedly")
         return not state.buildStage
             and not state.drawerPending
+            and not state.nativeInput
             and not state.drawerBuild
             and not state.previewPending
             and not state.previewRefresh

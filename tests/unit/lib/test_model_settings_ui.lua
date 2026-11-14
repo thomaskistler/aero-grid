@@ -162,6 +162,8 @@ do
         state.controls[key].properties.set(value)
         local attempts = control.attempts
         ui.advance(c)
+        assert(control.attempts == attempts, "normalization has its own grant")
+        ui.advance(c)
         assert(control.attempts == attempts + 1)
         assert(c.modelSettingsUi == state, "saving a field keeps the page open")
         assert(state.revision == document().revision, "each field uses the latest saved revision")
@@ -204,12 +206,15 @@ do
         for _, seconds in ipairs({ 0, 3601 }) do
             properties.set(seconds)
             ui.advance(c)
+            ui.advance(c)
             assert(document().flight[key] == 2 and properties.get() == 2)
         end
         assert(control.attempts == attemptsBefore and control.errors == errorsBefore + 2)
     end
     state.values.minFlightDuration = 2.75
     state.values.disarmDuration = 0.25
+    state.readControls.minFlightDuration()
+    state.readControls.disarmDuration()
     assert(state.controls.minFlightDuration.properties.get() == 3)
     assert(state.controls.disarmDuration.properties.get() == 1)
     local threshold = state.controls.minMotorPercent.properties
@@ -222,10 +227,12 @@ do
     assert(document().flight.minMotorPercent == 25 and threshold.get() == 25)
     assert(document().flight.minFlightDuration == 2.75 and document().flight.disarmDuration == 0.25)
     state.values.minMotorPercent = 99.99
+    state.readControls.minMotorPercent()
     assert(threshold.get() == 99)
     local thresholdAttempts, thresholdErrors = control.attempts, control.errors
     for _, percent in ipairs({ -1, 100 }) do
         threshold.set(percent)
+        ui.advance(c)
         ui.advance(c)
         assert(document().flight.minMotorPercent == 25 and threshold.get() == 99)
     end
@@ -267,19 +274,23 @@ do
     state.controls.motorSource.properties.set(107)
     assert(control.attempts == 0, "native callbacks defer filesystem work")
     ui.advance(c)
+    ui.advance(c)
     assert(state.values.motorSource == "ch3" and document().flight.motorSource == "ch3")
     assert(state.controls.motorSource.properties.get() == 103)
     assert(state.status.properties.text == control.failure and control.errors == 1)
     control.failure = nil
     state.controls.motorSource.properties.set(107)
     ui.advance(c)
+    ui.advance(c)
     assert(document().flight.motorSource == "ch7" and control.published == 1)
     assert(state.status.properties.text == "")
     state.controls.minMotorPercent.properties.set(100)
     ui.advance(c)
+    ui.advance(c)
     assert(control.attempts == 2 and state.values.minMotorPercent < 100 and control.errors == 2)
     control.exception = true
     state.controls.motorReversed.properties.set(1)
+    ui.advance(c)
     ui.advance(c)
     assert(string.find(state.status.properties.text, "filesystem exception") and control.errors == 3)
     ui.close(c)
@@ -298,6 +309,7 @@ do
     local c, state, control, document = fixture()
     state.controls.motorReversed.properties.set(1)
     state.dialog.properties.close()
+    ui.advance(c)
     ui.advance(c)
     ui.advance(c)
     mock.settle()

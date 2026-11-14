@@ -793,8 +793,12 @@ function navigation.create(parent, rect, settings, services)
     context.showCoordinates = context.coordinatesLabel ~= nil and area.showCoordinates == true
     context.showTape = context.tape ~= nil and area.showTape == true
 
-    local _, drawn = primitives.changed(context, navigation.render)
-    navigation.apply(context, drawn)
+    if services.preview then
+        context.initialRefresh = true
+    else
+        local _, drawn = primitives.changed(context, navigation.render)
+        navigation.apply(context, drawn)
+    end
     return context
 end
 

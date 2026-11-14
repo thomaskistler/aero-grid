@@ -52,6 +52,7 @@
 local telemetryService = { RUNTIME_API = 1 }
 telemetryService.__index = telemetryService
 telemetryService.updateCost = "variable"
+telemetryService.updateMinCost = 1
 
 --- Ticks of 10ms between polls. Faster than any panel's refresh so a
 --- panel never renders a reading older than its own interval.

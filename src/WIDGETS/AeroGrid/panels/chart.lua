@@ -1,11 +1,14 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
+local budget = assert(..., "chart requires scheduler budget")
+
 local chart = {
     id = "chart",
     apiVersion = 1,
     supportedSpans = { "2x1", "3x1", "4x1", "2x2", "3x2", "4x2", "3x3", "4x3", "4x4" },
     refreshInterval = 20,
     refreshCost = "variable",
+    refreshMinCost = 1,
     independentRefresh = true,
     settings = {
         { key = "label", label = "Label", type = "string", default = "" },
@@ -210,7 +213,8 @@ local function label(context, color, font)
 end
 
 local GRID_CAP = 12
-local SLOT_INSTRUCTIONS = 1600
+-- Leave 20% of each nominal slot for work outside the measured chart pipeline.
+local SLOT_INSTRUCTIONS = budget.instructionsPerSlot * 4 / 5
 local CALLBACK_RESERVE = 900
 
 local function instructionAllowance(slots)
@@ -1832,9 +1836,11 @@ end
 
 local function hiddenLagging(auto)
     local owners = auto.job and auto.hidden and rawget(auto.hidden, "columnConsumers")
+    local renderer = auto.hidden and rawget(auto.hidden, "columnRenderer")
     for index, owner in ipairs(owners or {}) do
         if
-            behind(auto.job, owner, auto.consumers[index]) > 2
+            renderer and not renderer.published[index]
+            or behind(auto.job, owner, auto.consumers[index]) > 2
             or #owner.map.dirtyList > 2 and auto.job.kind ~= "range"
         then
             return true
@@ -2278,7 +2284,7 @@ local function refreshChart(context, creating, slots)
 end
 
 function chart.refresh(context, creating, slots)
-    slots = slots or 8
+    slots = slots or budget.capacity
     if context.resetWork and not creating then
         -- Old columns and overlays are hidden before anything new is drawn.
         local used, complete = resetPresentation(context, instructionAllowance(slots))

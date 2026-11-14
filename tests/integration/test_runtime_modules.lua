@@ -13,6 +13,7 @@ end
 for _, relative in ipairs({
     "lib/dashboard_loader.lua",
     "lib/dashboard_lifecycle.lua",
+    "lib/scheduler.lua",
     "lib/editor_controller.lua",
     "lib/typography.lua",
     "lib/panel_layout.lua",
@@ -47,6 +48,9 @@ for _, relative in ipairs({
         definition = fixture.module("main.lua")
         local zone = { x = 0, y = 0, w = 480, h = 272 }
         local context = definition.create(zone, { Layout = "main", Theme = "modern-dark" }, path)
+        if context.initializing then
+            definition.refresh(context)
+        end
         assert(context.runtimeFailed and not context.stage, relative .. " should fail before staging")
         assert(string.find(table.concat(context.errors, "\n"), relative, 1, true), "missing module was not reported")
         local reported

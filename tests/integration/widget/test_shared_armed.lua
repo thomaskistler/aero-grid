@@ -43,7 +43,7 @@ write("shared-armed", document)
 write("shared-armed-copy", document)
 
 local worst, callbacks = 0, 0
-local function measured(callback, context)
+local function measured(callback, context, draining)
     fixture.lvglMock.setPropertyValidation(false)
     fixture.lvglMock.setCallCounting(false)
     fixture.lcdMock.setTextMeasurement(false)
@@ -59,10 +59,25 @@ local function measured(callback, context)
     assert(ok, message)
     worst, callbacks = math.max(worst, instructions), callbacks + 1
     assert(instructions < 15000, "model Armed callback exceeded budget: " .. instructions)
+    if not draining then
+        for _ = 1, 20 do
+            local uiTask = context.uiTasks and context.uiTasks[context.uiRequest]
+            if
+                not (context.hostTask and context.hostTask.refused == context.scheduler.callbacks)
+                and not context.optionsRequest
+                and not context.editorTransitionRequest
+                and not (context.modelSettingsUi and (context.modelSettingsUi.pending or context.modelSettingsUi.closing))
+                and not (context.uiRequest and (not uiTask or uiTask.ran ~= context.scheduler.callbacks))
+            then
+                break
+            end
+            measured(callback, context, true)
+        end
+    end
 end
 local function finish(context)
     for _ = 1, 300 do
-        if not context.stage and not context.reloadState then
+        if not context.optionsRequest and not context.stage and not context.reloadState then
             equal(#context.errors, 0, table.concat(context.errors, "\n"))
             return context
         end
@@ -94,7 +109,7 @@ equal(fixture.instanceOf(first, "counter").arm.condition, "L02")
 
 local function open(context)
     context.aeroMenuHandlers.modelSettings()
-    for _ = 1, 30 do
+    for _ = 1, 300 do
         if context.modelSettingsUi and not context.modelSettingsUi.build then
             return context.modelSettingsUi
         end

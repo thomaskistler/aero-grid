@@ -9,6 +9,7 @@ local function testPanelContract()
     local valid = { id = "demo", apiVersion = 1, create = function() end }
     assert(panelHost.validateModule(valid, "demo"))
     valid.refreshCost = "variable"
+    valid.refreshMinCost = 1
     assert(panelHost.validateModule(valid, "demo"))
     valid.refreshCost = 8
     assert(panelHost.validateModule(valid, "demo"))
@@ -27,7 +28,22 @@ local function testPanelContract()
     rejects({ id = "demo", apiVersion = 1, create = function() end, refresh = 5 }, "demo", "refresh must be a function")
     rejects({ id = "demo", apiVersion = 1, create = function() end, supportedSpans = 5 }, "demo", "supportedSpans")
     valid.refreshCost = 0
+    valid.refreshMinCost = nil
     assert(panelHost.validateModule(valid, "demo"))
+    rejects(
+        { id = "demo", apiVersion = 1, create = function() end, refreshCost = "variable" },
+        "demo",
+        "requires refreshMinCost"
+    )
+    for _, minimum in ipairs({ 0, 1.5, 9, "1" }) do
+        rejects({
+            id = "demo",
+            apiVersion = 1,
+            create = function() end,
+            refreshCost = "variable",
+            refreshMinCost = minimum,
+        }, "demo", "refreshMinCost")
+    end
     for _, cost in ipairs({ -1, 9, 1.5, "6", 0 / 0 }) do
         rejects({ id = "demo", apiVersion = 1, create = function() end, refreshCost = cost }, "demo", "refreshCost")
     end

@@ -18,15 +18,19 @@
 ---  means every frame. Telemetry rarely needs more than a few hertz, and the
 ---  host pays every panel's cost inside one instruction budget.
 ---@field refreshCost? integer|"variable" Nominal 2000-instruction slots, 0 to 8; defaults to 1.
---- An instance may override refreshCost; zero-cost refreshes run when due even without remaining slots.
+--- An instance may override refreshCost and refreshMinCost; zero-cost refreshes
+--- run when due even without remaining slots.
+---@field refreshMinCost? integer Minimum grant for a variable-cost refresh, 1 to 8.
+---@field refreshContinuation? boolean Permit a refresh to request another turn in the same callback.
+---@field independentRefresh? boolean Refreshes do not block other instances of this panel type.
 ---@field settings? AeroGridPanelSetting[]
 ---@field create fun(parent: any, rect: table, settings: table, services: table): any
 ---@field update? fun(instance: any, rect: table, settings: table)
 ---@field refresh? fun(instance: any)
 --- A numeric refresh result selects the next interval in 10ms ticks.
---- A second result of true requests consecutive turns until this update finishes.
---- Variable refreshes receive (instance, false, slots) and return consumed slots
---- as a third result.
+--- A second result of true requests another turn in the same callback.
+--- Refreshes receive (instance, false, slots) and may return consumed slots as
+--- a third result. Variable refreshes must declare a minimum and report consumption.
 ---@field background? fun(instance: any)
 ---@field resetSession? fun(instance: any, now: integer) Second result true requests another reset turn.
 ---@field event? fun(instance: any, event: any): boolean
@@ -43,6 +47,8 @@
 ---@field error? string First lifecycle failure message.
 
 local panelHost = { RUNTIME_API = 1 }
+local MAX_REFRESH_SLOTS = 8
+panelHost.SLOTS = MAX_REFRESH_SLOTS
 
 --- Host-side panel API version. Modules declaring anything else are rejected.
 panelHost.API_VERSION = 1
@@ -123,9 +129,27 @@ function panelHost.validateModule(module, typeName)
     if
         cost ~= nil
         and cost ~= "variable"
-        and (type(cost) ~= "number" or cost < 0 or cost > 8 or cost ~= math.floor(cost))
+        and (type(cost) ~= "number" or cost < 0 or cost > MAX_REFRESH_SLOTS or cost ~= math.floor(cost))
     then
-        return false, "refreshCost must be a whole number from 0 to 8 or variable"
+        return false, "refreshCost must be a whole number from 0 to " .. MAX_REFRESH_SLOTS .. " or variable"
+    end
+    local minimum = field(module, "refreshMinCost")
+    if
+        minimum ~= nil
+        and (type(minimum) ~= "number" or minimum < 1 or minimum > MAX_REFRESH_SLOTS or minimum ~= math.floor(minimum))
+    then
+        return false, "refreshMinCost must be a whole number from 1 to " .. MAX_REFRESH_SLOTS
+    end
+    if cost == "variable" and minimum == nil then
+        return false, "variable refreshCost requires refreshMinCost"
+    end
+    local continuation = field(module, "refreshContinuation")
+    if continuation ~= nil and type(continuation) ~= "boolean" then
+        return false, "refreshContinuation must be a boolean"
+    end
+    local independent = field(module, "independentRefresh")
+    if independent ~= nil and type(independent) ~= "boolean" then
+        return false, "independentRefresh must be a boolean"
     end
 
     return true
@@ -285,7 +309,7 @@ end
 ---@return string? error Set only on the call that first fails.
 ---@return any result First value returned by the callback.
 ---@return boolean? unfinished Whether this staged refresh needs another turn.
----@return integer? consumed Nominal slots consumed by a variable refresh.
+---@return integer? consumed Nominal slots consumed by the refresh.
 function panelHost.dispatch(entry, event, ...)
     if type(entry) ~= "table" or entry.failed then
         return false
