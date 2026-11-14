@@ -16,9 +16,59 @@
 ---@field error? string
 ---@field pending? boolean Set by the scheduler while a step asked for another.
 ---@field spent? integer Slots charged so far.
+---@field refused? integer Callback in which the task was denied slots or spun on free turns.
+---@field denied? integer Segment in which the task did not fit its grant.
+---@field spun? integer Callback in which the task was stopped after repeated free turns.
 
 local MAX_TASK_SLOTS = 8
 local scheduler = { RUNTIME_API = 1, SLOTS = MAX_TASK_SLOTS, INSTRUCTIONS_PER_SLOT = 2000 }
+
+--- Burns VM instructions until EdgeTX's per-callback CPU limit raises an error.
+--- Only the instruction count matters, so the body is cheap register moves
+--- spread between loop instructions. The iteration count is a safety cap for
+--- firmware that never raises the limit.
+local function burn()
+    local a, b = 0, 0
+    for _ = 1, 3000 do
+        a = b
+        b = a
+        a = b
+        b = a
+        a = b
+        b = a
+        a = b
+        b = a
+        a = b
+        b = a
+    end
+end
+
+--- Run `work` past EdgeTX's per-callback instruction limit.
+--- The limit's error is raised from inside the firmware hook, and an `xpcall`
+--- message handler runs at the point of the error with hooks still disabled, so
+--- work done there is not counted. If the burn finishes without the limit
+--- firing (simulator, debug builds, tests) nothing enforces it and `work` runs
+--- directly. `work` is called under `pcall`.
+---@param work fun()
+---@return boolean ok `work` ran and did not fail.
+---@return any result Failure message, or the burn error when the limit was not usable.
+function scheduler.cross(work)
+    local ok, result
+    local finished, failure = xpcall(burn, function(message)
+        if type(message) == "string" and string.find(message, "CPU limit", 1, true) then
+            ok, result = pcall(work)
+        end
+        return message
+    end)
+    if ok == nil then
+        if finished then
+            ok, result = pcall(work)
+        else
+            return false, failure
+        end
+    end
+    return ok, result
+end
 
 --- Slots a task is granted, zero when it does not fit, or nil when its cost is invalid.
 ---@param cost any
@@ -56,6 +106,7 @@ function scheduler.new(dependencies)
         count = 0,
         cursor = 1,
         callbacks = 0,
+        segments = 0,
     }
     assert(
         type(self.capacity) == "number" and self.capacity > 0 and self.capacity < math.huge and self.capacity % 1 == 0,
@@ -87,26 +138,36 @@ function scheduler.new(dependencies)
         end
     end
 
-    --- Run one callback's worth of work.
+    --- Run one segment of a callback's work. A fresh callback starts with
+    --- `run`; `resume` continues the same callback with new slots.
     --- Every eligible task takes a turn per pass, and a task that asks for
     --- another step runs again only after the rest of the ring has had its turn.
     --- The first task that does not fit keeps the next callback's first turn;
     --- nothing charged runs after it, though free tasks still do.
     --- Consecutive zero-charge turns are limited to at most eight per task
     --- per callback; unfinished work resumes on the next callback.
-    ---@param now integer
-    ---@param slots integer Slots available to this callback.
-    ---@param context any Passed through to `ready` and `step`.
-    ---@return integer used
-    ---@return integer requested Eligible tasks that asked for slots.
-    ---@return integer denied Eligible tasks that did not fit.
-    function self.run(now, slots, context)
+    local function execute(now, slots, context, resuming)
         local count, tasks, capacity = self.count, self.tasks, self.capacity
         if count == 0 then
             return 0, 0, 0
         end
-        local callback = self.callbacks + 1
-        self.callbacks = callback
+        local callback, previous = self.callbacks, self.segments
+        if not resuming then
+            callback = callback + 1
+            self.callbacks = callback
+        end
+        local segment = previous + 1
+        self.segments = segment
+        if resuming then
+            -- Tasks that did not fit the last segment continue with the new
+            -- allowance; tasks that spun on free turns wait for the next callback.
+            for index = 1, count do
+                local task = tasks[index]
+                if task.denied == previous and task.spun ~= callback then
+                    task.refused, task.pending = nil, true
+                end
+            end
+        end
         local start = self.cursor
         if start > count then
             start = 1
@@ -140,7 +201,7 @@ function scheduler.new(dependencies)
                         end
                         if granted == 0 and cost ~= 0 then
                             denied = denied + 1
-                            task.refused = callback
+                            task.refused, task.denied = callback, segment
                             deferred = deferred or position
                         else
                             local ok, used, again = pcall(task.step, task, now, granted, context)
@@ -172,7 +233,7 @@ function scheduler.new(dependencies)
                                 task.pending = true
                                 progressed = true
                                 if task.zeroTurns >= math.min(capacity, MAX_TASK_SLOTS) then
-                                    task.refused = callback
+                                    task.refused, task.spun = callback, callback
                                 end
                             else
                                 task.pending = false
@@ -190,6 +251,51 @@ function scheduler.new(dependencies)
         return slots - remaining, requested, denied
     end
 
+    --- Run one callback's worth of work.
+    ---@param now integer
+    ---@param slots integer Slots available to this callback.
+    ---@param context any Passed through to `ready` and `step`.
+    ---@return integer used
+    ---@return integer requested Eligible tasks that asked for slots.
+    ---@return integer denied Eligible tasks that did not fit.
+    function self.run(now, slots, context)
+        return execute(now, slots, context, false)
+    end
+
+    --- Continue the callback of the last `run` with a new allowance. Only tasks
+    --- that asked for another step or did not fit the previous segment take a
+    --- turn; a task that already ran does not run again just because it is due.
+    ---@param now integer
+    ---@param slots integer Slots available to this segment.
+    ---@param context any Passed through to `ready` and `step`.
+    ---@return integer used
+    ---@return integer requested
+    ---@return integer denied
+    function self.resume(now, slots, context)
+        return execute(now, slots, context, true)
+    end
+
+    --- Whether `resume` has work to do after the last segment.
+    ---@param now integer
+    ---@param context any Passed through to `ready`.
+    ---@return boolean
+    function self.more(now, context)
+        local callback, segment, tasks = self.callbacks, self.segments, self.tasks
+        for index = 1, self.count do
+            local task = tasks[index]
+            if
+                not task.failed
+                and task.spun ~= callback
+                and (task.pending and task.refused ~= callback or task.denied == segment)
+                and (not task.ready or task.ready(task, now, context))
+            then
+                return true
+            end
+        end
+        return false
+    end
+
+    self.cross = scheduler.cross
     return self
 end
 

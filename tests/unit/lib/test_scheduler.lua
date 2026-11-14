@@ -366,3 +366,108 @@ do
     assert(queue.run(0, 8) == 0 and fixed.failed)
     assert(fixed.error == "invalid slot cost")
 end
+
+do
+    -- A callback continues with new slots: only tasks that asked for another
+    -- step or did not fit run again, and a task that already ran is not rerun.
+    local queue, calls, task = fixture()
+    task("A", 4, 3)
+    task("B", 4)
+    task("C", 4)
+    task("D", 1)
+    local used, requested, denied = queue.run(0, 8)
+    assert(table.concat(calls, ",") == "A,B" and used == 8 and requested == 5 and denied == 3)
+    assert(queue.more(0), "pending and deferred tasks remain")
+    local before = queue.callbacks
+    used, requested, denied = queue.resume(0, 8)
+    assert(queue.callbacks == before, "a continuation stays in the same callback")
+    assert(table.concat(calls, ",") == "A,B,C,D" and used == 5 and requested == 3 and denied == 1)
+    assert(queue.more(0))
+    used = queue.resume(0, 8)
+    assert(table.concat(calls, ",") == "A,B,C,D,A,A" and used == 8)
+    assert(not queue.more(0), "nothing is left to continue")
+    assert(queue.resume(0, 8) == 0, "an idle continuation runs nothing")
+    assert(#calls == 6)
+end
+
+do
+    local queue, calls, task = fixture()
+    task("A", 1)
+    task("B", 1)
+    queue.run(0, 8)
+    assert(not queue.more(0) and queue.resume(0, 8) == 0 and #calls == 2, "ran tasks do not repeat")
+    local free = task("free", 0, 100)
+    queue.clear()
+    queue.add(free)
+    queue.run(1, 8)
+    assert(free.pending and free.refused == queue.callbacks)
+    assert(not queue.more(1), "a task stopped after repeated free turns waits for the next callback")
+end
+
+do
+    local queue = module.new()
+    queue.add({
+        name = "heavy",
+        cost = 8,
+        step = function()
+            return 8, false
+        end,
+    })
+    queue.run(0, 4)
+    assert(queue.more(0), "a deferred task continues")
+    assert(queue.resume(0, 8) == 8)
+    assert(not queue.more(0))
+end
+
+do
+    -- EdgeTX raises "CPU limit" from its count hook after 100 hooks of 200
+    -- instructions, and an xpcall message handler runs with hooks disabled.
+    local function limit()
+        local hooks = 0
+        debug.sethook(function()
+            hooks = hooks + 1
+            if hooks > 100 then
+                error("CPU limit")
+            end
+        end, "", 200)
+    end
+    local function heavy()
+        local total = 0
+        for index = 1, 60000 do
+            total = total + index % 7
+        end
+        return total
+    end
+    limit()
+    local ok, result = module.cross(function()
+        return heavy()
+    end)
+    debug.sethook()
+    assert(ok and result ~= nil, "the work ran past the limit")
+
+    local finished
+    limit()
+    ok = module.cross(function()
+        finished = heavy()
+    end)
+    debug.sethook()
+    assert(ok and finished ~= nil, "work after the limit completes without being cut off")
+
+    -- Without a limit the burn finishes and the work runs directly.
+    local ran = false
+    assert(module.cross(function()
+        ran = true
+    end))
+    assert(ran)
+
+    -- A failing job reports its error and the callback survives.
+    limit()
+    ok, result = module.cross(function()
+        error("job failed", 0)
+    end)
+    debug.sethook()
+    assert(not ok and result == "job failed")
+
+    local queue = module.new()
+    assert(queue.cross == module.cross)
+end

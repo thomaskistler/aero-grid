@@ -590,7 +590,7 @@ local function newScheduler(context, schedulerModule)
         addError(context, "lib/scheduler.lua: " .. tostring(ok and "constructor did not return a table" or scheduler))
         return nil
     end
-    for _, operation in ipairs({ "add", "clear", "run" }) do
+    for _, operation in ipairs({ "add", "clear", "run", "resume", "more", "cross" }) do
         if type(rawget(scheduler, operation)) ~= "function" then
             addError(context, "lib/scheduler.lua: missing operation " .. operation)
             return nil
@@ -1243,6 +1243,17 @@ local function enrolTasks(context, registry)
     end
 end
 
+-- Further segments of scheduler capacity a callback may run past EdgeTX's
+-- 20000-instruction limit when the model enables "Live dangerously".
+local EXTENDED_SEGMENTS = 4
+
+local function liveDangerously(context)
+    local owner = context.flightFactory and context.flightFactory.broker
+    local document = owner and owner.documentLoaded and owner.document
+    local flight = document and document.flight
+    return type(flight) == "table" and flight.liveDangerously == true and not context.liveDangerouslyFailed
+end
+
 --- Run flight, host work, services and panels in one fair queue.
 local function runTasks(context, hidden, flightTask, hostTask)
     local registry, support = context.serviceRuntime, context.servicesModule
@@ -1261,19 +1272,42 @@ local function runTasks(context, hidden, flightTask, hostTask)
     local now = getTime()
     local stats = context.schedulerStats
     local used, requested, denied = scheduler.run(now, scheduler.capacity, hidden or false)
-    scheduler.clear()
+    local available = scheduler.capacity
     context.remainingSlots = scheduler.capacity - used
+    if liveDangerously(context) and scheduler.more(now, hidden or false) then
+        -- Extra segments run past EdgeTX's per-callback limit in the same
+        -- callback; only pending and deferred work continues.
+        local ok, failure = scheduler.cross(function()
+            for _ = 1, EXTENDED_SEGMENTS do
+                if not scheduler.more(now, hidden or false) then
+                    break
+                end
+                local segmentUsed, segmentRequested, segmentDenied =
+                    scheduler.resume(now, scheduler.capacity, hidden or false)
+                used, requested, denied = used + segmentUsed, requested + segmentRequested, denied + segmentDenied
+                available = available + scheduler.capacity
+                context.remainingSlots = scheduler.capacity - segmentUsed
+            end
+        end)
+        if not ok then
+            context.liveDangerouslyFailed = true
+            addError(context, "extended callback budget: " .. tostring(failure))
+            context.schedulerFailed = true
+        end
+    end
+    scheduler.clear()
 
     if stats then
         stats.callbacks = stats.callbacks + 1
-        stats.used = stats.used + scheduler.capacity - context.remainingSlots
+        stats.used, stats.available = stats.used + used, (stats.available or 0) + available
         stats.requested, stats.denied = stats.requested + requested, stats.denied + denied
         if now - stats.started >= 100 then
-            stats.utilization = stats.used * 100 / (stats.callbacks * scheduler.capacity)
+            stats.utilization = stats.used * 100 / stats.available
             stats.deferrals = stats.requested > 0 and stats.denied * 100 / stats.requested or 0
             stats.revision = stats.revision + 1
-            stats.capacity, stats.seconds = stats.callbacks * scheduler.capacity, (now - stats.started) / 100
-            stats.started, stats.callbacks, stats.used, stats.requested, stats.denied = now, 0, 0, 0, 0
+            stats.capacity, stats.seconds = stats.available, (now - stats.started) / 100
+            stats.started, stats.callbacks, stats.used, stats.available = now, 0, 0, 0
+            stats.requested, stats.denied = 0, 0
         end
     end
     if context.schedulerFailed then
