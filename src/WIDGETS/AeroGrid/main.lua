@@ -65,6 +65,7 @@
 ---@field editorUi? table Active editor screen state.
 
 local WIDGET_PATH = "/WIDGETS/AeroGrid/"
+local MAX_TASK_SLOTS = 8
 
 local function directory(path)
     return string.sub(path, -1) == "/" and path or path .. "/"
@@ -549,6 +550,18 @@ end
 local sharedDiagnosticsLog
 local flightFactories = {}
 
+local function taskStep(action)
+    return function(task, now, slots, context)
+        local _, canContinue = action(task, now, slots, context)
+        if canContinue == nil then
+            canContinue = false
+        elseif type(canContinue) ~= "boolean" then
+            error("task continuation must be boolean", 0)
+        end
+        return slots, canContinue
+    end
+end
+
 local function newScheduler(context, schedulerModule)
     local ok, scheduler = pcall(schedulerModule.new, {
         fail = function(task, message)
@@ -645,7 +658,7 @@ local function create(zone, widgetOptions, path)
             owner = "startup background",
             hostWork = true,
             cost = 1,
-            step = function()
+            step = taskStep(function()
                 context.root = lvgl.box({ x = 0, y = 0, w = zone.w, h = zone.h })
                 context.rootBuiltFullscreen = isFullScreen()
                 context.page = lvgl.box(context.root, { x = 0, y = 0, w = zone.w, h = zone.h })
@@ -658,7 +671,7 @@ local function create(zone, widgetOptions, path)
                     color = lcd.RGB(0x101316),
                     filled = true,
                 })
-            end,
+            end),
         })
         context.scheduler.run(getTime(), context.scheduler.capacity, false)
         context.scheduler.clear()
@@ -684,11 +697,11 @@ local function create(zone, widgetOptions, path)
         owner = "initialize",
         host = context,
         hostWork = true,
-        cost = context.scheduler.capacity,
-        step = function()
+        cost = math.min(context.scheduler.capacity, MAX_TASK_SLOTS),
+        step = taskStep(function()
             context.initializing = nil
             initialize(context)
-        end,
+        end),
     }
     return context
 end
@@ -792,9 +805,6 @@ initialize = function(context)
                 isFullScreen = isFullScreen,
                 readThemeDefinition = readThemeDefinition,
             }, { "beginLoad", "advanceLoad", "panelRect", "buildPanel" })
-        end
-        if context.panelHost then
-            context.panelHost.SLOTS = context.scheduler.capacity
         end
         if context.dashboardLoader then
             context.dashboardLifecycle = bindHost(lifecycle, "lib/dashboard_lifecycle.lua", {
@@ -1054,8 +1064,11 @@ local function serviceStep(task, now, slots)
     if not task.host.servicesModule.consumption(used, slots) then
         error("update consumption must be whole slots within the grant", 0)
     end
+    if again ~= nil and type(again) ~= "boolean" then
+        error("update continuation must be boolean", 0)
+    end
     instance.revision = instance.revision + 1
-    return used, again
+    return used, again == true
 end
 
 local function refreshReady(task, _, hidden)
@@ -1080,6 +1093,10 @@ local function panelStep(task, now, granted)
         ok, message = false, "refresh consumption must be whole slots within the grant"
         entry.failed, entry.error = true, message
     end
+    if ok and unfinished ~= nil and type(unfinished) ~= "boolean" then
+        ok, message = false, "refresh continuation must be boolean"
+        entry.failed, entry.error = true, message
+    end
     if eventName == "refresh" then
         entry.nextRefresh = now + entry.interval
         if ok and unfinished and not rawget(entry.module, "independentRefresh") then
@@ -1091,7 +1108,11 @@ local function panelStep(task, now, granted)
     if not ok then
         error(message or "panel failed", 0)
     end
-    return used, eventName == "refresh" and unfinished and rawget(entry.module, "refreshContinuation") == true
+    local canContinue = unfinished == true
+    if eventName == "refresh" then
+        canContinue = canContinue and rawget(entry.module, "refreshContinuation") == true
+    end
+    return used, canContinue
 end
 
 --- Enrol the live services and panels, in that order, for one run.
@@ -1117,7 +1138,8 @@ local function enrolTasks(context, registry)
             }
             instance.task = task
         end
-        task.cost, task.due, task.failed = instance.updateCost, instance.due, instance.failed
+        task.cost, task.minCost, task.due, task.failed =
+            instance.updateCost, instance.updateMinCost, instance.due, instance.failed
         scheduler.add(task)
     end
     local panels = context.panels
@@ -1138,6 +1160,7 @@ local function enrolTasks(context, registry)
                 entry.refreshTask = task
             end
             task.cost = rawget(entry.instance, "refreshCost") or rawget(module, "refreshCost") or 1
+            task.minCost = rawget(entry.instance, "refreshMinCost") or rawget(module, "refreshMinCost")
             task.due, task.failed = entry.nextRefresh or 0, entry.failed
             scheduler.add(task)
         end
@@ -1225,7 +1248,7 @@ local function pumpFlight(task, now, granted)
     end
     if filename ~= owner.filename then
         owner:reset(filename)
-        task.cost = context.scheduler.capacity
+        task.cost = math.min(context.scheduler.capacity, MAX_TASK_SLOTS)
         context.scheduledServices, context.scheduledPanels = false, false
         if granted < context.scheduler.capacity then
             return nil, true
@@ -2168,7 +2191,7 @@ local function loadCost(context)
     elseif stage == "services" or stage == "theme-validate" then
         return math.min(4, context.scheduler.capacity)
     end
-    return context.scheduler.capacity
+    return math.min(context.scheduler.capacity, MAX_TASK_SLOTS)
 end
 
 local function lifecycleStep(task)
@@ -2381,11 +2404,11 @@ local function runCallback(context, hidden, widgetEvent, touchState)
                 flightWork = true,
                 broker = owner,
                 host = context,
-                step = pumpFlight,
+                step = taskStep(pumpFlight),
             }
             context.flightTask = flightTask
         end
-        flightTask.cost = owner.documentLoaded and 1 or scheduler.capacity
+        flightTask.cost = owner.documentLoaded and 1 or math.min(scheduler.capacity, MAX_TASK_SLOTS)
     end
     local hostTask
     if hostNeeded then
@@ -2397,7 +2420,7 @@ local function runCallback(context, hidden, widgetEvent, touchState)
                     owner = "native options",
                     host = context,
                     hostWork = true,
-                    step = optionsStep,
+                    step = taskStep(optionsStep),
                 }
                 context.optionsTask = hostTask
             end
@@ -2414,7 +2437,7 @@ local function runCallback(context, hidden, widgetEvent, touchState)
                     owner = "session reset",
                     host = context,
                     hostWork = true,
-                    step = sessionResetStep,
+                    step = taskStep(sessionResetStep),
                     ready = sessionResetReady,
                 }
                 context.sessionResetTask = hostTask
@@ -2428,7 +2451,7 @@ local function runCallback(context, hidden, widgetEvent, touchState)
                         owner = "menu",
                         host = context,
                         hostWork = true,
-                        step = menuStep,
+                        step = taskStep(menuStep),
                         ready = menuReady,
                     }
                     context.menuTask = hostTask
@@ -2442,7 +2465,7 @@ local function runCallback(context, hidden, widgetEvent, touchState)
                         owner = "input",
                         host = context,
                         hostWork = true,
-                        step = inputStep,
+                        step = taskStep(inputStep),
                         ready = inputReady,
                     }
                     context.inputTask = task
@@ -2459,7 +2482,7 @@ local function runCallback(context, hidden, widgetEvent, touchState)
                         owner = "model settings open",
                         host = context,
                         hostWork = true,
-                        step = modelSettingsOpenStep,
+                        step = taskStep(modelSettingsOpenStep),
                         ready = modelSettingsOpenReady,
                     }
                     context.modelSettingsOpenTask = task
@@ -2480,7 +2503,7 @@ local function runCallback(context, hidden, widgetEvent, touchState)
                         owner = "editor transition",
                         host = context,
                         hostWork = true,
-                        step = editorTransitionStep,
+                        step = taskStep(editorTransitionStep),
                         ready = editorTransitionReady,
                     }
                     context.editorTransitionTask = task
@@ -2512,7 +2535,7 @@ local function runCallback(context, hidden, widgetEvent, touchState)
                             owner = "log open",
                             host = context,
                             hostWork = true,
-                            step = logOpenStep,
+                            step = taskStep(logOpenStep),
                         }
                         context.logOpenTask = hostTask
                     end
@@ -2534,7 +2557,7 @@ local function runCallback(context, hidden, widgetEvent, touchState)
                             owner = "location details",
                             host = context,
                             hostWork = true,
-                            step = locationStep,
+                            step = taskStep(locationStep),
                         }
                         context.locationTask = hostTask
                     end
@@ -2555,7 +2578,7 @@ local function runCallback(context, hidden, widgetEvent, touchState)
                         kind = kind,
                         host = context,
                         hostWork = true,
-                        step = lifecycleStep,
+                        step = taskStep(lifecycleStep),
                         ready = lifecycleReady,
                     }
                     tasks[kind] = task
@@ -2583,7 +2606,7 @@ local function runCallback(context, hidden, widgetEvent, touchState)
                         ui = ui,
                         host = context,
                         hostWork = true,
-                        step = uiStep,
+                        step = taskStep(uiStep),
                         ready = uiReady,
                     }
                     tasks[kind] = task
@@ -2603,17 +2626,17 @@ local function runCallback(context, hidden, widgetEvent, touchState)
                     owner = "host",
                     host = context,
                     hostWork = true,
-                    step = advanceHost,
+                    step = taskStep(advanceHost),
                 }
                 context.hostTask = hostTask
             end
         end
-        hostTask.cost = scheduler.capacity
+        hostTask.cost = math.min(scheduler.capacity, MAX_TASK_SLOTS)
         if context.lifecycleTasks and hostTask == context.lifecycleTasks.load then
             hostTask.cost = loadCost(context)
         elseif context.uiTasks and hostTask == context.uiTasks["model settings"] then
             if context.modelSettingsUiModule.cost then
-                hostTask.cost = context.modelSettingsUiModule.cost(context)
+                hostTask.cost = math.min(context.modelSettingsUiModule.cost(context), MAX_TASK_SLOTS)
             end
         elseif context.uiTasks and hostTask == context.uiTasks.editor then
             local state = context.editorUi

@@ -101,9 +101,10 @@ local function testPollingContinuationIsFair()
     queue.add(control)
     queue.add({
         cost = 1,
-        step = function(self)
+        step = function(self, _, slots)
             turns[#turns + 1] = "other"
             self.due = 100
+            return slots, false
         end,
     })
     assert(queue.run(0, 2) == 2 and control.pending)

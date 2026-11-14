@@ -6,9 +6,9 @@
 ---
 ---@class AeroGridTask
 ---@field name string Label used in error reports.
----@field step fun(task: AeroGridTask, now: integer, slots: integer, context: any): integer?, boolean? Returns slots used and whether more work is ready now.
----@field cost? integer|"variable" Slots one step needs, 0 to capacity. Defaults to 1. Read before every step.
---- Fixed-cost steps may return fewer slots than granted, or nil to charge the full grant.
+---@field step fun(task: AeroGridTask, now: integer, slots: integer, context: any): integer, boolean Returns slots used and whether more work is ready now.
+---@field cost? integer|"variable" Slots one step needs, 0 to 8. Defaults to 1. Read before every step.
+---@field minCost? integer Minimum grant for a variable-cost step, 1 to 8.
 ---@field due? integer Tick from which the task is eligible. Ignored while pending.
 ---@field ready? fun(task: AeroGridTask, now: integer, context: any): boolean Extra gate.
 ---@field verb? string Names the work in the consumption error message.
@@ -17,18 +17,25 @@
 ---@field pending? boolean Set by the scheduler while a step asked for another.
 ---@field spent? integer Slots charged so far.
 
-local scheduler = { RUNTIME_API = 1, SLOTS = 8, INSTRUCTIONS_PER_SLOT = 2000 }
+local MAX_TASK_SLOTS = 8
+local scheduler = { RUNTIME_API = 1, SLOTS = MAX_TASK_SLOTS, INSTRUCTIONS_PER_SLOT = 2000 }
 
---- Slots a task is granted, or nil when its cost is not valid.
+--- Slots a task is granted, zero when it does not fit, or nil when its cost is invalid.
 ---@param cost any
+---@param minCost any
 ---@param allowance integer Slots still available to charged work.
----@param capacity integer
 ---@return integer?
-local function grant(cost, allowance, capacity)
+local function grant(cost, minCost, allowance)
     if cost == "variable" then
-        return allowance
+        if type(minCost) ~= "number" or minCost < 1 or minCost > MAX_TASK_SLOTS or minCost % 1 ~= 0 then
+            return nil
+        end
+        if allowance < minCost then
+            return 0
+        end
+        return math.min(allowance, MAX_TASK_SLOTS)
     end
-    if type(cost) ~= "number" or cost < 0 or cost > capacity or cost % 1 ~= 0 then
+    if type(cost) ~= "number" or cost < 0 or cost > MAX_TASK_SLOTS or cost % 1 ~= 0 then
         return nil
     end
     return cost <= allowance and cost or 0
@@ -85,8 +92,8 @@ function scheduler.new(dependencies)
     --- another step runs again only after the rest of the ring has had its turn.
     --- The first task that does not fit keeps the next callback's first turn;
     --- nothing charged runs after it, though free tasks still do.
-    --- Consecutive zero-charge turns are limited to capacity per task per
-    --- callback; unfinished work resumes on the next callback.
+    --- Consecutive zero-charge turns are limited to at most eight per task
+    --- per callback; unfinished work resumes on the next callback.
     ---@param now integer
     ---@param slots integer Slots available to this callback.
     ---@param context any Passed through to `ready` and `step`.
@@ -124,9 +131,9 @@ function scheduler.new(dependencies)
                     if cost == nil then
                         cost = 1
                     end
-                    local granted = grant(cost, deferred and 0 or remaining, capacity)
+                    local granted = grant(cost, task.minCost, deferred and 0 or remaining)
                     if granted == nil then
-                        failTask(task, "invalid slot cost")
+                        failTask(task, cost == "variable" and "invalid minimum slot cost" or "invalid slot cost")
                     else
                         if cost ~= 0 then
                             requested = requested + 1
@@ -140,16 +147,18 @@ function scheduler.new(dependencies)
                             local spent = granted
                             if not ok then
                                 failTask(task, tostring(used))
-                            elseif used ~= nil or cost == "variable" then
-                                if type(used) == "number" and used >= 0 and used <= granted and used % 1 == 0 then
-                                    spent = used
-                                else
+                            elseif type(used) == "number" and used >= 0 and used <= granted and used % 1 == 0 then
+                                spent = used
+                                if type(again) ~= "boolean" then
                                     ok = false
-                                    failTask(
-                                        task,
-                                        (task.verb or "step") .. " consumption must be whole slots within the grant"
-                                    )
+                                    failTask(task, (task.verb or "step") .. " continuation must be boolean")
                                 end
+                            else
+                                ok = false
+                                failTask(
+                                    task,
+                                    (task.verb or "step") .. " consumption must be whole slots within the grant"
+                                )
                             end
                             if spent == 0 then
                                 task.zeroTurns = task.ran == callback and (task.zeroTurns or 0) + 1 or 1
@@ -162,7 +171,7 @@ function scheduler.new(dependencies)
                             if ok and again then
                                 task.pending = true
                                 progressed = true
-                                if task.zeroTurns >= capacity then
+                                if task.zeroTurns >= math.min(capacity, MAX_TASK_SLOTS) then
                                     task.refused = callback
                                 end
                             else

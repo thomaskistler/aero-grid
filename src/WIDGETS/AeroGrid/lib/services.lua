@@ -23,20 +23,26 @@
 ---@field revision integer Incremented on every completed update.
 ---@field count integer Number of live subscriptions.
 ---@field failed? boolean Set after an update raises, which retires the service.
----@field updateCost? integer|"variable" Nominal 2000-instruction slots; defaults to 1.
+---@field updateCost? integer|"variable" Nominal 2000-instruction slots, 0 to 8; defaults to 1.
+---@field updateMinCost? integer Minimum grant for a variable-cost update, 1 to 8.
 ---@field update fun(self: AeroGridServiceInstance, now: integer, slots: integer): integer?, boolean? Slots used and whether more work is ready.
 ---@field resetSession? fun(self: AeroGridServiceInstance, now: integer, index: integer): integer? Next reset item, or nil when finished.
 
 local services = { RUNTIME_API = 1 }
-services.SLOTS = 8
+local MAX_TASK_SLOTS = 8
+services.SLOTS = MAX_TASK_SLOTS
 services.INSTRUCTIONS_PER_SLOT = 2000
 
-function services.grant(cost, remaining)
+function services.grant(cost, remaining, minimum)
     if cost == "variable" then
-        return remaining
+        assert(
+            type(minimum) == "number" and minimum >= 1 and minimum <= MAX_TASK_SLOTS and minimum % 1 == 0,
+            "invalid minimum slot cost"
+        )
+        return remaining >= minimum and math.min(remaining, MAX_TASK_SLOTS) or 0
     end
     cost = cost or 1
-    assert(type(cost) == "number" and cost >= 0 and cost <= services.SLOTS and cost % 1 == 0, "invalid slot cost")
+    assert(type(cost) == "number" and cost >= 0 and cost <= MAX_TASK_SLOTS and cost % 1 == 0, "invalid slot cost")
     return cost <= remaining and cost or 0
 end
 
@@ -163,7 +169,7 @@ function services.dispatch(runtime, instance, now, remaining)
     if instance.failed or instance.count == 0 or now < instance.due then
         return nil
     end
-    local granted = services.grant(instance.updateCost, remaining)
+    local granted = services.grant(instance.updateCost, remaining, instance.updateMinCost)
     if granted == 0 and instance.updateCost ~= 0 then
         return nil, nil, 0
     end

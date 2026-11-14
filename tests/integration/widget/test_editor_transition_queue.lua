@@ -31,8 +31,9 @@ local broker = { documentLoaded = true, filename = context.aerogridMenu.modelFil
 context.flightFactory = { broker = broker }
 context.flightTask = {
     broker = broker,
-    step = function()
+    step = function(_, _, slots)
         flightSteps = flightSteps + 1
+        return slots, false
     end,
 }
 context.aeroMenuHandlers.uiSetup()

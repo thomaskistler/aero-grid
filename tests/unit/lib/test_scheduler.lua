@@ -92,6 +92,7 @@ end
 do
     local queue, calls, task = fixture()
     local variable = task("variable", "variable", 2)
+    variable.minCost = 1
     variable.step = function(self)
         calls[#calls + 1] = self.name
         self.turns = self.turns + 1
@@ -109,7 +110,7 @@ do
     local reserved = task("reserved", 4)
     reserved.step = function()
         calls[#calls + 1] = "reserved"
-        return 1
+        return 1, false
     end
     task("other", 3)
     local used, requested, denied = queue.run(0, 4)
@@ -122,7 +123,7 @@ do
     local reserved = task("reserved", 2)
     reserved.step = function()
         calls[#calls + 1] = "reserved"
-        return 0
+        return 0, false
     end
     task("other", 2)
     assert(queue.run(0, 2) == 2)
@@ -147,11 +148,11 @@ end
 do
     local queue, calls, task = fixture()
     local a = task("A", 2, 2)
-    a.step = function(self)
+    a.step = function(self, _, slots)
         calls[#calls + 1] = self.name
         self.turns = self.turns + 1
         self.cost = 3
-        return nil, self.turns == 1
+        return slots, self.turns == 1
     end
     assert(queue.run(0, 5) == 5)
     assert(table.concat(calls, ",") == "A,A" and a.spent == 5)
@@ -165,6 +166,7 @@ do
         end,
     })
     local variable = task("variable", "variable", 2)
+    variable.minCost = 1
     variable.step = function(self, _, slots)
         calls[#calls + 1] = self.name .. ":" .. slots
         self.turns = self.turns + 1
@@ -199,6 +201,7 @@ end
 for _, invalid in ipairs({ false, -1, 1.5, 9, math.huge, 0 / 0, "1" }) do
     local queue, _, task = fixture()
     local variable = task("invalid", "variable")
+    variable.minCost = 1
     variable.step = function()
         return invalid, true
     end
@@ -221,8 +224,16 @@ end
 do
     local queue, _, task = fixture()
     local variable = task("missing", "variable")
+    variable.minCost = 1
     variable.step = function() end
     assert(queue.run(0, 8) == 8 and variable.failed)
+end
+
+do
+    local queue, _, task = fixture()
+    local variable = task("missing minimum", "variable")
+    assert(queue.run(0, 8) == 0 and variable.failed)
+    assert(variable.error == "invalid minimum slot cost")
 end
 
 for _, invalid in ipairs({ false, -1, 1.5, 9, math.huge, 0 / 0, "1" }) do
@@ -261,15 +272,97 @@ end
 
 do
     local queue = module.new({ capacity = 12 })
-    assert(queue.instructionsPerSlot == 2000)
-    local instance = { name = "large", cost = 12, step = function() end }
-    queue.add(instance)
-    assert(queue.run(0, 12) == 12)
+    local granted
+    queue.add({
+        name = "bounded",
+        cost = "variable",
+        minCost = 3,
+        step = function(_, _, slots)
+            granted = slots
+            return slots, false
+        end,
+    })
+    assert(queue.run(0, 12) == 8 and granted == 8, "one variable turn must never exceed eight slots")
     queue.clear()
     assert(queue.count == 0 and next(queue.tasks) == nil)
     local used, requested, denied = queue.run(1, 12)
     assert(used == 0 and requested == 0 and denied == 0)
     queue.cursor = 20
-    queue.add({ name = "replacement", step = function() end })
+    queue.add({
+        name = "replacement",
+        step = function(_, _, slots)
+            return slots, false
+        end,
+    })
     assert(queue.run(2, 12) == 1 and queue.cursor == 1)
+end
+
+do
+    local queue = module.new({ capacity = 12 })
+    local calls = {}
+    queue.add({
+        name = "small",
+        cost = 2,
+        step = function(_, _, slots)
+            calls[#calls + 1] = "small:" .. slots
+            return slots, false
+        end,
+    })
+    queue.add({
+        name = "minimum",
+        cost = "variable",
+        minCost = 5,
+        step = function(_, _, slots)
+            calls[#calls + 1] = "minimum:" .. slots
+            return slots, false
+        end,
+    })
+    local used, requested, denied = queue.run(0, 4)
+    assert(used == 2 and requested == 2 and denied == 1)
+    assert(table.concat(calls, ",") == "small:2", "variable tasks must not run below their minimum")
+end
+
+for _, minimum in ipairs({ false, 0, 1.5, 9, math.huge, 0 / 0, "1" }) do
+    local queue, _, task = fixture()
+    local variable = task("invalid minimum", "variable")
+    variable.minCost = minimum
+    assert(queue.run(0, 8) == 0)
+    assert(variable.failed and variable.error == "invalid minimum slot cost")
+end
+
+do
+    local queue, _, task = fixture()
+    local fixed = task("missing usage", 2)
+    fixed.step = function()
+        return nil, false
+    end
+    assert(queue.run(0, 8) == 2 and fixed.failed)
+    assert(fixed.error == "step consumption must be whole slots within the grant")
+end
+
+do
+    local queue, _, task = fixture()
+    local fixed = task("missing continuation", 2)
+    fixed.step = function(_, _, slots)
+        return slots
+    end
+    assert(queue.run(0, 8) == 2 and fixed.failed)
+    assert(fixed.error == "step continuation must be boolean")
+end
+
+for _, continuation in ipairs({ 1, "yes" }) do
+    local queue, _, task = fixture()
+    local fixed = task("invalid continuation", 2)
+    fixed.step = function(_, _, slots)
+        return slots, continuation
+    end
+    assert(queue.run(0, 8) == 2 and fixed.failed)
+    assert(fixed.error == "step continuation must be boolean")
+end
+
+do
+    local queue, _, task = fixture()
+    local fixed = task("too large", 9)
+    assert(queue.run(0, 8) == 0 and fixed.failed)
+    assert(fixed.error == "invalid slot cost")
 end

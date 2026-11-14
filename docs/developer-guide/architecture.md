@@ -97,14 +97,17 @@ Subscriptions to the same source share polling, and an unsubscribed service
 does not consume scheduled work.
 
 Due services and panels share nominal slots in round-robin order. The default
-is eight 2,000-instruction slots, configured by `SLOTS` and
-`INSTRUCTIONS_PER_SLOT` in `lib/scheduler.lua`. Ordinary tasks default to one slot. Variable tasks receive the remaining
-slots and report consumption, leaving unused slots available to later tasks.
-History and control declare zero slots: they retain their due intervals and
-run at most once per callback, even when charged work exhausts the allowance.
-Flight polling requests one slot from the same queue; model document loading
-reserves the full capacity. Staged host work also reserves the full capacity
-until its individual operations are split. Slot costs are
+callback capacity is eight 2,000-instruction slots, configured by `SLOTS` and
+`INSTRUCTIONS_PER_SLOT` in `lib/scheduler.lua`. Every task turn is capped at
+eight slots, even if a callback has a larger capacity. Fixed tasks reserve
+their declared cost; variable tasks declare a minimum and receive between that
+minimum and eight slots when enough remain. Each task turn reports its charged
+slots and whether it requests another turn in the same callback. Panels opt in
+to same-callback refresh continuation with `refreshContinuation`; other staged
+refreshes resume on their next due callback. Unused slots are released to later
+tasks, and pending work remains subject to the scheduler's fair rotation. A
+task's `due` time controls its next eligibility independently of same-callback
+continuation. Slot costs are
 initial approximations, not live instruction measurements; the whole callback
 has a nominal target below 16,000 instructions; regression tests enforce the
 stricter 15,000-instruction ceiling. Callback/scheduler overhead is not separately charged.

@@ -13,8 +13,9 @@ context.flightTask = {
     name = "flight",
     owner = "flight",
     broker = broker,
-    step = function()
+    step = function(_, _, slots)
         flights = flights + 1
+        return slots, false
     end,
 }
 local function tick()

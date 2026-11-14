@@ -657,6 +657,7 @@ for index = 1, 2 do
     local entry = scheduled("independent-" .. index, "chart")
     entry.module.independentRefresh = chart.independentRefresh
     entry.module.refreshCost = "variable"
+    entry.module.refreshMinCost = 1
     entry.module.refresh = function(_, _, grant)
         progressing[index] = (progressing[index] or 0) + 1
         return 1, true, grant

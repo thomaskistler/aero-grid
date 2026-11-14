@@ -77,8 +77,9 @@ local broker, flightSteps = { documentLoaded = true, filename = context.aerogrid
 context.flightFactory = { broker = broker }
 context.flightTask = {
     broker = broker,
-    step = function()
+    step = function(_, _, slots)
         flightSteps = flightSteps + 1
+        return slots, false
     end,
 }
 context.scheduler.cursor = 1

@@ -17,8 +17,9 @@ local broker = context.flightFactory.broker
 local flights = 0
 context.flightTask = {
     broker = broker,
-    step = function()
+    step = function(_, _, slots)
         flights = flights + 1
+        return slots, false
     end,
 }
 local function untilState(predicate, hidden)

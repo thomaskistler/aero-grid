@@ -94,6 +94,7 @@ local function run()
         count = 1,
         revision = 0,
         updateCost = "variable",
+        updateMinCost = 1,
         update = function(_, _, slots)
             granted = slots
             return 2
@@ -164,6 +165,8 @@ local function run()
     id, message, used = services.dispatch(runtime, task, 60, 0)
     assert(id == "variable" and message and used == 0 and task.failed)
     assert(services.grant(0, 0) == 0)
+    assert(services.grant("variable", 12, 3) == 8)
+    assert(services.grant("variable", 2, 3) == 0)
 end
 
 run()

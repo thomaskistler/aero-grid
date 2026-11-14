@@ -50,8 +50,9 @@ context.editorController.advanceEditor = function()
 end
 context.flightTask = {
     broker = broker,
-    step = function()
+    step = function(_, _, slots)
         flightSteps = flightSteps + 1
+        return slots, false
     end,
 }
 context.aeroMenuHandlers.modelSettings()

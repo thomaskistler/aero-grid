@@ -564,7 +564,6 @@ function module.new(dependencies)
                 end
 
                 context.servicesModule = support
-                support.SLOTS = context.scheduler.capacity
                 support.INSTRUCTIONS_PER_SLOT = context.scheduler.instructionsPerSlot
                 context.serviceRuntime = support.runtime(support.environment())
                 context.serviceRuntime.host = context

@@ -12,8 +12,9 @@ local broker = context.flightFactory.broker
 local flights, calls, seen = 0, 0, {}
 context.flightTask = {
     broker = broker,
-    step = function()
+    step = function(_, _, slots)
         flights = flights + 1
+        return slots, false
     end,
 }
 context.editorController.editorEntryHit = function(_, value, _, held)

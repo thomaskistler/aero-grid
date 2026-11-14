@@ -8,6 +8,7 @@ local chart = {
     supportedSpans = { "2x1", "3x1", "4x1", "2x2", "3x2", "4x2", "3x3", "4x3", "4x4" },
     refreshInterval = 20,
     refreshCost = "variable",
+    refreshMinCost = 1,
     independentRefresh = true,
     settings = {
         { key = "label", label = "Label", type = "string", default = "" },

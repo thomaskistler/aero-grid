@@ -22,6 +22,7 @@ local telemetry = {
     count = 1,
     revision = 0,
     updateCost = "variable",
+    updateMinCost = 1,
     update = function(_, _, slots)
         record("telemetry", slots)
         return slots
@@ -45,6 +46,7 @@ local function panel(id, cost, used)
         module = {
             id = id,
             refreshCost = cost,
+            refreshMinCost = cost == "variable" and 1 or nil,
             refresh = function(_, creating, slots)
                 assert(creating == false)
                 record(id, slots)
@@ -260,3 +262,22 @@ local inactive = {
 support.register(context.serviceRuntime, inactive, 0)
 definition.refresh(context)
 assert(stats.revision == 5 and stats.utilization == 0 and stats.deferrals == 0)
+
+context.serviceRuntime = support.runtime({})
+local backgroundTurns = 0
+context.panels = {
+    {
+        placement = { id = "background" },
+        module = {
+            background = function()
+                backgroundTurns = backgroundTurns + 1
+                return nil, backgroundTurns == 1, 0
+            end,
+        },
+        instance = {},
+    },
+}
+fixture.tick(10)
+definition.background(context)
+assert(backgroundTurns == 2, "background continuation must resume in the same callback")
+assert(context.panels[1].backgroundTask.spent == 0)

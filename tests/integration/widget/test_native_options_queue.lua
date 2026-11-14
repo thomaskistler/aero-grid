@@ -27,8 +27,9 @@ context.editorController.restorePreview = function()
 end
 context.flightTask = {
     broker = broker,
-    step = function()
+    step = function(_, _, slots)
         flightSteps = flightSteps + 1
+        return slots, false
     end,
 }
 local pending = member.pending

@@ -21,12 +21,12 @@ fixture.pump(context, 6)
 loadScript = originalLoadScript
 local definition = fixture.module("main.lua")
 assert(context.scheduler.capacity == 12)
-assert(context.servicesModule.SLOTS == 12 and context.servicesModule.INSTRUCTIONS_PER_SLOT == 2000)
-assert(context.panelHost.SLOTS == 12)
-assert(context.servicesModule.grant(12, 12) == 12)
-assert(not pcall(context.servicesModule.grant, 13, 12))
+assert(context.servicesModule.SLOTS == 8 and context.servicesModule.INSTRUCTIONS_PER_SLOT == 2000)
+assert(context.panelHost.SLOTS == 8)
+assert(context.servicesModule.grant(8, 12) == 8)
+assert(not pcall(context.servicesModule.grant, 9, 12))
 local panel = { id = "test", apiVersion = 1, create = function() end, refreshCost = 12 }
-assert(context.panelHost.validateModule(panel, "test"))
+assert(not context.panelHost.validateModule(panel, "test"))
 panel.refreshCost = 13
 assert(not context.panelHost.validateModule(panel, "test"))
 
@@ -39,6 +39,7 @@ context.servicesModule.register(context.serviceRuntime, {
     interval = 0,
     revision = 0,
     updateCost = "variable",
+    updateMinCost = 1,
     update = function(_, _, slots)
         granted = slots
         return slots
@@ -54,8 +55,8 @@ context.schedulerStats = {
 }
 fixture.tick(100)
 definition.refresh(context)
-assert(granted == 12 and context.remainingSlots == 0)
-assert(context.schedulerStats.capacity == 12 and context.schedulerStats.utilization == 100)
+assert(granted == 8 and context.remainingSlots == 4)
+assert(context.schedulerStats.capacity == 12 and context.schedulerStats.utilization < 100)
 fixture.tick(10)
 definition.background(context)
-assert(granted == 12 and context.remainingSlots == 0, "hidden callbacks use the same capacity")
+assert(granted == 8 and context.remainingSlots == 4, "a task turn stays capped at eight slots in hidden callbacks")

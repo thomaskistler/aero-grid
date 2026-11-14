@@ -3,9 +3,9 @@
 local output = {
     id = "output",
     apiVersion = 1,
+    refreshContinuation = true,
     supportedSpans = { "any" },
     refreshInterval = 10,
-    refreshContinuation = true,
     independentRefresh = true,
     settings = {
         { key = "label", label = "Label", type = "string", default = "CHANNEL OUTPUT" },

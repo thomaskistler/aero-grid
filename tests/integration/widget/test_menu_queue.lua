@@ -20,8 +20,9 @@ local broker = { documentLoaded = true, filename = menu.modelFilename }
 context.flightFactory = { broker = broker }
 context.flightTask = {
     broker = broker,
-    step = function()
+    step = function(_, _, slots)
         flightSteps = flightSteps + 1
+        return slots, false
     end,
 }
 menu.pending = true
