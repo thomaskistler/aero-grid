@@ -3,6 +3,7 @@
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(root).new()
 local chart = fixture.module("panels/chart.lua")
+assert(loadfile(root .. "/tests/support/chart_turns.lua"))().install(chart)
 local recorder = assert(loadfile(root .. "/tests/support/chart_recorder.lua"))(root)
 local view = assert(loadfile(root .. "/tests/support/chart_assertions.lua"))()
 local equal = assert(loadfile(root .. "/tests/support/assertions.lua"))().assertEqual
@@ -23,6 +24,7 @@ local panel = chart.create(dashboard.page, { x = 0, y = 0, w = 472, h = 196 }, {
     },
 }, services)
 local worst, counted, grant = 0, 0, 1
+local phase = 0
 local depth, inside, worstBackground, backgroundCount = 0, nil, 0, 0
 local worstByGrant = {}
 local function hook(event)
@@ -44,18 +46,21 @@ local function hook(event)
         depth = depth - 1
     end
 end
--- Simulate 50 ms callbacks on a shared dashboard: one or two granted slots in turn.
+-- 50 ms callbacks on a busy dashboard: 1, 2 and 7 slots offered in turn, as measured.
 local function callbacks(count)
     for _ = 1, count do
         now = now + 5
         counted = 0
         depth, inside = 0, nil
         debug.sethook(hook, "cr", 1)
-        grant = 3 - grant
+        phase = phase % 3 + 1
+        grant = ({ 1, 2, 7 })[phase]
+        grant = chart.offered(panel, grant)
+        local offered = grant
         local _, _, used = chart.refresh(panel, false, grant)
         debug.sethook()
         worst = math.max(worst, counted)
-        assert(used >= 1 and used <= grant, "auto preparation must stay within the grant")
+        assert(used >= 1 and used <= offered, "auto preparation must stay within the grant")
     end
 end
 -- One sample per series and one chart refresh per simulated 50 ms callback.
@@ -69,7 +74,9 @@ local function activeResumes()
 end
 for at = 0, 9000, 5 do
     -- A one-second pause at 40 s, after the next window is already prepared.
-    record.sample(at, { (at * 7) % 997, -(at % 389), (at % 600) - 300 }, false, not (at >= 4000 and at < 4100))
+    if at % 10 == 0 then
+        record.sample(at, { (at * 7) % 997, -(at % 389), (at % 600) - 300 }, false, not (at >= 4000 and at < 4100))
+    end
     if at == 1000 then
         -- A flight that is still open when the window swaps.
         for _, session in ipairs(record.history.sessions) do

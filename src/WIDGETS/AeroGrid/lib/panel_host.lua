@@ -21,7 +21,7 @@
 --- An instance may override refreshCost and refreshMinCost; zero-cost refreshes
 --- run when due even without remaining slots.
 ---@field refreshMinCost? integer Minimum grant for a variable-cost refresh, 1 to 8.
----@field refreshContinuation? boolean Permit a refresh to request another turn in the same callback.
+---@field refreshContinuation? boolean Permit a refresh to request another turn in the same callback. An instance may set it for a single turn.
 ---@field independentRefresh? boolean Refreshes do not block other instances of this panel type.
 ---@field settings? AeroGridPanelSetting[]
 ---@field create fun(parent: any, rect: table, settings: table, services: table): any
@@ -31,7 +31,11 @@
 --- A second result of true requests another turn in the same callback.
 --- Refreshes receive (instance, false, slots) and may return consumed slots as
 --- a third result. Variable refreshes must declare a minimum and report consumption.
----@field background? fun(instance: any)
+---@field finish? fun(instance: any, creating: boolean, slots: integer) Finishing work after a refresh. Its own variable-cost task, ready while `finishPending` is true; may return the ticks until the next refresh is due, whether more finishing is ready now, and slots consumed.
+---@field finishPending? fun(instance: any): boolean While true the finishing task runs and refreshes wait.
+---@field finishMinCost? integer Minimum grant for finishing, 1 to 8; an instance may override it.
+---@field background? fun(instance: any, creating: boolean, slots: integer) While the dashboard is hidden. A fixed one-slot task unless `backgroundMinCost` is declared.
+---@field backgroundMinCost? integer Makes background a variable-cost task with this minimum grant, 1 to 8; an instance may override it. It then reports consumed slots as a third result.
 ---@field resetSession? fun(instance: any, now: integer) Second result true requests another reset turn.
 ---@field event? fun(instance: any, event: any): boolean
 ---@field destroy? fun(instance: any)
@@ -54,7 +58,8 @@ panelHost.SLOTS = MAX_REFRESH_SLOTS
 panelHost.API_VERSION = 1
 
 --- Optional lifecycle callbacks, in a fixed order so errors stay deterministic.
-local OPTIONAL_CALLBACKS = { "update", "refresh", "background", "resetSession", "event", "destroy" }
+local OPTIONAL_CALLBACKS =
+    { "update", "refresh", "finish", "finishPending", "background", "resetSession", "event", "destroy" }
 
 --- Restrict module identifiers to the same path-safe characters as layout types.
 ---@param value any
@@ -142,6 +147,33 @@ function panelHost.validateModule(module, typeName)
     end
     if cost == "variable" and minimum == nil then
         return false, "variable refreshCost requires refreshMinCost"
+    end
+    local backgroundMinimum = field(module, "backgroundMinCost")
+    if
+        backgroundMinimum ~= nil
+        and (
+            type(backgroundMinimum) ~= "number"
+            or backgroundMinimum < 1
+            or backgroundMinimum > MAX_REFRESH_SLOTS
+            or backgroundMinimum ~= math.floor(backgroundMinimum)
+        )
+    then
+        return false, "backgroundMinCost must be a whole number from 1 to " .. MAX_REFRESH_SLOTS
+    end
+    local finishMinimum = field(module, "finishMinCost")
+    if
+        finishMinimum ~= nil
+        and (
+            type(finishMinimum) ~= "number"
+            or finishMinimum < 1
+            or finishMinimum > MAX_REFRESH_SLOTS
+            or finishMinimum ~= math.floor(finishMinimum)
+        )
+    then
+        return false, "finishMinCost must be a whole number from 1 to " .. MAX_REFRESH_SLOTS
+    end
+    if field(module, "finish") ~= nil and (finishMinimum == nil or field(module, "finishPending") == nil) then
+        return false, "finish requires finishMinCost and finishPending"
     end
     local continuation = field(module, "refreshContinuation")
     if continuation ~= nil and type(continuation) ~= "boolean" then
@@ -321,7 +353,7 @@ function panelHost.dispatch(entry, event, ...)
     end
 
     local ok, resultOrError, unfinished, consumed = pcall(callback, entry.instance, ...)
-    if ok and event == "refresh" and type(resultOrError) == "number" then
+    if ok and (event == "refresh" or event == "finish") and type(resultOrError) == "number" then
         if resultOrError < 1 or resultOrError > 6000 or resultOrError ~= math.floor(resultOrError) then
             ok, resultOrError = false, "refresh interval must be a whole number from 1 to 6000 ticks"
         else

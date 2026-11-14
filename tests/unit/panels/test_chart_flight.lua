@@ -3,6 +3,7 @@
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
 local chart = fixture.module("panels/chart.lua")
+assert(loadfile(root .. "/tests/support/chart_turns.lua"))().install(chart)
 local equal = assert(loadfile(root .. "/tests/support/assertions.lua"))().assertEqual
 local chartView = assert(loadfile(root .. "/tests/support/chart_assertions.lua"))()
 local function liveSamples(service)
@@ -327,9 +328,13 @@ equal(
 )
 
 local function finishFrame(target)
+    -- A frame ends when its overlays have been redrawn, not when readouts finish.
+    local decorated = false
     for _ = 1, 2000 do
+        local decorating = target.columnsDecorating
         local _, pending = chart.refresh(target)
-        if not pending and chartView.finished(target) then
+        decorated = decorated or decorating and not target.columnsDecorating
+        if decorated and not pending and chartView.finished(target) then
             return
         end
     end

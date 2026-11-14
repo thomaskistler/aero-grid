@@ -218,8 +218,7 @@ fixture.tick(100)
 definition.refresh(context)
 assert(#calls == 3 and calls[3].id == "diagnostic" and calls[3].slots == 0)
 assert(stats.revision == 2 and stats.deferrals == 50)
-assert(stats.consumers[telemetry] == 8 and next(stats.consumers, next(stats.consumers)) == nil)
-assert(stats.capacity == 8 and stats.seconds == 1, "consumer slots are reported per measured second")
+assert(stats.capacity == 8 and stats.seconds == 1, "capacity is reported per measured second")
 context.flightFactory = {
     broker = {
         identity = function()
@@ -237,7 +236,6 @@ context.flightFactory = {
 context.flightReportedRevision, context.flightReportedEpoch = 0, 1
 fixture.tick(100)
 definition.refresh(context)
-assert(stats.consumers.flight == 1, "flight detection slots are attributed")
 context.flightFactory = nil
 
 context.serviceRuntime = support.runtime({})

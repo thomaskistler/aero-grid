@@ -3,6 +3,7 @@
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
 local chartModule = fixture.module("panels/chart.lua")
+assert(loadfile(root .. "/tests/support/chart_turns.lua"))().install(chartModule)
 local chartView = assert(loadfile(root .. "/tests/support/chart_assertions.lua"))()
 local function refresh(panel)
     local interval, unfinished
@@ -863,10 +864,12 @@ local gridPanel = recordingPanel("minute-grid", "rolling", 10)
 do
     local setup = gridPanel.columnSetup
     assert(setup, "recording panel must require initial attachment")
-    local _, unfinished, used = chartModule.refresh(gridPanel, false, 1)
-    assert(unfinished and used == 1 and gridPanel.columnSetup == setup, "geometry must progress with one slot")
-    _, unfinished, used = chartModule.refresh(gridPanel, false, 1)
-    assert(unfinished and used == 1 and not gridPanel.columnSetup, "attachment must progress with one slot")
+    -- The geometry is laid out in one piece, so the panel declares the grant it needs.
+    equal(gridPanel.refreshMinCost, 3, "geometry must declare the grant it needs")
+    local _, unfinished, used = chartModule.refreshOnly(gridPanel, false, 1)
+    assert(unfinished and used == 1 and not gridPanel.columnSetupIndex, "a smaller grant must not lay out the geometry")
+    _, unfinished, used = chartModule.refreshOnly(gridPanel, false, 3)
+    assert(unfinished and used <= 3 and not gridPanel.columnSetup, "geometry and attachment must fit that grant")
 end
 gridPanel.session = { configured = true, available = true, recording = false, elapsed = 65000 }
 for _ = 1, 24 do
@@ -877,23 +880,34 @@ do
     local render = chartModule.render
     local renderer = gridPanel.columnRenderer
     local append = renderer.append
+    local rendered = 0
     chartModule.render = function()
+        rendered = rendered + 1
         return true
     end
     renderer.append = function()
         error("readout updates must yield before drawing")
     end
     gridPanel.metadataReady, gridPanel.columnsDecorating = nil, nil
-    local _, unfinished, used = chartModule.refresh(gridPanel, false, 8)
-    assert(unfinished and used == 1, "readout and legend updates must use one slot without drawing")
+    -- Readouts and legend belong to the finishing task and need two slots.
+    assert(chartModule.finishPending(gridPanel) and gridPanel.finishMinCost == 2, "readouts must declare their minimum")
+    local _, unfinished, used = chartModule.finish(gridPanel, false, 1)
+    assert(unfinished and used == 1 and rendered == 0, "a grant below the minimum must not run readouts")
+    _, unfinished, used = chartModule.finish(gridPanel, false, 2)
+    assert(not unfinished and used == 2 and rendered == 1, "readouts must be charged their two slots without drawing")
+    -- A refresh waits while overlays or readouts are pending.
+    gridPanel.metadataReady = nil
+    _, unfinished, used = chartModule.refreshOnly(gridPanel, false, 8)
+    assert(unfinished and used == 1 and rendered == 1, "a refresh must leave pending readouts to the finishing task")
+    gridPanel.metadataReady = true
     gridPanel.gridVersion = gridPanel.version
     local appended = false
-    renderer.append = function(self)
+    renderer.append = function(self, ...)
         appended = true
-        append(self)
+        return append(self, ...)
     end
-    _, unfinished, used = chartModule.refresh(gridPanel, false, 2)
-    assert(appended and not unfinished and used == 1, "the entire append must complete in one slot")
+    _, unfinished, used = chartModule.refreshOnly(gridPanel, false, 2)
+    assert(appended and not unfinished and used >= 1 and used <= 2, "the append must charge within its grant")
     chartModule.render, renderer.append = render, append
 end
 assert(not gridPanel.durationBackground.hidden, "titleless charts need a readable duration annotation")

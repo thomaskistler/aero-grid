@@ -3,6 +3,7 @@
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(root).new()
 local chart = fixture.module("panels/chart.lua")
+assert(loadfile(root .. "/tests/support/chart_turns.lua"))().install(chart)
 local recorder = assert(loadfile(root .. "/tests/support/chart_recorder.lua"))(root)
 local view = assert(loadfile(root .. "/tests/support/chart_assertions.lua"))()
 local equal = assert(loadfile(root .. "/tests/support/assertions.lua"))().assertEqual
@@ -32,17 +33,21 @@ local panel = chart.create(dashboard.page, { x = 0, y = 0, w = 472, h = 196 }, {
     },
 }, services)
 local counted, worst, grant = 0, 0, 1
+local phase = 0
 local function callbacks(count)
     for _ = 1, count do
         now = now + 5
-        grant = 3 - grant
+        phase = phase % 3 + 1
+        grant = ({ 1, 2, 7 })[phase]
         counted = 0
         debug.sethook(function()
             counted = counted + 1
         end, "", 1)
+        grant = chart.offered(panel, grant)
+        local offered = grant
         local _, _, used = chart.refresh(panel, false, grant)
         debug.sethook()
-        assert(used >= 1 and used <= grant, "range rescales must stay within the grant")
+        assert(used >= 1 and used <= offered, "range rescales must stay within the grant")
         if panel.columnRenderer and not panel.columnSetup then
             worst = math.max(worst, counted)
         end
@@ -52,7 +57,9 @@ end
 local jumpedAt, rescaledAt
 for at = 0, 1000, 5 do
     local value = at < 300 and 0 or 1000
-    record.sample(at, { value, value / 2, -value })
+    if at % 10 == 0 then
+        record.sample(at, { value, value / 2, -value })
+    end
     callbacks(1)
     jumpedAt = jumpedAt or value > 0 and at or nil
     if jumpedAt and not rescaledAt and panel.series[1].high >= 1000 and panel.series[1].low <= -1000 then

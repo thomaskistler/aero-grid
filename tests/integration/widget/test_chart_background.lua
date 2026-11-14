@@ -44,10 +44,24 @@ local function pump(count, hidden)
         for index = 1, 3 do
             fixture.radio.values[5100 + index] = (getTime() * index * 7) % 997 - 400
         end
-        local counted = 0
-        debug.sethook(function()
-            counted = counted + 1
-        end, "", 1)
+        -- Count real code only: the mock LVGL stands in for native functions that
+        -- cost the radio no Lua instructions.
+        local counted, stack, top = 0, {}, "code"
+        debug.sethook(function(event)
+            if event == "count" then
+                if top == "code" then
+                    counted = counted + 1
+                end
+            elseif event == "return" then
+                top = stack[#stack] or "code"
+                stack[#stack] = nil
+            else
+                if event == "call" then
+                    stack[#stack + 1] = top
+                end
+                top = string.find(debug.getinfo(2, "S").short_src, "tests/support", 1, true) and "mock" or "code"
+            end
+        end, "cr", 1)
         if hidden then
             definition.background(context)
         else

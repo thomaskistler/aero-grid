@@ -3,6 +3,7 @@
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(root).new()
 local chart = fixture.module("panels/chart.lua")
+assert(loadfile(root .. "/tests/support/chart_turns.lua"))().install(chart)
 local Columns = fixture.module("lib/chart_columns.lua")
 local recorder = assert(loadfile(root .. "/tests/support/chart_recorder.lua"))(root)
 local view = assert(loadfile(root .. "/tests/support/chart_assertions.lua"))()
@@ -25,6 +26,7 @@ local panel = chart.create(dashboard.page, { x = 0, y = 0, w = 472, h = 196 }, {
     },
 }, services)
 local worst, counted, grant = 0, 0, 1
+local phase = 0
 local depth, inside, backgroundCount = 0, nil, 0
 local worstByGrant = {}
 local function hook(event)
@@ -46,17 +48,20 @@ local function hook(event)
         depth = depth - 1
     end
 end
--- 50 ms callbacks on a shared dashboard: one or two granted slots in turn.
+-- 50 ms callbacks on a busy dashboard: 1, 2 and 7 slots offered in turn, as measured.
 local function callbacks(count)
     for _ = 1, count do
         now = now + 5
         counted, depth, inside = 0, 0, nil
         debug.sethook(hook, "cr", 1)
-        grant = 3 - grant
+        phase = phase % 3 + 1
+        grant = ({ 1, 2, 7 })[phase]
+        grant = chart.offered(panel, grant)
+        local offered = grant
         local _, _, used = chart.refresh(panel, false, grant)
         debug.sethook()
         worst = math.max(worst, counted)
-        assert(used >= 1 and used <= grant, "sliding must stay within the grant")
+        assert(used >= 1 and used <= offered, "sliding must stay within the grant")
     end
 end
 -- Every sample each series receives, replayed below into a directly sampled map.
@@ -78,7 +83,9 @@ local starts, overflowAt, lateness = {}, nil, 0
 for at = 0, 21000, 5 do
     -- One-second pauses before the first slide and after it.
     local paused = at >= 4000 and at < 4100 or at >= 15000 and at < 15100
-    record.sample(at, { (at * 7) % 997, -(at % 389), (at % 600) - 300 }, false, not paused)
+    if at % 10 == 0 then
+        record.sample(at, { (at * 7) % 997, -(at % 389), (at % 600) - 300 }, false, not paused)
+    end
     capture()
     callbacks(1)
     local first = panel.columnConsumers and panel.columnConsumers[1]

@@ -66,12 +66,11 @@ For raw-field interpretation, see
 
 ![Host diagnostics scheduler view at 2x2](../assets/panels/host-diagnostics/scheduler-2x2.png)
 
-Select **scheduler** to see scheduled-work utilization from 0 to 100%.
-Each column covers one second. Colors identify the five busiest consumers;
-gray groups the rest. The orange line shows the percentage of due requests
-deferred because no slots were available.
+Select **scheduler** to see two lines, with one point added each second at most:
+the cyan line is the percentage of scheduler slots used, and the orange line is
+the percentage of due requests deferred because no slots were available.
 
-The cursor marks the newest column and wraps to the left when full.
+The cursor marks the newest point and wraps to the left when full.
 Resizing clears the graph. The view measures this widget's accounted work,
 **not actual CPU usage**. Measurement continues on hidden screens but is not
 enabled by editor previews.
