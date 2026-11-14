@@ -5,6 +5,7 @@
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(root).new()
 local chart = fixture.module("panels/chart.lua")
+assert(loadfile(root .. "/tests/support/chart_turns.lua"))().install(chart)
 local recorder = assert(loadfile(root .. "/tests/support/chart_recorder.lua"))(root)
 local view = assert(loadfile(root .. "/tests/support/chart_assertions.lua"))()
 fixture.reset()
@@ -62,17 +63,41 @@ end
 assert(#starts >= 3, "a hidden full chart must keep sliding while samples queue")
 assert(queued(hidden) < 10, "queued samples must drain while the chart is hidden")
 
--- One-slot grants with a sustained backlog still finish the slid layer.
+-- One-slot refresh grants with a sustained backlog still finish the slid layer.
 local narrow, narrowRecord = create(1)
 starts = {}
-for at = 0, 24000, 10 do
-    now = at
-    narrowRecord.sample(at, values(at))
-    local _, _, used = chart.refresh(narrow, false, 1)
-    assert(used == 1, "one-slot grants must not be exceeded")
+local function narrowTurn()
+    -- The refresh is offered one slot each callback. The finishing task is a
+    -- separate task: it runs in the same callback, with its declared minimum.
+    if not chart.finishPending(narrow) then
+        local offered = chart.offered(narrow, 1)
+        local _, _, used = chart.refresh(narrow, false, 1)
+        assert(used >= 1 and used <= offered, "offers must not be exceeded")
+    end
+    for _ = 1, 2 do
+        if chart.finishPending(narrow) then
+            local offered = narrow.finishMinCost
+            local _, _, used = chart.finish(narrow, false, offered)
+            assert(used >= 1 and used <= offered, "finishing must stay within its minimum")
+        end
+    end
     if narrow.start ~= (starts[#starts] or 0) then
         starts[#starts + 1] = narrow.start
     end
+end
+for at = 0, 24000, 10 do
+    now = at
+    narrowRecord.sample(at, values(at))
+    narrowTurn()
+end
+-- One slot cannot keep pace with three lines at ten readings a second, so the
+-- backlog drains after the feed stops; the chart must keep sliding until it has.
+for step = 1, 8000 do
+    if queued(narrow) == 0 and view.finished(narrow) then
+        break
+    end
+    now = 24000 + step * 10
+    narrowTurn()
 end
 assert(#starts >= 3, "a one-slot chart must keep sliding with a sustained backlog")
 assert(queued(narrow) < 10, "queued samples must drain under one-slot grants")
@@ -83,7 +108,10 @@ local resetPanel, resetRecord = create(nil)
 for at = 0, 9000, 25 do
     now = at
     resetRecord.sample(at, values(at))
-    chart.refresh(resetPanel, false, 2)
+    -- Callbacks come every 50 ms: five of them per 250 ms of samples.
+    for _ = 1, 5 do
+        chart.refresh(resetPanel, false, 2)
+    end
 end
 local auto = resetPanel.auto
 assert(auto.hidden and auto.hidden.columnRenderer, "the test needs a prepared hidden layer")
@@ -124,8 +152,11 @@ local swept = false
 for at = 9025, 12000, 25 do
     now = at
     resetRecord.sample(at, values(at))
-    chart.refresh(resetPanel, false, 2)
-    swept = swept or auto.hidden and not auto.hidden.recycle and next(hiddenRenderer.visible) == nil
+    for _ = 1, 5 do
+        chart.refresh(resetPanel, false, 2)
+    end
+    -- The layers may swap meanwhile; whichever is hidden must have been swept.
+    swept = swept or auto.hidden and not auto.hidden.recycle and next(auto.hidden.columnRenderer.visible) == nil
 end
 assert(swept, "the hidden layer's old columns must be swept")
 for index = 1, 3 do

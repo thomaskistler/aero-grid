@@ -373,8 +373,9 @@ function consumer:sample(at, value, broken, resumed)
     end
 end
 
+--- Take at most `limit` queued samples (default APPEND_LIMIT).
 --- Returns the number of queued samples taken.
-function consumer:append()
+function consumer:append(limit)
     if self.readonly then
         self.map.historyRevision = self.feed.plotRevision
     end
@@ -385,7 +386,8 @@ function consumer:append()
     local pending = self.pending
     -- A bounded batch per append keeps a backlog from overrunning one callback.
     local count = 0
-    while count < math.min(#pending, columns.APPEND_LIMIT) do
+    local cap = math.min(#pending, limit and math.min(limit, columns.APPEND_LIMIT) or columns.APPEND_LIMIT)
+    while count < cap do
         local sample = pending[count + 1]
         local at, value, broken, resumed = sample[1], sample[2], sample[3], sample[4]
         if self.slide and self.map:bucketOf(at, sample[6]) >= self.map.width then

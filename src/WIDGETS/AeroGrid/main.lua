@@ -585,13 +585,6 @@ local function newScheduler(context, schedulerModule)
             addError(context, task.name .. ": " .. message)
             context.schedulerFailed = true
         end,
-        charge = function(task, spent)
-            local stats = context.schedulerStats
-            local window = stats and stats.window
-            if window then
-                window[task.owner] = (window[task.owner] or 0) + spent
-            end
-        end,
     })
     if not ok or type(scheduler) ~= "table" then
         addError(context, "lib/scheduler.lua: " .. tostring(ok and "constructor did not return a table" or scheduler))
@@ -1071,12 +1064,48 @@ local function serviceStep(task, now, slots)
     return used, again == true
 end
 
+--- Whether a panel's finishing work is ready now; it then runs before refreshes resume.
+local function finishPending(context, entry)
+    local module = entry.module
+    local pending = rawget(module, "finishPending")
+    if type(pending) ~= "function" then
+        return false
+    end
+    local ok, message, result = context.panelHost.dispatch(entry, "finishPending")
+    if not ok then
+        addError(context, entry.placement.id .. ": finishPending: " .. tostring(message))
+        context.schedulerFailed = true
+        return false
+    end
+    return result
+end
+
 local function refreshReady(task, _, hidden)
     local entry, owner = task.owner, task.host.refreshOwner
-    return task.host.scheduledPanels
-        and not hidden
-        and not entry.failed
-        and not (owner and entry ~= owner and entry.module.id == owner.module.id)
+    if
+        not task.host.scheduledPanels
+        or hidden
+        or entry.failed
+        or owner and entry ~= owner and entry.module.id == owner.module.id
+    then
+        return false
+    end
+    local pending = finishPending(task.host, entry)
+    return not entry.failed and not pending
+end
+
+local function finishReady(task, _, hidden)
+    local entry = task.owner
+    if not (task.host.scheduledPanels and not hidden and not entry.failed) then
+        return false
+    end
+    local pending = finishPending(task.host, entry)
+    if entry.failed or not pending then
+        return false
+    end
+    -- The next stage may need more than the module's default minimum.
+    task.minCost = rawget(entry.instance, "finishMinCost") or rawget(entry.module, "finishMinCost")
+    return true
 end
 
 local function backgroundReady(task, _, hidden)
@@ -1085,7 +1114,7 @@ end
 
 local function panelStep(task, now, granted)
     local context, entry, eventName = task.host, task.owner, task.event
-    local ok, message, _, unfinished, used = context.panelHost.dispatch(entry, eventName, false, granted)
+    local ok, message, interval, unfinished, used = context.panelHost.dispatch(entry, eventName, false, granted)
     if used == nil and task.cost ~= "variable" then
         used = granted
     end
@@ -1097,7 +1126,12 @@ local function panelStep(task, now, granted)
         ok, message = false, "refresh continuation must be boolean"
         entry.failed, entry.error = true, message
     end
-    if eventName == "refresh" then
+    if eventName == "finish" then
+        -- Ending a cycle sets when the next refresh is due.
+        if ok and type(interval) == "number" then
+            entry.nextRefresh = now + entry.interval
+        end
+    elseif eventName == "refresh" then
         entry.nextRefresh = now + entry.interval
         if ok and unfinished and not rawget(entry.module, "independentRefresh") then
             context.refreshOwner = entry
@@ -1110,7 +1144,12 @@ local function panelStep(task, now, granted)
     end
     local canContinue = unfinished == true
     if eventName == "refresh" then
-        canContinue = canContinue and rawget(entry.module, "refreshContinuation") == true
+        -- A panel may opt in for one turn, as it may override the refresh cost.
+        canContinue = canContinue
+            and (
+                rawget(entry.instance, "refreshContinuation") == true
+                or rawget(entry.module, "refreshContinuation") == true
+            )
     end
     return used, canContinue
 end
@@ -1164,6 +1203,24 @@ local function enrolTasks(context, registry)
             task.due, task.failed = entry.nextRefresh or 0, entry.failed
             scheduler.add(task)
         end
+        if type(rawget(module, "finish")) == "function" then
+            local task = entry.finishTask
+            if not task then
+                task = {
+                    name = entry.placement.id .. ": finish",
+                    owner = entry,
+                    host = context,
+                    event = "finish",
+                    cost = "variable",
+                    step = panelStep,
+                    ready = finishReady,
+                }
+                entry.finishTask = task
+            end
+            task.minCost = rawget(entry.instance, "finishMinCost") or rawget(module, "finishMinCost")
+            task.failed = entry.failed
+            scheduler.add(task)
+        end
         if type(rawget(module, "background")) == "function" then
             local task = entry.backgroundTask
             if not task then
@@ -1172,12 +1229,14 @@ local function enrolTasks(context, registry)
                     owner = entry,
                     host = context,
                     event = "background",
-                    cost = 1,
                     step = panelStep,
                     ready = backgroundReady,
                 }
                 entry.backgroundTask = task
             end
+            -- A panel that declares a minimum is charged what it reports.
+            local minimum = rawget(entry.instance, "backgroundMinCost") or rawget(module, "backgroundMinCost")
+            task.cost, task.minCost = minimum and "variable" or 1, minimum
             task.failed = entry.failed
             scheduler.add(task)
         end
@@ -1201,11 +1260,6 @@ local function runTasks(context, hidden, flightTask, hostTask)
 
     local now = getTime()
     local stats = context.schedulerStats
-    local window = stats and stats.window
-    if stats and not window then
-        window = {}
-        stats.window = window
-    end
     local used, requested, denied = scheduler.run(now, scheduler.capacity, hidden or false)
     scheduler.clear()
     context.remainingSlots = scheduler.capacity - used
@@ -1218,7 +1272,6 @@ local function runTasks(context, hidden, flightTask, hostTask)
             stats.utilization = stats.used * 100 / (stats.callbacks * scheduler.capacity)
             stats.deferrals = stats.requested > 0 and stats.denied * 100 / stats.requested or 0
             stats.revision = stats.revision + 1
-            stats.consumers, stats.window = window, nil
             stats.capacity, stats.seconds = stats.callbacks * scheduler.capacity, (now - stats.started) / 100
             stats.started, stats.callbacks, stats.used, stats.requested, stats.denied = now, 0, 0, 0, 0
         end

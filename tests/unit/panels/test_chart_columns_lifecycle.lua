@@ -3,6 +3,7 @@
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(root).new()
 local chart = fixture.module("panels/chart.lua")
+assert(loadfile(root .. "/tests/support/chart_turns.lua"))().install(chart)
 local recorder = assert(loadfile(root .. "/tests/support/chart_recorder.lua"))(root)
 local view = assert(loadfile(root .. "/tests/support/chart_assertions.lua"))()
 fixture.reset()
@@ -18,11 +19,27 @@ local function panel()
     }, services)
 end
 local first, second = panel(), panel()
+local function queued(current)
+    for _, consumer in ipairs(current.columnConsumers or {}) do
+        if #consumer.pending > 0 or consumer.tail then
+            return true
+        end
+    end
+    return false
+end
+-- One callback of the chart's two tasks: the refresh is offered `grant` slots,
+-- and the finishing task, when pending, gets at least its declared minimum.
 local function settle(current, grant)
     for _ = 1, 2000 do
-        local _, pending, used = chart.refresh(current, false, grant or 8)
-        assert(used >= 1 and used <= (grant or 8), "chart exceeded scheduler grant")
-        if not pending and view.finished(current) then
+        local pending, used
+        local offered = chart.offered(current, grant)
+        if chart.finishPending(current) then
+            _, pending, used = chart.finish(current, false, offered)
+        else
+            _, pending, used = chart.refresh(current, false, offered)
+        end
+        assert(used >= 1 and used <= offered, "chart exceeded scheduler grant")
+        if not pending and not queued(current) and view.finished(current) then
             return
         end
     end
@@ -44,22 +61,22 @@ record.sample(1020, { 45 })
 first.metadataReady = nil
 local draw = first.columnRenderer.append
 first.columnRenderer.append = function()
-    error("metadata slot attempted plot work")
+    error("readout pass attempted plot work")
 end
-local _, metadataPending, metadataSlots = chart.refresh(first, false, 1)
-assert(metadataPending and metadataSlots == 1 and first.metadataReady)
-assert(first.series[1].valueText == "45.000", "one-slot metadata pass did not update its readout")
+assert(chart.finishPending(first) and first.finishMinCost == 2, "readouts must declare a two-slot minimum")
+local _, metadataPending, metadataSlots = chart.finish(first, false, 2)
+assert(not metadataPending and metadataSlots == 2 and first.metadataReady)
+assert(first.series[1].valueText == "45.000", "the readout pass did not update its readout")
 first.columnRenderer.append = draw
 settle(first)
-chart.refresh(first, false, 1)
 local render = chart.render
 chart.render = function()
     error("append slot attempted metadata work")
 end
 local appendCalls = 0
-first.columnRenderer.append = function(self)
+first.columnRenderer.append = function(self, ...)
     appendCalls = appendCalls + 1
-    draw(self)
+    return draw(self, ...)
 end
 record.sample(1040, { 46 })
 local _, appendPending, appendSlots = chart.refresh(first, false, 1)
@@ -153,11 +170,11 @@ local three = chart.create(dashboard.page, { x = 0, y = 0, w = 472, h = 196 }, {
     },
 }, services)
 settle(three, 1)
-chart.refresh(three, false, 1)
 triple.sample(0, { -2000, 0, 2000 })
 triple.sample(1, { -500, 500, -500 })
-local _, triplePending, tripleSlots = chart.refresh(three, false, 1)
-assert(not triplePending and tripleSlots == 1, "all three series must finish appending in one slot")
+-- Two samples for each of three series cost about 3,200 instructions.
+local _, triplePending, tripleSlots = chart.refresh(three, false, 3)
+assert(not triplePending and tripleSlots <= 3, "all three series must finish appending in three slots")
 for index, consumer in ipairs(three.columnConsumers) do
     assert(#consumer.pending == 0 and #consumer.map.dirtyList == 0)
     assert(three.series[index].drawnRevision == triple.feeds[index].plotRevision)

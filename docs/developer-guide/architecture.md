@@ -103,14 +103,27 @@ eight slots, even if a callback has a larger capacity. Fixed tasks reserve
 their declared cost; variable tasks declare a minimum and receive between that
 minimum and eight slots when enough remain. Each task turn reports its charged
 slots and whether it requests another turn in the same callback. Panels opt in
-to same-callback refresh continuation with `refreshContinuation`; other staged
-refreshes resume on their next due callback. Unused slots are released to later
+to same-callback refresh continuation with `refreshContinuation`, which a panel
+instance may also set for a single turn; other staged refreshes resume on their
+next due callback. A panel may split work into further tasks: `finish`, ready
+while `finishPending` is true and declaring `finishMinCost`, runs after a
+refresh while refreshes wait; `background` becomes variable-cost when it
+declares `backgroundMinCost`. An instance may override each minimum for the
+stage it needs next. Unused slots are released to later
 tasks, and pending work remains subject to the scheduler's fair rotation. A
 task's `due` time controls its next eligibility independently of same-callback
 continuation. Slot costs are
 initial approximations, not live instruction measurements; the whole callback
 has a nominal target below 16,000 instructions; regression tests enforce the
 stricter 15,000-instruction ceiling. Callback/scheduler overhead is not separately charged.
+
+The chart reports the slots a step really needs, rounded up to whole slots, and
+limits each step to the slots it was given: a live append takes only the samples
+and columns that fit and leaves the rest queued, and a step that cannot fit its
+smallest unit of work declares a larger minimum instead of overrunning. Charts
+refresh at most four times a second. Their appends continue within one callback
+while readings are waiting; readouts, overlays and the next rescale layer are
+prepared by other turns.
 
 | Service module | Responsibility |
 | --- | --- |

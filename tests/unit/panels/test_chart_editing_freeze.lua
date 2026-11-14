@@ -5,6 +5,7 @@
 local root = assert(...)
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))(root).new()
 local chart = fixture.module("panels/chart.lua")
+assert(loadfile(root .. "/tests/support/chart_turns.lua"))().install(chart)
 local recorder = assert(loadfile(root .. "/tests/support/chart_recorder.lua"))(root)
 local view = assert(loadfile(root .. "/tests/support/chart_assertions.lua"))()
 local equal = assert(loadfile(root .. "/tests/support/assertions.lua"))().assertEqual
@@ -46,8 +47,9 @@ local function run(duration, editingKey)
             end
             if now >= due then
                 grant = 3 - grant
+                local offered = chart.offered(panel, grant)
                 local interval, _, used = chart.refresh(panel, false, grant)
-                assert(used >= 1 and used <= grant, "refreshes must stay within the grant")
+                assert(used >= 1 and used <= offered, "refreshes must stay within the grant")
                 due = now + interval
             end
         end
@@ -90,7 +92,11 @@ local function run(duration, editingKey)
     equal(pauseAt, frozenAt, "the pause sits where recording time stopped")
     for _ = 1, 400 do
         local _, pending = chart.refresh(panel, false, 8)
-        if not pending and view.finished(panel) then
+        local waiting = false
+        for _, owner in ipairs(panel.columnConsumers) do
+            waiting = waiting or #owner.pending > 0 or owner.tail ~= nil
+        end
+        if not pending and not waiting and view.finished(panel) then
             break
         end
     end

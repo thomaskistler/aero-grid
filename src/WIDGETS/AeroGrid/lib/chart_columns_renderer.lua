@@ -1,6 +1,8 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local renderer = { RUNTIME_API = 1, PAINT_LIMIT = 10 }
+-- Conservative Lua instructions for append work, measured on the test runtime:
+-- per series visited, per queued sample taken, and per column drawn.
+local renderer = { RUNTIME_API = 1, PAINT_LIMIT = 10, SERIES_COST = 200, SAMPLE_COST = 300, PAINT_COST = 125 }
 renderer.__index = renderer
 
 function renderer.new(context)
@@ -82,12 +84,31 @@ end
 
 --- Append new samples and draw changed columns; `deferPaint` keeps them pending
 --- for a layer about to replace this one.
+--- With an instruction `allowance`, only the series, samples and columns that fit
+--- are visited, and the next call resumes with the first series left out.
 ---@return integer appended Queued samples taken across all series.
-function renderer:append(deferPaint)
+---@return integer painted Columns drawn across all series.
+---@return integer used Estimated Lua instructions spent.
+function renderer:append(deferPaint, allowance)
     local context = self.context
-    local appended = 0
-    for series, owner in ipairs(context.columnConsumers) do
-        appended = appended + owner:append()
+    local owners = context.columnConsumers
+    local appended, painted, used = 0, 0, 0
+    local first = allowance and self.nextSeries or 1
+    local each = renderer.SAMPLE_COST + (deferPaint and 0 or renderer.PAINT_COST)
+    for offset = 0, #owners - 1 do
+        local series = (first + offset - 1) % #owners + 1
+        local owner = owners[series]
+        local sampleLimit
+        if allowance then
+            local room = allowance - used - renderer.SERIES_COST
+            if room < each then
+                self.nextSeries = series
+                return appended, painted, used
+            end
+            sampleLimit = room // each
+        end
+        local taken = owner:append(sampleLimit)
+        appended, used = appended + taken, used + renderer.SERIES_COST + taken * renderer.SAMPLE_COST
         local map = owner.map
         if context.checkRange then
             -- Lets the chart seed or grow automatic bounds before columns are drawn.
@@ -98,16 +119,21 @@ function renderer:append(deferPaint)
             -- A bounded batch per append; any backlog is drawn on later appends.
             local list = map.dirtyList
             local count = math.min(#list, renderer.PAINT_LIMIT)
+            if allowance then
+                count = math.max(0, math.min(count, (allowance - used) // renderer.PAINT_COST))
+            end
             for index = 1, count do
                 local slot = list[index]
                 paintColumn(self, map, series, slot, look)
                 map.dirtyColumns[slot] = nil
             end
             table.move(list, count + 1, #list + count, 1)
+            painted, used = painted + count, used + count * renderer.PAINT_COST
         end
         publish(self, series, map)
     end
-    return appended
+    self.nextSeries = first
+    return appended, painted, used
 end
 
 --- Paint at most `limit` pending columns of maps filled without live samples,
