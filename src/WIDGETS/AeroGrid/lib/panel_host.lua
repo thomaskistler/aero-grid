@@ -353,6 +353,9 @@ function panelHost.dispatch(entry, event, ...)
     end
 
     local ok, resultOrError, unfinished, consumed = pcall(callback, entry.instance, ...)
+    if ok and event == "finishPending" and type(resultOrError) ~= "boolean" then
+        ok, resultOrError = false, "finishPending must return a boolean"
+    end
     if ok and (event == "refresh" or event == "finish") and type(resultOrError) == "number" then
         if resultOrError < 1 or resultOrError > 6000 or resultOrError ~= math.floor(resultOrError) then
             ok, resultOrError = false, "refresh interval must be a whole number from 1 to 6000 ticks"

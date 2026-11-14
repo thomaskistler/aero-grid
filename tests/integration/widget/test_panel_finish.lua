@@ -100,3 +100,37 @@ fixture.tick(10)
 definition.background(context)
 assert(#calls == 1 and calls[1].slots >= 3, "background must receive its declared minimum")
 assert(context.panels[1].backgroundTask.spent == 3, "background is charged what it reports")
+
+-- A failing readiness callback is isolated and reported rather than escaping the scheduler.
+local broken = entry({
+    id = "demo",
+    refreshCost = "variable",
+    refreshMinCost = 1,
+    finish = function() end,
+    finishMinCost = 1,
+    finishPending = function()
+        error("broken finish check")
+    end,
+    refresh = function()
+        error("failed panels must not refresh after their readiness callback fails")
+    end,
+})
+context.errors = {}
+run({ broken })
+assert(broken.failed, "a failing finishPending callback must disable its panel")
+assert(#context.errors == 1 and string.find(context.errors[1], "broken finish check", 1, true))
+
+local invalid = entry({
+    id = "demo",
+    refreshCost = "variable",
+    refreshMinCost = 1,
+    finish = function() end,
+    finishMinCost = 1,
+    finishPending = function()
+        return "yes"
+    end,
+})
+context.errors = {}
+run({ invalid })
+assert(invalid.failed, "a non-boolean finishPending result must disable its panel")
+assert(#context.errors == 1 and string.find(context.errors[1], "must return a boolean", 1, true))

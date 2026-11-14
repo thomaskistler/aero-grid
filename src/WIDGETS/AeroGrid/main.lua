@@ -1065,24 +1065,42 @@ local function serviceStep(task, now, slots)
 end
 
 --- Whether a panel's finishing work is ready now; it then runs before refreshes resume.
-local function finishPending(entry)
+local function finishPending(context, entry)
     local module = entry.module
     local pending = rawget(module, "finishPending")
-    return type(pending) == "function" and pending(entry.instance) == true
+    if type(pending) ~= "function" then
+        return false
+    end
+    local ok, message, result = context.panelHost.dispatch(entry, "finishPending")
+    if not ok then
+        addError(context, entry.placement.id .. ": finishPending: " .. tostring(message))
+        context.schedulerFailed = true
+        return false
+    end
+    return result
 end
 
 local function refreshReady(task, _, hidden)
     local entry, owner = task.owner, task.host.refreshOwner
-    return task.host.scheduledPanels
-        and not hidden
-        and not entry.failed
-        and not (owner and entry ~= owner and entry.module.id == owner.module.id)
-        and not finishPending(entry)
+    if
+        not task.host.scheduledPanels
+        or hidden
+        or entry.failed
+        or owner and entry ~= owner and entry.module.id == owner.module.id
+    then
+        return false
+    end
+    local pending = finishPending(task.host, entry)
+    return not entry.failed and not pending
 end
 
 local function finishReady(task, _, hidden)
     local entry = task.owner
-    if not (task.host.scheduledPanels and not hidden and not entry.failed and finishPending(entry)) then
+    if not (task.host.scheduledPanels and not hidden and not entry.failed) then
+        return false
+    end
+    local pending = finishPending(task.host, entry)
+    if entry.failed or not pending then
         return false
     end
     -- The next stage may need more than the module's default minimum.

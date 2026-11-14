@@ -97,6 +97,25 @@ local function testFinishDispatch()
     entry.failed = false
     ok, message = panelHost.dispatch(entry, "finish", false, 4)
     assert(not ok and entry.failed and string.find(message, "interval", 1, true))
+
+    entry.module.finishPending = function()
+        return true
+    end
+    entry.failed = false
+    local pendingOk, pendingError, pending = panelHost.dispatch(entry, "finishPending")
+    assert(pendingOk and not pendingError and pending == true)
+    entry.module.finishPending = function()
+        error("pending check failed")
+    end
+    entry.failed = false
+    pendingOk, pendingError = panelHost.dispatch(entry, "finishPending")
+    assert(not pendingOk and entry.failed and string.find(pendingError, "pending check failed", 1, true))
+    entry.module.finishPending = function()
+        return "yes"
+    end
+    entry.failed = false
+    pendingOk, pendingError = panelHost.dispatch(entry, "finishPending")
+    assert(not pendingOk and entry.failed and string.find(pendingError, "must return a boolean", 1, true))
 end
 
 local function testSupportedSpans()
