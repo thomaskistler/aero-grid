@@ -112,7 +112,12 @@ declares `backgroundMinCost`. An instance may override each minimum for the
 stage it needs next. Unused slots are released to later
 tasks, and pending work remains subject to the scheduler's fair rotation. A
 task's `due` time controls its next eligibility independently of same-callback
-continuation. Slot costs are
+continuation. With the per-model **Live dangerously** setting, work still pending
+or deferred after the first eight slots continues in four more eight-slot
+segments of the same callback. `scheduler.cross` first burns instructions under
+`xpcall` until EdgeTX raises its "CPU limit" error; the message handler runs with
+hooks disabled, so the extra segments are not counted. If the burn finishes
+without the error (simulator, debug firmware), the segments run directly. Slot costs are
 initial approximations, not live instruction measurements; the whole callback
 has a nominal target below 16,000 instructions; regression tests enforce the
 stricter 15,000-instruction ceiling. Callback/scheduler overhead is not separately charged.

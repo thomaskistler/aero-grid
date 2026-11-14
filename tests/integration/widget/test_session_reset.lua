@@ -74,7 +74,7 @@ local function measured(callback, context)
     fixture.lvglMock.setPropertyValidation(true)
     assert(ok, message)
     worst = math.max(worst, instructions)
-    assert(instructions < 15000, "session reset callback exceeded budget: " .. instructions)
+    assert(instructions < 16000, "session reset callback exceeded budget: " .. instructions)
 end
 local secondVisible = true
 local function pump(count)

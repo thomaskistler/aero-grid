@@ -135,6 +135,14 @@ radio telemetry minima/maxima, EdgeTX home, saved settings/layouts, and
 unsaved editor changes are preserved. The dashboard stays on screen; only
 session-dependent content is redrawn.
 
+## Live dangerously
+
+**Live dangerously** is an experimental, per-model setting that is off by default.
+EdgeTX stops a widget callback after 20,000 Lua instructions. With the setting
+on, AeroGrid can use up to five times its usual work budget in a busy callback.
+This relies on firmware behavior that EdgeTX does not document, so turn it off if
+the dashboard misbehaves.
+
 ## Older layouts
 
 Until you save model arming, older panels can retain their own Arm switch.

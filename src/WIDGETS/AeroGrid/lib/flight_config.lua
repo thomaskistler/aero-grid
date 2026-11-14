@@ -10,8 +10,9 @@ local defaults = {
     minFlightDuration = 30,
     disarmDuration = 10,
     flightSwitch = "",
+    liveDangerously = false,
 }
-local booleanKeys = { "motorReversed", "requireReceiver", "smartDetection" }
+local booleanKeys = { "motorReversed", "requireReceiver", "smartDetection", "liveDangerously" }
 local durationKeys = { "minFlightDuration", "disarmDuration" }
 local signatureKeys = {
     "motorSource",

@@ -42,6 +42,13 @@ local fields = {
         section = "Session reset",
         description = "Clears session data across all dashboards. Keeps flight totals and radio data.",
     },
+    {
+        key = "liveDangerously",
+        label = "Live dangerously",
+        kind = "toggle",
+        section = "Experimental",
+        description = "Lets busy callbacks run past EdgeTX's 20000-instruction limit. Unsupported.",
+    },
 }
 
 local function outputAvailable(index)
