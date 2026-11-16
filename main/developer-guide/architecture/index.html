@@ -342,11 +342,19 @@ add every intervening step; a layout is rejected if its source version is newer
 or any transition is missing.</p>
 <p>Runtime loading validates the header, applies at most one header transition per
 loader callback, then parses each panel and applies at most one panel transition
-per callback before validating and building that panel. Staged Save follows the
-same bounded progression, keeping header migration, each panel migration,
-validation, and persistence in separate callbacks. The synchronous whole-layout
-helpers are for tests and tools, not runtime callback paths. Loading changes
-only the in-memory document and emits an upgrade notice; only explicit editor
+per callback before validating and building that panel. Hidden layouts instead
+validate all placements and register flight declarations before constructing
+panels, so hidden UI can yield while a visible dashboard loads without blocking
+background configuration. Hidden construction also waits for the first normal
+visible panel refresh, with a one-second limit if that refresh cannot run.
+Initial dashboards share model-settings and theme reads; theme reloads still
+read the files afresh. The first visible panel also ends the loader's
+construction burst, giving firmware a chance to paint it.
+Staged Save follows the same bounded progression, keeping header migration,
+each panel migration, validation, and persistence in separate callbacks. The
+synchronous whole-layout helpers are for tests and tools, not runtime callback
+paths. Loading changes only the in-memory document and emits an upgrade notice;
+only explicit editor
 Save persists the current schema. Runtime modules expose <code>RUNTIME_API</code>; panels
 expose <code>apiVersion</code>. The host surfaces incompatible modules and isolates
 failures where possible. These checks detect incompatible mixtures, not every
