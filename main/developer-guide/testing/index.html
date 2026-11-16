@@ -203,7 +203,7 @@ none replaces the others.</p>
 <pre><code class="language-sh">make test
 make check
 </code></pre>
-<p><code>make test</code> checks the Python runner, then runs every <code>test_*.lua</code> under
+<p><code>make test</code> checks menu artwork and the Python runner, then runs every <code>test_*.lua</code> under
 <code>tests/</code>, excluding support modules. Each suite gets a fresh Lua 5.3 runtime
 and the repository root as its chunk argument. The runner stops at the first
 failure and prints its captured AeroGrid errors and traceback.</p>
@@ -238,7 +238,7 @@ Install the <a href="../build/#install-the-validation-tools">validation tools</a
 </tr>
 <tr>
 <td>Loading, scheduling, callback budgets</td>
-<td><code>tests/integration/test_widget.lua</code> and widget queue/slot suites.</td>
+<td>Focused <code>test_catalog_loading.lua</code>, <code>test_host_faults.lua</code>, <code>test_callback_budget.lua</code>, and widget queue/slot suites.</td>
 </tr>
 <tr>
 <td>Editor commands/dialogs</td>
@@ -250,7 +250,7 @@ Install the <a href="../build/#install-the-validation-tools">validation tools</a
 </tr>
 <tr>
 <td>Reflow or resource lifetime</td>
-<td>All-panel-spans, builder-matrix, panel-reflow, font-callback, and resource-stability suites.</td>
+<td>Rendered-geometry, all-panel-spans, panel-reflow, font-callback, and resource-stability suites.</td>
 </tr>
 </tbody>
 </table>
@@ -259,7 +259,7 @@ Install the <a href="../build/#install-the-validation-tools">validation tools</a
 and LVGL inspection. Firmware-dependent mocks require implementation citations;
 do not make a mock agree with an unverified assumption.</p>
 <h2 id="performance-and-resource-regressions">Performance and resource regressions</h2>
-<p><code>tests/integration/test_widget.lua</code> measures callback instructions across
+<p><code>tests/integration/widget/test_callback_budget.lua</code> measures callback instructions across
 loading, dense layouts, services, and reflow. Its ceiling is below 15,000,
 leaving headroom against EdgeTX's 20,000-instruction limit. Focused suites add
 their own budgets; these are mock measurements, not hardware timing guarantees.</p>
@@ -293,7 +293,7 @@ destructive tests.</p>
 serve a <a href="../build/#browser-installer-assets">built site with mirrored assets</a>:</p>
 <pre><code class="language-sh">node tests/browser/radio-panel.smoke.mjs http://127.0.0.1:8000/
 </code></pre>
-<p>It needs two mirrored releases and uses disposable browser storage, not a radio
+<p>It needs two available mirrored stable releases and uses disposable browser storage, not a radio
 or the OS folder picker. Optional environment variables are <code>PLAYWRIGHT_MODULE</code>
 (external <code>index.mjs</code> path), <code>PLAYWRIGHT_CHANNEL=chrome</code>, and
 <code>INSTALLER_KEYBOARD=1</code> for keyboard activation.</p>
@@ -302,12 +302,16 @@ or the OS folder picker. Optional environment variables are <code>PLAYWRIGHT_MOD
 <p>Release packaging (standard library):</p>
 <pre><code class="language-sh">python3 -m unittest discover -s tools -p 'test_release_*.py'
 </code></pre>
+<p>Menu icon and tile artwork checks also use only the standard library:</p>
+<pre><code class="language-sh">make test-artwork
+</code></pre>
+<p>They run as part of <code>make test</code> / <code>make check</code>, including CI.</p>
 <p>Screenshot recipes/adapters (PyYAML, no Companion required):</p>
 <pre><code class="language-sh">make capture-setup
 build/capture-venv/bin/python -m unittest discover -s tools -p 'test_capture_*.py'
 </code></pre>
 <p>Documentation publishing and browser layout:</p>
-<pre><code class="language-sh">make docs
+<pre><code class="language-sh">python3 -m venv build/docs-venv
 build/docs-venv/bin/python -m pip install -r requirements-docs-test.txt
 build/docs-venv/bin/python -m playwright install chromium
 build/docs-venv/bin/python -m unittest discover -s tools -p 'test_docs_*.py'
