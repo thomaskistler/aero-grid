@@ -268,8 +268,8 @@ Switch positions describe transmitter controls, not confirmed aircraft state.</p
 <tbody>
 <tr>
 <td><strong>Entries</strong></td>
-<td>One entry, <code>SW1</code></td>
-<td>One to three readings. The first is the main reading; the others are supporting readings. Each row shows its label and a summary of its conditions. Tap <strong>+</strong> to copy the last entry, including its states.</td>
+<td>No entries</td>
+<td>Up to three readings. The first is the main reading; the others are supporting readings. Tap <strong>+</strong> to start the first entry blank or copy the last entry, including its states.</td>
 </tr>
 <tr>
 <td><strong>Accent</strong></td>
@@ -292,18 +292,17 @@ Switch positions describe transmitter controls, not confirmed aircraft state.</p
 <tbody>
 <tr>
 <td><strong>Label</strong></td>
-<td><code>SW1</code></td>
-<td>Panel heading for the main reading; caption for supporting readings. Required, nonempty single-line text. New entries copy the last entry's label.</td>
+<td>STATE</td>
+<td>Panel heading for the main reading; caption for supporting readings. Single-line text. New entries copy the last entry's label.</td>
 </tr>
 <tr>
 <td><strong>States</strong></td>
-<td>three SA positions</td>
-<td>One to three ordered conditions. The initial entry maps <code>SA^</code> to <code>UP</code>, <code>SA-</code> to <code>MID</code>, and <code>SAv</code> to <code>DOWN</code>. Tap <strong>+</strong> to append a state with <strong>When</strong> set to <code>SA^</code> and <strong>Text</strong> set to <code>UP</code>, rather than copying the last state.</td>
+<td>No states</td>
+<td>Up to three ordered conditions. Tap <strong>+</strong> to append a blank state, rather than copying the last state.</td>
 </tr>
 </tbody>
 </table>
-<p>Use <strong>Remove entry</strong> in the entry's settings dialog to delete a reading.
-At least one entry must remain.</p>
+<p>Use <strong>Remove entry</strong> in the entry's settings dialog to delete a reading.</p>
 <h3 id="state-condition">State condition</h3>
 <p>Tap a condition under <strong>States</strong> to open its settings.</p>
 <p><img alt="State condition settings" src="../../assets/editor/state-condition.png" /></p>
@@ -318,13 +317,13 @@ At least one entry must remain.</p>
 <tbody>
 <tr>
 <td><strong>When</strong></td>
-<td><code>SA^</code> for a new state</td>
+<td>Not selected</td>
 <td>Physical switch position, such as <code>SF^</code>, <code>SA-</code>, or <code>SFv</code>, or logical switch <code>L01</code>–<code>L64</code>. Prefix a logical switch with <code>!</code> to match when it is off, for example <code>!L04</code>. The first true condition wins.</td>
 </tr>
 <tr>
 <td><strong>Text</strong></td>
-<td><code>UP</code> for a new state</td>
-<td>Exact text displayed when this condition wins. Required, nonempty single-line text.</td>
+<td>Empty</td>
+<td>Exact single-line text displayed when this condition wins.</td>
 </tr>
 <tr>
 <td><strong>Background</strong></td>
@@ -333,8 +332,7 @@ At least one entry must remain.</p>
 </tr>
 </tbody>
 </table>
-<p>Use <strong>Remove state</strong> in the condition's settings dialog to delete it.
-At least one condition must remain in each entry.</p>
+<p>Use <strong>Remove state</strong> in the condition's settings dialog to delete it.</p>
 <h2 id="behavior">Behavior</h2>
 <p>Conditions are evaluated in insertion order. The first true condition wins.
 An unknown, unavailable, or stale earlier condition stops evaluation rather
@@ -366,6 +364,10 @@ for the widest configured text, not just the currently selected one.</p>
 </tr>
 </thead>
 <tbody>
+<tr>
+<td>No entries, no states, or an earlier condition missing <strong>When</strong> or <strong>Text</strong></td>
+<td><code>--</code> and unavailable presentation. An empty panel uses the <code>STATE</code> heading.</td>
+</tr>
 <tr>
 <td>First true main condition</td>
 <td>Exact configured <strong>Text</strong> and its whole-panel <strong>Background</strong>.</td>
