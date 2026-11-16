@@ -196,28 +196,23 @@
         
 
 <h1 id="test-and-debug">Test and debug</h1>
-<p>Use the quickest test that exercises your change while iterating, then run the
-broader checks before submitting. Mock tests validate logic; simulators validate
-the actual firmware UI; a radio validates hardware behavior. None substitutes
-for all the others.</p>
+<p>Start with the smallest test covering the change. Mocks validate logic,
+simulators validate firmware UI, and radios validate hardware behavior;
+none replaces the others.</p>
 <h2 id="run-the-automated-lua-suites">Run the automated Lua suites</h2>
 <pre><code class="language-sh">make test
 make check
 </code></pre>
-<p><code>make test</code> checks the Python test runner, then executes every <code>test_*.lua</code>
-beneath <code>tests/</code>, excluding support modules. Each Lua suite gets a fresh
-<code>lupa.lua53.LuaRuntime</code> and the repository root as its chunk argument.</p>
-<p>Expected <code>[AeroGrid] ERROR</code> lines are hidden for passing suites. On failure,
-the runner prints that suite's captured errors, file path, and traceback, then
-stops. Other output remains visible.</p>
-<p>Every suite runs once with the string metatable removed to resemble EdgeTX.
-Runtime code should use
-<code>string.sub(value, ...)</code>, not assume <code>value:sub(...)</code> works on the radio.</p>
-<p><code>make check</code> runs those same tests and then parses all source/test Lua with
-the detected compiler. The runner explicitly selects Lua 5.3 to match EdgeTX,
-rather than <code>lupa</code>'s default runtime, which can change between releases.
-Mock behavior tests still do not replace firmware compiler validation. Install the
-<a href="../build/#install-the-validation-tools">compiler</a>, or specify it:</p>
+<p><code>make test</code> checks the Python runner, then runs every <code>test_*.lua</code> under
+<code>tests/</code>, excluding support modules. Each suite gets a fresh Lua 5.3 runtime
+and the repository root as its chunk argument. The runner stops at the first
+failure and prints its captured AeroGrid errors and traceback.</p>
+<p>Tests must be ASCII. The runner removes the string metatable to resemble
+EdgeTX: use <code>string.sub(value, ...)</code>, not <code>value:sub(...)</code>.
+The desktop runtime does not reproduce radio integer/float widths or native
+resource behavior.</p>
+<p><code>make check</code> also parses source/test Lua with an EdgeTX or Lua 5.3 compiler.
+Install the <a href="../build/#install-the-validation-tools">validation tools</a>, or pass:</p>
 <pre><code class="language-sh">make check LUA_COMPILER=/absolute/path/to/edgetx-luac
 </code></pre>
 <h2 id="choose-the-right-test-layer">Choose the right test layer</h2>
@@ -230,175 +225,125 @@ Mock behavior tests still do not replace firmware compiler validation. Install t
 </thead>
 <tbody>
 <tr>
-<td>YAML, layout validation, geometry, or persistence</td>
-<td><code>tests/unit/lib/</code> and <code>tests/support/assertions.lua</code>.</td>
+<td>Layout parsing, validation, geometry, persistence</td>
+<td>Corresponding <code>tests/unit/lib/</code> suites.</td>
 </tr>
 <tr>
-<td>Source resolution, freshness, model/control/navigation data</td>
-<td>The corresponding service suite in <code>tests/unit/lib/</code>.</td>
+<td>Source resolution or service data</td>
+<td>Corresponding service suites in <code>tests/unit/lib/</code>.</td>
 </tr>
 <tr>
-<td>Panel settings or presentation</td>
-<td><code>tests/unit/panels/</code>, then the relevant <code>tests/integration/widget/test_*_review.lua</code>.</td>
+<td>Panel settings/presentation</td>
+<td><code>tests/unit/panels/</code> and <code>tests/integration/widget/test_*_review.lua</code>.</td>
 </tr>
 <tr>
-<td>Host load/reload, failure isolation, scheduling, or callback budgets</td>
-<td><code>tests/integration/test_widget.lua</code>.</td>
+<td>Loading, scheduling, callback budgets</td>
+<td><code>tests/integration/test_widget.lua</code> and widget queue/slot suites.</td>
 </tr>
 <tr>
-<td>Editor commands and settings dialogs</td>
-<td><code>tests/unit/lib/test_editor.lua</code> and <code>tests/integration/test_editor_ui.lua</code>.</td>
+<td>Editor commands/dialogs</td>
+<td><code>test_editor.lua</code>, <code>test_editor_ui.lua</code>, and <code>test_panel_installation.lua</code>.</td>
 </tr>
 <tr>
-<td>Model settings, arming, or session reset</td>
-<td>Model-settings unit suites, shared-arming/shared-flight integration suites, and <code>tests/integration/widget/test_session_reset.lua</code>.</td>
+<td>Arming, flight detection, model settings, reset</td>
+<td>Shared-arming/shared-flight, model-settings, and session-reset suites.</td>
 </tr>
 <tr>
-<td>Installing panels from the editor</td>
-<td><code>tests/integration/test_panel_installation.lua</code>.</td>
-</tr>
-<tr>
-<td>Shared rendering or reflow</td>
-<td>Builder-matrix, panel-reflow, font-callback, and resource-stability integration suites.</td>
+<td>Reflow or resource lifetime</td>
+<td>All-panel-spans, builder-matrix, panel-reflow, font-callback, and resource-stability suites.</td>
 </tr>
 </tbody>
 </table>
-<p>Use <code>tests/support/runtime_fixture.lua</code> for pure runtime helpers without LVGL,
-and <code>tests/support/widget_fixture.lua</code> for a host with mocked firmware APIs.
-The installation integration suite exercises every editor-selectable panel
-from an empty grid through configuration, preview, save, and reload; it fails
-on retained or caught errors. This is mock coverage, not native UI evidence.</p>
-<p>Use <code>tests/support/edgetx.lua</code> for firmware behavior and LVGL object inspection
-instead of inventing another mock. That module separates <strong>firmware claims</strong>
-(with source-file/symbol citations) from invented test <strong>scaffold</strong> values.
-If a new regression depends on how EdgeTX behaves, verify and cite the firmware
-implementation; making the mock agree with an assumption can hide a real bug.</p>
+<p>Use <code>tests/support/runtime_fixture.lua</code> for runtime helpers without LVGL,
+<code>widget_fixture.lua</code> for a mocked host, and <code>edgetx.lua</code> for firmware behavior
+and LVGL inspection. Firmware-dependent mocks require implementation citations;
+do not make a mock agree with an unverified assumption.</p>
 <h2 id="performance-and-resource-regressions">Performance and resource regressions</h2>
-<p><code>tests/integration/test_widget.lua</code> measures widget callbacks with instruction
-hooks, including dense sixteen-panel layouts, service work, loading, and reflow.
-It fails at <strong>15,000 instructions or more</strong>, reserving headroom against EdgeTX's 20,000-instruction
-callback budget. Read the printed <code>budget headroom</code> and <code>steady state</code> results
-when changing scheduling or rendering.</p>
-<p>Chart performance is evaluated on the real radio. Automated chart tests check
-functional behavior, including gaps, axes, and right-edge preservation;
-they do not establish hardware responsiveness.</p>
-<p>The resource suites check reload collectibility, object counts, sustained
-updates, and font callback retention. They cannot measure native LVGL/bitmap
-memory, firmware GC cadence, or radio timing. A short green mock run is not
-evidence of long-term hardware stability.</p>
+<p><code>tests/integration/test_widget.lua</code> measures callback instructions across
+loading, dense layouts, services, and reflow. Its ceiling is below 15,000,
+leaving headroom against EdgeTX's 20,000-instruction limit. Focused suites add
+their own budgets; these are mock measurements, not hardware timing guarantees.</p>
+<p>Resource suites check reload collection, retained Lua memory, LVGL object
+counts, sustained output updates, and font callbacks. They do not measure
+native bitmap/LVGL memory or firmware GC cadence. Chart tests cover functional
+behavior; evaluate responsiveness on a radio.</p>
 <h2 id="browser-installer-tests">Browser installer tests</h2>
-<p>The browser USB-storage installer uses Python's standard library and Node.js 22:</p>
+<p>Use Python's standard library and Node.js 22:</p>
 <pre><code class="language-sh">make test-installer
 </code></pre>
-<p>This runs release-mirroring and Node tests for connections, confirmation,
-release availability, content integrity, and preservation of non-widget files.
-Mocks do not prove physical radio behavior; never use a real radio for automated
+<p>Tests cover release mirroring, connections, confirmation, integrity, and
+preservation of non-widget files. Never use a real radio for automated
 destructive tests.</p>
-<p>For an optional rendered-panel check, install Playwright and Chromium separately,
-then serve a built site with mirrored assets as described in
-<a href="../build/#browser-installer-assets">Check out and build</a>:</p>
+<p>For an optional rendered check, install Playwright/Chromium separately and
+serve a <a href="../build/#browser-installer-assets">built site with mirrored assets</a>:</p>
 <pre><code class="language-sh">node tests/browser/radio-panel.smoke.mjs http://127.0.0.1:8000/
 </code></pre>
-<p>The smoke check uses disposable browser storage, not a radio or the OS folder
-picker, and requires at least two mirrored releases. Set <code>PLAYWRIGHT_MODULE</code> to an
-external Playwright <code>index.mjs</code> path if needed, <code>PLAYWRIGHT_CHANNEL=chrome</code> to use
-installed Chrome, or <code>INSTALLER_KEYBOARD=1</code> to exercise keyboard activation.</p>
+<p>It needs two mirrored releases and uses disposable browser storage, not a radio
+or the OS folder picker. Optional environment variables are <code>PLAYWRIGHT_MODULE</code>
+(external <code>index.mjs</code> path), <code>PLAYWRIGHT_CHANNEL=chrome</code>, and
+<code>INSTALLER_KEYBOARD=1</code> for keyboard activation.</p>
 <h2 id="python-tooling-tests">Python tooling tests</h2>
-<p>Release packaging uses only Python's standard library:</p>
+<p>Run the suites relevant to the changed tool; <code>make test</code> does not run these.</p>
+<p>Release packaging (standard library):</p>
 <pre><code class="language-sh">python3 -m unittest discover -s tools -p 'test_release_*.py'
 </code></pre>
-<p>Capture-recipe tests need the optional PyYAML environment, but not Companion
-or the native screenshot runner:</p>
+<p>Screenshot recipes/adapters (PyYAML, no Companion required):</p>
 <pre><code class="language-sh">make capture-setup
 build/capture-venv/bin/python -m unittest discover -s tools -p 'test_capture_*.py'
 </code></pre>
-<p>Neither command is included in <code>make test</code>. CI runs the release-packaging
-tests; run capture-recipe tests locally when changing recipes or adapters.</p>
-<p>Documentation tests check versioned publishing, version switching, table
-containment, and keyboard navigation in Chromium:</p>
+<p>Documentation publishing and browser layout:</p>
 <pre><code class="language-sh">make docs
 build/docs-venv/bin/python -m pip install -r requirements-docs-test.txt
 build/docs-venv/bin/python -m playwright install chromium
 build/docs-venv/bin/python -m unittest discover -s tools -p 'test_docs_*.py'
 </code></pre>
+<p>See <a href="../videos/#validate-changes">Tutorial videos</a> for video tests and
+<a href="../contributing/#maintain-simulator-fixtures">Maintain simulator fixtures</a>
+for model generation and checksum checks.</p>
 <h2 id="lint-and-formatting">Lint and formatting</h2>
 <pre><code class="language-sh">make lint
 stylua --check src/WIDGETS tests
 </code></pre>
-<p><code>make lint</code> uses <code>lint-config.lua</code>, including the EdgeTX globals the runtime
-expects. <code>stylua.toml</code> defines repository formatting.
-<code>make format</code> <strong>changes files</strong>; inspect the diff afterwards.
-Use StyLua 2.5.2 to match CI.</p>
+<p><code>lint-config.lua</code> declares runtime globals; <code>stylua.toml</code> defines formatting.
+Use StyLua 2.5.2 to match CI. <code>make format</code> rewrites files; inspect its diff.</p>
 <h2 id="debug-a-failure">Debug a failure</h2>
-<p>For a mock assertion, start with the failing file and traceback, reproduce it
-with <code>make test</code>, and minimize the fixture. Check whether the failure
-is in code, expected behavior, or an inaccurate mock before changing expectations.</p>
-<p>For a firmware error, use the simulator's logs and the <strong>Diagnostics</strong>
-layout. Record the loaded package identity, failing module/source, exact
-message, model, and layout. An unavailable sensor is not automatically a Lua
-failure: verify its binding and link state first.</p>
-<p>If the display ignores your code change, check the active SD path, saved layout
-override, and stale <code>.luac</code> before investigating rendering.</p>
+<p>Start with the failing suite/traceback and minimize the fixture. Verify whether
+the defect is in code, expectations, or a mock before changing assertions.</p>
+<p>For firmware problems, record package identity, module, exact error,
+model/layout, and source/link state. If changes do not appear, check the active
+SD path, saved-layout override, and stale <code>.luac</code> files.</p>
 <h3 id="simulator-logs-and-caught-errors">Simulator logs and caught errors</h3>
-<p>In Companion 2.12's simulator, open <strong>View &gt; Debug Output</strong> (<strong>F6</strong>, or
-<strong>Fn+F6</strong> on some Macs). Disable its filter initially so it does not hide
-messages. Firmware Lua errors and Lua <code>print(...)</code> output go to this console.
-For a persistent log, enable <strong>Radio Firmware (in Simulator)</strong> in Companion's
-application preferences and choose an <strong>Output Logs Folder</strong> before starting
-the simulation. Files are named <code>FirmwareDebug_&lt;timestamp&gt;.log</code>.</p>
-<p>AeroGrid mirrors caught runtime, panel, and editor validation/save errors to
-Lua <code>print(...)</code>, prefixed with <code>[AeroGrid] ERROR</code>. Messages include the layout,
-model filename when known, operation, and panel/setting details when relevant.
-Identical messages are suppressed per widget instance across layout reloads.
-The last 64 distinct messages are retained for deduplication; an older message
-may be logged again after eviction or when a new widget instance is created.
-Disable console filters or include <code>AeroGrid</code> to see these messages.</p>
-<p>Logging does not replace the live host's retained failures, dashboard error
-overlay, or editor validation messages. Preview errors still appear in
-<strong>Panel preview failed</strong> messages; open the details to read the complete
-explanation. AeroGrid does not write a separate persistent error file; use
-Companion's firmware logging option above when persistence is needed.</p>
-<p>The <strong>Diagnostics</strong> layout shows the host it belongs to, not the errors of
-another dashboard. To inspect a failing dashboard's own panels, add a
-<strong>Host diagnostics</strong> panel there and select its <strong>panels</strong> section. It lists
-rejected and failed panels first, including their reasons. The other sections
-show package/layout identity, theme notices, and source bindings.</p>
-<p>For Navigation first-arm home failures, select <strong>log</strong> on a Host diagnostics
-panel before reproducing the problem. This enables a radio-wide, in-memory
-event buffer, including events from Navigation services on hidden screens.
-It is independent of the per-widget console-error deduplication above.
-Entries identify uptime, layout/host instance, panel, and captured/missed
-or switch unavailable. Each event records <code>now</code>, availability, freshness,
-stale state, value, <code>updatedAt</code>, reported delay, and coordinate validity,
-never coordinates. Inputs describe GPS for capture attempts or the arm
-switch for switch-unavailable events; inapplicable fields appear as <code>nil</code>.
-Timestamps are 10 ms ticks; GPS <code>delay</code> uses <strong>160 ms units</strong>.
-Calculate poll age as <code>now - updatedAt</code> and combined age as
-<code>delay * 16 + now - updatedAt</code>. First-arm capture requires an arm observation
-no older than the shared 500-tick (5-second) sample limit and combined GPS age
-no greater than 1,000 ticks (10 seconds). Capture policy is not relaxed for
-diagnosis. <strong>Maximum log
-entries</strong> defaults to 64 (1–256); the largest active log panel setting wins.
-In widget fullscreen, tap the log panel and use drag/wheel scrolling to read
-a stable snapshot; Close/RTN dismisses it. Reopen for newer events. Removing
-all log panels stops recording. The buffer is never saved to the SD card
-and is lost when the radio restarts or the widget script unloads.</p>
-<p>Diagnostic-log, Host diagnostics, and Navigation suites cover retention,
-cross-dashboard capture, viewer interaction, and callback budgets. Reproduce
-timing or native UI problems on hardware with logging enabled.</p>
-<p>The native capture tools already redirect simulator output to
-<code>build/doc-capture/&lt;panel&gt;/simulator.log</code> or
-<code>build/editor-capture/&lt;scene&gt;/simulator.log</code>; these are separate from an
-interactive Companion session.</p>
+<p>In Companion 2.12, open <strong>View &gt; Debug Output</strong> (<strong>F6</strong>, or <strong>Fn+F6</strong>).
+Disable filters or include <code>AeroGrid</code>. For persistent logs, enable
+<strong>Radio Firmware (in Simulator)</strong> and choose an <strong>Output Logs Folder</strong> in
+application preferences before simulation.</p>
+<p>AeroGrid prints caught errors with <code>[AeroGrid] ERROR</code>, including operation and
+layout/panel context. Identical messages are deduplicated per widget across
+reloads, with 64 distinct messages retained. AeroGrid does not write an error
+file; use Companion's logging for persistence.</p>
+<p>The <strong>Diagnostics</strong> layout reports only its own host. To inspect another
+dashboard, add <strong>Host diagnostics</strong> there and select <strong>panels</strong> for rejected
+or failed panels and their reasons. Editor errors remain in their dialogs.</p>
+<p>For Navigation capture timing, select <strong>log</strong> before reproducing the issue.
+This enables a radio-wide in-memory buffer, including hidden dashboards,
+without recording coordinates. <strong>Maximum log entries</strong> is 1-256 (default 64);
+the largest active setting wins. Removing all log panels stops recording.
+Restarting the radio or unloading the script loses the buffer.</p>
+<p>In widget fullscreen, tap the log panel to open a scrollable snapshot;
+Close/RTN dismisses it. Reopen for newer events. Entries include uptime,
+host/panel identity, capture outcome, and source reliability/age. Timestamps
+use 10 ms ticks; GPS <code>delay</code> uses 160 ms units, so combined age in ticks is
+<code>delay * 16 + now - updatedAt</code>. Logging does not relax capture rules.</p>
+<p>Native capture logs are separate: see <code>simulator.log</code> under
+<code>build/doc-capture/&lt;panel&gt;/</code> or <code>build/editor-capture/&lt;scene&gt;/</code>.</p>
 <h2 id="validate-on-a-radio-when-needed">Validate on a radio when needed</h2>
-<p>Hardware-sensitive work includes native
-resource lifetime, telemetry freshness/recovery, timer behavior, and flight
-count persistence. Record radio/firmware/package versions, layout, duration,
-memory/CPU observations, and receiver state; distinguish actual telemetry from
-synthetic inputs.</p>
-<p>Do not infer broader radio support from the TX16S fixture. Use the release
-package and <a href="../../user-guide/installation/">installation instructions</a> for a
-hardware check, with your custom layouts backed up before replacement.</p>
+<p>Hardware-sensitive work includes native resource lifetime, telemetry
+freshness/recovery, timers, and flight persistence. Record radio/firmware/package,
+layout, duration, CPU/memory, and receiver state; distinguish real telemetry
+from synthetic inputs.</p>
+<p>Do not infer other-radio support from the TX16S fixture. Use the release ZIP
+and <a href="../../user-guide/installation/">installation procedure</a>, with user data
+backed up.</p>
       </article>
     </div>
   </div>

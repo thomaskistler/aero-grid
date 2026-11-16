@@ -196,154 +196,119 @@
         
 
 <h1 id="check-out-and-build">Check out and build</h1>
-<p>AeroGrid is a Lua widget, not a firmware fork. You do not need to build EdgeTX
-or connect a radio to get started. The development build assembles an SD-card
-directory that either simulator can boot; the release build creates the ZIP
-that users install.</p>
+<p>AeroGrid is a Lua widget, not a firmware fork. Development builds assemble a
+simulator SD card; release builds create the installable ZIP. Neither requires
+building EdgeTX or connecting a radio.</p>
 <h2 id="get-the-code">Get the code</h2>
-<p>With Git installed, clone the repository and create a branch for your change:</p>
 <pre><code class="language-sh">git clone https://github.com/thomaskistler/aero-grid.git
 cd aero-grid
 git switch -c my-change
 </code></pre>
-<p>If you do not have repository write access, fork it on GitHub and clone your
-fork instead. Run all commands in this guide from the repository root.</p>
+<p>Fork and clone your fork if you do not have write access. Run guide commands
+from the repository root.</p>
 <h2 id="prerequisites">Prerequisites</h2>
-<p>Install Python 3 with virtual-environment support, Make, and rsync.
-Python 3.11 is the version used in CI. The Makefile uses a Unix shell and
-<code>bin/</code> virtual-environment paths: use macOS, Linux, or WSL for these commands.
-On Windows, Companion can run natively, but must be pointed at a directory
-accessible from Windows.</p>
-<h3 id="set-up-the-development-environment">Set up the development environment</h3>
+<p>Use macOS, Linux, or WSL with Git, Make, rsync, and Python 3 with
+virtual-environment support. CI uses Python 3.11. The Makefile requires a Unix
+shell and <code>bin/</code> environment paths. Native Windows Companion can use an SD
+directory accessible from Windows.</p>
 <pre><code class="language-sh">make setup
 make test
 </code></pre>
-<p><code>make setup</code> creates <code>build/venv/</code> and installs the pinned <code>lupa</code> dependency.
-There is no need to activate the environment: Make invokes its Python directly.
-<code>make test</code> also sets up this environment automatically when needed.</p>
+<p><code>make setup</code> installs pinned development dependencies into <code>build/venv/</code>.
+Make invokes that environment directly; activation is unnecessary.
+<code>make test</code> also creates it when needed.</p>
 <h3 id="install-the-validation-tools">Install the validation tools</h3>
-<p>Behavior tests need only the Python environment, but runtime changes also need
-these tools on <code>PATH</code>:</p>
+<p>Runtime changes also need these executables on <code>PATH</code>:</p>
 <table>
 <thead>
 <tr>
 <th>Tool</th>
-<th>Used for</th>
-<th>Version guidance</th>
+<th>Purpose</th>
+<th>Version</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>edgetx-luac</code> or Lua 5.3 <code>luac</code></td>
-<td>Parse source and test Lua in <code>make check</code>.</td>
-<td>Prefer EdgeTX's compiler when available; otherwise use Lua <strong>5.3</strong>, not a different Lua version.</td>
+<td>Source/test syntax checks in <code>make check</code>.</td>
+<td>EdgeTX's compiler or Lua <strong>5.3</strong>.</td>
 </tr>
 <tr>
 <td><code>lua-language-server</code></td>
 <td>Static diagnostics in <code>make lint</code>.</td>
-<td>CI uses 3.19.1; install the appropriate binary from <a href="https://github.com/LuaLS/lua-language-server/releases">LuaLS releases</a>.</td>
+<td>CI uses 3.19.1.</td>
 </tr>
 <tr>
 <td><code>stylua</code></td>
-<td>Format Lua and check formatting.</td>
-<td>CI pins 2.5.2; use <a href="https://github.com/JohnnyMorganz/StyLua/releases">StyLua releases</a>.</td>
+<td>Formatting and formatting checks.</td>
+<td>CI pins 2.5.2.</td>
 </tr>
 </tbody>
 </table>
-<p>For example, on Debian/Ubuntu:</p>
+<p>For Debian/Ubuntu:</p>
 <pre><code class="language-sh">sudo apt-get install git make rsync python3 python3-venv lua5.3
 make check LUA_COMPILER=luac5.3
 </code></pre>
-<p>On macOS with Homebrew, the basic dependencies and Lua compiler can be installed
-with:</p>
+<p>For macOS with Homebrew:</p>
 <pre><code class="language-sh">brew install python rsync lua@5.3
 make check LUA_COMPILER=&quot;$(brew --prefix lua@5.3)/bin/luac&quot;
 </code></pre>
-<p>Install LuaLS and StyLua separately and ensure their executables are on <code>PATH</code>.
-The VS Code Lua extension is useful in the editor, but does not by itself make
-the LuaLS command-line binary available to Make.</p>
-<p><code>make check</code> searches for <code>edgetx-luac</code>, <code>luac5.3</code>, then <code>luac</code>.
-If the last one is a different version, pass <code>LUA_COMPILER</code> explicitly.
-See <a href="../testing/">Test and debug</a> for the complete validation workflow.</p>
+<p>Install <a href="https://github.com/LuaLS/lua-language-server/releases">LuaLS</a> and
+<a href="https://github.com/JohnnyMorganz/StyLua/releases">StyLua</a> separately.
+The VS Code Lua extension alone does not put LuaLS on Make's <code>PATH</code>.
+<code>make check</code> searches for <code>edgetx-luac</code>, <code>luac5.3</code>, then <code>luac</code>; pass
+<code>LUA_COMPILER</code> explicitly if discovery selects a different Lua version.</p>
 <h2 id="build">Build</h2>
 <pre><code class="language-sh">make build
 </code></pre>
-<p>This creates the SD image at <code>build/sdcard/</code>. To see the dashboard, follow
-<a href="../simulators/">Run and test in simulators</a>.</p>
-<h3 id="what-the-build-does">What the build does</h3>
-<pre><code class="language-text">tests/fixtures/sdcard/        radio, models, registry, and model image
-            +
-src/WIDGETS/AeroGrid/         current widget, panels, libraries, and layouts
-            |
-            v
-build/sdcard/                disposable simulator SD-card root
-</code></pre>
-<p><code>make build</code> copies the fixture first, then overlays the whole widget package.
-It removes compiled <code>.luac</code> files and updates Lua source timestamps so EdgeTX
-recompiles the current sources. There is no transpilation or native compilation
-of AeroGrid itself.</p>
-<p><strong>Stop the simulator before rebuilding.</strong> The build recreates the image from
-the baseline, deleting simulator-created models, saved layouts, registry changes,
-and other files not present in the fixture. Back up experiments outside that
-directory first. Never point a build at a real SD card or personal model backup.</p>
-<p>Use a separate image when you want an independent experiment:</p>
-<pre><code class="language-sh">make build BUILD_DIR=build/experiment
-</code></pre>
-<p>Its SD-card root is <code>build/experiment/sdcard/</code>; change the simulator path to match.
-Changing <code>BUILD_DIR</code> also relocates Make-managed environments and output.
-The screenshot tools have their own fixed output paths, described in
-<a href="../tools/">Project tools</a>.</p>
+<p>This recreates <code>build/sdcard/</code> from <code>tests/fixtures/sdcard/</code>, overlays the widget
+source and development layouts, and removes stale bytecode. There is no
+transpilation or native compilation of AeroGrid.
+See <a href="../simulators/">Run and test in simulators</a> to use it.</p>
+<p><strong>Stop the simulator before rebuilding.</strong> A build deletes simulator-created
+state in that image. Back up experiments elsewhere, and never build onto a
+radio SD card or personal model backup.</p>
+<p>For a separate image, use <code>make build BUILD_DIR=build/experiment</code> and point
+the simulator at <code>build/experiment/sdcard/</code>. <code>BUILD_DIR</code> relocates Make-managed
+environments and output, but not the <a href="../tools/">capture tools' output</a>.</p>
 <h2 id="build-an-installable-package">Build an installable package</h2>
 <pre><code class="language-sh">make release-package
 </code></pre>
-<p>This writes <code>AeroGrid-&lt;version&gt;.zip</code> and its <code>.sha256</code> file to <code>build/release/</code>,
-using the version in <code>src/WIDGETS/AeroGrid/lib/package.lua</code>. The archive contains
-runtime Lua, the editor assets, the <code>Default</code>, <code>Empty</code>, <code>Diagnostics</code>, and <code>Palette</code> layouts, and
-the license. Review layouts, fixture models, simulator state, and bytecode are
-not included.</p>
-<p>Use this ZIP, rather than the development SD image, to check the actual
+<p>This writes <code>AeroGrid-&lt;version&gt;.zip</code> and <code>.zip.sha256</code> to <code>build/release/</code>,
+using <code>lib/package.lua</code>. The deterministic source-only package includes runtime
+code/assets, the license, and the <code>Default</code>, <code>Empty</code>, <code>Diagnostics</code>, and
+<code>Palette</code> layouts. Development fixtures and bytecode are excluded.</p>
+<p>Use the ZIP to check the actual
 <a href="../../user-guide/installation/">installation and upgrade procedure</a>.
-Publishing a release is a separate <a href="../contributing/#publish-a-release">maintainer workflow</a>.</p>
+Packaging does not publish; see <a href="../contributing/#publish-a-release">Publish a release</a>.</p>
 <h2 id="build-and-preview-the-documentation">Build and preview the documentation</h2>
 <pre><code class="language-sh">make docs
 make docs-serve
 </code></pre>
-<p>The first command installs the pinned documentation tools into
-<code>build/docs-venv/</code> and strictly builds the site at <code>build/docs/</code>.
-The second serves a live-reloading preview at <code>http://127.0.0.1:8000</code>;
-stop it with Ctrl-C.</p>
-<p>This previews the checkout only. The published site's <strong>Documentation version</strong>
-menu offers released versions and <code>main</code>.</p>
-<p>Markdown lives in <code>docs/</code>. When adding or renaming a page, update <strong>both</strong>
-<code>mkdocs.yml</code> and the explicit sidebar in <code>docs/overrides/toc.html</code>.
-Base site styling is in <code>docs/stylesheets/aerogrid.css</code>; the shared Radio Console
-shell, typography, cards, dialogs, help popovers, notices, and disclosures are in
-<code>docs/stylesheets/console.css</code>. Their existing <code>ag-radio</code>, <code>ag-release</code>, and
-<code>ag-install</code> class names are also reused by the browser tools; these styles do not
-load or require those tools. Checked-in screenshots are used as-is; building the
-site never launches a simulator.</p>
+<p>These install pinned tools into <code>build/docs-venv/</code>, strictly build the site at
+<code>build/docs/</code>, and serve a live preview at <code>http://127.0.0.1:8000</code>.
+Stop the preview with Ctrl-C.</p>
+<p>Markdown lives in <code>docs/</code>. Add or rename pages in both <code>mkdocs.yml</code> and
+<code>docs/overrides/toc.html</code>. Site styles live in <code>docs/stylesheets/</code>; shared
+Radio Console styles are in <code>console.css</code>. Builds use checked-in screenshots
+without launching a simulator.</p>
 <h3 id="browser-installer-assets">Browser installer assets</h3>
-<p>The USB installer modules live in <code>docs/javascripts/</code>: <code>radio-storage.mjs</code> owns
-connections and metadata, <code>radio-installer.mjs</code> handles releases and verified
-widget replacement, <code>radio-panel.mjs</code> drives the installation UI, and
-<code>radio-connection-help.mjs</code> adds connection help.</p>
-<p>The site mirrors <strong>published stable releases</strong> and the rolling <strong>dev</strong> release,
-not the current source tree. The installer hides dev until
-<strong>Show developer releases</strong> is selected; beta/RC releases are excluded.
-Downloads are verified before replacement and installed files are checked afterward.
-Only <code>WIDGETS/AeroGrid</code> is replaced; user data, maps, other widgets, settings, and
-firmware are preserved. There is no backup or rollback.</p>
-<p>To include those assets in a disposable built-site preview:</p>
+<p>The installer modules live in <code>docs/javascripts/</code>: <code>radio-storage.mjs</code> owns
+connections, <code>radio-installer.mjs</code> handles verified widget replacement,
+<code>radio-panel.mjs</code> drives the UI, and <code>radio-connection-help.mjs</code> provides help.</p>
+<p>Automatic installation uses mirrored published stable releases and the rolling
+<code>dev</code> release, not checkout sources. Dev is opt-in; beta/RC releases are
+excluded. Only <code>WIDGETS/AeroGrid</code> is replaced. Downloads and installed content
+are verified, but there is no backup or rollback.</p>
+<p>To preview with mirrored assets:</p>
 <pre><code class="language-sh">make docs
 python3 tools/installer_assets.py --output build/docs/installer
 python3 -m http.server 8000 --directory build/docs
 </code></pre>
-<p>Mirroring needs network access to GitHub; optional <code>GH_TOKEN</code> authentication stays
-server-side. Test in desktop Chrome or Edge over HTTPS or localhost.
-Ordinary <code>make docs-serve</code> does not mirror installation assets. Releases without
-mirrored assets remain unavailable for automatic installation.
-Stop the preview with Ctrl-C. Never direct asset output or a development build at
-a radio's SD card.</p>
+<p>Mirroring requires GitHub access; optional <code>GH_TOKEN</code> stays server-side.
+Use desktop Chrome or Edge over HTTPS or localhost. <code>make docs-serve</code> does not
+mirror assets; unmirrored releases cannot be installed automatically.
+Never direct generated output at a radio SD card.</p>
 <h2 id="command-reference">Command reference</h2>
 <table>
 <thead>
@@ -363,15 +328,15 @@ a radio's SD card.</p>
 </tr>
 <tr>
 <td><code>make test</code></td>
-<td>Check the Python runner, then run every Lua behavior suite with firmware-like string behavior.</td>
+<td>Run Python runner tests and Lua behavior suites.</td>
 </tr>
 <tr>
 <td><code>make test-installer</code></td>
-<td>Test the browser installer with Node.js 22 and Python.</td>
+<td>Run Python/Node browser-installer tests.</td>
 </tr>
 <tr>
 <td><code>make check</code></td>
-<td>Run behavior tests, then parse source/test Lua.</td>
+<td>Run behavior tests and Lua syntax checks.</td>
 </tr>
 <tr>
 <td><code>make lint</code></td>
@@ -379,19 +344,19 @@ a radio's SD card.</p>
 </tr>
 <tr>
 <td><code>make format</code></td>
-<td>Rewrite source/test Lua using StyLua.</td>
+<td>Rewrite source/test Lua with StyLua.</td>
 </tr>
 <tr>
 <td><code>make build</code></td>
-<td>Reset and assemble the development SD image.</td>
+<td>Recreate the simulator SD image.</td>
 </tr>
 <tr>
-<td><code>make capture-setup</code></td>
-<td>Install optional panel screenshot dependencies.</td>
+<td><code>make capture-setup</code> / <code>make video-setup</code></td>
+<td>Install optional image/video dependencies.</td>
 </tr>
 <tr>
 <td><code>make release-package</code></td>
-<td>Generate the installation ZIP and checksum.</td>
+<td>Create the installation ZIP and checksum.</td>
 </tr>
 <tr>
 <td><code>make docs</code> / <code>make docs-serve</code></td>

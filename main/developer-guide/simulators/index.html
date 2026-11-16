@@ -196,10 +196,8 @@
         
 
 <h1 id="run-and-test-in-simulators">Run and test in simulators</h1>
-<p>Both simulators run EdgeTX firmware, but use different builds and interfaces.
-Use VS Code for a tight edit/run loop and Companion for native firmware UI,
-radio controls, and screenshot tooling. Record which one you used when
-reporting a result.</p>
+<p>Use VS Code for an integrated edit/run loop and Companion for native firmware
+UI and controls. Record the simulator and version when reporting results.</p>
 <table>
 <thead>
 <tr>
@@ -223,22 +221,12 @@ reporting a result.</p>
 </table>
 <p>Neither proves receiver behavior, native radio memory stability, or support
 for every color radio.</p>
-<h2 id="mock-memory-regression-tests">Mock memory regression tests</h2>
-<p><code>python3 tests/run.py</code> includes repeated layout reload/resize checks for retired
-page and service-runtime collection, stable LVGL object counts, retained Lua
-memory, and font callback references. The <code>review-output</code> layout participates.
-A dedicated output-panel test warms all 32 channel rows, then measures 100 cycles
-of changing outputs/trims, loss/recovery, name and trim ambiguity, channel-range
-changes, display toggles, and narrow/wide reflows. It requires retained growth
-below 1 KiB and second-half growth below 0.25 KiB, with no live-object growth.
-These mock checks catch regressions; they do not replace native-radio soak tests.</p>
 <h2 id="prepare-a-disposable-sd-image">Prepare a disposable SD image</h2>
 <pre><code class="language-sh">make build
 </code></pre>
 <p>Use the <strong>absolute path to <code>build/sdcard/</code></strong>, not <code>src/</code>, <code>WIDGETS/</code>, or
 <code>tests/fixtures/sdcard/</code>, as the simulator SD-card root. It contains <code>RADIO/</code>,
-<code>MODELS/</code>, <code>IMAGES/</code>, <code>AEROGRID/</code>, and <code>WIDGETS/</code>.
-Run <code>pwd</code> at the repository root to find the checkout's absolute path.</p>
+<code>MODELS/</code>, <code>IMAGES/</code>, <code>AEROGRID/</code>, and <code>WIDGETS/</code>.</p>
 <p><strong>Do not run both simulators against the same image at the same time.</strong>
 They can write files on the simulated SD card. Stop the simulator before rebuilding,
 back up experiments elsewhere, and remember that <code>make build</code> resets them.
@@ -247,8 +235,7 @@ Use <code>make build BUILD_DIR=build/companion</code> and point Companion at
 <h2 id="vs-code-edgetx-dev-kit">VS Code: EdgeTX Dev Kit</h2>
 <p>Install <a href="https://marketplace.visualstudio.com/items?itemName=jeffreychix.edgetx-dev-kit">EdgeTX Dev Kit</a>
 (<code>jeffreychix.edgetx-dev-kit</code>) from VS Code's Extensions view.
-The steps here use the extension's 2.x simulator commands; Companion is not
-required.</p>
+Use the extension's 2.x simulator commands; Companion is not required.</p>
 <ol>
 <li>Open the repository <strong>folder</strong> in VS Code. Open
     <code>src/WIDGETS/AeroGrid/main.lua</code>.</li>
@@ -381,35 +368,44 @@ radio's model-selection UI, just as on a radio.</p>
 <p>Review and simulator-only layouts live in
 <code>tests/fixtures/layouts/development/</code>; <code>make build</code> adds them to the disposable
 simulator image without including them in the widget source or release ZIP.
-Together the categories expose all 23 registered layouts exactly once, in the
-screen order shown above. Layout filenames and registry indices are unchanged.
-All six models share the same sensors, physical switches, mixes, trims, and timer setup.
-EdgeTX stores each model's live timer and trim state separately.
-<strong>AG Flight</strong> also reserves Sticky <strong>L01</strong> for AeroGrid's flight-status output.
-Its Special Functions play three Beep 1 tones when L01 turns on and four when
-it turns off, using the supplied one-shot <code>agstart</code> and <code>agend</code> audio tracks.
-They do not play at model startup.
-All screens use App mode and the Modern Dark theme. On the State dashboard, SF
-changes MODE, SA changes RATE, and SB changes FLAP; NO MIDDLE deliberately
-leaves SA's middle position unmapped.</p>
-<p>The sixth screen of <strong>AG System</strong> is the telemetry-free <strong>Palette</strong> layout. Its
-fixed samples show token swatches, text levels, accents, a dial, bars, and
-the six dashboard panel states. Change the widget's Theme option to compare
-Modern Dark and Modern Light, or add a <code>.yml</code> theme file as described in
-<a href="../../user-guide/customize-themes/">Customize themes</a>.</p>
-<p><strong>Diagnostics</strong> reports loading, package identity, and service errors; <code>services</code>
-and <code>services2</code> exercise the service-probe panel across the telemetry, model, control, and navigation services.
-<code>sim</code> and <code>sim2</code> are complementary live-data dashboards: the first focuses on
-telemetry, while the second focuses on radio-local values and metric modes.
-Development layouts are not included in the release ZIP.</p>
-<p><strong>AG Flight</strong> uses SF down for model-wide arming, ten-second start and end
-detection windows, and Smart detection enabled. Raise CH3
-above 25% and supply live telemetry to exercise flight detection. Its
-flight-counter screen displays the shared model count; resize it in the editor to
-inspect other spans.</p>
-<p>Rebuild and re-import models/settings into Companion to replace the former
-STD/PANEL1/PANEL2 models. Existing Companion documents retain their old screens
-until refreshed; <code>make build</code> replaces the generated simulator image.</p>
+All screens use App mode and Modern Dark. Models share sensors, switches,
+mixes, trims, and timer setup, but EdgeTX keeps live timer/trim state per model.</p>
+<p>Useful scenarios:</p>
+<table>
+<thead>
+<tr>
+<th>Layout/model</th>
+<th>Inputs and purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sim</code> / <code>sim2</code></td>
+<td>Telemetry / radio-local values and metric modes.</td>
+</tr>
+<tr>
+<td>State (<code>review-state</code>)</td>
+<td>SF changes MODE, SA changes RATE, SB changes FLAP. NO MIDDLE intentionally leaves SA's middle position unmapped.</td>
+</tr>
+<tr>
+<td>Palette</td>
+<td>Telemetry-free theme samples; change Theme or <a href="../../user-guide/customize-themes/">add a custom theme</a>.</td>
+</tr>
+<tr>
+<td>Diagnostics / <code>services</code> / <code>services2</code></td>
+<td>Host errors and service-probe views.</td>
+</tr>
+<tr>
+<td>AG Flight</td>
+<td>SF down arms; CH3 above 25% with live telemetry exercises detection. Start/end windows are ten seconds; Smart detection is enabled.</td>
+</tr>
+</tbody>
+</table>
+<p>AG Flight reserves Sticky <strong>L01</strong> for flight status. Its one-shot <code>agstart</code> and
+<code>agend</code> tracks play three tones at flight start and four at end, not at model
+startup. The flight-counter screen reads the shared model count.</p>
+<p>To change the baseline, follow
+<a href="../contributing/#maintain-simulator-fixtures">Maintain simulator fixtures</a>.</p>
       </article>
     </div>
   </div>

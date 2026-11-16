@@ -196,15 +196,13 @@
         
 
 <h1 id="issues-changes-and-releases">Issues, changes, and releases</h1>
-<p>You can contribute a reproducible bug report, a focused fix, a panel, or clearer
-documentation. Start with the <a href="../build/">checkout instructions</a> for code work;
-you do not need a working development environment to file an issue.</p>
+<p>Start code work with <a href="../build/">Check out and build</a>.
+A development environment is not required to file an issue.</p>
 <h2 id="file-an-issue">File an issue</h2>
-<p>Search <a href="https://github.com/thomaskistler/aero-grid/issues">existing issues</a>
-first. If none describes the problem, choose
-<a href="https://github.com/thomaskistler/aero-grid/issues/new">New issue</a>.
-There are currently no repository-specific issue templates.</p>
-<p>For a bug report, include:</p>
+<p>Search <a href="https://github.com/thomaskistler/aero-grid/issues">existing issues</a>,
+then <a href="https://github.com/thomaskistler/aero-grid/issues/new">open an issue</a>
+if needed.</p>
+<p>For bugs, include:</p>
 <table>
 <thead>
 <tr>
@@ -214,51 +212,35 @@ There are currently no repository-specific issue templates.</p>
 </thead>
 <tbody>
 <tr>
-<td>Summary</td>
-<td>A specific title and what failed.</td>
-</tr>
-<tr>
-<td>Version</td>
-<td>AeroGrid package version or Git commit; EdgeTX version; radio type and display size.</td>
+<td>Versions</td>
+<td>AeroGrid version/commit, EdgeTX version, radio, and display size.</td>
 </tr>
 <tr>
 <td>Environment</td>
-<td>Physical radio, VS Code Dev Kit/WASM, Companion native simulator, or mock test; extension/Companion version and desktop OS when relevant.</td>
+<td>Hardware, Dev Kit/WASM, Companion, or mock tests; relevant tool version and OS.</td>
 </tr>
 <tr>
 <td>Reproduction</td>
-<td>Steps from a clean baseline, selected model/layout/theme, and the smallest layout or settings that reproduce it.</td>
+<td>Minimal steps, model/layout/theme, source setup, and switch/link state.</td>
 </tr>
 <tr>
 <td>Expected / actual</td>
-<td>What should happen and what actually happens, including exact error text.</td>
+<td>Intended result, observed result, and exact error text.</td>
 </tr>
 <tr>
 <td>Evidence</td>
-<td>Relevant logs, screenshots, failing test output, or a recording. For growth/CPU problems, include duration and observed measurements.</td>
-</tr>
-<tr>
-<td>Data setup</td>
-<td>Source names/types/units, link state, switches, timers, and any synthetic inputs needed to reproduce it.</td>
+<td>Logs, screenshots, failing output, or recording; duration and measurements for CPU/memory issues.</td>
 </tr>
 </tbody>
 </table>
-<p>Attach a minimal YAML layout rather than an entire personal SD card. Remove
-unrelated model information, GPS coordinates, and other private data before
-posting. State whether the issue survives a fresh build/restart; that helps
-separate a code defect from stale bytecode or saved-layout overrides.</p>
-<p>For a feature request, describe the developer or pilot problem, an example
-workflow, and the desired behavior. Mention relevant panel sizes and radio
-constraints. Discuss large behavioral changes before implementing them.</p>
-<p>The optional GitHub CLI provides the same workflow:</p>
-<pre><code class="language-sh">gh issue list --repo thomaskistler/aero-grid
-gh issue create --repo thomaskistler/aero-grid
-</code></pre>
+<p>Attach a minimal layout, not a personal SD card. Remove private model data and
+GPS coordinates. State whether a fresh build/restart reproduces the failure.
+For features, describe the problem, workflow, desired behavior, and relevant
+radio/panel constraints. Discuss large behavioral changes before implementation.</p>
 <h2 id="prepare-a-focused-change">Prepare a focused change</h2>
-<p>Work on a branch or fork based on current <code>main</code>. Keep implementation, tests,
-and directly related documentation together. Runtime code and tests use SPDX
-<code>GPL-2.0-only</code> headers.</p>
-<p>Lua naming follows these conventions:</p>
+<p>Base your branch or fork on current <code>main</code>. Keep implementation, regression
+tests, and directly related documentation together. Lua code and tests use
+SPDX <code>GPL-2.0-only</code> headers.</p>
 <table>
 <thead>
 <tr>
@@ -269,125 +251,102 @@ and directly related documentation together. Runtime code and tests use SPDX
 <tbody>
 <tr>
 <td>Library modules and test filenames</td>
-<td>snake_case; tests start with <code>test_</code></td>
+<td>snake_case; tests start with <code>test_</code>.</td>
 </tr>
 <tr>
-<td>Panel module filenames</td>
-<td>kebab-case</td>
+<td>Panel filenames, IDs, and layout types</td>
+<td>Matching kebab-case names.</td>
 </tr>
 <tr>
-<td>Panel IDs and layout types</td>
-<td>kebab-case; match the panel filename</td>
-</tr>
-<tr>
-<td>Lua locals, functions, fields, and settings keys</td>
-<td>camelCase</td>
+<td>Lua locals, functions, fields, settings</td>
+<td>camelCase.</td>
 </tr>
 <tr>
 <td>Constants</td>
-<td><code>UPPER_SNAKE_CASE</code>; keep implementation details local and expose a module field only when callers or tests use it</td>
+<td><code>UPPER_SNAKE_CASE</code>; keep internal constants local.</td>
 </tr>
 <tr>
 <td>LuaDoc</td>
-<td>Annotate parameters in signature order, followed by return values</td>
+<td>Parameters in signature order, then returns.</td>
 </tr>
 </tbody>
 </table>
-<p>Comments should explain current contracts, non-obvious decisions, or firmware
-constraints. Keep historical bug narratives and experiment results in tests,
-commit history, or developer documentation rather than beside the implementation.
-Use the established settings vocabulary and shared rendering/service helpers.</p>
-<p>For a fix, add a regression test that fails before the change. Exercise absent
-data and boundary values, not only the happy path. For UI changes, cover
-declared spans, resizing, content shedding/restoration, App mode's menu
-reservation, and editor behavior. See <a href="../testing/">Test and debug</a> and
+<p>Comments and documentation describe current contracts and constraints, not
+historical bug narratives or experiment results. Reuse shared service,
+rendering, and settings conventions.</p>
+<p>Cover absent data and boundaries. UI changes also need span/reflow coverage,
+menu reservation, and editor behavior. See <a href="../testing/">Test and debug</a> and
 <a href="../architecture/">Repository and architecture</a>.</p>
-<p><code>tests/fixtures/sdcard/</code> is deterministic input, not a place to save a running
-simulator. If a radio/model change intentionally becomes the baseline, stop the
-simulator and update only the relevant tracked fixture files. Keep
-<code>manuallyEdited: 1</code> in <code>RADIO/radio.yml</code> when manually changing its model
-selection; EdgeTX can then accept the edit and regenerate the checksum.
-Companion's SD import still checks the checksum even with that flag. After
-editing, run <code>python3 -m unittest discover -s tools -p 'test_sdcard_checksum.py'</code>
-and update the first line to the calculated value reported by a failing check.
-The checksum includes the exact bytes after the first line, including line
-endings. Check a fresh <code>make build</code> afterwards.</p>
-<p>The six categorized simulator models use <code>MODELS/model1.yml</code> as their common
-setup source. Edit shared sensors, mixes, timers, or other model setup there,
-then run <code>python3 tools/generate-simulator-models.py</code> to refresh all six models
-and <code>labels.yml</code>. Category names and screen assignments live in that generator;
-keep the layout registry order stable because widget options store its indices.
-<code>python3 tools/generate-simulator-models.py --check</code> checks reproducibility, and
-<code>make test</code> checks the exact category mapping and shared setup. The generator
-does not change radio settings or their checksum.</p>
-<p>Do not commit <code>.luac</code>, virtual environments, logs, framebuffer dumps,
-<code>build/sdcard/</code>, or incidental captures. Reviewed website screenshots belong
-in <code>docs/assets/</code> with the relevant provenance and disclosure.</p>
+<h3 id="maintain-simulator-fixtures">Maintain simulator fixtures</h3>
+<p><code>tests/fixtures/sdcard/</code> is deterministic input, not a running simulator's SD
+card. Stop the simulator before deliberately updating tracked fixture files.</p>
+<p>Shared sensors, mixes, timers, and model setup come from <code>MODELS/model1.yml</code>.
+After changing them, regenerate the six category models, labels, and flight
+announcement tracks:</p>
+<pre><code class="language-sh">python3 tools/generate-simulator-models.py
+python3 tools/generate-simulator-models.py --check
+</code></pre>
+<p>Category names/screens live in that generator. Keep registry order stable
+because widget options store its indices.</p>
+<p>When manually changing <code>RADIO/radio.yml</code> model selection, keep
+<code>manuallyEdited: 1</code>. Companion also requires a valid checksum: run
+<code>python3 -m unittest discover -s tools -p 'test_sdcard_checksum.py'</code> and, if
+needed, set the first line to the reported checksum. It covers the exact bytes
+after that line. Model generation does not update radio settings.</p>
+<p>Check fixture changes with a fresh <code>make build</code>. Do not commit generated
+bytecode, environments, simulator state, logs, or incidental captures.
+Publish only reviewed documentation assets with matching provenance.</p>
 <h2 id="check-and-submit">Check and submit</h2>
-<p>For runtime Lua changes, use:</p>
+<p>For runtime Lua changes:</p>
 <pre><code class="language-sh">make format
 make check
 make lint
 stylua --check src/WIDGETS tests
-make build BUILD_DIR=build/package-check
-diff -r src/WIDGETS/AeroGrid build/package-check/sdcard/WIDGETS/AeroGrid \
-  --exclude='review-*.yaml' --exclude='services*.yaml' \
-  --exclude='sim*.yaml' --exclude='states.yaml'
-for layout in tests/fixtures/layouts/development/*.yaml; do
-  cmp &quot;$layout&quot; &quot;build/package-check/sdcard/WIDGETS/AeroGrid/layouts/$(basename &quot;$layout&quot;)&quot;
-done
+make build
 </code></pre>
-<p>Inspect formatting changes before committing. Run the
-<a href="../testing/#python-tooling-tests">tooling tests</a> if changing Python tools,
-and <code>make docs</code> if changing documentation. Exercise behavior/UI changes in
-a simulator; hardware-sensitive changes need radio evidence or an explicit
-statement that hardware remains unverified.</p>
-<p>Push your branch and open a pull request against <code>main</code>. Explain the problem,
-the behavior change, reproduction/regression coverage, and any remaining
-limitations. Reference the associated issue, using <code>Fixes #&lt;number&gt;</code> when the
-PR resolves it. Distinguish mocked, synthetic simulator, and real hardware
-observations rather than calling all three "tested."</p>
-<p>GitHub's <strong>CI</strong> workflow runs Lua behavior/syntax checks, release-package tests,
-LuaLS, pinned StyLua formatting, SD-image/source parity, and clean-tree checks.
-The separate <strong>Documentation</strong> workflow strictly builds website changes.
-The native screenshot tools are local macOS tools, not CI jobs.</p>
+<p>Inspect formatting changes. Run the relevant
+<a href="../testing/#python-tooling-tests">tooling tests</a> for tool changes and <code>make docs</code>
+for documentation. Exercise UI/behavior changes in a simulator.
+Hardware-sensitive work needs radio evidence or an explicit unverified status.</p>
+<p>Open a pull request against <code>main</code> explaining the problem, behavior change,
+regression coverage, and remaining limitations. Link the issue; use
+<code>Fixes #&lt;number&gt;</code> when appropriate. Distinguish mocks, synthetic simulator
+inputs, and hardware observations.</p>
+<p><strong>CI</strong> checks Lua behavior/syntax, packaging, browser installer behavior, LuaLS,
+pinned StyLua formatting, SD-image/source parity, and a clean generated tree.
+<strong>Documentation</strong> strictly builds the site and tests publishing/browser layout.
+Native captures run locally, not in CI.</p>
 <h2 id="publish-a-release">Publish a release</h2>
-<p>This is a maintainer operation, not a required step for a normal contribution.</p>
+<p>Maintainers:</p>
 <ol>
-<li>Update <code>src/WIDGETS/AeroGrid/lib/package.lua</code> in a PR and merge to <code>main</code>.
-   Use <code>X.Y.Z</code>, <code>X.Y.Z-beta.N</code>, or <code>X.Y.Z-rc.N</code>; beta/RC releases become
-   prereleases. Change API versions only when the corresponding contract
-   changes.</li>
-<li>Build locally with <code>make release-package</code> when checking archive contents.
-   The allowlists in <code>tools/package-release.py</code> separate installation content
-   from development fixtures.</li>
-<li>In <a href="https://github.com/thomaskistler/aero-grid/actions/workflows/release.yml">Actions &gt; Release</a>,
-   choose <strong>Run workflow</strong> on <strong>main</strong>. The workflow runs CI, documentation,
-   and package validation against the exact selected commit, creates
-   <code>v&lt;version&gt;</code>, uploads the ZIP and checksum to a draft, then publishes.</li>
+<li>Update <code>lib/package.lua</code> in a PR and merge to <code>main</code>. Use <code>X.Y.Z</code>,
+   <code>X.Y.Z-beta.N</code>, or <code>X.Y.Z-rc.N</code>; beta/RC versions become prereleases.
+   Change API versions only with their contracts.</li>
+<li>Optionally inspect <code>make release-package</code> output before publication.</li>
+<li>Run <a href="https://github.com/thomaskistler/aero-grid/actions/workflows/release.yml">Actions &gt; Release</a>
+   on <strong>main</strong>. It validates the selected commit, creates <code>v&lt;version&gt;</code>, uploads
+   the ZIP/checksum to a draft, and publishes it.</li>
 </ol>
-<p>Successful CI builds on <code>main</code> update a single <a href="https://github.com/thomaskistler/aero-grid/releases/tag/dev">developer prerelease</a>,
-replacing its ZIP and checksum. Select <strong>Show developer releases</strong> in the USB
-installer to try it. Developer builds may be unstable; stable and beta/RC
-releases still use the manual workflow above.</p>
-<p>If validation fails, fix it in a PR, merge, and run again. If publication fails
-after creating a tag/draft, rerun the <strong>same workflow run</strong> at the same commit:
-it can resume a matching draft and replace incomplete assets. A tag pointing
-to another commit or an already-public release is rejected. Never move a
-published version tag; use a new version for fixes. The rolling <code>dev</code> tag is the exception.
-Abandoning an unpublished attempt
-requires deliberately removing its draft and tag before reusing that version.</p>
-<p>Documentation defaults to the latest stable release. The header's
-<strong>Documentation version</strong> menu also offers previous releases, prereleases, and
-<code>main</code> (unreleased). The installer has its own independent release selection.</p>
-<p>The <strong>Documentation</strong> workflow builds released documentation from its exact tag
-and updates <code>main</code> separately. Existing releases are backfilled on the first
-deployment; subsequent deployments preserve those snapshots. To publish again,
-run <strong>Actions &gt; Documentation &gt; Run workflow</strong> on <strong>main</strong>.</p>
-<p>Released content and layouts stay version-specific; all builds share the current
-version navigation, installer UI, and Google Analytics configuration.</p>
-<p>Generated snapshots are stored on <code>gh-pages</code>; do not edit that branch manually.
-Repository <strong>Settings &gt; Pages &gt; Source</strong> must remain <strong>GitHub Actions</strong>.</p>
+<p>After a publication failure, rerun the same workflow run at the same commit
+to resume a matching draft. Published versions and tags pointing elsewhere
+are rejected. Never move a published version tag; use a new version.
+Reusing an abandoned unpublished version requires deliberately removing its
+draft and tag.</p>
+<p>Successful push CI for the current <code>main</code> commit updates the rolling
+<a href="https://github.com/thomaskistler/aero-grid/releases/tag/dev">developer prerelease</a>.
+Its <code>dev</code> tag and assets are replaced; the USB installer exposes it only with
+<strong>Show developer releases</strong> enabled.</p>
+<h3 id="publish-documentation">Publish documentation</h3>
+<p>The <strong>Documentation</strong> workflow maintains release-tag snapshots and updates
+<code>main</code> separately, building missing snapshots and preserving existing ones.
+It runs on relevant <code>main</code> changes and release publication; use
+<strong>Actions &gt; Documentation &gt; Run workflow</strong> on <strong>main</strong> to redeploy.</p>
+<p>The default is the latest stable release. <strong>Documentation version</strong> selects
+released versions, prereleases, or <code>main</code>; installer release selection is
+independent. Content/layouts are version-specific, while navigation, installer
+UI, and analytics configuration use the current publishing implementation.</p>
+<p>Snapshots are stored on <code>gh-pages</code>; do not edit it manually.
+Repository <strong>Settings &gt; Pages &gt; Source</strong> must be <strong>GitHub Actions</strong>.</p>
       </article>
     </div>
   </div>

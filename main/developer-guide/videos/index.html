@@ -196,190 +196,149 @@
         
 
 <h1 id="record-and-recreate-tutorial-videos">Record and recreate tutorial videos</h1>
-<p><code>tools/video.py</code> provides reusable <strong>local</strong> native TX16S recording, Microsoft
-Cora narration, and FFmpeg compositing. It does not upload to YouTube.
-Recipes and real input scripts are versioned in <code>tools/video-recipes/</code>.
-Generated SD cards, recordings, caches, and provenance belong in ignored
-<code>build/video/</code>. No product photograph, credentials, or video is distributed
-with the repository.</p>
+<p><code>tools/video.py</code> records native TX16S interactions, uses cached Microsoft Cora
+narration, and composites with FFmpeg. It is local-only and does not upload.
+Recipes/actions live in <code>tools/video-recipes/</code>; generated media, SD cards,
+caches, and provenance stay in ignored <code>build/video/</code>.</p>
 <h2 id="install-and-run">Install and run</h2>
-<p>Use Python 3.9+ and <code>make video-setup</code> to install pinned
-<code>imageio-ffmpeg==0.6.0</code> (including its encoder) into <code>build/video-venv</code>.
-Capture additionally requires macOS, Xcode command-line tools, and EdgeTX
-Companion 2.12. The default simulator library is:</p>
-<pre><code class="language-text">/Applications/EdgeTX Companion 2.12.app/Contents/Resources/libedgetx-tx16s-simulator.dylib
-</code></pre>
-<p>Override with <code>--library /path/to/libedgetx-tx16s-simulator.dylib</code>.
-Compilation selects the library's architecture; for a universal library use
-<code>--architecture arm64</code> or <code>--architecture x86_64</code>. Running Intel firmware on
-Apple Silicon requires Rosetta. The symbol ABI and geometry are TX16S-specific.
-Rendering and speech caching do not require Companion.</p>
 <pre><code class="language-sh">make video-setup
 build/video-venv/bin/python tools/video.py --help
 build/video-venv/bin/python tools/video.py validate
 build/video-venv/bin/python tools/video.py capture
 </code></pre>
-<p>The default recipe is <code>add-move-resize-panel.json</code>. Select another tutorial,
-such as <code>--recipe tools/video-recipes/model-settings.json</code>, on <strong>each</strong>
-command. <code>--output build/video/my-run</code> selects a different working directory.
-<code>compile</code> only builds the recorder; <code>prepare</code> only creates an SD card.
-<code>capture</code> does both, then records. Preparation refuses an existing SD card:
-use a new output directory for another capture. It never replaces your
-development SD image.</p>
-<p>Capture uses <code>capture-editor.py</code>'s SD preparation and the current checkout's
-widget source, including uncommitted changes. The demo model is named
-<strong>Crack Yak</strong>, and the radio backlight stays on: after a backlight timeout,
-the firmware treats the next touch as a wake-up and drops it. All editor interactions go
-through genuine simulator touch/key input. No panel code is rewritten.
-The editing recipe explicitly injects demonstration telemetry <strong>only in its
-isolated widget copy</strong>: registered <code>GSpd</code>/maximum sensor, values 48/72, RSSI
-85. Those values demonstrate the UI, not receiver telemetry accuracy.</p>
+<p>Setup installs pinned <code>imageio-ffmpeg</code>, including its encoder. Native capture
+also requires macOS, Xcode command-line tools, and Companion 2.12.
+The default library is:</p>
+<pre><code class="language-text">/Applications/EdgeTX Companion 2.12.app/Contents/Resources/libedgetx-tx16s-simulator.dylib
+</code></pre>
+<p>Override with <code>--library</code>; universal libraries also need <code>--architecture arm64</code>
+or <code>--architecture x86_64</code>. Intel firmware on Apple Silicon requires Rosetta.
+Rendering and speech caching do not require Companion.</p>
+<p>The default recipe is <code>add-move-resize-panel.json</code>. Pass
+<code>--recipe tools/video-recipes/&lt;name&gt;.json</code> on each command for another tutorial.
+<code>--output</code> overrides <code>build/video/&lt;recipe-id&gt;/</code>.
+<code>compile</code> builds the recorder; <code>prepare</code> creates the SD card; <code>capture</code> does
+both and records. Preparation refuses an existing SD card, so use a new output
+directory for another capture.</p>
+<p>Capture uses current widget sources, including uncommitted changes, in an
+isolated copy. Touch/key scripts operate the firmware UI. The editing recipe
+injects demonstration telemetry only into that copy; it does not validate
+receiver telemetry.</p>
 <h2 id="narration-without-storing-credentials">Narration without storing credentials</h2>
-<p><code>speech</code> is <strong>offline by default</strong>. Cache files are addressed by SHA-256 of
-text, voice, rate, and PCM format. Text/rate changes require new speech;
-timing changes reuse a clip if it still fits. Each WAV must be 48 kHz,
-16-bit mono PCM, nonempty, intact, and at least 0.3 seconds shorter than its
-slot. Oversized clips fail rather than silently speeding up or truncating
-the voice. Increase a recipe's <code>rate</code> percentage or shorten text and retry.</p>
-<p>Paid synthesis requires an explicit opt-in:</p>
-<pre><code class="language-sh"># Set AZURE_SPEECH_KEY securely in your terminal/environment, not in a file,
-# command argument, recipe, shell history, or checked-in configuration.
+<p><code>speech</code> is offline by default. Clips are keyed by text, voice, rate, and PCM
+format. Text/rate changes need new clips; timing changes can reuse them.
+WAVs must be intact 48 kHz, 16-bit mono PCM and fit their slots with 0.3 seconds
+to spare. Shorten text, increase recipe rate, or adjust timing if a clip fails.
+The tool does not truncate or automatically accelerate audio.</p>
+<p>Paid Azure synthesis requires explicit opt-in:</p>
+<pre><code class="language-sh"># Set AZURE_SPEECH_KEY securely in your environment, never in tracked files.
 export AZURE_SPEECH_REGION=westus2
 build/video-venv/bin/python tools/video.py speech --online
 unset AZURE_SPEECH_KEY AZURE_SPEECH_REGION
 </code></pre>
-<p>The REST request uses <code>en-US-CoraMultilingualNeural</code>; existing clips are not
-resynthesized. The tool never writes keys or logs request headers. Synthesis
-can incur Azure charges and sends narration text to Azure. A failed later
-clip leaves previously successful cache entries for retry.</p>
-<p>To reuse privately retained prototype clips without synthesis:</p>
-<pre><code class="language-sh">build/video-venv/bin/python tools/video.py speech --cache-source /path/to/private/clips
-</code></pre>
-<p>This trusts recipe <code>legacy_cache</code> filenames as matching the text. WAV
-format and duration are checked, but spoken content and synthesis rate cannot
-be inferred from audio: listen before importing. Import provenance records this
-uncertainty. No imported media is required or included. <code>--cache</code> selects an alternate cache directory; keep it ignored.</p>
+<p>This sends narration text to Azure and can incur charges. It uses
+<code>en-US-CoraMultilingualNeural</code> and reuses valid cached clips.
+Never put credentials in recipes, arguments, or shell history.</p>
+<p><code>--cache</code> selects another ignored cache directory.
+<code>speech --cache-source /path/to/clips</code> imports recipe <code>legacy_cache</code> filenames:
+format/duration are checked, but you must listen to verify their content/rate.</p>
 <h2 id="render-and-inspect">Render and inspect</h2>
-<pre><code class="language-sh"># Screen-only preview, no network or speech needed:
+<pre><code class="language-sh"># Offline screen-only excerpt:
 build/video-venv/bin/python tools/video.py render --silent --limit 12
 
-# Final photo composite with previously cached narration:
-build/video-venv/bin/python tools/video.py render --photo /path/to/private/tx16s-upscaled.webp
+# Photo composite with cached narration:
+build/video-venv/bin/python tools/video.py render --photo /path/to/tx16s.webp
 
-# Render a retained raw recording instead of capturing again:
-build/video-venv/bin/python tools/video.py render --raw /path/to/recording.rgb565 \
-  --photo /path/to/private/tx16s-upscaled.webp
+# Review selected rendered-timeline frames:
+build/video-venv/bin/python tools/video.py frames --times 0,7.3,21.3,42.1
 </code></pre>
-<p><code>render</code> never synthesizes speech. Omit <code>--photo</code> for a 480×272 screen-only
-video (physical button feedback is then omitted). <code>--silent</code> bypasses all
-speech cache requirements. <code>--limit</code> renders an initial excerpt, not a new
-capture. Re-rendering replaces outputs in that directory.</p>
-<p>The supplied photograph must match the recipe geometry. Original source:
+<p><code>render</code> never synthesizes speech. <code>--silent</code> bypasses speech requirements;
+<code>--limit</code> renders an excerpt. Omit <code>--photo</code> for a 480 x 272 screen-only video
+without physical-button feedback. <code>--raw</code> accepts an external recording.
+Re-rendering replaces output files.</p>
+<p>Photo geometry is configured for a user-supplied 4000 x 4000 image based on the
 <a href="https://radiomasterrc.com/cdn/shop/files/478937e8d66c767632b986b2cb0362f5_1800x1800.jpg?v=1755743144">RadioMaster TX16S product photograph</a>.
-The original retrieved image was 1000×1000; the prototypes used a
-<strong>user-supplied 4000×4000 upscale</strong>. The tool does not download or upscale
-it. Confirm usage rights and retain attribution to RadioMaster when
-publishing; the repository's GPL does not license that photograph.</p>
-<p>Recipe <code>radio</code> geometry fits that upscale; a different photograph needs
-different crop, screen, and mask settings. Inspect the bezel and alignment.
-Feedback rings show touch/drag input and RTN on the physical key. No titles
-or subtitles are burned in.</p>
-<p>Outputs include:</p>
+The tool neither supplies nor downloads/upscales it. Verify usage rights and
+retain RadioMaster attribution; the repository GPL does not license the photo.
+Other images need matching crop, screen, and mask geometry.</p>
 <table>
 <thead>
 <tr>
-<th>File</th>
+<th>Output</th>
 <th>Purpose</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>frames.rgb565</code>, <code>last-frame.png</code>, <code>simulator.log</code></td>
-<td>Recorder evidence and diagnostics.</td>
+<td>Raw recording and diagnostics.</td>
 </tr>
 <tr>
 <td><code>frame-*.png</code>, <code>frames-sheet.png</code></td>
-<td>Frames exported by the <code>frames</code> command for review.</td>
+<td>Frame review.</td>
 </tr>
 <tr>
 <td><code>sdcard/</code>, <code>video-native</code></td>
-<td>Isolated firmware fixture and compiled recorder.</td>
+<td>Isolated fixture and recorder.</td>
 </tr>
 <tr>
 <td><code>feedback.mov</code>, <code>radio.png</code>, <code>bezel.png</code></td>
-<td>Regenerable render intermediates.</td>
+<td>Regenerable composite intermediates.</td>
 </tr>
 <tr>
 <td><code>&lt;recipe-id&gt;.mp4</code>, <code>transcript.txt</code></td>
-<td>H.264/AAC deliverable and narration text.</td>
+<td>Video and narration transcript.</td>
 </tr>
 <tr>
 <td><code>capture-provenance.json</code>, <code>render-provenance.json</code></td>
-<td>Recipe, source/input digests, disclosures, tail holds, verification limits.</td>
+<td>Inputs/hashes, disclosures, and verification limits.</td>
 </tr>
 </tbody>
 </table>
-<p>Capture fails if any touch press in the rendered timeline (after warmup and
-<code>trim_start</code>) has no matching firmware <code>TE_PRESSED</code> entry in
-<code>simulator.log</code>, and records <code>unaccepted_touch_ticks</code> in capture provenance.
-This catches dropped input, not wrong navigation. Export frames to check
-key states:</p>
-<pre><code class="language-sh">build/video-venv/bin/python tools/video.py frames --times 0,7.3,21.3,42.1,54.65
-</code></pre>
-<p><code>--times</code> uses rendered-timeline seconds. PNGs and a tiled
-<code>frames-sheet.png</code> are written to the output directory.</p>
-<p>Raw capture is RGB565 little-endian, 480×272, 20 fps. The recorder uses
-10 ms ticks, drops the warmup interval, and samples every five ticks.
-Rendering trims <code>trim_start</code> seconds from that recording and holds the
-final frame if narration extends past it; the hold duration is recorded.
-Capture hashes all current widget sources, not just the Git revision.
-External recordings have no automatically reconstructed capture provenance.
-FFmpeg decoding and frame counts prove media integrity, <strong>not UI success</strong>.
-Review the whole video for correct navigation, drag, save behavior, voice
-alignment, source units, and photo placement before publishing.</p>
+<p>Recordings are RGB565 little-endian, 480 x 272, 20 fps. Rendering removes
+<code>trim_start</code> and holds the last frame when needed; provenance records the hold.
+Capture checks that timeline touches reached firmware, not that navigation
+succeeded. External raw recordings have no reconstructed capture provenance.
+Watch the complete result for navigation, save behavior, voice alignment,
+units, and photo placement before publishing.</p>
 <h2 id="recipe-format-and-reproducibility">Recipe format and reproducibility</h2>
-<p>Version 1 is validated before execution; unknown fields are rejected.
-Recipes require <code>id</code>, <code>initial</code> (<code>fresh-model</code>, <code>empty-dashboard</code>, or
-<code>default-dashboard</code>), <code>ticks</code>,
-<code>warmup_ticks</code>, <code>trim_start</code>, <code>duration</code>, recipe-relative <code>actions</code>,
-<code>narration</code>, <code>radio</code>, and <code>provenance</code>. Optional <code>sample_telemetry: true</code>
-is supported only for the editing fixture. Tick totals/warmup are multiples
-of five. Action rows contain <code>tick x y down</code>; <code>down</code> is 1 or 0. Negative
-<code>x</code> encodes key <code>-x-1</code> (<code>-2</code> is RTN). Consecutive touch-down positions are
-a drag, terminated by a release. Contacts cannot overlap.</p>
-<p>Narration entries have ordered, nonoverlapping <code>start</code>/<code>end</code> seconds,
-<code>text</code>, and nonnegative <code>rate</code> (percentage); <code>legacy_cache</code> is optional.
-Radio entries contain <code>crop</code>, even-sized <code>canvas</code>, <code>[x,y,width,height]</code>
-<code>screen</code>, <code>[x,y]</code> <code>return_button</code>, <code>[low,high]</code> <code>mask_threshold</code>, and <code>source</code>.
-Provenance requires <code>status</code> and <code>notes</code>.</p>
-<p><strong>Create Empty dashboard:</strong> starts from a fresh model, adds an App-mode
-AeroGrid widget with Empty and Modern Dark, then returns to the dashboard.
-A menu-open/close sequence before recorded frames primes firmware input;
-keep it when updating the script to avoid dropping the first recorded touch.</p>
-<p><strong>Add/move/resize panel:</strong> the recipe preserves the prototype's real touch
-script, current/maximum speed configuration, movement, resizing, and save
-interaction. Nine seconds are trimmed from the raw capture, including most
-of its first long-press; check intro timing. The last second is a held frame.
-Radio restart and selecting the new layout after <strong>Save as...</strong> are <strong>narrated
-instructions</strong>, not automated or demonstrated steps. Panel unit appearance
-comes from production source, never simulator-only rendering patches.</p>
-<p><strong>Model settings:</strong> a native replay starting from the Default dashboard. It
-sets the arm switch, shows the flight detection defaults, creates a Sticky
-<strong>L01</strong> logical switch with a Play Sound special function, selects L01 as the
-Flight status switch, and sets a Session reset switch. Motor channel stays
-at its CH3 default; its picker is not opened. The flight-end sound on <code>!L01</code>
-is narrated, not demonstrated.</p>
-<p>Fixed-coordinate/realtime scripts can change behavior with firmware,
-machine load, or widget changes. There is no UI-state assertion or automatic
-recovery. Keep the approved published videos separately; recipes are
-maintainable starting points, not a guarantee of identical recreation.</p>
+<p>Use a bundled JSON recipe as the schema example. Version 1 rejects unknown
+fields and requires initial state, timing, action path, narration, radio
+geometry, and provenance. Actions are recipe-relative <code>tick x y down</code> rows
+with 10 ms ticks; negative <code>x</code> encodes key <code>-x-1</code> (<code>-2</code> is RTN). Consecutive
+touch-down positions form a drag; end with release and do not overlap contacts.</p>
+<p>The bundled tutorials cover:</p>
+<table>
+<thead>
+<tr>
+<th>Recipe</th>
+<th>Demonstrated scope</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>create-empty-dashboard</code></td>
+<td>Add an App-mode widget with Empty and Modern Dark.</td>
+</tr>
+<tr>
+<td><code>add-move-resize-panel</code></td>
+<td>Configure, move, resize, and save a panel. Restart/layout selection are narrated, not replayed.</td>
+</tr>
+<tr>
+<td><code>model-settings</code></td>
+<td>Arm/detection settings, Sticky L01 with start sound, flight-status output, and session reset. The end sound is narrated, not replayed.</td>
+</tr>
+</tbody>
+</table>
+<p>Fixed-coordinate scripts depend on firmware, widget behavior, and machine load.
+There is no UI-state recovery: maintain the scripts and retain approved videos
+separately rather than assuming byte-identical recreation.</p>
 <h2 id="validate-changes">Validate changes</h2>
-<pre><code class="language-sh">build/video-venv/bin/python -m unittest discover -s tools -p test_video.py
+<pre><code class="language-sh">build/video-venv/bin/python -m unittest discover -s tools -p 'test_video.py'
 </code></pre>
-<p>Tests cover recipe/action validation, isolated source preservation, cache
-behavior, request escaping via a mocked Azure response, and offline
-screen/photo render-and-decode smoke checks. Real native capture is local
-and must be checked separately. Never require paid speech in tests.</p>
+<p>Tests cover validation, source isolation, cache behavior, mocked synthesis, and
+offline screen/photo render-and-decode checks. Native capture needs separate
+local review. Tests must never require paid speech.</p>
       </article>
     </div>
   </div>
