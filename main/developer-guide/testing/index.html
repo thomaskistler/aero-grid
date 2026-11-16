@@ -267,6 +267,21 @@ their own budgets; these are mock measurements, not hardware timing guarantees.<
 counts, sustained output updates, and font callbacks. They do not measure
 native bitmap/LVGL memory or firmware GC cadence. Chart tests cover functional
 behavior; evaluate responsiveness on a radio.</p>
+<p>On macOS with Companion 2.12, measure Model and panel drawer construction:</p>
+<pre><code class="language-sh">python3 tools/measure-model-settings.py
+python3 tools/measure-model-settings.py --mode callbacks --output build/model-settings-callbacks.json
+python3 tools/measure-panel-settings.py
+python3 tools/measure-panel-settings.py --mode callbacks --output build/panel-settings-callbacks.json
+</code></pre>
+<p>Reports include per-row grants and native instruction bounds with firmware
+property polling. Callback mode includes scheduler/host work and rejects usage
+reaching 15,000 instructions. Neither mode establishes physical-radio timing
+or safety; mock regression envelopes remain separate from production grants.</p>
+<p>Both drawers use <code>lib/settings_ui.lua</code>. Model construction reserves 13 slots:
+one per step except two for the logical-switch list. Panel rows reserve one slot
+and can share callbacks; lifecycle operations retain full grants and dialog
+opening/replacement/closing boundaries. The panel profiler covers every catalog
+panel, maximum-size lists, nested editors and conditional rows.</p>
 <h2 id="browser-installer-tests">Browser installer tests</h2>
 <p>Use Python's standard library and Node.js 22:</p>
 <pre><code class="language-sh">make test-installer
