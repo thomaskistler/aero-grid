@@ -305,11 +305,12 @@ For raw-field interpretation, see
 <a href="../../developer-guide/testing/#simulator-logs-and-caught-errors">Simulator logs and caught errors</a>.</p>
 <h3 id="scheduler">Scheduler</h3>
 <p><img alt="Host diagnostics scheduler view at 2x2" src="../../assets/panels/host-diagnostics/scheduler-2x2.png" /></p>
-<p>Select <strong>scheduler</strong> to see scheduled-work utilization from 0 to 100%.
-Each column covers one second. Colors identify the five busiest consumers;
-gray groups the rest. The orange line shows the percentage of due requests
-deferred because no slots were available.</p>
-<p>The cursor marks the newest column and wraps to the left when full.
+<p>Select <strong>scheduler</strong> to see two lines, with one point added each second at most:
+the cyan line is the percentage of scheduler slots used out of the slots a
+callback may run (40 when Pre-release features is on, otherwise 8), and the
+orange line is the percentage of due requests still deferred when the callback
+ends because no slots were left.</p>
+<p>The cursor marks the newest point and wraps to the left when full.
 Resizing clears the graph. The view measures this widget's accounted work,
 <strong>not actual CPU usage</strong>. Measurement continues on hidden screens but is not
 enabled by editor previews.</p>

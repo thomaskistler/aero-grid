@@ -387,6 +387,14 @@ Disarm before another flight can be counted. Flight totals, radio timers,
 radio telemetry minima/maxima, EdgeTX home, saved settings/layouts, and
 unsaved editor changes are preserved. The dashboard stays on screen; only
 session-dependent content is redrawn.</p>
+<h2 id="pre-release-features">Pre-release features</h2>
+<p><strong>Pre-release features</strong> enables features that are not fully validated yet. It is a per-model setting that is off by default.
+EdgeTX stops a widget callback after 20,000 Lua instructions. With the setting
+on, AeroGrid can use up to five times its usual work budget in a busy callback.
+Until a model's settings have loaded, AeroGrid uses the extended budget for
+every model so the dashboard loads faster.
+This relies on firmware behavior that EdgeTX does not document, so turn it off if
+the dashboard misbehaves.</p>
 <h2 id="older-layouts">Older layouts</h2>
 <p>Until you save model arming, older panels can retain their own Arm switch.
 Saving <strong>None</strong> explicitly disables these fallbacks. The obsolete layout
