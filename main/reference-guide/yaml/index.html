@@ -423,7 +423,7 @@ rather than relying on fallback behavior.</p>
 <td><code>armSwitch</code></td>
 <td>string</td>
 <td><code>""</code></td>
-<td>Physical position or logical switch</td>
+<td>Physical position or logical switch <code>L01</code>–<code>L64</code>, including <code>"!L04"</code></td>
 <td>Arm switch position</td>
 <td>Legacy fallback before model arming is saved.</td>
 </tr>
@@ -611,7 +611,7 @@ panels:
 <td><code>armSwitch</code></td>
 <td>string</td>
 <td><code>""</code></td>
-<td>Blank, physical switch position, or logical switch such as <code>L01</code></td>
+<td>Blank, physical switch position, or logical switch <code>L01</code>–<code>L64</code>, including <code>"!L04"</code></td>
 <td>Arm switch position (legacy only)</td>
 <td>New panels use model arming. Version-1–3 layouts retain the former <code>SF^</code> default when omitted.</td>
 </tr>
@@ -1250,7 +1250,7 @@ flight-active logical switch and EdgeTX Special Functions. See
 <td><code>armSwitch</code></td>
 <td>string</td>
 <td><code>""</code></td>
-<td>Blank, physical switch position, or logical switch such as <code>L01</code></td>
+<td>Blank, physical switch position, or logical switch <code>L01</code>–<code>L64</code>, including <code>"!L04"</code></td>
 <td>Home arm switch</td>
 <td>Legacy fallback before model arming is saved. Older layouts with a nonblank switch migrate to <code>first-arm</code>; other older layouts keep EdgeTX home.</td>
 </tr>
@@ -1693,7 +1693,7 @@ flight-active logical switch and EdgeTX Special Functions. See
 <td><code>switch</code></td>
 <td>string</td>
 <td><code>SA^</code> in default example; required otherwise</td>
-<td>Switch position such as <code>SF^</code>, <code>SA-</code>, <code>SFv</code>, or logical switch <code>L01</code></td>
+<td>Switch position such as <code>SF^</code>, <code>SA-</code>, <code>SFv</code>, or logical switch <code>L01</code>–<code>L64</code>, including negated conditions such as <code>"!L04"</code></td>
 <td>When</td>
 <td>Nested in <code>entries[].states[]</code>; required.</td>
 </tr>
