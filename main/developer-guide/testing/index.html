@@ -375,8 +375,9 @@ switch for switch-unavailable events; inapplicable fields appear as <code>nil</c
 Timestamps are 10 ms ticks; GPS <code>delay</code> uses <strong>160 ms units</strong>.
 Calculate poll age as <code>now - updatedAt</code> and combined age as
 <code>delay * 16 + now - updatedAt</code>. First-arm capture requires an arm observation
-no older than 100 ticks (1 second) and combined GPS age no greater than
-1,000 ticks (10 seconds). Capture policy is not relaxed for diagnosis. <strong>Maximum log
+no older than the shared 500-tick (5-second) sample limit and combined GPS age
+no greater than 1,000 ticks (10 seconds). Capture policy is not relaxed for
+diagnosis. <strong>Maximum log
 entries</strong> defaults to 64 (1–256); the largest active log panel setting wins.
 In widget fullscreen, tap the log panel and use drag/wheel scrolling to read
 a stable snapshot; Close/RTN dismisses it. Reopen for newer events. Removing

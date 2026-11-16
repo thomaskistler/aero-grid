@@ -480,8 +480,10 @@ from telemetry polling and reported through normal service failure handling.
 Snapshots expose <code>condition</code>, <code>key</code>, <code>origin</code>, <code>generation</code>, <code>configured</code>,
 <code>available</code>, <code>fresh</code>, <code>updatedAt</code>, Boolean <code>value</code>, <code>revision</code>, and <code>status</code>.
 An unavailable/stale reading is not disarmed. Reliability is evaluated on
-access with a one-second maximum sample age, so a failed poller cannot leave a
-permanently fresh reading. <code>revision</code> changes on observed sample/reliability
+access with the shared five-second maximum sample age
+(<code>services.MAX_SAMPLE_AGE</code>, 500 ticks), also used by flight detection and
+history, so a stopped poller cannot leave a permanently fresh reading.
+<code>revision</code> changes on observed sample/reliability
 changes; <code>generation</code> changes when the widget runtime is rebuilt.
 <code>status</code> is <code>unconfigured</code>, <code>ready</code>, or <code>unavailable</code>; invalid configuration
 is reported through normal host error isolation.
