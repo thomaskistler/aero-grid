@@ -252,7 +252,7 @@
 </tr>
 </tbody>
 </table>
-<p>Displays the model's GV9 flight total and highlights a detected active flight.
+<p>Displays the model's selected flight total and highlights an AeroGrid-detected active flight.
 Flight tracking is shared by AeroGrid dashboards and does not require a visible
 Flight counter.</p>
 <h2 id="settings">Settings</h2>
@@ -273,14 +273,19 @@ Flight counter.</p>
 </tr>
 </tbody>
 </table>
-<p>Configure arming, detection, optional sounds, and the required <strong>GV9</strong>
-reservation in <a href="../../user-guide/model-settings/#flight-detection">Model settings</a>.
+<p>Configure arming, detection, optional sounds, and <strong>Flight count source</strong>
+in <a href="../../user-guide/model-settings/#flight-detection">Model settings</a>.
 Those settings apply across the model's dashboards; this panel only configures
 its label. For migration, see
 <a href="../../user-guide/model-settings/#older-layouts">Older layouts</a>.</p>
 <h2 id="behavior">Behavior</h2>
-<p>Each confirmed flight start increments the total once. Detection continues
-on hidden dashboards and does not depend on the number of counter panels.
+<p>Each confirmed flight start increments AeroGrid's own persistent total once.
+Choose <strong>AeroGrid</strong>, <strong>GV9</strong>, or <strong>GV8:GV9</strong> as the displayed source in Model
+settings. External values are read from flight mode 0 and never written.
+AeroGrid keeps its own count regardless of the displayed source; the totals
+can differ because flight detection is independent.</p>
+<p>Detection continues on hidden dashboards and does not depend on the number of
+counter panels.
 Telemetry loss or reducing motor output after confirmation does not end a
 flight. Continuous disarming for the configured end window does; rearming
 within that window keeps the same flight open. An unavailable arm reading
@@ -289,11 +294,11 @@ cannot confirm disarming.</p>
 current flight finishes using its original condition and output. New flights
 wait until the configuration is consistent.</p>
 <p>The <a href="../../user-guide/model-settings/#session-reset">Session reset switch</a>
-cancels detection and clears its output without changing GV9.
+cancels detection and clears its output without changing flight totals.
 Disarm before another flight can be counted. AeroGrid does not write flight CSV files.</p>
-<p>GV9 persists through model saving and transmitter restarts, but in-flight
-detection state does not. Changing model or restarting during a flight can
-lose its history and qualify it again.</p>
+<p>AeroGrid supports totals up to 16,777,215. Its total persists through transmitter
+restarts, but in-flight detection state does not. Changing model or restarting
+during a flight can lose its history and qualify it again.</p>
 <h2 id="states">States</h2>
 <table>
 <thead>
@@ -316,7 +321,7 @@ lose its history and qualify it again.</p>
 <td>Count retained and normal styling restored.</td>
 </tr>
 <tr>
-<td>GV9 unavailable</td>
+<td>Selected count unavailable or invalid</td>
 <td><code>--</code> and an <code>N/A</code> badge.</td>
 </tr>
 <tr>
