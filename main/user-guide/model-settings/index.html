@@ -202,6 +202,17 @@ appears in the top-left corner. Tap it, then choose <strong>Model settings</stro
 <p>Settings apply to every AeroGrid dashboard for the selected model, not to an individual panel
 or layout. Each confirmed change saves automatically; Back closes the page.
 Chart recording time stops while this page is open and resumes with a pause gap.</p>
+<p>On EdgeTX 2.x, AeroGrid uses the <strong>CH32 name</strong> for its settings ID (for example,
+<code>AGK7Q2</code>). Leave that name unchanged; CH32's output limits are preserved.
+If CH32 already has another name, clear it before saving Model settings.
+New links and copied models are linked only while disarmed.</p>
+<p>Display-name changes keep the same settings. A copied model inherits settings
+when AeroGrid first loads it, then gets its own independent record. Model
+filename changes also create a new record; old records are left on the SD card.
+Changing or clearing the CH32 name unlinks settings; restoring the ID relinks
+them. The ID can appear in channel source lists and Output panels.
+To transfer settings to another radio, also copy
+<code>/AEROGRID/models/&lt;ID&gt;.yaml</code> from the SD card.</p>
 <p><img alt="AeroGrid menu with Model settings and UI setup" src="../../assets/editor/aero-menu.png" /></p>
 <h2 id="arming">Arming</h2>
 <p>Arming tells AeroGrid when your model is armed, using the switch condition

@@ -1,5 +1,5 @@
 {
-  "revision": "f414fa285a011383b9d66572729c6bdadd646803",
+  "revision": "271e9afebd5201f7992d6893647fda7548638465",
   "simulator": "/Applications/EdgeTX Companion 2.12.app/Contents/Resources/libedgetx-tx16s-simulator.dylib",
   "simulator_sha256": "7ca1e6982909b2c22a6c8d306cb4ffd84929374251ec4ba8bb917bf4b7809acc",
   "source_sha256": {
@@ -52,7 +52,7 @@
     "src/WIDGETS/AeroGrid/lib/flight_config.lua": "2ca7912cccadbbb23e4ff508e8913d655ffb7af82f54a77d09dfdd97672d5adb",
     "src/WIDGETS/AeroGrid/lib/flight_count.lua": "1cc8fd837fa550efc7fbf2aeb4396caee609bf373dd6c5191f5e3d526098a9ed",
     "src/WIDGETS/AeroGrid/lib/flight_registration.lua": "767e58e464d895ea3cc9cb2f093b33f7ee368f9bb6d0782f12eb94aa3bcad7a2",
-    "src/WIDGETS/AeroGrid/lib/flight_service.lua": "2722c30832b164397aed04d767b49c5d601e7986e34968ff6440492cb1e5a442",
+    "src/WIDGETS/AeroGrid/lib/flight_service.lua": "c4f824221b8c5ac959310ead258d4458d41bbc75ba9e8e061560ca42e7e95be7",
     "src/WIDGETS/AeroGrid/lib/gesture.lua": "6086a18c0da7c9807722d099d40858f807d2acb28bfbecdfe3beb0590325e58c",
     "src/WIDGETS/AeroGrid/lib/grid.lua": "fa06b40a9835a522bba200464eb73d28dfab36b089420e77c0a504a11405c172",
     "src/WIDGETS/AeroGrid/lib/history_service.lua": "fa2549b83dccd7430a3936c288844031296e004ca4e55baf9d289992a6690560",
@@ -62,7 +62,8 @@
     "src/WIDGETS/AeroGrid/lib/location_details.lua": "2e4de7dbdbe1d03ccb4adbeef15bf1a643b56b39ec427a2690bf9aef46b7499f",
     "src/WIDGETS/AeroGrid/lib/log_viewer.lua": "087b29df1ea8f6fdfe9a992c3b5c07bce4ed358cf132928dd40a4b748dc1573d",
     "src/WIDGETS/AeroGrid/lib/model_service.lua": "19178f324eabdcc27d1871f61d109c823835986ca34b0cfff2a0d6576288e6f1",
-    "src/WIDGETS/AeroGrid/lib/model_settings_store.lua": "f35f8e8e58085ad4400ce153c7b7583566c9d9f4520f22a7f4fda076696cf02b",
+    "src/WIDGETS/AeroGrid/lib/model_settings_sidecar.lua": "be44888de1f347ba0fa030a21634e0b41a29fdab9430859d75caeea4472786d8",
+    "src/WIDGETS/AeroGrid/lib/model_settings_store.lua": "0fc848dc0446e1f681bc58d61e323eea6154da6bb36a015dc486f982dd305110",
     "src/WIDGETS/AeroGrid/lib/model_settings_ui.lua": "ad54605b3385ac1f8b55a48586cc3c55fd991f41ce0f74138206d532d236f439",
     "src/WIDGETS/AeroGrid/lib/name_registry.lua": "0c9f070cdcb814d18b6f9969e2b781741667e648bdf2fb9b815e29a65fc2ce73",
     "src/WIDGETS/AeroGrid/lib/native_budget.lua": "55d1beacd7254c9675117e64b2b60898f47c1eec1333af29694682f1f91e961f",
@@ -73,7 +74,7 @@
     "src/WIDGETS/AeroGrid/lib/primitives.lua": "50a05eb2b037399fe21b2e60faacce095a3f28e6a35de323c0db30586bc34aa1",
     "src/WIDGETS/AeroGrid/lib/reading.lua": "7f909f01fe26181f5deec8cda93334ab73ecb8506f9425c7403df37cec427ac6",
     "src/WIDGETS/AeroGrid/lib/scheduler.lua": "aec9f30888fcf62c9beafd11f6d5ae3c89daa056ff22d625cec4b57e955b89ba",
-    "src/WIDGETS/AeroGrid/lib/services.lua": "f907f194ae7c2f3361e098f59aa242fbd62eeb11f54d5d57ee6983afc714d42a",
+    "src/WIDGETS/AeroGrid/lib/services.lua": "2af45ab6defeff594d5351a557eac88aa5643a18a1f93d70fdf34849a1f3cb27",
     "src/WIDGETS/AeroGrid/lib/settings_ui.lua": "b6d137704e21717cd62c19afa51ca6238f873cd22217fd58dbc50b86e37e9778",
     "src/WIDGETS/AeroGrid/lib/smart_flight.lua": "e38b90ff74ee8d8e9109bfe7dd487f2048fa1b1513a9fab5e5c4ba905ff37581",
     "src/WIDGETS/AeroGrid/lib/telemetry_service.lua": "10809a27c0ecf9a3f7f23d5e243b459cecb4fd8c4ae31f30923366b7c94b2e26",
@@ -82,7 +83,7 @@
     "src/WIDGETS/AeroGrid/lib/typography.lua": "e66c8d96f4f24d4af7059a102b34d782cebe4429281b4a7a2d7c2363d77f51ec",
     "src/WIDGETS/AeroGrid/lib/verified_file.lua": "1b1247f21536cb50921ee0bcaefb21350b4fc455d948fb3f7919b131eadb5ff3",
     "src/WIDGETS/AeroGrid/lib/yaml.lua": "ca43da83a622cd519466577f716b73a38bac587b04ef86e340db7ce97ce5c69a",
-    "src/WIDGETS/AeroGrid/main.lua": "07d4ce0c906e3eb7ee1bbaeef685e4a6b2eef432b74e8dde0d0146a9828befbc",
+    "src/WIDGETS/AeroGrid/main.lua": "e19dd86c40f9d7743cef320512e2ece21b09349e1215ba0f5be893688badf4f6",
     "src/WIDGETS/AeroGrid/panels/chart.lua": "dafbbc72915d0efd6db9262b44fad5bed1eabe196add6b70f6c720bfe9f59302",
     "src/WIDGETS/AeroGrid/panels/flight-counter.lua": "ba2f01d30b4a184ad9a362d61bba22cd3ecdfdddc52aa270a32aeb82e05c674d",
     "src/WIDGETS/AeroGrid/panels/flight-mode.lua": "5e1c903cbeb9445238924cf2b5c1f96f4317c0561c68fe386d29d1c8491ebd61",
@@ -103,7 +104,7 @@
     "src/WIDGETS/AeroGrid/themes/modern-light.yml": "ac7d1aafc08787f0d25abfabdac1669a05c38c662b63f3109b7abb6952196e81"
   },
   "capture_sha256": {
-    "capture-editor.py": "643fbe4895b8562440fd12cf1eaa1445ad6b662fdae05f5064272f13a2e3957b",
+    "capture-editor.py": "b2596920c91c0387ab0724aa5d6b0dd5516d2ed91032b32d22837a535f71bbb1",
     "capture-native.cpp": "07c5486bfa98fa20b09276d2a5893af95382b1e4a68598254e6096556eb5a1bc"
   },
   "dashboard_sample": null,
