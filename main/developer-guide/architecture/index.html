@@ -448,6 +448,10 @@ Put a module at <code>panels/&lt;type&gt;.lua</code>, with an <code>id</code> ma
 <td>Reset session state; second result true requests another bounded reset turn.</td>
 </tr>
 <tr>
+<td><code>rebindArming(instance, services)</code></td>
+<td>Reconnect arming-dependent subscriptions after a model arm-switch change, keeping existing native objects. Receives the service registry's <code>byId</code> table.</td>
+</tr>
+<tr>
 <td><code>event(instance, event)</code></td>
 <td>Return true when consumed.</td>
 </tr>
