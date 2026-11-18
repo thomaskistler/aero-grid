@@ -166,6 +166,21 @@ series:
 - Only the latest debrief is kept, in memory. A new flight replaces it, and
   it is lost on power off.
 
+## Rules
+
+- **Short flights:** flights shorter than the model's *Minimum flight
+  duration* are not counted by flight detection, so they create no debrief.
+- **No flight detection:** no flight completes, so there is no debrief. The
+  Flight debrief setup page stays available, because a layout can be used by
+  several models; it shows a note that a debrief needs flight detection.
+- **Session reset** clears the debrief and the pill, like Chart recordings.
+  `Drop` and `FDst` are unaffected; only an EdgeTX telemetry reset clears
+  them.
+- **Conflicting thresholds:** when two panels set thresholds for the same
+  sensor, the first panel in layout order wins.
+- **Tile limit:** at most 12 tiles per debrief (up to 36 series of about 200
+  points), to protect the 6 MiB Lua heap. **Add** is disabled at the limit.
+
 ## Codebase anchors
 
 | Area | Location |
@@ -184,6 +199,3 @@ series:
 ## Open questions
 
 1. **Published sensors:** sensor IDs.
-2. **Small rules:** conflicting thresholds from two panels, whether Session
-   reset clears the debrief, no flight detection configured, very short
-   flights, and a tile limit to protect the 6 MiB Lua heap.
