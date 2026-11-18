@@ -92,13 +92,16 @@ series:
   | --- | --- | --- | --- |
   | `VCel` | Battery | V, 2 decimals | Lowest cell from a cells monitor, or pack voltage divided by the configured or estimated cell count |
   | `Mrgn` | Link | dB | ELRS RSSI margin |
-  | `Drop` | Link | s | Time without a link, accumulated over the flight |
+  | `Drop` | Link | s | Accumulated time without a link |
   | `HDst` | Navigation | m | Distance to home, including a switch-captured home |
-  | `Flwn` | Navigation | m | Distance flown, accumulated over the flight |
+  | `FDst` | Navigation | m | Accumulated distance flown |
 
 - The panels that compute these values (Battery, Link, Navigation) publish
   them automatically. No panel means no sensor; there is no move of this
   logic into Model settings.
+- `Drop` and `FDst` behave like any other accumulating telemetry, such as
+  consumption: they keep counting until EdgeTX telemetry is reset. The
+  debrief shows a flight's share with the `used` statistic.
 - Only the first panel of each type on a layout publishes; further panels of
   the same type are ignored.
 - Panels publish from their background hook too, so sensors keep updating
@@ -139,8 +142,7 @@ series:
 
 ## Open questions
 
-1. **Published sensors:** sensor IDs, and whether `Drop` and `Flwn` reset at
-   flight start or at Session reset.
+1. **Published sensors:** sensor IDs.
 2. **Screen format:** full-width tiles, legend overflow, the date when the
    radio has no real-time clock, and other screens (480 x 320, 800 x 480,
    portrait).
