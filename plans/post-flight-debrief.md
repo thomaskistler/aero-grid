@@ -86,11 +86,38 @@ series:
   layout.
 - Edits follow the existing layout rules: changes are a draft until **Save**
   or **Save as**; editing a bundled layout creates a user copy.
-- A debrief is an ordered list of tiles. Each tile has a title and one to
-  three series; each series has a telemetry source and a statistic (min, max,
-  avg, or used).
-- Automatic population from the layout's panels is wanted but not yet
-  designed.
+- A debrief is an ordered list of tiles. Each tile has a title, a size
+  (Compact 2 x 2, Wide 4 x 2, Wide 4 x 1), and one to three series. Each
+  series uses the Chart panel's series settings (source, label, range, unit,
+  precision, color) plus a statistic: min, max, avg, or used (end minus
+  start). The time window is always the flight.
+
+### Setup page
+
+- A list page, not a visual editor: the tiles are listed by title and size.
+  Selecting a tile opens its settings in the shared settings UI.
+- Actions: **Add**, **Remove**, **Move up**, **Move down**, and **Fill from
+  dashboard**.
+- Works with touch and keys, like other settings pages.
+
+### Automatic population
+
+- A layout that has never had a debrief is filled automatically from its
+  panels, so the debrief works out of the box.
+- **Fill from dashboard** rebuilds the tiles from the panels, replacing the
+  current tiles after confirmation.
+- Mapping, in panel order; every tile starts Compact:
+
+  | Panel | Tile series |
+  | --- | --- |
+  | Battery | `VCel` min |
+  | Link | link quality min, `Mrgn` min, `Drop` used |
+  | Navigation | `HDst` max, `FDst` used |
+  | Chart | the same series |
+  | Metric | one series per entry: min when its warnings trigger on falling values, otherwise max |
+
+- Panels without telemetry (timer, flight mode, model, trims, and similar)
+  are skipped.
 
 ## Data
 
@@ -157,8 +184,6 @@ series:
 ## Open questions
 
 1. **Published sensors:** sensor IDs.
-2. **Flight debrief setup page:** adding, removing, and reordering tiles,
-   choosing statistics, and automatic population from the layout's panels.
-3. **Small rules:** conflicting thresholds from two panels, whether Session
+2. **Small rules:** conflicting thresholds from two panels, whether Session
    reset clears the debrief, no flight detection configured, very short
    flights, and a tile limit to protect the 6 MiB Lua heap.
