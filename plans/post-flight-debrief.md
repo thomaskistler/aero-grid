@@ -1,7 +1,7 @@
 # Post-flight debrief
 
-> Design plan. No code has been written yet. Open questions are listed at the
-> end and must be settled before implementation starts.
+> Design plan. No code has been written yet. The design is settled; the
+> implementation order is at the end.
 
 After a flight completes, AeroGrid shows a short summary of that flight: one
 chart per value with the flight statistics that matter, with warning and
@@ -154,6 +154,11 @@ series:
 - Panels register their configured thresholds with the dashboard's telemetry
   service, and debrief charts read them from there. Thresholds therefore come
   from panels on the same layout.
+- Thresholds belong to telemetry, not to the history: they describe how to
+  judge a sensor's value, live or recorded. History records values only.
+- Thresholds do not change during a flight, so the shaded periods and the
+  worst level per series are derived at flight end from the recorded values.
+  No alarm state is recorded.
 
 ### Recording
 
@@ -196,6 +201,35 @@ series:
 | AeroGrid menu items | `lib/aerogrid_menu.lua` |
 | Chart behavior to mirror | `docs/panels/chart.md` |
 
-## Open questions
+## Implementation order
 
-1. **Published sensors:** sensor IDs.
+Each step is a separate pull request that can be reviewed and merged on its
+own. Nothing user-visible is half finished between steps.
+
+1. **Published sensors.** Battery publishes `VCel`; Link publishes `Mrgn`
+   and `Drop`; Navigation publishes `HDst` and `FDst` (new distance
+   accumulator). Includes publishing from the background hook. Useful on its
+   own. Can be split into Battery and Link, then Navigation.
+2. **Threshold registry.** Panels register thresholds with the telemetry
+   service; the first panel in layout order wins. Not visible; tests only.
+3. **Debrief configuration.** The data and rules, without UI: the debrief
+   section in the layout file, validation, the tile limit, Save and Save as,
+   and automatic population from the panels.
+4. **Recorder.** A debrief service copies the flight slice from
+   `history_service` at flight end and computes statistics and shaded
+   periods. Session reset clears it. Headless and tested.
+5. **Debrief view.** Header and tiles, shading, legend overflow, scrolling.
+   Swipe up and down in fullscreen, rotary scrolls, RTN closes, leaving
+   fullscreen closes.
+6. **Pill.** Both texts and the pill lifecycle. The feature now works end to
+   end with the automatically populated debrief.
+7. **Setup page.** The Flight debrief menu item, the tile list page, tile
+   settings, Fill from dashboard, and the flight-detection note. Edits the
+   data defined in step 3.
+8. **Documentation.** User guide page and real screenshots replacing the
+   mockup images.
+
+Steps 1, 2, and 3 are independent. Step 4 needs steps 2 and 3; steps 5 to 7
+follow in order.
+
+Sensor IDs are chosen in step 1.
