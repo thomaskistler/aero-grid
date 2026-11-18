@@ -203,15 +203,22 @@
 </thead>
 <tbody>
 <tr>
-<td><strong>Modern Dark</strong></td>
-<td>AeroGrid's dark instrument palette.</td>
+<td><strong>Dark</strong> (default)</td>
+<td>Dark, opaque panels on AeroGrid's dark background.</td>
 </tr>
 <tr>
-<td><strong>Modern Light</strong></td>
-<td>Pale instrument panels, dark text, and light-background accents and alarm tints.</td>
+<td><strong>Light</strong></td>
+<td>Light, opaque panels on AeroGrid's light background.</td>
+</tr>
+<tr>
+<td><strong>Glass</strong></td>
+<td>Translucent panels over the radio theme background, with automatic light/dark colors and opacity.</td>
 </tr>
 </tbody>
 </table>
+<p>Glass uses the background image's average brightness to choose panel colors
+and opacity. Text and status accents stay fully opaque. If the image cannot be
+read, Glass uses dark panels at 80% opacity.</p>
 <p><img alt="Theme showcase with token swatches, text levels, bars, a dial, and six dashboard panel states" src="../../assets/theme/theme-modern.png" /></p>
 <p><em>Modern Dark palette.</em></p>
 <p><img alt="Modern Light theme showcase with pale panels, dark text, and pastel alarm tints" src="../../assets/theme/theme-modern-light.png" /></p>
@@ -224,7 +231,7 @@ name. Restart the radio after adding a theme so it appears in the Theme picker.<
 <p>Select <strong>Palette</strong> as the layout on a separate App-mode screen. It shows the
 theme with fixed sample data, without
 a receiver or telemetry setup. Switch the widget's <strong>Theme</strong> option between
-Modern Dark and Modern Light to compare the same samples. Normal, active,
+Dark, Light, and Glass to compare the same samples. Normal, active,
 warning, critical, stale, and unavailable cards are shown together.</p>
 <h2 id="create-a-custom-theme">Create a custom theme</h2>
 <ol>

@@ -282,6 +282,9 @@ signatures; <code>plans/</code> contains design material, not the runtime contra
 callbacks. Page retirement and replacement occur in separate callbacks.
 Keep these boundaries: a synchronous whole-dashboard operation can exceed the
 firmware budget or invalidate deferred native objects.</p>
+<p>Glass shares sampled background brightness through
+<code>/AEROGRID/cache/backgrounds.yml</code>. This generated cache survives widget updates
+and can be deleted to regenerate it.</p>
 <p><code>lib/package.lua</code> declares package, runtime API, panel API, and layout versions.
 Runtime modules expose <code>RUNTIME_API</code>; panels expose <code>apiVersion</code>. Deploy the
 complete widget directory: these checks do not detect every mixed package.</p>
