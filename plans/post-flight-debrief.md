@@ -40,10 +40,12 @@ at a glance without opening a log file on a computer.
 - **Header card:** model name, flight number, flight start date and time
   (for example "Flight 42 · Nov 17, 14:24"), and the flight time in large
   digits. No alarm-count badge.
-- **Tiles:** a flat list of chart tiles in two columns, no sections. On
-  480 x 272 each tile is 232 x 96 px.
-- The whole debrief scrolls vertically, header included. The next row peeks
-  in by about 20 px to show there is more; there is no scroll bar.
+- **Tiles:** a flat list of chart tiles, no sections. Tile sizes use the
+  dashboard's 4 x 4 grid, like panels, so they scale with the screen:
+  - **Compact** 2 x 2: half the width and half the height of the screen.
+  - **Wide** 4 x 2 or 4 x 1: the full width, at compact height or half of it.
+- The whole debrief scrolls vertically, header included. There is no scroll
+  bar. The mockup images predate the grid-based sizes.
 - A small grab handle sits at the top of the sheet.
 
 ### Tiles
@@ -143,7 +145,7 @@ series:
 ## Open questions
 
 1. **Published sensors:** sensor IDs.
-2. **Screen format:** full-width tiles, legend overflow, the date when the
+2. **Screen format:** legend overflow, the date when the
    radio has no real-time clock, and other screens (480 x 320, 800 x 480,
    portrait).
 3. **Outside fullscreen:** confirm the long-press flow and that App mode
