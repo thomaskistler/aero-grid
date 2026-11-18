@@ -17,8 +17,9 @@ at a glance without opening a log file on a computer.
 - When flight detection reports a completed flight, the dashboard shows a
   pill at the bottom center.
 - Pill text:
-  - Outside widget fullscreen: **Debrief ready · long-press, then swipe up**
-  - In widget fullscreen or App mode: **Debrief ready · swipe up**
+  - Outside widget fullscreen, including App mode: **Debrief ready ·
+    long-press, then swipe up**
+  - In widget fullscreen: **Debrief ready · swipe up**
 - The pill is plain text: no "new" dot, no arrow.
 - The pill means "a new debrief exists". It stays until the debrief is opened
   or the session is reset.
@@ -30,8 +31,13 @@ at a glance without opening a log file on a computer.
 
 - Swipe up opens the latest debrief; swipe down hides it. Swipe up always
   works after a flight, even after the pill has gone.
-- Touch only works in widget fullscreen, so outside fullscreen the user
-  long-presses first (hence the pill wording).
+- The widget only receives touch in widget fullscreen; App mode does not
+  deliver touch either. Outside fullscreen the user long-presses first
+  (hence the pill wording).
+- Opening is touch only, like the AeroGrid menu. Once open, the rotary
+  encoder scrolls and RTN closes the debrief. Key-only access to the menu
+  and the debrief is a separate issue.
+- Leaving widget fullscreen closes the debrief.
 
 ### Layout
 
@@ -151,10 +157,8 @@ series:
 ## Open questions
 
 1. **Published sensors:** sensor IDs.
-2. **Outside fullscreen:** confirm the long-press flow and that App mode
-   accepts touch.
-3. **Flight debrief setup page:** adding, removing, and reordering tiles,
+2. **Flight debrief setup page:** adding, removing, and reordering tiles,
    choosing statistics, and automatic population from the layout's panels.
-4. **Small rules:** conflicting thresholds from two panels, whether Session
+3. **Small rules:** conflicting thresholds from two panels, whether Session
    reset clears the debrief, no flight detection configured, very short
    flights, and a tile limit to protect the 6 MiB Lua heap.
