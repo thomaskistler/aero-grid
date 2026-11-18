@@ -86,11 +86,21 @@ series:
   Battery, Link, or Navigation tile types.
 - Values that AeroGrid computes itself are published as EdgeTX sensors with
   `setTelemetryValue`, so they can be charted, logged, and used anywhere
-  else in EdgeTX. Candidates: per-cell voltage from a pack reading, ELRS link
-  margin, dropout count, and distance flown.
+  else in EdgeTX. Only values EdgeTX cannot calculate itself are published:
+
+  | Sensor | Panel | Unit | Value |
+  | --- | --- | --- | --- |
+  | `VCel` | Battery | V, 2 decimals | Lowest cell from a cells monitor, or pack voltage divided by the configured or estimated cell count |
+  | `Mrgn` | Link | dB | ELRS RSSI margin |
+  | `Drop` | Link | s | Time without a link, accumulated over the flight |
+  | `HDst` | Navigation | m | Distance to home, including a switch-captured home |
+  | `Flwn` | Navigation | m | Distance flown, accumulated over the flight |
+
 - The panels that compute these values (Battery, Link, Navigation) publish
-  them. No panel means no sensor; there is no move of this logic into Model
-  settings.
+  them automatically. No panel means no sensor; there is no move of this
+  logic into Model settings.
+- Only the first panel of each type on a layout publishes; further panels of
+  the same type are ignored.
 - Panels publish from their background hook too, so sensors keep updating
   while the dashboard is hidden.
 
@@ -129,9 +139,8 @@ series:
 
 ## Open questions
 
-1. **Published sensors:** the exact list, four-character names, sensor IDs,
-   duplicate panels of the same type, and overlap with EdgeTX calculated
-   sensors (Cell, Consumption, Distance).
+1. **Published sensors:** sensor IDs, and whether `Drop` and `Flwn` reset at
+   flight start or at Session reset.
 2. **Screen format:** full-width tiles, legend overflow, the date when the
    radio has no real-time clock, and other screens (480 x 320, 800 x 480,
    portrait).
