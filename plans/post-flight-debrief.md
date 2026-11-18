@@ -39,11 +39,14 @@ at a glance without opening a log file on a computer.
 
 - **Header card:** model name, flight number, flight start date and time
   (for example "Flight 42 · Nov 17, 14:24"), and the flight time in large
-  digits. No alarm-count badge.
+  digits. No alarm-count badge. When the radio clock looks unset (year
+  before 2024), the date is hidden and only the flight number is shown.
 - **Tiles:** a flat list of chart tiles, no sections. Tile sizes use the
   dashboard's 4 x 4 grid, like panels, so they scale with the screen:
   - **Compact** 2 x 2: half the width and half the height of the screen.
   - **Wide** 4 x 2 or 4 x 1: the full width, at compact height or half of it.
+- The same grid rules apply on every screen, including portrait; there are
+  no special cases per radio.
 - The whole debrief scrolls vertically, header included. There is no scroll
   bar. The mockup images predate the grid-based sizes.
 - A small grab handle sits at the top of the sheet.
@@ -58,6 +61,9 @@ series:
   example `min 3.48V`, `max 186m`, `avg 20.3A`, `used 1,840 mAh`. The value
   is colored by the worst level the series reached (normal, warning,
   critical).
+- When the legend does not fit, the statistic words (`min`, `max`, ...)
+  are dropped first, then series values from the right. Every series is
+  still drawn in the chart.
 - Chart window is exactly the detected flight, with axis labels `0:00` and
   the flight time.
 - Warning and critical periods are shaded amber and red, with dashed
@@ -145,13 +151,10 @@ series:
 ## Open questions
 
 1. **Published sensors:** sensor IDs.
-2. **Screen format:** legend overflow, the date when the
-   radio has no real-time clock, and other screens (480 x 320, 800 x 480,
-   portrait).
-3. **Outside fullscreen:** confirm the long-press flow and that App mode
+2. **Outside fullscreen:** confirm the long-press flow and that App mode
    accepts touch.
-4. **Flight debrief setup page:** adding, removing, and reordering tiles,
+3. **Flight debrief setup page:** adding, removing, and reordering tiles,
    choosing statistics, and automatic population from the layout's panels.
-5. **Small rules:** conflicting thresholds from two panels, whether Session
+4. **Small rules:** conflicting thresholds from two panels, whether Session
    reset clears the debrief, no flight detection configured, very short
    flights, and a tile limit to protect the 6 MiB Lua heap.
