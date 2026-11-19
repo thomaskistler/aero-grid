@@ -12,6 +12,7 @@ function module.new(dependencies)
     local loadModule = dependencies.loadModule
     local isFullScreen = dependencies.isFullScreen
     local readThemeDefinition = dependencies.readThemeDefinition
+    local sharedTelemetry = dependencies.sharedTelemetry or {}
 
     local function applyTheme(context, resolved, opacity)
         context.theme, context.panelOpacity = resolved, opacity
@@ -108,11 +109,12 @@ function module.new(dependencies)
     ---@param context AeroGridContext
     ---@param placement table
     ---@return table services
-    local function buildServices(context, placement)
+    local function buildServices(context, placement, preview)
         local builder = context.themeBuilder
         local theme = context.theme
         local registry = context.serviceRuntime
         local byId = registry and registry.byId or {}
+        local publisher = registry and registry.telemetryPublisher or nil
 
         -- Where the radio paints over us, the theme builder this panel sees
         -- resolves its panel frame around that corner. Binding it here rather than
@@ -156,6 +158,20 @@ function module.new(dependencies)
             -- Shared data services. Any of these may be absent when its module failed
             -- to load, so a panel must tolerate nil rather than assume.
             telemetry = byId.telemetry,
+            telemetryPublisher = publisher,
+            -- Only the first panel of a type in layout order publishes, and
+            -- only on the first widget to claim that type. There is no backup.
+            ownsTelemetry = function()
+                if preview or not publisher then
+                    return false
+                end
+                for _, entry in ipairs(context.panels) do
+                    if entry.placement.type == placement.type then
+                        return entry.placement.id == placement.id and publisher:owns(placement.type, context)
+                    end
+                end
+                return false
+            end,
             model = byId.model,
             control = byId.control,
             armed = byId.armed,
@@ -254,7 +270,7 @@ function module.new(dependencies)
             end
         end
 
-        local services = buildServices(context, placement)
+        local services = buildServices(context, placement, preview == true)
         services.preview = preview == true
         local ok, instance =
             pcall(panel.create, container, { x = 0, y = 0, w = rect.w, h = rect.h }, settings, services)
@@ -706,6 +722,27 @@ function module.new(dependencies)
                 return true
             end
 
+            if not context.telemetryPublisherReady then
+                context.telemetryPublisherReady = true
+                -- Shared by every widget and rebuilt when the model changes,
+                -- since sensor sources belong to the model.
+                if not sharedTelemetry.publisher or sharedTelemetry.model ~= context.modelFilename then
+                    local module, moduleError =
+                        loadModule(context.path, "lib/telemetry_publisher.lua", context.packageInfo.runtimeApi)
+                    local ok, instance = false, moduleError
+                    if module then
+                        ok, instance = pcall(module.new, context.serviceRuntime.env)
+                    end
+                    if not ok then
+                        addError(context, "telemetry publisher: " .. tostring(instance))
+                        return true
+                    end
+                    sharedTelemetry.publisher, sharedTelemetry.model = instance, context.modelFilename
+                end
+                context.serviceRuntime.telemetryPublisher = sharedTelemetry.publisher
+                return true
+            end
+
             local definition = context.servicesModule.DEFINITIONS[index]
             if not definition then
                 context.serviceIndex = nil
@@ -902,6 +939,7 @@ function module.new(dependencies)
         -- rebuilt with the dashboard rather than reused across a reload.
         context.serviceRuntime = nil
         context.serviceIndex = nil
+        context.telemetryPublisherReady = nil
         context.themeNames = { "modern-dark" }
         if context.radioBackground then
             context.themeNames[#context.themeNames + 1] = "modern-light"

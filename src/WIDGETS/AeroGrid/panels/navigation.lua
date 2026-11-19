@@ -675,6 +675,8 @@ function navigation.create(parent, rect, settings, services)
         detail = "",
         origin = "",
         coordinates = "",
+        publisher = services.telemetryPublisher,
+        ownsTelemetry = services.ownsTelemetry,
     }
 
     -- Subscribing in create is the mechanism: a GPS source nothing references
@@ -890,6 +892,23 @@ function navigation.render(context, out)
     end
 end
 
+--- Publish derived navigation telemetry without touching the LVGL tree.
+function navigation.publish(context)
+    local publisher = context.publisher
+    local view = context.feed
+    if not publisher or not context.ownsTelemetry() or type(view) ~= "table" or view.state ~= "normal" then
+        return
+    end
+    if type(view.distance) == "number" then
+        publisher:publish("HDst", view.distance)
+    end
+    -- A gap is bridged by the next fresh fix: the straight line is the least
+    -- the aircraft flew.
+    if view.latitude and view.longitude then
+        publisher:track(view.latitude, view.longitude, context.service.distanceBetween)
+    end
+end
+
 --- Paint the panel from what `render` collected, and from nothing else.
 ---@param context AeroGridNavigationContext
 ---@param drawn table
@@ -997,6 +1016,13 @@ function navigation.refresh(context)
     if changed or pending then
         navigation.apply(context, drawn)
     end
+    navigation.publish(context)
+end
+
+--- Keep publishing while the dashboard is hidden.
+function navigation.background(context)
+    navigation.publish(context)
+    return navigation.refreshInterval
 end
 
 function navigation.rebindArming(context, services)

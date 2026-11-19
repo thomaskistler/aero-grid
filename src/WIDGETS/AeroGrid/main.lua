@@ -555,6 +555,9 @@ local function dispatchAll(context, event, ...)
 end
 
 local sharedDiagnosticsLog
+-- One telemetry publisher for every AeroGrid widget, so derived counters
+-- advance once however many dashboards report the same flight.
+local sharedTelemetry = {}
 local flightFactories = {}
 
 --- Failure handlers: each task's `onError` records a failure on its owner.
@@ -899,6 +902,7 @@ initialize = function(context)
                 loadModule = loadModule,
                 isFullScreen = isFullScreen,
                 readThemeDefinition = readThemeDefinition,
+                sharedTelemetry = sharedTelemetry,
             }, { "beginLoad", "advanceLoad", "panelRect", "reservedFor", "buildPanel" })
         end
         if context.dashboardLoader then
@@ -1332,6 +1336,9 @@ local function panelStep(task, now, granted)
         end
     elseif eventName == "refresh" then
         entry.nextRefresh = now + entry.interval
+    elseif eventName == "background" and ok and type(interval) == "number" then
+        -- A background hook that returns an interval sleeps that many ticks.
+        task.due = now + interval
     end
     if not ok then
         error(message or "panel failed", 0)

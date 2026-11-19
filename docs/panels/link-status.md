@@ -64,6 +64,19 @@ the automatic source. The tracked source is **RSSI source** when **Primary readi
 otherwise it is **Link quality source**, falling back to **RSSI source** when
 no quality source is selected. It does not switch with the automatic headline.
 
+### EdgeTX sensors
+
+The panel publishes two EdgeTX sensors that logical switches, logs and other
+screens can use:
+
+- **Mrgn**: the ELRS signal margin in dB, when the panel shows one.
+- **Drop**: total seconds without a link since telemetry was last reset.
+
+To create the sensors, open the model's **Telemetry** page with telemetry live
+and run **Discover new sensors** once.
+**Drop** keeps counting across flights and a [Session reset](../user-guide/model-settings.md#session-reset); reset
+telemetry in EdgeTX to clear it.
+
 ## States
 
 | Condition | Presentation |
