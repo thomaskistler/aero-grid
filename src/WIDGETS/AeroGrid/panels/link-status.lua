@@ -363,13 +363,12 @@ end
 ---@return AeroGridThreshold[]
 function linkStatus.thresholds(settings)
     local list = {}
-    local function add(sensor, warning, critical, unit)
+    local function add(sensor, warning, critical)
         if type(sensor) == "string" and sensor ~= "" and (type(warning) == "number" or type(critical) == "number") then
-            list[#list + 1] = { sensor = sensor, warning = warning, critical = critical, falling = true, unit = unit }
+            list[#list + 1] = { sensor = sensor, warning = warning, critical = critical, falling = true }
         end
     end
-    -- The panel judges quality only from a percentage source.
-    add(settings.qualitySource, settings.qualityWarning, settings.qualityCritical, "%")
+    add(settings.qualitySource, settings.qualityWarning, settings.qualityCritical)
     add(settings.rssiSource, settings.rssiWarning, settings.rssiCritical)
     if settings.protocol == "elrs4" then
         add("Mrgn", settings.marginWarning, settings.marginCritical)

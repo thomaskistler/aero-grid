@@ -259,7 +259,6 @@ end
 ---@field critical? number
 ---@field falling boolean Values at or below a threshold alarm, rather than at or above.
 ---@field strict? boolean Only values strictly beyond a threshold alarm.
----@field unit? string Applies only while the sensor reports this unit.
 
 --- Register one panel's thresholds, replacing any earlier registration.
 ---

@@ -271,7 +271,6 @@ local function testThresholdRegistrations()
     }
     local list = linkStatus.thresholds(settings)
     assertions.assertEqual(#list, 3)
-    assertions.assertEqual(list[1].unit, "%", "quality thresholds apply only to a percentage source")
     local readings = {
         RQly = function(value)
             return { qualityState = "live", qualityValue = value, sourceState = "live", value = value }
