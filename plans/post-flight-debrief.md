@@ -94,8 +94,31 @@ series:
   start). The label defaults to the statistic word and can be overridden,
   for example `flown`; a cleared label falls back to the statistic word.
   The time window is always the flight.
+- The debrief is stored in an optional `debrief` section of the layout file:
 
-### Setup page
+  ```yaml
+  debrief:
+    tiles:
+      - title: RX battery
+        colSpan: 2          # 2 x 2 Compact, 4 x 2 or 4 x 1 Wide
+        rowSpan: 2
+        series:             # 1 to 3
+          - source: VCel    # telemetry sensor name
+            statistic: min  # min, max, avg, or delta
+            label: low      # optional; defaults to the statistic word
+            rangeMin: 3.0   # optional, like Chart series
+            rangeMax: 4.2
+            unit: V
+            precision: 2
+            accent: cyan
+  ```
+
+- A layout without a `debrief` section has no debrief (no pill, nothing
+  recorded) until it is filled; see Automatic population. An empty tile list
+  is a valid, empty debrief and is never filled automatically.
+- Validation follows the panel rules. Invalid series are dropped; a tile with
+  no valid series, a bad size, or no title is dropped. On load the errors
+  become notices and the rest is used; in the editor they block Save.
 
 - A list page, not a visual editor: the tiles are listed by title and size.
   Selecting a tile opens its settings in the shared settings UI.
@@ -177,7 +200,9 @@ series:
 ### Recording
 
 - Charts reuse the Chart panel recording (`history_service`), including gaps
-  for stale telemetry.
+  for stale telemetry. `history_service` records only subscribed sources, so
+  the debrief's series are subscribed when the layout loads and after every
+  Save, before the flight starts.
 - At flight end, the flight slice of each series is copied at about chart
   width (roughly 200 points per series) and the statistics are computed.
 - Each dashboard records its own debrief. Hidden dashboards keep their
