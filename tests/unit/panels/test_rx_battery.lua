@@ -128,6 +128,49 @@ local function testPackSourceAndAutomaticCount()
     assertions.assertEqual(rxBattery.summarizePack(nil, 4, empty).shape, "none")
 end
 
+local function testPublishedCellVoltage()
+    local published = {}
+    local context = {
+        settings = {
+            sourceType = "cells",
+            reading = "pack",
+            cellEmpty = 3.2,
+            cellFull = 4.2,
+            cellWarning = 3.6,
+            cellCritical = 3.4,
+        },
+        summary = {},
+        feed = { available = true, raw = { 4.1, 3.72, 4.08 }, stale = false },
+        publisher = {
+            publish = function(_, name, value)
+                published[#published + 1] = { name, value }
+            end,
+        },
+        ownsTelemetry = function()
+            return true
+        end,
+        clock = function()
+            return 100
+        end,
+    }
+    rxBattery.gather(context)
+    rxBattery.publish(context)
+    assertions.assertEqual(published[1][1], "VCel")
+    assertions.assertEqual(published[1][2], 3.72, "VCel is the lowest cell even when the panel displays pack")
+
+    context.feed.raw = 16.4
+    context.settings.cells = 4
+    rxBattery.gather(context)
+    rxBattery.publish(context)
+    assertions.assertEqual(published[2][2], 4.1)
+    context.feed.stale = true
+    rxBattery.gather(context)
+    rxBattery.publish(context)
+    assertions.assertEqual(#published, 2, "stale held values must not be republished as fresh")
+    rxBattery.background(context)
+    assertions.assertEqual(#published, 2, "background uses the same stale-value rule")
+end
+
 local function testConfigurationValidation()
     local settings = {
         sourceType = "pack",
@@ -266,6 +309,7 @@ end
 local function run()
     testCellShapesAndReadings()
     testPackSourceAndAutomaticCount()
+    testPublishedCellVoltage()
     testConfigurationValidation()
     testSupportingWordings()
     testVisualizationMetadata()

@@ -675,6 +675,9 @@ function navigation.create(parent, rect, settings, services)
         detail = "",
         origin = "",
         coordinates = "",
+        publisher = services.telemetryPublisher,
+        ownsTelemetry = services.ownsTelemetry,
+        clock = services.clock,
     }
 
     -- Subscribing in create is the mechanism: a GPS source nothing references
@@ -890,6 +893,28 @@ function navigation.render(context, out)
     end
 end
 
+--- Publish derived navigation telemetry without touching the LVGL tree.
+function navigation.publish(context)
+    local publisher = context.publisher
+    local view = context.feed
+    if not publisher or not context.ownsTelemetry() or type(view) ~= "table" then
+        return
+    end
+    if view.state == "normal" and type(view.distance) == "number" then
+        publisher:publish("HDst", view.distance)
+    end
+    local track = view.trackDistance
+    if type(track) == "number" then
+        if context.publishedTrack == nil then
+            context.publishedTrack = track
+            publisher:distance()
+        elseif track > context.publishedTrack then
+            publisher:distance(track - context.publishedTrack)
+            context.publishedTrack = track
+        end
+    end
+end
+
 --- Paint the panel from what `render` collected, and from nothing else.
 ---@param context AeroGridNavigationContext
 ---@param drawn table
@@ -997,6 +1022,27 @@ function navigation.refresh(context)
     if changed or pending then
         navigation.apply(context, drawn)
     end
+    navigation.publish(context)
+end
+
+function navigation.background(context)
+    if not navigation.backgroundEnabled(context) then
+        return
+    end
+    local now = context.clock()
+    if
+        context.backgroundAt
+        and now >= context.backgroundAt
+        and now - context.backgroundAt < navigation.refreshInterval
+    then
+        return
+    end
+    context.backgroundAt = now
+    navigation.publish(context)
+end
+
+function navigation.backgroundEnabled(context)
+    return context.publisher ~= nil and context.ownsTelemetry()
 end
 
 function navigation.rebindArming(context, services)
@@ -1004,6 +1050,7 @@ function navigation.rebindArming(context, services)
         context.service = services.navigation
         context.feed =
             context.service:subscribe(context.settings.source, context.settings.armSwitch, context.settings.homeMode)
+        context.publishedTrack = nil
     end
 end
 

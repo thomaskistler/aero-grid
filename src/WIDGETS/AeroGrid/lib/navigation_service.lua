@@ -24,6 +24,7 @@
 ---@field distanceUnit string Unit label for the distance.
 ---@field bearing? number Initial bearing from home to model, 0 to 359 degrees.
 ---@field age? number Seconds since the fix was last updated.
+---@field trackDistance? number Monotonic 5 m-deadband GPS track length.
 
 local navigationService = { RUNTIME_API = 1 }
 navigationService.__index = navigationService
@@ -41,6 +42,7 @@ local EARTH_RADIUS = 6371000
 --- Coordinates closer than this to the null island are treated as no fix.
 --- EdgeTX reports zero for both axes before a sensor has produced a position.
 local NULL_EPSILON = 0.0000005
+local TRACK_DEADBAND = 5
 
 local TICKS_PER_SECOND = 100
 local GPS_DELAY_TICKS = 16
@@ -79,6 +81,8 @@ end
 function navigationService.new(env, support, runtime)
     local homes = runtime.navigationHomes or {}
     runtime.navigationHomes = homes
+    local tracks = runtime.navigationTracks or {}
+    runtime.navigationTracks = tracks
     return setmetatable({
         id = "navigation",
         interval = INTERVAL,
@@ -91,6 +95,7 @@ function navigationService.new(env, support, runtime)
         entries = {},
         cursor = 1,
         sources = {},
+        tracks = tracks,
         homes = homes,
     }, navigationService)
 end
@@ -259,6 +264,23 @@ function navigationService.bearingBetween(fromLatitude, fromLongitude, toLatitud
     return bearing
 end
 
+local function advanceTrack(entry, reading, position, usable)
+    if not usable or type(reading) ~= "table" or reading.fresh ~= true then
+        return
+    end
+    local track = entry.track
+    if track.latitude == nil or track.longitude == nil then
+        track.latitude, track.longitude = position.lat, position.lon
+        return
+    end
+    local segment = navigationService.distanceBetween(track.latitude, track.longitude, position.lat, position.lon)
+    if segment >= TRACK_DEADBAND then
+        track.distance = track.distance + segment
+        track.latitude, track.longitude = position.lat, position.lon
+    end
+    entry.state.trackDistance = track.distance
+end
+
 --- Read one GPS subscription.
 ---@param entry table
 ---@param now integer
@@ -339,6 +361,7 @@ function navigationService:poll(entry, now)
     else
         state.bearing = nil
     end
+    advanceTrack(entry, reading, position, state.state == "normal")
 end
 
 --- Subscribe to a GPS source.
@@ -370,6 +393,8 @@ function navigationService:subscribe(name, armSwitch, homeMode)
     end
 
     local telemetry = self:telemetry()
+    local track = self.tracks[key] or { distance = 0 }
+    self.tracks[key] = track
     local entry = {
         state = {
             source = name,
@@ -385,8 +410,10 @@ function navigationService:subscribe(name, armSwitch, homeMode)
             distanceUnit = "m",
             bearing = nil,
             age = nil,
+            trackDistance = track.distance,
         },
         reading = telemetry and telemetry:subscribe(name) or nil,
+        track = track,
     }
     if customHome then
         entry.arm = arm

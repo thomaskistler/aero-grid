@@ -584,6 +584,7 @@ local function panelError(task, message)
     local context, entry = task.host, task.owner
     if not entry.failed then
         entry.failed, entry.error = true, message
+        context.panelOrderRevision = (context.panelOrderRevision or 0) + 1
     end
 end
 
@@ -1352,8 +1353,11 @@ local NONE = {}
 --- Held owners wait for the next callback; a hold that starts later in the
 --- callback is seen by the ready checks.
 ---@param context AeroGridContext
-local function enrolTasks(context, registry, support)
+local function enrolTasks(context, registry, support, hidden)
     local scheduler = context.scheduler
+    if registry.telemetryPublisher then
+        registry.telemetryPublisher:refreshOwners()
+    end
     local order = context.servicesHold and NONE or registry.order
     for index = 1, #order do
         local instance = order[index]
@@ -1414,22 +1418,29 @@ local function enrolTasks(context, registry, support)
             task.failed = entry.failed
             scheduler.add(task)
         end
-        if type(rawget(module, "background")) == "function" then
-            local task = entry.backgroundTask
-            if not task then
-                task = {
-                    name = entry.placement.id .. ": background",
-                    owner = entry,
-                    onError = panelError,
-                    host = context,
-                    event = "background",
-                    step = panelStep,
-                    ready = backgroundReady,
-                }
-                entry.backgroundTask = task
+        if hidden and type(rawget(module, "background")) == "function" then
+            local enabled = true
+            local publisher = registry.telemetryPublisher
+            if publisher and publisher:publishes(entry.placement.type) then
+                enabled = publisher:owns(entry.placement.id, entry.placement.type)
             end
-            task.failed = entry.failed
-            scheduler.add(task)
+            if enabled then
+                local task = entry.backgroundTask
+                if not task then
+                    task = {
+                        name = entry.placement.id .. ": background",
+                        owner = entry,
+                        onError = panelError,
+                        host = context,
+                        event = "background",
+                        step = panelStep,
+                        ready = backgroundReady,
+                    }
+                    entry.backgroundTask = task
+                end
+                task.failed = entry.failed
+                scheduler.add(task)
+            end
         end
     end
 end
@@ -1483,7 +1494,7 @@ end
 local function runTasks(context, hidden)
     local registry, support = context.serviceRuntime, context.servicesModule
     if registry and support then
-        enrolTasks(context, registry, support)
+        enrolTasks(context, registry, support, hidden)
     end
 
     -- Extra segments run past EdgeTX's per-callback limit in the same

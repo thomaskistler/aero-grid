@@ -108,11 +108,12 @@ function module.new(dependencies)
     ---@param context AeroGridContext
     ---@param placement table
     ---@return table services
-    local function buildServices(context, placement)
+    local function buildServices(context, placement, preview)
         local builder = context.themeBuilder
         local theme = context.theme
         local registry = context.serviceRuntime
         local byId = registry and registry.byId or {}
+        local publisher = registry and registry.telemetryPublisher or nil
 
         -- Where the radio paints over us, the theme builder this panel sees
         -- resolves its panel frame around that corner. Binding it here rather than
@@ -156,6 +157,10 @@ function module.new(dependencies)
             -- Shared data services. Any of these may be absent when its module failed
             -- to load, so a panel must tolerate nil rather than assume.
             telemetry = byId.telemetry,
+            telemetryPublisher = publisher,
+            ownsTelemetry = function()
+                return not preview and publisher ~= nil and publisher:owns(placement.id, placement.type)
+            end,
             model = byId.model,
             control = byId.control,
             armed = byId.armed,
@@ -254,7 +259,7 @@ function module.new(dependencies)
             end
         end
 
-        local services = buildServices(context, placement)
+        local services = buildServices(context, placement, preview == true)
         services.preview = preview == true
         local ok, instance =
             pcall(panel.create, container, { x = 0, y = 0, w = rect.w, h = rect.h }, settings, services)
@@ -263,6 +268,7 @@ function module.new(dependencies)
             local interval = host.refreshInterval(panel)
             context.panels[#context.panels + 1] = {
                 placement = placement,
+                preview = preview == true,
                 module = panel,
                 instance = instance,
                 settings = settings,
@@ -277,6 +283,7 @@ function module.new(dependencies)
                 -- due on the same frame.
                 nextRefresh = getTime() + host.phaseOffset(interval, #context.panels + 1),
             }
+            context.panelOrderRevision = (context.panelOrderRevision or 0) + 1
             return context.panels[#context.panels]
         else
             -- Discard whatever the failed panel managed to build.
@@ -449,6 +456,7 @@ function module.new(dependencies)
             local modelFilename = modelInfo and modelInfo.filename or nil
             if context.modelFilename ~= modelFilename then
                 context.navigationHomes = nil
+                context.navigationTracks = nil
             end
             context.modelFilename = modelFilename
             context.loadCandidates = candidates
@@ -702,7 +710,28 @@ function module.new(dependencies)
                 context.serviceRuntime.armGeneration = context.armGeneration
                 context.navigationHomes = context.navigationHomes or {}
                 context.serviceRuntime.navigationHomes = context.navigationHomes
+                context.navigationTracks = context.navigationTracks or {}
+                context.serviceRuntime.navigationTracks = context.navigationTracks
                 context.serviceIndex = 1
+                return true
+            end
+
+            if not context.telemetryPublisherReady then
+                context.telemetryPublisherReady = true
+                local runtime = context.serviceRuntime
+                local module, moduleError =
+                    loadModule(context.path, "lib/telemetry_publisher.lua", context.packageInfo.runtimeApi)
+                local constructor = module and rawget(module, "new") or nil
+                if type(constructor) == "function" then
+                    local ok, instance = pcall(constructor, runtime.env, runtime)
+                    if ok and type(instance) == "table" then
+                        runtime.telemetryPublisher = instance
+                    else
+                        addError(context, "telemetry publisher: " .. tostring(instance))
+                    end
+                else
+                    addError(context, "telemetry publisher: " .. tostring(moduleError or "no constructor"))
+                end
                 return true
             end
 
@@ -878,6 +907,7 @@ function module.new(dependencies)
             end
         end
         context.panels = {}
+        context.panelOrderRevision = (context.panelOrderRevision or 0) + 1
         context.rejected = {}
         context.errors = {}
         context.notices = {}
@@ -902,6 +932,7 @@ function module.new(dependencies)
         -- rebuilt with the dashboard rather than reused across a reload.
         context.serviceRuntime = nil
         context.serviceIndex = nil
+        context.telemetryPublisherReady = nil
         context.themeNames = { "modern-dark" }
         if context.radioBackground then
             context.themeNames[#context.themeNames + 1] = "modern-light"

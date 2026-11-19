@@ -201,6 +201,7 @@ function module.new(dependencies)
             for index, current in ipairs(context.panels) do
                 if current == entry then
                     table.remove(context.panels, index)
+                    context.panelOrderRevision = (context.panelOrderRevision or 0) + 1
                     job.index = index
                     break
                 end
@@ -212,6 +213,7 @@ function module.new(dependencies)
             if rebuilt then
                 table.remove(context.panels)
                 table.insert(context.panels, math.min(job.index, #context.panels + 1), rebuilt)
+                context.panelOrderRevision = (context.panelOrderRevision or 0) + 1
             end
             job.built = true
             return
@@ -293,6 +295,7 @@ function module.new(dependencies)
         context.canvas = nil
         context.emptyHint = nil
         context.panels = {}
+        context.panelOrderRevision = (context.panelOrderRevision or 0) + 1
         context.rejected = {}
         context.errors = {}
         context.notices = {}

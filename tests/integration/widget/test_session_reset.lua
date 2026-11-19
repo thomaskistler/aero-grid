@@ -56,6 +56,60 @@ fixture.radio.values[306] = -1024
 fixture.radio.rssi = 80
 fixture.radio.values[fixture.radio.fields.RQly.id] = 80
 fixture.radio.values[fixture.radio.fields.RxBt.id] = 16.8
+local sourceValue = getSourceValue
+local sourceInfo = getFieldInfo
+local sensorInfo = model.getSensor
+local publishedSensors, publishedValues = {}, {}
+local nextPublishedSensor = 50
+model.getSensor = function(index)
+    return publishedSensors[index] or sensorInfo(index)
+end
+getFieldInfo = function(name)
+    local number = type(name) == "string" and tonumber(string.match(name, "^telem(%d+)$"))
+    local index = number and number - 1 or nil
+    if index and publishedSensors[index] then
+        return { id = 10000 + index, unit = publishedSensors[index].unit }
+    end
+    return sourceInfo(name)
+end
+getSourceValue = function(source)
+    if publishedValues[source] ~= nil then
+        return publishedValues[source], true, true
+    end
+    return sourceValue and sourceValue(source)
+end
+setTelemetryValue = function(id, _, instance, value, unit, precision, name)
+    local index
+    for candidate, sensor in pairs(publishedSensors) do
+        if sensor.id == id and sensor.instance == instance then
+            index = candidate
+            break
+        end
+    end
+    if not index then
+        index = nextPublishedSensor
+        nextPublishedSensor = nextPublishedSensor + 1
+        publishedSensors[index] = {
+            type = 0,
+            id = id,
+            instance = instance,
+            name = name,
+            unit = unit,
+            prec = precision,
+        }
+        return true
+    end
+    publishedValues[10000 + index] = value / (10 ^ precision)
+    return false
+end
+local function published(name)
+    for index, sensor in pairs(publishedSensors) do
+        if sensor.name == name then
+            return publishedValues[10000 + index]
+        end
+    end
+    return nil
+end
 local first = definition.create({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "session-reset" }, path)
 local second = definition.create({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "session-reset" }, path)
 local worst = 0
@@ -141,6 +195,12 @@ untilState(function()
     return owner.view.active
 end)
 secondVisible = false
+fixture.radio.values[fixture.radio.fields.RxBt.id] = 12
+for _ = 1, 30 do
+    fixture.tick(20)
+    measured(definition.background, second)
+end
+equal(published("VCel"), 3, "hidden dashboards keep publishing derived telemetry")
 equal(owner.view.count, 1)
 equal(model.getGlobalVariable(8, 0), 17)
 assert(owner.view.active and sticky)
@@ -214,7 +274,7 @@ first.editorController.restorePreview(first)
 untilState(function()
     return panel(first, "battery").estimatedCells == 2
 end)
-equal(panel(second, "battery").estimatedCells, nil, "hidden panels discard old estimates before their next render")
+equal(panel(second, "battery").estimatedCells, 2, "hidden panels refresh their published-cell estimate")
 secondVisible = true
 untilState(function()
     return panel(second, "battery").estimatedCells == 2

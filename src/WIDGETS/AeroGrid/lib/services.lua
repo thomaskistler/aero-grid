@@ -97,6 +97,7 @@ function services.environment(overrides)
     return {
         getValue = callable(overrides.getValue) or callable(getValue),
         getSourceValue = callable(overrides.getSourceValue) or callable(getSourceValue),
+        setTelemetryValue = callable(overrides.setTelemetryValue) or callable(setTelemetryValue),
         getOutputValue = callable(overrides.getOutputValue) or callable(getOutputValue),
         getFieldInfo = callable(overrides.getFieldInfo) or callable(getFieldInfo),
         getRSSI = callable(overrides.getRSSI) or callable(getRSSI),

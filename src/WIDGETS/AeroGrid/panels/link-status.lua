@@ -779,6 +779,9 @@ function linkStatus.create(parent, rect, settings, services)
         -- Reused so a refresh allocates nothing; the host pays this per frame.
         readingCache = {},
         pairedRow = layout.pairedRow,
+        publisher = services.telemetryPublisher,
+        ownsTelemetry = services.ownsTelemetry,
+        clock = services.clock,
     }
 
     local telemetry = services.telemetry
@@ -917,6 +920,19 @@ function linkStatus.create(parent, rect, settings, services)
     local _, drawn = primitives.changed(context, linkStatus.render)
     linkStatus.apply(context, drawn)
     return context
+end
+
+--- Publish derived link telemetry without touching the LVGL tree.
+function linkStatus.publish(context, reading)
+    local publisher = context.publisher
+    if not publisher or not context.ownsTelemetry() then
+        return
+    end
+    reading = reading or linkStatus.read(context)
+    if finite(reading.margin) then
+        publisher:publish("Mrgn", reading.margin)
+    end
+    publisher:drop(context.clock(), reading.linkLive)
 end
 
 --- Repaint the panel from its current subscriptions.
@@ -1103,6 +1119,7 @@ end
 ---@param context AeroGridLinkContext
 function linkStatus.refresh(context)
     if not context.rssiFeed and not context.qualityFeed then
+        linkStatus.publish(context)
         return
     end
     local reading = linkStatus.read(context)
@@ -1118,6 +1135,27 @@ function linkStatus.refresh(context)
     if changed then
         linkStatus.apply(context, drawn)
     end
+    linkStatus.publish(context, reading)
+end
+
+function linkStatus.backgroundEnabled(context)
+    return context.publisher ~= nil and context.ownsTelemetry()
+end
+
+function linkStatus.background(context)
+    if not linkStatus.backgroundEnabled(context) then
+        return
+    end
+    local now = context.clock()
+    if
+        context.backgroundAt
+        and now >= context.backgroundAt
+        and now - context.backgroundAt < linkStatus.refreshInterval
+    then
+        return
+    end
+    context.backgroundAt = now
+    linkStatus.publish(context)
 end
 
 --- Reposition after a zone change.

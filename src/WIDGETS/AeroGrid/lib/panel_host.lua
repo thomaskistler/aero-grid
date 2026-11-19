@@ -54,8 +54,17 @@ local panelHost = { RUNTIME_API = 1 }
 panelHost.API_VERSION = 1
 
 --- Optional lifecycle callbacks, in a fixed order so errors stay deterministic.
-local OPTIONAL_CALLBACKS =
-    { "update", "refresh", "finish", "finishPending", "background", "resetSession", "rebindArming", "event", "destroy" }
+local OPTIONAL_CALLBACKS = {
+    "update",
+    "refresh",
+    "finish",
+    "finishPending",
+    "background",
+    "resetSession",
+    "rebindArming",
+    "event",
+    "destroy",
+}
 
 --- Restrict module identifiers to the same path-safe characters as layout types.
 ---@param value any

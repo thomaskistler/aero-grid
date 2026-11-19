@@ -185,6 +185,33 @@ local function testIndependentAlarms()
     assertions.assertEqual(state(), "critical")
 end
 
+local function testPublishedLinkValues()
+    local context = elrsContext()
+    local published = {}
+    context.clock = function()
+        return 500
+    end
+    context.publisher = {
+        publish = function(_, name, value)
+            published[name] = value
+        end,
+        drop = function(_, now, down)
+            published.Drop = { now, down }
+        end,
+    }
+    context.ownsTelemetry = function()
+        return true
+    end
+    linkStatus.publish(context)
+    assertions.assertEqual(published.Mrgn, 10)
+    assert(published.Drop[1] == 500 and published.Drop[2] == true)
+
+    context.link.live = false
+    linkStatus.background(context)
+    assertions.assertEqual(published.Mrgn, 10, "an invalid margin must not replace the old sensor value")
+    assert(published.Drop[2] == false, "background keeps Drop observing link loss")
+end
+
 local function testValidation()
     local settings = elrsContext().settings
     assertions.assertEqual(#linkStatus.validateSettings(settings), 0)
@@ -235,6 +262,7 @@ local function run()
     testBarFraction()
     testElrsModes()
     testIndependentAlarms()
+    testPublishedLinkValues()
     testValidation()
 end
 
