@@ -160,11 +160,24 @@ local function testTrackDeadband()
     assertions.assertEqual(radio.value("FDst"), 7300)
 end
 
+local function testOneOwnerPerType()
+    local service = publisher.new(firmware().env)
+    local first, second = {}, {}
+    assert(service:owns("navigation", first))
+    assert(not service:owns("navigation", second), "a second widget does not publish a claimed type")
+    assert(service:owns("navigation", first))
+    assert(service:owns("link-status", second))
+    first = nil
+    collectgarbage()
+    assert(service:owns("navigation", second), "a destroyed widget releases its claims")
+end
+
 local function run()
     testCreationNeedsDiscovery()
     testDropCountsExactly()
     testTelemetryResetClearsCounters()
     testTrackDeadband()
+    testOneOwnerPerType()
 end
 
 run()

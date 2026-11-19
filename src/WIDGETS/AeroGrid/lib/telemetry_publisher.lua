@@ -32,8 +32,21 @@ end
 
 function publisher.new(env)
     local self = setmetatable({ env = env, sources = {}, counters = {} }, publisher)
+    -- Weak, so a destroyed widget does not keep its claims.
+    self.owners = setmetatable({}, { __mode = "v" })
     self:discover()
     return self
+end
+
+--- Whether `owner` publishes for `kind`. The first owner to ask keeps it, so
+--- widgets reading different sources never feed the same sensor.
+function publisher:owns(kind, owner)
+    local current = self.owners[kind]
+    if current == nil then
+        self.owners[kind] = owner
+        return true
+    end
+    return current == owner
 end
 
 --- Find the EdgeTX source of each published sensor by its protocol ID.

@@ -896,12 +896,14 @@ end
 function navigation.publish(context)
     local publisher = context.publisher
     local view = context.feed
-    if not publisher or not context.ownsTelemetry() or type(view) ~= "table" then
+    if not publisher or not context.ownsTelemetry() or type(view) ~= "table" or view.state ~= "normal" then
         return
     end
-    if view.state == "normal" and type(view.distance) == "number" then
+    if type(view.distance) == "number" then
         publisher:publish("HDst", view.distance)
     end
+    -- A gap is bridged by the next fresh fix: the straight line is the least
+    -- the aircraft flew.
     if view.latitude and view.longitude then
         publisher:track(view.latitude, view.longitude, context.service.distanceBetween)
     end

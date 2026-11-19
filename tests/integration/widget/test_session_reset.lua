@@ -195,12 +195,37 @@ untilState(function()
     return owner.view.active
 end)
 secondVisible = false
-fixture.radio.values[fixture.radio.fields.RxBt.id] = 12
-for _ = 1, 30 do
-    fixture.tick(20)
-    measured(definition.background, second)
+-- Hidden dashboards keep publishing; the first widget claimed every sensor and
+-- the second never takes over.
+local function hidden(steps, move)
+    for _ = 1, steps do
+        fixture.tick(20)
+        if move then
+            local position = fixture.radio.values[fixture.radio.fields.GPS.id]
+            fixture.radio.values[fixture.radio.fields.GPS.id] = {
+                lat = position.lat + 0.0001,
+                lon = position.lon,
+                ["pilot-lat"] = position["pilot-lat"],
+                ["pilot-lon"] = position["pilot-lon"],
+                delay = position.delay,
+            }
+        end
+        measured(definition.background, first)
+        measured(definition.background, second)
+    end
 end
+fixture.radio.values[fixture.radio.fields.RxBt.id] = 12
+hidden(30, true)
 equal(published("VCel"), 3, "hidden dashboards keep publishing derived telemetry")
+local flownBefore = published("FDst")
+assert(flownBefore and flownBefore > 0, "movement accumulates FDst")
+fixture.radio.rssi = 0
+fixture.radio.values[fixture.radio.fields.RQly.id] = 0
+hidden(30)
+local dropBefore = published("Drop")
+assert(dropBefore and dropBefore > 0, "link loss accumulates Drop")
+fixture.radio.rssi = 80
+fixture.radio.values[fixture.radio.fields.RQly.id] = 80
 equal(owner.view.count, 1)
 equal(model.getGlobalVariable(8, 0), 17)
 assert(owner.view.active and sticky)
@@ -246,6 +271,7 @@ equal(owner.document.revision, revision, "switch activation must not save model 
 equal(owner.view.count, 1)
 equal(model.getGlobalVariable(8, 0), 17)
 assert(not owner.view.active)
+assert(published("Drop") >= dropBefore and published("FDst") >= flownBefore, "Session reset keeps Drop and FDst")
 pump(60)
 equal(sticky, false)
 for index, context in ipairs({ first, second }) do
@@ -274,7 +300,7 @@ first.editorController.restorePreview(first)
 untilState(function()
     return panel(first, "battery").estimatedCells == 2
 end)
-equal(panel(second, "battery").estimatedCells, 2, "hidden panels refresh their published-cell estimate")
+equal(panel(second, "battery").estimatedCells, nil, "hidden panels discard old estimates before their next render")
 secondVisible = true
 untilState(function()
     return panel(second, "battery").estimatedCells == 2
@@ -357,6 +383,9 @@ for _, context in ipairs({ first, second }) do
     equal(history:subscribe("Alt").count, 0, "paused recordings are cleared without restarting")
 end
 equal(owner.view.count, 2)
+local home, radioHome = panel(first, "home"), panel(first, "radio-home")
+assert(home.ownsTelemetry() and not radioHome.ownsTelemetry(), "the first Navigation panel publishes")
+assert(not panel(second, "home").ownsTelemetry(), "another widget never publishes a claimed sensor")
 equal(#first.errors, 0, table.concat(first.errors, "; "))
 equal(#second.errors, 0, table.concat(second.errors, "; "))
 print("model session reset: foreground and hidden consumers, worst " .. worst .. " instructions")

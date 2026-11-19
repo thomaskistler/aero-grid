@@ -159,14 +159,15 @@ function module.new(dependencies)
             -- to load, so a panel must tolerate nil rather than assume.
             telemetry = byId.telemetry,
             telemetryPublisher = publisher,
-            -- Only the first live panel of a type in layout order publishes.
+            -- Only the first panel of a type in layout order publishes, and
+            -- only on the first widget to claim that type. There is no backup.
             ownsTelemetry = function()
                 if preview or not publisher then
                     return false
                 end
                 for _, entry in ipairs(context.panels) do
-                    if entry.placement.type == placement.type and not entry.failed and not entry.preview then
-                        return entry.placement.id == placement.id
+                    if entry.placement.type == placement.type then
+                        return entry.placement.id == placement.id and publisher:owns(placement.type, context)
                     end
                 end
                 return false
@@ -278,7 +279,6 @@ function module.new(dependencies)
             local interval = host.refreshInterval(panel)
             context.panels[#context.panels + 1] = {
                 placement = placement,
-                preview = preview == true,
                 module = panel,
                 instance = instance,
                 settings = settings,
