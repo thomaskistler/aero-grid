@@ -229,19 +229,25 @@ local function testDebriefRoundTrip()
                 title = "Link",
                 colSpan = 4,
                 rowSpan = 1,
-                series = { { source = "RQly", statistic = "min", label = "worst", precision = 0 } },
+                futureTile = { mode = "new" },
+                series = { { source = "RQly", statistic = "min", label = "worst", precision = 0, future = "kept" } },
             },
         },
     }
+    local errors, warnings = layout.validateDebrief(document)
+    assert(#errors == 0 and #warnings == 2, "unknown settings should be reported on load")
     local saved, saveError, filename = stagedSave("main", document, operations)
     assert(saved, saveError)
     local parsed = assert(yaml.parse(files[filename]))
     local tile = parsed.debrief.tiles[1]
     assert(tile.title == "Link" and tile.colSpan == 4 and tile.series[1].label == "worst")
+    assert(tile.futureTile.mode == "new" and tile.series[1].future == "kept")
 
     saved, saveError, filename = stagedSave("copy", parsed, operations)
     assert(saved, saveError)
     assert(assert(yaml.parse(files[filename])).debrief.tiles[1].series[1].source == "RQly", "Save as keeps the debrief")
+    local copy = assert(yaml.parse(files[filename])).debrief.tiles[1]
+    assert(copy.futureTile.mode == "new" and copy.series[1].future == "kept")
 
     local empty = makeDocument("empty")
     empty.version = layout.VERSION

@@ -77,6 +77,22 @@ assert(
     "saving a compatible preview must attach observers for new telemetry"
 )
 
+local sections = {
+    { tiles = { { title = "Link", colSpan = 2, rowSpan = 2, series = { { source = "RQly", statistic = "min" } } } } },
+    { tiles = {} },
+    false,
+}
+for _, section in ipairs(sections) do
+    draft, handlers = preview(function()
+        context.editorSession.draft.debrief = section or nil
+    end)
+    save(draft, handlers)
+    equal(context.reloadState, nil, "a debrief-only save must not reload the dashboard")
+    equal(context.serviceRuntime.byId.history, history)
+    equal(context.document.debrief, section or nil)
+    equal(fixture.instanceOf(context, "power"), compatible)
+end
+
 fixture.radio.fields.NewChart = { id = 5100, name = "NewChart", unit = 1 }
 fixture.radio.values[5100] = 55
 fixture.radioMock.indexFields()

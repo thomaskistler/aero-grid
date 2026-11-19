@@ -8,7 +8,7 @@ local function series(source, statistic)
 end
 
 local function tile(title, entries)
-    return { title = title, series = entries or { series("VCel") } }
+    return { title = title, colSpan = 2, rowSpan = 2, series = entries or { series("VCel") } }
 end
 
 local function hasMessage(errors, text)
@@ -48,7 +48,7 @@ local function testValidSection()
     assert(#section.tiles == 2)
     assert(section.tiles[1].colSpan == 4 and section.tiles[1].rowSpan == 1)
     assert(section.tiles[1].series[1].precision == 2)
-    assert(section.tiles[2].colSpan == 2 and section.tiles[2].rowSpan == 2, "tiles default to Compact")
+    assert(section.tiles[2].colSpan == 2 and section.tiles[2].rowSpan == 2)
 end
 
 local function testEmptyAndMalformedSections()
@@ -71,7 +71,6 @@ local function testInvalidEntriesAreDropped()
         tiles = {
             { series = { series("VCel") } },
             { title = "Size", colSpan = 3, rowSpan = 2, series = { series("VCel") } },
-            { title = "Extra", stripe = true, series = { series("VCel") } },
             tile("None", {}),
             tile("Mixed", {
                 series("RQly"),
@@ -80,7 +79,6 @@ local function testInvalidEntriesAreDropped()
                 { source = "Drop", statistic = "delta", precision = 1.5 },
                 { source = "Alt", statistic = "max", rangeMin = 5, rangeMax = 5 },
                 { source = "Alt", statistic = "max", accent = "red" },
-                { source = "Alt", statistic = "max", color = "cyan" },
                 series("Drop", "delta"),
                 series("FDst", "delta"),
                 series("HDst", "max"),
@@ -92,15 +90,33 @@ local function testInvalidEntriesAreDropped()
     assert(#kept == 3 and kept[1].source == "RQly" and kept[3].source == "FDst")
     assert(hasMessage(errors, "debrief tile 1: title is required"))
     assert(hasMessage(errors, "debrief tile 2: size"))
-    assert(hasMessage(errors, "debrief tile 3: stripe is not a tile setting"))
-    assert(hasMessage(errors, "debrief tile 4: has no valid series"))
-    assert(hasMessage(errors, "debrief tile 5: series 2: statistic is invalid"))
+    assert(hasMessage(errors, "debrief tile 3: has no valid series"))
+    assert(hasMessage(errors, "debrief tile 4: series 2: statistic must be"))
     assert(hasMessage(errors, "series 3: source is invalid"))
     assert(hasMessage(errors, "series 4: precision is invalid"))
     assert(hasMessage(errors, "series 5: rangeMax must be greater"))
     assert(hasMessage(errors, "series 6: accent is invalid"))
-    assert(hasMessage(errors, "series 7: color is not a series setting"))
     assert(hasMessage(errors, "more than 3 series"))
+end
+
+local function testUnknownSettingsAndRequiredSizes()
+    local entry = tile("Future")
+    entry.stripe = { style = "dashed" }
+    entry.series[1].future = { mode = "new" }
+    local section, errors, warnings = debrief.validate({ tiles = { entry } })
+    assert(#errors == 0 and #warnings == 2)
+    assert(hasMessage(warnings, "stripe is not a tile setting"))
+    assert(hasMessage(warnings, "series 1: future is not a series setting"))
+    assert(section.tiles[1].stripe.style == "dashed")
+    assert(section.tiles[1].series[1].future.mode == "new")
+    for _, size in ipairs({ {}, { colSpan = 4 }, { rowSpan = 2 } }) do
+        size.title, size.series = "Missing size", { series("VCel") }
+        local normalized, problems = debrief.validate({ tiles = { size } })
+        assert(#normalized.tiles == 0 and hasMessage(problems, "size must be"))
+    end
+    local sparse = { [0] = series("VCel"), [2] = series("RQly") }
+    local normalized, problems = debrief.validate({ tiles = { tile("Bad list", sparse) } })
+    assert(#normalized.tiles == 0 and hasMessage(problems, "series must be a sequence"))
 end
 
 local function testTileLimit()
@@ -115,12 +131,6 @@ local function testTileLimit()
     assert(not debrief.canAdd(section))
     local added, addError = debrief.addTile(section, tile("Thirteen"))
     assert(added == false and string.find(addError, "at most 12", 1, true))
-end
-
-local function testLabels()
-    assert(debrief.label(series("VCel", "min")) == "min")
-    assert(debrief.label({ source = "FDst", statistic = "delta", label = "" }) == "delta")
-    assert(debrief.label({ source = "FDst", statistic = "delta", label = "flown" }) == "flown")
 end
 
 local function testDraftOperations()
@@ -154,8 +164,8 @@ local function run()
     testValidSection()
     testEmptyAndMalformedSections()
     testInvalidEntriesAreDropped()
+    testUnknownSettingsAndRequiredSizes()
     testTileLimit()
-    testLabels()
     testDraftOperations()
 end
 

@@ -102,12 +102,12 @@ function module.new(dependencies)
             return false
         end
         for key, value in pairs(document) do
-            if key ~= "panels" and not sameConfig(value, current[key]) then
+            if key ~= "panels" and key ~= "debrief" and not sameConfig(value, current[key]) then
                 return false
             end
         end
         for key in pairs(current) do
-            if key ~= "panels" and document[key] == nil then
+            if key ~= "panels" and key ~= "debrief" and document[key] == nil then
                 return false
             end
         end

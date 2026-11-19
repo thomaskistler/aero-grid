@@ -146,7 +146,7 @@ end
 
 local function testDebriefDraft()
     local session = newSession()
-    local tile = { title = "RX", series = { { source = "VCel", statistic = "min" } } }
+    local tile = { title = "RX", colSpan = 2, rowSpan = 2, series = { { source = "VCel", statistic = "min" } } }
     assert(not editor.removeDebriefTile(session, 1), "a layout without a debrief has no tiles")
     assert(editor.debriefTiles(session) == nil and editor.canAddDebriefTile(session))
     assert(editor.addDebriefTile(session, tile) == 1 and session.dirty)
@@ -160,9 +160,27 @@ local function testDebriefDraft()
     assert(editor.cancel(session))
     assert(#editor.debriefTiles(session) == 1, "cancel restores the debrief")
 
+    local other = { title = "Link", colSpan = 4, rowSpan = 1, series = { { source = "RQly", statistic = "min" } } }
+    assert(editor.addDebriefTile(session, other) == 2)
+    assert(editor.moveDebriefTile(session, 2, -1) == 1)
+    assert(editor.setDebriefTile(session, 1, tile))
+    assert(session.draft.debrief.tiles[1].title == "mutated")
+    assert(editor.cancel(session))
+
+    session.draft.debrief.tiles[1].futureTile = "preserved"
+    session.draft.debrief.tiles[1].series[1].futureSeries = "preserved"
+    local valid, normalized = editor.validate(session)
+    assert(valid, table.concat(normalized, "\n"))
+    assert(normalized.debrief.tiles[1].futureTile == "preserved")
+    assert(normalized.debrief.tiles[1].series[1].futureSeries == "preserved")
+
     session.draft.debrief.tiles[1].series[1].statistic = "last"
-    local valid, errors = editor.validate(session)
+    local errors
+    valid, errors = editor.validate(session)
     assert(not valid and string.find(table.concat(errors, "\n"), "debrief tile 1", 1, true))
+    session.draft.debrief = "invalid"
+    valid, errors = editor.validate(session)
+    assert(not valid and string.find(table.concat(errors, "\n"), "debrief must be a mapping", 1, true))
 end
 
 local function testAddChannelOutput()

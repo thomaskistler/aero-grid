@@ -367,22 +367,23 @@ function layout.debrief()
 end
 
 --- Normalize a header's optional debrief section in place.
---- Invalid tiles and series are dropped and reported; callers decide whether
---- the report blocks (Save) or only informs (loading).
+--- Invalid tiles and series are dropped and reported as errors. Unknown
+--- settings are preserved and reported separately as non-blocking warnings.
 ---@param header table
 ---@return string[] errors
+---@return string[] warnings
 function layout.validateDebrief(header)
     if header.debrief == nil then
-        return {}
+        return {}, {}
     end
     local module, loadError = layout.debrief()
     if not module then
         header.debrief = nil
-        return { "debrief: " .. tostring(loadError) }
+        return { "debrief: " .. tostring(loadError) }, {}
     end
-    local normalized, errors = module.validate(header.debrief)
+    local normalized, errors, warnings = module.validate(header.debrief)
     header.debrief = normalized
-    return errors
+    return errors, warnings
 end
 
 --- Validate one panel against the grid and the entries already accepted.

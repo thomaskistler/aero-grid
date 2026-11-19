@@ -20,7 +20,10 @@ local function isSequence(value)
         return false
     end
     local count = 0
-    for _ in pairs(value) do
+    for key in pairs(value) do
+        if type(key) ~= "number" or key % 1 ~= 0 or key < 1 or key > #value then
+            return false
+        end
         count = count + 1
     end
     return count == #value
@@ -57,55 +60,59 @@ local SERIES_FIELDS = {
 ---@param value any
 ---@return table? series
 ---@return string? error
+---@return string[] warnings
 function debrief.validateSeries(value)
     if not isMapping(value) then
-        return nil, "must be a mapping"
+        return nil, "must be a mapping", {}
     end
-    local series = {}
+    local series, warnings = {}, {}
     for key, field in pairs(value) do
         local check = SERIES_FIELDS[key]
         if not check then
-            return nil, tostring(key) .. " is not a series setting"
-        end
-        if not check(field) then
-            return nil, key .. " is invalid"
+            warnings[#warnings + 1] = tostring(key) .. " is not a series setting"
+        elseif not check(field) then
+            local message = key == "statistic" and "statistic must be min, max, avg, or delta" or key .. " is invalid"
+            return nil, message, warnings
         end
         series[key] = field
     end
     if series.source == nil then
-        return nil, "source is required"
+        return nil, "source is required", warnings
     end
     if series.statistic == nil then
-        return nil, "statistic must be min, max, avg, or delta"
+        return nil, "statistic must be min, max, avg, or delta", warnings
     end
     if series.rangeMin and series.rangeMax and series.rangeMin >= series.rangeMax then
-        return nil, "rangeMax must be greater than rangeMin"
+        return nil, "rangeMax must be greater than rangeMin", warnings
     end
-    return series
+    return series, nil, warnings
 end
 
 --- Validate one tile, dropping invalid series.
 ---@param value any
 ---@return table? tile
 ---@return string[] errors Problems, including those of dropped series.
+---@return string[] warnings
 function debrief.validateTile(value)
     if not isMapping(value) then
-        return nil, { "must be a mapping" }
+        return nil, { "must be a mapping" }, {}
     end
-    for key in pairs(value) do
+    local tile, warnings = {}, {}
+    for key, field in pairs(value) do
         if not TILE_KEYS[key] then
-            return nil, { tostring(key) .. " is not a tile setting" }
+            warnings[#warnings + 1] = tostring(key) .. " is not a tile setting"
         end
+        tile[key] = field
     end
     if type(value.title) ~= "string" or value.title == "" then
-        return nil, { "title is required" }
+        return nil, { "title is required" }, warnings
     end
-    local colSpan, rowSpan = value.colSpan or 2, value.rowSpan or 2
+    local colSpan, rowSpan = value.colSpan, value.rowSpan
     if not SIZES[tostring(colSpan) .. "x" .. tostring(rowSpan)] then
-        return nil, { "size must be 2 x 2, 4 x 2, or 4 x 1" }
+        return nil, { "size must be 2 x 2, 4 x 2, or 4 x 1" }, warnings
     end
     if not isSequence(value.series) then
-        return nil, { "series must be a sequence" }
+        return nil, { "series must be a sequence" }, warnings
     end
 
     local errors, series = {}, {}
@@ -114,7 +121,10 @@ function debrief.validateTile(value)
             errors[#errors + 1] = "more than " .. debrief.MAX_SERIES .. " series; the rest were dropped"
             break
         end
-        local valid, seriesError = debrief.validateSeries(entry)
+        local valid, seriesError, seriesWarnings = debrief.validateSeries(entry)
+        for _, message in ipairs(seriesWarnings) do
+            warnings[#warnings + 1] = "series " .. index .. ": " .. message
+        end
         if valid then
             series[#series + 1] = valid
         else
@@ -123,9 +133,10 @@ function debrief.validateTile(value)
     end
     if #series == 0 then
         errors[#errors + 1] = "has no valid series"
-        return nil, errors
+        return nil, errors, warnings
     end
-    return { title = value.title, colSpan = colSpan, rowSpan = rowSpan, series = series }, errors
+    tile.series = series
+    return tile, errors, warnings
 end
 
 --- Validate a debrief section. Invalid tiles and series are reported and
@@ -134,51 +145,53 @@ end
 ---@param value any
 ---@return table? debrief Nil when the section itself is unusable.
 ---@return string[] errors
+---@return string[] warnings
 function debrief.validate(value)
     if not isMapping(value) then
-        return nil, { "debrief must be a mapping" }
+        return nil, { "debrief must be a mapping" }, {}
     end
-    local errors, result = {}, {}
+    local errors, warnings, result = {}, {}, {}
     -- Unknown keys are carried through, like unknown layout keys.
     for key, field in pairs(value) do
         result[key] = field
     end
     result.tiles = {}
     if value.tiles == nil then
-        return result, errors
+        return result, errors, warnings
     end
     if not isSequence(value.tiles) then
         errors[#errors + 1] = "debrief tiles must be a sequence"
-        return result, errors
+        return result, errors, warnings
     end
     for index, entry in ipairs(value.tiles) do
         if #result.tiles == debrief.MAX_TILES then
             errors[#errors + 1] = "debrief has more than " .. debrief.MAX_TILES .. " tiles; the rest were dropped"
             break
         end
-        local tile, tileErrors = debrief.validateTile(entry)
+        local tile, tileErrors, tileWarnings = debrief.validateTile(entry)
         for _, message in ipairs(tileErrors) do
             errors[#errors + 1] = "debrief tile " .. index .. ": " .. message
         end
+        for _, message in ipairs(tileWarnings) do
+            warnings[#warnings + 1] = "debrief tile " .. index .. ": " .. message
+        end
         result.tiles[#result.tiles + 1] = tile
     end
-    return result, errors
-end
-
---- The legend text before a series value.
----@param series table
----@return string
-function debrief.label(series)
-    if type(series.label) == "string" and series.label ~= "" then
-        return series.label
-    end
-    return series.statistic
+    return result, errors, warnings
 end
 
 ---@param section table?
 ---@return boolean
 function debrief.canAdd(section)
     return section == nil or #section.tiles < debrief.MAX_TILES
+end
+
+local function strictTile(tile)
+    local valid, errors = debrief.validateTile(tile)
+    if not valid or #errors > 0 then
+        return nil, table.concat(errors, "; ")
+    end
+    return valid
 end
 
 --- Append a tile.
@@ -190,9 +203,9 @@ function debrief.addTile(section, tile)
     if not debrief.canAdd(section) then
         return false, "a debrief has at most " .. debrief.MAX_TILES .. " tiles"
     end
-    local valid, errors = debrief.validateTile(tile)
-    if not valid or #errors > 0 then
-        return false, table.concat(errors, "; ")
+    local valid, message = strictTile(tile)
+    if not valid then
+        return false, message
     end
     section.tiles[#section.tiles + 1] = valid
     return #section.tiles
@@ -208,9 +221,9 @@ function debrief.setTile(section, index, tile)
     if not section.tiles[index] then
         return false, "no tile " .. tostring(index)
     end
-    local valid, errors = debrief.validateTile(tile)
-    if not valid or #errors > 0 then
-        return false, table.concat(errors, "; ")
+    local valid, message = strictTile(tile)
+    if not valid then
+        return false, message
     end
     section.tiles[index] = valid
     return true

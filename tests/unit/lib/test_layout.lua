@@ -252,15 +252,12 @@ local function testDebriefSection()
     local header = {
         version = layout.VERSION,
         grid = { columns = 4, rows = 4 },
-        debrief = { tiles = { { title = "RX", series = { { source = "VCel", statistic = "min" } } }, { title = "" } } },
+        debrief = { tiles = { { title = "", series = {} } } },
     }
     local errors = layout.validateDebrief(header)
-    assert(#errors == 1 and string.find(errors[1], "debrief tile 2", 1, true))
-    assert(#header.debrief.tiles == 1 and header.debrief.tiles[1].colSpan == 2)
+    assert(#errors == 1 and string.find(errors[1], "debrief tile 1", 1, true))
     local bare = { version = layout.VERSION, grid = { columns = 4, rows = 4 } }
     assert(#layout.validateDebrief(bare) == 0 and bare.debrief == nil, "no section means no debrief")
-    local empty = { debrief = { tiles = {} } }
-    assert(#layout.validateDebrief(empty) == 0 and #empty.debrief.tiles == 0)
 end
 
 local function run()
