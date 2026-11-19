@@ -100,8 +100,8 @@ series:
   debrief:
     tiles:
       - title: RX battery
-        colSpan: 2          # 2 x 2 Compact, 4 x 2 or 4 x 1 Wide
-        rowSpan: 2
+        colSpan: 2          # required: 2 x 2 Compact, 4 x 2 or 4 x 1 Wide
+        rowSpan: 2          # required
         series:             # 1 to 3
           - source: VCel    # telemetry sensor name
             statistic: min  # min, max, avg, or delta
@@ -117,8 +117,11 @@ series:
   recorded) until it is filled; see Automatic population. An empty tile list
   is a valid, empty debrief and is never filled automatically.
 - Validation follows the panel rules. Invalid series are dropped; a tile with
-  no valid series, a bad size, or no title is dropped. On load the errors
-  become notices and the rest is used; in the editor they block Save.
+  no valid series, a missing or bad size, or no title is dropped. On load the
+  errors become notices and the rest is used; in the editor they block Save.
+  Unknown settings are reported as notices but kept, and do not block Save,
+  so an older version never destroys a newer layout's settings.
+- Saving a change to only the debrief does not reload the dashboard.
 
 - A list page, not a visual editor: the tiles are listed by title and size.
   Selecting a tile opens its settings in the shared settings UI.
