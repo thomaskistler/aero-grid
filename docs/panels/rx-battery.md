@@ -61,6 +61,15 @@ for a monitored cell headline, it uses the lowest cell. This is voltage
 headroom, not remaining capacity. Values outside the range keep the visual
 empty or full while the number still shows the actual voltage.
 
+### EdgeTX sensor
+
+The panel publishes the cell voltage as the EdgeTX sensor **VCel**: the lowest
+cell for a cells monitor, otherwise the average cell voltage. Logical
+switches, logs and other screens can use it.
+To create the sensors, open the model's **Telemetry** page with telemetry live
+and run **Discover new sensors** once. AeroGrid cannot create them itself.
+If several widgets or panels of this type are shown, only the first publishes.
+
 ### Visualization and details
 
 **battery** never shows supporting readings. **bar** and **details** show
