@@ -140,6 +140,13 @@ series:
 - The panels that compute these values (Battery, Link, Navigation) publish
   them automatically. No panel means no sensor; there is no move of this
   logic into Model settings.
+- EdgeTX only creates a published sensor while **Discover new sensors** is
+  running (verified in the EdgeTX 2.12.4 simulator). The user runs Discover
+  once per model with AeroGrid on screen; the sensors then stay in the
+  model. Until then, the Flight debrief setup page shows "Run Discover new
+  sensors in Model > Telemetry" next to tiles whose sensor is missing.
+- Published values are read back with `getSourceValue`, which works without
+  a receiver link; `getValue` returns 0 then.
 - `Drop` and `FDst` behave like any other accumulating telemetry, such as
   consumption: they keep counting until EdgeTX telemetry is reset. The
   debrief shows a flight's share with the `used` statistic.
@@ -224,10 +231,10 @@ own. Nothing user-visible is half finished between steps.
 6. **Pill.** Both texts and the pill lifecycle. The feature now works end to
    end with the automatically populated debrief.
 7. **Setup page.** The Flight debrief menu item, the tile list page, tile
-   settings, Fill from dashboard, and the flight-detection note. Edits the
-   data defined in step 3.
-8. **Documentation.** User guide page and real screenshots replacing the
-   mockup images.
+   settings, Fill from dashboard, the flight-detection note, and the
+   missing-sensor hint. Edits the data defined in step 3.
+8. **Documentation.** User guide page, including running Discover new
+   sensors once, and real screenshots replacing the mockup images.
 
 Steps 1, 2, and 3 are independent. Step 4 needs steps 2 and 3; steps 5 to 7
 follow in order.
