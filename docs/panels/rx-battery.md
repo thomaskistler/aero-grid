@@ -67,8 +67,7 @@ The panel publishes the cell voltage as the EdgeTX sensor **VCel**: the lowest
 cell for a cells monitor, otherwise the average cell voltage. Logical
 switches, logs and other screens can use it.
 To create the sensors, open the model's **Telemetry** page with telemetry live
-and run **Discover new sensors** once. AeroGrid cannot create them itself.
-If several widgets or panels of this type are shown, only the first publishes.
+and run **Discover new sensors** once.
 
 ### Visualization and details
 

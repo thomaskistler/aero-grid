@@ -105,11 +105,9 @@ screens can use:
 
 - **HDst**: distance from home in metres, using the panel's home.
 - **FDst**: total distance flown in metres since telemetry was last reset.
-  Movements under 5 m are ignored.
 
 To create the sensors, open the model's **Telemetry** page with telemetry live
-and run **Discover new sensors** once. AeroGrid cannot create them itself.
-If several widgets or panels of this type are shown, only the first publishes.
+and run **Discover new sensors** once.
 **FDst** keeps counting across flights and a [Session reset](../user-guide/model-settings.md#session-reset); reset
 telemetry in EdgeTX to clear it.
 
