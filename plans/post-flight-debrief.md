@@ -257,12 +257,12 @@ own. Nothing user-visible is half finished between steps.
 4. **Recorder.** A debrief service copies the flight slice from
    `history_service` at flight end and computes statistics and shaded
    periods. Session reset clears it. Headless and tested.
-5. **Debrief view.** Header and tiles, shading, legend overflow, scrolling.
-   Swipe up and down in fullscreen, rotary scrolls, RTN closes, leaving
-   fullscreen closes.
-6. **Setup page.** The Flight debrief menu item, the tile list page, tile
+5. **Setup page.** The Flight debrief menu item, the tile list page, tile
    settings, the flight-detection note, and the missing-sensor hint. Edits
    the data defined in step 3.
+6. **Debrief view.** Header and tiles, shading, legend overflow, scrolling.
+   Swipe up and down in fullscreen, rotary scrolls, RTN closes, leaving
+   fullscreen closes.
 7. **Pill.** Both texts and the pill lifecycle. The feature now works end to
    end with a debrief built on the setup page.
 8. **Automatic population.** The panel-to-tile mapping, filling layouts that
