@@ -183,6 +183,22 @@ function module.new(dependencies)
         }
     end
 
+    --- Register a saved panel's thresholds with telemetry; no module clears them.
+    ---@param context AeroGridContext
+    ---@param id any
+    ---@param panel? table
+    ---@param settings? table
+    local function registerThresholds(context, id, panel, settings)
+        local runtime = context.serviceRuntime
+        local telemetry = runtime and runtime.byId.telemetry
+        if telemetry then
+            local ok, message = telemetry:registerPanel(id, panel, settings)
+            if not ok then
+                addError(context, tostring(id) .. ": thresholds: " .. tostring(message))
+            end
+        end
+    end
+
     --- Load, validate, and instantiate every panel in the selected layout.
     --- Instantiate one validated placement.
     ---@param context AeroGridContext
@@ -199,6 +215,7 @@ function module.new(dependencies)
         --- that works and no panel that does not, which is the wrong half.
         local function reject(reason)
             if not preview then
+                registerThresholds(context, placement.id)
                 addError(context, placement.id .. ": " .. tostring(reason))
                 context.rejected[#context.rejected + 1] = {
                     placement = placement,
@@ -275,18 +292,8 @@ function module.new(dependencies)
         local ok, instance =
             pcall(panel.create, container, { x = 0, y = 0, w = rect.w, h = rect.h }, settings, services)
 
-        -- Previews register too: saving the editor keeps preview-built panels.
-        local telemetry = services.telemetry
-        if telemetry then
-            if not telemetry.layoutOrder then
-                telemetry:setLayoutOrder(function()
-                    return context.document and context.document.panels
-                end)
-            end
-            local thresholds = ok and rawget(panel, "thresholds") or nil
-            telemetry:setThresholds(placement.id, thresholds and function()
-                return thresholds(settings, instance)
-            end or nil)
+        if not preview then
+            registerThresholds(context, placement.id, ok and panel or nil, settings)
         end
 
         if ok then
@@ -794,6 +801,11 @@ function module.new(dependencies)
                 local ok, instance = pcall(constructor, runtime.env, context.servicesModule, runtime)
                 if ok and type(instance) == "table" then
                     context.servicesModule.register(runtime, instance, getTime())
+                    if definition.id == "telemetry" then
+                        instance:setLayoutOrder(function()
+                            return context.document and context.document.panels
+                        end)
+                    end
                 else
                     addError(context, definition.id .. ": " .. tostring(instance))
                 end
@@ -971,6 +983,7 @@ function module.new(dependencies)
         reservedFor = reservedFor,
         buildServices = buildServices,
         buildPanel = buildPanel,
+        registerThresholds = registerThresholds,
         advanceLoad = advanceLoad,
         beginLoad = beginLoad,
     }

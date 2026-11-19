@@ -183,16 +183,6 @@ function txBattery.fraction(settings, value, range, primitives)
     return primitives.fraction(value, low, high)
 end
 
---- Thresholds of the transmitter voltage source.
----@param settings AeroGridTxBatterySettings
----@return AeroGridThreshold[]
-function txBattery.thresholds(settings)
-    if type(settings.warning) ~= "number" and type(settings.critical) ~= "number" then
-        return {}
-    end
-    return { { sensor = "tx-voltage", warning = settings.warning, critical = settings.critical, falling = true } }
-end
-
 --- Resolve the panel state. Voltage thresholds always count downward.
 ---@param settings AeroGridTxBatterySettings
 ---@param value any

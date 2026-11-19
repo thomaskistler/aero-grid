@@ -163,7 +163,7 @@ Put a module at `panels/<type>.lua`, with an `id` matching that layout type.
 | `event(instance, event)` | Return true when consumed. |
 | `destroy(instance)` | Release panel-owned references. |
 | `validateSettings(settings, span, config, modelArmed)` | Cross-field or span-dependent validation, with the effective model arm condition. |
-| `thresholds(settings, instance)` | Configured `{ sensor, warning, critical, falling, strict }` list, registered with the telemetry service; for each sensor the first panel in layout order wins. |
+| `thresholds(settings)` | Configured `{ sensor, warning, critical, falling, strict, unit }` list, registered with telemetry when the layout is built or saved; for each sensor the first panel in layout order wins. |
 
 A lifecycle failure disables the affected panel and reports its error without
 repeatedly invoking the failed panel.

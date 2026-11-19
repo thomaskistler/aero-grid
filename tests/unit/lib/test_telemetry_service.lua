@@ -257,30 +257,40 @@ local function testThresholdsFollowLayoutOrder()
     service:setLayoutOrder(function()
         return placements
     end)
-    local function provide(warning)
-        return function()
-            return { { sensor = "Alt", warning = warning, falling = false } }
-        end
+    local panel = {
+        thresholds = function(settings)
+            return settings.list
+        end,
+    }
+    local function alt(warning)
+        return { list = { { sensor = "Alt", warning = warning, falling = false } } }
     end
-    service:setThresholds("b", provide(50))
-    service:setThresholds("a", provide(100))
-    service:setThresholds("c", function()
-        return { { sensor = "Alt" }, { sensor = "VCel", critical = 3.4, falling = true } }
-    end)
+    service:registerPanel("b", panel, alt(50))
+    service:registerPanel("a", panel, alt(100))
+    service:registerPanel("c", panel, { list = { { sensor = "Alt" }, { sensor = "VCel", critical = 3.4 } } })
     equal(service:thresholds("Alt").warning, 100, "the first panel in layout order wins, not the first registered")
-    equal(service:thresholds("VCel").critical, 3.4)
-    equal(service:thresholds("RxBt"), nil)
+    local map = service:thresholdMap()
+    equal(map.Alt.warning, 100)
+    equal(map.VCel.critical, 3.4)
+    equal(map.RxBt, nil)
 
     placements[1], placements[2] = placements[2], placements[1]
     equal(service:thresholds("Alt").warning, 50, "reordering the layout changes the winner")
-    service:setThresholds("b", nil)
+    service:registerPanel("b", nil)
     equal(service:thresholds("Alt").warning, 100, "a cleared panel gives up its thresholds")
-    service:setThresholds("a", function()
-        error("broken panel")
-    end)
+    local ok, message = service:registerPanel("a", {
+        thresholds = function()
+            error("broken panel")
+        end,
+    }, {})
+    equal(ok, false)
+    assert(string.find(message, "broken panel", 1, true), "the panel error was lost")
     equal(service:thresholds("Alt"), nil, "a failing panel and a sensor without thresholds set nothing")
-    service:setThresholds("removed", provide(10))
+    service:registerPanel("removed", panel, alt(10))
     equal(service:thresholds("Alt"), nil, "a panel outside the layout is ignored")
+    service:registerPanel("a", panel, alt(100))
+    service:clearThresholds()
+    equal(service:thresholds("Alt"), nil)
 end
 
 local function testThresholdLevels()

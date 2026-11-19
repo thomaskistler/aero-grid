@@ -3,6 +3,7 @@
 local root = (... and ... ~= "" and ...) or "."
 
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
+local sweep = assert(loadfile(root .. "/tests/support/threshold_sweep.lua"))(root)
 local navigation = assert(loadfile(root .. "/tests/support/module_loader.lua"))(root)("panels/navigation.lua")
 
 local function testPresentation()
@@ -169,10 +170,17 @@ end
 
 local function testThresholdRegistration()
     assertions.assertEqual(#navigation.thresholds({ satelliteSource = "" }), 0)
-    local list = navigation.thresholds({ satelliteSource = "Sats", satelliteWarning = 8, satelliteCritical = 4 })
-    assertions.assertEqual(list[1].sensor, "Sats")
-    assertions.assertEqual(list[1].strict, true, "satellite thresholds alarm below the count")
-    assertions.assertEqual(list[1].falling, true)
+    local view = { source = "GPS", known = true, fix = true }
+    for _, settings in ipairs({
+        { satelliteSource = "Sats", satelliteWarning = 10, satelliteCritical = 6 },
+        { satelliteSource = "Sats" },
+    }) do
+        local spec = navigation.thresholds(settings)[1]
+        assertions.assertEqual(spec.sensor, "Sats")
+        sweep(spec, function(count)
+            return navigation.resolveState(settings, view, { available = true, value = count })
+        end, 1, "satellites " .. spec.warning .. "/" .. spec.critical)
+    end
 end
 
 local function run()

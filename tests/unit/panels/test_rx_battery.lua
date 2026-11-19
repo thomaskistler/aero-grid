@@ -4,6 +4,7 @@ local root = (... and ... ~= "" and ...) or "."
 local moduleLoader = assert(loadfile(root .. "/tests/support/module_loader.lua"))(root)
 
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
+local sweep = assert(loadfile(root .. "/tests/support/threshold_sweep.lua"))(root)
 local rxBattery = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/rx-battery.lua"))()
 local primitives = moduleLoader("lib/primitives.lua")
 -- radio/src/translations/untranslated.h, CHAR_DELTA (U+0088).
@@ -304,12 +305,13 @@ local function testAutomaticShapesAndDelta()
 end
 
 local function testThresholdRegistration()
-    local list = rxBattery.thresholds({ cellWarning = 3.6, cellCritical = 3.4 })
-    assertions.assertEqual(#list, 1)
-    assertions.assertEqual(list[1].sensor, "VCel")
-    assertions.assertEqual(list[1].warning, 3.6)
-    assertions.assertEqual(list[1].critical, 3.4)
-    assertions.assertEqual(list[1].falling, true)
+    assertions.assertEqual(#rxBattery.thresholds({}), 0)
+    local settings = { cellWarning = 3.6, cellCritical = 3.4 }
+    local spec = rxBattery.thresholds(settings)[1]
+    assertions.assertEqual(spec.sensor, "VCel")
+    sweep(spec, function(cell)
+        return rxBattery.resolveState(settings, cell * 3, cell, false)
+    end, 0.01, "cell")
 end
 
 local function run()

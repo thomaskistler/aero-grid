@@ -31,16 +31,7 @@ local function testStatesAndReading()
     assertions.assertEqual(battery.reading(nil), "--")
 end
 
-local function testThresholdRegistration()
-    assertions.assertEqual(#battery.thresholds({}), 0)
-    local list = battery.thresholds({ warning = 7.0 })
-    assertions.assertEqual(list[1].sensor, "tx-voltage")
-    assertions.assertEqual(list[1].warning, 7.0)
-    assertions.assertEqual(list[1].falling, true)
-end
-
 local function run()
-    testThresholdRegistration()
     testRangeAndEstimate()
     testStatesAndReading()
 end

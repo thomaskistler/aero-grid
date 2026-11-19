@@ -4,6 +4,7 @@ local root = (... and ... ~= "" and ...) or "."
 local moduleLoader = assert(loadfile(root .. "/tests/support/module_loader.lua"))(root)
 
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
+local sweep = assert(loadfile(root .. "/tests/support/threshold_sweep.lua"))(root)
 local WidgetFixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))()
 local primitives = moduleLoader("lib/primitives.lua")
 
@@ -290,22 +291,29 @@ end
 
 local function testThresholdRegistrations()
     local metric = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/metric.lua"))()
-    local list = metric.thresholds({
-        metrics = {
-            { source = "Curr", rangeMax = 120, warning = 60, critical = 90 },
-            { source = "Alt", warning = 150 },
-            { source = "RxBt", rangeMax = 10, warning = 7, critical = 6.6 },
-            { source = "Tmp1", warning = 40, direction = "falling" },
-            { warning = 1 },
-        },
-    })
-    assertions.assertEqual(#list, 3, "unset, out-of-range, and sourceless thresholds register nothing")
-    assertions.assertEqual(list[1].sensor, "Curr")
-    assertions.assertEqual(list[1].falling, false)
-    assertions.assertEqual(list[2].sensor, "RxBt")
-    assertions.assertEqual(list[2].falling, true, "two thresholds infer a falling direction")
-    assertions.assertEqual(list[3].falling, true, "an explicit direction is kept")
-    assertions.assertEqual(list[3].critical, nil)
+    local entries = {
+        { source = "Curr", rangeMax = 120, warning = 60, critical = 90 },
+        { source = "RxBt", rangeMax = 10, warning = 7, critical = 6.6 },
+        { source = "Tmp1", warning = 40, direction = "falling" },
+        { source = "Alt", warning = 50, direction = "auto" },
+        { source = "Alt", warning = 150 },
+        { warning = 1 },
+    }
+    local list = metric.thresholds({ metrics = entries })
+    assertions.assertEqual(#list, 4, "out-of-range and sourceless thresholds register nothing")
+    for index, spec in ipairs(list) do
+        local entry = entries[index]
+        local settings = {
+            rangeMin = entry.rangeMin or 0,
+            rangeMax = entry.rangeMax or 100,
+            warning = entry.warning,
+            critical = entry.critical,
+            direction = entry.direction or "auto",
+        }
+        sweep(spec, function(value)
+            return metric.resolveState(settings, value, false)
+        end, 0.1, "metric " .. entry.source)
+    end
 end
 
 local function run()

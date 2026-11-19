@@ -38,7 +38,7 @@
 ---@field rebindArming? fun(instance: any, services: table) Reconnect arming-dependent subscriptions without replacing native objects.
 ---@field event? fun(instance: any, event: any): boolean
 ---@field destroy? fun(instance: any)
----@field thresholds? fun(settings: table, instance: any): table[] Thresholds per sensor, read by the telemetry service.
+---@field thresholds? fun(settings: table): AeroGridThreshold[] Configured thresholds per sensor, registered with telemetry.
 
 ---@class AeroGridPanelEntry
 ---@field placement table Validated YAML panel placement.

@@ -259,28 +259,6 @@ function flightTimer.resolveState(settings, feed)
     return "normal"
 end
 
---- Thresholds of the EdgeTX timer source, once the timer's direction is known.
----@param settings AeroGridTimerSettings
----@param context? table Panel instance holding the model timer feed.
----@return AeroGridThreshold[]
-function flightTimer.thresholds(settings, context)
-    local feed = type(context) == "table" and context.feed or nil
-    if type(feed) ~= "table" or not feed.available or type(settings.timer) ~= "number" then
-        return {}
-    end
-    if type(settings.warning) ~= "number" and type(settings.critical) ~= "number" then
-        return {}
-    end
-    return {
-        {
-            sensor = "timer" .. (settings.timer + 1),
-            warning = settings.warning,
-            critical = settings.critical,
-            falling = feed.countdown == true,
-        },
-    }
-end
-
 --- Wordings for the row beneath the clock, longest first.
 ---
 --- **One form per state, and each fits every panel that draws a row.** The

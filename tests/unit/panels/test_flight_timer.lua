@@ -96,19 +96,7 @@ local function testTimerLabels()
     end
 end
 
-local function testThresholdRegistration()
-    local settings = { timer = 1, warning = 60, critical = 30 }
-    assertions.assertEqual(#timer.thresholds(settings, {}), 0, "direction is unknown until the timer is read")
-    local list = timer.thresholds(settings, { feed = { available = true, countdown = true } })
-    assertions.assertEqual(list[1].sensor, "timer2")
-    assertions.assertEqual(list[1].falling, true, "a countdown alarms on time left")
-    list = timer.thresholds(settings, { feed = { available = true, countdown = false } })
-    assertions.assertEqual(list[1].falling, false, "a count-up timer alarms on time used")
-    assertions.assertEqual(#timer.thresholds({ timer = 0 }, { feed = { available = true } }), 0)
-end
-
 local function run()
-    testThresholdRegistration()
     testTimerSemantics()
     testTimerBounds()
     testTimerLabels()
