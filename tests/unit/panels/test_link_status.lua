@@ -256,7 +256,26 @@ local function testValidation()
     assertions.assertEqual(reading.cause, "LOW RSSI")
 end
 
+local function testThresholdRegistrations()
+    local list = linkStatus.thresholds({
+        qualitySource = "RQly",
+        qualityWarning = 70,
+        qualityCritical = 50,
+        rssiSource = "1RSS",
+        protocol = "elrs4",
+        marginWarning = 10,
+    })
+    assertions.assertEqual(#list, 2, "RSSI without thresholds registers nothing")
+    assertions.assertEqual(list[1].sensor, "RQly")
+    assertions.assertEqual(list[1].critical, 50)
+    assertions.assertEqual(list[2].sensor, "Mrgn")
+    assertions.assertEqual(list[2].warning, 10)
+    assertions.assertEqual(list[2].falling, true)
+    assertions.assertEqual(#linkStatus.thresholds({ rssiSource = "1RSS", marginWarning = 10 }), 0)
+end
+
 local function run()
+    testThresholdRegistrations()
     testSourceClassification()
     testLinkStates()
     testBarFraction()

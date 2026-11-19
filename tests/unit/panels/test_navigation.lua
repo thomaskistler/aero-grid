@@ -167,7 +167,16 @@ local function testDistanceText()
     assertions.assertEqual(navigation.coordinateText({ latitude = 1, longitude = 2 }), "1.00000 2.00000")
 end
 
+local function testThresholdRegistration()
+    assertions.assertEqual(#navigation.thresholds({ satelliteSource = "" }), 0)
+    local list = navigation.thresholds({ satelliteSource = "Sats", satelliteWarning = 8, satelliteCritical = 4 })
+    assertions.assertEqual(list[1].sensor, "Sats")
+    assertions.assertEqual(list[1].strict, true, "satellite thresholds alarm below the count")
+    assertions.assertEqual(list[1].falling, true)
+end
+
 local function run()
+    testThresholdRegistration()
     testPresentation()
     testNavigationStates()
     testDistanceText()

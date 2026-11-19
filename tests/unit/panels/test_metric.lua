@@ -288,7 +288,28 @@ local function testThresholdsOutsideRangeAreOff()
     assertions.assertEqual(metric.resolveState(settings, 5, false), "critical", "a reversed range still bounds")
 end
 
+local function testThresholdRegistrations()
+    local metric = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/metric.lua"))()
+    local list = metric.thresholds({
+        metrics = {
+            { source = "Curr", rangeMax = 120, warning = 60, critical = 90 },
+            { source = "Alt", warning = 150 },
+            { source = "RxBt", rangeMax = 10, warning = 7, critical = 6.6 },
+            { source = "Tmp1", warning = 40, direction = "falling" },
+            { warning = 1 },
+        },
+    })
+    assertions.assertEqual(#list, 3, "unset, out-of-range, and sourceless thresholds register nothing")
+    assertions.assertEqual(list[1].sensor, "Curr")
+    assertions.assertEqual(list[1].falling, false)
+    assertions.assertEqual(list[2].sensor, "RxBt")
+    assertions.assertEqual(list[2].falling, true, "two thresholds infer a falling direction")
+    assertions.assertEqual(list[3].falling, true, "an explicit direction is kept")
+    assertions.assertEqual(list[3].critical, nil)
+end
+
 local function run()
+    testThresholdRegistrations()
     testThresholdsOutsideRangeAreOff()
     testUnconfiguredMetric()
     testDefaultSensorUnitAfterResize()

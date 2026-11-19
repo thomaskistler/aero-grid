@@ -27,6 +27,11 @@ local function testPanelContract()
     rejects({ id = "other", apiVersion = 1, create = function() end }, "demo", "does not match type")
     rejects({ id = "demo", apiVersion = 1 }, "demo", "no create function")
     rejects({ id = "demo", apiVersion = 1, create = function() end, refresh = 5 }, "demo", "refresh must be a function")
+    rejects(
+        { id = "demo", apiVersion = 1, create = function() end, thresholds = {} },
+        "demo",
+        "thresholds must be a function"
+    )
     rejects({ id = "demo", apiVersion = 1, create = function() end, supportedSpans = 5 }, "demo", "supportedSpans")
     valid.refreshCost = 0
     valid.refreshMinCost = nil

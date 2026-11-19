@@ -303,7 +303,17 @@ local function testAutomaticShapesAndDelta()
     assertions.assertEqual(context.estimatedCells, 3, "unavailable then fresh starts a new estimate")
 end
 
+local function testThresholdRegistration()
+    local list = rxBattery.thresholds({ cellWarning = 3.6, cellCritical = 3.4 })
+    assertions.assertEqual(#list, 1)
+    assertions.assertEqual(list[1].sensor, "VCel")
+    assertions.assertEqual(list[1].warning, 3.6)
+    assertions.assertEqual(list[1].critical, 3.4)
+    assertions.assertEqual(list[1].falling, true)
+end
+
 local function run()
+    testThresholdRegistration()
     testCellShapesAndReadings()
     testPackSourceAndAutomaticCount()
     testPublishedCellVoltage()

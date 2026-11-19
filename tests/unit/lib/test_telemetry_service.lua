@@ -249,12 +249,73 @@ local function testPrecisionSearchesResumeAfterIdle()
     assertions.assertEqual(entry.scanIndex, nil)
 end
 
+local function testThresholdsFollowLayoutOrder()
+    local service = telemetryService.new(services.environment({}), services)
+    local equal = assertions.assertEqual
+    equal(service:thresholds("Alt"), nil, "no layout means no thresholds")
+    local placements = { { id = "a" }, { id = "b" }, { id = "c" } }
+    service:setLayoutOrder(function()
+        return placements
+    end)
+    local function provide(warning)
+        return function()
+            return { { sensor = "Alt", warning = warning, falling = false } }
+        end
+    end
+    service:setThresholds("b", provide(50))
+    service:setThresholds("a", provide(100))
+    service:setThresholds("c", function()
+        return { { sensor = "Alt" }, { sensor = "VCel", critical = 3.4, falling = true } }
+    end)
+    equal(service:thresholds("Alt").warning, 100, "the first panel in layout order wins, not the first registered")
+    equal(service:thresholds("VCel").critical, 3.4)
+    equal(service:thresholds("RxBt"), nil)
+
+    placements[1], placements[2] = placements[2], placements[1]
+    equal(service:thresholds("Alt").warning, 50, "reordering the layout changes the winner")
+    service:setThresholds("b", nil)
+    equal(service:thresholds("Alt").warning, 100, "a cleared panel gives up its thresholds")
+    service:setThresholds("a", function()
+        error("broken panel")
+    end)
+    equal(service:thresholds("Alt"), nil, "a failing panel and a sensor without thresholds set nothing")
+    service:setThresholds("removed", provide(10))
+    equal(service:thresholds("Alt"), nil, "a panel outside the layout is ignored")
+end
+
+local function testThresholdLevels()
+    local level = telemetryService.level
+    local rising = { warning = 50, critical = 80 }
+    local falling = { warning = 3.6, critical = 3.4, falling = true }
+    local below = { warning = 8, critical = 4, falling = true, strict = true }
+    local cases = {
+        { rising, 49, "normal" },
+        { rising, 50, "warning" },
+        { rising, 80, "critical" },
+        { falling, 3.7, "normal" },
+        { falling, 3.6, "warning" },
+        { falling, 3.4, "critical" },
+        { below, 8, "normal" },
+        { below, 7, "warning" },
+        { below, 4, "warning" },
+        { below, 3, "critical" },
+        { { critical = 10 }, 5, "normal" },
+        { rising, nil, "normal" },
+        { nil, 100, "normal" },
+    }
+    for index, case in ipairs(cases) do
+        assertions.assertEqual(level(case[1], case[2]), case[3], "level case " .. index)
+    end
+end
+
 local function run()
     testTransmitterLocalSourceIsNotLinkEvidence()
     testHostPollingBudgetKeepsRoundRobinProgress()
     testContinuationPollsEachSourceOncePerRound()
     testContendedRoundSurvivesCallbacksAndSubscriptionChanges()
     testPrecisionSearchesResumeAfterIdle()
+    testThresholdsFollowLayoutOrder()
+    testThresholdLevels()
 end
 
 run()

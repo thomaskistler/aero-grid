@@ -275,6 +275,20 @@ function module.new(dependencies)
         local ok, instance =
             pcall(panel.create, container, { x = 0, y = 0, w = rect.w, h = rect.h }, settings, services)
 
+        -- Previews register too: saving the editor keeps preview-built panels.
+        local telemetry = services.telemetry
+        if telemetry then
+            if not telemetry.layoutOrder then
+                telemetry:setLayoutOrder(function()
+                    return context.document and context.document.panels
+                end)
+            end
+            local thresholds = ok and rawget(panel, "thresholds") or nil
+            telemetry:setThresholds(placement.id, thresholds and function()
+                return thresholds(settings, instance)
+            end or nil)
+        end
+
         if ok then
             local interval = host.refreshInterval(panel)
             context.panels[#context.panels + 1] = {

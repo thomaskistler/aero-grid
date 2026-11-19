@@ -253,6 +253,95 @@ function telemetryService:unobserve(observer)
     error("telemetry observer is not registered")
 end
 
+---@class AeroGridThreshold
+---@field sensor string EdgeTX source name.
+---@field warning? number
+---@field critical? number
+---@field falling boolean Values at or below a threshold alarm, rather than at or above.
+---@field strict? boolean Only values strictly beyond a threshold alarm.
+
+--- Register one panel's thresholds, replacing any earlier registration.
+---
+--- EdgeTX sensors carry no thresholds, so they come from the panels on this
+--- dashboard. The provider is called on lookup rather than now, so it can
+--- answer from facts only known at runtime, such as a timer counting down.
+---@param owner any Placement id of the registering panel.
+---@param provider? fun(): AeroGridThreshold[] Nil removes the registration.
+function telemetryService:setThresholds(owner, provider)
+    self.thresholdOwners = self.thresholdOwners or {}
+    self.thresholdOwners[owner] = provider
+end
+
+--- Supply the layout's placements in layout order.
+---
+--- Panels are rebuilt one at a time by App-mode rebuilds and the editor, so
+--- registration order is not layout order; ownership is decided on lookup.
+---@param order fun(): table[]?
+function telemetryService:setLayoutOrder(order)
+    self.layoutOrder = order
+end
+
+--- Thresholds for one sensor; the first panel in layout order setting any wins.
+---@param sensor any
+---@return AeroGridThreshold?
+function telemetryService:thresholds(sensor)
+    local owners = self.thresholdOwners
+    local placements = owners and type(sensor) == "string" and self.layoutOrder and self.layoutOrder()
+    if type(placements) ~= "table" then
+        return nil
+    end
+    for _, placement in ipairs(placements) do
+        local provider = owners[placement.id]
+        if provider then
+            local ok, list = pcall(provider)
+            if ok and type(list) == "table" then
+                for _, spec in ipairs(list) do
+                    if
+                        type(spec) == "table"
+                        and spec.sensor == sensor
+                        and (type(spec.warning) == "number" or type(spec.critical) == "number")
+                    then
+                        return spec
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+--- Judge a value against thresholds.
+---@param spec? AeroGridThreshold
+---@param value any
+---@return "normal"|"warning"|"critical"
+function telemetryService.level(spec, value)
+    if type(spec) ~= "table" or type(value) ~= "number" then
+        return "normal"
+    end
+    local function beyond(limit)
+        if type(limit) ~= "number" then
+            return false
+        end
+        if spec.falling then
+            if spec.strict then
+                return value < limit
+            end
+            return value <= limit
+        end
+        if spec.strict then
+            return value > limit
+        end
+        return value >= limit
+    end
+    if beyond(spec.critical) then
+        return "critical"
+    end
+    if beyond(spec.warning) then
+        return "warning"
+    end
+    return "normal"
+end
+
 --- Resolve a source name to its EdgeTX id, unit, and value shape.
 ---@param entry table
 ---@param now integer

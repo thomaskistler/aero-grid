@@ -38,6 +38,7 @@
 ---@field rebindArming? fun(instance: any, services: table) Reconnect arming-dependent subscriptions without replacing native objects.
 ---@field event? fun(instance: any, event: any): boolean
 ---@field destroy? fun(instance: any)
+---@field thresholds? fun(settings: table, instance: any): table[] Thresholds per sensor, read by the telemetry service.
 
 ---@class AeroGridPanelEntry
 ---@field placement table Validated YAML panel placement.
@@ -54,8 +55,18 @@ local panelHost = { RUNTIME_API = 1 }
 panelHost.API_VERSION = 1
 
 --- Optional lifecycle callbacks, in a fixed order so errors stay deterministic.
-local OPTIONAL_CALLBACKS =
-    { "update", "refresh", "finish", "finishPending", "background", "resetSession", "rebindArming", "event", "destroy" }
+local OPTIONAL_CALLBACKS = {
+    "update",
+    "refresh",
+    "finish",
+    "finishPending",
+    "background",
+    "resetSession",
+    "rebindArming",
+    "event",
+    "destroy",
+    "thresholds",
+}
 
 --- Restrict module identifiers to the same path-safe characters as layout types.
 ---@param value any

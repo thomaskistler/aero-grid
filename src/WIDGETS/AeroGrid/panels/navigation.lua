@@ -141,6 +141,24 @@ function navigation.cardinal(bearing)
     return CARDINALS[index + 1]
 end
 
+--- Thresholds of the satellite count source, which alarm below the count.
+---@param settings AeroGridNavigationSettings
+---@return AeroGridThreshold[]
+function navigation.thresholds(settings)
+    if type(settings.satelliteSource) ~= "string" or settings.satelliteSource == "" then
+        return {}
+    end
+    return {
+        {
+            sensor = settings.satelliteSource,
+            warning = settings.satelliteWarning or 8,
+            critical = settings.satelliteCritical or 4,
+            falling = true,
+            strict = true,
+        },
+    }
+end
+
 --- Resolve the panel state from the navigation snapshot.
 ---
 --- Satellite thresholds apply even before a fix/home is available. Missing or

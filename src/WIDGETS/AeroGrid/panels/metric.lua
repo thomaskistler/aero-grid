@@ -321,6 +321,34 @@ local function isFalling(settings)
     return warning ~= nil and critical ~= nil and critical < warning
 end
 
+--- Thresholds of every reading, judged as this panel judges its primary one.
+---@param config AeroGridMetricSettings
+---@return AeroGridThreshold[]
+function metric.thresholds(config)
+    local list = {}
+    for _, entry in ipairs(config.metrics or {}) do
+        if hasSource(entry) then
+            local resolved = {
+                rangeMin = entry.rangeMin or 0,
+                rangeMax = entry.rangeMax or 100,
+                warning = entry.warning,
+                critical = entry.critical,
+                direction = entry.direction or "auto",
+            }
+            local warning, critical = threshold(resolved, "warning"), threshold(resolved, "critical")
+            if warning ~= nil or critical ~= nil then
+                list[#list + 1] = {
+                    sensor = entry.source,
+                    warning = warning,
+                    critical = critical,
+                    falling = isFalling(resolved),
+                }
+            end
+        end
+    end
+    return list
+end
+
 --- Resolve the panel state from thresholds and reading availability.
 --- Direction may be stated explicitly. When left on `auto` it can only be
 --- inferred from two thresholds; a single threshold alone is ambiguous, so it
