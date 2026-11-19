@@ -150,6 +150,10 @@ series:
 - `Drop` and `FDst` behave like any other accumulating telemetry, such as
   consumption: they keep counting until EdgeTX telemetry is reset. The
   debrief shows a flight's share with the `used` statistic.
+- `Drop` starts counting only once the link has been up since the last
+  telemetry reset, so a radio waiting for its receiver adds nothing.
+- `FDst` counts a GPS fix only once it is at least 5 m from the last counted
+  point, so a stationary model does not gain distance from GPS drift.
 - Only the first panel of each type on a layout publishes; further panels of
   the same type are ignored.
 - Panels publish from their background hook too, so sensors keep updating
