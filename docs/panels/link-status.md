@@ -16,7 +16,7 @@ aggregate health percentage or issue voice or haptic alerts.
 | --- | --- | --- |
 | **Label** | LINK | Panel heading. |
 | **RSSI source** | RSSI | Signal-strength source, such as `RSSI` or receiver-side `1RSS`. |
-| **Link quality source** | Not set | Measured link-quality source, such as receiver-side `RQly`. Quality alarms require a source reporting percent. |
+| **Link quality source** | Not set | Measured link-quality source, such as receiver-side `RQly`. |
 | **RF mode source** | Not set | RF mode source, such as `RFMD`. Enables rate decoding and margin calculation with **Protocol mapping** set to **elrs4**. |
 | **SNR source** | Not set | Optional signal-to-noise reading, such as `RSNR`. It does not trigger alarms. |
 | **Transmit power source** | Not set | Optional transmit-power reading, such as `TPWR`. It does not trigger alarms. |
@@ -56,7 +56,6 @@ margin. Use **generic** for other protocols, including ExpressLRS 3.x.
 All thresholds trigger at or below their value. The most severe live alarm
 wins, with critical ahead of warning. Equal-severity conditions prefer RSSI,
 then link quality, then margin. Link-down takes precedence over alarms.
-Link-quality thresholds only apply to a source reporting percent.
 
 **Minimum tracked** set to **source** shows EdgeTX's own minimum (for example
 `RSSI-`), which EdgeTX resets on its own schedule. **Minimum source** overrides

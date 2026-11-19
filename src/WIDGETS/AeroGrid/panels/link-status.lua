@@ -474,7 +474,7 @@ function linkStatus.read(context)
     -- Without a link view at all, fall back to the source's own freshness
     -- rather than claiming the link is down on no evidence.
     out.linkDown = type(link) == "table" and not out.linkLive
-    out.qualityValue = type(quality) == "table" and quality.unitText == "%" and quality.value or nil
+    out.qualityValue = type(quality) == "table" and quality.value or nil
     out.margin, out.mode = nil, nil
     if context.settings.protocol == "elrs4" then
         local modeFeed = context.modeFeed
