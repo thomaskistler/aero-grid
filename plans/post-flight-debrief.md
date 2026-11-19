@@ -260,14 +260,13 @@ own. Nothing user-visible is half finished between steps.
 5. **Debrief view.** Header and tiles, shading, legend overflow, scrolling.
    Swipe up and down in fullscreen, rotary scrolls, RTN closes, leaving
    fullscreen closes.
-6. **Pill.** Both texts and the pill lifecycle. The feature now works end to
-   end for layouts that define a debrief.
-7. **Setup page.** The Flight debrief menu item, the tile list page, tile
-   settings, the flight-detection note, and the missing-sensor hint. Edits
-   the data defined in step 3.
-8. **Automatic population.** The panel-to-tile mapping, filling layouts that
-   have never had a debrief, and the **Fill from dashboard** action on the
-   setup page.
+6. **Automatic population.** The panel-to-tile mapping, and filling layouts
+   that have never had a debrief.
+7. **Pill.** Both texts and the pill lifecycle. The feature now works end to
+   end with the automatically populated debrief.
+8. **Setup page.** The Flight debrief menu item, the tile list page, tile
+   settings, **Fill from dashboard**, the flight-detection note, and the
+   missing-sensor hint. Edits the data defined in step 3.
 9. **Documentation.** User guide page, including running Discover new
    sensors once, and real screenshots replacing the mockup images.
 
