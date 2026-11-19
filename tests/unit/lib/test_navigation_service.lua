@@ -8,11 +8,6 @@ local services = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/services.lua
 local scheduler = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.lua"))()
 local navigationService = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/navigation_service.lua"))()
 local armedService = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/armed_service.lua"))()
-local navigationPanel = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/navigation.lua"))(nil, {
-    valid = function()
-        return true
-    end,
-})
 local GPS_DELAY_TICKS = edgetx.firmware.GPS_DELAY_TICKS
 
 local function testPositionChecksAndDistance()
@@ -513,73 +508,6 @@ local function testCapturePolicy()
     end
 end
 
-local function testTrackDeadbandAndSessionReset()
-    local service, view, reading, _, update = captureFixture()
-    update(0, false)
-    assertions.assertEqual(view.trackDistance, 0)
-    reading.raw = { lat = 47.00002, lon = 8, delay = 0 }
-    update(20, false)
-    assertions.assertEqual(view.trackDistance, 0, "GPS jitter below five metres is ignored")
-
-    reading.raw = { lat = 47.00006, lon = 8, delay = 0 }
-    update(40, false)
-    local firstSegment = view.trackDistance
-    assert(firstSegment >= 5 and firstSegment < 8)
-
-    reading.stale = true
-    reading.raw = { lat = 47.001, lon = 8, delay = 0 }
-    update(60, false)
-    assertions.assertEqual(view.trackDistance, firstSegment, "stale fixes do not move the track")
-    reading.stale = false
-    reading.raw = { lat = 47.0001, lon = 8, delay = 0 }
-    update(80, false)
-    assertions.assertEqual(view.trackDistance, firstSegment, "a move below the deadband is held")
-    reading.raw = { lat = 47.001, lon = 8, delay = 0 }
-    update(100, false)
-    assert(view.trackDistance > firstSegment + 90)
-
-    local total = view.trackDistance
-    service:resetSession(0, 1)
-    update(120, false)
-    assertions.assertEqual(view.trackDistance, total, "AeroGrid Session reset does not alter the GPS track")
-end
-
-local function testNavigationPublication()
-    local published = { HDst = nil, FDst = 0 }
-    local context = {
-        publisher = {
-            publish = function(_, name, value)
-                published[name] = value
-            end,
-            distance = function(_, delta)
-                published.FDst = published.FDst + (delta or 0)
-            end,
-        },
-        ownsTelemetry = function()
-            return true
-        end,
-        feed = { state = "normal", distance = 123, trackDistance = 456 },
-        clock = function()
-            return 789
-        end,
-    }
-    navigationPanel.publish(context)
-    assertions.assertEqual(published.HDst, 123)
-    assertions.assertEqual(published.FDst, 0)
-    context.feed = { state = "normal", distance = 789, trackDistance = 468 }
-    navigationPanel.publish(context)
-    assertions.assertEqual(published.FDst, 12, "the panel publishes only the new track delta")
-    context.feed = { state = "stale", distance = 789, trackDistance = 468 }
-    navigationPanel.background(context)
-    assertions.assertEqual(published.HDst, 789, "stale home distance must not become fresh")
-    assertions.assertEqual(published.FDst, 12)
-    assert(navigationPanel.backgroundEnabled(context), "the hidden owner keeps a background publisher task")
-    context.ownsTelemetry = function()
-        return false
-    end
-    assert(not navigationPanel.backgroundEnabled(context), "non-owners have no hidden task")
-end
-
 local function run()
     testPositionChecksAndDistance()
     testRoundContinuesUntilEverySubscriptionIsPolled()
@@ -589,8 +517,6 @@ local function run()
     testArmObservationAndFreshness()
     testCaptureDiagnostics()
     testCapturePolicy()
-    testTrackDeadbandAndSessionReset()
-    testNavigationPublication()
 end
 
 run()

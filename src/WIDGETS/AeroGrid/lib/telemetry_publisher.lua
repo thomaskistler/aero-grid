@@ -1,256 +1,134 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 --- Publish AeroGrid-derived values into the EdgeTX telemetry sensor table.
+--- One publisher serves every AeroGrid widget, so counters advance once
+--- however many panels report the same link or position.
 local publisher = { RUNTIME_API = 1 }
 publisher.__index = publisher
 
 local MAX_INTEGER = 2147483647
 local SENSOR_LIMIT = 60
+local TRACK_DEADBAND = 5
 
 -- radio/src/dataconstants.h, TelemetryUnit in EdgeTX v2.12.4.
-publisher.UNITS = {
-    VOLTS = 1,
-    METERS = 9,
-    DECIBELS = 17,
-    SECONDS = 37,
-}
-local units = publisher.UNITS
+local VOLTS, METERS, DECIBELS, SECONDS = 1, 9, 17, 37
 
 local specs = {
-    VCel = { id = 0xAE01, name = "VCel", unit = units.VOLTS, precision = 2 },
-    Mrgn = { id = 0xAE02, name = "Mrgn", unit = units.DECIBELS, precision = 0 },
-    Drop = { id = 0xAE03, name = "Drop", unit = units.SECONDS, precision = 0 },
-    HDst = { id = 0xAE04, name = "HDst", unit = units.METERS, precision = 0 },
-    FDst = { id = 0xAE05, name = "FDst", unit = units.METERS, precision = 0 },
+    VCel = { id = 0xAE01, unit = VOLTS, precision = 2 },
+    Mrgn = { id = 0xAE02, unit = DECIBELS, precision = 0 },
+    Drop = { id = 0xAE03, unit = SECONDS, precision = 0 },
+    HDst = { id = 0xAE04, unit = METERS, precision = 0 },
+    FDst = { id = 0xAE05, unit = METERS, precision = 0 },
 }
 publisher.SPECS = specs
-local specsById = {}
+local namesById = {}
 for name, spec in pairs(specs) do
-    specsById[spec.id] = { name = name, instance = 0 }
+    namesById[spec.id] = name
 end
 
 local function finite(value)
     return type(value) == "number" and value == value and value > -math.huge and value < math.huge
 end
 
-local function rounded(value)
-    return value >= 0 and math.floor(value + 0.5) or math.ceil(value - 0.5)
-end
-
-function publisher.new(env, runtime)
-    local self = setmetatable({
-        env = env,
-        runtime = runtime,
-        sensors = {},
-        counters = {},
-        owners = nil,
-        resolveAfter = 0,
-    }, publisher)
+function publisher.new(env)
+    local self = setmetatable({ env = env, sources = {}, counters = {} }, publisher)
     self:discover()
     return self
 end
 
-local function sensorState(self, name)
-    local state = self.sensors[name]
-    if not state then
-        state = {}
-        self.sensors[name] = state
-    end
-    return state
-end
-
-function publisher:discover(force)
-    local now = self.env.getTime and self.env.getTime() or 0
-    if not force and now < self.resolveAfter then
-        return
-    end
-    self.resolveAfter = now + 200
-
-    local getSensor = self.env.getSensor
-    local getFieldInfo = self.env.getFieldInfo
+--- Find the EdgeTX source of each published sensor by its protocol ID.
+--- Labels are not used: users can rename any sensor.
+function publisher:discover()
+    local sources = {}
+    self.sources = sources
+    local getSensor, getFieldInfo = self.env.getSensor, self.env.getFieldInfo
     if not getSensor or not getFieldInfo then
         return
     end
     for index = 0, SENSOR_LIMIT - 1 do
         local sensor = getSensor(index)
-        local definition = type(sensor) == "table" and sensor.type == 0 and specsById[sensor.id] or nil
-        if definition and sensor.instance == definition.instance then
+        local name = type(sensor) == "table" and sensor.type == 0 and sensor.instance == 0 and namesById[sensor.id]
+        if name then
             local info = getFieldInfo("telem" .. (index + 1))
-            if type(info) == "table" and type(info.id) == "number" then
-                local state = sensorState(self, definition.name)
-                if state.source == nil then
-                    state.source = info.id
-                end
-            end
+            sources[name] = type(info) == "table" and info.id or nil
         end
     end
 end
 
---- Resolve a Lua sensor by its protocol ID and remember the EdgeTX source.
---- Label matches are deliberately avoided: users can rename any sensor.
-function publisher:resolve(name, force)
-    local state = sensorState(self, name)
-    if state.source == nil then
-        self:discover(force)
-    end
-    return state.source
-end
-
---- Read one published value by its resolved EdgeTX source.
+--- The current value of a published sensor, or nil when it has none.
 function publisher:read(name)
-    local source = self:resolve(name)
-    local read = source ~= nil and self.env.getSourceValue or nil
-    if not read then
-        return nil
-    end
-    local value = read(source)
+    local source, read = self.sources[name], self.env.getSourceValue
+    local value = source and read and read(source)
     return finite(value) and value or nil
 end
 
---- Write a named sensor. EdgeTX ignores the creation call's value, so repeat
---- only a call that created a sensor.
+--- Write a sensor. EdgeTX only creates one while Discover new sensors runs and
+--- drops the value of the creating call, so that call is repeated.
 function publisher:publish(name, value)
-    local spec = specs[name]
-    local write = self.env.setTelemetryValue
-    if not spec or not write or not finite(value) then
-        return false
+    local spec, write = specs[name], self.env.setTelemetryValue
+    if not write or not finite(value) then
+        return
     end
-
-    local scaled = rounded(value * (10 ^ spec.precision))
+    local scaled = math.floor(value * 10 ^ spec.precision + 0.5)
     if scaled > MAX_INTEGER or scaled < -MAX_INTEGER then
-        return false
-    end
-
-    local created = write(spec.id, 0, 0, scaled, spec.unit, spec.precision, spec.name)
-    if created == true then
-        write(spec.id, 0, 0, scaled, spec.unit, spec.precision, spec.name)
-        self:resolve(name, true)
-    else
-        self:resolve(name)
-    end
-    return true
-end
-
---- Whether one live panel is the first of its type in layout order.
-function publisher:refreshOwners()
-    local host = self.runtime and self.runtime.host
-    local panels = host and host.panels
-    local revision = host and host.panelOrderRevision
-    if self.owners ~= nil and self.ownerRevision == revision then
         return
     end
-    local owners = {}
-    self.owners = owners
-    self.ownerRevision = revision
-    if type(panels) ~= "table" then
-        return
-    end
-    for _, entry in ipairs(panels) do
-        if entry and not entry.failed and not entry.preview and entry.placement then
-            owners[entry.placement.type] = owners[entry.placement.type] or entry.placement.id
-        end
+    if write(spec.id, 0, 0, scaled, spec.unit, spec.precision, name) == true then
+        write(spec.id, 0, 0, scaled, spec.unit, spec.precision, name)
+        self:discover()
     end
 end
 
-function publisher:owns(placementId, panelType)
-    local owners = self.owners
-    if not owners then
-        self:refreshOwners()
-        owners = self.owners
-    end
-    return owners[panelType] == placementId
-end
-
-function publisher:publishes(panelType)
-    return panelType == "rx-battery" or panelType == "link-status" or panelType == "navigation"
-end
-
-local function counterState(self, name)
-    local state = self.counters[name]
-    if not state then
-        local current = self:read(name)
-        state = {
-            value = current or 0,
-            seen = current ~= nil,
-            observed = current,
-            lastAt = nil,
-        }
-        if name == "Drop" then
-            state.linkSeen = current ~= nil
-        end
-        self.counters[name] = state
-    end
-    return state
-end
-
-local function mergeCounter(self, name, delta)
-    local state = counterState(self, name)
+--- A counter accumulated exactly here; the sensor only mirrors it. A sensor
+--- that loses its value was cleared by an EdgeTX telemetry reset.
+local function counter(self, name)
     local current = self:read(name)
-    local reset = current == nil and state.seen
-    local republishedReset = current ~= nil and state.observed ~= nil and current < state.observed
-    if reset or republishedReset then
-        state.value = 0
-        state.seen = current ~= nil
-        state.lastAt = nil
-        if name == "Drop" then
-            state.linkSeen = false
-        end
-        delta = republishedReset and 0 or delta
-    elseif current ~= nil then
-        state.seen = true
+    local state = self.counters[name]
+    local reset = false
+    if not state then
+        state = { value = current or 0 }
+        self.counters[name] = state
+    elseif current == nil and state.seen then
+        state.value, reset = 0, true
     end
-    delta = finite(delta) and delta > 0 and delta or 0
-    state.value = math.min(MAX_INTEGER, math.max(state.value + delta, current or 0))
-    state.observed = current
-    return state
+    state.seen = current ~= nil
+    return state, reset
 end
 
---- Advance Drop only after a link has been observed since the last reset.
+--- Accumulate seconds without a link, once a link has been seen.
 function publisher:drop(now, linkLive)
-    local state = counterState(self, "Drop")
-    local current = self:read("Drop")
-    local reset = current == nil and state.seen
-    local republishedReset = current ~= nil and state.observed ~= nil and current < state.observed
-    if reset or republishedReset then
-        state.value = 0
-        state.seen = current ~= nil
-        state.lastAt = nil
-        state.linkSeen = current ~= nil
-    elseif current ~= nil then
-        state.seen = true
+    local state, reset = counter(self, "Drop")
+    if reset then
+        state.linkSeen, state.lastAt = false, nil
+    elseif state.linkSeen == nil then
+        state.linkSeen = state.seen
+    end
+    if linkLive then
         state.linkSeen = true
+    elseif state.linkSeen and state.lastAt and now > state.lastAt then
+        state.value = state.value + (now - state.lastAt) / 100
     end
-
-    if linkLive == true then
-        state.linkSeen = true
-    end
-    local increment = 0
-    if
-        not republishedReset
-        and state.linkSeen
-        and not linkLive
-        and type(state.lastAt) == "number"
-        and now >= state.lastAt
-    then
-        increment = (now - state.lastAt) / 100
-    end
-    increment = finite(increment) and increment > 0 and increment or 0
-    state.value = math.min(MAX_INTEGER, math.max(state.value + increment, current or 0))
     state.lastAt = now
-
     if state.linkSeen then
         self:publish("Drop", state.value)
-        state.seen = self:read("Drop") ~= nil
     end
-    state.observed = self:read("Drop")
     return state.value
 end
 
-function publisher:distance(delta)
-    local state = mergeCounter(self, "FDst", delta)
+--- Accumulate the distance flown between positions at least 5 m apart, so GPS
+--- jitter at rest does not add up.
+function publisher:track(latitude, longitude, measure)
+    local state = counter(self, "FDst")
+    if state.latitude == nil then
+        state.latitude, state.longitude = latitude, longitude
+    else
+        local segment = measure(state.latitude, state.longitude, latitude, longitude)
+        if finite(segment) and segment >= TRACK_DEADBAND then
+            state.value = state.value + segment
+            state.latitude, state.longitude = latitude, longitude
+        end
+    end
     self:publish("FDst", state.value)
-    state.observed = self:read("FDst")
-    state.seen = state.observed ~= nil
     return state.value
 end
 

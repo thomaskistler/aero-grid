@@ -678,7 +678,6 @@ function rxBattery.create(parent, rect, settings, services)
         rect = rect,
         publisher = services.telemetryPublisher,
         ownsTelemetry = services.ownsTelemetry,
-        clock = services.clock,
     }
 
     -- Subscribing in create is the mechanism: a source nothing references is
@@ -992,25 +991,13 @@ function rxBattery.refresh(context)
     rxBattery.publish(context)
 end
 
-function rxBattery.backgroundEnabled(context)
-    return context.publisher ~= nil and context.ownsTelemetry()
-end
-
+--- Keep publishing while the dashboard is hidden.
 function rxBattery.background(context)
-    if not rxBattery.backgroundEnabled(context) or not context.feed then
-        return
+    if context.feed and context.publisher and context.ownsTelemetry() then
+        rxBattery.gather(context)
+        rxBattery.publish(context)
     end
-    local now = context.clock()
-    if
-        context.backgroundAt
-        and now >= context.backgroundAt
-        and now - context.backgroundAt < rxBattery.refreshInterval
-    then
-        return
-    end
-    context.backgroundAt = now
-    rxBattery.gather(context)
-    rxBattery.publish(context)
+    return rxBattery.refreshInterval
 end
 
 --- Reposition after a zone change.

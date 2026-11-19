@@ -555,6 +555,9 @@ local function dispatchAll(context, event, ...)
 end
 
 local sharedDiagnosticsLog
+-- One telemetry publisher for every AeroGrid widget, so derived counters
+-- advance once however many dashboards report the same flight.
+local sharedTelemetry = {}
 local flightFactories = {}
 
 --- Failure handlers: each task's `onError` records a failure on its owner.
@@ -584,7 +587,6 @@ local function panelError(task, message)
     local context, entry = task.host, task.owner
     if not entry.failed then
         entry.failed, entry.error = true, message
-        context.panelOrderRevision = (context.panelOrderRevision or 0) + 1
     end
 end
 
@@ -900,6 +902,7 @@ initialize = function(context)
                 loadModule = loadModule,
                 isFullScreen = isFullScreen,
                 readThemeDefinition = readThemeDefinition,
+                sharedTelemetry = sharedTelemetry,
             }, { "beginLoad", "advanceLoad", "panelRect", "reservedFor", "buildPanel" })
         end
         if context.dashboardLoader then
@@ -1333,6 +1336,9 @@ local function panelStep(task, now, granted)
         end
     elseif eventName == "refresh" then
         entry.nextRefresh = now + entry.interval
+    elseif eventName == "background" and ok and type(interval) == "number" then
+        -- A background hook that returns an interval sleeps that many ticks.
+        task.due = now + interval
     end
     if not ok then
         error(message or "panel failed", 0)
@@ -1353,11 +1359,8 @@ local NONE = {}
 --- Held owners wait for the next callback; a hold that starts later in the
 --- callback is seen by the ready checks.
 ---@param context AeroGridContext
-local function enrolTasks(context, registry, support, hidden)
+local function enrolTasks(context, registry, support)
     local scheduler = context.scheduler
-    if registry.telemetryPublisher then
-        registry.telemetryPublisher:refreshOwners()
-    end
     local order = context.servicesHold and NONE or registry.order
     for index = 1, #order do
         local instance = order[index]
@@ -1418,29 +1421,22 @@ local function enrolTasks(context, registry, support, hidden)
             task.failed = entry.failed
             scheduler.add(task)
         end
-        if hidden and type(rawget(module, "background")) == "function" then
-            local enabled = true
-            local publisher = registry.telemetryPublisher
-            if publisher and publisher:publishes(entry.placement.type) then
-                enabled = publisher:owns(entry.placement.id, entry.placement.type)
+        if type(rawget(module, "background")) == "function" then
+            local task = entry.backgroundTask
+            if not task then
+                task = {
+                    name = entry.placement.id .. ": background",
+                    owner = entry,
+                    onError = panelError,
+                    host = context,
+                    event = "background",
+                    step = panelStep,
+                    ready = backgroundReady,
+                }
+                entry.backgroundTask = task
             end
-            if enabled then
-                local task = entry.backgroundTask
-                if not task then
-                    task = {
-                        name = entry.placement.id .. ": background",
-                        owner = entry,
-                        onError = panelError,
-                        host = context,
-                        event = "background",
-                        step = panelStep,
-                        ready = backgroundReady,
-                    }
-                    entry.backgroundTask = task
-                end
-                task.failed = entry.failed
-                scheduler.add(task)
-            end
+            task.failed = entry.failed
+            scheduler.add(task)
         end
     end
 end
@@ -1494,7 +1490,7 @@ end
 local function runTasks(context, hidden)
     local registry, support = context.serviceRuntime, context.servicesModule
     if registry and support then
-        enrolTasks(context, registry, support, hidden)
+        enrolTasks(context, registry, support)
     end
 
     -- Extra segments run past EdgeTX's per-callback limit in the same

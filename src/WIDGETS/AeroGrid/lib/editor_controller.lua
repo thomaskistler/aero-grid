@@ -179,7 +179,6 @@ function module.new(dependencies)
             end
         end
         context.panels = ordered
-        context.panelOrderRevision = (context.panelOrderRevision or 0) + 1
         context.document = document
         context.flightSources = {}
         for _, placement in ipairs(document.panels) do
@@ -264,7 +263,6 @@ function module.new(dependencies)
                 for index, current in ipairs(context.panels) do
                     if current == entry then
                         table.remove(context.panels, index)
-                        context.panelOrderRevision = (context.panelOrderRevision or 0) + 1
                         break
                     end
                 end
@@ -330,7 +328,6 @@ function module.new(dependencies)
             end
         end
         context.panels = ordered
-        context.panelOrderRevision = (context.panelOrderRevision or 0) + 1
         context.editorRestore = nil
         updateEmptyHint(context)
     end

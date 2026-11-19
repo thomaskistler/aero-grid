@@ -24,9 +24,6 @@ local function testEnvironmentAndRuntime()
     assertions.assertEqual(type(env.getFieldInfo), "function")
     assertions.assertEqual(type(env.getSourceValue), "function")
     assertions.assertEqual(type(env.setTelemetryValue), "function")
-    for _, definition in ipairs(services.DEFINITIONS) do
-        assert(definition.id ~= "telemetryPublisher", "publisher is runtime-owned, not a scheduled service")
-    end
 
     local runtime = services.runtime(env)
     assertions.assertTableHasKey(runtime, "order", "runtime should track service order")

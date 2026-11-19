@@ -1138,24 +1138,10 @@ function linkStatus.refresh(context)
     linkStatus.publish(context, reading)
 end
 
-function linkStatus.backgroundEnabled(context)
-    return context.publisher ~= nil and context.ownsTelemetry()
-end
-
+--- Keep publishing while the dashboard is hidden.
 function linkStatus.background(context)
-    if not linkStatus.backgroundEnabled(context) then
-        return
-    end
-    local now = context.clock()
-    if
-        context.backgroundAt
-        and now >= context.backgroundAt
-        and now - context.backgroundAt < linkStatus.refreshInterval
-    then
-        return
-    end
-    context.backgroundAt = now
     linkStatus.publish(context)
+    return linkStatus.refreshInterval
 end
 
 --- Reposition after a zone change.

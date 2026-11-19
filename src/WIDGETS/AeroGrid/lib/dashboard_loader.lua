@@ -12,6 +12,7 @@ function module.new(dependencies)
     local loadModule = dependencies.loadModule
     local isFullScreen = dependencies.isFullScreen
     local readThemeDefinition = dependencies.readThemeDefinition
+    local sharedTelemetry = dependencies.sharedTelemetry or {}
 
     local function applyTheme(context, resolved, opacity)
         context.theme, context.panelOpacity = resolved, opacity
@@ -158,8 +159,17 @@ function module.new(dependencies)
             -- to load, so a panel must tolerate nil rather than assume.
             telemetry = byId.telemetry,
             telemetryPublisher = publisher,
+            -- Only the first live panel of a type in layout order publishes.
             ownsTelemetry = function()
-                return not preview and publisher ~= nil and publisher:owns(placement.id, placement.type)
+                if preview or not publisher then
+                    return false
+                end
+                for _, entry in ipairs(context.panels) do
+                    if entry.placement.type == placement.type and not entry.failed and not entry.preview then
+                        return entry.placement.id == placement.id
+                    end
+                end
+                return false
             end,
             model = byId.model,
             control = byId.control,
@@ -283,7 +293,6 @@ function module.new(dependencies)
                 -- due on the same frame.
                 nextRefresh = getTime() + host.phaseOffset(interval, #context.panels + 1),
             }
-            context.panelOrderRevision = (context.panelOrderRevision or 0) + 1
             return context.panels[#context.panels]
         else
             -- Discard whatever the failed panel managed to build.
@@ -456,7 +465,6 @@ function module.new(dependencies)
             local modelFilename = modelInfo and modelInfo.filename or nil
             if context.modelFilename ~= modelFilename then
                 context.navigationHomes = nil
-                context.navigationTracks = nil
             end
             context.modelFilename = modelFilename
             context.loadCandidates = candidates
@@ -710,28 +718,28 @@ function module.new(dependencies)
                 context.serviceRuntime.armGeneration = context.armGeneration
                 context.navigationHomes = context.navigationHomes or {}
                 context.serviceRuntime.navigationHomes = context.navigationHomes
-                context.navigationTracks = context.navigationTracks or {}
-                context.serviceRuntime.navigationTracks = context.navigationTracks
                 context.serviceIndex = 1
                 return true
             end
 
             if not context.telemetryPublisherReady then
                 context.telemetryPublisherReady = true
-                local runtime = context.serviceRuntime
-                local module, moduleError =
-                    loadModule(context.path, "lib/telemetry_publisher.lua", context.packageInfo.runtimeApi)
-                local constructor = module and rawget(module, "new") or nil
-                if type(constructor) == "function" then
-                    local ok, instance = pcall(constructor, runtime.env, runtime)
-                    if ok and type(instance) == "table" then
-                        runtime.telemetryPublisher = instance
-                    else
-                        addError(context, "telemetry publisher: " .. tostring(instance))
+                -- Shared by every widget and rebuilt when the model changes,
+                -- since sensor sources belong to the model.
+                if not sharedTelemetry.publisher or sharedTelemetry.model ~= context.modelFilename then
+                    local module, moduleError =
+                        loadModule(context.path, "lib/telemetry_publisher.lua", context.packageInfo.runtimeApi)
+                    local ok, instance = false, moduleError
+                    if module then
+                        ok, instance = pcall(module.new, context.serviceRuntime.env)
                     end
-                else
-                    addError(context, "telemetry publisher: " .. tostring(moduleError or "no constructor"))
+                    if not ok then
+                        addError(context, "telemetry publisher: " .. tostring(instance))
+                        return true
+                    end
+                    sharedTelemetry.publisher, sharedTelemetry.model = instance, context.modelFilename
                 end
+                context.serviceRuntime.telemetryPublisher = sharedTelemetry.publisher
                 return true
             end
 
@@ -907,7 +915,6 @@ function module.new(dependencies)
             end
         end
         context.panels = {}
-        context.panelOrderRevision = (context.panelOrderRevision or 0) + 1
         context.rejected = {}
         context.errors = {}
         context.notices = {}

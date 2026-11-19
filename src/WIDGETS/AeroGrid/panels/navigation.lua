@@ -677,7 +677,6 @@ function navigation.create(parent, rect, settings, services)
         coordinates = "",
         publisher = services.telemetryPublisher,
         ownsTelemetry = services.ownsTelemetry,
-        clock = services.clock,
     }
 
     -- Subscribing in create is the mechanism: a GPS source nothing references
@@ -903,15 +902,8 @@ function navigation.publish(context)
     if view.state == "normal" and type(view.distance) == "number" then
         publisher:publish("HDst", view.distance)
     end
-    local track = view.trackDistance
-    if type(track) == "number" then
-        if context.publishedTrack == nil then
-            context.publishedTrack = track
-            publisher:distance()
-        elseif track > context.publishedTrack then
-            publisher:distance(track - context.publishedTrack)
-            context.publishedTrack = track
-        end
+    if view.latitude and view.longitude then
+        publisher:track(view.latitude, view.longitude, context.service.distanceBetween)
     end
 end
 
@@ -1025,24 +1017,10 @@ function navigation.refresh(context)
     navigation.publish(context)
 end
 
+--- Keep publishing while the dashboard is hidden.
 function navigation.background(context)
-    if not navigation.backgroundEnabled(context) then
-        return
-    end
-    local now = context.clock()
-    if
-        context.backgroundAt
-        and now >= context.backgroundAt
-        and now - context.backgroundAt < navigation.refreshInterval
-    then
-        return
-    end
-    context.backgroundAt = now
     navigation.publish(context)
-end
-
-function navigation.backgroundEnabled(context)
-    return context.publisher ~= nil and context.ownsTelemetry()
+    return navigation.refreshInterval
 end
 
 function navigation.rebindArming(context, services)
@@ -1050,7 +1028,6 @@ function navigation.rebindArming(context, services)
         context.service = services.navigation
         context.feed =
             context.service:subscribe(context.settings.source, context.settings.armSwitch, context.settings.homeMode)
-        context.publishedTrack = nil
     end
 end
 

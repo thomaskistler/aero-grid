@@ -149,9 +149,6 @@ local function testPublishedCellVoltage()
         ownsTelemetry = function()
             return true
         end,
-        clock = function()
-            return 100
-        end,
     }
     rxBattery.gather(context)
     rxBattery.publish(context)
