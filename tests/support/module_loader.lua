@@ -12,6 +12,11 @@ local function loadModule(relative)
     if relative == "lib/theme.lua" then
         return chunk(loadModule("lib/typography.lua"), loadModule("lib/panel_layout.lua"))
     end
+    if relative == "lib/layout.lua" then
+        return chunk(function()
+            return loadModule("lib/debrief_config.lua")
+        end)
+    end
     if relative == "lib/primitives.lua" then
         return chunk(loadModule("lib/reading.lua"))
     end

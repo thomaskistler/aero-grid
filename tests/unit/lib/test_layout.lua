@@ -5,7 +5,9 @@ local root = (... and ... ~= "" and ...) or "."
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local yaml = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/yaml.lua"))()
 local grid = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/grid.lua"))()
-local layout = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/layout.lua"))()
+local layout = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/layout.lua"))(function()
+    return assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/debrief_config.lua"))()
+end)
 
 local function testVersionOneBatteryMigration()
     local document = assert(yaml.parse([[
@@ -246,6 +248,21 @@ local function testNavigationMigration()
     end
 end
 
+local function testDebriefSection()
+    local header = {
+        version = layout.VERSION,
+        grid = { columns = 4, rows = 4 },
+        debrief = { tiles = { { title = "RX", series = { { source = "VCel", statistic = "min" } } }, { title = "" } } },
+    }
+    local errors = layout.validateDebrief(header)
+    assert(#errors == 1 and string.find(errors[1], "debrief tile 2", 1, true))
+    assert(#header.debrief.tiles == 1 and header.debrief.tiles[1].colSpan == 2)
+    local bare = { version = layout.VERSION, grid = { columns = 4, rows = 4 } }
+    assert(#layout.validateDebrief(bare) == 0 and bare.debrief == nil, "no section means no debrief")
+    local empty = { debrief = { tiles = {} } }
+    assert(#layout.validateDebrief(empty) == 0 and #empty.debrief.tiles == 0)
+end
+
 local function run()
     local panel = { type = "flight-counter", config = { announcements = true, history = true, motorSource = "ch7" } }
     layout.normalizePanel(panel)
@@ -258,6 +275,7 @@ local function run()
     testAdjacentMigrationSteps()
     testUnsupportedFutureVersion()
     testNavigationMigration()
+    testDebriefSection()
 end
 
 run()

@@ -4,7 +4,9 @@ local root = (... and ... ~= "" and ...) or "."
 local moduleLoader = assert(loadfile(root .. "/tests/support/module_loader.lua"))(root)
 local editor = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/editor.lua"))()
 local grid = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/grid.lua"))()
-local layout = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/layout.lua"))()
+local layout = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/layout.lua"))(function()
+    return assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/debrief_config.lua"))()
+end)
 local panelHost = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/panel_host.lua"))()
 panelHost.SLOTS = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.lua"))().SLOTS
 
@@ -140,6 +142,27 @@ local function testAddRemoveAndStrictSettings()
     assert(editor.setValue(session, "label", ""))
     local valid, errors = editor.validate(session)
     assert(not valid and string.find(table.concat(errors, "\n"), "label must not be empty", 1, true))
+end
+
+local function testDebriefDraft()
+    local session = newSession()
+    local tile = { title = "RX", series = { { source = "VCel", statistic = "min" } } }
+    assert(not editor.removeDebriefTile(session, 1), "a layout without a debrief has no tiles")
+    assert(editor.debriefTiles(session) == nil and editor.canAddDebriefTile(session))
+    assert(editor.addDebriefTile(session, tile) == 1 and session.dirty)
+    tile.title = "mutated"
+    assert(session.draft.debrief.tiles[1].title == "RX", "added tiles are copied")
+    local applied, saved = editor.apply(session)
+    assert(applied, table.concat(saved or {}, "; "))
+    assert(saved.debrief.tiles[1].title == "RX")
+
+    assert(editor.removeDebriefTile(session, 1))
+    assert(editor.cancel(session))
+    assert(#editor.debriefTiles(session) == 1, "cancel restores the debrief")
+
+    session.draft.debrief.tiles[1].series[1].statistic = "last"
+    local valid, errors = editor.validate(session)
+    assert(not valid and string.find(table.concat(errors, "\n"), "debrief tile 1", 1, true))
 end
 
 local function testAddChannelOutput()
@@ -851,6 +874,7 @@ testCompatibleSwaps()
 testWorkingCopyCancelAndApply()
 testPlacementRulesAndResizeAnchor()
 testAddRemoveAndStrictSettings()
+testDebriefDraft()
 testAddChannelOutput()
 testAddSpanDeclarations()
 testCatalogPanelSizes()
