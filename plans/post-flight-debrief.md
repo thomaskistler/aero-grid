@@ -227,8 +227,8 @@ own. Nothing user-visible is half finished between steps.
 2. **Threshold registry.** Panels register thresholds with the telemetry
    service; the first panel in layout order wins. Not visible; tests only.
 3. **Debrief configuration.** The data and rules, without UI: the debrief
-   section in the layout file, validation, the tile limit, Save and Save as,
-   and automatic population from the panels.
+   section in the layout file, validation, the tile limit, and Save and Save
+   as. A layout without a debrief section has no debrief.
 4. **Recorder.** A debrief service copies the flight slice from
    `history_service` at flight end and computes statistics and shaded
    periods. Session reset clears it. Headless and tested.
@@ -236,14 +236,17 @@ own. Nothing user-visible is half finished between steps.
    Swipe up and down in fullscreen, rotary scrolls, RTN closes, leaving
    fullscreen closes.
 6. **Pill.** Both texts and the pill lifecycle. The feature now works end to
-   end with the automatically populated debrief.
+   end for layouts that define a debrief.
 7. **Setup page.** The Flight debrief menu item, the tile list page, tile
-   settings, Fill from dashboard, the flight-detection note, and the
-   missing-sensor hint. Edits the data defined in step 3.
-8. **Documentation.** User guide page, including running Discover new
+   settings, the flight-detection note, and the missing-sensor hint. Edits
+   the data defined in step 3.
+8. **Automatic population.** The panel-to-tile mapping, filling layouts that
+   have never had a debrief, and the **Fill from dashboard** action on the
+   setup page.
+9. **Documentation.** User guide page, including running Discover new
    sensors once, and real screenshots replacing the mockup images.
 
-Steps 1, 2, and 3 are independent. Step 4 needs steps 2 and 3; steps 5 to 7
+Steps 1, 2, and 3 are independent. Step 4 needs steps 2 and 3; steps 5 to 8
 follow in order.
 
 Sensor IDs are chosen in step 1.
