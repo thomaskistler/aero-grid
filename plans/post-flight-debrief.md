@@ -63,12 +63,13 @@ Each tile is essentially a Chart panel configuration with one to three
 series:
 
 - Title at the top left, like a panel title. No colored side stripe.
-- Legend: for each series, a flight statistic instead of the live value, for
-  example `min 3.48V`, `max 186m`, `avg 20.3A`, `used 1,840 mAh`. The value
-  is colored by the worst level the series reached (normal, warning,
+- Legend: for each series, its label and flight statistic instead of the
+  live value, for example `min 3.48V`, `max 186m`, `avg 20.3A`,
+  `delta 1,840 mAh`, `flown 3.2 km`. The source name is never shown. The
+  value is colored by the worst level the series reached (normal, warning,
   critical).
-- When the legend does not fit, the statistic words (`min`, `max`, ...)
-  are dropped first, then series values from the right. Every series is
+- When the legend does not fit, the labels are dropped first, then series
+  values from the right. Every series is
   still drawn in the chart.
 - Chart window is exactly the detected flight, with axis labels `0:00` and
   the flight time.
@@ -89,8 +90,10 @@ series:
 - A debrief is an ordered list of tiles. Each tile has a title, a size
   (Compact 2 x 2, Wide 4 x 2, Wide 4 x 1), and one to three series. Each
   series uses the Chart panel's series settings (source, label, range, unit,
-  precision, color) plus a statistic: min, max, avg, or used (end minus
-  start). The time window is always the flight.
+  precision, color) plus a statistic: min, max, avg, or delta (end minus
+  start). The label defaults to the statistic word and can be overridden,
+  for example `flown`; a cleared label falls back to the statistic word.
+  The time window is always the flight.
 
 ### Setup page
 
@@ -111,8 +114,8 @@ series:
   | Panel | Tile series |
   | --- | --- |
   | Battery | `VCel` min |
-  | Link | link quality min, `Mrgn` min, `Drop` used |
-  | Navigation | `HDst` max, `FDst` used |
+  | Link | link quality min, `Mrgn` min, `Drop` delta |
+  | Navigation | `HDst` max, `FDst` delta |
   | Chart | the same series |
   | Metric | one series per entry: min when its warnings trigger on falling values, otherwise max |
 
@@ -149,7 +152,7 @@ series:
   a receiver link; `getValue` returns 0 then.
 - `Drop` and `FDst` behave like any other accumulating telemetry, such as
   consumption: they keep counting until EdgeTX telemetry is reset. The
-  debrief shows a flight's share with the `used` statistic.
+  debrief shows a flight's share with the `delta` statistic.
 - `Drop` starts counting only once the link has been up since the last
   telemetry reset, so a radio waiting for its receiver adds nothing.
 - `FDst` counts a GPS fix only once it is at least 5 m from the last counted
