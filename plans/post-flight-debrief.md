@@ -207,7 +207,9 @@ series:
   the debrief's series are subscribed when the layout loads and after every
   Save, before the flight starts.
 - At flight end, the flight slice of each series is copied at its tile's
-  chart width (one point per pixel column) and the statistics are computed.
+  chart width (one point per pixel column). Statistics are computed from the
+  full recording of the flight, so they do not depend on chart width; avg is
+  time-weighted.
 - Each dashboard records its own debrief. Hidden dashboards keep their
   services running, so changing screens mid-flight loses nothing.
 - Only the latest debrief is kept, in memory. A new flight replaces it, and
