@@ -221,7 +221,10 @@ for _, item in ipairs(state.items) do
             local p = child.properties
             local font = type(p.font) == "function" and p.font() or p.font
             local top, bottom = p.y, p.y + themeBuilder.fontHeight(font)
-            assert(top >= 0 and bottom <= item.h and p.x >= 0 and p.x + p.w <= item.w, "label leaves its tile: " .. p.text)
+            assert(
+                top >= 0 and bottom <= item.h and p.x >= 0 and p.x + p.w <= item.w,
+                "label leaves its tile: " .. p.text
+            )
             assert(bottom <= area.y or top >= area.y + area.h, "label overlaps the plot: " .. p.text)
         end
     end

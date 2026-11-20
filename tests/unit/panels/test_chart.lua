@@ -41,8 +41,11 @@ end
 for _, armSwitch in ipairs({ "sa", "ch5", "invalid", 1, true }) do
     assert(#chart.validateSettings({ metrics = {}, armSwitch = armSwitch }) > 0)
 end
-equal(chart.format(12.345, 2), "12.35")
-equal(chart.format(nil), "--")
+local numbers = {}
+fixture.module("lib/typography.lua").install(numbers)
+equal(numbers.numberText(12.345, 2), "12.35")
+equal(numbers.numberText(nil), "--")
+equal(numbers.numberText(0 / 0), "--")
 equal(chart.durationText(3000), "30s")
 equal(chart.durationText(6000), "1m")
 equal(chart.durationText(12000), "2m")
