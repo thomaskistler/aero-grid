@@ -305,6 +305,20 @@ local function threshold(settings, key)
     return value
 end
 
+--- Fill in the range, thresholds, and direction a reading is judged by.
+---@param entry table One configured reading.
+---@param into? table Settings to complete; a new table when absent.
+---@return table
+local function judgedBy(entry, into)
+    into = into or {}
+    into.rangeMin = entry.rangeMin or 0
+    into.rangeMax = entry.rangeMax or 100
+    into.warning = entry.warning
+    into.critical = entry.critical
+    into.direction = entry.direction or "auto"
+    return into
+end
+
 --- Report whether thresholds count downward for this metric.
 ---@param settings AeroGridResolvedMetricSettings
 ---@return boolean
@@ -319,6 +333,28 @@ local function isFalling(settings)
         return false
     end
     return warning ~= nil and critical ~= nil and critical < warning
+end
+
+--- Thresholds of every reading, judged as this panel judges its primary one.
+---@param config AeroGridMetricSettings
+---@return AeroGridThreshold[]
+function metric.thresholds(config)
+    local list = {}
+    for _, entry in ipairs(config.metrics or {}) do
+        if hasSource(entry) then
+            local resolved = judgedBy(entry)
+            local warning, critical = threshold(resolved, "warning"), threshold(resolved, "critical")
+            if warning ~= nil or critical ~= nil then
+                list[#list + 1] = {
+                    sensor = entry.source,
+                    warning = warning,
+                    critical = critical,
+                    falling = isFalling(resolved),
+                }
+            end
+        end
+    end
+    return list
 end
 
 --- Resolve the panel state from thresholds and reading availability.
@@ -705,20 +741,15 @@ function metric.create(parent, rect, config, services)
     -- placed first and pointed at a sensor afterwards.
     local primary = entries[1] or {}
     ---@type AeroGridResolvedMetricSettings
-    local settings = {
+    local settings = judgedBy(primary, {
         metrics = entries,
         source = primary.source,
         label = captionOf(primary),
         unit = primary.unit or "",
         precision = primary.precision or -1,
-        rangeMin = primary.rangeMin or 0,
-        rangeMax = primary.rangeMax or 100,
-        warning = primary.warning,
-        critical = primary.critical,
-        direction = primary.direction or "auto",
         accent = config.accent or "cyan",
         visual = config.visual or "none",
-    }
+    })
 
     local layout = metric.presentationFor(span.colSpan, span.rowSpan)
     layout.showRange = entries[2] ~= nil

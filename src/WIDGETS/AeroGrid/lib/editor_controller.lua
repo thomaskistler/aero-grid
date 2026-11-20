@@ -12,6 +12,7 @@ function module.new(dependencies)
     local loadModule = dependencies.loadModule
     local isFullScreen = dependencies.isFullScreen
     local buildPanel = dependencies.buildPanel
+    local registerThresholds = dependencies.registerThresholds
     local updateEmptyHint = dependencies.updateEmptyHint
 
     local function previewLayout(context, document)
@@ -180,6 +181,14 @@ function module.new(dependencies)
         end
         context.panels = ordered
         context.document = document
+        -- Previews never register, so Save is where draft thresholds take over.
+        local telemetry = context.serviceRuntime and context.serviceRuntime.byId.telemetry
+        if telemetry then
+            telemetry:clearThresholds()
+            for _, entry in ipairs(ordered) do
+                registerThresholds(context, entry.placement.id, entry.module, entry.settings)
+            end
+        end
         context.flightSources = {}
         for _, placement in ipairs(document.panels) do
             if placement.type == "flight-counter" then
@@ -255,6 +264,9 @@ function module.new(dependencies)
                 local ok, destroyError = context.panelHost.dispatch(entry, "destroy")
                 if not ok and destroyError then
                     return true, entry.placement.id .. ": preview destroy: " .. destroyError
+                end
+                if not job.preview and not action.placement then
+                    registerThresholds(context, entry.placement.id)
                 end
                 entry.container:clear()
                 lvgl.hide(entry.container)

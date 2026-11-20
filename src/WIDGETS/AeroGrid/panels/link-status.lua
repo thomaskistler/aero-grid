@@ -357,6 +357,25 @@ function linkStatus.resolveState(settings, reading)
     return "normal"
 end
 
+--- Thresholds of the link sources and the published RSSI margin sensor.
+--- Link thresholds always count downward.
+---@param settings AeroGridLinkSettings
+---@return AeroGridThreshold[]
+function linkStatus.thresholds(settings)
+    local list = {}
+    local function add(sensor, warning, critical)
+        if type(sensor) == "string" and sensor ~= "" and (type(warning) == "number" or type(critical) == "number") then
+            list[#list + 1] = { sensor = sensor, warning = warning, critical = critical, falling = true }
+        end
+    end
+    add(settings.qualitySource, settings.qualityWarning, settings.qualityCritical)
+    add(settings.rssiSource, settings.rssiWarning, settings.rssiCritical)
+    if settings.protocol == "elrs4" then
+        add("Mrgn", settings.marginWarning, settings.marginCritical)
+    end
+    return list
+end
+
 --- Validate source-specific thresholds and their required sources.
 ---@param settings AeroGridLinkSettings
 ---@return string[] messages
@@ -455,7 +474,7 @@ function linkStatus.read(context)
     -- Without a link view at all, fall back to the source's own freshness
     -- rather than claiming the link is down on no evidence.
     out.linkDown = type(link) == "table" and not out.linkLive
-    out.qualityValue = type(quality) == "table" and quality.unitText == "%" and quality.value or nil
+    out.qualityValue = type(quality) == "table" and quality.value or nil
     out.margin, out.mode = nil, nil
     if context.settings.protocol == "elrs4" then
         local modeFeed = context.modeFeed

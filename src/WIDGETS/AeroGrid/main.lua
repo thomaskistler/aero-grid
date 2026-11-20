@@ -933,6 +933,7 @@ initialize = function(context)
                 loadModule = loadModule,
                 isFullScreen = isFullScreen,
                 buildPanel = context.dashboardLoader.buildPanel,
+                registerThresholds = context.dashboardLoader.registerThresholds,
                 updateEmptyHint = context.dashboardLifecycle.updateEmptyHint,
             }, { "restorePreview", "openEditor", "advanceEditor", "editorEntryHit" })
         end

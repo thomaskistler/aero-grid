@@ -4,6 +4,7 @@ local root = (... and ... ~= "" and ...) or "."
 local moduleLoader = assert(loadfile(root .. "/tests/support/module_loader.lua"))(root)
 
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
+local sweep = assert(loadfile(root .. "/tests/support/threshold_sweep.lua"))(root)
 local linkStatus = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/link-status.lua"))()
 local primitives = moduleLoader("lib/primitives.lua")
 
@@ -256,7 +257,41 @@ local function testValidation()
     assertions.assertEqual(reading.cause, "LOW RSSI")
 end
 
+local function testThresholdRegistrations()
+    local settings = {
+        qualitySource = "RQly",
+        qualityWarning = 70,
+        qualityCritical = 50,
+        rssiSource = "1RSS",
+        rssiWarning = -95,
+        rssiCritical = -105,
+        protocol = "elrs4",
+        marginWarning = 10,
+        marginCritical = 5,
+    }
+    local list = linkStatus.thresholds(settings)
+    assertions.assertEqual(#list, 3)
+    local readings = {
+        RQly = function(value)
+            return { qualityState = "live", qualityValue = value, sourceState = "live", value = value }
+        end,
+        ["1RSS"] = function(value)
+            return { rssiState = "live", rssiValue = value, sourceState = "live", value = value }
+        end,
+        Mrgn = function(value)
+            return { margin = value, sourceState = "live", value = value }
+        end,
+    }
+    for _, spec in ipairs(list) do
+        sweep(spec, function(value)
+            return linkStatus.resolveState(settings, readings[spec.sensor](value))
+        end, 1, "link " .. spec.sensor)
+    end
+    assertions.assertEqual(#linkStatus.thresholds({ rssiSource = "1RSS", marginWarning = 10 }), 0)
+end
+
 local function run()
+    testThresholdRegistrations()
     testSourceClassification()
     testLinkStates()
     testBarFraction()

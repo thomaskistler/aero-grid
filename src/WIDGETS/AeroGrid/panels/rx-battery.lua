@@ -308,6 +308,16 @@ function rxBattery.estimateCount(voltage, cellFull)
     return count
 end
 
+--- Thresholds of the published lowest-cell sensor, judged as the panel does.
+---@param settings AeroGridRxBatterySettings
+---@return AeroGridThreshold[]
+function rxBattery.thresholds(settings)
+    if type(settings.cellWarning) ~= "number" and type(settings.cellCritical) ~= "number" then
+        return {}
+    end
+    return { { sensor = "VCel", warning = settings.cellWarning, critical = settings.cellCritical, falling = true } }
+end
+
 --- Resolve the panel state. Cell voltages always count downward.
 ---@param settings AeroGridRxBatterySettings
 ---@param value any Primary reading.
