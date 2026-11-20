@@ -309,6 +309,57 @@ debrief:configure(saved, { 30 })
 equal(drain(debrief, 6800), 0)
 equal(debrief:result(), result)
 
+-- A Save between a flight's end and its capture still captures the flight.
+fly(7000, 7500, { V = climb, A = gappy })
+debrief:configure(saved, { 30 })
+drain(debrief, 7700)
+assert(debrief:result() ~= result, "a Save must not skip a finished flight")
+equal(debrief:result().duration, 510)
+
+-- A session reset during a capture drops it; flights the history has not reset
+-- yet are not captured, and the next flight is.
+fly(8000, 8500, { V = climb, A = gappy })
+used, busy = debrief:update(8700, 1)
+assert(busy and debrief.job, "the capture is under way")
+debrief:resetSession()
+equal(debrief.job, nil)
+equal(debrief:result(), nil)
+equal(drain(debrief, 8700), 0, "flights before the reset are not captured")
+for index = 1, 8 do
+    history:resetSession(8800, index)
+end
+equal(drain(debrief, 8800), 0)
+equal(debrief:result(), nil)
+fly(9000, 9500, { V = climb, A = gappy })
+drain(debrief, 9700)
+equal(debrief:result().duration, 510, "the first flight after a reset is captured")
+
+-- An empty flight slice after a long history is searched within budget.
+debrief:configure({
+    tiles = {
+        tile({
+            { source = "Z", statistic = "min" },
+            { source = "Z", statistic = "max" },
+            { source = "Z", statistic = "avg" },
+            { source = "Z", statistic = "delta" },
+        }),
+    },
+}, { 40 })
+local function zigzag(t)
+    return t // 10 % 2
+end
+poll(9900, false, {})
+for now = 10000, 71000, 10 do
+    poll(now, true, { Z = zigzag })
+end
+fly(71100, 71600, {})
+drain(debrief, 71800)
+for _, quiet in ipairs(debrief:result().tiles[1].series) do
+    equal(quiet.value, nil, "no samples, no statistic")
+    equal(next(quiet.columns.kinds), nil, "no samples, no columns")
+end
+debrief:configure(saved, { 30 })
+
 -- A rebind replaces the history; the old one is ignored until reconfigured.
 local old = history
 history = historyModule.new(env, support, runtime)
@@ -328,40 +379,69 @@ debrief:configure({ tiles = {} }, {})
 equal(debrief.count, 0)
 equal(debrief:update(7000, 4), 1)
 
--- Flight time is scaled so column arithmetic stays within int32.
-do
-    local feed = { first = 1, last = 2, count = 2 }
-    local knots = { { 0, 0 }, { 400000000, 100 } }
-    local fake = {}
-    function fake:session()
+--- Capture one flight from a fake history of `knots` ({ at, value, broken }).
+local function fake(knots, from, to, series, width)
+    local feed = { first = 1, last = #knots, count = #knots }
+    local source = {}
+    function source:session()
         return { flightLast = 1 }
     end
-    function fake:subscribe()
+    function source:subscribe()
         return feed
     end
-    function fake:flight()
-        return 0, 400000000
+    function source:flight()
+        return from, to
     end
-    function fake:point(_, index)
+    function source:point(_, index)
         local knot = knots[index]
         if knot then
-            return knot[1], knot[2], false
+            return knot[1], knot[2], knot[3] == true
         end
     end
-    local long = debriefModule.new(env, support, runtime)
-    runtime.byId.history = fake
-    long:configure({ tiles = { tile({ { source = "V", statistic = "avg" } }) } }, { 400 })
-    long.handled = 0
-    drain(long, 0)
-    local series = long:result().tiles[1].series[1]
+    local recorder = debriefModule.new(env, support, runtime)
+    runtime.byId.history = source
+    recorder:configure({ tiles = { tile(series) } }, { width or 40 })
+    recorder.handled = 0
+    drain(recorder, 0)
+    runtime.byId.history = history
+    return recorder:result().tiles[1].series
+end
+local all = {
+    { source = "X", statistic = "min" },
+    { source = "X", statistic = "max" },
+    { source = "X", statistic = "avg" },
+    { source = "X", statistic = "delta" },
+}
+
+-- Flight time is scaled so column arithmetic stays within int32.
+do
+    local series = fake({ { 0, 0 }, { 400000000, 100 } }, 0, 400000000, { { source = "X", statistic = "avg" } }, 400)[1]
     local store = series.columns
     assert(store.window * store.width < 0x7fffffff, "column times must fit int32")
     for slot = 1, 400 do
         equal(store.kinds[slot], "data", "column " .. slot)
     end
     near(series.value, 50, "average of a long ramp")
-    runtime.byId.history = history
 end
+
+-- A flight with a single sample.
+local single = fake({ { 50, 7 } }, 0, 100, all)
+equal(single[1].value, 7, "min of one sample")
+equal(single[2].value, 7, "max of one sample")
+near(single[3].value, 7, "avg of one sample")
+near(single[4].value, 0, "delta of one sample")
+
+-- Integer readings at int32 scale: clipping and averaging must not overflow.
+local clipped = fake({ { 0, 0 }, { 60000, 100000 } }, 30000, 60000, all)
+near(clipped[1].value, 50000, "min at the interpolated flight start")
+near(clipped[2].value, 100000, "max")
+near(clipped[3].value, 75000, "avg")
+near(clipped[4].value, 50000, "delta")
+local wide = fake({ { 0, 2000000000 }, { 1000, 2000000000 }, { 2000, -2000000000 } }, 0, 2000, all)
+near(wide[1].value, -2e9, "min")
+near(wide[2].value, 2e9, "max")
+near(wide[3].value, 1e9, "avg")
+near(wide[4].value, -4e9, "delta")
 
 -- One slot is a nominal 2000 instructions, setup included.
 assert(worst <= 2000, "capture work must fit its slots: " .. worst)

@@ -43,6 +43,7 @@ function debrief:configure(section, widths)
     local history = self.runtime.byId.history
     local job = self.job
     local resume = job and job.history == history and job.index
+    local attached = history == self.history and self.session
     self.job, self.tiles, self.widths, self.feeds = nil, {}, widths, {}
     self.history, self.session, self.count = history, nil, 0
     if not history or not section then
@@ -57,10 +58,15 @@ function debrief:configure(section, widths)
         self.count = self.count + #feeds
     end
     if self.count > 0 then
-        self.session = history:session()
-        self.handled = settled(history, self.session)
+        local session = history:session()
+        -- Flights that ended before the series were recorded are skipped; a
+        -- Save keeps the cursor, so a finished flight is still captured.
+        if session ~= attached then
+            self.handled = settled(history, session)
+        end
+        self.session = session
         -- A capture a Save interrupted starts over with the saved debrief.
-        if resume and resume <= self.session.flightLast then
+        if resume then
             self.handled = math.min(self.handled, resume - 1)
         end
     end
@@ -72,21 +78,9 @@ function debrief:result()
 end
 
 function debrief:resetSession()
-    self.latest, self.job, self.handled = nil, nil, 0
-end
-
---- Last knot at or before `at`, or the first knot when none is.
-local function search(history, feed, at)
-    local low, high = feed.first, feed.last
-    while low < high do
-        local middle = (low + high + 1) // 2
-        if history:point(feed, middle) <= at then
-            low = middle
-        else
-            high = middle - 1
-        end
-    end
-    return low
+    self.latest, self.job = nil, nil
+    -- Flights the history has not reset yet are never captured.
+    self.handled = self.session and settled(self.history, self.session) or 0
 end
 
 local function begin(self, index, start, finish)
@@ -134,15 +128,17 @@ local function nextSeries(self, job)
             tiles[job.tile] = tiles[job.tile] or { config = tile, series = {} }
             tiles[job.tile].series[position] = result
             job.position = position
+            -- The walk starts at the last knot at or before the flight start,
+            -- found by a binary search over `low..high`.
             job.series = {
                 feed = feed,
                 result = result,
+                statistic = config.statistic,
                 spec = job.thresholds[config.source],
-                index = feed.count > 0 and search(self.history, feed, job.start) or nil,
+                low = feed.first,
+                high = feed.count > 0 and feed.last or nil,
                 worst = 0,
-                area = 0,
                 time = 0,
-                sum = 0,
                 samples = 0,
             }
             return job.series
@@ -152,20 +148,46 @@ local function nextSeries(self, job)
     end
 end
 
---- Add one sample at flight time `at` (scaled ticks) to the series.
+--- Fold one flight-clipped knot at flight time `at` into the statistic.
+--- Means are updated in place, so no running sum can overflow.
+local function accumulate(series, at, value, connected)
+    local statistic, current = series.statistic, series.value
+    series.samples = series.samples + 1
+    if statistic == "min" then
+        series.value = current and math.min(current, value) or value
+    elseif statistic == "max" then
+        series.value = current and math.max(current, value) or value
+    elseif statistic == "avg" then
+        if connected then
+            -- Time-weighted: each segment counts its mean for its duration.
+            local span = at - series.knotTime
+            series.time = series.time + span
+            if span > 0 then
+                local mean = series.knotMean * 0.5 + value * 0.5
+                series.mean = series.mean + (mean - series.mean) * (span / series.time)
+            end
+        end
+        if series.time == 0 then
+            -- Until the first segment, the plain mean of the samples.
+            local mean = series.mean or 0.0
+            series.mean = mean + (value - mean) / series.samples
+        end
+        series.knotMean = value
+    else
+        series.first = series.first or value
+        series.value = value * 1.0 - series.first
+    end
+    series.knotTime = at
+end
+
+--- Add one sample at flight time `at` (scaled ticks) to the pixel columns.
 local function sample(job, series, at, value, connected)
     local store = series.result.columns
     store:sample(at, value, not connected, false, 0)
-    if connected then
-        local span = at - series.lastAt
-        series.area = series.area + (series.lastValue + value) * 0.5 * span
-        series.time = series.time + span
-    elseif series.lastAt then
+    if not connected and series.lastAt then
         store:breakAt(at)
     end
-    series.first = series.first or value
     series.lastAt, series.lastValue = at, value
-    series.sum, series.samples = series.sum + value, series.samples + 1
     local level = series.spec and job.level and LEVELS[job.level(series.spec, value)] or 0
     if level > 0 then
         local slot = store:bucketOf(at, 0) + 1
@@ -177,29 +199,39 @@ end
 
 local function complete(series)
     local result = series.result
-    local columns = result.columns
-    local statistic = result.config.statistic
-    if series.samples > 0 then
-        if statistic == "min" then
-            result.value = columns.minimum
-        elseif statistic == "max" then
-            result.value = columns.maximum
-        elseif statistic == "avg" then
-            result.value = series.time > 0 and series.area / series.time or series.sum / series.samples
-        else
-            result.value = series.lastValue - series.first
-        end
+    if series.statistic == "avg" then
+        result.value = series.mean
+    else
+        result.value = series.value
     end
     result.level = NAMES[series.worst]
 end
 
+--- Value at `at` on the line between two knots, in floats so neither the
+--- difference nor the product can overflow int32.
 local function interpolate(fromAt, fromValue, toAt, toValue, at)
-    return fromValue + (toValue - fromValue) * (at - fromAt) / (toAt - fromAt)
+    return fromValue + (toValue * 1.0 - fromValue) * ((at - fromAt) / (toAt - fromAt))
 end
 
---- One unit of capture work: one knot read or one column sample.
---- Returns true when the series is done.
+--- One unit of capture work: one search step, one knot read or one column
+--- sample. Returns true when the series is done.
 local function work(self, job, series)
+    local high = series.high
+    if high then
+        local low = series.low
+        if low < high then
+            local middle = (low + high + 1) // 2
+            local at = self.history:point(series.feed, middle)
+            if at and at > job.start then
+                series.high = middle - 1
+            else
+                series.low = middle
+            end
+            return false
+        end
+        series.index, series.high = low, nil
+        return false
+    end
     local store = series.result.columns
     local target = series.target
     if target then
@@ -235,12 +267,15 @@ local function work(self, job, series)
         return true
     end
     if connected and previousAt < job.start then
-        sample(job, series, 0, interpolate(previousAt, previousValue, at, value, job.start), false)
+        local first = interpolate(previousAt, previousValue, at, value, job.start)
+        accumulate(series, job.start, first, false)
+        sample(job, series, 0, first, false)
     end
     local finish = math.min(at, job.finish)
     if finish < at then
         value = interpolate(previousAt, previousValue, at, value, finish)
     end
+    accumulate(series, finish, value, connected)
     at = (finish - job.start) // job.scale
     if connected then
         series.target, series.targetValue = at, value
@@ -252,21 +287,24 @@ local function work(self, job, series)
     return series.ended and not connected
 end
 
-local function capture(self, slots)
+--- Run capture work within the grant; `used` units are already spent.
+--- Starting a series is a unit of its own.
+local function capture(self, slots, used)
     local job = self.job
     local units = slots * debrief.UNITS_PER_SLOT
-    local used = 0
-    local series = job.series or nextSeries(self, job)
-    while series and used < units do
+    while used < units do
         used = used + 1
-        if work(self, job, series) then
+        local series = job.series
+        if not series then
+            if not nextSeries(self, job) then
+                self.job = nil
+                self.latest = { duration = job.finish - job.start, tiles = job.tiles }
+                break
+            end
+        elseif work(self, job, series) then
             complete(series)
-            series = nextSeries(self, job)
+            job.series = nil
         end
-    end
-    if not series then
-        self.job = nil
-        self.latest = { duration = job.finish - job.start, tiles = job.tiles }
     end
     return math.max(1, (used + debrief.UNITS_PER_SLOT - 1) // debrief.UNITS_PER_SLOT), self.job ~= nil
 end
@@ -297,9 +335,11 @@ function debrief:update(now, slots)
             return 1, true
         end
         begin(self, index, start, finish)
+        self.due = now
+        return capture(self, slots, 1)
     end
     self.due = now
-    return capture(self, slots)
+    return capture(self, slots, 0)
 end
 
 return debrief
