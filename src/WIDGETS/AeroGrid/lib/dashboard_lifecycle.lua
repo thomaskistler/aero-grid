@@ -235,6 +235,7 @@ function module.new(dependencies)
         context.logViewer = nil
         context.logOverlay = nil
         context.debriefOverlay = nil
+        context.debriefPill = nil
         if context.debrief then
             context.debriefModule.detach(context.debrief)
         end

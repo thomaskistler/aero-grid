@@ -682,6 +682,101 @@ function view.handle(host, event, touch)
     return true
 end
 
+local PILL_TEXTS = {
+    [true] = { "Debrief ready - swipe up", "Debrief ready" },
+    [false] = { "Debrief ready - long-press, then swipe up", "Debrief ready" },
+}
+local PILL_PAD, PILL_MARGIN = 10, 6
+
+--- The pill's text and size for a zone, or nil when even the short text does
+--- not fit. Outside fullscreen the widget gets no touch until a long press.
+function view.pillFit(host, fullscreen, width, height)
+    local themeBuilder = host.themeBuilder
+    local h = themeBuilder.fontHeight(SMLSIZE) + 8
+    if h + 2 * PILL_MARGIN > height then
+        return nil
+    end
+    for _, text in ipairs(PILL_TEXTS[fullscreen == true]) do
+        local w = themeBuilder.measureText(SMLSIZE, text) + 2 * PILL_PAD
+        if w + 2 * PILL_MARGIN <= width then
+            return text, w, h
+        end
+    end
+    return nil
+end
+
+--- Show the "debrief ready" pill at the bottom center of the page, worded for
+--- `fullscreen`, or hide it when `fullscreen` is nil. The pill lies above
+--- every page object made before it, so the host passes `containers`, its
+--- count of panel containers made, and the pill is remade when that moves.
+function view.pill(host, fullscreen, containers)
+    local zone, pill = host.zone, host.debriefPill
+    if not pill then
+        pill = {}
+        host.debriefPill = pill
+    end
+    pill.fullscreen, pill.w, pill.h, pill.containers = fullscreen, zone.w, zone.h, containers
+    local text, w, h
+    if fullscreen ~= nil then
+        text, w, h = view.pillFit(host, fullscreen, zone.w, zone.h)
+    end
+    local ui = pill.ui
+    if ui and (not text or ui.made ~= containers) then
+        lvgl.hide(ui.box)
+        if text then
+            -- A newer panel covers it; leave it empty and make one on top.
+            ui.box:clear()
+            ui.box:set({ w = 0, h = 0 })
+            ui, pill.ui = nil, nil
+        end
+    end
+    if not text then
+        return
+    end
+    local x, y, radius = (zone.w - w) // 2, zone.h - h - PILL_MARGIN, h // 2
+    local color = host.theme.color
+    local textY = (h - host.themeBuilder.fontHeight(SMLSIZE)) // 2
+    if not ui then
+        local box = lvgl.box(host.page, { x = x, y = y, w = w, h = h })
+        ui = {
+            box = box,
+            made = containers,
+            fill = lvgl.rectangle(box, {
+                x = 0,
+                y = 0,
+                w = w,
+                h = h,
+                filled = true,
+                rounded = radius,
+                color = color.surfaceRaised,
+            }),
+            outline = lvgl.rectangle(box, { x = 0, y = 0, w = w, h = h, rounded = radius, color = color.border }),
+            label = host.primitives.label(box, host.theme, {
+                x = PILL_PAD,
+                y = textY,
+                w = w - 2 * PILL_PAD,
+                text = text,
+                font = SMLSIZE,
+                color = color.text,
+            }),
+            text = text,
+            x = x,
+            y = y,
+            w = w,
+        }
+        pill.ui = ui
+        return
+    end
+    if ui.text ~= text or ui.x ~= x or ui.y ~= y or ui.w ~= w then
+        ui.box:set({ x = x, y = y, w = w, h = h })
+        ui.fill:set({ w = w, h = h, rounded = radius })
+        ui.outline:set({ w = w, h = h, rounded = radius })
+        ui.label:set({ y = textY, w = w - 2 * PILL_PAD, text = text })
+        ui.text, ui.x, ui.y, ui.w = text, x, y, w
+    end
+    lvgl.show(ui.box)
+end
+
 --- Open the fully built view of `result` from an upward drag `request`,
 --- where it was last scrolled.
 function view.open(host, result, request)
