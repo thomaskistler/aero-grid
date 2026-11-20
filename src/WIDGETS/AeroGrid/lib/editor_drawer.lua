@@ -21,6 +21,7 @@ local function deferredSetter(context, state, generation, apply)
         return queueNative(context, state, generation, callback, value)
     end)
 end
+drawer.deferredSetter = deferredSetter
 
 function drawer.applyNative(context, state)
     local command = state.nativeInput
@@ -66,6 +67,7 @@ local function enqueue(state, action, generation)
         state.drawerPending = action
     end
 end
+drawer.enqueue = enqueue
 
 local function closeDialog(state)
     state.nativeDrawer = nil
@@ -77,6 +79,7 @@ local function closeDialog(state)
     end
     state.nativeDrawerHost = nil
 end
+drawer.closeDialog = closeDialog
 
 local function hostedDialog(context, state, properties)
     local generation = state.drawerGeneration
@@ -110,6 +113,7 @@ local function hostedDialog(context, state, properties)
     state.nativeDrawerHost = state.drawerView.host
     return state.drawerView.dialog
 end
+drawer.hostedDialog = hostedDialog
 
 function drawer.close(state)
     closeDialog(state)
@@ -377,7 +381,6 @@ end
 --- Offer Save, Save As and Discard for a changed draft. RTN keeps editing.
 function drawer.openExit(context, state)
     closeDialog(state)
-    assert(type(lvgl.menu) == "function", "exit dialog requires EdgeTX Lua LVGL menu")
     local actions, values = {}, {}
     if not state.handlers.isEmpty(state.handlers.layoutName()) then
         actions[#actions + 1], values[#values + 1] = "save", "Save"
@@ -385,6 +388,41 @@ function drawer.openExit(context, state)
     actions[#actions + 1], values[#values + 1] = "save-as", "Save as..."
     actions[#actions + 1], values[#values + 1] = "discard", "Discard changes"
     local generation = state.drawerGeneration
+    if state.debrief then
+        -- No grid stays behind a native menu, so RTN must return to the tile list.
+        state.mode = "exit"
+        state.nativeDrawer = assert(
+            hostedDialog(context, state, {
+                title = "Unsaved changes",
+                close = function()
+                    if generation == state.drawerGeneration then
+                        state.nativeDrawer = nil
+                        state.drawerPending = { action = "list" }
+                    end
+                end,
+            }),
+            "cannot open editor dialog"
+        )
+        local height = lvgl.UI_ELEMENT_HEIGHT or 32
+        local width = math.floor(context.zone.w * 0.8) - 16
+        for index, value in ipairs(values) do
+            lvgl.button(state.nativeDrawer, {
+                x = 4,
+                y = 4 + (index - 1) * (height + 8),
+                w = width,
+                h = height,
+                text = value,
+                active = function()
+                    return generation == state.drawerGeneration and not state.exitCommand
+                end,
+                press = function()
+                    exitCommand(context, state, generation, { action = actions[index] })
+                end,
+            })
+        end
+        return
+    end
+    assert(type(lvgl.menu) == "function", "exit dialog requires EdgeTX Lua LVGL menu")
     state.mode = "menu"
     lvgl.menu({
         title = "Unsaved changes",

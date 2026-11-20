@@ -44,10 +44,13 @@ class MenuTilesTests(unittest.TestCase):
         expected = {
             ("model", 36): "3eb087a537fa618ba339155ed54962ddaf9d01f049ec60ef3606e383cecf1dac",
             ("theme", 36): "bf852c5d4f1be02f69fc4010ee35d63baeba4f535a09713cba92953f030d91ad",
+            ("stats", 36): "855b4bbf069bb848fa614c687f7794824e2793094f9529e32a5b726a3ecd2f52",
             ("model", 45): "1650222969f41623cbf6a5fc08e5a4e1b8cb7d57db5413c87b715fe99601cb1c",
             ("theme", 45): "5ad3e1eab025bf20e18e64f47fa87fb5a2bbf65e48d9aedd49919475562bf294",
+            ("stats", 45): "658fcc0aa0f1d50675c41aaae4d3a0b223ccf24e27cf4446e4b71b385424985e",
             ("model", 62): "2c58417f8fad8867dd26e3af5b64c50eb9fc70ceeb22c6255e42cf60c00fc8fc",
             ("theme", 62): "2cde45a04134bff6b767940a71ec14af625463c608086fbddb3f7360f5350039",
+            ("stats", 62): "fb4e05fb137d64bda383e21cfaf7d3d4841a3c3bbd786624f0be0c7fd19ee4e8",
         }
         for (icon, size), digest in expected.items():
             rows = tiles.png.read_png(ROOT / f"src/WIDGETS/AeroGrid/assets/menu-{icon}-white-{size}.png")
@@ -62,19 +65,20 @@ class MenuTilesTests(unittest.TestCase):
                 rows[y][left * 3:(left + width) * 3] = bytes([value] * width * 3)
 
         rectangle(208, 58, 64, 10, 255)
-        rectangle(134, 49, 212, 3, 255)
+        rectangle(84, 49, 312, 3, 255)
         rectangle(180, 53, 120, 21, 255)
-        rectangle(146, 81, 88, 80, 255)
-        rectangle(181, 90, 12, 12, 0)
-        rectangle(281, 90, 12, 12, 255)
+        rectangle(96, 81, 88, 80, 255)
+        rectangle(131, 90, 12, 12, 0)
+        rectangle(231, 90, 12, 12, 255)
+        rectangle(331, 90, 12, 12, 255)
         self.assertEqual(capture.verify_menu_grid(rows, 1)["selected"], 1)
-        rectangle(134, 49, 212, 3, 0)
+        rectangle(84, 49, 312, 3, 0)
         with self.assertRaisesRegex(RuntimeError, "title rule"):
             capture.verify_menu_grid(rows, 1)
-        rectangle(134, 49, 212, 3, 255)
+        rectangle(84, 49, 312, 3, 255)
         with self.assertRaisesRegex(RuntimeError, "invert"):
             capture.verify_menu_grid(rows, 2)
-        rectangle(181, 90, 12, 12, 255)
+        rectangle(131, 90, 12, 12, 255)
         with self.assertRaisesRegex(RuntimeError, "icon is missing"):
             capture.verify_menu_grid(rows, 1)
 

@@ -146,36 +146,29 @@ end
 
 local function testDebriefDraft()
     local session = newSession()
-    local tile = { title = "RX", colSpan = 2, rowSpan = 2, series = { { source = "VCel", statistic = "min" } } }
-    assert(not editor.removeDebriefTile(session, 1), "a layout without a debrief has no tiles")
-    assert(editor.debriefTiles(session) == nil and editor.canAddDebriefTile(session))
-    assert(editor.addDebriefTile(session, tile) == 1 and session.dirty)
-    tile.title = "mutated"
-    assert(session.draft.debrief.tiles[1].title == "RX", "added tiles are copied")
+    assert(not editor.editDebrief(session, "removeTile", 1), "a layout without a debrief has no tiles")
+    assert(session.draft.debrief == nil and not session.dirty)
+    assert(editor.editDebrief(session, "addTile") == 1 and session.dirty)
+    local valid, errors = editor.validate(session)
+    assert(not valid and string.find(table.concat(errors, "\n"), "series 1: source is required", 1, true))
+    assert(editor.editDebrief(session, "setSeriesValue", 1, 1, "source", "VCel"))
     local applied, saved = editor.apply(session)
     assert(applied, table.concat(saved or {}, "; "))
-    assert(saved.debrief.tiles[1].title == "RX")
+    assert(saved.debrief.tiles[1].title == "Tile 1")
 
-    assert(editor.removeDebriefTile(session, 1))
+    assert(editor.editDebrief(session, "removeTile", 1))
     assert(editor.cancel(session))
-    assert(#editor.debriefTiles(session) == 1, "cancel restores the debrief")
-
-    local other = { title = "Link", colSpan = 4, rowSpan = 1, series = { { source = "RQly", statistic = "min" } } }
-    assert(editor.addDebriefTile(session, other) == 2)
-    assert(editor.moveDebriefTile(session, 2, -1) == 1)
-    assert(editor.setDebriefTile(session, 1, tile))
-    assert(session.draft.debrief.tiles[1].title == "mutated")
-    assert(editor.cancel(session))
+    assert(#session.draft.debrief.tiles == 1, "cancel restores the debrief")
 
     session.draft.debrief.tiles[1].futureTile = "preserved"
     session.draft.debrief.tiles[1].series[1].futureSeries = "preserved"
-    local valid, normalized = editor.validate(session)
+    local normalized
+    valid, normalized = editor.validate(session)
     assert(valid, table.concat(normalized, "\n"))
     assert(normalized.debrief.tiles[1].futureTile == "preserved")
     assert(normalized.debrief.tiles[1].series[1].futureSeries == "preserved")
 
     session.draft.debrief.tiles[1].series[1].statistic = "last"
-    local errors
     valid, errors = editor.validate(session)
     assert(not valid and string.find(table.concat(errors, "\n"), "debrief tile 1", 1, true))
     session.draft.debrief = "invalid"

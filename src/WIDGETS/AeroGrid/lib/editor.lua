@@ -1040,20 +1040,12 @@ function editor.cancel(session)
     return true
 end
 
---- The draft's debrief tiles, or nil when the layout has no debrief.
----@return table[]?
-function editor.debriefTiles(session)
-    return session.draft.debrief and session.draft.debrief.tiles
-end
-
-function editor.canAddDebriefTile(session)
-    local module = session.layout.debrief()
-    return module ~= nil and module.canAdd(session.draft.debrief)
-end
-
---- Apply one debrief draft operation. Only adding a tile creates the section:
---- an absent debrief and an empty one are different things.
-local function editDebrief(session, operation, ...)
+--- Apply one debrief_config draft operation, such as "pasteTile", to the
+--- draft's debrief. Only adding a tile creates the section: an absent debrief
+--- and an empty one are different things.
+---@return any result The operation's result; false when it failed.
+---@return string? error
+function editor.editDebrief(session, operation, ...)
     local module, loadError = session.layout.debrief()
     if not module then
         return false, loadError
@@ -1069,31 +1061,6 @@ local function editDebrief(session, operation, ...)
         session.dirty = true
     end
     return result, message
-end
-
---- Append a tile, creating the debrief if the layout has none.
----@return integer|false index
----@return string? error
-function editor.addDebriefTile(session, tile)
-    return editDebrief(session, "addTile", copy(tile))
-end
-
----@return boolean ok
----@return string? error
-function editor.setDebriefTile(session, index, tile)
-    return editDebrief(session, "setTile", index, copy(tile))
-end
-
----@return boolean removed
----@return string? error
-function editor.removeDebriefTile(session, index)
-    return editDebrief(session, "removeTile", index)
-end
-
----@return integer|false index The tile's new position.
----@return string? error
-function editor.moveDebriefTile(session, index, delta)
-    return editDebrief(session, "moveTile", index, delta)
 end
 
 --- Validate the entire working copy without dropping bad panels or keys.

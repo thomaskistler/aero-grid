@@ -351,6 +351,10 @@ function module.new(dependencies)
     ---@param context AeroGridContext
     ---@return boolean opened
     local function openEditor(context)
+        -- true opens the Flight debrief page, false the layout grid, and nil
+        -- resumes a set-aside draft where it stopped.
+        local debriefRequest = context.editorDebriefRequest
+        context.editorDebriefRequest = nil
         if
             not isFullScreen()
             or context.stage
@@ -397,6 +401,20 @@ function module.new(dependencies)
             end
             context.editorDrawerModule = module
         end
+        local resumed = context.editorStash
+        local debrief = debriefRequest
+        if debrief == nil then
+            debrief = resumed ~= nil and resumed.debriefMode == true
+        end
+        if debrief and not context.debriefPageModule then
+            local module, moduleError = loadModule(context.path, "lib/debrief_page.lua", runtimeApi)
+            if not module then
+                addError(context, "debrief page: " .. tostring(moduleError))
+                showErrors(context)
+                return false
+            end
+            context.debriefPageModule = module
+        end
 
         context.editorPanelCache = context.editorPanelCache or {}
         local function loadPanel(typeName)
@@ -420,7 +438,6 @@ function module.new(dependencies)
         end
 
         -- A draft set aside when fullscreen was left resumes where it stopped.
-        local resumed = context.editorStash
         context.editorStash = nil
         local created, session, sessionError = true, resumed, nil
         if not resumed then
@@ -441,6 +458,7 @@ function module.new(dependencies)
 
         context.editorSession = session
         session.modelArmed = context.modelArmed
+        session.debriefMode = debrief
         local handlers = {
             editor = context.editorModule,
             logError = function(operation, message)
@@ -455,6 +473,7 @@ function module.new(dependencies)
                 )
             end,
             resumed = resumed ~= nil,
+            debrief = debrief,
             preview = function(document)
                 return previewLayout(context, document)
             end,
