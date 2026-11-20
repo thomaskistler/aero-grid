@@ -206,12 +206,13 @@ series:
   for stale telemetry. `history_service` records only subscribed sources, so
   the debrief's series are subscribed when the layout loads and after every
   Save, before the flight starts.
-- At flight end, the flight slice of each series is copied at about chart
-  width (roughly 200 points per series) and the statistics are computed.
+- At flight end, the flight slice of each series is copied at its tile's
+  chart width (one point per pixel column) and the statistics are computed.
 - Each dashboard records its own debrief. Hidden dashboards keep their
   services running, so changing screens mid-flight loses nothing.
 - Only the latest debrief is kept, in memory. A new flight replaces it, and
-  it is lost on power off.
+  it is lost on power off or when the dashboard reloads, like Chart
+  recordings. Saving the layout keeps it.
 
 ## Rules
 
