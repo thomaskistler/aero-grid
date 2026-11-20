@@ -72,11 +72,12 @@ end
 
 --- The pill's visible text, or nil when no pill is on screen.
 local function pill(host)
-    local ui = (host or context).debriefPill and (host or context).debriefPill.ui
-    if not ui or ui.box.hidden then
+    host = host or context
+    local ui = host.debriefPill and host.debriefPill.ui
+    if not ui or host.pillLayer.hidden then
         return nil
     end
-    return ui.label.properties.text, ui.box.properties
+    return ui.label.properties.text, host.pillLayer.properties
 end
 
 local chartColumns = context.chartColumns
@@ -124,18 +125,43 @@ assert(view.pillFit(context, false, narrow, 272) == "Debrief ready", "a narrow z
 assert(view.pillFit(context, false, narrow - 10, 272) == nil, "a too narrow zone shows no pill")
 assert(view.pillFit(context, false, 480, 20) == nil, "a too short zone shows no pill")
 
--- No debrief, no pill; the pill waits until every tile is built.
-settle()
-assert(not pill(), "no debrief, no pill")
+-- No debrief, no pill; the pill waits until every tile is built. The first
+-- debrief arrives in fullscreen, on the page built in App mode.
+local page = context.page
+assert(not context.pageBuiltFullscreen, "the page was built in App mode")
+fixture.lvglMock.setFullScreen(true)
+settle(20)
+assert(context.page == page and not pill(), "no debrief, no pill")
 current = makeResult("Pack")
 settle(2)
 assert(context.debrief and not context.debriefModule.ready(context.debrief) and not pill(), "pill waits for the view")
 build()
+assert(pill() == SHORT, "fullscreen pill says swipe up: " .. tostring(pill()))
+
+-- Leaving fullscreen keeps the page. A pill built in fullscreen would take
+-- the long press there, so it is rebuilt outside fullscreen.
+fixture.lvglMock.setFullScreen(false)
+settle(20)
 local text, box = pill()
-assert(text == LONG, "outside fullscreen the pill says to long-press: " .. tostring(text))
+assert(context.page == page and text == LONG, "outside fullscreen the pill says to long-press: " .. tostring(text))
 assert(box.x == (context.zone.w - box.w) // 2, "the pill is centered")
 assert(box.y + box.h < H and box.y > H - 40, "the pill sits at the bottom")
 assert(not pill(other), "each dashboard shows its own pill")
+local function builtOutside(object)
+    if object.builtFullscreen then
+        return false
+    end
+    for _, child in ipairs(object.children) do
+        if not builtOutside(child) then
+            return false
+        end
+    end
+    return true
+end
+assert(
+    #context.pillLayer.children > 0 and builtOutside(context.pillLayer),
+    "no fullscreen-built pill outside fullscreen"
+)
 
 -- App mode is not widget fullscreen either.
 fixture.lvglMock.setAppMode(true)
@@ -143,22 +169,40 @@ settle()
 assert(pill() == LONG, "App mode keeps the long-press wording")
 fixture.lvglMock.setAppMode(false)
 
--- Fullscreen rebuilds the page; the pill returns with the short wording.
-fixture.lvglMock.setFullScreen(true)
-fixture.pump(context, 40)
-build()
-assert(pill() == SHORT, "fullscreen pill says swipe up: " .. tostring(pill()))
+-- Rebuilt panels land in the panel layer, below the pill; the page itself
+-- gains nothing, however often its panels are replaced.
+local function indexOf(object)
+    for index, child in ipairs(page.children) do
+        if child == object then
+            return index
+        end
+    end
+end
+local pageObjects, containers = #page.children, context.panels[1].container
+local pillWorst = worst
+for _ = 1, 5 do
+    for _, entry in ipairs(context.panels) do
+        entry.builtFullscreen = true
+    end
+    settle(40)
+    assert(not context.appRebuild, "panels rebuilt")
+end
+-- Rebuilding a panel is the loader's cost, not the pill's.
+worst = pillWorst
+assert(context.panels[1].container ~= containers, "panels got new containers")
+assert(#page.children == pageObjects, "panel rebuilds left objects on the page: " .. #page.children)
+assert(context.panels[1].container.parent == context.panelLayer, "panels sit in the panel layer")
+assert(indexOf(context.panelLayer) < indexOf(context.pillLayer) and pill() == LONG, "the pill stays above the panels")
 
--- A panel container made later would cover the pill, so it is remade on top.
-local made = context.debriefPill.ui
-context.pageContainers = context.pageContainers + 1
-settle()
-assert(context.debriefPill.ui ~= made and made.box.hidden and pill() == SHORT, "the pill is remade on top")
+fixture.lvglMock.setFullScreen(true)
+settle(20)
+assert(pill() == SHORT, "back in fullscreen the pill says swipe up")
 
 -- A drag that snaps back still counts as opened; the pill is gone for good.
 input(EVT_TOUCH_FIRST, touch(H - 5, H - 5))
 input(EVT_TOUCH_SLIDE, touch(H - 40, H - 5))
 assert(context.debrief.shown and not pill(), "the pill hides while the debrief shows")
+assert(indexOf(context.panelLayer) < indexOf(context.debriefOverlay), "the debrief covers the panels")
 input(EVT_TOUCH_BREAK, touch(H - 40, H - 5))
 settle()
 assert(not context.debrief.shown and not pill(), "an opened debrief has no pill")
