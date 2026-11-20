@@ -307,6 +307,54 @@ panels:
     assertEqual(unchanged, source, "loading a migrated layout rewrote its source file")
 end
 
+local function testDebriefErrorsAreNotices()
+    resetRadio()
+    local source = table.concat({
+        "version: 5\ngrid:\n  columns: 4\n  rows: 4\n",
+        "panels:\n  - id: clock\n    type: flight-timer\n",
+        "    col: 0\n    row: 0\n    colSpan: 2\n    rowSpan: 2\n",
+        "debrief:\n  tiles:\n",
+        "    - title: Link\n      colSpan: 2\n      rowSpan: 2\n      futureTile: kept\n",
+        "      series:\n        - source: RQly\n          statistic: min\n          futureSeries: kept\n",
+        "    - title: Broken\n      colSpan: 2\n      rowSpan: 2\n",
+        "      series:\n        - source: RQly\n          statistic: last\n",
+    })
+    local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, makeWidget("debrief", source))
+    assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+    assertEqual(#context.document.debrief.tiles, 1, "the valid debrief tiles were not kept")
+    assertEqual(context.document.debrief.tiles[1].title, "Link")
+    assertEqual(context.document.debrief.tiles[1].futureTile, "kept")
+    assertEqual(context.document.debrief.tiles[1].series[1].futureSeries, "kept")
+    local noticed, futureTile, futureSeries = false, false, false
+    for _, notice in ipairs(context.notices) do
+        noticed = noticed or string.find(notice.text, "debrief tile 2", 1, true) ~= nil
+        futureTile = futureTile or string.find(notice.text, "futureTile", 1, true) ~= nil
+        futureSeries = futureSeries or string.find(notice.text, "futureSeries", 1, true) ~= nil
+    end
+    assert(noticed, "the debrief error was not surfaced as a notice")
+    assert(futureTile and futureSeries, "unknown settings must be reported")
+    assert(entryById(context, "clock"), "a debrief error must not stop the dashboard")
+
+    local bare = createLoaded(
+        { x = 0, y = 0, w = 480, h = 272 },
+        DEFAULT_OPTIONS,
+        makeWidget("no-debrief", "version: 5\ngrid:\n  columns: 4\n  rows: 4\npanels: []\n")
+    )
+    assertEqual(bare.document.debrief, nil, "a layout without a debrief section gained one")
+    local malformed = createLoaded(
+        { x = 0, y = 0, w = 480, h = 272 },
+        DEFAULT_OPTIONS,
+        makeWidget("bad-debrief", "version: 5\ngrid:\n  columns: 4\n  rows: 4\npanels: []\ndebrief: invalid\n")
+    )
+    assertEqual(malformed.document.debrief, nil)
+    assertEqual(#malformed.errors, 0)
+    local badNotice = false
+    for _, notice in ipairs(malformed.notices) do
+        badNotice = badNotice or string.find(notice.text, "debrief must be a mapping", 1, true) ~= nil
+    end
+    assert(badNotice)
+end
+
 local function testRejectedLayouts()
     local cases = {
         { name = "corrupt", yaml = "version: 1\n\tpanels: []\n", error = "tab" },
@@ -343,4 +391,5 @@ testContractRejections()
 testPackageCompatibility()
 testVersionOneBatteryLoadsWithoutWriting()
 testRejectedLayouts()
+testDebriefErrorsAreNotices()
 testTimerIndexIsRefusedAtLoad()

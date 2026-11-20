@@ -3,7 +3,9 @@
 local root = (... and ... ~= "" and ...) or "."
 local layoutStore = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/layout_store.lua"))()
 local yaml = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/yaml.lua"))()
-local layout = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/layout.lua"))()
+local layout = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/layout.lua"))(function()
+    return assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/debrief_config.lua"))()
+end)
 local grid = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/grid.lua"))()
 
 local memoryFiles = assert(loadfile(root .. "/tests/support/memory_files.lua"))()
@@ -204,6 +206,71 @@ local function testStagedSave()
     assert(files[state.filename] == previousContent, "failed staging must preserve primary")
 end
 
+local function stagedSave(name, document, operations)
+    local state = layoutStore.startSave("/widget", name, document, yaml, layout, grid, operations)
+    local done, saved, saveError
+    for _ = 1, 20 do
+        done, saved, saveError = layoutStore.advanceSave(state)
+        if done then
+            break
+        end
+    end
+    assert(done, "save did not finish")
+    return saved, saveError, state.filename
+end
+
+local function testDebriefRoundTrip()
+    local files, operations = memoryFiles()
+    local document = makeDocument("debrief")
+    document.version = layout.VERSION
+    document.debrief = {
+        tiles = {
+            {
+                title = "Link",
+                colSpan = 4,
+                rowSpan = 1,
+                futureTile = { mode = "new" },
+                series = { { source = "RQly", statistic = "min", label = "worst", precision = 0, future = "kept" } },
+            },
+        },
+    }
+    local errors, warnings = layout.validateDebrief(document)
+    assert(#errors == 0 and #warnings == 2, "unknown settings should be reported on load")
+    local saved, saveError, filename = stagedSave("main", document, operations)
+    assert(saved, saveError)
+    local parsed = assert(yaml.parse(files[filename]))
+    local tile = parsed.debrief.tiles[1]
+    assert(tile.title == "Link" and tile.colSpan == 4 and tile.series[1].label == "worst")
+    assert(tile.futureTile.mode == "new" and tile.series[1].future == "kept")
+
+    saved, saveError, filename = stagedSave("copy", parsed, operations)
+    assert(saved, saveError)
+    assert(assert(yaml.parse(files[filename])).debrief.tiles[1].series[1].source == "RQly", "Save as keeps the debrief")
+    local copy = assert(yaml.parse(files[filename])).debrief.tiles[1]
+    assert(copy.futureTile.mode == "new" and copy.series[1].future == "kept")
+
+    local empty = makeDocument("empty")
+    empty.version = layout.VERSION
+    empty.debrief = { tiles = {} }
+    saved, saveError, filename = stagedSave("empty", empty, operations)
+    assert(saved, saveError)
+    parsed = assert(yaml.parse(files[filename]))
+    assert(type(parsed.debrief) == "table" and type(parsed.debrief.tiles) == "table" and #parsed.debrief.tiles == 0)
+    assert(#layout.validateDebrief(parsed) == 0, "an empty debrief stays a section")
+
+    local bare = makeDocument("bare")
+    bare.version = layout.VERSION
+    saved, saveError, filename = stagedSave("bare", bare, operations)
+    assert(saved, saveError)
+    assert(assert(yaml.parse(files[filename])).debrief == nil)
+
+    local broken = makeDocument("broken")
+    broken.version = layout.VERSION
+    broken.debrief = { tiles = { { title = "Bad", series = { { source = "VCel", statistic = "last" } } } } }
+    saved, saveError, filename = stagedSave("broken", broken, operations)
+    assert(not saved and saveError and not files[filename], "an invalid debrief must not be saved")
+end
+
 local function testRadioFileOperations()
     local files, operations = memoryFiles()
     local originalIo, originalOs, originalStat, originalRename, originalDelete = io, os, fstat, rename, del
@@ -289,6 +356,7 @@ testFailedCommitLeavesBackup()
 testFutureVersionIsNotSaved()
 testExplicitSavePersistsMigratedBattery()
 testStagedSave()
+testDebriefRoundTrip()
 testStagedSaveMigratesLegacyBattery()
 testRadioFileOperations()
 testTemporaryMismatch()

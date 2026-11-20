@@ -404,6 +404,10 @@ function layoutStore.advanceSave(state)
             return true, false, parseError
         end
         parsed.panels = {}
+        local debriefErrors = layout.validateDebrief(parsed)
+        if #debriefErrors > 0 then
+            return true, false, table.concat(debriefErrors, "; ")
+        end
         local valid, validationErrors = layout.finalizeHeader(parsed)
         if not valid then
             return true, false, table.concat(validationErrors, "; ")

@@ -642,6 +642,14 @@ function module.new(dependencies)
             end
 
             context.session = validated.session or {}
+            -- A bad debrief must not cost the dashboard; keep its valid tiles.
+            local debriefErrors, debriefWarnings = context.layoutValidator.validateDebrief(validated)
+            for _, message in ipairs(debriefErrors) do
+                addNotice(context, "warning", message)
+            end
+            for _, message in ipairs(debriefWarnings) do
+                addNotice(context, "warning", message)
+            end
             context.document = validated
             if context.layoutSourceVersion < context.layoutValidator.VERSION then
                 addNotice(

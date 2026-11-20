@@ -13,6 +13,10 @@
 ---@field panels table[] Only valid, non-overlapping panels.
 --- Unrecognized top-level keys from the source document are preserved verbatim.
 
+-- Loads lib/debrief_config.lua on first use, so layouts without a debrief
+-- never pay for it.
+local loadDebrief = ...
+
 local layout = { RUNTIME_API = 1 }
 
 layout.VERSION = 5
@@ -343,6 +347,45 @@ function layout.validateDocument(document)
     return finalized, errors, sourceVersion
 end
 
+local debriefModule
+
+--- The debrief configuration module, loaded on first use.
+---@return table? module
+---@return string? error
+function layout.debrief()
+    if not debriefModule then
+        if type(loadDebrief) ~= "function" then
+            return nil, "debrief support is unavailable"
+        end
+        local module, loadError = loadDebrief()
+        if not module then
+            return nil, loadError
+        end
+        debriefModule = module
+    end
+    return debriefModule
+end
+
+--- Normalize a header's optional debrief section in place.
+--- Invalid tiles and series are dropped and reported as errors. Unknown
+--- settings are preserved and reported separately as non-blocking warnings.
+---@param header table
+---@return string[] errors
+---@return string[] warnings
+function layout.validateDebrief(header)
+    if header.debrief == nil then
+        return {}, {}
+    end
+    local module, loadError = layout.debrief()
+    if not module then
+        header.debrief = nil
+        return { "debrief: " .. tostring(loadError) }, {}
+    end
+    local normalized, errors, warnings = module.validate(header.debrief)
+    header.debrief = normalized
+    return errors, warnings
+end
+
 --- Validate one panel against the grid and the entries already accepted.
 --- Returning the outcome per entry lets the host validate and build panels
 --- one at a time, rather than holding the whole layout in one callback.
@@ -398,6 +441,9 @@ function layout.validate(document, grid)
     local normalized, errors, sourceVersion = layout.validateDocument(document)
     if not normalized or not sourceVersion then
         return nil, errors
+    end
+    for _, message in ipairs(layout.validateDebrief(normalized)) do
+        errors[#errors + 1] = message
     end
 
     if not isSequence(document.panels) then
