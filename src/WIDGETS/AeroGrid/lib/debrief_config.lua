@@ -383,26 +383,6 @@ local function sensorPresent(name)
     return getFieldInfo == nil or getFieldInfo(name) ~= nil
 end
 
---- Whether a Metric entry's thresholds count downward, as the Metric panel
---- judges it: an explicit direction, or a critical level below the warning
---- level with both inside the range.
-local function metricFalling(entry)
-    if entry.direction == "falling" then
-        return true
-    elseif entry.direction == "rising" then
-        return false
-    end
-    local low, high = entry.rangeMin or 0, entry.rangeMax or 100
-    local ranged = type(low) == "number" and type(high) == "number"
-    if ranged and high < low then
-        low, high = high, low
-    end
-    local function within(value)
-        return type(value) == "number" and (not ranged or (value >= low and value <= high))
-    end
-    return within(entry.warning) and within(entry.critical) and entry.critical < entry.warning
-end
-
 local function config(panel)
     return type(panel) == "table" and type(panel.config) == "table" and panel.config or {}
 end
@@ -419,12 +399,19 @@ local function entries(settings)
     return list
 end
 
+--- The Link panel's readings in order, each named once; either may be unset.
 local function linkSources(settings)
     local rssi = settings.rssiSource
     if rssi == nil then
         rssi = "RSSI"
     end
-    return settings.qualitySource, rssi
+    local list = {}
+    for _, source in ipairs({ settings.qualitySource or false, rssi or false }) do
+        if named(source) and list[1] ~= source then
+            list[#list + 1] = source
+        end
+    end
+    return list
 end
 
 local function satelliteSource(settings)
@@ -433,10 +420,14 @@ end
 
 local ACCENTS = { cyan = true, green = true, orange = true, amber = true }
 
---- A series for one Chart or Metric reading. Its label is left out: the tile
---- title names the reading. Only Chart readings carry a range and color.
-local function readingSeries(entry, statistic, chart)
+--- A series for one Chart or Metric reading. A lone reading's label is left
+--- out, since the tile title names it; beside others it tells them apart.
+--- Only Chart readings carry a range and color.
+local function readingSeries(entry, statistic, chart, labelled)
     local series = { source = entry.source, statistic = statistic }
+    if labelled and named(entry.label) then
+        series.label = entry.label
+    end
     if type(entry.unit) == "string" then
         series.unit = entry.unit
     end
@@ -455,30 +446,21 @@ local function readingSeries(entry, statistic, chart)
     return series
 end
 
---- Sources the layout judges as falling, so a fill records their minimum.
-local function fallingSources(panels)
+--- Sources whose readings fall toward danger, so a fill records their
+--- minimum. Thresholds are the layout's, owned as the telemetry registry owns
+--- them; a source without any follows the first Metric naming a direction.
+local function fallingSources(panels, thresholds)
     local falling = {}
-    local function mark(source, value)
-        if named(source) and falling[source] == nil then
-            falling[source] = value
-        end
+    for sensor, spec in pairs(thresholds or {}) do
+        falling[sensor] = type(spec) == "table" and spec.falling == true
     end
     for _, panel in ipairs(panels) do
-        local kind, settings = type(panel) == "table" and panel.type, config(panel)
-        if kind == "rx-battery" then
-            mark("VCel", true)
-        elseif kind == "link-status" then
-            local quality, rssi = linkSources(settings)
-            mark(quality, true)
-            mark(rssi, true)
-            if settings.protocol == "elrs4" then
-                mark("Mrgn", true)
-            end
-        elseif kind == "navigation" then
-            mark(satelliteSource(settings), true)
-        elseif kind == "metric" then
-            for _, entry in ipairs(entries(settings)) do
-                mark(entry.source, metricFalling(entry))
+        if type(panel) == "table" and panel.type == "metric" then
+            for _, entry in ipairs(entries(config(panel))) do
+                local direction = entry.direction
+                if falling[entry.source] == nil and (direction == "falling" or direction == "rising") then
+                    falling[entry.source] = direction == "falling"
+                end
             end
         end
     end
@@ -489,11 +471,12 @@ end
 --- after a flight with this dashboard. Every tile is Compact.
 ---@param panels table[] The layout's panels.
 ---@param present? fun(source: string): boolean Whether the model has a sensor.
+---@param thresholds? table<string, table> The layout's thresholds by sensor.
 ---@return table section
-function debrief.fromPanels(panels, present)
+function debrief.fromPanels(panels, present, thresholds)
     present = present or sensorPresent
     panels = type(panels) == "table" and panels or {}
-    local falling, tiles, seen = fallingSources(panels), {}, {}
+    local falling, tiles, seen = fallingSources(panels, thresholds), {}, {}
 
     local function has(source)
         return named(source) and (PUBLISHED[source] or present(source) and true or false)
@@ -522,9 +505,8 @@ function debrief.fromPanels(panels, present)
             add(title(settings.label, "PACK"), list)
         elseif kind == "link-status" and first then
             local list = {}
-            local quality, rssi = linkSources(settings)
-            for _, source in ipairs({ quality, rssi }) do
-                if has(source) and (#list == 0 or list[1].source ~= source) then
+            for _, source in ipairs(linkSources(settings)) do
+                if has(source) then
                     list[#list + 1] = { source = source, statistic = "min" }
                 end
             end
@@ -546,10 +528,16 @@ function debrief.fromPanels(panels, present)
             local satellites = satelliteSource(settings)
             add("SATELLITES", has(satellites) and { { source = satellites, statistic = "min" } } or {})
         elseif kind == "chart" or kind == "metric" then
-            local readings, list = entries(settings), {}
-            for index = 1, math.min(#readings, debrief.MAX_SERIES) do
-                local entry = readings[index]
-                list[index] = readingSeries(entry, falling[entry.source] and "min" or "max", kind == "chart")
+            local readings = {}
+            for _, entry in ipairs(entries(settings)) do
+                if #readings < debrief.MAX_SERIES and has(entry.source) then
+                    readings[#readings + 1] = entry
+                end
+            end
+            local list = {}
+            for index, entry in ipairs(readings) do
+                local statistic = falling[entry.source] and "min" or "max"
+                list[index] = readingSeries(entry, statistic, kind == "chart", #readings > 1)
             end
             local head = readings[1]
             local name = head and title(head.label, head.source)
@@ -566,9 +554,10 @@ end
 ---@param section table
 ---@param panels table[]
 ---@param present? fun(source: string): boolean
+---@param thresholds? table<string, table>
 ---@return integer count
-function debrief.fill(section, panels, present)
-    section.tiles = debrief.fromPanels(panels, present).tiles
+function debrief.fill(section, panels, present, thresholds)
+    section.tiles = debrief.fromPanels(panels, present, thresholds).tiles
     return #section.tiles
 end
 

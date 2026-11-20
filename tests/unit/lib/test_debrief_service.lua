@@ -406,6 +406,17 @@ local shown = debrief:result().tiles
 equal(#shown, 1, "a tile without reported series is hidden")
 equal(#shown[1].series, 1)
 equal(shown[1].series[1].config.source, "V")
+
+-- A zero that reaches a threshold is a reading, not a missing sensor.
+thresholds.Q = { sensor = "Q", warning = 8, critical = 4, falling = true }
+debrief:configure({ tiles = { zeroTile } }, { 30 })
+fly(72800, 73300, { Q = zero })
+drain(debrief, 73500)
+shown = debrief:result().tiles
+equal(#shown, 1, "a critical zero is shown")
+equal(shown[1].series[1].level, "critical")
+equal(shown[1].series[1].value, 0)
+thresholds.Q = nil
 debrief:configure(saved, { 30 })
 
 -- A rebind replaces the history; the old one is ignored until reconfigured.

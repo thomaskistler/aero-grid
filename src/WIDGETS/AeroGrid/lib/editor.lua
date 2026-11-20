@@ -1077,8 +1077,10 @@ end
 
 --- Rebuild a derived debrief from the draft's panels, which may have changed
 --- since it was derived. Not an edit, so the draft stays clean.
+---@param session table
+---@param thresholds? table<string, table> The draft's thresholds by sensor.
 ---@return boolean rebuilt
-function editor.deriveDebrief(session)
+function editor.deriveDebrief(session, thresholds)
     if not session.debriefDerived then
         return false
     end
@@ -1086,7 +1088,7 @@ function editor.deriveDebrief(session)
     if not module then
         return false
     end
-    session.draft.debrief = module.fromPanels(session.draft.panels)
+    session.draft.debrief = module.fromPanels(session.draft.panels, nil, thresholds)
     return true
 end
 

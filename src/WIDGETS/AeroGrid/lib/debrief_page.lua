@@ -140,9 +140,15 @@ local function show(context, state, target)
     end)
 end
 
+--- The draft's thresholds, which decide each reading's statistic.
+local function thresholds(state)
+    local lookup = state.handlers.debriefThresholds
+    return lookup and lookup(state.session.draft.panels)
+end
+
 --- Open the tile list. A derived debrief follows the draft's panels.
 function page.open(context, state)
-    state.handlers.editor.deriveDebrief(state.session)
+    state.handlers.editor.deriveDebrief(state.session, thresholds(state))
     show(context, state, { kind = "list" })
 end
 
@@ -163,7 +169,8 @@ local function fill(context, state, confirmed)
         return true
     end
     state.debriefMark = nil
-    local count, err = state.handlers.editor.editDebrief(state.session, "fill", state.session.draft.panels)
+    local panels = state.session.draft.panels
+    local count, err = state.handlers.editor.editDebrief(state.session, "fill", panels, nil, thresholds(state))
     if not count then
         return count, err
     end

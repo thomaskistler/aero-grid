@@ -365,6 +365,47 @@ local function testDebriefErrorsAreNotices()
         badNotice = badNotice or string.find(notice.text, "debrief must be a mapping", 1, true) ~= nil
     end
     assert(badNotice)
+
+    -- The statistic follows the panel owning the sensor's thresholds, as the
+    -- telemetry registry decides, not the first panel naming it.
+    local function metric(id, row, extra)
+        return table.concat({
+            "  - id: " .. id .. "\n    type: metric\n",
+            "    col: 0\n    row: " .. row .. "\n    colSpan: 2\n    rowSpan: 2\n",
+            "    config:\n      metrics:\n        - source: Curr\n" .. extra,
+        })
+    end
+    local owned = createLoaded(
+        { x = 0, y = 0, w = 480, h = 272 },
+        DEFAULT_OPTIONS,
+        makeWidget(
+            "debrief-owner",
+            "version: 5\ngrid:\n  columns: 4\n  rows: 4\npanels:\n"
+                .. metric("plain", 0, "")
+                .. metric("judged", 2, "          warning: 20\n          critical: 10\n")
+        )
+    )
+    assertEqual(#owned.errors, 0, table.concat(owned.errors, "\n"))
+    local derived = owned.document.debrief.tiles
+    assertEqual(#derived, 2)
+    assertEqual(derived[1].series[1].statistic, "min", "the threshold owner judges Curr as falling")
+    assertEqual(derived[2].series[1].statistic, "min")
+
+    -- Reloading a layout with its own debrief forgets the derived one.
+    local switching = makeWidget("debrief-switch", battery)
+    writeFile(switching .. "layouts/Own.yaml", battery .. "debrief:\n  tiles: []\n")
+    local reloaded = createLoaded(
+        { x = 0, y = 0, w = 480, h = 272 },
+        { Layout = "Default", Theme = "modern-dark" },
+        switching
+    )
+    assert(reloaded.debriefGenerated and reloaded.derivedDebrief)
+    definition.update(reloaded, { Layout = "Own", Theme = "modern-dark" })
+    pump(reloaded, 300)
+    assert(not reloaded.stage and not reloaded.reloadState, "the layout must finish loading")
+    assertEqual(#reloaded.document.debrief.tiles, 0)
+    assert(not reloaded.debriefGenerated, "the loaded debrief is the layout's own")
+    assertEqual(reloaded.derivedDebrief, nil, "the obsolete derived debrief must not be retained")
 end
 
 local function testRejectedLayouts()

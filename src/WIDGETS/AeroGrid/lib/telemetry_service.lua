@@ -301,12 +301,21 @@ end
 --- Thresholds of every sensor, built in one pass over the layout.
 ---@return table<string, AeroGridThreshold>
 function telemetryService:thresholdMap()
-    local map = {}
     local owners = self.thresholdOwners
     local placements = owners and self.layoutOrder and self.layoutOrder()
     if type(placements) ~= "table" then
-        return map
+        return {}
     end
+    return telemetryService.ownedThresholds(placements, owners)
+end
+
+--- The ownership rule on its own: the first placement in `placements` whose
+--- declaration (`owners[placement.id]`) sets any level owns a sensor.
+---@param placements table[]
+---@param owners table<any, table[]>
+---@return table<string, AeroGridThreshold>
+function telemetryService.ownedThresholds(placements, owners)
+    local map = {}
     for _, placement in ipairs(placements) do
         for _, spec in ipairs(owners[placement.id] or {}) do
             local sensor = type(spec) == "table" and spec.sensor

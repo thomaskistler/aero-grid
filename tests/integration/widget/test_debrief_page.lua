@@ -109,6 +109,16 @@ settle()
 assert(#tiles() == 1 and tiles()[1].title == "Alt", "Fill rebuilds the tiles from the panels")
 assert(not state().session.debriefDerived and state().session.dirty)
 
+-- Fill judges each reading by the draft's thresholds, not the saved layout's.
+assert(tiles()[1].series[1].statistic == "max")
+local reading = state().session.draft.panels[1].config.metrics[1]
+reading.warning, reading.critical = 20, 10
+press("Fill from dashboard")
+assert(fixture.lvglMock.confirm()).confirm()
+settle()
+assert(tiles()[1].series[1].statistic == "min", "a falling draft threshold records the minimum")
+reading.warning, reading.critical = nil, nil
+
 -- A Fill that maps no panels leaves an empty debrief and says why.
 assert(state().handlers.editor.editDebrief(state().session, "removeTile", 1))
 local panels = state().session.draft.panels

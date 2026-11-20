@@ -2,6 +2,7 @@
 
 local root = (... and ... ~= "" and ...) or "."
 local debrief = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/debrief_config.lua"))()
+local equal = assert(loadfile(root .. "/tests/support/assertions.lua"))().assertEqual
 
 local function series(source, statistic)
     return { source = source, statistic = statistic or "min" }
@@ -217,7 +218,18 @@ local function sources(tileValue)
 end
 
 local function testFromPanels()
-    local sensors = { Capa = true, RQly = true, RSSI = true, GSpd = true, GAlt = true, Sats = true }
+    local sensors = {
+        Capa = true,
+        RQly = true,
+        RSSI = true,
+        GSpd = true,
+        GAlt = true,
+        Sats = true,
+        Curr = true,
+        Vspd = true,
+        Fuel = true,
+        Tmp1 = true,
+    }
     local function present(name)
         return sensors[name] == true
     end
@@ -239,7 +251,12 @@ local function testFromPanels()
         panel("metric", { metrics = { { label = "no source" } } }),
         panel("unknown"),
     }
-    local section = debrief.fromPanels(panels, present)
+    -- The layout's thresholds, as the telemetry registry owns them.
+    local owned = {
+        RQly = { sensor = "RQly", warning = 70, critical = 50, falling = true },
+        Tmp1 = { sensor = "Tmp1", warning = 20, critical = 10, falling = true },
+    }
+    local section = debrief.fromPanels(panels, present, owned)
     local valid = debrief.validate(section)
     assert(valid and #valid.tiles == #section.tiles, "derived tiles validate")
     local expected = {
@@ -260,7 +277,8 @@ local function testFromPanels()
     end
     assert(section.tiles[1].series[2].label == "used" and section.tiles[4].series[2].label == "flown")
     local power = section.tiles[6].series
-    assert(power[1].label == nil and power[1].accent == "amber" and power[1].precision == 1)
+    assert(power[1].label == "amps" and power[1].accent == "amber" and power[1].precision == 1)
+    assert(section.tiles[7].series[1].label == nil, "a lone reading's label is the tile title")
     assert(power[1].rangeMin == 0 and power[1].rangeMax == 60)
     assert(power[3].rangeMin == nil and power[3].accent == nil, "an invalid range and accent are dropped")
 
@@ -281,7 +299,9 @@ local function testFromPanels()
     for index = 1, debrief.MAX_TILES + 4 do
         many[index] = panel("metric", { metrics = { { source = "M" .. index } } })
     end
-    local capped = debrief.fromPanels(many, present)
+    local capped = debrief.fromPanels(many, function()
+        return true
+    end)
     assert(#capped.tiles == debrief.MAX_TILES and capped.tiles[debrief.MAX_TILES].title == "M" .. debrief.MAX_TILES)
 
     -- Fill replaces the existing tiles and keeps unknown settings.
@@ -289,6 +309,47 @@ local function testFromPanels()
     assert(debrief.fill(filled, { panel("rx-battery") }, present) == 1)
     assert(filled.tiles[1].title == "PACK" and filled.future == true)
     assert(debrief.fill(filled, {}, present) == 0 and #filled.tiles == 0)
+
+    -- Link readings are independent: either source may be unset.
+    local function link(settings)
+        return debrief.fromPanels({ panel("link-status", settings) }, present).tiles[1]
+    end
+    equal(sources(link({})), "RSSI:min", "an RSSI-only link maps")
+    equal(sources(link({ qualitySource = "" })), "RSSI:min")
+    equal(sources(link({ qualitySource = "RQly", rssiSource = "" })), "RQly:min")
+    equal(sources(link({ qualitySource = "RSSI" })), "RSSI:min", "a source is named once")
+    assert(link({ qualitySource = "", rssiSource = "" }) == nil)
+
+    -- Chart and Metric readings the model lacks are left out before the
+    -- reading limit, and a tile without readings is not added.
+    local sparse = debrief.fromPanels({
+        panel("chart", {
+            metrics = { { source = "Nope" }, { source = "Curr" }, { source = "HDst" }, { source = "Vspd" } },
+        }),
+        panel("metric", { metrics = { { source = "Gone" } } }),
+    }, present)
+    equal(#sparse.tiles, 1, "a tile of missing readings is skipped")
+    equal(sources(sparse.tiles[1]), "Curr:max,HDst:max,Vspd:max")
+    equal(sparse.tiles[1].title, "Curr", "the title is the first kept reading")
+
+    -- The statistic follows the threshold owner, not the first panel naming
+    -- the source; a source without thresholds follows an explicit direction.
+    local fuel = {
+        panel("metric", { metrics = { { source = "Fuel", direction = "rising" } } }),
+        panel("metric", { metrics = { { source = "Fuel", warning = 20, critical = 10 } } }),
+    }
+    local judged =
+        debrief.fromPanels(fuel, present, { Fuel = { sensor = "Fuel", warning = 20, critical = 10, falling = true } })
+    equal(sources(judged.tiles[1]) .. " " .. sources(judged.tiles[2]), "Fuel:min Fuel:min")
+    local directed = debrief.fromPanels({
+        panel("metric", { metrics = { { source = "Fuel" } } }),
+        panel("metric", { metrics = { { source = "Fuel", direction = "falling" } } }),
+    }, present)
+    equal(sources(directed.tiles[1]), "Fuel:min")
+    equal(
+        sources(debrief.fromPanels({ panel("metric", { metrics = { { source = "Fuel" } } }) }, present).tiles[1]),
+        "Fuel:max"
+    )
 end
 
 local function run()

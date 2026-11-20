@@ -265,11 +265,13 @@ local function complete(series)
         result.value = series.value
     end
     result.level = NAMES[series.worst]
-    result.empty = not series.reported
+    -- All zeros at a normal level is a sensor the aircraft does not have; a
+    -- zero that reached a threshold is a reading worth showing.
+    result.empty = not series.reported and series.worst == 0
 end
 
---- Drop series that never reported anything but zero, and tiles left without
---- a series: a sensor the aircraft does not have shows no chart.
+--- Drop series that never reported anything but a normal zero, and tiles left
+--- without a series: a sensor the aircraft does not have shows no chart.
 local function reported(tiles)
     local shown = {}
     for _, tile in ipairs(tiles) do

@@ -72,8 +72,7 @@
 ---@field debriefPageModule? table Flight debrief setup page, loaded only on demand.
 ---@field debriefGenerated? boolean The document's debrief was derived from its panels, not loaded.
 ---@field derivedDebrief? table The derived debrief section, while it is the document's.
----@field debriefDerivedFor? table Document whose load has had its debrief derived.
----@field debriefDeriving? table Debrief module loaded for the next load step's derivation.
+---@field debriefDeriving? table|boolean The load derives a debrief: true, then its loaded module.
 
 local WIDGET_PATH = "/WIDGETS/AeroGrid/"
 
@@ -887,7 +886,9 @@ initialize = function(context)
         --- tiles spends no load step or heap on it.
         context.deriveDebrief = function(host, module)
             local document = host.document
-            document.debrief = module.fromPanels(document.panels)
+            local telemetry = host.serviceRuntime and host.serviceRuntime.byId.telemetry
+            local thresholds = telemetry and telemetry:thresholdMap()
+            document.debrief = module.fromPanels(document.panels, nil, thresholds)
             host.derivedDebrief = document.debrief
         end
         context.configureDebrief = function(host)
@@ -904,6 +905,9 @@ initialize = function(context)
             end
             local section = document and document.debrief
             host.debriefGenerated = section ~= nil and section == host.derivedDebrief
+            if not host.debriefGenerated then
+                host.derivedDebrief = nil
+            end
             local service = registry.byId.debrief
             if not service then
                 if not (section and section.tiles and #section.tiles > 0) then
