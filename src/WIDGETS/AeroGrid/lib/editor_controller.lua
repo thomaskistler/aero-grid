@@ -441,9 +441,19 @@ function module.new(dependencies)
         context.editorStash = nil
         local created, session, sessionError = true, resumed, nil
         if not resumed then
+            local document = context.document
+            if context.debriefGenerated and document then
+                -- A derived debrief is rebuilt when its page opens, so the
+                -- session need not copy it.
+                document = {}
+                for key, value in pairs(context.document) do
+                    document[key] = value
+                end
+                document.debrief = nil
+            end
             created, session, sessionError = pcall(
                 context.editorModule.new,
-                context.document,
+                document,
                 context.grid,
                 context.layoutValidator,
                 context.panelHost,
@@ -456,6 +466,9 @@ function module.new(dependencies)
             return false
         end
 
+        if not resumed then
+            context.editorModule.setDebriefDerived(session, context.debriefGenerated)
+        end
         context.editorSession = session
         session.modelArmed = context.modelArmed
         session.debriefMode = debrief
@@ -516,6 +529,15 @@ function module.new(dependencies)
                     end
                 end
                 name = name or context.layoutName
+                if session.debriefDerived and document.debrief ~= nil then
+                    -- A derived debrief is rebuilt from the saved panels.
+                    local saved = {}
+                    for key, value in pairs(document) do
+                        saved[key] = value
+                    end
+                    saved.debrief = nil
+                    document = saved
+                end
                 context.editorSavedDocument = document
                 local state = context.layoutStore.startSave(
                     context.path,

@@ -235,6 +235,7 @@ function ui.row(view, field)
     local fullWidth = field.action == "remove"
         or field.action == "remove-item"
         or field.action == "append"
+        or field.action == "fill"
         or field.type == "section"
     local rowHeight = field.type == "section" and math.floor(view.height * 0.625) or view.rowHeight
     local row = lvgl.setting(view.dialog, {

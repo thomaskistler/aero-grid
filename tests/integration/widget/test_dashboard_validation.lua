@@ -335,18 +335,30 @@ local function testDebriefErrorsAreNotices()
     assert(futureTile and futureSeries, "unknown settings must be reported")
     assert(entryById(context, "clock"), "a debrief error must not stop the dashboard")
 
-    local bare = createLoaded(
+    local battery = table.concat({
+        "version: 5\ngrid:\n  columns: 4\n  rows: 4\n",
+        "panels:\n  - id: pack\n    type: rx-battery\n",
+        "    col: 0\n    row: 0\n    colSpan: 2\n    rowSpan: 2\n",
+    })
+    local bare = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, makeWidget("no-debrief", battery))
+    assertEqual(#bare.errors, 0, table.concat(bare.errors, "\n"))
+    -- A layout that has never had a debrief derives one from its panels.
+    assert(bare.debriefGenerated, "a layout without a debrief section must derive one")
+    assertEqual(#bare.document.debrief.tiles, 1)
+    assertEqual(bare.document.debrief.tiles[1].title, "PACK")
+    local empty = createLoaded(
         { x = 0, y = 0, w = 480, h = 272 },
         DEFAULT_OPTIONS,
-        makeWidget("no-debrief", "version: 5\ngrid:\n  columns: 4\n  rows: 4\npanels: []\n")
+        makeWidget("empty-debrief", battery .. "debrief:\n  tiles: []\n")
     )
-    assertEqual(bare.document.debrief, nil, "a layout without a debrief section gained one")
+    assert(not empty.debriefGenerated, "an empty debrief is the layout's own")
+    assertEqual(#empty.document.debrief.tiles, 0, "an empty debrief is never filled")
     local malformed = createLoaded(
         { x = 0, y = 0, w = 480, h = 272 },
         DEFAULT_OPTIONS,
         makeWidget("bad-debrief", "version: 5\ngrid:\n  columns: 4\n  rows: 4\npanels: []\ndebrief: invalid\n")
     )
-    assertEqual(malformed.document.debrief, nil)
+    assert(malformed.debriefGenerated and #malformed.document.debrief.tiles == 0)
     assertEqual(#malformed.errors, 0)
     local badNotice = false
     for _, notice in ipairs(malformed.notices) do

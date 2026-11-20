@@ -170,7 +170,7 @@ function uiModule.open(context, session, handlers)
     if handlers.debrief then
         -- The Flight debrief page is native dialogs over the dashboard; no grid.
         state.debrief, state.buildStage = true, nil
-        state.drawerPending = { action = "list" }
+        state.drawerPending = { action = "open" }
     end
     context.editorUi = state
     return state

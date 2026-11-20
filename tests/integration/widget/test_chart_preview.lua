@@ -82,15 +82,23 @@ local sections = {
     { tiles = {} },
     false,
 }
-equal(context.serviceRuntime.byId.debrief, nil, "a layout without debrief tiles must not load the recorder")
+-- A layout that has never had a debrief records one derived from its chart.
+assert(context.debriefGenerated and #context.document.debrief.tiles > 0, "the charts must derive debrief tiles")
+assert(context.serviceRuntime.byId.debrief, "derived debrief tiles must load the recorder")
 for _, section in ipairs(sections) do
     draft, handlers = preview(function()
         context.editorSession.draft.debrief = section or nil
+        context.editorModule.setDebriefDerived(context.editorSession, not section)
     end)
     save(draft, handlers)
     equal(context.reloadState, nil, "a debrief-only save must not reload the dashboard")
     equal(context.serviceRuntime.byId.history, history)
-    equal(context.document.debrief, section or nil)
+    if section then
+        equal(context.document.debrief, section)
+    else
+        -- Without a section of its own the layout derives its debrief again.
+        assert(context.debriefGenerated and #context.document.debrief.tiles > 0, "the debrief must be derived again")
+    end
     equal(fixture.instanceOf(context, "power"), compatible)
     assert(context.serviceRuntime.byId.debrief, "a debrief save must load the recorder")
 end

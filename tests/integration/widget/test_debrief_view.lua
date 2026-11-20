@@ -42,7 +42,7 @@ local function input(event, touch)
 end
 --- Run callbacks until the view is fully built; returns how many it took.
 local function build()
-    for count = 1, 1000 do
+    for count = 1, 2000 do
         local state = context.debrief
         if state and context.debriefModule.ready(state) then
             return count - 1

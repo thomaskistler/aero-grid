@@ -204,6 +204,93 @@ local function testDraftOperations()
     assert(titles(section) == "A,C,A")
 end
 
+local function panel(kind, config)
+    return { type = kind, config = config or {} }
+end
+
+local function sources(tileValue)
+    local list = {}
+    for _, entry in ipairs(tileValue.series) do
+        list[#list + 1] = entry.source .. ":" .. entry.statistic
+    end
+    return table.concat(list, ",")
+end
+
+local function testFromPanels()
+    local sensors = { Capa = true, RQly = true, RSSI = true, GSpd = true, GAlt = true, Sats = true }
+    local function present(name)
+        return sensors[name] == true
+    end
+    local panels = {
+        panel("rx-battery", { label = "Flight pack" }),
+        panel("rx-battery", { label = "Second" }),
+        panel("link-status", { qualitySource = "RQly" }),
+        panel("navigation"),
+        panel("chart", {
+            label = "Power",
+            metrics = {
+                { source = "Curr", label = "amps", rangeMin = 0, rangeMax = 60, accent = "amber", precision = 1 },
+                { source = "RQly" },
+                { source = "Vspd", rangeMin = 5, rangeMax = 1, accent = "pink" },
+                { source = "Fuel" },
+            },
+        }),
+        panel("metric", { metrics = { { source = "Tmp1", label = "ESC", warning = 20, critical = 10 } } }),
+        panel("metric", { metrics = { { label = "no source" } } }),
+        panel("unknown"),
+    }
+    local section = debrief.fromPanels(panels, present)
+    local valid = debrief.validate(section)
+    assert(valid and #valid.tiles == #section.tiles, "derived tiles validate")
+    local expected = {
+        { "Flight pack", "VCel:min,Capa:delta" },
+        { "LINK", "RQly:min,RSSI:min" },
+        { "SPEED & ALTITUDE", "GSpd:max,GAlt:max" },
+        { "NAV", "HDst:max,FDst:delta" },
+        { "SATELLITES", "Sats:min" },
+        { "Power", "Curr:max,RQly:min,Vspd:max" },
+        { "ESC", "Tmp1:min" },
+    }
+    assert(#section.tiles == #expected, "one tile per mapped reading, got " .. #section.tiles)
+    for index, want in ipairs(expected) do
+        local got = section.tiles[index]
+        assert(got.title == want[1], "tile " .. index .. " title " .. tostring(got.title))
+        assert(sources(got) == want[2], "tile " .. index .. " series " .. sources(got))
+        assert(got.colSpan == 2 and got.rowSpan == 2, "derived tiles are Compact")
+    end
+    assert(section.tiles[1].series[2].label == "used" and section.tiles[4].series[2].label == "flown")
+    local power = section.tiles[6].series
+    assert(power[1].label == nil and power[1].accent == "amber" and power[1].precision == 1)
+    assert(power[1].rangeMin == 0 and power[1].rangeMax == 60)
+    assert(power[3].rangeMin == nil and power[3].accent == nil, "an invalid range and accent are dropped")
+
+    -- Sources the model lacks are left out; published sensors always map.
+    local bare = debrief.fromPanels({ panel("rx-battery"), panel("link-status"), panel("navigation") }, function()
+        return false
+    end)
+    assert(#bare.tiles == 2, "only the battery and distance tiles remain")
+    assert(bare.tiles[1].title == "PACK" and sources(bare.tiles[1]) == "VCel:min")
+    assert(bare.tiles[2].title == "NAV" and sources(bare.tiles[2]) == "HDst:max,FDst:delta")
+
+    -- A layout without mappable panels derives an empty debrief.
+    assert(#debrief.fromPanels({}, present).tiles == 0)
+    assert(#debrief.fromPanels(nil, present).tiles == 0)
+
+    -- At most MAX_TILES tiles.
+    local many = {}
+    for index = 1, debrief.MAX_TILES + 4 do
+        many[index] = panel("metric", { metrics = { { source = "M" .. index } } })
+    end
+    local capped = debrief.fromPanels(many, present)
+    assert(#capped.tiles == debrief.MAX_TILES and capped.tiles[debrief.MAX_TILES].title == "M" .. debrief.MAX_TILES)
+
+    -- Fill replaces the existing tiles and keeps unknown settings.
+    local filled = { tiles = { tile("Old") }, future = true }
+    assert(debrief.fill(filled, { panel("rx-battery") }, present) == 1)
+    assert(filled.tiles[1].title == "PACK" and filled.future == true)
+    assert(debrief.fill(filled, {}, present) == 0 and #filled.tiles == 0)
+end
+
 local function run()
     testValidSection()
     testEmptyAndMalformedSections()
@@ -211,6 +298,7 @@ local function run()
     testUnknownSettingsAndRequiredSizes()
     testTileLimit()
     testDraftOperations()
+    testFromPanels()
 end
 
 run()

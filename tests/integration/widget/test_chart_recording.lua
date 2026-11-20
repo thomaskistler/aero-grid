@@ -32,6 +32,8 @@ for index = 1, 8 do
         lines[#lines + 1] = "        - source: " .. name .. "\n          precision: 1"
     end
 end
+-- Only the charts record here; a derived debrief would record its own series.
+lines[#lines + 1] = "debrief:\n  tiles: []"
 fixture.radioMock.indexFields()
 if smartEnabled then
     local sensors = {

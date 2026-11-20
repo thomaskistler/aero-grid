@@ -834,6 +834,12 @@ function module.new(dependencies)
             end
             local token = index and tokens[index] or nil
             if not index or not token or token.indent < context.itemIndent then
+                local document = context.document
+                if document and document.debrief == nil and context.debriefDerivedFor ~= document then
+                    context.debriefDerivedFor = document
+                    context.stage = "debrief"
+                    return true
+                end
                 context.tokens = nil
                 context.loadCandidates = nil
                 context.loadCandidateIndex = nil
@@ -864,6 +870,24 @@ function module.new(dependencies)
             context.panelMigrationVersion = context.layoutSourceVersion
             context.stage = context.panelMigrationVersion < context.layoutValidator.VERSION and "panel-migrate"
                 or "panel-validate"
+            return true
+        end
+
+        -- A layout that has never had a debrief derives one from its panels:
+        -- the module loads in one step and the tiles are derived in the next.
+        if stage == "debrief" then
+            local module = context.debriefDeriving
+            if not module then
+                module = context.layoutValidator.debrief and context.layoutValidator.debrief()
+                if module then
+                    context.debriefDeriving = module
+                    return true
+                end
+            elseif context.deriveDebrief then
+                context.deriveDebrief(context, module)
+            end
+            context.debriefDeriving = nil
+            context.stage = "panels"
             return true
         end
 

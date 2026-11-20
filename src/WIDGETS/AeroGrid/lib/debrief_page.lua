@@ -8,6 +8,7 @@ local page = { RUNTIME_API = 1 }
 local SIZE_LABELS = { ["2x2"] = "Compact 2 x 2", ["4x2"] = "Wide 4 x 2", ["4x1"] = "Wide 4 x 1" }
 page.FLIGHT_NOTE = "A debrief needs flight detection. Choose Armed in Model settings."
 page.SENSOR_HINT = "Run Discover new sensors in Model > Telemetry"
+page.FILL_EMPTY = "No dashboard panels map to debrief tiles."
 
 local function tiles(state)
     local section = state.session.draft.debrief
@@ -41,6 +42,7 @@ function page.listFields(state, config)
         end
     end
     fields[#fields + 1] = { action = "append", label = "Add tile", active = config.canAdd }
+    fields[#fields + 1] = { action = "fill", label = "Fill from dashboard" }
     local notes = {}
     if state.status and state.status ~= "" then
         notes[#notes + 1] = state.status
@@ -138,9 +140,38 @@ local function show(context, state, target)
     end)
 end
 
---- Open the tile list.
+--- Open the tile list. A derived debrief follows the draft's panels.
 function page.open(context, state)
+    state.handlers.editor.deriveDebrief(state.session)
     show(context, state, { kind = "list" })
+end
+
+--- Rebuild the tiles from the dashboard's panels, asking first when that
+--- replaces tiles.
+local function fill(context, state, confirmed)
+    if #tiles(state) > 0 and not confirmed and type(lvgl.confirm) == "function" then
+        local generation = state.drawerGeneration
+        lvgl.confirm({
+            title = "Fill from dashboard?",
+            message = "This replaces all debrief tiles.",
+            confirm = function()
+                if context.editorUi == state and generation == state.drawerGeneration and not state.drawerPending then
+                    state.drawerPending = { action = "fill", confirmed = true }
+                end
+            end,
+        })
+        return true
+    end
+    state.debriefMark = nil
+    local count, err = state.handlers.editor.editDebrief(state.session, "fill", state.session.draft.panels)
+    if not count then
+        return count, err
+    end
+    if count == 0 then
+        state.status = page.FILL_EMPTY
+    end
+    show(context, state, { kind = "list" })
+    return true
 end
 
 --- Ask what to do with one tile, like EdgeTX's input and mix lists.
@@ -220,7 +251,9 @@ function page.advance(context, state)
     state.drawerPending = nil
     local target = state.debriefTarget or { kind = "list" }
     local editor, ok, err = state.handlers.editor, true, nil
-    if command.action == "list" then
+    if command.action == "open" then
+        page.open(context, state)
+    elseif command.action == "list" then
         show(context, state, { kind = "list" })
     elseif command.action == "back" then
         if target.kind == "series" then
@@ -242,6 +275,8 @@ function page.advance(context, state)
         show(context, state, { kind = "series", tile = target.tile, series = command.series })
     elseif command.action == "tile" then
         ok, err = tileCommand(context, state, command)
+    elseif command.action == "fill" then
+        ok, err = fill(context, state, command.confirmed)
     elseif command.action == "append" and target.kind == "list" then
         ok, err = editor.editDebrief(state.session, "addTile")
         if ok then

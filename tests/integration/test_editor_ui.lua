@@ -67,6 +67,9 @@ local function document(count)
             math.floor((index - 1) / 4)
         )
     end
+    -- An explicit empty debrief keeps derived tiles, and the recording the
+    -- scheduler budgets on the radio, out of these editor-only measurements.
+    lines[#lines + 1] = "debrief:\n  tiles: []"
     return table.concat(lines, "\n")
 end
 write("edit-sparse", document(1))

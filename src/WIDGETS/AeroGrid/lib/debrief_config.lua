@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
---- Validation and draft edits of a layout's post-flight debrief section.
---- Loaded only for layouts that have one.
+--- Validation, draft edits, and automatic population of a layout's
+--- post-flight debrief section.
 
 local debrief = { RUNTIME_API = 1, MAX_TILES = 12, MAX_SERIES = 3 }
 
@@ -369,6 +369,207 @@ function debrief.removeSeries(section, index, seriesIndex)
     end
     table.remove(tile.series, seriesIndex)
     return true
+end
+
+-- Sensors AeroGrid publishes itself. They exist once Discover new sensors has
+-- run, so a fill names them even before the model has them.
+local PUBLISHED = { VCel = true, HDst = true, FDst = true }
+
+local function named(value)
+    return type(value) == "string" and value ~= ""
+end
+
+local function sensorPresent(name)
+    return getFieldInfo == nil or getFieldInfo(name) ~= nil
+end
+
+--- Whether a Metric entry's thresholds count downward, as the Metric panel
+--- judges it: an explicit direction, or a critical level below the warning
+--- level with both inside the range.
+local function metricFalling(entry)
+    if entry.direction == "falling" then
+        return true
+    elseif entry.direction == "rising" then
+        return false
+    end
+    local low, high = entry.rangeMin or 0, entry.rangeMax or 100
+    local ranged = type(low) == "number" and type(high) == "number"
+    if ranged and high < low then
+        low, high = high, low
+    end
+    local function within(value)
+        return type(value) == "number" and (not ranged or (value >= low and value <= high))
+    end
+    return within(entry.warning) and within(entry.critical) and entry.critical < entry.warning
+end
+
+local function config(panel)
+    return type(panel) == "table" and type(panel.config) == "table" and panel.config or {}
+end
+
+local function entries(settings)
+    local list = {}
+    if type(settings.metrics) == "table" then
+        for _, entry in ipairs(settings.metrics) do
+            if type(entry) == "table" and named(entry.source) then
+                list[#list + 1] = entry
+            end
+        end
+    end
+    return list
+end
+
+local function linkSources(settings)
+    local rssi = settings.rssiSource
+    if rssi == nil then
+        rssi = "RSSI"
+    end
+    return settings.qualitySource, rssi
+end
+
+local function satelliteSource(settings)
+    return named(settings.satelliteSource) and settings.satelliteSource or "Sats"
+end
+
+local ACCENTS = { cyan = true, green = true, orange = true, amber = true }
+
+--- A series for one Chart or Metric reading. Its label is left out: the tile
+--- title names the reading. Only Chart readings carry a range and color.
+local function readingSeries(entry, statistic, chart)
+    local series = { source = entry.source, statistic = statistic }
+    if type(entry.unit) == "string" then
+        series.unit = entry.unit
+    end
+    local precision = entry.precision
+    if finite(precision) and precision >= 0 and precision <= 3 and precision % 1 == 0 then
+        series.precision = precision
+    end
+    if chart then
+        local low, high = entry.rangeMin, entry.rangeMax
+        low, high = finite(low) and low or nil, finite(high) and high or nil
+        if not (low and high and low >= high) then
+            series.rangeMin, series.rangeMax = low, high
+        end
+        series.accent = ACCENTS[entry.accent] and entry.accent or nil
+    end
+    return series
+end
+
+--- Sources the layout judges as falling, so a fill records their minimum.
+local function fallingSources(panels)
+    local falling = {}
+    local function mark(source, value)
+        if named(source) and falling[source] == nil then
+            falling[source] = value
+        end
+    end
+    for _, panel in ipairs(panels) do
+        local kind, settings = type(panel) == "table" and panel.type, config(panel)
+        if kind == "rx-battery" then
+            mark("VCel", true)
+        elseif kind == "link-status" then
+            local quality, rssi = linkSources(settings)
+            mark(quality, true)
+            mark(rssi, true)
+            if settings.protocol == "elrs4" then
+                mark("Mrgn", true)
+            end
+        elseif kind == "navigation" then
+            mark(satelliteSource(settings), true)
+        elseif kind == "metric" then
+            for _, entry in ipairs(entries(settings)) do
+                mark(entry.source, metricFalling(entry))
+            end
+        end
+    end
+    return falling
+end
+
+--- Build a debrief from a layout's panels: what a pilot would want to see
+--- after a flight with this dashboard. Every tile is Compact.
+---@param panels table[] The layout's panels.
+---@param present? fun(source: string): boolean Whether the model has a sensor.
+---@return table section
+function debrief.fromPanels(panels, present)
+    present = present or sensorPresent
+    panels = type(panels) == "table" and panels or {}
+    local falling, tiles, seen = fallingSources(panels), {}, {}
+
+    local function has(source)
+        return named(source) and (PUBLISHED[source] or present(source) and true or false)
+    end
+    local function add(title, list)
+        if #list > 0 and #tiles < debrief.MAX_TILES then
+            tiles[#tiles + 1] = { title = title, colSpan = 2, rowSpan = 2, series = list }
+        end
+    end
+    local function title(label, fallback)
+        return named(label) and label or fallback
+    end
+
+    for _, panel in ipairs(panels) do
+        local kind, settings = type(panel) == "table" and panel.type, config(panel)
+        -- Only the first Battery, Link, and Navigation panel publishes.
+        local first = kind and not seen[kind]
+        if kind then
+            seen[kind] = true
+        end
+        if kind == "rx-battery" and first then
+            local list = { { source = "VCel", statistic = "min" } }
+            if has("Capa") then
+                list[2] = { source = "Capa", statistic = "delta", label = "used" }
+            end
+            add(title(settings.label, "PACK"), list)
+        elseif kind == "link-status" and first then
+            local list = {}
+            local quality, rssi = linkSources(settings)
+            for _, source in ipairs({ quality, rssi }) do
+                if has(source) and (#list == 0 or list[1].source ~= source) then
+                    list[#list + 1] = { source = source, statistic = "min" }
+                end
+            end
+            add(title(settings.label, "LINK"), list)
+        elseif kind == "navigation" and first then
+            local motion = {}
+            if has("GSpd") then
+                motion[#motion + 1] = { source = "GSpd", statistic = "max" }
+            end
+            local altitude = has("Alt") and "Alt" or has("GAlt") and "GAlt"
+            if altitude then
+                motion[#motion + 1] = { source = altitude, statistic = "max" }
+            end
+            add("SPEED & ALTITUDE", motion)
+            add(title(settings.label, "NAV"), {
+                { source = "HDst", statistic = "max" },
+                { source = "FDst", statistic = "delta", label = "flown" },
+            })
+            local satellites = satelliteSource(settings)
+            add("SATELLITES", has(satellites) and { { source = satellites, statistic = "min" } } or {})
+        elseif kind == "chart" or kind == "metric" then
+            local readings, list = entries(settings), {}
+            for index = 1, math.min(#readings, debrief.MAX_SERIES) do
+                local entry = readings[index]
+                list[index] = readingSeries(entry, falling[entry.source] and "min" or "max", kind == "chart")
+            end
+            local head = readings[1]
+            local name = head and title(head.label, head.source)
+            add(kind == "chart" and title(settings.label, name) or name, list)
+        end
+        if #tiles == debrief.MAX_TILES then
+            break
+        end
+    end
+    return { tiles = tiles }
+end
+
+--- Replace a section's tiles with those built from the panels.
+---@param section table
+---@param panels table[]
+---@param present? fun(source: string): boolean
+---@return integer count
+function debrief.fill(section, panels, present)
+    section.tiles = debrief.fromPanels(panels, present).tiles
+    return #section.tiles
 end
 
 return debrief

@@ -212,6 +212,7 @@ end
 local function accumulate(series, at, value, connected)
     local statistic, current = series.statistic, series.value
     series.samples = series.samples + 1
+    series.reported = series.reported or value ~= 0
     if statistic == "min" then
         series.value = current and math.min(current, value) or value
     elseif statistic == "max" then
@@ -264,6 +265,26 @@ local function complete(series)
         result.value = series.value
     end
     result.level = NAMES[series.worst]
+    result.empty = not series.reported
+end
+
+--- Drop series that never reported anything but zero, and tiles left without
+--- a series: a sensor the aircraft does not have shows no chart.
+local function reported(tiles)
+    local shown = {}
+    for _, tile in ipairs(tiles) do
+        local series = {}
+        for _, result in ipairs(tile.series) do
+            if not result.empty then
+                series[#series + 1] = result
+            end
+        end
+        if #series > 0 then
+            tile.series = series
+            shown[#shown + 1] = tile
+        end
+    end
+    return shown
 end
 
 --- Value at `at` on the line between two knots, in floats so neither the
@@ -360,7 +381,7 @@ local function capture(self, slots, used)
                 local header = job.header
                 self.latest = {
                     duration = job.finish - job.start,
-                    tiles = job.tiles,
+                    tiles = reported(job.tiles),
                     flight = header.flight,
                     model = header.model,
                     started = header.started,

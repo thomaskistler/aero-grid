@@ -92,6 +92,36 @@ assert(state().mode == "debrief" and state().nativeDrawer)
 assert(active("Add tile"))
 local note = context.debriefPageModule.FLIGHT_NOTE
 local unconfigured = context.flightFactory.broker.view.status == "unconfigured"
+
+-- The layout has never had a debrief, so the page shows the one derived from
+-- its panels; deriving is not an edit.
+assert(context.debriefGenerated and state().session.debriefDerived and not state().session.dirty)
+assert(#tiles() == 1 and tiles()[1].title == "Alt" and tiles()[1].series[1].source == "Alt")
+assert((row("Alt").field.description == note) == unconfigured, "the note follows flight detection")
+
+-- Fill from dashboard asks before it replaces tiles, then makes them the layout's own.
+tiles()[1].title = "Renamed"
+press("Fill from dashboard")
+local confirmation = assert(fixture.lvglMock.confirm(), "Fill asks before replacing tiles")
+assert(confirmation.title == "Fill from dashboard?" and tiles()[1].title == "Renamed")
+confirmation.confirm()
+settle()
+assert(#tiles() == 1 and tiles()[1].title == "Alt", "Fill rebuilds the tiles from the panels")
+assert(not state().session.debriefDerived and state().session.dirty)
+
+-- A Fill that maps no panels leaves an empty debrief and says why.
+assert(state().handlers.editor.editDebrief(state().session, "removeTile", 1))
+local panels = state().session.draft.panels
+state().session.draft.panels = {}
+press("Fill from dashboard")
+state().session.draft.panels = panels
+assert(#tiles() == 0 and state().session.draft.debrief)
+assert(
+    row("Add tile").field.description == context.debriefPageModule.FILL_EMPTY .. (unconfigured and " " .. note or "")
+)
+state().status = nil
+state().drawerPending = { action = "list" }
+settle()
 assert((row("Add tile").field.description == note) == unconfigured, "the note follows flight detection")
 for _, configured in ipairs({ false, true }) do
     local fields = context.debriefPageModule.listFields(state(), { configured = configured, canAdd = true })
@@ -224,3 +254,8 @@ assert(
 assert(#context.errors == 0, table.concat(context.errors, "\n"))
 assert(context.page == page and context.serviceRuntime == runtime, "a debrief-only Save keeps the dashboard")
 assert(#context.document.debrief.tiles == 2 and context.document.debrief.tiles[1].title == "Tile 2")
+assert(not context.debriefGenerated, "the saved debrief is the layout's own")
+local saved = assert(fixture.hostIo.open(context.layoutPath, "r"))
+local text = saved:read("*a")
+saved:close()
+assert(string.find(text, "debrief:\n  tiles:\n", 1, true), "Save writes the edited debrief")
