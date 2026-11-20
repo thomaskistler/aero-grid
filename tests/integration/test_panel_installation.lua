@@ -174,6 +174,17 @@ local function same(actual, expected)
     end
 end
 
+-- The loaded document carries a debrief derived from its panels; the file does not.
+local function loaded()
+    assert(context.debriefGenerated and context.document.debrief, panelType .. ": debrief was not derived")
+    local document = {}
+    for key, value in pairs(context.document) do
+        document[key] = value
+    end
+    document.debrief = nil
+    return document
+end
+
 local function running()
     healthy()
     assert(#context.panels == 1, panelType .. ": panel was not built")
@@ -236,7 +247,9 @@ for catalogIndex, item in ipairs(editor.CATALOG) do
 
     frame(EVT_TOUCH_FIRST, { x = 50, y = 40 })
     fixture.tick(60)
-    frame()
+    untilReady(function()
+        return context.editorUi ~= nil
+    end, "long press did not open the editor")
     drawerReady()
     frame(EVT_TOUCH_BREAK)
     local add = assert(context.editorUi.addRect, "empty grid has no Add button")
@@ -322,7 +335,7 @@ for catalogIndex, item in ipairs(editor.CATALOG) do
     untilReady(function()
         return not context.editorUi and not context.stage and not context.reloadState
     end, "save/apply did not finish")
-    same(context.document, expected)
+    same(loaded(), expected)
     running()
     local saved = assert(hostIo.open(savedPath, "r"), "Save did not write a user layout")
     local document = assert(context.yaml.parse(saved:read("*a")))
@@ -331,7 +344,7 @@ for catalogIndex, item in ipairs(editor.CATALOG) do
 
     firstObject = #fixture.lvglMock.objects + 1
     context = fixture.createLoaded(nil, { Layout = name, Theme = "modern-dark" }, path)
-    same(context.document, expected)
+    same(loaded(), expected)
     running()
     if panelType == "metric" or panelType == "chart" then
         assert(context.panels[1].settings.metrics[1].source == "Alt", "configured metric source did not reload")

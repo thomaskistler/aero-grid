@@ -1034,6 +1034,7 @@ end
 
 function editor.cancel(session)
     session.draft = copy(session.original)
+    session.debriefDerived = session.originalDebriefDerived
     session.selected = #session.draft.panels > 0 and 1 or 0
     session.dirty = false
     session.errors = {}
@@ -1041,8 +1042,9 @@ function editor.cancel(session)
 end
 
 --- Apply one debrief_config draft operation, such as "pasteTile", to the
---- draft's debrief. Only adding a tile creates the section: an absent debrief
---- and an empty one are different things.
+--- draft's debrief. Only adding a tile or a fill creates the section: an
+--- absent debrief and an empty one are different things. Any edit makes a
+--- derived debrief the layout's own, so Save writes it.
 ---@return any result The operation's result; false when it failed.
 ---@return string? error
 function editor.editDebrief(session, operation, ...)
@@ -1051,7 +1053,7 @@ function editor.editDebrief(session, operation, ...)
         return false, loadError
     end
     local section = session.draft.debrief
-    if not section and operation ~= "addTile" then
+    if not section and operation ~= "addTile" and operation ~= "fill" then
         return false, "the layout has no debrief"
     end
     section = section or { tiles = {} }
@@ -1059,8 +1061,35 @@ function editor.editDebrief(session, operation, ...)
     if result then
         session.draft.debrief = section
         session.dirty = true
+        session.debriefDerived = false
     end
     return result, message
+end
+
+--- Mark the draft's debrief as derived from its panels rather than saved in
+--- the layout. Save leaves a derived debrief out of the file.
+---@param session table
+---@param derived boolean
+function editor.setDebriefDerived(session, derived)
+    session.debriefDerived = derived == true
+    session.originalDebriefDerived = session.debriefDerived
+end
+
+--- Rebuild a derived debrief from the draft's panels, which may have changed
+--- since it was derived. Not an edit, so the draft stays clean.
+---@param session table
+---@param thresholds? table<string, table> The draft's thresholds by sensor.
+---@return boolean rebuilt
+function editor.deriveDebrief(session, thresholds)
+    if not session.debriefDerived then
+        return false
+    end
+    local module = session.layout.debrief()
+    if not module then
+        return false
+    end
+    session.draft.debrief = module.fromPanels(session.draft.panels, nil, thresholds)
+    return true
 end
 
 --- Validate the entire working copy without dropping bad panels or keys.

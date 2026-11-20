@@ -329,6 +329,7 @@ function module.new(dependencies)
 
     local function completeLoad(context, failed)
         context.pending, context.pendingIndex = nil, nil
+        context.debriefDeriving = nil
         context.stage = nil
         if context.flightFactory then
             context.flightFactory.startupThemes = nil
@@ -840,7 +841,11 @@ function module.new(dependencies)
                 if context.configureFlight then
                     context.configureFlight(context)
                 end
-                if context.configureDebrief then
+                local document = context.document
+                -- A layout that has never had a debrief derives one once every
+                -- panel has registered its thresholds, just before the load ends.
+                context.debriefDeriving = document and document.debrief == nil and context.deriveDebrief ~= nil
+                if context.configureDebrief and not context.debriefDeriving then
                     context.configureDebrief(context)
                 end
                 context.loadConfigured = true
@@ -848,6 +853,10 @@ function module.new(dependencies)
                     context.pendingIndex = 1
                     context.pendingPlacement = context.pending[1]
                     context.stage = "panel-build"
+                    return true
+                end
+                if context.debriefDeriving then
+                    context.stage = "debrief"
                     return true
                 end
                 return completeLoad(context)
@@ -865,6 +874,26 @@ function module.new(dependencies)
             context.stage = context.panelMigrationVersion < context.layoutValidator.VERSION and "panel-migrate"
                 or "panel-validate"
             return true
+        end
+
+        -- Deriving a debrief loads its module in one step and derives the
+        -- tiles in the next.
+        if stage == "debrief" then
+            local module = context.debriefDeriving
+            if module == true then
+                module = context.layoutValidator.debrief and context.layoutValidator.debrief()
+                if module then
+                    context.debriefDeriving = module
+                    return true
+                end
+            elseif module then
+                context.deriveDebrief(context, module)
+            end
+            context.debriefDeriving = nil
+            if context.configureDebrief then
+                context.configureDebrief(context)
+            end
+            return completeLoad(context)
         end
 
         if stage == "panel-migrate" then
@@ -923,7 +952,9 @@ function module.new(dependencies)
             if context.pendingIndex then
                 context.pendingIndex = context.pendingIndex + 1
                 context.pendingPlacement = context.pending[context.pendingIndex]
-                context.stage = context.pendingPlacement and "panel-build" or "load-complete"
+                context.stage = context.pendingPlacement and "panel-build"
+                    or context.debriefDeriving and "debrief"
+                    or "load-complete"
             else
                 context.pendingPlacement = nil
                 context.panelMigrationVersion = nil
@@ -965,6 +996,9 @@ function module.new(dependencies)
         context.pending = nil
         context.pendingIndex = nil
         context.loadConfigured = nil
+        context.debriefDeriving = nil
+        context.debriefGenerated = nil
+        context.derivedDebrief = nil
         context.pendingPlacement = nil
         context.panelMigrationVersion = nil
         context.identifiers = nil

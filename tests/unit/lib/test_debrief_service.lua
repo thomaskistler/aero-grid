@@ -388,10 +388,35 @@ for now = 10000, 71000, 10 do
 end
 fly(71100, 71600, {})
 drain(debrief, 71800)
-for _, quiet in ipairs(debrief:result().tiles[1].series) do
-    equal(quiet.value, nil, "no samples, no statistic")
-    equal(next(quiet.columns.kinds), nil, "no samples, no columns")
+equal(#debrief:result().tiles, 0, "series without samples and their tile are hidden")
+debrief:configure(saved, { 30 })
+
+-- A series that reports nothing but zero is hidden, and so is a tile left
+-- without series.
+local zeroTile = tile({ { source = "Q", statistic = "max" } })
+debrief:configure({
+    tiles = { tile({ { source = "V", statistic = "avg" }, { source = "Q", statistic = "min" } }), zeroTile },
+}, { 30, 30 })
+local function zero()
+    return 0
 end
+fly(72000, 72500, { V = climb, Q = zero })
+drain(debrief, 72700)
+local shown = debrief:result().tiles
+equal(#shown, 1, "a tile without reported series is hidden")
+equal(#shown[1].series, 1)
+equal(shown[1].series[1].config.source, "V")
+
+-- A zero that reaches a threshold is a reading, not a missing sensor.
+thresholds.Q = { sensor = "Q", warning = 8, critical = 4, falling = true }
+debrief:configure({ tiles = { zeroTile } }, { 30 })
+fly(72800, 73300, { Q = zero })
+drain(debrief, 73500)
+shown = debrief:result().tiles
+equal(#shown, 1, "a critical zero is shown")
+equal(shown[1].series[1].level, "critical")
+equal(shown[1].series[1].value, 0)
+thresholds.Q = nil
 debrief:configure(saved, { 30 })
 
 -- A rebind replaces the history; the old one is ignored until reconfigured.

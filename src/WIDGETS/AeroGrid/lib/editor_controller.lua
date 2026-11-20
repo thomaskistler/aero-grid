@@ -347,6 +347,43 @@ function module.new(dependencies)
         updateEmptyHint(context)
     end
 
+    --- The draft's thresholds by sensor, as the telemetry registry would own
+    --- them once saved. Each placement resolves through the module of a panel
+    --- of its type already built for the editor.
+    ---@return table<string, table>?
+    local function draftThresholds(context, panels)
+        local telemetry = context.serviceRuntime and context.serviceRuntime.byId.telemetry
+        if not telemetry or type(panels) ~= "table" then
+            return nil
+        end
+        local modules = {}
+        for _, entry in ipairs(context.panels or {}) do
+            if type(entry.module) == "table" and entry.placement then
+                modules[entry.placement.type] = entry.module
+            end
+        end
+        local owners = {}
+        for index, placement in ipairs(panels) do
+            local panel = type(placement) == "table" and modules[placement.type]
+            local hook = panel and rawget(panel, "thresholds")
+            if type(hook) == "function" then
+                local settings = context.panelHost.resolveSettings(
+                    panel,
+                    placement.config,
+                    { colSpan = placement.colSpan, rowSpan = placement.rowSpan },
+                    context.modelArmed
+                )
+                local ok, list = pcall(hook, settings)
+                owners[index] = ok and type(list) == "table" and list or nil
+            end
+        end
+        local order = {}
+        for index in ipairs(panels) do
+            order[index] = { id = index }
+        end
+        return telemetry.ownedThresholds(order, owners)
+    end
+
     --- Enter the editor while preserving the current dashboard until saving succeeds.
     ---@param context AeroGridContext
     ---@return boolean opened
@@ -441,9 +478,19 @@ function module.new(dependencies)
         context.editorStash = nil
         local created, session, sessionError = true, resumed, nil
         if not resumed then
+            local document = context.document
+            if context.debriefGenerated and document then
+                -- A derived debrief is rebuilt when its page opens, so the
+                -- session need not copy it.
+                document = {}
+                for key, value in pairs(context.document) do
+                    document[key] = value
+                end
+                document.debrief = nil
+            end
             created, session, sessionError = pcall(
                 context.editorModule.new,
-                context.document,
+                document,
                 context.grid,
                 context.layoutValidator,
                 context.panelHost,
@@ -456,11 +503,17 @@ function module.new(dependencies)
             return false
         end
 
+        if not resumed then
+            context.editorModule.setDebriefDerived(session, context.debriefGenerated)
+        end
         context.editorSession = session
         session.modelArmed = context.modelArmed
         session.debriefMode = debrief
         local handlers = {
             editor = context.editorModule,
+            debriefThresholds = function(panels)
+                return draftThresholds(context, panels)
+            end,
             logError = function(operation, message)
                 local placement = session.draft.panels[session.selected]
                 logError(
@@ -516,6 +569,15 @@ function module.new(dependencies)
                     end
                 end
                 name = name or context.layoutName
+                if session.debriefDerived and document.debrief ~= nil then
+                    -- A derived debrief is rebuilt from the saved panels.
+                    local saved = {}
+                    for key, value in pairs(document) do
+                        saved[key] = value
+                    end
+                    saved.debrief = nil
+                    document = saved
+                end
                 context.editorSavedDocument = document
                 local state = context.layoutStore.startSave(
                     context.path,

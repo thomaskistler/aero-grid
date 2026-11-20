@@ -48,7 +48,7 @@
 ---@field errorLabel? any
 ---@field page any Container holding one generation of the dashboard.
 ---@field reloadState? "clear"|"rebuild"
----@field stage? "theme-read"|"theme-validate"|"read"|"tokenize"|"header"|"header-migrate"|"header-finalize"|"glass"|"services"|"panels"|"panel-migrate"|"panel-validate"|"panel-build"|"load-complete" Staged loader position.
+---@field stage? "theme-read"|"theme-validate"|"read"|"tokenize"|"header"|"header-migrate"|"header-finalize"|"glass"|"services"|"panels"|"debrief"|"panel-migrate"|"panel-validate"|"panel-build"|"load-complete" Staged loader position.
 ---@field foreground? boolean Whether the latest callback was visible.
 ---@field firstRefreshUntil? integer Bounded foreground priority until a regular panel refresh.
 ---@field servicesModule? table Loaded lib/services.lua registry module.
@@ -70,6 +70,9 @@
 ---@field editorUi? table Active editor screen state.
 ---@field editorDebriefRequest? boolean Open the Flight debrief page (true) or the grid (false).
 ---@field debriefPageModule? table Flight debrief setup page, loaded only on demand.
+---@field debriefGenerated? boolean The document's debrief was derived from its panels, not loaded.
+---@field derivedDebrief? table The derived debrief section, while it is the document's.
+---@field debriefDeriving? table|boolean The load derives a debrief: true, then its loaded module.
 
 local WIDGET_PATH = "/WIDGETS/AeroGrid/"
 
@@ -877,14 +880,34 @@ initialize = function(context)
             end
         end
         --- Hand the debrief recorder the layout's debrief and each tile's width.
-        --- The recorder is loaded on first use, so a dashboard without debrief
+        --- A layout that has never had a debrief gets one derived from its
+        --- panels; it stays out of the file until the pilot edits it. The
+        --- recorder is loaded on first use, so a dashboard without debrief
         --- tiles spends no load step or heap on it.
+        context.deriveDebrief = function(host, module)
+            local document = host.document
+            local telemetry = host.serviceRuntime and host.serviceRuntime.byId.telemetry
+            local thresholds = telemetry and telemetry:thresholdMap()
+            document.debrief = module.fromPanels(document.panels, nil, thresholds)
+            host.derivedDebrief = document.debrief
+        end
         context.configureDebrief = function(host)
             local registry = host.serviceRuntime
             if not registry then
                 return
             end
-            local section = host.document and host.document.debrief
+            local document = host.document
+            if document and document.debrief == nil then
+                local module = host.layoutValidator and host.layoutValidator.debrief()
+                if module then
+                    host.deriveDebrief(host, module)
+                end
+            end
+            local section = document and document.debrief
+            host.debriefGenerated = section ~= nil and section == host.derivedDebrief
+            if not host.debriefGenerated then
+                host.derivedDebrief = nil
+            end
             local service = registry.byId.debrief
             if not service then
                 if not (section and section.tiles and #section.tiles > 0) then
@@ -903,12 +926,18 @@ initialize = function(context)
                 host.servicesModule.register(registry, instance, getTime())
                 service = instance
             end
-            local widths = {}
+            local widths, bySize = {}, {}
             for index, tile in ipairs(section and section.tiles or {}) do
-                local span = { col = 0, row = 0, colSpan = tile.colSpan, rowSpan = tile.rowSpan }
-                local rect = host.grid.rect(host.zone, span, 4, 4, 4)
-                local fonts = host.themeBuilder.typography(tile.colSpan, tile.rowSpan)
-                widths[index] = host.themeBuilder.frame(host.theme, rect, fonts).content
+                local size = tile.colSpan * 8 + tile.rowSpan
+                local width = bySize[size]
+                if not width then
+                    local span = { col = 0, row = 0, colSpan = tile.colSpan, rowSpan = tile.rowSpan }
+                    local rect = host.grid.rect(host.zone, span, 4, 4, 4)
+                    local fonts = host.themeBuilder.typography(tile.colSpan, tile.rowSpan)
+                    width = host.themeBuilder.frame(host.theme, rect, fonts).content
+                    bySize[size] = width
+                end
+                widths[index] = width
             end
             service:configure(section, widths)
         end
@@ -2935,6 +2964,7 @@ local LOAD_STAGE_COST = {
     ["header"] = 2,
     ["header-finalize"] = 2,
     ["panels"] = 2,
+    ["debrief"] = 3,
     ["load-complete"] = 2,
     ["tokenize"] = 3,
     ["theme-validate"] = 4,

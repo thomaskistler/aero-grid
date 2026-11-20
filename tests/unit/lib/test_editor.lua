@@ -176,6 +176,27 @@ local function testDebriefDraft()
     assert(not valid and string.find(table.concat(errors, "\n"), "debrief must be a mapping", 1, true))
 end
 
+local function testDerivedDebrief()
+    local session = newSession()
+    assert(not editor.deriveDebrief(session), "a layout's own debrief is never derived")
+    assert(session.draft.debrief == nil)
+
+    editor.setDebriefDerived(session, true)
+    assert(editor.deriveDebrief(session) and type(session.draft.debrief) == "table")
+    assert(session.debriefDerived and not session.dirty, "deriving is not an edit")
+
+    assert(editor.editDebrief(session, "addTile"))
+    assert(session.debriefDerived == false and session.dirty, "an edit makes the debrief the layout's own")
+    assert(editor.cancel(session))
+    assert(session.debriefDerived and session.draft.debrief == nil, "cancel restores the derived state")
+
+    -- Fill creates the section, even when the panels map to no tiles.
+    local filled = newSession()
+    filled.draft.panels = {}
+    assert(editor.editDebrief(filled, "fill", filled.draft.panels) == 0)
+    assert(filled.draft.debrief and #filled.draft.debrief.tiles == 0 and filled.dirty)
+end
+
 local function testAddChannelOutput()
     modules.output = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/output.lua"))()
     local session = newSession({ version = layout.VERSION, grid = { columns = 4, rows = 4 }, panels = {} })
@@ -886,6 +907,7 @@ testWorkingCopyCancelAndApply()
 testPlacementRulesAndResizeAnchor()
 testAddRemoveAndStrictSettings()
 testDebriefDraft()
+testDerivedDebrief()
 testAddChannelOutput()
 testAddSpanDeclarations()
 testCatalogPanelSizes()

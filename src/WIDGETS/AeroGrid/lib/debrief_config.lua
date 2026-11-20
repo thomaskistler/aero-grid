@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
---- Validation and draft edits of a layout's post-flight debrief section.
---- Loaded only for layouts that have one.
+--- Validation, draft edits, and automatic population of a layout's
+--- post-flight debrief section.
 
 local debrief = { RUNTIME_API = 1, MAX_TILES = 12, MAX_SERIES = 3 }
 
@@ -369,6 +369,196 @@ function debrief.removeSeries(section, index, seriesIndex)
     end
     table.remove(tile.series, seriesIndex)
     return true
+end
+
+-- Sensors AeroGrid publishes itself. They exist once Discover new sensors has
+-- run, so a fill names them even before the model has them.
+local PUBLISHED = { VCel = true, HDst = true, FDst = true }
+
+local function named(value)
+    return type(value) == "string" and value ~= ""
+end
+
+local function sensorPresent(name)
+    return getFieldInfo == nil or getFieldInfo(name) ~= nil
+end
+
+local function config(panel)
+    return type(panel) == "table" and type(panel.config) == "table" and panel.config or {}
+end
+
+local function entries(settings)
+    local list = {}
+    if type(settings.metrics) == "table" then
+        for _, entry in ipairs(settings.metrics) do
+            if type(entry) == "table" and named(entry.source) then
+                list[#list + 1] = entry
+            end
+        end
+    end
+    return list
+end
+
+--- The Link panel's readings in order, each named once; either may be unset.
+local function linkSources(settings)
+    local rssi = settings.rssiSource
+    if rssi == nil then
+        rssi = "RSSI"
+    end
+    local list = {}
+    for _, source in ipairs({ settings.qualitySource or false, rssi or false }) do
+        if named(source) and list[1] ~= source then
+            list[#list + 1] = source
+        end
+    end
+    return list
+end
+
+local function satelliteSource(settings)
+    return named(settings.satelliteSource) and settings.satelliteSource or "Sats"
+end
+
+local ACCENTS = { cyan = true, green = true, orange = true, amber = true }
+
+--- A series for one Chart or Metric reading. A lone reading's label is left
+--- out, since the tile title names it; beside others it tells them apart.
+--- Only Chart readings carry a range and color.
+local function readingSeries(entry, statistic, chart, labelled)
+    local series = { source = entry.source, statistic = statistic }
+    if labelled and named(entry.label) then
+        series.label = entry.label
+    end
+    if type(entry.unit) == "string" then
+        series.unit = entry.unit
+    end
+    local precision = entry.precision
+    if finite(precision) and precision >= 0 and precision <= 3 and precision % 1 == 0 then
+        series.precision = precision
+    end
+    if chart then
+        local low, high = entry.rangeMin, entry.rangeMax
+        low, high = finite(low) and low or nil, finite(high) and high or nil
+        if not (low and high and low >= high) then
+            series.rangeMin, series.rangeMax = low, high
+        end
+        series.accent = ACCENTS[entry.accent] and entry.accent or nil
+    end
+    return series
+end
+
+--- Sources whose readings fall toward danger, so a fill records their
+--- minimum. Thresholds are the layout's, owned as the telemetry registry owns
+--- them; a source without any follows the first Metric naming a direction.
+local function fallingSources(panels, thresholds)
+    local falling = {}
+    for sensor, spec in pairs(thresholds or {}) do
+        falling[sensor] = type(spec) == "table" and spec.falling == true
+    end
+    for _, panel in ipairs(panels) do
+        if type(panel) == "table" and panel.type == "metric" then
+            for _, entry in ipairs(entries(config(panel))) do
+                local direction = entry.direction
+                if falling[entry.source] == nil and (direction == "falling" or direction == "rising") then
+                    falling[entry.source] = direction == "falling"
+                end
+            end
+        end
+    end
+    return falling
+end
+
+--- Build a debrief from a layout's panels: what a pilot would want to see
+--- after a flight with this dashboard. Every tile is Compact.
+---@param panels table[] The layout's panels.
+---@param present? fun(source: string): boolean Whether the model has a sensor.
+---@param thresholds? table<string, table> The layout's thresholds by sensor.
+---@return table section
+function debrief.fromPanels(panels, present, thresholds)
+    present = present or sensorPresent
+    panels = type(panels) == "table" and panels or {}
+    local falling, tiles, seen = fallingSources(panels, thresholds), {}, {}
+
+    local function has(source)
+        return named(source) and (PUBLISHED[source] or present(source) and true or false)
+    end
+    local function add(title, list)
+        if #list > 0 and #tiles < debrief.MAX_TILES then
+            tiles[#tiles + 1] = { title = title, colSpan = 2, rowSpan = 2, series = list }
+        end
+    end
+    local function title(label, fallback)
+        return named(label) and label or fallback
+    end
+
+    for _, panel in ipairs(panels) do
+        local kind, settings = type(panel) == "table" and panel.type, config(panel)
+        -- Only the first Battery, Link, and Navigation panel publishes.
+        local first = kind and not seen[kind]
+        if kind then
+            seen[kind] = true
+        end
+        if kind == "rx-battery" and first then
+            local list = { { source = "VCel", statistic = "min" } }
+            if has("Capa") then
+                list[2] = { source = "Capa", statistic = "delta", label = "used" }
+            end
+            add(title(settings.label, "PACK"), list)
+        elseif kind == "link-status" and first then
+            local list = {}
+            for _, source in ipairs(linkSources(settings)) do
+                if has(source) then
+                    list[#list + 1] = { source = source, statistic = "min" }
+                end
+            end
+            add(title(settings.label, "LINK"), list)
+        elseif kind == "navigation" and first then
+            local motion = {}
+            if has("GSpd") then
+                motion[#motion + 1] = { source = "GSpd", statistic = "max" }
+            end
+            local altitude = has("Alt") and "Alt" or has("GAlt") and "GAlt"
+            if altitude then
+                motion[#motion + 1] = { source = altitude, statistic = "max" }
+            end
+            add("SPEED & ALTITUDE", motion)
+            add(title(settings.label, "NAV"), {
+                { source = "HDst", statistic = "max" },
+                { source = "FDst", statistic = "delta", label = "flown" },
+            })
+            local satellites = satelliteSource(settings)
+            add("SATELLITES", has(satellites) and { { source = satellites, statistic = "min" } } or {})
+        elseif kind == "chart" or kind == "metric" then
+            local readings = {}
+            for _, entry in ipairs(entries(settings)) do
+                if #readings < debrief.MAX_SERIES and has(entry.source) then
+                    readings[#readings + 1] = entry
+                end
+            end
+            local list = {}
+            for index, entry in ipairs(readings) do
+                local statistic = falling[entry.source] and "min" or "max"
+                list[index] = readingSeries(entry, statistic, kind == "chart", #readings > 1)
+            end
+            local head = readings[1]
+            local name = head and title(head.label, head.source)
+            add(kind == "chart" and title(settings.label, name) or name, list)
+        end
+        if #tiles == debrief.MAX_TILES then
+            break
+        end
+    end
+    return { tiles = tiles }
+end
+
+--- Replace a section's tiles with those built from the panels.
+---@param section table
+---@param panels table[]
+---@param present? fun(source: string): boolean
+---@param thresholds? table<string, table>
+---@return integer count
+function debrief.fill(section, panels, present, thresholds)
+    section.tiles = debrief.fromPanels(panels, present, thresholds).tiles
+    return #section.tiles
 end
 
 return debrief
