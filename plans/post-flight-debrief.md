@@ -48,13 +48,16 @@ at a glance without opening a log file on a computer.
 ![Debrief scrolled](assets/post-flight-debrief/frame3.png)
 
 - **Header card:** model name, flight number, flight start date and time
-  (for example "Flight 42 - Nov 17, 14:24"), and the flight time in large
+  (for example "Flight 42 - Nov 17, 14:24"; recording pauses and a late
+  capture do not shift it), and the flight time in large
   digits. No alarm-count badge. When the radio clock looks unset (year
   before 2024), the date is hidden and only the flight number is shown.
 - **Tiles:** a flat list of chart tiles, no sections. Tile sizes use the
   dashboard's 4 x 4 grid, like panels, so they scale with the screen:
   - **Compact** 2 x 2: half the width and half the height of the screen.
   - **Wide** 4 x 2 or 4 x 1: the full width, at compact height or half of it.
+    A tile too short for a full layout puts its title and legend on one line
+    and omits the axis time labels.
 - The same grid rules apply on every screen, including portrait; there are
   no special cases per radio.
 - The whole debrief scrolls vertically, header included. There is no scroll
