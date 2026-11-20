@@ -149,15 +149,24 @@ series:
   panels, so the debrief works out of the box.
 - **Fill from dashboard** rebuilds the tiles from the panels, replacing the
   current tiles after confirmation.
-- Mapping, in panel order; every tile starts Compact:
+- Mapping, in panel order; every tile starts Compact, up to 12 tiles. Only
+  the first Battery, Link and Navigation panel maps:
 
-  | Panel | Tile series |
-  | --- | --- |
-  | Battery | `VCel` min |
-  | Link | link quality min, `Mrgn` min, `Drop` delta |
-  | Navigation | `HDst` max, `FDst` delta |
-  | Chart | the same series |
-  | Metric | one series per entry: min when its warnings trigger on falling values, otherwise max |
+  | Panel | Tile | Series |
+  | --- | --- | --- |
+  | Battery | its label, else PACK | `VCel` min, `Capa` delta ("used") |
+  | Link | its label, else LINK | link quality min, RSSI min |
+  | Navigation | SPEED & ALTITUDE | `GSpd` max, `Alt` (else `GAlt`) max |
+  | Navigation | its label, else NAV | `HDst` max, `FDst` delta ("flown") |
+  | Navigation | SATELLITES | `Sats` min |
+  | Chart, Metric | the chart label, else the first reading's | up to three readings |
+
+- A reading is used only if the model has its sensor; `VCel`, `HDst` and
+  `FDst` always are, because AeroGrid publishes them.
+- A Chart or Metric reading records min when the thresholds that judge its
+  sensor trigger on falling values (see Thresholds), otherwise max.
+- After a flight, a series that never reported a value is hidden unless it
+  reached warning or critical, and a tile left without series is hidden.
 
 - Panels without telemetry (timer, flight mode, model, trims, and similar)
   are skipped.
