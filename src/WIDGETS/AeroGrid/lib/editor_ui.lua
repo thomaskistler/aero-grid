@@ -42,6 +42,9 @@ local function keyMatches(event, name)
 end
 
 local function render(context, state)
+    if state.debrief then
+        return
+    end
     local placements = state.session.draft.panels
     local changed = state.panelCount ~= #placements
     state.panelCount = #placements
@@ -164,6 +167,11 @@ function uiModule.open(context, session, handlers)
         state.existing[entry.placement.id] = entry.placement.type
     end
     lvgl.hide(screen)
+    if handlers.debrief then
+        -- The Flight debrief page is native dialogs over the dashboard; no grid.
+        state.debrief, state.buildStage = true, nil
+        state.drawerPending = { action = "list" }
+    end
     context.editorUi = state
     return state
 end
@@ -238,7 +246,8 @@ function uiModule.advance(context)
         return true
     end
     if state.drawerBuild ~= nil or state.drawerPending then
-        context.editorDrawerModule.advance(context, state)
+        local module = state.debrief and context.debriefPageModule or context.editorDrawerModule
+        module.advance(context, state)
         if state.drawerBuild == nil then
             render(context, state)
         end
@@ -250,6 +259,7 @@ function uiModule.advance(context)
             state.status, state.saveFailed, state.statusError = tostring(message), true, true
             state.handlers.logError("save", message)
             state.saving = nil
+            state.drawerPending = state.debrief and { action = "list" } or nil
             render(context, state)
         end
         if not saving.store then
@@ -420,6 +430,10 @@ function uiModule.saveFailure(context, message)
     state.saveFailed, state.statusError = true, true
     state.status = "Cannot save layout: " .. tostring(message)
     state.handlers.logError("save", message)
+    if state.debrief then
+        state.drawerPending = { action = "list" }
+        return
+    end
     state.statusLabel:set({ text = state.status })
     lvgl.show(state.statusLabel)
 end
@@ -547,7 +561,7 @@ function uiModule.handle(context, event, touch)
         return false
     end
     -- Modal input, including picker/keyboard RTN, belongs to native LVGL.
-    if state.mode ~= "menu" then
+    if state.mode ~= "menu" or state.debrief then
         return true
     end
     local tap

@@ -644,16 +644,16 @@ def verify_menu_grid(rows, selected):
     """Check the real TX16S frame, including inverse artwork and centered title."""
     pixel = lambda x, y: rows[y][x * 3:x * 3 + 3]
     black, white = b"\0\0\0", b"\xff\xff\xff"
-    if pixel(134, 53) != black or pixel(345, 172) != black:
+    if pixel(84, 53) != black or pixel(395, 172) != black:
         raise RuntimeError("AeroGrid icon grid must have a black rectangular popup below the header")
-    if any(pixel(x, 50) != white for x in range(134, 346)):
+    if any(pixel(x, 50) != white for x in range(84, 396)):
         raise RuntimeError("AeroGrid menu must use the native full-width title rule")
     if pixel(183, 54) != white or pixel(296, 54) != white or pixel(239, 72) != white:
         raise RuntimeError("AeroGrid menu must use the native tapered title tab")
-    title = [x for y in range(54, 78) for x in range(134, 346) if pixel(x, y) == white]
+    title = [x for y in range(54, 78) for x in range(84, 396) if pixel(x, y) == white]
     if not title or abs((min(title) + max(title)) / 2 - 239.5) > 2:
         raise RuntimeError("AeroGrid menu title must be visibly centered")
-    for index, left in enumerate((146, 246), 1):
+    for index, left in enumerate((96, 196, 296), 1):
         background, foreground = (white, black) if index == selected else (black, white)
         if pixel(left + 3, 84) != background:
             raise RuntimeError("AeroGrid selected tile must invert to white")
@@ -662,7 +662,7 @@ def verify_menu_grid(rows, selected):
         icon = [pixel(x, y) for y in range(87, 117) for x in range(left + 29, left + 59)]
         if icon.count(foreground) < 30 or icon.count(background) < 30:
             raise RuntimeError("AeroGrid tile icon is missing or has the wrong selection color")
-    return {"popup": [134, 49, 212, 124], "selected": selected, "icons": ["model", "theme"]}
+    return {"popup": [84, 49, 312, 124], "selected": selected, "icons": ["model", "theme", "stats"]}
 
 
 def dialog_geometry(rows):

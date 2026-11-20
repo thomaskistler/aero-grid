@@ -21,6 +21,7 @@ local function deferredSetter(context, state, generation, apply)
         return queueNative(context, state, generation, callback, value)
     end)
 end
+drawer.deferredSetter = deferredSetter
 
 function drawer.applyNative(context, state)
     local command = state.nativeInput
@@ -56,6 +57,14 @@ local function current(state, field)
     return value
 end
 
+local function writeField(state, field, value)
+    local editor = state.handlers.editor
+    if field.path then
+        return editor.setPath(state.session, field.key, field.path, value)
+    end
+    return editor.setValue(state.session, field.key, value)
+end
+
 local function enqueue(state, action, generation)
     if
         (state.nativeDrawer or state.applyingNative)
@@ -66,6 +75,7 @@ local function enqueue(state, action, generation)
         state.drawerPending = action
     end
 end
+drawer.enqueue = enqueue
 
 local function closeDialog(state)
     state.nativeDrawer = nil
@@ -77,6 +87,7 @@ local function closeDialog(state)
     end
     state.nativeDrawerHost = nil
 end
+drawer.closeDialog = closeDialog
 
 local function hostedDialog(context, state, properties)
     local generation = state.drawerGeneration
@@ -109,6 +120,45 @@ local function hostedDialog(context, state, properties)
     })
     state.nativeDrawerHost = state.drawerView.host
     return state.drawerView.dialog
+end
+drawer.hostedDialog = hostedDialog
+
+--- Open a settings dialog of `fields` whose controls read and write through
+--- `read(field)` and `write(field, value)`. RTN queues `back()`'s command.
+function drawer.settingsDialog(context, state, title, fields, read, write, back)
+    local generation = state.drawerGeneration
+    state.nativeDrawer = assert(
+        hostedDialog(context, state, {
+            title = title,
+            close = function()
+                if generation == state.drawerGeneration then
+                    state.nativeDrawer, state.drawerBuild = nil, nil
+                    local command = back()
+                    if state.drawerPending then
+                        state.drawerDismiss = command
+                    else
+                        state.drawerPending = command
+                    end
+                end
+            end,
+        }),
+        "cannot open editor dialog"
+    )
+    local view = state.drawerView
+    view.fields, view.build = fields, 1
+    view.errorHeight = math.floor((lvgl.UI_ELEMENT_HEIGHT or 32) * 0.56 + 0.5)
+    view.errorColor = context.theme.color.critical
+    view.read, view.writeValue = read, write
+    view.write = function(field, value, control)
+        enqueue(state, { action = "write", field = field, value = value, control = control }, generation)
+    end
+    view.action = function(command)
+        enqueue(state, command, generation)
+    end
+    view.report = function(message, control)
+        enqueue(state, { action = "error", message = message, control = control }, generation)
+    end
+    state.drawerControls, state.drawerBuild = view.controls, 1
 end
 
 function drawer.close(state)
@@ -320,51 +370,24 @@ function drawer.open(context, state, mode, listKey, itemIndex, itemPath, groupKe
     state.drawerNextY = state.drawerPadding * 2
     state.drawerErrorHeight = math.floor(state.drawerControlHeight * 0.56 + 0.5)
     -- Native dialogs supply centering, 80%-screen dimensions, scrolling and RTN.
-    state.nativeDrawer = assert(
-        hostedDialog(context, state, {
-            title = title,
-            close = function()
-                if not state.drawerClosing then
-                    state.nativeDrawer = nil
-                    state.drawerBuild = nil
-                    local command = {
-                        action = (listKey or groupKey) and "parent" or "back",
-                        key = listKey,
-                        groupKey = listKey and groupKey or nil,
-                    }
-                    if itemPath and #itemPath > 1 then
-                        command.itemPath = state.handlers.editor.clone(itemPath)
-                        table.remove(command.itemPath)
-                        table.remove(command.itemPath)
-                    end
-                    if state.drawerPending then
-                        state.drawerDismiss = command
-                    else
-                        state.drawerPending = command
-                    end
-                end
-            end,
-        }),
-        "cannot open editor dialog"
-    )
-    state.drawerWidth = math.floor(context.zone.w * 0.8)
-    local view = state.drawerView
-    view.fields, view.build = fields, 1
-    view.errorHeight, view.errorColor = state.drawerErrorHeight, context.theme.color.critical
-    local generation = state.drawerGeneration
-    view.read = function(field)
+    drawer.settingsDialog(context, state, title, fields, function(field)
         return current(state, field)
-    end
-    view.write = function(field, value, control)
-        enqueue(state, { action = "write", field = field, value = value, control = control }, generation)
-    end
-    view.action = function(command)
-        enqueue(state, command, generation)
-    end
-    view.report = function(message, control)
-        enqueue(state, { action = "error", message = message, control = control }, generation)
-    end
-    state.drawerControls = view.controls
+    end, function(field, value)
+        return writeField(state, field, value)
+    end, function()
+        local command = {
+            action = (listKey or groupKey) and "parent" or "back",
+            key = listKey,
+            groupKey = listKey and groupKey or nil,
+        }
+        if itemPath and #itemPath > 1 then
+            command.itemPath = state.handlers.editor.clone(itemPath)
+            table.remove(command.itemPath)
+            table.remove(command.itemPath)
+        end
+        return command
+    end)
+    state.drawerWidth = math.floor(context.zone.w * 0.8)
 end
 
 --- Queue an exit-flow command from a native callback of this generation.
@@ -377,7 +400,6 @@ end
 --- Offer Save, Save As and Discard for a changed draft. RTN keeps editing.
 function drawer.openExit(context, state)
     closeDialog(state)
-    assert(type(lvgl.menu) == "function", "exit dialog requires EdgeTX Lua LVGL menu")
     local actions, values = {}, {}
     if not state.handlers.isEmpty(state.handlers.layoutName()) then
         actions[#actions + 1], values[#values + 1] = "save", "Save"
@@ -385,6 +407,41 @@ function drawer.openExit(context, state)
     actions[#actions + 1], values[#values + 1] = "save-as", "Save as..."
     actions[#actions + 1], values[#values + 1] = "discard", "Discard changes"
     local generation = state.drawerGeneration
+    if state.debrief then
+        -- No grid stays behind a native menu, so RTN must return to the tile list.
+        state.mode = "exit"
+        state.nativeDrawer = assert(
+            hostedDialog(context, state, {
+                title = "Unsaved changes",
+                close = function()
+                    if generation == state.drawerGeneration then
+                        state.nativeDrawer = nil
+                        state.drawerPending = { action = "list" }
+                    end
+                end,
+            }),
+            "cannot open editor dialog"
+        )
+        local height = lvgl.UI_ELEMENT_HEIGHT or 32
+        local width = math.floor(context.zone.w * 0.8) - 16
+        for index, value in ipairs(values) do
+            lvgl.button(state.nativeDrawer, {
+                x = 4,
+                y = 4 + (index - 1) * (height + 8),
+                w = width,
+                h = height,
+                text = value,
+                active = function()
+                    return generation == state.drawerGeneration and not state.exitCommand
+                end,
+                press = function()
+                    exitCommand(context, state, generation, { action = actions[index] })
+                end,
+            })
+        end
+        return
+    end
+    assert(type(lvgl.menu) == "function", "exit dialog requires EdgeTX Lua LVGL menu")
     state.mode = "menu"
     lvgl.menu({
         title = "Unsaved changes",
@@ -476,14 +533,6 @@ function drawer.confirmOverwrite(context, state, name)
     })
 end
 
-local function writeField(state, field, value)
-    local editor = state.handlers.editor
-    if field.path then
-        return editor.setPath(state.session, field.key, field.path, value)
-    end
-    return editor.setValue(state.session, field.key, value)
-end
-
 local function relayout(state)
     state.settingsUi.relayout(state.drawerView)
 end
@@ -503,6 +552,27 @@ end
 
 local function fieldError(state, control, message)
     state.settingsUi.fieldError(state.drawerView, control, message)
+end
+
+--- Apply a queued `write` command of a settings dialog and refresh its controls.
+function drawer.applyWrite(state, command)
+    local view = state.drawerView
+    local ok, err = view.writeValue(command.field, command.value)
+    -- Return may dismiss the native dialog before its queued edit runs.
+    -- Apply the value, but never refresh controls from a retired dialog.
+    if ok and state.nativeDrawer then
+        refreshVisibility(state)
+    end
+    if command.control and state.nativeDrawer then
+        if not ok and command.control.readNative then
+            command.control.readNative()
+        end
+        if command.control.kind == "textEdit" then
+            command.control.object:set({ value = tostring(view.read(command.field) or "") })
+        end
+        fieldError(state, command.control, not ok and tostring(err) or nil)
+    end
+    return ok, err
 end
 
 function drawer.advance(context, state)
@@ -538,21 +608,7 @@ function drawer.advance(context, state)
     elseif command.action == "item" then
         drawer.open(context, state, "configure", command.key, command.index, command.itemPath)
     elseif command.action == "write" then
-        ok, err = writeField(state, command.field, command.value)
-        -- Return may dismiss the native dialog before its queued edit runs.
-        -- Apply the value, but never refresh controls from a retired dialog.
-        if ok and state.nativeDrawer then
-            refreshVisibility(state)
-        end
-        if command.control and state.nativeDrawer then
-            if not ok and command.control.readNative then
-                command.control.readNative()
-            end
-            if command.control.kind == "textEdit" then
-                command.control.object:set({ value = tostring(current(state, command.field) or "") })
-            end
-            fieldError(state, command.control, not ok and tostring(err) or nil)
-        end
+        ok, err = drawer.applyWrite(state, command)
     elseif command.action == "append" then
         ok, err = editor.appendItem(state.session, command.key, command.path)
         if ok then

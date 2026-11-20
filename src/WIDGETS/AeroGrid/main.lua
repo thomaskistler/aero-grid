@@ -68,6 +68,8 @@
 ---@field editorUiModule? table LVGL editor controls, loaded only on demand.
 ---@field editorSession? table Uncommitted editor working copy.
 ---@field editorUi? table Active editor screen state.
+---@field editorDebriefRequest? boolean Open the Flight debrief page (true) or the grid (false).
+---@field debriefPageModule? table Flight debrief setup page, loaded only on demand.
 
 local WIDGET_PATH = "/WIDGETS/AeroGrid/"
 
@@ -1074,6 +1076,7 @@ local function optionsStep(task)
     member.pending = true
     context.flightFactory.revision = (context.flightFactory.revision or 0) + 1
     context.editorStash, context.editorTransitionRequest, context.modelSettingsRequest = nil, nil, nil
+    context.editorDebriefRequest = nil
     context.logOpenRequest = nil
     if context.locationRequest and context.locationRequest.kind == "open" then
         context.locationRequest = nil
@@ -1854,6 +1857,11 @@ local function prepareAeroMenu(context)
                 context.modelSettingsRequest = { modelFilename = context.aeroMenuHandlers.modelFilename() }
             end,
             uiSetup = function()
+                context.editorDebriefRequest = false
+                context.editorTransitionRequest = "open"
+            end,
+            debrief = function()
+                context.editorDebriefRequest = true
                 context.editorTransitionRequest = "open"
             end,
             modal = function()
@@ -2540,6 +2548,7 @@ local function editorTransitionStep(task)
     if request == "open" then
         context.editorController.openEditor(context)
     else
+        context.editorDebriefRequest = nil
         if state then
             local session = context.editorSession
             local keep = request == "suspend" or session and session.dirty and not state.buildStage
@@ -2912,7 +2921,7 @@ local function pruneRequests(context, hidden, fullscreen)
             { inputFirst = editorOpening }
         )
         if not editorTransitionReady(task, nil, hidden) then
-            context.editorTransitionRequest = nil
+            context.editorTransitionRequest, context.editorDebriefRequest = nil, nil
         end
     end
     local request = context.logOpenRequest

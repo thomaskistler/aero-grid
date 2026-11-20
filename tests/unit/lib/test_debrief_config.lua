@@ -129,35 +129,79 @@ local function testTileLimit()
     assert(section.tiles[12].title == "Tile 12", "the limit counts valid tiles")
     assert(hasMessage(errors, "more than 12 tiles"))
     assert(not debrief.canAdd(section))
-    local added, addError = debrief.addTile(section, tile("Thirteen"))
+    local added, addError = debrief.addTile(section)
     assert(added == false and string.find(addError, "at most 12", 1, true))
+    added, addError = debrief.pasteTile(section, 1, 2, true, true)
+    assert(added == false and string.find(addError, "at most 12", 1, true))
+    assert(debrief.pasteTile(section, 1, 12, true, false) == 12, "a move is allowed at the limit")
+    assert(section.tiles[12].title == "Tile 1")
+end
+
+local function titles(section)
+    local result = {}
+    for index, entry in ipairs(section.tiles) do
+        result[index] = entry.title
+    end
+    return table.concat(result, ",")
 end
 
 local function testDraftOperations()
     local section = { tiles = {} }
-    assert(debrief.canAdd(section))
-    assert(debrief.addTile(section, tile("A")) == 1)
-    assert(debrief.addTile(section, tile("B")) == 2)
-    assert(debrief.addTile(section, tile("C")) == 3)
-    local added, addError = debrief.addTile(section, tile("Bad", { series("VCel", "last") }))
-    assert(added == false and string.find(addError, "statistic", 1, true))
-    added = debrief.addTile(section, tile("Partly", { series("VCel"), series("VCel", "last") }))
-    assert(added == false, "a tile with a rejected series is not added")
-    assert(#section.tiles == 3)
+    assert(debrief.addTile(section) == 1)
+    local added = section.tiles[1]
+    assert(added.title == "Tile 1" and debrief.size(added) == "2x2")
+    assert(#added.series == 1 and added.series[1].statistic == "min" and added.series[1].source == nil)
+    local _, errors = debrief.validate(section)
+    assert(hasMessage(errors, "series 1: source is required"), "a new tile needs a source before Save")
 
-    assert(debrief.moveTile(section, 3, -2) == 1)
-    assert(section.tiles[1].title == "C" and section.tiles[2].title == "A")
-    assert(debrief.moveTile(section, 1, -1) == false)
-    assert(debrief.moveTile(section, 3, 1) == false)
+    assert(debrief.setTileValue(section, 1, "title", "A"))
+    local ok, message = debrief.setTileValue(section, 1, "title", "")
+    assert(not ok and message == "Title is required" and added.title == "A")
+    assert(debrief.setTileValue(section, 1, "size", "4x1"))
+    assert(added.colSpan == 4 and added.rowSpan == 1 and debrief.size(added) == "4x1")
+    ok, message = debrief.setTileValue(section, 1, "size", "3x2")
+    assert(not ok and message and debrief.size(added) == "4x1", "a rejected size leaves the tile unchanged")
+    assert(not debrief.setTileValue(section, 1, "colSpan", 2))
 
-    assert(debrief.setTile(section, 2, { title = "Wide", colSpan = 4, rowSpan = 2, series = { series("RQly") } }))
-    assert(section.tiles[2].title == "Wide" and section.tiles[2].colSpan == 4)
-    assert(not debrief.setTile(section, 2, { title = "", series = { series("RQly") } }))
-    assert(not debrief.setTile(section, 9, tile("Missing")))
+    assert(debrief.setSeriesValue(section, 1, 1, "source", "VCel"))
+    assert(debrief.setSeriesValue(section, 1, 1, "label", "low"))
+    assert(debrief.setSeriesValue(section, 1, 1, "label", nil), "a cleared label falls back")
+    assert(added.series[1].label == nil)
+    ok, message = debrief.setSeriesValue(section, 1, 1, "source", nil)
+    assert(not ok and message == "Source is required")
+    assert(not debrief.setSeriesValue(section, 1, 1, "statistic", "last"))
+    assert(not debrief.setSeriesValue(section, 1, 1, "precision", 1.5))
+    assert(not debrief.setSeriesValue(section, 1, 1, "accent", "red"))
+    assert(not debrief.setSeriesValue(section, 1, 2, "unit", "V"))
+
+    assert(debrief.addSeries(section, 1) == 2 and debrief.addSeries(section, 1) == 3)
+    assert(not debrief.addSeries(section, 1), "at most three series")
+    assert(debrief.removeSeries(section, 1, 2) and debrief.removeSeries(section, 1, 2))
+    assert(not debrief.removeSeries(section, 1, 1), "a tile keeps one series")
+
+    debrief.addTile(section)
+    debrief.addTile(section)
+    debrief.setTileValue(section, 2, "title", "B")
+    debrief.setTileValue(section, 3, "title", "C")
+    assert(debrief.pasteTile(section, 3, 1, false, false) == 1 and titles(section) == "C,A,B")
+    assert(debrief.pasteTile(section, 1, 3, true, false) == 3 and titles(section) == "A,B,C")
+    assert(debrief.pasteTile(section, 1, 2, true, false) == 2 and titles(section) == "B,A,C")
+    assert(debrief.pasteTile(section, 2, 2, false, false) == 2 and titles(section) == "B,A,C")
+    assert(debrief.pasteTile(section, 2, 2, true, false) == 2 and titles(section) == "B,A,C")
+    assert(
+        debrief.pasteTile(section, 3, 3, true, false) == 3 and titles(section) == "B,A,C",
+        "moving the last tile onto itself"
+    )
+    local single = { tiles = { { title = "S" } } }
+    assert(debrief.pasteTile(single, 1, 1, true, false) == 1 and #single.tiles == 1 and single.tiles[1].title == "S")
+    assert(debrief.pasteTile(section, 2, 3, true, true) == 4 and titles(section) == "B,A,C,A")
+    section.tiles[4].series[1].source = "RQly"
+    assert(section.tiles[2].series[1].source == "VCel", "a pasted copy is independent")
+    assert(not debrief.pasteTile(section, 9, 1, true, true))
 
     assert(debrief.removeTile(section, 1))
     assert(not debrief.removeTile(section, 5))
-    assert(#section.tiles == 2 and section.tiles[1].title == "Wide")
+    assert(titles(section) == "A,C,A")
 end
 
 local function run()
