@@ -859,6 +859,42 @@ initialize = function(context)
                 end
             end
         end
+        --- Hand the debrief recorder the layout's debrief and each tile's width.
+        --- The recorder is loaded on first use, so a dashboard without debrief
+        --- tiles spends no load step or heap on it.
+        context.configureDebrief = function(host)
+            local registry = host.serviceRuntime
+            if not registry then
+                return
+            end
+            local section = host.document and host.document.debrief
+            local service = registry.byId.debrief
+            if not service then
+                if not (section and section.tiles and #section.tiles > 0) then
+                    return
+                end
+                local module, moduleError =
+                    loadModule(host.path, "lib/debrief_service.lua", host.packageInfo.runtimeApi)
+                local ok, instance = false, moduleError
+                if module then
+                    ok, instance = pcall(module.new, registry.env, host.servicesModule, registry)
+                end
+                if not ok then
+                    addError(host, "debrief: " .. tostring(instance))
+                    return
+                end
+                host.servicesModule.register(registry, instance, getTime())
+                service = instance
+            end
+            local widths = {}
+            for index, tile in ipairs(section and section.tiles or {}) do
+                local span = { col = 0, row = 0, colSpan = tile.colSpan, rowSpan = tile.rowSpan }
+                local rect = host.grid.rect(host.zone, span, 4, 4, 4)
+                local fonts = host.themeBuilder.typography(tile.colSpan, tile.rowSpan)
+                widths[index] = host.themeBuilder.frame(host.theme, rect, fonts).content
+            end
+            service:configure(section, widths)
+        end
         context.panelHost = runtimeModule("lib/panel_host.lua")
         if context.panelHost and context.scheduler then
             context.panelHost.SLOTS = context.scheduler.budget.slots
@@ -2491,6 +2527,7 @@ local function rebindArming(context)
     context.armingRebind = nil
     if context.modelArmed == context.flightFactory.broker.document.armed then
         context.configureFlight(context)
+        context.configureDebrief(context)
         context.modelArmingReload = nil
     end
 end

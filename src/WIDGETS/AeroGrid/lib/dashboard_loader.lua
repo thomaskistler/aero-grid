@@ -743,6 +743,7 @@ function module.new(dependencies)
                 context.serviceRuntime = support.runtime(support.environment())
                 context.serviceRuntime.host = context
                 context.serviceRuntime.modules = {}
+                context.serviceRuntime.chartColumns = context.chartColumns
                 context.armGeneration = (context.armGeneration or 0) + 1
                 context.serviceRuntime.armGeneration = context.armGeneration
                 context.navigationHomes = context.navigationHomes or {}
@@ -838,6 +839,9 @@ function module.new(dependencies)
                 context.loadCandidateIndex = nil
                 if context.configureFlight then
                     context.configureFlight(context)
+                end
+                if context.configureDebrief then
+                    context.configureDebrief(context)
                 end
                 context.loadConfigured = true
                 if context.pending then
