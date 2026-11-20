@@ -14,12 +14,13 @@ at a glance without opening a log file on a computer.
 
 ![Pill over the dashboard](assets/post-flight-debrief/frame1.png)
 
-- When flight detection reports a completed flight, the dashboard shows a
-  pill at the bottom center.
+- When flight detection reports a completed flight, the debrief is built in
+  the background. Once it is complete, the dashboard shows a pill at the
+  bottom center, so opening and scrolling never wait.
 - Pill text:
-  - Outside widget fullscreen, including App mode: **Debrief ready ·
+  - Outside widget fullscreen, including App mode: **Debrief ready -
     long-press, then swipe up**
-  - In widget fullscreen: **Debrief ready · swipe up**
+  - In widget fullscreen: **Debrief ready - swipe up**
 - The pill is plain text: no "new" dot, no arrow.
 - The pill means "a new debrief exists". It stays until the debrief is opened
   or the session is reset.
@@ -29,22 +30,25 @@ at a glance without opening a log file on a computer.
 
 ![Debrief](assets/post-flight-debrief/frame2.png)
 
-- Swipe up opens the latest debrief; swipe down hides it. Swipe up always
-  works after a flight, even after the pill has gone.
+- The debrief is a sheet below the layout. Scrolling up reveals it and then
+  scrolls its content; scrolling down at its top slides it away. On release
+  it snaps open or closed; a fast swipe snaps at once.
+- Swipe up always works after a flight, even after the pill has gone.
+  Hiding keeps the scroll position.
 - The widget only receives touch in widget fullscreen; App mode does not
   deliver touch either. Outside fullscreen the user long-presses first
   (hence the pill wording).
 - Opening is touch only, like the AeroGrid menu. Once open, the rotary
-  encoder scrolls and RTN closes the debrief. Key-only access to the menu
+  encoder scrolls and RTN hides the debrief. Key-only access to the menu
   and the debrief is a separate issue.
-- Leaving widget fullscreen closes the debrief.
+- Leaving widget fullscreen hides the debrief.
 
 ### Layout
 
 ![Debrief scrolled](assets/post-flight-debrief/frame3.png)
 
 - **Header card:** model name, flight number, flight start date and time
-  (for example "Flight 42 · Nov 17, 14:24"), and the flight time in large
+  (for example "Flight 42 - Nov 17, 14:24"), and the flight time in large
   digits. No alarm-count badge. When the radio clock looks unset (year
   before 2024), the date is hidden and only the flight number is shown.
 - **Tiles:** a flat list of chart tiles, no sections. Tile sizes use the
@@ -272,8 +276,8 @@ own. Nothing user-visible is half finished between steps.
    settings, the flight-detection note, and the missing-sensor hint. Edits
    the data defined in step 3.
 6. **Debrief view.** Header and tiles, shading, legend overflow, scrolling.
-   Swipe up and down in fullscreen, rotary scrolls, RTN closes, leaving
-   fullscreen closes.
+   Swipe up and down in fullscreen, rotary scrolls, RTN hides, leaving
+   fullscreen hides. Built in the background after capture.
 7. **Pill.** Both texts and the pill lifecycle. The feature now works end to
    end with a debrief built on the setup page.
 8. **Automatic population.** The panel-to-tile mapping, filling layouts that
