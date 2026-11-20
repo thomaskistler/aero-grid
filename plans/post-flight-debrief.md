@@ -85,8 +85,10 @@ series:
 - A new AeroGrid menu item, **Flight debrief**, sits next to **Model
   settings** and **UI setup** and configures the debrief of the current
   layout.
-- Edits follow the existing layout rules: changes are a draft until **Save**
-  or **Save as**; editing a bundled layout creates a user copy.
+- Edits follow the existing layout rules: changes are a draft; leaving with
+  changes asks **Save**, **Save as...** or **Discard changes**. Editing a
+  bundled layout creates a user copy. A failed Save returns to the list and
+  shows why.
 - A debrief is an ordered list of tiles. Each tile has a title, a size
   (Compact 2 x 2, Wide 4 x 2, Wide 4 x 1), and one to three series. Each
   series uses the Chart panel's series settings (source, label, range, unit,
@@ -125,8 +127,10 @@ series:
 
 - A list page, not a visual editor: the tiles are listed by title and size.
   Selecting a tile opens its settings in the shared settings UI.
-- Actions: **Add**, **Remove**, **Move up**, **Move down**, and **Fill from
-  dashboard**.
+- Actions: **Add tile**. Tapping a tile opens a menu, like EdgeTX inputs and
+  mixes: **Edit**, **Copy**, **Move**, **Delete**, then **Paste before** /
+  **Paste after** while a tile is marked. Adding and pasting are disabled at
+  12 tiles. **Fill from dashboard** is added by Automatic population.
 - Works with touch and keys, like other settings pages.
 
 ### Automatic population
@@ -222,7 +226,8 @@ series:
   duration* are not counted by flight detection, so they create no debrief.
 - **No flight detection:** no flight completes, so there is no debrief. The
   Flight debrief setup page stays available, because a layout can be used by
-  several models; it shows a note that a debrief needs flight detection.
+  several models; it shows "A debrief needs flight detection. Choose Armed in
+  Model settings."
 - **Session reset** clears the debrief and the pill, like Chart recordings.
   `Drop` and `FDst` are unaffected; only an EdgeTX telemetry reset clears
   them.
