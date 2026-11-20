@@ -83,6 +83,55 @@ function debrief:resetSession()
     self.handled = self.session and settled(self.history, self.session) or 0
 end
 
+--- Days since 1970-01-01 of a civil date, in int32-safe steps.
+local function daysFromCivil(year, month, day)
+    year = month <= 2 and year - 1 or year
+    local era = (year >= 0 and year or year - 399) // 400
+    local yoe = year - era * 400
+    local doy = (153 * (month + (month > 2 and -3 or 9)) + 2) // 5 + day - 1
+    local doe = yoe * 365 + yoe // 4 - yoe // 100 + doy
+    return era * 146097 + doe - 719468
+end
+
+local function civilFromDays(days)
+    days = days + 719468
+    local era = (days >= 0 and days or days - 146096) // 146097
+    local doe = days - era * 146097
+    local yoe = (doe - doe // 1460 + doe // 36524 - doe // 146096) // 365
+    local doy = doe - (365 * yoe + yoe // 4 - yoe // 100)
+    local mp = (5 * doy + 2) // 153
+    local month = mp < 10 and mp + 3 or mp - 9
+    local year = yoe + era * 400 + (month <= 2 and 1 or 0)
+    return year, month, doy - (153 * mp + 2) // 5 + 1
+end
+
+--- The clock reading `age` seconds before `now`, a getDateTime() table.
+---@return table? date year, mon, day, hour, min; nil without a clock.
+function debrief.dateBefore(now, age)
+    if type(now) ~= "table" or type(now.year) ~= "number" then
+        return nil
+    end
+    local seconds = (now.hour or 0) * 3600 + (now.min or 0) * 60 + (now.sec or 0) - math.max(0, age // 1)
+    local days = daysFromCivil(now.year, now.mon or 1, now.day or 1) + seconds // 86400
+    seconds = seconds % 86400
+    local year, month, day = civilFromDays(days)
+    return { year = year, mon = month, day = day, hour = seconds // 3600, min = seconds % 3600 // 60 }
+end
+
+--- Flight number, model name and start date for the debrief header.
+local function header(self, start)
+    local env, flight = self.env, self.runtime.byId.flight
+    local state = flight and flight.state and flight:state()
+    local info = env.getInfo and env.getInfo()
+    local now = env.getDateTime and env.getDateTime()
+    local elapsed = self.session and self.session.elapsed
+    return {
+        flight = state and state.countAvailable and state.displayCount or nil,
+        model = type(info) == "table" and info.name or nil,
+        started = debrief.dateBefore(now, elapsed and math.max(0, elapsed - start) // 100 or 0),
+    }
+end
+
 local function begin(self, index, start, finish)
     local telemetry = self.runtime.byId.telemetry
     local widest = 1
@@ -104,6 +153,7 @@ local function begin(self, index, start, finish)
         window = (finish - start) // scale + 1,
         thresholds = telemetry and telemetry:thresholdMap() or {},
         level = telemetry and telemetry.level,
+        header = header(self, start),
         tile = 1,
         position = 0,
         tiles = {},
@@ -118,8 +168,16 @@ local function nextSeries(self, job)
         local config = tile.series[position]
         if config then
             local feed = self.feeds[job.tile][position]
+            local spec = job.thresholds[config.source]
             local result = {
                 config = config,
+                -- A copy, so later threshold edits cannot restyle this debrief.
+                thresholds = spec and {
+                    warning = spec.warning,
+                    critical = spec.critical,
+                    falling = spec.falling,
+                    strict = spec.strict,
+                },
                 level = "normal",
                 columns = self.runtime.chartColumns.new(self.widths[job.tile], job.window, nil, { passive = true }),
                 levels = {},
@@ -298,7 +356,14 @@ local function capture(self, slots, used)
         if not series then
             if not nextSeries(self, job) then
                 self.job = nil
-                self.latest = { duration = job.finish - job.start, tiles = job.tiles }
+                local header = job.header
+                self.latest = {
+                    duration = job.finish - job.start,
+                    tiles = job.tiles,
+                    flight = header.flight,
+                    model = header.model,
+                    started = header.started,
+                }
                 break
             end
         elseif work(self, job, series) then

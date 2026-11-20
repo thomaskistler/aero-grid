@@ -234,6 +234,9 @@ function module.new(dependencies)
         context.locationOverlay = nil
         context.logViewer = nil
         context.logOverlay = nil
+        if context.debrief then
+            context.debriefModule.detach(context.debrief)
+        end
         local leavingFullscreen = not isFullScreen()
         if
             not context.retainedPage

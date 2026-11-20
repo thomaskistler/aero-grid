@@ -103,6 +103,7 @@ function services.environment(overrides)
         getRSSI = callable(overrides.getRSSI) or callable(getRSSI),
         getFlightMode = callable(overrides.getFlightMode) or callable(getFlightMode),
         getTime = callable(overrides.getTime) or callable(getTime),
+        getDateTime = callable(overrides.getDateTime) or callable(getDateTime),
         getSwitchIndex = callable(overrides.getSwitchIndex) or callable(getSwitchIndex),
         getSwitchValue = callable(overrides.getSwitchValue) or callable(getSwitchValue),
         setStickySwitch = callable(overrides.setStickySwitch) or callable(setStickySwitch),
