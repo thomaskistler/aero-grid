@@ -682,6 +682,101 @@ function view.handle(host, event, touch)
     return true
 end
 
+local PILL_TEXTS = {
+    [true] = { "Debrief ready - swipe up", "Debrief ready" },
+    [false] = { "Debrief ready - long-press, then swipe up", "Debrief ready" },
+}
+local PILL_PAD, PILL_MARGIN = 10, 6
+
+--- The pill's text and size for a zone, or nil when even the short text does
+--- not fit. Outside fullscreen the widget gets no touch until a long press.
+function view.pillFit(host, fullscreen, width, height)
+    local themeBuilder = host.themeBuilder
+    local h = themeBuilder.fontHeight(SMLSIZE) + 8
+    if h + 2 * PILL_MARGIN > height then
+        return nil
+    end
+    for _, text in ipairs(PILL_TEXTS[fullscreen == true]) do
+        local w = themeBuilder.measureText(SMLSIZE, text) + 2 * PILL_PAD
+        if w + 2 * PILL_MARGIN <= width then
+            return text, w, h
+        end
+    end
+    return nil
+end
+
+--- Show the "debrief ready" pill at the bottom center of the page, worded for
+--- `fullscreen`, or hide it when `fullscreen` is nil. It is drawn in the
+--- host's pill layer, which the page keeps above its panels.
+function view.pill(host, fullscreen)
+    local zone, layer, pill = host.zone, host.pillLayer, host.debriefPill
+    if not pill then
+        pill = {}
+        host.debriefPill = pill
+    end
+    pill.fullscreen, pill.w, pill.h = fullscreen, zone.w, zone.h
+    local text, w, h
+    if fullscreen ~= nil and layer then
+        text, w, h = view.pillFit(host, fullscreen, zone.w, zone.h)
+    end
+    if not text then
+        if layer then
+            lvgl.hide(layer)
+        end
+        return
+    end
+    local ui = pill.ui
+    if ui and ui.builtFullscreen and not fullscreen then
+        -- EdgeTX keeps objects built in fullscreen touchable, so outside it they
+        -- would take the widget's long press. EdgeTX sweeps whatever is made
+        -- under a cleared object in the same callback, so rebuild in the next.
+        lvgl.hide(layer)
+        layer:clear()
+        pill.ui, pill.fullscreen = nil, nil
+        return
+    end
+    local x, y = (zone.w - w) // 2, zone.h - h - PILL_MARGIN
+    if not ui then
+        local color = host.theme.color
+        local radius = h // 2
+        layer:set({ x = x, y = y, w = w, h = h })
+        ui = {
+            fill = lvgl.rectangle(layer, {
+                x = 0,
+                y = 0,
+                w = w,
+                h = h,
+                filled = true,
+                rounded = radius,
+                color = color.surfaceRaised,
+            }),
+            outline = lvgl.rectangle(layer, { x = 0, y = 0, w = w, h = h, rounded = radius, color = color.border }),
+            label = host.primitives.label(layer, host.theme, {
+                x = PILL_PAD,
+                y = (h - host.themeBuilder.fontHeight(SMLSIZE)) // 2,
+                w = w - 2 * PILL_PAD,
+                text = text,
+                font = SMLSIZE,
+                color = color.text,
+            }),
+            builtFullscreen = fullscreen,
+            text = text,
+            x = x,
+            y = y,
+            w = w,
+        }
+        pill.ui = ui
+    elseif ui.text ~= text or ui.x ~= x or ui.y ~= y or ui.w ~= w then
+        -- The height is fixed by the font, so the construction-time radius holds.
+        layer:set({ x = x, y = y, w = w, h = h })
+        ui.fill:set({ w = w })
+        ui.outline:set({ w = w })
+        ui.label:set({ w = w - 2 * PILL_PAD, text = text })
+        ui.text, ui.x, ui.y, ui.w = text, x, y, w
+    end
+    lvgl.show(layer)
+end
+
 --- Open the fully built view of `result` from an upward drag `request`,
 --- where it was last scrolled.
 function view.open(host, result, request)

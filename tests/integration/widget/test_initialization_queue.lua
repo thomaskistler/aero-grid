@@ -18,7 +18,8 @@ local context = definition.create({ x = 0, y = 0, w = 480, h = 272 }, {
 assert(context.scheduler and context.initializing and context.stage == "initialize")
 assert(context.root and context.page and context.canvas and not context.grid and not context.configureFlight)
 assert(not context.flightFactory.members[context], "native create cannot enroll substantive flight membership")
-assert(#fixture.lvglMock.objects == objects + 3, "native create only constructs the charged background shell")
+-- Root, page, canvas, and the panel and pill layers.
+assert(#fixture.lvglMock.objects == objects + 5, "native create only constructs the charged background shell")
 assert(context.scheduler.callbacks == 1 and context.scheduler.count == 0)
 assert(context.canvas.properties.filled and context.canvas.properties.w == 480)
 local shellRoot, shellPage, shellCanvas = context.root, context.page, context.canvas

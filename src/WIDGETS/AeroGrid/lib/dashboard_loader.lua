@@ -279,7 +279,7 @@ function module.new(dependencies)
             container:set(geometry)
             lvgl.show(container)
         else
-            container = lvgl.box(context.page, geometry)
+            container = lvgl.box(context.panelLayer or context.page, geometry)
             -- Preview pools reuse containers, so their origin follows the object.
             if isFullScreen() then
                 context.fullscreenContainers = context.fullscreenContainers or setmetatable({}, { __mode = "k" })

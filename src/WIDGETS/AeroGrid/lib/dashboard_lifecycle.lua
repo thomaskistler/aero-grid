@@ -115,6 +115,7 @@ function module.new(dependencies)
         context.root:set({ w = context.zone.w, h = context.zone.h })
         context.page:set({ w = context.zone.w, h = context.zone.h })
         context.canvas:set({ w = context.zone.w, h = context.zone.h })
+        context.panelLayer:set({ w = context.zone.w, h = context.zone.h })
 
         -- A zone that moved may have moved out from under the button, or into it.
         context.reserved = reservedCorner(context.zone)
@@ -235,6 +236,7 @@ function module.new(dependencies)
         context.logViewer = nil
         context.logOverlay = nil
         context.debriefOverlay = nil
+        context.debriefPill = nil
         if context.debrief then
             context.debriefModule.detach(context.debrief)
         end
@@ -295,6 +297,8 @@ function module.new(dependencies)
 
         context.page = nil
         context.canvas = nil
+        context.panelLayer = nil
+        context.pillLayer = nil
         context.emptyHint = nil
         context.panels = {}
         context.rejected = {}
@@ -328,6 +332,10 @@ function module.new(dependencies)
             filled = true,
             opacity = context.radioBackground and 0 or 255,
         })
+        -- Panels below, the pill above; see addPageLayers in main.lua.
+        context.panelLayer = lvgl.box(context.page, { x = 0, y = 0, w = context.zone.w, h = context.zone.h })
+        context.pillLayer = lvgl.box(context.page, { x = 0, y = 0, w = 1, h = 1 })
+        lvgl.hide(context.pillLayer)
         context.reloadState = nil
     end
 

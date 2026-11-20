@@ -615,6 +615,15 @@ end
 
 local initialize
 
+--- Panels go in one layer and the pill in another above it, both made with
+--- the page, so the pill stays on top without being remade.
+---@param context AeroGridContext
+local function addPageLayers(context, zone)
+    context.panelLayer = lvgl.box(context.page, { x = 0, y = 0, w = zone.w, h = zone.h })
+    context.pillLayer = lvgl.box(context.page, { x = 0, y = 0, w = 1, h = 1 })
+    lvgl.hide(context.pillLayer)
+end
+
 --- Build whatever part of the bare page shell is missing, so errors have
 --- somewhere to be shown.
 ---@param context AeroGridContext
@@ -636,6 +645,9 @@ local function ensureShell(context)
             filled = true,
             opacity = context.radioBackground and 0 or 255,
         })
+    end
+    if not context.panelLayer then
+        addPageLayers(context, zone)
     end
 end
 
@@ -665,6 +677,8 @@ local function create(zone, widgetOptions, path)
         rejected = {},
         errors = {},
         notices = {},
+        -- Debriefs already opened; their pill is gone for good.
+        debriefOpened = setmetatable({}, { __mode = "k" }),
         width = zone.w,
         height = zone.h,
         left = zone.xabs or 0,
@@ -708,6 +722,7 @@ local function create(zone, widgetOptions, path)
                     filled = true,
                     opacity = context.radioBackground and 0 or 255,
                 })
+                addPageLayers(context, zone)
             end,
         })
         context.scheduler.run(getTime(), context.scheduler.budget.capacity, false)
@@ -1120,6 +1135,39 @@ end
 local function debriefReady(context)
     local state = context.debrief
     return state ~= nil and state.result == debriefResult(context) and context.debriefModule.ready(state)
+end
+
+--- Whether the "debrief ready" pill should show, and in which wording: nil for
+--- no pill, else whether the zone is fullscreen. The pill marks a debrief
+--- that is fully built and not yet opened.
+local function debriefPillWanted(context)
+    if
+        not context.page
+        or context.stage
+        or context.reloadState
+        or context.editorUi
+        or context.modelSettingsUi
+        or context.logViewer
+        or context.locationDetails
+        or debriefShown(context)
+        or not debriefReady(context)
+        or context.debriefOpened[context.debrief.result]
+    then
+        return nil
+    end
+    return isFullScreen()
+end
+
+local function debriefPillStale(context)
+    local pill = context.debriefPill
+    if not pill and not context.debrief then
+        return false
+    end
+    local wanted, zone = debriefPillWanted(context), context.zone
+    if wanted == nil then
+        return pill ~= nil and pill.fullscreen ~= nil
+    end
+    return not pill or pill.fullscreen ~= wanted or pill.w ~= zone.w or pill.h ~= zone.h
 end
 
 --- Whether a fullscreen touch is an upward drag that should reveal the debrief.
@@ -2288,6 +2336,7 @@ local function advanceForeground(context)
         context.root:set({ w = context.zone.w, h = context.zone.h })
         context.page:set({ w = context.zone.w, h = context.zone.h })
         context.canvas:set({ w = context.zone.w, h = context.zone.h })
+        context.panelLayer:set({ w = context.zone.w, h = context.zone.h })
         context.reserved = reservedCorner(context.zone)
         if context.errorLabel then
             context.errorLabel:set({ y = errorTop(context), w = math.max(1, context.zone.w - 16) })
@@ -2500,6 +2549,26 @@ local function debriefOpenStep(task)
     local ok, openError = pcall(context.debriefModule.open, context, result, request)
     if not ok then
         debriefFailed(context, openError)
+        return
+    end
+    -- Any reveal counts as opened, even one that snaps closed again. The pill
+    -- lies above the sheet, so it goes in the same turn.
+    context.debriefOpened[result] = true
+    if context.debriefPill then
+        context.debriefModule.pill(context, nil)
+    end
+end
+
+local function debriefPillReady(task, _, hidden)
+    local context = task.host
+    return not hidden and not context.lifecycleRequest and debriefPillStale(context)
+end
+
+local function debriefPillStep(task)
+    local context = task.host
+    local ok, pillError = pcall(context.debriefModule.pill, context, debriefPillWanted(context))
+    if not ok then
+        debriefFailed(context, pillError)
     end
 end
 
@@ -2507,6 +2576,8 @@ end
 local DEBRIEF_SLOT_INSTRUCTIONS = 2000
 -- Slots per debrief build step: one tile (about 10k instructions) or curves.
 local DEBRIEF_SLOTS = 5
+-- Slots per pill update: a few measured texts and objects.
+local DEBRIEF_PILL_SLOTS = 2
 
 --- Whether the latest debrief's view still has to be built. Building starts
 --- as soon as a debrief exists, so the view opens complete.
@@ -3267,6 +3338,18 @@ local function enrolHost(context, hidden)
     end
     if not hidden and emptyHintStale(context) then
         add(hostTask(context, "hostTask", "host", hintReady, hintStep, { inputFirst = true }))
+    end
+    if not hidden and debriefPillStale(context) then
+        add(
+            hostTask(
+                context,
+                "debriefPillTask",
+                "debrief pill",
+                debriefPillReady,
+                debriefPillStep,
+                { inputFirst = true, cost = DEBRIEF_PILL_SLOTS }
+            )
+        )
     end
 end
 
