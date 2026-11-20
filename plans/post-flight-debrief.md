@@ -21,9 +21,12 @@ at a glance without opening a log file on a computer.
   - Outside widget fullscreen, including App mode: **Debrief ready -
     long-press, then swipe up**
   - In widget fullscreen: **Debrief ready - swipe up**
+  - In a zone too narrow for these: **Debrief ready**, or no pill if even
+    that does not fit.
 - The pill is plain text: no "new" dot, no arrow.
 - The pill means "a new debrief exists". It stays until the debrief is opened
-  or the session is reset.
+  (any reveal counts, even one that snaps closed) or the session is reset. The
+  next flight's debrief brings it back.
 - Each dashboard shows its own pill for its own debrief.
 
 ### Opening and closing
