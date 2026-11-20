@@ -391,6 +391,30 @@ local function testDebriefErrorsAreNotices()
     assertEqual(derived[1].series[1].statistic, "min", "the threshold owner judges Curr as falling")
     assertEqual(derived[2].series[1].statistic, "min")
 
+    -- A derived series shares the recording of an unsmoothed chart; only a
+    -- smoothed chart needs its own track beside the debrief's.
+    local function chart(id, row, smoothing)
+        return table.concat({
+            "  - id: " .. id .. "\n    type: chart\n",
+            "    col: 0\n    row: " .. row .. "\n    colSpan: 4\n    rowSpan: 2\n",
+            "    config:\n      smoothing: " .. smoothing .. "\n      metrics:\n        - source: Curr\n",
+        })
+    end
+    local charts = createLoaded(
+        { x = 0, y = 0, w = 480, h = 272 },
+        DEFAULT_OPTIONS,
+        makeWidget(
+            "debrief-shared",
+            "version: 5\ngrid:\n  columns: 4\n  rows: 4\npanels:\n"
+                .. chart("raw", 0, "off")
+                .. chart("smooth", 2, "medium")
+        )
+    )
+    assertEqual(#charts.errors, 0, table.concat(charts.errors, "\n"))
+    pump(charts, 20)
+    assertEqual(#charts.document.debrief.tiles, 2)
+    assertEqual(charts.serviceRuntime.byId.history.count, 2, "the debrief must reuse the unsmoothed recording")
+
     -- Reloading a layout with its own debrief forgets the derived one.
     local switching = makeWidget("debrief-switch", battery)
     writeFile(switching .. "layouts/Own.yaml", battery .. "debrief:\n  tiles: []\n")
