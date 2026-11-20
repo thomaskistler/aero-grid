@@ -82,6 +82,7 @@ local sections = {
     { tiles = {} },
     false,
 }
+equal(context.serviceRuntime.byId.debrief, nil, "a layout without debrief tiles must not load the recorder")
 for _, section in ipairs(sections) do
     draft, handlers = preview(function()
         context.editorSession.draft.debrief = section or nil
@@ -91,7 +92,12 @@ for _, section in ipairs(sections) do
     equal(context.serviceRuntime.byId.history, history)
     equal(context.document.debrief, section or nil)
     equal(fixture.instanceOf(context, "power"), compatible)
+    assert(context.serviceRuntime.byId.debrief, "a debrief save must load the recorder")
 end
+-- Saving debrief series subscribes them before the next flight; history keeps
+-- subscriptions until the dashboard reloads.
+equal(history.count, subscriptions + 1, "a debrief save must record its series")
+subscriptions, telemetryCount = history.count, telemetry.count
 
 fixture.radio.fields.NewChart = { id = 5100, name = "NewChart", unit = 1 }
 fixture.radio.values[5100] = 55

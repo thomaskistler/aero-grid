@@ -198,6 +198,9 @@ function module.new(dependencies)
         if context.configureFlight then
             context.configureFlight(context)
         end
+        if context.configureDebrief then
+            context.configureDebrief(context)
+        end
         return true
     end
 
