@@ -268,6 +268,9 @@ function debrief.pasteTile(section, from, target, after, duplicate)
     if duplicate and not debrief.canAdd(section) then
         return false, "a debrief has at most " .. debrief.MAX_TILES .. " tiles"
     end
+    if not duplicate and from == target then
+        return from
+    end
     local tile = duplicate and copy(tiles[from]) or table.remove(tiles, from)
     if not duplicate and from < target then
         target = target - 1
@@ -296,10 +299,11 @@ function debrief.setTileValue(section, index, key, value)
         tile.title = value
     elseif key == "size" then
         local colSpan, rowSpan = string.match(tostring(value), "^(%d)x(%d)$")
-        tile.colSpan, tile.rowSpan = tonumber(colSpan), tonumber(rowSpan)
-        if not debrief.size(tile) then
+        local size = { colSpan = tonumber(colSpan), rowSpan = tonumber(rowSpan) }
+        if not debrief.size(size) then
             return false, "size must be 2 x 2, 4 x 2, or 4 x 1"
         end
+        tile.colSpan, tile.rowSpan = size.colSpan, size.rowSpan
     else
         return false, tostring(key) .. " is not a tile setting"
     end

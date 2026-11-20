@@ -133,39 +133,9 @@ local function show(context, state, target)
             return editor.editDebrief(state.session, "setSeriesValue", target.tile, target.series, field.key, value)
         end
     end
-    local generation = state.drawerGeneration
-    state.nativeDrawer = assert(
-        drawer.hostedDialog(context, state, {
-            title = title,
-            close = function()
-                if generation == state.drawerGeneration then
-                    state.nativeDrawer, state.drawerBuild = nil, nil
-                    local command = { action = "back" }
-                    if state.drawerPending then
-                        state.drawerDismiss = command
-                    else
-                        state.drawerPending = command
-                    end
-                end
-            end,
-        }),
-        "cannot open editor dialog"
-    )
-    local view = state.drawerView
-    view.fields, view.build = fields, 1
-    view.errorHeight = math.floor((lvgl.UI_ELEMENT_HEIGHT or 32) * 0.56 + 0.5)
-    view.errorColor = context.theme.color.critical
-    view.read, view.writeValue = read, write
-    view.write = function(field, value, control)
-        drawer.enqueue(state, { action = "write", field = field, value = value, control = control }, generation)
-    end
-    view.action = function(command)
-        drawer.enqueue(state, command, generation)
-    end
-    view.report = function(message, control)
-        drawer.enqueue(state, { action = "error", message = message, control = control }, generation)
-    end
-    state.drawerBuild = 1
+    drawer.settingsDialog(context, state, title, fields, read, write, function()
+        return { action = "back" }
+    end)
 end
 
 --- Open the tile list.
@@ -288,17 +258,7 @@ function page.advance(context, state)
             show(context, state, { kind = "tile", tile = target.tile })
         end
     elseif command.action == "write" then
-        local view = state.drawerView
-        ok, err = view.writeValue(command.field, command.value)
-        if command.control and state.nativeDrawer then
-            if not ok and command.control.readNative then
-                command.control.readNative()
-            end
-            if command.control.kind == "textEdit" then
-                command.control.object:set({ value = tostring(view.read(command.field) or "") })
-            end
-            state.settingsUi.fieldError(view, command.control, not ok and tostring(err) or nil)
-        end
+        ok, err = context.editorDrawerModule.applyWrite(state, command)
     elseif command.action == "error" then
         ok, err = false, command.message
         if command.control and state.nativeDrawer then

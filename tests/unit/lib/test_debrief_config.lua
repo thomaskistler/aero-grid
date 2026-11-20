@@ -159,7 +159,8 @@ local function testDraftOperations()
     assert(not ok and message == "Title is required" and added.title == "A")
     assert(debrief.setTileValue(section, 1, "size", "4x1"))
     assert(added.colSpan == 4 and added.rowSpan == 1 and debrief.size(added) == "4x1")
-    assert(not debrief.setTileValue(section, 1, "size", "3x2"))
+    ok, message = debrief.setTileValue(section, 1, "size", "3x2")
+    assert(not ok and message and debrief.size(added) == "4x1", "a rejected size leaves the tile unchanged")
     assert(not debrief.setTileValue(section, 1, "colSpan", 2))
 
     assert(debrief.setSeriesValue(section, 1, 1, "source", "VCel"))
@@ -186,6 +187,13 @@ local function testDraftOperations()
     assert(debrief.pasteTile(section, 1, 3, true, false) == 3 and titles(section) == "A,B,C")
     assert(debrief.pasteTile(section, 1, 2, true, false) == 2 and titles(section) == "B,A,C")
     assert(debrief.pasteTile(section, 2, 2, false, false) == 2 and titles(section) == "B,A,C")
+    assert(debrief.pasteTile(section, 2, 2, true, false) == 2 and titles(section) == "B,A,C")
+    assert(
+        debrief.pasteTile(section, 3, 3, true, false) == 3 and titles(section) == "B,A,C",
+        "moving the last tile onto itself"
+    )
+    local single = { tiles = { { title = "S" } } }
+    assert(debrief.pasteTile(single, 1, 1, true, false) == 1 and #single.tiles == 1 and single.tiles[1].title == "S")
     assert(debrief.pasteTile(section, 2, 3, true, true) == 4 and titles(section) == "B,A,C,A")
     section.tiles[4].series[1].source = "RQly"
     assert(section.tiles[2].series[1].source == "VCel", "a pasted copy is independent")

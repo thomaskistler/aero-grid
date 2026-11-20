@@ -105,6 +105,7 @@ settle()
 row("Size").object.properties.set(3)
 settle()
 assert(tiles()[1].title == "Battery" and tiles()[1].colSpan == 4 and tiles()[1].rowSpan == 1)
+assert(row("Size").object.properties.get() == 3, "the Size control shows the edited size")
 assert(active("Add series"))
 
 press("min")
@@ -112,6 +113,9 @@ assert(state().debriefTarget.kind == "series")
 for _, entry in ipairs(state().drawerView.controls) do
     assert(entry.field.label ~= "Remove series", "the only series cannot be removed")
 end
+row("Statistic").object.properties.set(2)
+settle()
+assert(tiles()[1].series[1].statistic == "max" and row("Statistic").object.properties.get() == 2)
 row("Label").object.properties.set("Low")
 settle()
 assert(tiles()[1].series[1].label == "Low")
