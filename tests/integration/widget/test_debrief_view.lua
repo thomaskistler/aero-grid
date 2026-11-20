@@ -1,8 +1,9 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
--- The debrief view: an upward drag in fullscreen reveals the latest flight's
--- debrief over the layout; it scrolls, hides without being destroyed, and is
--- rebuilt only when the debrief, layout or zone changes.
+-- The debrief view: built in the background as soon as a debrief exists, it
+-- opens only when complete. An upward drag in fullscreen reveals it over the
+-- layout; it scrolls, hides without being destroyed, and is rebuilt only when
+-- the debrief, layout or zone changes.
 
 local root = ... or "."
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
@@ -17,27 +18,40 @@ EVT_VIRTUAL_EXIT, EVT_ROT_LEFT, EVT_ROT_RIGHT = 9106, 9107, 9108
 local worst = 0
 local function busy()
     local state = context.debrief
-    return context.inputQueue
-        or context.debriefRequest
-        or context.uiRequest
-        or state and state.shown and context.debriefModule.pending(state)
+    return context.inputQueue or context.debriefRequest or context.uiRequest
+end
+local function callback(event, touch)
+    local instructions = 0
+    debug.sethook(function()
+        instructions = instructions + 100
+    end, "", 100)
+    definition.refresh(context, event, touch)
+    debug.sethook()
+    worst = math.max(worst, instructions)
+    fixture.lvglMock.settle()
 end
 local function input(event, touch)
     fixture.tick(20)
-    for attempt = 1, 200 do
-        local instructions = 0
-        debug.sethook(function()
-            instructions = instructions + 100
-        end, "", 100)
-        definition.refresh(context, attempt == 1 and event or nil, attempt == 1 and touch or nil)
-        debug.sethook()
-        worst = math.max(worst, instructions)
-        fixture.lvglMock.settle()
+    callback(event, touch)
+    for _ = 1, 200 do
         if not busy() then
             return
         end
+        callback()
     end
     error("debrief input did not settle")
+end
+--- Run callbacks until the view is fully built; returns how many it took.
+local function build()
+    for count = 1, 1000 do
+        local state = context.debrief
+        if state and context.debriefModule.ready(state) then
+            return count - 1
+        end
+        fixture.tick(5)
+        callback()
+    end
+    error("debrief view was not built")
 end
 
 local H = context.zone.h
@@ -181,10 +195,28 @@ drag(250, 100)
 input(EVT_TOUCH_BREAK, touch(100, 250))
 assert(not context.debrief, "no debrief, no view")
 
--- A drag past the halfway point snaps the sheet open on release.
+-- The view builds in the background, even outside fullscreen, and does not
+-- open until every tile is built and painted.
 current = makeResult("Tile")
+fixture.lvglMock.setFullScreen(false)
+for _ = 1, 3 do
+    fixture.tick(5)
+    callback()
+end
+local state = assert(context.debrief, "a debrief starts building its view")
+assert(view.pending(state) and not state.shown)
+fixture.lvglMock.setFullScreen(true)
 drag(H - 5, H - 60)
-local state = assert(context.debrief, "an upward drag opens the debrief")
+input(EVT_TOUCH_BREAK, touch(H - 60, H - 5))
+assert(not state.shown, "an unfinished view does not open")
+local callbacks = build()
+assert(context.debrief == state and state.ui.overlay.hidden and not state.shown)
+for _, item in ipairs(state.items) do
+    assert(item.built and item.complete, "every tile is built before the view opens")
+end
+
+-- A drag past the halfway point snaps the sheet open on release.
+drag(H - 5, H - 60)
 assert(state.shown and state.reveal == 55, "the sheet follows the finger")
 assert(state.ui.overlay.properties.y == H - 55)
 input(EVT_TOUCH_SLIDE, touch(20, H - 5))
@@ -192,7 +224,6 @@ assert(state.reveal == H - 25)
 input(EVT_TOUCH_BREAK, touch(20, H - 5))
 assert(state.reveal == H and state.offset == 0, "release past halfway opens fully")
 assert(state.ui.overlay.properties.y == 0)
-assert(not view.pending(state), "visible tiles are built and painted")
 
 local function labelsOf(object, found)
     found = found or {}
@@ -233,8 +264,6 @@ end
 assert(shades == 2, "warning and critical periods are shaded: " .. shades)
 assert(dashes == 2, "warning and critical thresholds are dashed lines: " .. dashes)
 assert(has(labelsOf(first.box), "Min"), "wide tiles label their statistics")
-local far = state.items[#state.items]
-assert(not far.built, "tiles far below the viewport wait")
 
 -- Dragging further up scrolls; the rotary scrolls and never hides.
 drag(200, 120)
@@ -248,7 +277,6 @@ for _ = 1, 20 do
     input(EVT_ROT_RIGHT)
 end
 assert(state.offset == state.maxOffset and state.maxOffset > 0, "the rotary stops at the bottom")
-assert(far.built and far.complete, "scrolling builds the tiles it reaches")
 
 -- A downward swipe with content scrolled only scrolls back.
 input(EVT_TOUCH_FIRST, touch(50, 50))
@@ -293,14 +321,15 @@ assert(not state.ui or state.ui.overlay.hidden)
 fixture.lvglMock.setFullScreen(true)
 fixture.pump(context, 40)
 drag(H - 5, H - 40, { swipeUp = true })
-assert(context.debrief == state and state.ui and state.offset == offset, "the view is rebuilt where it was")
+assert(context.debrief == state and state.ui and state.offset == offset, "the view opens where it was")
 assert(not state.ui.overlay.hidden)
 input(EVT_VIRTUAL_EXIT)
 
 -- The next flight's debrief and a session reset destroy the view.
 current = makeResult("Next")
 fixture.pump(context, 5)
-assert(context.debrief == nil, "a new debrief replaces the view")
+assert(context.debrief ~= state, "a new debrief replaces the view")
+build()
 drag(H - 5, H - 40, { swipeUp = true })
 assert(context.debrief and context.debrief.result == current and context.debrief.offset == 0)
 assert(has(labelsOf(context.debrief.ui.overlay), "Next 1"))
@@ -313,4 +342,10 @@ assert(context.debrief == nil, "no debrief, no view")
 
 assert(worst < 15000, "debrief callback exceeded budget: " .. worst)
 runtime.byId.debrief = realDebrief
-print("Debrief view integration passed; worst callback: " .. worst .. " instructions")
+print(
+    "Debrief view integration passed; 12 tiles built in "
+        .. callbacks
+        .. " callbacks; worst callback: "
+        .. worst
+        .. " instructions"
+)

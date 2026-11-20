@@ -4,7 +4,7 @@
 --- it and then scrolls its content; dragging down at its top slides it away
 --- again. Hiding keeps the built view; the host destroys it when the debrief,
 --- the layout or the zone changes.
-local view = { RUNTIME_API = 1, TOP = 10, GUTTER = 4, PAINT_COST = 200 }
+local view = { RUNTIME_API = 1, TOP = 10, GUTTER = 4, PAINT_COST = 250 }
 
 local COLORS = { "cyan", "orange", "green" }
 local MONTHS = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }
@@ -184,25 +184,22 @@ local function apply(state)
     end
 end
 
---- Whether a tile is within a screen of the viewport.
-local function near(state, item)
-    return item.y + item.h > state.offset - state.height and item.y < state.offset + 2 * state.height
-end
-
---- Whether `advance` has work left for the shown view.
+--- Whether `advance` has work left: the overlay, a tile or a curve.
 function view.pending(state)
-    if not state.shown then
-        return false
-    end
     if not state.ui then
         return true
     end
     for _, item in ipairs(state.items) do
-        if not item.complete and near(state, item) then
+        if not item.complete then
             return true
         end
     end
     return false
+end
+
+--- Whether the view is fully built and may open.
+function view.ready(state)
+    return state ~= nil and not state.stale and not view.pending(state)
 end
 
 function view.new(host, result)
@@ -482,17 +479,20 @@ local function buildTile(host, state, item)
     item.built = true
 end
 
---- Build the overlay, then each tile near the viewport, one per step, then
---- paint their curves within `allowance` Lua instructions.
+--- Build the hidden overlay, then each tile, one per step, then paint their
+--- curves within `allowance` Lua instructions.
 function view.advance(host, allowance)
     local state = host.debrief
     if not state.ui then
         buildOverlay(host, state)
+        if not state.shown then
+            lvgl.hide(state.ui.overlay)
+        end
         apply(state)
         return
     end
     for _, item in ipairs(state.items) do
-        if not item.built and near(state, item) then
+        if not item.built then
             buildTile(host, state, item)
             return
         end
@@ -501,7 +501,7 @@ function view.advance(host, allowance)
         if allowance < view.PAINT_COST then
             return
         end
-        if item.built and not item.complete and near(state, item) then
+        if item.built and not item.complete then
             local painted, complete = item.renderer:paintSlots(allowance // view.PAINT_COST, 1, true)
             allowance = allowance - painted * view.PAINT_COST
             item.complete = complete
@@ -532,7 +532,7 @@ function view.hide(host)
 end
 
 --- Forget the view's objects before the page holding them is cleared; the
---- scroll position stays, and the objects are rebuilt when it opens again.
+--- scroll position stays, and the objects are rebuilt in the background.
 function view.detach(state)
     if state.ui then
         lvgl.hide(state.ui.overlay)
@@ -588,9 +588,6 @@ local function settle(host, state)
         return
     end
     apply(state)
-    if view.pending(state) then
-        host.uiRequest = "debrief"
-    end
 end
 
 --- Apply one input the host has already granted a scheduler turn.
@@ -633,17 +630,12 @@ function view.handle(host, event, touch)
     return true
 end
 
---- Open the view for `result` from an upward drag `request`, reusing a
---- hidden view of the same debrief with its scroll position.
+--- Open the fully built view of `result` from an upward drag `request`,
+--- where it was last scrolled.
 function view.open(host, result, request)
     local state = host.debrief
-    if state and state.result ~= result then
-        view.destroy(host)
-        state = nil
-    end
-    if not state then
-        host.debrief = view.new(host, result)
-        state = host.debrief
+    if not view.ready(state) or state.result ~= result then
+        return
     end
     local reveal = state.height
     if request and not request.swipe and type(request.startY) == "number" and type(request.y) == "number" then

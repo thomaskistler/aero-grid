@@ -1116,13 +1116,19 @@ local function debriefShown(context)
     return context.debrief ~= nil and context.debrief.shown
 end
 
+--- Whether the debrief view is fully built for the latest debrief.
+local function debriefReady(context)
+    local state = context.debrief
+    return state ~= nil and state.result == debriefResult(context) and context.debriefModule.ready(state)
+end
+
 --- Whether a fullscreen touch is an upward drag that should reveal the debrief.
 local function debriefPull(context, widgetEvent, touchState)
     if
         widgetEvent ~= _G.EVT_TOUCH_SLIDE
         or type(touchState) ~= "table"
         or not isFullScreen()
-        or not debriefResult(context)
+        or not debriefReady(context)
     then
         return false
     end
@@ -2200,9 +2206,6 @@ local function routeForeground(context)
     end
 
     if debriefShown(context) then
-        if context.debriefModule.pending(context.debrief) then
-            context.uiRequest = "debrief"
-        end
         return
     end
 
@@ -2478,29 +2481,76 @@ local function debriefOpenReady(task, _, hidden)
     return not hidden and task.host.debriefRequest ~= nil
 end
 
+local function debriefFailed(context, message)
+    if context.debriefModule then
+        pcall(context.debriefModule.destroy, context)
+    end
+    context.debriefFailure = context.debrief and context.debrief.result or debriefResult(context)
+    addError(context, "debrief: " .. tostring(message))
+    showErrors(context)
+end
+
 local function debriefOpenStep(task)
     local context = task.host
     local request, result = context.debriefRequest, debriefResult(context)
     context.debriefRequest = nil
-    if not result then
+    if not result or not debriefReady(context) then
         return
+    end
+    local ok, openError = pcall(context.debriefModule.open, context, result, request)
+    if not ok then
+        debriefFailed(context, openError)
+    end
+end
+
+-- Lua instructions per scheduler slot, as the load stage costs assume.
+local DEBRIEF_SLOT_INSTRUCTIONS = 2000
+-- Slots per debrief build step: one tile (about 10k instructions) or curves.
+local DEBRIEF_SLOTS = 5
+
+--- Whether the latest debrief's view still has to be built. Building starts
+--- as soon as a debrief exists, so the view opens complete.
+local function debriefBuildDue(context)
+    local result, state = debriefResult(context), context.debrief
+    if not result or context.debriefFailure == result then
+        return false
+    end
+    if not state then
+        return true
+    end
+    return state.result == result and not state.stale and not state.closing and context.debriefModule.pending(state)
+end
+
+local function debriefBuildReady(task, _, hidden)
+    local context = task.host
+    return not hidden
+        and context.page ~= nil
+        and not context.reloadState
+        and not context.stage
+        and not context.modelSettingsUi
+        and not context.editorUi
+        and debriefBuildDue(context)
+end
+
+local function debriefBuildStep(task, _, granted)
+    local context = task.host
+    if not context.debriefModule then
+        local loaded, message = loadModule(context.path, "lib/debrief_view.lua", 1)
+        if not loaded then
+            debriefFailed(context, message)
+            return
+        end
+        context.debriefModule = loaded
     end
     local module = context.debriefModule
-    local message
-    if not module then
-        module, message = loadModule(context.path, "lib/debrief_view.lua", 1)
-    end
-    if not module then
-        addError(context, "debrief: " .. tostring(message))
-        showErrors(context)
-        return
-    end
-    context.debriefModule = module
-    local ok, openError = pcall(module.open, context, result, request)
+    local ok, buildError = pcall(function()
+        if not context.debrief then
+            context.debrief = module.new(context, debriefResult(context))
+        end
+        module.advance(context, granted * DEBRIEF_SLOT_INSTRUCTIONS)
+    end)
     if not ok then
-        pcall(module.destroy, context)
-        addError(context, "debrief: " .. tostring(openError))
-        showErrors(context)
+        debriefFailed(context, buildError)
     end
 end
 
@@ -2687,11 +2737,6 @@ local function editorRestoreStep(task)
     task.host.editorController.advanceRestore(task.host)
 end
 
--- Lua instructions per scheduler slot, as the load stage costs assume.
-local DEBRIEF_SLOT_INSTRUCTIONS = 2000
--- Slots per debrief step: one tile (about 10k instructions) or its curves.
-local DEBRIEF_SLOTS = 5
-
 local function uiField(kind)
     if kind == "model settings" then
         return "modelSettingsUi"
@@ -2712,7 +2757,7 @@ local function uiCost(task)
         return cost and math.min(cost(context), slots) or slots
     elseif task.kind == "debrief" then
         local state = context.debrief
-        return state and (state.stale or state.closing) and 1 or math.min(DEBRIEF_SLOTS, slots)
+        return 1
     end
     return context.logViewer and context.logViewer.closing and 1 or slots
 end
@@ -2745,14 +2790,7 @@ local function uiReady(task, _, hidden)
             and not context.stage
             and state ~= nil
             and state == task.ui
-            and (
-                state.stale
-                or state.closing
-                or not context.reloadState
-                    and isFullScreen()
-                    and state.shown
-                    and context.debriefModule.pending(state)
-            )
+            and (state.stale or state.closing)
     end
     local viewer = context.logViewer
     return not hidden
@@ -2796,15 +2834,8 @@ local function uiStep(task, _, _, hidden)
         local state, module = context.debrief, context.debriefModule
         if state.stale then
             module.destroy(context)
-            return
-        elseif state.closing then
+        else
             module.hide(context)
-            return
-        end
-        module.advance(context, task.cost * DEBRIEF_SLOT_INSTRUCTIONS)
-        if context.debrief and module.pending(context.debrief) then
-            context.uiRequest = task.kind
-            return nil, true
         end
     else
         if context.logViewer.closing then
@@ -3020,12 +3051,9 @@ local function kindTask(context, field, kind, gate, run, ui)
             ready = hostReady,
             step = hostStep,
         }
-        if kind == "model settings" or kind == "log viewer" or kind == "debrief" then
+        if kind == "model settings" or kind == "log viewer" then
             task.inputFirst = function(self)
                 local host = self.host
-                if self.kind == "debrief" then
-                    return not (host.debrief and (host.debrief.closing or host.debrief.stale))
-                end
                 return not (self.kind == "log viewer" and host.logViewer and host.logViewer.closing)
             end
         end
@@ -3190,6 +3218,18 @@ local function enrolHost(context, hidden)
     end
     if context.logOpenRequest then
         add(hostTask(context, "logOpenTask", "log open", logOpenReady, logOpenStep, { inputFirst = true }))
+    end
+    if debriefBuildDue(context) then
+        add(
+            hostTask(
+                context,
+                "debriefBuildTask",
+                "debrief build",
+                debriefBuildReady,
+                debriefBuildStep,
+                { inputFirst = true, cost = DEBRIEF_SLOTS }
+            )
+        )
     end
     if context.debriefRequest then
         add(
