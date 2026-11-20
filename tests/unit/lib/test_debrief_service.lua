@@ -10,8 +10,10 @@ local telemetryModule = assert(loadfile(base .. "telemetry_service.lua"))()
 local debriefModule = assert(loadfile(base .. "debrief_service.lua"))()
 local equal = assert(loadfile(root .. "/tests/support/assertions.lua"))().assertEqual
 
-local state = { epoch = 1, armKey = "L01", active = false, status = "ready" }
+local state = { epoch = 1, armKey = "L01", active = false, status = "ready", countAvailable = true, displayCount = 42 }
 local events, sequence, values = {}, 0, {}
+-- Radio wall clock in ticks from 2025-01-01, or a fixed 00:00:05.
+local wall
 local env = support.environment({
     getSwitchIndex = function(name)
         return name == "L01" and 1 or 2
@@ -19,6 +21,15 @@ local env = support.environment({
     getSwitchValue = function(id)
         return values[id]
     end,
+    getDateTime = function()
+        local seconds = wall and wall // 100 or 5
+        return { year = 2025, mon = 1, day = 1, hour = seconds // 3600, min = seconds % 3600 // 60, sec = seconds % 60 }
+    end,
+    model = {
+        getInfo = function()
+            return { name = "Edge 540" }
+        end,
+    },
 })
 local flight = {}
 function flight:state()
@@ -199,6 +210,26 @@ for slot = 1, 40 do
 end
 equal(first[1].level, "normal", "no thresholds means normal")
 equal(next(first[1].levels), nil)
+equal(first[1].thresholds, nil)
+-- Header metadata is taken when the capture starts; the flight began more
+-- than 5 s before the clock read 2025-01-01 00:00:05.
+equal(result.flight, 42)
+equal(result.model, "Edge 540")
+equal(result.started.year, 2024)
+equal(result.started.mon, 12)
+equal(result.started.day, 31)
+
+-- Start dates step back across midnight, month and leap-year boundaries.
+local function date(now, age, year, mon, day, hour, min)
+    local value = debriefModule.dateBefore(now, age)
+    local text = string.format("%d-%d-%d %d:%d", value.year, value.mon, value.day, value.hour, value.min)
+    equal(text, string.format("%d-%d-%d %d:%d", year, mon, day, hour, min))
+end
+date({ year = 2025, mon = 11, day = 17, hour = 14, min = 30, sec = 0 }, 360, 2025, 11, 17, 14, 24)
+date({ year = 2025, mon = 3, day = 1, hour = 0, min = 2, sec = 0 }, 180, 2025, 2, 28, 23, 59)
+date({ year = 2024, mon = 3, day = 1, hour = 0, min = 0, sec = 30 }, 60, 2024, 2, 29, 23, 59)
+date({ year = 2025, mon = 1, day = 1, hour = 0, min = 0, sec = 0 }, 1, 2024, 12, 31, 23, 59)
+equal(debriefModule.dateBefore(nil, 10), nil, "no clock means no date")
 
 -- A flight starting after arming and confirmed after a grace period is
 -- clipped to its own bounds; a missing reading breaks the line; threshold
@@ -255,6 +286,9 @@ near(first[1].value, 20.2, "max ignores samples after the flight")
 near(first[2].value, 2, "min starts at the interpolated flight start")
 near(first[2].columns.low[1], 2, "the first column starts at the flight start")
 equal(first[1].level, "critical", "the worst level is kept")
+equal(first[1].thresholds.warning, 15, "series carry their threshold spec")
+equal(first[1].thresholds.critical, 18)
+equal(first[1].thresholds.falling, false)
 equal(first[2].level, "normal", "a source without thresholds stays normal")
 local levels = first[1].levels
 equal(levels[1], nil)
@@ -442,6 +476,43 @@ near(wide[1].value, -2e9, "min")
 near(wide[2].value, 2e9, "max")
 near(wide[3].value, 1e9, "avg")
 near(wide[4].value, -4e9, "delta")
+
+-- The start date counts back by the time since the flight started, not by
+-- recorded time: recording pauses while disarmed mid-flight, and the capture
+-- may run long after the flight ended.
+do
+    local recorder = boot()
+    recorder:configure({ tiles = { tile({ { source = "V", statistic = "max" } }) } }, { 20 })
+    for now = 99000, 100000, 10 do
+        poll(now, false, {})
+    end
+    local level = {
+        V = function()
+            return 4
+        end,
+    }
+    for now = 200000, 203000, 10 do
+        if now == 200020 then
+            event("start", 200000)
+        end
+        poll(now, true, level)
+    end
+    for now = 203010, 230000, 10 do
+        poll(now, false, level)
+    end
+    for now = 230010, 233000, 10 do
+        poll(now, true, level)
+    end
+    event("end", 233010)
+    for now = 233020, 293000, 100 do
+        poll(now, false, {})
+    end
+    wall = 293000
+    drain(recorder, 293000)
+    wall = nil
+    local started = assert(recorder:result(), "the delayed flight is captured").started
+    equal(string.format("%02d:%02d", started.hour, started.min), "00:33", "start is 930 s before 00:48:50")
+end
 
 -- One slot is a nominal 2000 instructions, setup included.
 assert(worst <= 2000, "capture work must fit its slots: " .. worst)

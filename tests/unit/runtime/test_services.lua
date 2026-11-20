@@ -315,10 +315,10 @@ end
 --- Model facets are radio-local, so they never depend on a link, but every one
 --- of them can still be missing on some firmware.
 local function testModelService()
-    assertEqual(modelService.formatTime(125), "2:05")
-    assertEqual(modelService.formatTime(-5), "-0:05")
-    assertEqual(modelService.formatTime(3725), "1:02:05")
-    assertEqual(modelService.formatTime(nil), "--:--")
+    assertEqual(services.clockText(125), "2:05")
+    assertEqual(services.clockText(-5), "-0:05")
+    assertEqual(services.clockText(3725), "1:02:05")
+    assertEqual(services.clockText(nil), "--:--")
 
     local timers = {
         [0] = { value = 125, start = 300, name = "Flight", persistent = 1 },

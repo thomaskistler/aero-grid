@@ -821,6 +821,18 @@ function theme.accentColor(resolved, name)
     return resolved.color[name]
 end
 
+--- Inks of chart series by position, unless a series names its own accent.
+theme.SERIES_ACCENTS = { "cyan", "orange", "green" }
+
+--- The chart ink of the series at `index`, or of its own `accent`.
+---@param resolved AeroGridTheme
+---@param index integer
+---@param accent? string
+---@return integer? color
+function theme.seriesColor(resolved, index, accent)
+    return resolved.chartColor[accent or theme.SERIES_ACCENTS[index]]
+end
+
 --- Resolve a panel state into concrete presentation values.
 --- Warning, critical, stale, and unavailable states deliberately override a
 --- panel's decorative accent, and each carries a text badge because color

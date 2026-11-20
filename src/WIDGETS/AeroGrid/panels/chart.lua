@@ -96,7 +96,6 @@ local chart = {
     },
 }
 
-local COLORS = { "cyan", "orange", "green" }
 local LEGEND_FONTS = { MIDSIZE, 0, SMLSIZE }
 local textCache = setmetatable({}, { __mode = "k" })
 
@@ -172,10 +171,6 @@ end
 
 local function heading(context)
     return context.settings.label or ""
-end
-
-function chart.format(value, precision)
-    return finite(value) and string.format("%." .. math.min(3, math.max(0, precision or 0)) .. "f", value) or "--"
 end
 
 function chart.durationText(ticks)
@@ -1343,7 +1338,8 @@ function chart.render(context, defer)
         if unit == nil then
             unit = feed and feed.unitText or ""
         end
-        local value = chart.format(feed and feed.value, precision)
+        local numberText = context.themeBuilder.numberText
+        local value = numberText(feed and feed.value, precision)
         local unitText = value ~= "--" and unit or ""
         local color = feed and feed.stale and context.theme.color.textFaint or context.theme.color.text
         visibleChanged = visibleChanged
@@ -1355,8 +1351,8 @@ function chart.render(context, defer)
         item.rangeMinimum, item.rangeMaximum = feed and feed.min, feed and feed.max
         item.valueText, item.unitText = value, unitText
         item.readout = value .. item.unitText
-        local minimumText = chart.format(feed and feed.min, precision)
-        local maximumText = chart.format(feed and feed.max, precision)
+        local minimumText = numberText(feed and feed.min, precision)
+        local maximumText = numberText(feed and feed.max, precision)
         if item.minimumText ~= minimumText or item.maximumText ~= maximumText then
             item.extremaDirty = true
             visibleChanged = true
@@ -2623,7 +2619,7 @@ function chart.create(parent, rect, settings, services)
         context.previewMissing = context.session.previewMissing
     end
     for index, entry in ipairs(settings.metrics) do
-        local color = context.theme.chartColor[entry.accent or COLORS[index]]
+        local color = context.themeBuilder.seriesColor(context.theme, index, entry.accent)
         local item = {
             settings = entry,
             color = color,
