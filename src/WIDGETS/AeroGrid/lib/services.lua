@@ -234,6 +234,27 @@ function services.age(now, since)
     return (now - since) / 100
 end
 
+--- Format a signed second count as a clock reading.
+--- Hours appear only when they exist, so a flight timer does not waste width.
+---@param seconds any
+---@return string
+function services.clockText(seconds)
+    if type(seconds) ~= "number" then
+        return "--:--"
+    end
+
+    local sign = seconds < 0 and "-" or ""
+    local total = math.floor(math.abs(seconds) + 0.5)
+    local hours = math.floor(total / 3600)
+    local minutes = math.floor(total / 60) % 60
+    local secs = total % 60
+
+    if hours > 0 then
+        return string.format("%s%d:%02d:%02d", sign, hours, minutes, secs)
+    end
+    return string.format("%s%d:%02d", sign, minutes, secs)
+end
+
 --- Fill one diagnostic row in a reusable array, returning the next position.
 --- Rows are reused so a diagnostic view allocates nothing per refresh.
 ---@param rows table

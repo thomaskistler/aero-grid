@@ -2523,8 +2523,11 @@ end
 
 local function debriefBuildReady(task, _, hidden)
     local context = task.host
+    -- Objects created under the overlay in the callback that cleared it are
+    -- swept by EdgeTX after the callback; see the reload comment above.
     return not hidden
         and context.page ~= nil
+        and not context.debriefCleared
         and not context.reloadState
         and not context.stage
         and not context.modelSettingsUi
@@ -2756,7 +2759,6 @@ local function uiCost(task)
         local cost = context.modelSettingsUiModule.cost
         return cost and math.min(cost(context), slots) or slots
     elseif task.kind == "debrief" then
-        local state = context.debrief
         return 1
     end
     return context.logViewer and context.logViewer.closing and 1 or slots
@@ -3288,6 +3290,7 @@ local function runCallback(context, hidden, widgetEvent, touchState)
     end
     local fullscreen = not hidden and isFullScreen()
     context.inputHandled, context.dashboardClosed, context.retireBoundary, context.menuChromeOnly = nil, nil, nil, nil
+    context.debriefCleared = nil
     if not hidden then
         event(context, widgetEvent, touchState)
     end

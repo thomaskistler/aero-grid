@@ -118,21 +118,22 @@ function debrief.dateBefore(now, age)
     return { year = year, mon = month, day = day, hour = seconds // 3600, min = seconds % 3600 // 60 }
 end
 
---- Flight number, model name and start date for the debrief header.
-local function header(self, start)
+--- Flight number, model name and start date for the debrief header. The date
+--- counts back from the radio clock by the service-clock time since the
+--- flight's start, which keeps running while recording pauses.
+local function header(self, now, startedAt)
     local env, flight = self.env, self.runtime.byId.flight
     local state = flight and flight.state and flight:state()
     local info = env.getInfo and env.getInfo()
-    local now = env.getDateTime and env.getDateTime()
-    local elapsed = self.session and self.session.elapsed
+    local date = env.getDateTime and env.getDateTime()
     return {
         flight = state and state.countAvailable and state.displayCount or nil,
         model = type(info) == "table" and info.name or nil,
-        started = debrief.dateBefore(now, elapsed and math.max(0, elapsed - start) // 100 or 0),
+        started = startedAt and debrief.dateBefore(date, math.max(0, now - startedAt) // 100) or nil,
     }
 end
 
-local function begin(self, index, start, finish)
+local function begin(self, index, start, finish, now, startedAt)
     local telemetry = self.runtime.byId.telemetry
     local widest = 1
     for _, width in ipairs(self.widths) do
@@ -153,7 +154,7 @@ local function begin(self, index, start, finish)
         window = (finish - start) // scale + 1,
         thresholds = telemetry and telemetry:thresholdMap() or {},
         level = telemetry and telemetry.level,
-        header = header(self, start),
+        header = header(self, now, startedAt),
         tile = 1,
         position = 0,
         tiles = {},
@@ -391,7 +392,7 @@ function debrief:update(now, slots)
         if index > session.flightLast then
             return 1
         end
-        local start, finish = history:flight(session, index)
+        local start, finish, _, _, startedAt = history:flight(session, index)
         if start and not finish then
             return 1
         end
@@ -399,7 +400,7 @@ function debrief:update(now, slots)
         if not start or finish <= start then
             return 1, true
         end
-        begin(self, index, start, finish)
+        begin(self, index, start, finish, now, startedAt)
         self.due = now
         return capture(self, slots, 1)
     end

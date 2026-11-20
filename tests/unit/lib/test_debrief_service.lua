@@ -12,6 +12,8 @@ local equal = assert(loadfile(root .. "/tests/support/assertions.lua"))().assert
 
 local state = { epoch = 1, armKey = "L01", active = false, status = "ready", countAvailable = true, displayCount = 42 }
 local events, sequence, values = {}, 0, {}
+-- Radio wall clock in ticks from 2025-01-01, or a fixed 00:00:05.
+local wall
 local env = support.environment({
     getSwitchIndex = function(name)
         return name == "L01" and 1 or 2
@@ -20,7 +22,8 @@ local env = support.environment({
         return values[id]
     end,
     getDateTime = function()
-        return { year = 2025, mon = 1, day = 1, hour = 0, min = 0, sec = 5 }
+        local seconds = wall and wall // 100 or 5
+        return { year = 2025, mon = 1, day = 1, hour = seconds // 3600, min = seconds % 3600 // 60, sec = seconds % 60 }
     end,
     model = {
         getInfo = function()
@@ -473,6 +476,43 @@ near(wide[1].value, -2e9, "min")
 near(wide[2].value, 2e9, "max")
 near(wide[3].value, 1e9, "avg")
 near(wide[4].value, -4e9, "delta")
+
+-- The start date counts back by the time since the flight started, not by
+-- recorded time: recording pauses while disarmed mid-flight, and the capture
+-- may run long after the flight ended.
+do
+    local recorder = boot()
+    recorder:configure({ tiles = { tile({ { source = "V", statistic = "max" } }) } }, { 20 })
+    for now = 99000, 100000, 10 do
+        poll(now, false, {})
+    end
+    local level = {
+        V = function()
+            return 4
+        end,
+    }
+    for now = 200000, 203000, 10 do
+        if now == 200020 then
+            event("start", 200000)
+        end
+        poll(now, true, level)
+    end
+    for now = 203010, 230000, 10 do
+        poll(now, false, level)
+    end
+    for now = 230010, 233000, 10 do
+        poll(now, true, level)
+    end
+    event("end", 233010)
+    for now = 233020, 293000, 100 do
+        poll(now, false, {})
+    end
+    wall = 293000
+    drain(recorder, 293000)
+    wall = nil
+    local started = assert(recorder:result(), "the delayed flight is captured").started
+    equal(string.format("%02d:%02d", started.hour, started.min), "00:33", "start is 930 s before 00:48:50")
+end
 
 -- One slot is a nominal 2000 instructions, setup included.
 assert(worst <= 2000, "capture work must fit its slots: " .. worst)

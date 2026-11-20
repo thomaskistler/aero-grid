@@ -17,7 +17,6 @@ EVT_VIRTUAL_EXIT, EVT_ROT_LEFT, EVT_ROT_RIGHT = 9106, 9107, 9108
 
 local worst = 0
 local function busy()
-    local state = context.debrief
     return context.inputQueue or context.debriefRequest or context.uiRequest
 end
 local function callback(event, touch)
@@ -148,8 +147,7 @@ runtime.byId.debrief = {
 
 -- Pure helpers.
 local view = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/debrief_view.lua"))()
-assert(view.durationText(72300) == "12:03")
-assert(view.durationText(372300) == "1:02:03")
+local themeBuilder = context.themeBuilder
 assert(view.dateText({ year = 2025, mon = 11, day = 17, hour = 14, min = 4 }) == "Nov 17, 14:04")
 assert(view.dateText({ year = 2000, mon = 1, day = 1, hour = 0, min = 0 }) == nil, "an unset clock shows no date")
 assert(view.flightText({ flight = 42 }) == "Flight 42")
@@ -157,12 +155,12 @@ assert(
     view.flightText({ flight = 42, started = { year = 2025, mon = 1, day = 2, hour = 3, min = 4 } })
         == "Flight 42 - Jan 2, 03:04"
 )
-assert(view.valueText(1840.4) == "1,840")
-assert(view.valueText(-1234567, 0) == "-1,234,567")
-assert(view.valueText(3.476) == "3.48")
-assert(view.valueText(12.34) == "12.3")
-assert(view.valueText(nil) == "--")
-assert(view.valueText(0 / 0) == "--")
+assert(view.valueText(themeBuilder, 1840.4) == "1,840")
+assert(view.valueText(themeBuilder, -1234567, 0) == "-1,234,567")
+assert(view.valueText(themeBuilder, 3.476) == "3.48")
+assert(view.valueText(themeBuilder, 12.34) == "12.3")
+assert(view.valueText(themeBuilder, nil) == "--")
+assert(view.valueText(themeBuilder, 0 / 0) == "--")
 local labels, count =
     view.legendFit({ { label = 20, value = 30, unit = 10 }, { label = 20, value = 30, unit = 10 } }, 200)
 assert(labels and count == 2)
@@ -170,8 +168,6 @@ labels, count = view.legendFit({ { label = 20, value = 30, unit = 10 }, { label 
 assert(not labels and count == 2, "labels go before values")
 labels, count = view.legendFit({ { label = 20, value = 30, unit = 10 }, { label = 20, value = 30, unit = 10 } }, 60)
 assert(not labels and count == 1, "values go from the right")
-local runs = view.shadeRuns({ [2] = 1, [3] = 1, [4] = 2, [7] = 1 }, 8)
-assert(#runs == 3 and runs[1][1] == 2 and runs[1][2] == 3 and runs[2][3] == 2 and runs[3][1] == 7)
 local layoutTiles = {
     { config = { colSpan = 2, rowSpan = 2 } },
     { config = { colSpan = 4, rowSpan = 1 } },
@@ -213,6 +209,22 @@ local callbacks = build()
 assert(context.debrief == state and state.ui.overlay.hidden and not state.shown)
 for _, item in ipairs(state.items) do
     assert(item.built and item.complete, "every tile is built before the view opens")
+end
+
+-- Every tile size keeps a third of its height for the plot, with each label
+-- inside the tile and clear of the plot.
+for _, item in ipairs(state.items) do
+    local area = item.area
+    assert(area.h >= item.h // 3, "a " .. item.w .. "x" .. item.h .. " tile has a " .. area.h .. " px plot")
+    for _, child in ipairs(item.box.children) do
+        if child.kind == "label" then
+            local p = child.properties
+            local font = type(p.font) == "function" and p.font() or p.font
+            local top, bottom = p.y, p.y + themeBuilder.fontHeight(font)
+            assert(top >= 0 and bottom <= item.h and p.x >= 0 and p.x + p.w <= item.w, "label leaves its tile: " .. p.text)
+            assert(bottom <= area.y or top >= area.y + area.h, "label overlaps the plot: " .. p.text)
+        end
+    end
 end
 
 -- A drag past the halfway point snaps the sheet open on release.
@@ -333,12 +345,60 @@ build()
 drag(H - 5, H - 40, { swipeUp = true })
 assert(context.debrief and context.debrief.result == current and context.debrief.offset == 0)
 assert(has(labelsOf(context.debrief.ui.overlay), "Next 1"))
+local pageChildren = #context.page.children
 input(EVT_VIRTUAL_EXIT)
 current = nil
 fixture.pump(context, 5)
 assert(context.debrief == nil, "a session reset destroys the view")
 drag(H - 5, H - 40, { swipeUp = true })
 assert(context.debrief == nil, "no debrief, no view")
+
+-- Warning and critical alternating every column on three series, and a
+-- threshold whose integer pixel product would overflow int32, still build
+-- within the callback budget, in the overlay the earlier debriefs used.
+local dense = makeResult("Dense")
+for _, tile in ipairs(dense.tiles) do
+    local width = tile.series[1].columns.width
+    tile.series[3] = {
+        config = { source = "Curr", statistic = "max", unit = "A" },
+        value = 12,
+        level = "warning",
+        columns = store(width, function(at)
+            return at % 50
+        end),
+        levels = {},
+    }
+    for _, entry in ipairs(tile.series) do
+        for slot = 1, width do
+            entry.levels[slot] = slot % 2 + 1
+        end
+    end
+end
+local large = dense.tiles[1].series[1]
+large.config.rangeMin, large.config.rangeMax = 0, 100000000
+large.thresholds = { warning = 50000000 }
+local earlier = worst
+worst = 0
+current = dense
+build()
+assert(worst < 15000, "dense shading exceeded budget: " .. worst)
+worst = math.max(worst, earlier)
+assert(#context.page.children == pageChildren, "replacements and resets reuse one overlay")
+first = context.debrief.items[1]
+local covered, line = 0, nil
+for _, child in ipairs(first.box.children) do
+    local properties = child.properties
+    if child.kind == "rectangle" and properties.opacity == 64 then
+        covered = covered + properties.w
+    elseif child.kind == "hline" and properties.dashGap then
+        line = properties.y
+    end
+end
+assert(covered == 3 * first.area.w, "every column of every series is shaded: " .. covered)
+local middle = first.area.y + first.area.h / 2
+assert(line and math.abs(line - middle) <= 1, "a large threshold sits mid-plot: " .. tostring(line))
+current = nil
+fixture.pump(context, 5)
 
 assert(worst < 15000, "debrief callback exceeded budget: " .. worst)
 runtime.byId.debrief = realDebrief

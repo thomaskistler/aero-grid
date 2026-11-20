@@ -313,10 +313,11 @@ local function mapped(session, stamp, clipStart)
     return clipped, false
 end
 
-local function addFlight(session, id, at, known)
+--- `stamp` is the flight's start on the service clock, for its wall time.
+local function addFlight(session, id, at, known, stamp)
     local state = session.state
     local index = state.flightLast + 1
-    local interval = { id = id, start = at, startKnown = known }
+    local interval = { id = id, start = at, startKnown = known, startedAt = stamp }
     session.flights[(index - 1) % history.FLIGHT_CAPACITY + 1] = interval
     state.flightLast = index
     state.flightFirst = math.max(state.flightFirst, index - history.FLIGHT_CAPACITY + 1)
@@ -336,7 +337,7 @@ function history:flight(view, index)
     if interval.empty then
         return nil
     end
-    return interval.start, interval.finish, interval.startKnown, interval.endKnown
+    return interval.start, interval.finish, interval.startKnown, interval.endKnown, interval.startedAt
 end
 
 function history:armBoundary(view, index)
@@ -384,7 +385,7 @@ function history:boundaries()
         if session and session.epoch == event.epoch then
             local at, known = mapped(session, event.at, event.kind == "start")
             if event.kind == "start" and at and event.observedAt >= session.attachedAt then
-                addFlight(session, event.flightId, at, known)
+                addFlight(session, event.flightId, at, known, event.at)
             elseif event.kind == "end" then
                 local interval = session.openFlight
                 if interval and interval.id == event.flightId then
@@ -404,7 +405,7 @@ function history:boundaries()
             local at, known = mapped(session, flight.startedAt, true)
             -- Late attachment shows only the portion this runtime recorded,
             -- never a fabricated start marker or pre-attachment samples.
-            addFlight(session, flight.flightId, at or session.state.elapsed, known)
+            addFlight(session, flight.flightId, at or session.state.elapsed, known, flight.startedAt)
         end
         session.openFlight.observed = session.state.elapsed
     end

@@ -4,28 +4,30 @@
 --- it and then scrolls its content; dragging down at its top slides it away
 --- again. Hiding keeps the built view; the host destroys it when the debrief,
 --- the layout or the zone changes.
-local view = { RUNTIME_API = 1, TOP = 10, GUTTER = 4, PAINT_COST = 250 }
+-- Instruction costs the build charges: a painted column, a shading
+-- rectangle, a scanned shading column, and a tile's lines and renderer.
+local view = {
+    RUNTIME_API = 1,
+    TOP = 10,
+    GUTTER = 4,
+    PAINT_COST = 250,
+    SHADE_COST = 300,
+    SCAN_COST = 15,
+    LINES_COST = 4000,
+}
 
-local COLORS = { "cyan", "orange", "green" }
 local MONTHS = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }
 local LEGEND_GAP, ITEM_GAP = 3, 10
+-- EdgeTX's standard font is no size flag at all.
+local STD_FONT = 0
 local SHADE_OPACITY, LINE_OPACITY = 64, 192
 
 local function matches(event, name)
     return _G[name] ~= nil and event == _G[name]
 end
 
-local function finite(value)
-    return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
-end
-
---- "M:SS" or "H:MM:SS" for a duration in 10 ms ticks.
-function view.durationText(ticks)
-    local seconds = math.max(0, ticks // 100)
-    if seconds >= 3600 then
-        return string.format("%d:%02d:%02d", seconds // 3600, seconds % 3600 // 60, seconds % 60)
-    end
-    return string.format("%d:%02d", seconds // 60, seconds % 60)
+local function durationText(host, ticks)
+    return host.servicesModule.clockText(math.max(0, (ticks or 0) // 100))
 end
 
 --- "Nov 17, 14:24", or nil when the radio clock looks unset.
@@ -51,15 +53,12 @@ function view.flightText(result)
 end
 
 --- A statistic with its precision, thousands grouped: "1,840", "3.48".
-function view.valueText(value, precision)
-    if not finite(value) then
-        return "--"
-    end
-    if precision == nil then
+function view.valueText(themeBuilder, value, precision)
+    if precision == nil and type(value) == "number" then
         local size = math.abs(value)
         precision = size >= 100 and 0 or size >= 10 and 1 or 2
     end
-    local text = string.format("%." .. math.min(3, math.max(0, precision)) .. "f", value)
+    local text = themeBuilder.numberText(value, precision)
     local sign, whole, rest = string.match(text, "^(-?)(%d+)(.*)$")
     if not whole or #whole <= 3 then
         return text
@@ -98,32 +97,18 @@ function view.legendFit(items, width)
     return false, 0
 end
 
---- Runs of equal non-zero levels over columns `1..width`: { first, last, level }.
-function view.shadeRuns(levels, width)
-    local runs, run = {}, nil
-    for slot = 1, width do
-        local level = levels[slot]
-        if run and level == run[3] then
-            run[2] = slot
-        elseif level and level > 0 then
-            run = { slot, slot, level }
-            runs[#runs + 1] = run
-        else
-            run = nil
-        end
-    end
-    return runs
-end
-
 --- Vertical bounds of one series: its configured range, or the drawn extremes
 --- with a little headroom.
 function view.range(config, store)
+    -- Floats throughout: int32 radio Lua would overflow integer products.
     local low, high = config.rangeMin, config.rangeMax
+    low, high = low and low + 0.0, high and high + 0.0
     local minimum, maximum = store.minimum, store.maximum
     if low == nil or high == nil then
         if minimum == nil then
-            low, high = low or 0, high or (low or 0) + 1
+            low, high = low or 0.0, high or (low or 0.0) + 1
         else
+            minimum, maximum = minimum + 0.0, maximum + 0.0
             local pad = math.max((maximum - minimum) * 0.1, math.abs(maximum) * 0.02, 0.01)
             low, high = low or minimum - pad, high or maximum + pad
         end
@@ -141,16 +126,11 @@ function view.layout(tiles, zone, grid)
     local function rowY(row)
         return top + row * (zone.h + gutter) // 4
     end
-    local last = 0
-    for index in pairs(tiles) do
-        last = math.max(last, index)
-    end
     -- `row` is the next free full row; `pending` the row of a compact tile
     -- whose right half is still free.
     local items, row, pending = {}, 1, nil
-    for position = 1, last do
-        local tile = tiles[position]
-        local config = tile and tile.config
+    for _, tile in ipairs(tiles) do
+        local config = tile.config
         if config then
             local col, at = 0, row
             if config.colSpan == 2 and pending then
@@ -234,7 +214,7 @@ local function buildHeader(host, state, parent)
         color = color.surface,
     })
     local result = state.result
-    local time = view.durationText(result.duration or 0)
+    local time = durationText(host, result.duration)
     local timeWidth = measure(DBLSIZE, time)
     local timeX = x + w - 8 - timeWidth
     host.primitives.label(parent, theme, {
@@ -287,7 +267,15 @@ end
 
 local function buildOverlay(host, state)
     local theme, width, height = host.theme, state.width, state.height
-    local overlay = lvgl.box(host.page, { x = 0, y = height - state.reveal, w = width, h = height })
+    -- One overlay per page, reused by every debrief: EdgeTX frees a page's
+    -- children only with the page.
+    local overlay = host.debriefOverlay
+    if overlay then
+        overlay:set({ x = 0, y = height - state.reveal, w = width, h = height })
+    else
+        overlay = lvgl.box(host.page, { x = 0, y = height - state.reveal, w = width, h = height })
+        host.debriefOverlay = overlay
+    end
     lvgl.rectangle(overlay, {
         x = 0,
         y = 0,
@@ -311,29 +299,33 @@ local function buildOverlay(host, state)
     buildHeader(host, state, content)
 end
 
-local function legendItems(host, series)
+local function legendItems(host, series, font)
     local measure = host.themeBuilder.measureText
     local items = {}
     for index, entry in ipairs(series) do
         local config = entry.config
         local label = config.label and config.label ~= "" and config.label or config.statistic
-        local value = view.valueText(entry.value, config.precision)
+        local value = view.valueText(host.themeBuilder, entry.value, config.precision)
         local unit = config.unit or ""
         items[index] = {
             labelText = label,
             valueText = value,
             unitText = unit,
             label = measure(SMLSIZE, label),
-            value = measure(MIDSIZE, value),
+            value = measure(font, value),
             unit = unit ~= "" and measure(SMLSIZE, unit) + 1 or 0,
         }
     end
     return items
 end
 
-local function buildTile(host, state, item)
+--- The tile's box, title, legend and axis. Short tiles put the title and a
+--- smaller legend on one line and drop the axis labels, keeping a third of
+--- their height for the plot.
+local function buildBase(host, state, item)
     local theme, color = host.theme, host.theme.color
     local themeBuilder, primitives = host.themeBuilder, host.primitives
+    local fontHeight, measure = themeBuilder.fontHeight, themeBuilder.measureText
     local tile = item.tile
     local config = tile.config
     local box = lvgl.box(state.ui.content, { x = item.x, y = item.y, w = item.w, h = item.h })
@@ -349,29 +341,40 @@ local function buildTile(host, state, item)
     })
     local fonts = themeBuilder.typography(config.colSpan, config.rowSpan)
     local frame = themeBuilder.frame(theme, { x = 0, y = 0, w = item.w, h = item.h }, fonts)
-    local pad = frame.pad
-    local titleHeight = themeBuilder.fontHeight(SMLSIZE)
-    primitives.label(box, theme, {
-        x = pad,
-        y = frame.labelY,
-        w = math.max(1, item.w - pad - frame.padRight),
-        text = config.title or "",
-        font = SMLSIZE,
-        color = color.text,
-    })
+    local pad, right = frame.pad, item.w - frame.padRight
+    local titleHeight = fontHeight(SMLSIZE)
+    local fullTop = frame.labelY + titleHeight + fontHeight(MIDSIZE) + 4
+    local compact = item.h - frame.bottom - titleHeight - 1 - fullTop < item.h // 3
+    local valueFont = compact and STD_FONT or MIDSIZE
+    local valueHeight = fontHeight(valueFont)
+    local smallOffset = valueHeight - titleHeight - 2
+    local title = config.title or ""
+    local legendX, legendY, titleWidth = pad, frame.labelY + titleHeight, right - pad
+    if compact then
+        legendY = frame.labelY
+        titleWidth = title ~= "" and measure(SMLSIZE, title) + 1 or 0
+        legendX = titleWidth > 0 and pad + titleWidth + ITEM_GAP or pad
+    end
+    if titleWidth > 0 then
+        primitives.label(box, theme, {
+            x = pad,
+            y = compact and legendY + smallOffset or frame.labelY,
+            w = math.max(1, titleWidth),
+            text = title,
+            font = SMLSIZE,
+            color = color.text,
+        })
+    end
 
     -- Legend: label, statistic and unit per series, coloured by its worst level.
-    local legendY = frame.labelY + titleHeight
-    local valueHeight = themeBuilder.fontHeight(MIDSIZE)
-    local smallOffset = valueHeight - titleHeight - 2
-    local items = legendItems(host, tile.series)
-    local labels, count = view.legendFit(items, item.w - pad - frame.padRight)
-    local x = pad
+    local items = legendItems(host, tile.series, valueFont)
+    local labels, count = view.legendFit(items, right - legendX)
+    local x = legendX
     for index = 1, count do
         local entry, legend = tile.series[index], items[index]
         local ink = entry.level == "critical" and color.critical
             or entry.level == "warning" and color.amber
-            or theme.chartColor[entry.config.accent or COLORS[index]]
+            or themeBuilder.seriesColor(theme, index, entry.config.accent)
         if index > 1 then
             x = x + ITEM_GAP
         end
@@ -391,7 +394,7 @@ local function buildTile(host, state, item)
             y = legendY,
             w = legend.value + 1,
             text = legend.valueText,
-            font = MIDSIZE,
+            font = valueFont,
             color = ink,
         })
         x = x + legend.value
@@ -408,57 +411,21 @@ local function buildTile(host, state, item)
         end
     end
 
-    -- Plot: shading behind, threshold lines, then the curves; axis below.
     local first = tile.series[1]
-    local plotWidth = first and first.columns.width or 1
-    local axisY = item.h - frame.bottom - titleHeight
-    local area = { x = pad, y = legendY + valueHeight + 4, w = plotWidth, h = 0 }
+    local axisY = item.h - frame.bottom - (compact and 1 or titleHeight)
+    local area = { x = pad, y = legendY + valueHeight + (compact and 2 or 4), w = first and first.columns.width or 1 }
     area.h = math.max(1, axisY - 1 - area.y)
-    for _, entry in ipairs(tile.series) do
-        for _, run in ipairs(view.shadeRuns(entry.levels, plotWidth)) do
-            lvgl.rectangle(box, {
-                x = area.x + run[1] - 1,
-                y = area.y,
-                w = run[2] - run[1] + 1,
-                h = area.h,
-                filled = true,
-                thickness = 0,
-                opacity = SHADE_OPACITY,
-                color = run[3] >= 2 and color.critical or color.amber,
-            })
-        end
-    end
-    local series, consumers = {}, {}
-    for index, entry in ipairs(tile.series) do
-        local low, high = view.range(entry.config, entry.columns)
-        local spec = entry.thresholds
-        if spec then
-            for _, mark in ipairs({ { spec.warning, color.amber }, { spec.critical, color.critical } }) do
-                local value = mark[1]
-                if finite(value) and value > low and value < high then
-                    lvgl.hline(box, {
-                        x = area.x,
-                        y = area.y + area.h - ((value - low) * area.h / (high - low) + 0.5) // 1,
-                        w = area.w,
-                        h = 1,
-                        color = mark[2],
-                        opacity = LINE_OPACITY,
-                        dashGap = 3,
-                        dashWidth = 2,
-                    })
-                end
-            end
-        end
-        series[index] = { low = low, high = high, color = theme.chartColor[entry.config.accent or COLORS[index]] }
-        consumers[index] = { map = entry.columns }
-    end
+    item.area, item.shade = area, { 1, 1 }
     lvgl.hline(box, { x = area.x, y = axisY, w = area.w, h = 1, color = color.border })
-    local duration = view.durationText(state.result.duration or 0)
-    local durationWidth = themeBuilder.measureText(SMLSIZE, duration)
+    if compact then
+        return
+    end
+    local duration = durationText(host, state.result.duration)
+    local durationWidth = measure(SMLSIZE, duration)
     primitives.label(box, theme, {
         x = area.x,
         y = axisY + 1,
-        w = themeBuilder.measureText(SMLSIZE, "0:00") + 1,
+        w = measure(SMLSIZE, "0:00") + 1,
         text = "0:00",
         font = SMLSIZE,
     })
@@ -469,6 +436,81 @@ local function buildTile(host, state, item)
         text = duration,
         font = SMLSIZE,
     })
+end
+
+--- Shade warning and critical periods within `allowance`, resuming where the
+--- last call stopped. Returns the allowance left once done, or nil.
+local function shade(host, item, allowance)
+    local cursor, series, area = item.shade, item.tile.series, item.area
+    local color, width = host.theme.color, area.w
+    local cost, scan = view.SHADE_COST, view.SCAN_COST
+    while cursor[1] <= #series do
+        local levels = series[cursor[1]].levels
+        local slot = next(levels) ~= nil and cursor[2] or width + 1
+        while slot <= width do
+            if allowance < cost + scan then
+                cursor[2] = slot
+                return nil
+            end
+            allowance = allowance - scan
+            local level, last = levels[slot], slot
+            if level then
+                while last < width and levels[last + 1] == level and allowance >= cost + scan do
+                    last = last + 1
+                    allowance = allowance - scan
+                end
+                lvgl.rectangle(item.box, {
+                    x = area.x + slot - 1,
+                    y = area.y,
+                    w = last - slot + 1,
+                    h = area.h,
+                    filled = true,
+                    thickness = 0,
+                    opacity = SHADE_OPACITY,
+                    color = level >= 2 and color.critical or color.amber,
+                })
+                allowance = allowance - cost
+            end
+            slot = last + 1
+        end
+        cursor[1], cursor[2] = cursor[1] + 1, 1
+    end
+    return allowance
+end
+
+--- Threshold lines over the shading, and the renderer for the curves.
+local function buildLines(host, item)
+    local theme, color = host.theme, host.theme.color
+    local tile, area, box = item.tile, item.area, item.box
+    local series, consumers = {}, {}
+    for index, entry in ipairs(tile.series) do
+        local low, high = view.range(entry.config, entry.columns)
+        local spec = entry.thresholds
+        if spec then
+            for _, mark in ipairs({ { spec.warning, color.amber }, { spec.critical, color.critical } }) do
+                local value = mark[1]
+                if type(value) == "number" and value > low and value < high then
+                    local fraction = (value - low) / (high - low)
+                    lvgl.hline(box, {
+                        x = area.x,
+                        y = area.y + area.h - (fraction * area.h + 0.5) // 1,
+                        w = area.w,
+                        h = 1,
+                        color = mark[2],
+                        opacity = LINE_OPACITY,
+                        dashGap = 3,
+                        dashWidth = 2,
+                    })
+                end
+            end
+        end
+        series[index] = {
+            low = low,
+            high = high,
+            color = host.themeBuilder.seriesColor(theme, index, entry.config.accent),
+        }
+        consumers[index] = { map = entry.columns }
+    end
     item.renderer = host.chartColumnsRenderer.new({
         area = area,
         rect = { w = item.w, h = item.h },
@@ -476,11 +518,12 @@ local function buildTile(host, state, item)
         series = series,
         columnConsumers = consumers,
     })
-    item.built = true
+    item.shade, item.built = nil, true
 end
 
---- Build the hidden overlay, then each tile, one per step, then paint their
---- curves within `allowance` Lua instructions.
+--- Build the hidden overlay, then each tile: its base, its shading and its
+--- lines, then paint the curves. Shading and curves keep within `allowance`
+--- Lua instructions; the overlay and a tile's base are one step each.
 function view.advance(host, allowance)
     local state = host.debrief
     if not state.ui then
@@ -493,7 +536,14 @@ function view.advance(host, allowance)
     end
     for _, item in ipairs(state.items) do
         if not item.built then
-            buildTile(host, state, item)
+            if not item.box then
+                buildBase(host, state, item)
+                return
+            end
+            local left = shade(host, item, allowance)
+            if left and left >= view.LINES_COST then
+                buildLines(host, item)
+            end
             return
         end
     end
@@ -501,7 +551,7 @@ function view.advance(host, allowance)
         if allowance < view.PAINT_COST then
             return
         end
-        if item.built and not item.complete then
+        if not item.complete then
             local painted, complete = item.renderer:paintSlots(allowance // view.PAINT_COST, 1, true)
             allowance = allowance - painted * view.PAINT_COST
             item.complete = complete
@@ -539,17 +589,19 @@ function view.detach(state)
     end
     state.ui, state.shown, state.closing, state.dragY, state.reveal = nil, false, nil, nil, 0
     for _, item in ipairs(state.items) do
-        item.built, item.complete, item.box, item.renderer = nil, nil, nil, nil
+        item.built, item.complete, item.box, item.renderer, item.shade = nil, nil, nil, nil, nil
     end
 end
 
 --- Release the view and its objects.
 function view.destroy(host)
     local state = host.debrief
-    if state and state.ui then
-        state.ui.overlay:clear()
-        lvgl.hide(state.ui.overlay)
-        state.ui.overlay:set({ w = 0, h = 0 })
+    local overlay = host.debriefOverlay
+    if state and state.ui and overlay then
+        overlay:clear()
+        lvgl.hide(overlay)
+        overlay:set({ w = 0, h = 0 })
+        host.debriefCleared = true
     end
     host.debrief = nil
 end

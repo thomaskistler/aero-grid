@@ -135,6 +135,17 @@ function module.install(theme)
         return width
     end
 
+    --- A number at fixed decimals (0 to 3), or "--" when it is not finite.
+    ---@param value any
+    ---@param precision? integer
+    ---@return string
+    function theme.numberText(value, precision)
+        if type(value) ~= "number" or value ~= value or value == math.huge or value == -math.huge then
+            return "--"
+        end
+        return string.format("%." .. math.min(3, math.max(0, precision or 0)) .. "f", value)
+    end
+
     --- Distance from the bottom of a font's line box to its baseline.
     ---
     --- `getFontHeight` is `lv_font_get_line_height`, so `lcd.sizeText` hands Lua a
