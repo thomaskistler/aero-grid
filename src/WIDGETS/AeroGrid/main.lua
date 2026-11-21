@@ -618,12 +618,20 @@ end
 
 local initialize
 
---- Panels go in one layer and the pill in another above it, both made with
---- the page, so the pill stays on top without being remade.
+--- The debrief body and its leading bar share one moving sheet above the panels.
 ---@param context AeroGridContext
 local function addPageLayers(context, zone)
     context.panelLayer = lvgl.box(context.page, { x = 0, y = 0, w = zone.w, h = zone.h })
-    context.pillLayer = lvgl.box(context.page, { x = 0, y = 0, w = 1, h = 1 })
+    context.debriefOverlay = lvgl.box(context.page, { x = 0, y = zone.h, w = zone.w, h = zone.h, scrollDir = 0 })
+    context.debriefViewport = lvgl.box(context.debriefOverlay, {
+        x = 0,
+        y = 0,
+        w = zone.w,
+        h = zone.h,
+        scrollDir = 0,
+    })
+    context.pillLayer = lvgl.box(context.debriefOverlay, { x = 0, y = 0, w = 1, h = 1, scrollDir = 0 })
+    lvgl.hide(context.debriefOverlay)
     lvgl.hide(context.pillLayer)
 end
 
@@ -1165,7 +1173,7 @@ local function debriefReady(context)
     return state ~= nil and state.result == debriefResult(context) and context.debriefModule.ready(state)
 end
 
---- Show the bottom bar whenever a debrief is available and not open.
+--- Keep the sheet's leading bar visible whenever a debrief is available.
 local function debriefPillWanted(context)
     if
         not context.page
@@ -1175,7 +1183,6 @@ local function debriefPillWanted(context)
         or context.modelSettingsUi
         or context.logViewer
         or context.locationDetails
-        or debriefShown(context)
         or not context.debrief
         or context.debrief.stale
         or context.debrief.result ~= debriefResult(context)
@@ -1196,6 +1203,15 @@ local function debriefPillStale(context)
         return pill ~= nil and pill.fullscreen ~= nil
     end
     return not pill or pill.fullscreen ~= wanted or pill.w ~= zone.w or pill.h ~= zone.h
+end
+
+local function debriefFailed(context, message)
+    if context.debriefModule then
+        pcall(context.debriefModule.destroy, context)
+    end
+    context.debriefFailure = context.debrief and context.debrief.result or debriefResult(context)
+    addError(context, "debrief: " .. tostring(message))
+    showErrors(context)
 end
 
 --- Whether a fullscreen touch is an upward drag that should reveal the debrief.
@@ -1245,12 +1261,17 @@ local function handleEvent(context, widgetEvent, touchState)
         return true
     end
     if debriefPull(context, widgetEvent, touchState) then
-        context.debriefRequest = {
+        local request = {
             page = context.page,
             y = touchState.y,
             startY = touchState.startY,
             swipe = touchState.swipeUp and true or nil,
+            follow = true,
         }
+        local ok, message = pcall(context.debriefModule.open, context, debriefResult(context), request)
+        if not ok then
+            debriefFailed(context, message)
+        end
         context.panelPress = context.gesture.cancel(context.panelPress)
         return true
     end
@@ -1261,6 +1282,11 @@ local function handleEvent(context, widgetEvent, touchState)
     local tap
     context.panelPress, tap = context.gesture.track(context.panelPress, widgetEvent, touchState)
     if tap and isFullScreen() then
+        if context.debriefModule and context.debriefModule.barHit(context, tap) then
+            context.debriefRequest = { page = context.page, swipe = true, released = true }
+            context.panelPress = context.gesture.cancel(context.panelPress)
+            return true
+        end
         local touchState = tap
         for _, entry in ipairs(context.panels) do
             local logPanel = entry.placement.type == "host-diagnostics" and entry.settings.section == "log"
@@ -2558,15 +2584,6 @@ local function debriefOpenReady(task, _, hidden)
     return not hidden and task.host.debriefRequest ~= nil and debriefReady(task.host)
 end
 
-local function debriefFailed(context, message)
-    if context.debriefModule then
-        pcall(context.debriefModule.destroy, context)
-    end
-    context.debriefFailure = context.debrief and context.debrief.result or debriefResult(context)
-    addError(context, "debrief: " .. tostring(message))
-    showErrors(context)
-end
-
 local function debriefOpenStep(task)
     local context = task.host
     local request, result = context.debriefRequest, debriefResult(context)
@@ -2578,10 +2595,6 @@ local function debriefOpenStep(task)
     if not ok then
         debriefFailed(context, openError)
         return
-    end
-    -- The bar lies above the sheet, so hide it in the same turn.
-    if context.debriefPill then
-        context.debriefModule.pill(context, nil)
     end
 end
 

@@ -236,6 +236,7 @@ function module.new(dependencies)
         context.logViewer = nil
         context.logOverlay = nil
         context.debriefOverlay = nil
+        context.debriefViewport = nil
         context.debriefPill = nil
         if context.debrief then
             context.debriefModule.detach(context.debrief)
@@ -332,9 +333,19 @@ function module.new(dependencies)
             filled = true,
             opacity = context.radioBackground and 0 or 255,
         })
-        -- Panels below, the pill above; see addPageLayers in main.lua.
+        -- See addPageLayers in main.lua: the bar is the sheet's leading edge.
         context.panelLayer = lvgl.box(context.page, { x = 0, y = 0, w = context.zone.w, h = context.zone.h })
-        context.pillLayer = lvgl.box(context.page, { x = 0, y = 0, w = 1, h = 1 })
+        local zone = context.zone
+        context.debriefOverlay = lvgl.box(context.page, { x = 0, y = zone.h, w = zone.w, h = zone.h, scrollDir = 0 })
+        context.debriefViewport = lvgl.box(context.debriefOverlay, {
+            x = 0,
+            y = 0,
+            w = zone.w,
+            h = zone.h,
+            scrollDir = 0,
+        })
+        context.pillLayer = lvgl.box(context.debriefOverlay, { x = 0, y = 0, w = 1, h = 1, scrollDir = 0 })
+        lvgl.hide(context.debriefOverlay)
         lvgl.hide(context.pillLayer)
         context.reloadState = nil
     end

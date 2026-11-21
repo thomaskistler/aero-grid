@@ -64,6 +64,9 @@ end
 local function drag(from, to, extra)
     input(EVT_TOUCH_FIRST, touch(from, from))
     input(EVT_TOUCH_SLIDE, touch(to, from, extra))
+    if extra and extra.swipeUp then
+        input(EVT_TOUCH_BREAK, touch(to, from))
+    end
 end
 
 -- A fake debrief at the 12-tile maximum: two compact tiles, the rest wide,
@@ -214,7 +217,8 @@ drag(H - 5, H - 60)
 input(EVT_TOUCH_BREAK, touch(H - 60, H - 5))
 assert(not state.shown, "an unfinished view does not open")
 local callbacks = build()
-assert(context.debrief == state and state.ui.overlay.hidden and not state.shown)
+assert(context.debrief == state and not state.shown)
+assert(state.ui.overlay.properties.y == state.travel, "only the bar peeks above the bottom when closed")
 assert(state.ui.overlay.properties.scrollDir == 0, "native scrolling must not move the sheet's background")
 assert(state.ui.content.properties.scrollDir == 0, "Lua alone scrolls the debrief content")
 for _, item in ipairs(state.items) do
@@ -244,11 +248,11 @@ end
 -- A drag past the halfway point snaps the sheet open on release.
 drag(H - 5, H - 60)
 assert(state.shown and state.reveal == 55, "the sheet follows the finger")
-assert(state.ui.overlay.properties.y == H - 55)
+assert(state.ui.overlay.properties.y == state.travel - 55)
 input(EVT_TOUCH_SLIDE, touch(20, H - 5))
 assert(state.reveal == H - 25)
 input(EVT_TOUCH_BREAK, touch(20, H - 5))
-assert(state.reveal == H and state.offset == 0, "release past halfway opens fully")
+assert(state.reveal == state.travel and state.offset == 0, "release past halfway opens fully")
 assert(state.ui.overlay.properties.y == 0)
 
 local function labelsOf(object, found)
@@ -326,7 +330,12 @@ assert(has(labelsOf(first.box), "MIN"), "wide tiles label their statistics in up
 
 -- Dragging further up scrolls; the rotary scrolls and never hides.
 drag(200, 120)
-assert(state.offset == 80 and state.reveal == H, "an upward drag scrolls the open sheet")
+assert(state.offset == 80 and state.reveal == state.travel, "an upward drag scrolls the open sheet")
+assert(state.ui.viewport.properties.y == state.barHeight, "scrolling cannot cover the leading bar")
+assert(
+    context.pillLayer.parent == state.ui.overlay and context.pillLayer.properties.y == 0,
+    "the bar stays pinned to the sheet"
+)
 input(EVT_TOUCH_BREAK, touch(120, 200))
 -- Native coordinates follow the touched tile as it moves, but slideY remains
 -- the finger's delta. Holding the finger still must not reverse the scroll.
@@ -358,9 +367,12 @@ local offset = state.offset
 -- RTN hides without destroying; reopening keeps the scroll position.
 local overlay = state.ui.overlay
 input(EVT_VIRTUAL_EXIT)
-assert(context.debrief == state and not state.shown and overlay.hidden, "RTN hides the debrief")
+assert(
+    context.debrief == state and not state.shown and overlay.properties.y == state.travel,
+    "RTN lowers the sheet to its bar"
+)
 drag(H - 5, H - 40, { swipeUp = true })
-assert(context.debrief == state and state.shown and state.reveal == H, "a swipe up opens fully")
+assert(context.debrief == state and state.shown and state.reveal == state.travel, "a swipe up opens fully")
 assert(state.ui.overlay == overlay and state.offset == offset, "the hidden view is reused as it was")
 
 -- At the top, a downward drag slides the sheet away; a swipe hides it.
@@ -368,12 +380,12 @@ for _ = 1, 20 do
     input(EVT_ROT_LEFT)
 end
 drag(50, 100)
-assert(state.shown and state.reveal == H - 50, "a downward drag at the top slides the sheet")
+assert(state.shown and state.reveal == state.travel - 50, "a downward drag at the top slides the sheet")
 input(EVT_TOUCH_BREAK, touch(100, 50))
-assert(state.reveal == H, "a short slide snaps back")
+assert(state.reveal == state.travel, "a short slide snaps back")
 input(EVT_TOUCH_FIRST, touch(50, 50))
 input(EVT_TOUCH_SLIDE, touch(80, 50, { swipeDown = true }))
-assert(not state.shown and context.debrief == state, "a swipe down at the top hides")
+assert(state.shown and state.reveal == state.travel - 30, "a downward swipe follows the finger before release")
 input(EVT_TOUCH_BREAK, touch(80, 50))
 assert(not context.debrief.shown, "release after hiding does not reopen")
 
@@ -386,7 +398,7 @@ offset = state.offset
 fixture.lvglMock.setFullScreen(false)
 fixture.pump(context, 40)
 assert(context.debrief == state and not state.shown, "leaving fullscreen closes the debrief")
-assert(not state.ui or state.ui.overlay.hidden)
+assert(not state.ui or state.ui.overlay.properties.y == state.travel)
 fixture.lvglMock.setFullScreen(true)
 fixture.pump(context, 40)
 drag(H - 5, H - 40, { swipeUp = true })

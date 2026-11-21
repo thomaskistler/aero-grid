@@ -153,7 +153,7 @@ local function apply(state)
     if not ui then
         return
     end
-    local y, offset = state.height - state.reveal, -state.offset
+    local y, offset = state.travel - state.reveal, -state.offset
     if ui.y ~= y then
         ui.overlay:set({ y = y })
         ui.y = y
@@ -184,18 +184,21 @@ end
 
 function view.new(host, result)
     local zone = host.zone
+    local barHeight = host.themeBuilder.fontHeight(SMLSIZE) + 4
     local state = {
         result = result,
         document = host.document,
         width = zone.w,
         height = zone.h,
+        barHeight = barHeight,
+        travel = math.max(0, zone.h - barHeight),
         reveal = 0,
         offset = 0,
         shown = false,
         step = math.max(1, (zone.h + view.GUTTER) // 4),
     }
     state.items, state.headerHeight, state.total = view.layout(result.tiles, zone, host.grid)
-    state.maxOffset = math.max(0, state.total - zone.h)
+    state.maxOffset = math.max(0, state.total - state.travel)
     return state
 end
 
@@ -286,32 +289,32 @@ local function buildOverlay(host, state)
     local theme, width, height = host.theme, state.width, state.height
     -- One overlay per page, reused by every debrief: EdgeTX frees a page's
     -- children only with the page.
-    local overlay = host.debriefOverlay
-    if overlay then
-        overlay:set({ x = 0, y = height - state.reveal, w = width, h = height })
-    else
-        -- The sheet and its content move in Lua; native scrolling would also
-        -- move the background and expose the dashboard underneath.
-        overlay = lvgl.box(host.page, { x = 0, y = height - state.reveal, w = width, h = height, scrollDir = 0 })
-        host.debriefOverlay = overlay
-    end
-    lvgl.rectangle(overlay, {
+    local overlay, viewport = host.debriefOverlay, host.debriefViewport
+    overlay:set({ x = 0, y = state.travel - state.reveal, w = width, h = height })
+    viewport:set({ y = state.barHeight, w = width, h = state.travel })
+    lvgl.rectangle(viewport, {
         x = 0,
         y = 0,
         w = width,
-        h = height,
+        h = state.travel,
         filled = true,
         color = theme.color.canvas,
         opacity = 255,
     })
-    local content = lvgl.box(overlay, {
+    local content = lvgl.box(viewport, {
         x = 0,
         y = -state.offset,
         w = width,
-        h = math.max(height, state.total),
+        h = math.max(state.travel, state.total),
         scrollDir = 0,
     })
-    state.ui = { overlay = overlay, content = content, y = height - state.reveal, offset = -state.offset }
+    state.ui = {
+        overlay = overlay,
+        viewport = viewport,
+        content = content,
+        y = state.travel - state.reveal,
+        offset = -state.offset,
+    }
     buildHeader(host, state, content)
 end
 
@@ -564,9 +567,6 @@ function view.advance(host, allowance)
     local state = host.debrief
     if not state.ui then
         buildOverlay(host, state)
-        if not state.shown then
-            lvgl.hide(state.ui.overlay)
-        end
         apply(state)
         return
     end
@@ -599,7 +599,7 @@ end
 function view.show(host, reveal)
     local state = host.debrief
     state.shown, state.closing = true, nil
-    state.reveal = math.max(0, math.min(state.height, reveal))
+    state.reveal = math.max(0, math.min(state.travel, reveal))
     if state.ui then
         lvgl.show(state.ui.overlay)
         apply(state)
@@ -610,8 +610,8 @@ end
 function view.hide(host)
     local state = host.debrief
     state.shown, state.closing, state.dragY, state.reveal = false, nil, nil, 0
+    state.follow, state.flick = nil, nil
     if state.ui then
-        lvgl.hide(state.ui.overlay)
         apply(state)
     end
     host.touchTapHandled = true
@@ -624,6 +624,7 @@ function view.detach(state)
         lvgl.hide(state.ui.overlay)
     end
     state.ui, state.shown, state.closing, state.dragY, state.reveal = nil, false, nil, nil, 0
+    state.follow, state.flick = nil, nil
     for _, item in ipairs(state.items) do
         item.built, item.complete, item.box, item.renderer, item.shade = nil, nil, nil, nil, nil
     end
@@ -634,9 +635,10 @@ function view.destroy(host)
     local state = host.debrief
     local overlay = host.debriefOverlay
     if state and state.ui and overlay then
-        overlay:clear()
+        host.debriefViewport:clear()
+        host.pillLayer:clear()
         lvgl.hide(overlay)
-        overlay:set({ w = 0, h = 0 })
+        host.debriefPill = nil
         host.debriefCleared = true
     end
     host.debrief = nil
@@ -647,11 +649,11 @@ end
 --- then the sheet slides away.
 function view.move(state, delta)
     if delta > 0 then
-        local rise = math.min(delta, state.height - state.reveal)
+        local rise = math.min(delta, state.travel - state.reveal)
         state.reveal = state.reveal + rise
         state.offset = math.min(state.maxOffset, state.offset + delta - rise)
     elseif delta < 0 then
-        if state.reveal < state.height then
+        if state.reveal < state.travel then
             state.reveal = math.max(0, state.reveal + delta)
         else
             local scroll = math.max(delta, -state.offset)
@@ -664,8 +666,14 @@ end
 --- Snap a partly revealed sheet open or closed when the touch ends.
 ---@return boolean open
 function view.release(state)
-    if state.reveal < state.height then
-        state.reveal = state.reveal * 2 >= state.height and state.height or 0
+    if state.flick == "up" then
+        state.reveal = state.travel
+    elseif state.flick == "down" and state.offset == 0 then
+        state.reveal = 0
+    end
+    state.flick = nil
+    if state.reveal < state.travel then
+        state.reveal = state.reveal * 2 >= state.travel and state.travel or 0
     end
     return state.reveal > 0
 end
@@ -690,6 +698,7 @@ function view.handle(host, event, touch)
         local point = type(touch) == "table" and type(touch.y) == "number"
         if matches(event, "EVT_TOUCH_FIRST") then
             state.dragY = point and touch.y or nil
+            state.follow, state.flick = true, nil
         elseif matches(event, "EVT_TOUCH_SLIDE") then
             local top = state.offset == 0
             if state.dragY and point then
@@ -699,14 +708,19 @@ function view.handle(host, event, touch)
                 view.move(state, delta)
                 state.dragY = touch.y
             end
-            if touch and touch.swipeUp and state.reveal < state.height then
-                state.reveal, state.dragY = state.height, nil
+            if state.follow and touch and touch.swipeUp then
+                state.flick = "up"
+            elseif state.follow and touch and touch.swipeDown and top then
+                state.flick = "down"
+            elseif touch and touch.swipeUp and state.reveal < state.travel then
+                state.reveal, state.dragY = state.travel, nil
             elseif touch and touch.swipeDown and top then
                 state.reveal, state.dragY = 0, nil
             end
             settle(host, state)
         elseif matches(event, "EVT_TOUCH_BREAK") or matches(event, "EVT_TOUCH_TAP") then
             state.dragY = nil
+            state.follow = nil
             view.release(state)
             settle(host, state)
             host.touchTapHandled = true
@@ -758,6 +772,7 @@ function view.pill(host, fullscreen)
     if not text then
         if layer then
             lvgl.hide(layer)
+            lvgl.hide(host.debriefOverlay)
         end
         return
     end
@@ -771,46 +786,23 @@ function view.pill(host, fullscreen)
         pill.ui, pill.fullscreen = nil, nil
         return
     end
-    local x, y = 0, zone.h - h
+    local x, y = 0, 0
     if not ui then
         local color = host.theme.color
         local textColor = host.theme.light and color.text or color.canvas
         layer:set({ x = x, y = y, w = w, h = h, scrollDir = 0 })
+        -- Fullscreen-created boxes otherwise consume the widget's gestures.
+        lvgl.disable(layer)
+        lvgl.disable(host.debriefOverlay)
         ui = { builtFullscreen = fullscreen, text = text, x = x, y = y, w = w }
-        if fullscreen then
-            ui.button = lvgl.button(layer, {
-                x = 0,
-                y = 0,
-                w = w,
-                h = h,
-                text = "",
-                color = color.green,
-                textColor = textColor,
-                cornerRadius = 0,
-                press = function()
-                    if
-                        host.debriefPill == pill
-                        and host.pillLayer == layer
-                        and pill.fullscreen == true
-                        and host.debrief
-                        and not host.debrief.stale
-                        and not host.debrief.shown
-                    then
-                        host.debriefRequest = { page = host.page, swipe = true, released = true }
-                        host.panelPress = host.gesture.cancel(host.panelPress)
-                    end
-                end,
-            })
-        else
-            ui.fill = lvgl.rectangle(layer, {
-                x = 0,
-                y = 0,
-                w = w,
-                h = h,
-                filled = true,
-                color = color.green,
-            })
-        end
+        -- A line paints the bar without intercepting the sheet's touch events.
+        ui.fill = lvgl.hline(layer, {
+            x = 0,
+            y = h // 2,
+            w = w,
+            h = h,
+            color = color.green,
+        })
         local textWidth = host.themeBuilder.measureText(SMLSIZE, text)
         local labelX = (w - textWidth - 10) // 2 + 10
         ui.arrow = lvgl.triangle(layer, {
@@ -828,11 +820,7 @@ function view.pill(host, fullscreen)
         pill.ui = ui
     elseif ui.text ~= text or ui.x ~= x or ui.y ~= y or ui.w ~= w then
         layer:set({ x = x, y = y, w = w, h = h })
-        if ui.button then
-            ui.button:set({ w = w })
-        else
-            ui.fill:set({ w = w })
-        end
+        ui.fill:set({ w = w })
         local textWidth = host.themeBuilder.measureText(SMLSIZE, text)
         local labelX = (w - textWidth - 10) // 2 + 10
         ui.arrow:set({
@@ -841,7 +829,24 @@ function view.pill(host, fullscreen)
         ui.label:set({ x = labelX, w = textWidth, text = text })
         ui.text, ui.x, ui.y, ui.w = text, x, y, w
     end
+
     lvgl.show(layer)
+    lvgl.show(host.debriefOverlay)
+end
+
+function view.barHit(host, touch)
+    local bar, state = host.debriefPill, host.debrief
+    local ui = bar and bar.fullscreen == true and bar.ui
+    local y = state and state.travel - state.reveal or 0
+    return ui
+        and state
+        and not state.stale
+        and type(touch.x) == "number"
+        and type(touch.y) == "number"
+        and touch.x >= ui.x
+        and touch.x < ui.x + ui.w
+        and touch.y >= y
+        and touch.y < y + state.barHeight
 end
 
 --- Open the fully built view of `result` from an upward drag `request`,
@@ -851,12 +856,14 @@ function view.open(host, result, request)
     if not view.ready(state) or state.result ~= result then
         return
     end
-    local reveal = state.height
-    if request and not request.swipe and type(request.startY) == "number" and type(request.y) == "number" then
+    local reveal = state.travel
+    if request and request.follow and type(request.startY) == "number" and type(request.y) == "number" then
         reveal = request.startY - request.y
     end
     view.show(host, reveal)
-    state.dragY = request and not request.swipe and not request.released and request.y or nil
+    state.follow = request and request.follow or nil
+    state.flick = state.follow and request.swipe and "up" or nil
+    state.dragY = state.follow and not request.released and request.y or nil
     if not state.dragY then
         view.release(state)
     end
