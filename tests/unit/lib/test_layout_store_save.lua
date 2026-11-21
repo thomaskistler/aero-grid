@@ -261,7 +261,7 @@ local function testDebriefSaveBudget()
     assert(parsed.debrief.size == "wide" and parsed.debrief.future.enabled and #parsed.debrief.tiles == 12)
     assert(#layout.validateDebrief(parsed) == 0)
     for _, tile in ipairs(parsed.debrief.tiles) do
-        assert(tile.colSpan == 4 and tile.rowSpan == 1 and #tile.series == 3)
+        assert(tile.colSpan == 4 and tile.rowSpan == 2 and #tile.series == 3)
     end
     document.debrief.tiles[5] = false
     local ok, err, filename = stagedSave("invalid-tile", document, operations)

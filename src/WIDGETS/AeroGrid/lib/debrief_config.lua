@@ -136,7 +136,7 @@ function debrief.validateTile(value, size)
         tile[key] = field
     end
     if size ~= nil then
-        tile.colSpan, tile.rowSpan = size == "wide" and 4 or 2, size == "wide" and 1 or 2
+        tile.colSpan, tile.rowSpan = size == "wide" and 4 or 2, 2
     end
     if type(value.title) ~= "string" or value.title == "" then
         return nil, { "title is required" }, warnings
@@ -238,7 +238,7 @@ function debrief.setSize(section, size)
     end
     section.size = size
     for _, tile in ipairs(section.tiles) do
-        tile.colSpan, tile.rowSpan = size == "wide" and 4 or 2, size == "wide" and 1 or 2
+        tile.colSpan, tile.rowSpan = size == "wide" and 4 or 2, 2
     end
     return true
 end
@@ -274,7 +274,7 @@ function debrief.addTile(section)
     section.tiles[index] = {
         title = "Tile " .. index,
         colSpan = wide and 4 or 2,
-        rowSpan = wide and 1 or 2,
+        rowSpan = 2,
         series = { { statistic = "min" } },
     }
     return index

@@ -45,7 +45,7 @@ Panel IDs and types are case-sensitive. Unknown top-level keys and extra placeme
 ## Flight debrief
 
 `debrief.size` selects one size for every tile: `compact` (2 × 2) or `wide`
-(4 × 1). A tile has a `title` and one to three `series`, each with a telemetry
+(4 × 2). A tile has a `title` and one to three `series`, each with a telemetry
 `source` and a `statistic`: `min`, `max`, `avg`, or `delta`.
 Series also accept `label`, `rangeMin`, `rangeMax`, `unit`, `precision` (0–3),
 and `accent` (`cyan`, `green`, `orange`, or `amber`).

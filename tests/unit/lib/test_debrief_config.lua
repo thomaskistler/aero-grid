@@ -140,12 +140,13 @@ end
 
 local function testSharedSize()
     local input = { size = "wide", tiles = { tile("A"), tile("B") } }
+    input.tiles[1].colSpan, input.tiles[1].rowSpan = 4, 1
     local section, errors = debrief.validate(input)
     assert(#errors == 0 and section.size == "wide")
     for _, entry in ipairs(section.tiles) do
-        assert(entry.colSpan == 4 and entry.rowSpan == 1, "the shared size overrides per-tile spans")
+        assert(entry.colSpan == 4 and entry.rowSpan == 2, "the shared size overrides per-tile spans")
     end
-    assert(input.tiles[1].colSpan == 2, "validation does not change the input")
+    assert(input.tiles[1].rowSpan == 1, "validation does not change the input")
     assert(debrief.setSize(section, "compact"))
     for _, entry in ipairs(section.tiles) do
         assert(entry.colSpan == 2 and entry.rowSpan == 2)
@@ -153,9 +154,9 @@ local function testSharedSize()
     assert(not debrief.setSize(section, "4x2") and section.size == "compact")
     assert(debrief.setSize(section, "wide"))
     debrief.addTile(section)
-    assert(section.tiles[3].colSpan == 4 and section.tiles[3].rowSpan == 1)
+    assert(section.tiles[3].colSpan == 4 and section.tiles[3].rowSpan == 2)
     debrief.fill(section, { { type = "rx-battery", config = {} } })
-    assert(section.size == "wide" and section.tiles[1].rowSpan == 1 and section.tiles[1].colSpan == 4)
+    assert(section.size == "wide" and section.tiles[1].rowSpan == 2 and section.tiles[1].colSpan == 4)
     debrief.fill(section, {})
     assert(section.size == "wide" and #section.tiles == 0)
     local _, problems = debrief.validate({ size = "nope", tiles = {} })

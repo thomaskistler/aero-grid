@@ -37,7 +37,7 @@ function page.listFields(state, config)
                 label = "Tile size",
                 type = "string",
                 choices = { "compact", "wide" },
-                choiceLabels = { "Compact 2 x 2", "Wide 4 x 1" },
+                choiceLabels = { "Compact 2 x 2", "Wide 4 x 2" },
             },
         }, state.debriefMark
     for index, tile in ipairs(tiles(state)) do

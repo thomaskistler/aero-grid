@@ -111,7 +111,7 @@ layouts live and how multiple dashboards share them.
 ## Flight debrief
 
 **AeroGrid → Flight debrief** configures the current layout's post-flight tiles.
-**Tile size** applies to the whole debrief: **Compact 2 × 2** or **Wide 4 × 1**.
+**Tile size** applies to the whole debrief: **Compact 2 × 2** or **Wide 4 × 2**.
 Each tile has a title and up to three series.
 
 Leaving with changes offers **Save layout**, **Save layout as...**, or
