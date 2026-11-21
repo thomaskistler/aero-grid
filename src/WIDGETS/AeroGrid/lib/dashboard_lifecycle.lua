@@ -15,6 +15,7 @@ function module.new(dependencies)
     local panelRect = dependencies.panelRect
     local reservedFor = dependencies.reservedFor
     local buildPanel = dependencies.buildPanel
+    local addPageLayers = dependencies.addPageLayers
 
     --- Empty-state decoration belongs to the page, never the layout document.
     ---@param context AeroGridContext
@@ -335,21 +336,7 @@ function module.new(dependencies)
             filled = true,
             opacity = context.radioBackground and 0 or 255,
         })
-        -- See addPageLayers in main.lua: the bar is the sheet's leading edge.
-        context.panelLayer =
-            lvgl.box(context.page, { x = 0, y = 0, w = context.zone.w, h = context.zone.h, scrollDir = 0 })
-        local zone = context.zone
-        context.debriefOverlay = lvgl.box(context.page, { x = 0, y = zone.h, w = zone.w, h = zone.h, scrollDir = 0 })
-        context.debriefViewport = lvgl.box(context.debriefOverlay, {
-            x = 0,
-            y = 0,
-            w = zone.w,
-            h = zone.h,
-            scrollDir = 0,
-        })
-        context.pillLayer = lvgl.box(context.debriefViewport, { x = 0, y = 0, w = 1, h = 1, scrollDir = 0 })
-        lvgl.hide(context.debriefOverlay)
-        lvgl.hide(context.pillLayer)
+        addPageLayers(context, context.zone)
         context.reloadState = nil
     end
 

@@ -688,7 +688,6 @@ local function create(zone, widgetOptions, path)
         rejected = {},
         errors = {},
         notices = {},
-        -- Debriefs already opened; their pill is gone for good.
         width = zone.w,
         height = zone.h,
         left = zone.xabs or 0,
@@ -1007,6 +1006,7 @@ initialize = function(context)
                 panelRect = context.dashboardLoader.panelRect,
                 reservedFor = context.dashboardLoader.reservedFor,
                 buildPanel = context.dashboardLoader.buildPanel,
+                addPageLayers = addPageLayers,
             }, {
                 "updateEmptyHint",
                 "beginReflow",

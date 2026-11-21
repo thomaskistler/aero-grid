@@ -42,16 +42,6 @@ function view.dateText(started)
     return string.format("%s %d, %02d:%02d", month, started.day or 1, started.hour or 0, started.min or 0)
 end
 
---- "Flight 42 - Nov 17, 14:24", either part alone, or nil.
-function view.flightText(result)
-    local flight = type(result.flight) == "number" and string.format("Flight %d", result.flight) or nil
-    local date = view.dateText(result.started)
-    if flight and date then
-        return flight .. " - " .. date
-    end
-    return flight or date
-end
-
 --- A statistic with its precision, thousands grouped: "1,840", "3.48".
 function view.valueText(themeBuilder, value, precision)
     if precision == nil and type(value) == "number" then
@@ -121,10 +111,13 @@ end
 
 --- Tile positions in content coordinates. Compact tiles pair up side by
 --- side in order; a wide tile starts a new row.
-function view.layout(tiles, zone, grid)
+function view.layout(tiles, zone, grid, minimumHeaderHeight)
     local gutter, top = view.GUTTER, view.TOP
+    local rowHeaderHeight = (zone.h + gutter) // 4 - gutter
+    local headerHeight = math.max(rowHeaderHeight, minimumHeaderHeight or 0)
+    local extra = headerHeight - rowHeaderHeight
     local function rowY(row)
-        return top + row * (zone.h + gutter) // 4
+        return top + row * (zone.h + gutter) // 4 + extra
     end
     -- `row` is the next free full row; `pending` the row of a compact tile
     -- whose right half is still free.
@@ -145,7 +138,7 @@ function view.layout(tiles, zone, grid)
             items[#items + 1] = { tile = tile, x = rect.x, y = rowY(at), w = rect.w, h = rect.h }
         end
     end
-    return items, rowY(1) - gutter - top, rowY(row)
+    return items, headerHeight, rowY(row)
 end
 
 local function apply(state)
@@ -197,7 +190,23 @@ function view.new(host, result)
         shown = false,
         step = math.max(1, (zone.h + view.GUTTER) // 4),
     }
-    state.items, state.headerHeight, state.total = view.layout(result.tiles, zone, host.grid)
+    local textHeight = host.themeBuilder.fontHeight(SMLSIZE)
+        + host.themeBuilder.fontHeight(MIDSIZE)
+        + host.themeBuilder.fontHeight(TINSIZE)
+    local headerHeight = (zone.h + view.GUTTER) // 4 - view.GUTTER
+    for _ = 1, 2 do
+        local frame = host.themeBuilder.frame(
+            host.theme,
+            { w = zone.w, h = headerHeight },
+            { label = SMLSIZE, badge = SMLSIZE }
+        )
+        local required = frame.labelY + textHeight + frame.bottom
+        if required <= headerHeight then
+            break
+        end
+        headerHeight = required
+    end
+    state.items, state.headerHeight, state.total = view.layout(result.tiles, zone, host.grid, headerHeight)
     state.maxOffset = math.max(0, state.total - state.travel)
     return state
 end

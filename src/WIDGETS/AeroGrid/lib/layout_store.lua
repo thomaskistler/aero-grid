@@ -404,10 +404,6 @@ function layoutStore.advanceSave(state)
             return true, false, parseError
         end
         parsed.panels = {}
-        local debriefErrors = layout.validateDebrief(parsed)
-        if #debriefErrors > 0 then
-            return true, false, table.concat(debriefErrors, "; ")
-        end
         local valid, validationErrors = layout.finalizeHeader(parsed)
         if not valid then
             return true, false, table.concat(validationErrors, "; ")
@@ -509,11 +505,7 @@ function layoutStore.advanceSave(state)
         return false
     end
     if state.phase == "debrief-write" then
-        local text, encodeError = yaml.serialize({ tiles = { state.debriefTile } })
-        if not text then
-            return true, false, encodeError
-        end
-        local content = string.sub(text, #"tiles:\n" + 1)
+        local content = string.sub(state.debriefText, #"tiles:\n" + 1)
         state.parts[#state.parts + 1] = string.gsub(content, "([^\n]*)\n", "  %1\n")
         state.debriefSection.tiles[state.debriefIndex] = state.debriefTile
         state.debriefIndex = state.debriefIndex + 1

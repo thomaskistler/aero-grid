@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
--- The debrief bottom bar stays until reset, hides while open, and supports
+-- The debrief bottom bar stays until reset, scrolls with the open sheet, and supports
 -- tapping or pulling up without taking the widget's App-mode long press.
 
 local root = ... or "."

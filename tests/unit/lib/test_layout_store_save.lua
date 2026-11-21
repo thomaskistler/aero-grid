@@ -240,7 +240,17 @@ local function testDebriefSaveBudget()
         end
         document.debrief.tiles[index] = tile
     end
-    local state = layoutStore.startSave("/widget", "maximum", document, yaml, layout, grid, operations)
+    local tileSerializations = 0
+    local saveYaml = {
+        parse = yaml.parse,
+        serialize = function(value)
+            if value.tiles then
+                tileSerializations = tileSerializations + 1
+            end
+            return yaml.serialize(value)
+        end,
+    }
+    local state = layoutStore.startSave("/widget", "maximum", document, saveYaml, layout, grid, operations)
     local worst, done, saved, saveError = 0, false, nil, nil
     for _ = 1, 120 do
         local count = 0
@@ -257,6 +267,7 @@ local function testDebriefSaveBudget()
     end
     assert(done and saved, saveError)
     assert(worst < 10000, "debrief save step exceeded budget: " .. worst)
+    assert(tileSerializations == 12, "each tile is serialized once without dropping round-trip validation")
     local parsed = assert(yaml.parse(files[state.filename]))
     assert(parsed.debrief.size == "wide" and parsed.debrief.future.enabled and #parsed.debrief.tiles == 12)
     assert(#layout.validateDebrief(parsed) == 0)

@@ -319,7 +319,7 @@ function debrief.pasteTile(section, from, target, after, duplicate)
     return index
 end
 
---- Set a tile setting: `title`, or `size` as one of SIZES.
+--- Set a tile's title.
 ---@param section table
 ---@param index integer
 ---@param key string
@@ -336,13 +336,6 @@ function debrief.setTileValue(section, index, key, value)
             return false, "Title is required"
         end
         tile.title = value
-    elseif key == "size" then
-        local colSpan, rowSpan = string.match(tostring(value), "^(%d)x(%d)$")
-        local size = { colSpan = tonumber(colSpan), rowSpan = tonumber(rowSpan) }
-        if not debrief.size(size) then
-            return false, "size must be 2 x 2, 4 x 2, or 4 x 1"
-        end
-        tile.colSpan, tile.rowSpan = size.colSpan, size.rowSpan
     else
         return false, tostring(key) .. " is not a tile setting"
     end
@@ -583,14 +576,21 @@ function debrief.fromPanels(panels, present, thresholds)
                         source, statistic = base, suffix == "+" and "max" or "min"
                     end
                 end
-                if #readings < debrief.MAX_SERIES and has(source) and (kind == "chart" or not used[source]) then
+                statistic = statistic or (falling[source] and "min" or "max")
+                if
+                    #readings < debrief.MAX_SERIES
+                    and has(source)
+                    and (kind == "chart" or not used[source] or not used[source][statistic])
+                then
                     local reading = entry
                     if source ~= entry.source then
                         reading = copy(entry)
                         reading.source = source
                     end
                     readings[#readings + 1] = reading
-                    statistics[#readings], used[source] = statistic, true
+                    statistics[#readings] = statistic
+                    used[source] = used[source] or {}
+                    used[source][statistic] = true
                 end
             end
             if

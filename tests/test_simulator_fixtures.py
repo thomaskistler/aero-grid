@@ -195,9 +195,13 @@ class SimulatorFixtureTests(unittest.TestCase):
         self.assertEqual(len(definitions), 29)
         self.assertEqual(len(blocks), len(definitions))
         layout = (ROOT / "tests/fixtures/layouts/development/debrief.yaml").read_text()
+        self.assertIn("version: 5\n", layout)
         panels = dict(block.split("\n", 1) for block in
                       re.split(r"(?m)^  - id: ", layout)[1:])
         self.assertNotIn("expo", panels)
+        self.assertNotIn("armSwitch:", panels["flight-count"])
+        self.assertNotIn("motorSource:", panels["flight-count"])
+        self.assertIn("homeMode: edgetx\n", panels["navigation"])
         for name, kind, geometry in (
                 ("link", "link-status", (3, 1, 1, 1)),
                 ("navigation", "navigation", (0, 2, 2, 1))):

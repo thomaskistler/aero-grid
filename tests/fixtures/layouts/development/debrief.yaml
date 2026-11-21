@@ -1,5 +1,5 @@
 # Debrief testing dashboard, on AG Debrief.
-version: 3
+version: 5
 grid:
   columns: 4
   rows: 4
@@ -28,6 +28,7 @@ panels:
       label: Navigation
       source: GPS
       satelliteSource: Sats
+      homeMode: edgetx
   - id: transmitter-battery
     type: tx-battery
     col: 3
@@ -71,8 +72,6 @@ panels:
     rowSpan: 1
     config:
       label: Flights
-      armSwitch: SFv
-      motorSource: ch3
   - id: link
     type: link-status
     col: 3

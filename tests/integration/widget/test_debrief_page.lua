@@ -190,13 +190,21 @@ assert(#tiles()[1].series == 1 and state().debriefTarget.kind == "tile")
 back()
 assert(state().debriefTarget.kind == "list")
 assert(row("Tile size").object.properties.get() == 2, "the shared size remains Wide")
+local sizeDrawer, sizeGeneration = state().nativeDrawer, state().drawerGeneration
 row("Tile size").object.properties.set(1)
 settle()
 assert(tiles()[1].colSpan == 2 and tiles()[1].rowSpan == 2)
+assert(row("Tile size").object.properties.get() == 1)
+assert(
+    state().nativeDrawer == sizeDrawer and state().drawerGeneration == sizeGeneration,
+    "size changes retain the drawer"
+)
 assert(row("Battery").object.properties.text == "Battery", "the title remains the button caption")
 row("Tile size").object.properties.set(2)
 settle()
 assert(tiles()[1].colSpan == 4 and tiles()[1].rowSpan == 2)
+assert(row("Tile size").object.properties.get() == 2)
+assert(state().nativeDrawer == sizeDrawer and state().drawerGeneration == sizeGeneration)
 assert(row("Battery").object.properties.text == "Battery")
 
 press("Add tile")

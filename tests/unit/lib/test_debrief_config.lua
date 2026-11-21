@@ -183,10 +183,6 @@ local function testDraftOperations()
     assert(debrief.setTileValue(section, 1, "title", "A"))
     local ok, message = debrief.setTileValue(section, 1, "title", "")
     assert(not ok and message == "Title is required" and added.title == "A")
-    assert(debrief.setTileValue(section, 1, "size", "4x1"))
-    assert(added.colSpan == 4 and added.rowSpan == 1 and debrief.size(added) == "4x1")
-    ok, message = debrief.setTileValue(section, 1, "size", "3x2")
-    assert(not ok and message and debrief.size(added) == "4x1", "a rejected size leaves the tile unchanged")
     assert(not debrief.setTileValue(section, 1, "colSpan", 2))
 
     assert(debrief.setSeriesValue(section, 1, 1, "source", "VCel"))
@@ -368,6 +364,28 @@ local function testFromPanels()
         return name == "GAlt"
     end).tiles[1]
     equal(sources(minimum), "GAlt:min", "a radio minimum becomes a flight minimum")
+    local function altitudeSources(metrics)
+        return sources(debrief.fromPanels({
+            panel("metric", { metrics = metrics }),
+        }, function(name)
+            return name == "Alt"
+        end).tiles[1])
+    end
+    equal(
+        altitudeSources({ { source = "Alt" }, { source = "Alt-" } }),
+        "Alt:max,Alt:min",
+        "a minimum is distinct from the raw reading's maximum"
+    )
+    equal(
+        altitudeSources({ { source = "Alt-" }, { source = "Alt+" } }),
+        "Alt:min,Alt:max",
+        "opposite extrema both survive normalization"
+    )
+    equal(
+        altitudeSources({ { source = "Alt" }, { source = "Alt+" } }),
+        "Alt:max",
+        "the same base source and statistic is recorded once"
+    )
 
     -- Fill replaces the existing tiles and keeps unknown settings.
     local filled = { tiles = { tile("Old") }, future = true }

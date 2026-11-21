@@ -310,9 +310,6 @@ function page.advance(context, state)
         end
     elseif command.action == "write" then
         ok, err = context.editorDrawerModule.applyWrite(state, command)
-        if ok and target.kind == "list" and command.field.key == "size" then
-            show(context, state, { kind = "list" })
-        end
     elseif command.action == "error" then
         ok, err = false, command.message
         if command.control and state.nativeDrawer then

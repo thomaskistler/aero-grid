@@ -162,11 +162,6 @@ local view = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/debrief_view.lua
 local themeBuilder = context.themeBuilder
 assert(view.dateText({ year = 2025, mon = 11, day = 17, hour = 14, min = 4 }) == "Nov 17, 14:04")
 assert(view.dateText({ year = 2000, mon = 1, day = 1, hour = 0, min = 0 }) == nil, "an unset clock shows no date")
-assert(view.flightText({ flight = 42 }) == "Flight 42")
-assert(
-    view.flightText({ flight = 42, started = { year = 2025, mon = 1, day = 2, hour = 3, min = 4 } })
-        == "Flight 42 - Jan 2, 03:04"
-)
 assert(view.valueText(themeBuilder, 1840.4) == "1,840")
 assert(view.valueText(themeBuilder, -1234567, 0) == "-1,234,567")
 assert(view.valueText(themeBuilder, 3.476) == "3.48")
@@ -524,6 +519,69 @@ local middle = first.area.y + first.area.h / 2
 assert(line and math.abs(line - middle) <= 1, "a large threshold sits mid-plot: " .. tostring(line))
 current = nil
 fixture.pump(context, 5)
+
+-- A shorter color screen still fits all header rows, and tiles start below them.
+local small = fixture.createLoaded(
+    { x = 0, y = 0, w = 320, h = 240 },
+    { Layout = "review-navigation", Theme = 3 },
+    nil,
+    definition
+)
+fixture.pump(small, 40)
+local rect = small.grid.rect(small.zone, { col = 0, row = 0, colSpan = 2, rowSpan = 2 }, 4, 4, 4)
+local width = small.themeBuilder.frame(small.theme, rect, small.themeBuilder.typography(2, 2)).content
+local smallResult = {
+    duration = 72300,
+    flight = 42,
+    model = "Edge 540",
+    started = { year = 2025, mon = 11, day = 17, hour = 14, min = 24 },
+    tiles = {
+        {
+            config = { title = "Altitude", colSpan = 2, rowSpan = 2 },
+            series = {
+                {
+                    config = { source = "Alt", statistic = "max" },
+                    value = 100,
+                    columns = store(width, function(at)
+                        return at / 10
+                    end),
+                    levels = {},
+                },
+            },
+        },
+    },
+}
+small.serviceRuntime.byId.debrief.result = function()
+    return smallResult
+end
+assert(
+    fixture.pumpUntil(small, function(host)
+        return host.debrief and host.debriefModule.ready(host.debrief)
+    end, 1000),
+    "the shorter screen's debrief did not build"
+)
+local smallState = small.debrief
+local header = smallState.ui.content.children[2]
+assert(header.kind == "box" and header.properties.h == smallState.headerHeight)
+local headerLabels = 0
+for _, child in ipairs(header.children) do
+    if child.kind == "label" and child.properties.text ~= "" then
+        local p = child.properties
+        local font = type(p.font) == "function" and p.font() or p.font
+        assert(
+            p.y >= 0 and p.y + small.themeBuilder.fontHeight(font) <= header.properties.h,
+            "header text is clipped at 320x240"
+        )
+        assert(p.x >= 0 and p.x + p.w <= header.properties.w, "header text exceeds the shorter screen's width")
+        headerLabels = headerLabels + 1
+    end
+end
+assert(headerLabels >= 4, "the header's flight, date/model and duration rows are present")
+assert(has(labelsOf(header), "NOV 17, 14:24 - Edge 540"), "the shorter screen keeps the date/model row")
+assert(
+    smallState.items[1].y == view.TOP + smallState.headerHeight + view.GUTTER,
+    "the taller header cannot overlap the first tile"
+)
 
 assert(worst < 15000, "debrief callback exceeded budget: " .. worst)
 runtime.byId.debrief = realDebrief
