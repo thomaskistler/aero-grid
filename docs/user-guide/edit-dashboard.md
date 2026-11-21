@@ -116,7 +116,7 @@ Each tile has a title and up to three series.
 
 After a recorded flight, a green **Debrief ready** bar stays at the bottom
 until the debrief is cleared. In fullscreen, tap it or drag it up to open.
-The bar rises with the debrief and stays at the top while its tiles scroll;
+The bar scrolls with the flight summary and tiles, rather than staying at the top;
 press **RTN** or swipe down at the top to return to the dashboard.
 Tile accents and badges show the worst recorded severity: red for critical,
 yellow for warning, and blue otherwise. Values include the recorded source's

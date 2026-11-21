@@ -621,7 +621,7 @@ local initialize
 --- The debrief body and its leading bar share one moving sheet above the panels.
 ---@param context AeroGridContext
 local function addPageLayers(context, zone)
-    context.panelLayer = lvgl.box(context.page, { x = 0, y = 0, w = zone.w, h = zone.h })
+    context.panelLayer = lvgl.box(context.page, { x = 0, y = 0, w = zone.w, h = zone.h, scrollDir = 0 })
     context.debriefOverlay = lvgl.box(context.page, { x = 0, y = zone.h, w = zone.w, h = zone.h, scrollDir = 0 })
     context.debriefViewport = lvgl.box(context.debriefOverlay, {
         x = 0,
@@ -630,7 +630,7 @@ local function addPageLayers(context, zone)
         h = zone.h,
         scrollDir = 0,
     })
-    context.pillLayer = lvgl.box(context.debriefOverlay, { x = 0, y = 0, w = 1, h = 1, scrollDir = 0 })
+    context.pillLayer = lvgl.box(context.debriefViewport, { x = 0, y = 0, w = 1, h = 1, scrollDir = 0 })
     lvgl.hide(context.debriefOverlay)
     lvgl.hide(context.pillLayer)
 end
@@ -641,10 +641,10 @@ end
 local function ensureShell(context)
     local zone = context.zone
     if not context.root then
-        context.root = lvgl.box({ x = 0, y = 0, w = zone.w, h = zone.h })
+        context.root = lvgl.box({ x = 0, y = 0, w = zone.w, h = zone.h, scrollDir = 0 })
     end
     if not context.page then
-        context.page = lvgl.box(context.root, { x = 0, y = 0, w = zone.w, h = zone.h })
+        context.page = lvgl.box(context.root, { x = 0, y = 0, w = zone.w, h = zone.h, scrollDir = 0 })
     end
     if not context.canvas then
         context.canvas = lvgl.rectangle(context.page, {
@@ -719,9 +719,9 @@ local function create(zone, widgetOptions, path)
             onError = hostError,
             cost = 1,
             step = function()
-                context.root = lvgl.box({ x = 0, y = 0, w = zone.w, h = zone.h })
+                context.root = lvgl.box({ x = 0, y = 0, w = zone.w, h = zone.h, scrollDir = 0 })
                 context.rootBuiltFullscreen = isFullScreen()
-                context.page = lvgl.box(context.root, { x = 0, y = 0, w = zone.w, h = zone.h })
+                context.page = lvgl.box(context.root, { x = 0, y = 0, w = zone.w, h = zone.h, scrollDir = 0 })
                 context.pageBuiltFullscreen = isFullScreen()
                 context.canvas = lvgl.rectangle(context.page, {
                     x = 0,

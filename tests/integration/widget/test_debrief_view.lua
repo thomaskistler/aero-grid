@@ -298,7 +298,7 @@ for index, expected in ipairs({ context.theme.color.critical, context.theme.colo
     end
     assert(accent == expected, "the worst series determines the tile accent")
 end
-assert(#state.ui.overlay.children == 2, "the open debrief has no handle above its header")
+assert(#state.ui.overlay.children == 1, "the open debrief contains just one scrolling canvas")
 
 local first = state.items[1]
 assert(first.built and first.complete)
@@ -331,10 +331,16 @@ assert(has(labelsOf(first.box), "MIN"), "wide tiles label their statistics in up
 -- Dragging further up scrolls; the rotary scrolls and never hides.
 drag(200, 120)
 assert(state.offset == 80 and state.reveal == state.travel, "an upward drag scrolls the open sheet")
-assert(state.ui.viewport.properties.y == state.barHeight, "scrolling cannot cover the leading bar")
+assert(state.ui.viewport.properties.y == -80, "the entire debrief canvas scrolls")
 assert(
-    context.pillLayer.parent == state.ui.overlay and context.pillLayer.properties.y == 0,
-    "the bar stays pinned to the sheet"
+    context.pillLayer.parent == state.ui.viewport and state.ui.content.parent == state.ui.viewport,
+    "the ready header and flight summary share one scrolling canvas"
+)
+local barY = state.ui.overlay.properties.y + state.ui.viewport.properties.y + context.pillLayer.properties.y
+local summaryY = state.ui.overlay.properties.y + state.ui.viewport.properties.y + state.ui.content.properties.y
+assert(
+    barY == -80 and summaryY == barY + state.barHeight,
+    "the header scrolls offscreen without overlapping the summary"
 )
 input(EVT_TOUCH_BREAK, touch(120, 200))
 -- Native coordinates follow the touched tile as it moves, but slideY remains
@@ -355,6 +361,16 @@ for _ = 1, 20 do
     input(EVT_ROT_RIGHT)
 end
 assert(state.offset == state.maxOffset and state.maxOffset > 0, "the rotary stops at the bottom")
+local background = state.ui.content.children[1].properties
+local backgroundY = state.ui.overlay.properties.y + state.ui.viewport.properties.y + state.ui.content.properties.y
+assert(
+    background.filled and background.opacity == 255 and background.color == context.theme.color.canvas,
+    "the scrolling body has an opaque debrief background"
+)
+assert(
+    background.w == state.width and backgroundY <= 0 and backgroundY + background.h >= state.height,
+    "the background covers the entire screen at the bottom of a long debrief"
+)
 
 -- A downward swipe with content scrolled only scrolls back.
 input(EVT_TOUCH_FIRST, touch(50, 50))
@@ -371,6 +387,7 @@ assert(
     context.debrief == state and not state.shown and overlay.properties.y == state.travel,
     "RTN lowers the sheet to its bar"
 )
+assert(state.ui.viewport.properties.y == 0, "closing restores the discoverable header even after scrolling")
 drag(H - 5, H - 40, { swipeUp = true })
 assert(context.debrief == state and state.shown and state.reveal == state.travel, "a swipe up opens fully")
 assert(state.ui.overlay == overlay and state.offset == offset, "the hidden view is reused as it was")

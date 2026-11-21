@@ -237,6 +237,7 @@ function module.new(dependencies)
         context.logOverlay = nil
         context.debriefOverlay = nil
         context.debriefViewport = nil
+        context.debriefContent = nil
         context.debriefPill = nil
         if context.debrief then
             context.debriefModule.detach(context.debrief)
@@ -311,7 +312,7 @@ function module.new(dependencies)
 
     local function rebuildPage(context)
         if not context.root then
-            context.root = lvgl.box({ x = 0, y = 0, w = context.zone.w, h = context.zone.h })
+            context.root = lvgl.box({ x = 0, y = 0, w = context.zone.w, h = context.zone.h, scrollDir = 0 })
             context.rootBuiltFullscreen = isFullScreen()
         end
         context.page = lvgl.box(context.root, {
@@ -319,6 +320,7 @@ function module.new(dependencies)
             y = 0,
             w = context.zone.w,
             h = context.zone.h,
+            scrollDir = 0,
         })
         context.pageBuiltFullscreen = isFullScreen()
         if context.retainedPage then
@@ -334,7 +336,8 @@ function module.new(dependencies)
             opacity = context.radioBackground and 0 or 255,
         })
         -- See addPageLayers in main.lua: the bar is the sheet's leading edge.
-        context.panelLayer = lvgl.box(context.page, { x = 0, y = 0, w = context.zone.w, h = context.zone.h })
+        context.panelLayer =
+            lvgl.box(context.page, { x = 0, y = 0, w = context.zone.w, h = context.zone.h, scrollDir = 0 })
         local zone = context.zone
         context.debriefOverlay = lvgl.box(context.page, { x = 0, y = zone.h, w = zone.w, h = zone.h, scrollDir = 0 })
         context.debriefViewport = lvgl.box(context.debriefOverlay, {
@@ -344,7 +347,7 @@ function module.new(dependencies)
             h = zone.h,
             scrollDir = 0,
         })
-        context.pillLayer = lvgl.box(context.debriefOverlay, { x = 0, y = 0, w = 1, h = 1, scrollDir = 0 })
+        context.pillLayer = lvgl.box(context.debriefViewport, { x = 0, y = 0, w = 1, h = 1, scrollDir = 0 })
         lvgl.hide(context.debriefOverlay)
         lvgl.hide(context.pillLayer)
         context.reloadState = nil

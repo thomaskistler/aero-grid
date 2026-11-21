@@ -77,7 +77,13 @@ local function pill(host)
         return nil
     end
     local p = host.pillLayer.properties
-    return ui.label.properties.text, { x = p.x, y = p.y + host.debriefOverlay.properties.y, w = p.w, h = p.h }
+    return ui.label.properties.text,
+        {
+            x = p.x,
+            y = p.y + host.debriefOverlay.properties.y + host.debriefViewport.properties.y,
+            w = p.w,
+            h = p.h,
+        }
 end
 
 local chartColumns = context.chartColumns
@@ -145,7 +151,7 @@ settle(2)
 assert(context.debriefRequest and not context.debrief.shown, "a tap waits for the complete view")
 build()
 assert(context.debrief.shown and pill() == SHORT, "the queued tap opens with the same bar still visible")
-assert(context.pillLayer.parent == context.debrief.ui.overlay, "the bar belongs to the debrief sheet")
+assert(context.pillLayer.parent == context.debrief.ui.viewport, "the bar belongs to the scrolling debrief canvas")
 assert(context.debriefOverlay.properties.y == 0, "the bar reaches the top when the sheet is open")
 input(EVT_VIRTUAL_EXIT)
 settle()
@@ -220,7 +226,7 @@ input(EVT_TOUCH_SLIDE, touch(H - 40, H - 5))
 assert(context.debrief.shown and pill() == SHORT, "the leading bar stays visible during a pull")
 local _, moving = pill()
 assert(moving.y == context.debrief.travel - 35, "the bar moves by the same distance as the finger")
-assert(context.debrief.ui.viewport.properties.y == moving.h, "the body starts below the leading bar")
+assert(context.debrief.ui.content.properties.y == moving.h, "the body starts below the leading bar")
 assert(indexOf(context.panelLayer) < indexOf(context.debriefOverlay), "the debrief covers the panels")
 input(EVT_TOUCH_BREAK, touch(H - 40, H - 5))
 settle()

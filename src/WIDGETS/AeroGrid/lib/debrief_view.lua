@@ -153,13 +153,13 @@ local function apply(state)
     if not ui then
         return
     end
-    local y, offset = state.travel - state.reveal, -state.offset
+    local y, offset = state.travel - state.reveal, state.shown and -state.offset or 0
     if ui.y ~= y then
         ui.overlay:set({ y = y })
         ui.y = y
     end
     if ui.offset ~= offset then
-        ui.content:set({ y = offset })
+        ui.viewport:set({ y = offset })
         ui.offset = offset
     end
 end
@@ -291,29 +291,34 @@ local function buildOverlay(host, state)
     -- children only with the page.
     local overlay, viewport = host.debriefOverlay, host.debriefViewport
     overlay:set({ x = 0, y = state.travel - state.reveal, w = width, h = height })
-    viewport:set({ y = state.barHeight, w = width, h = state.travel })
-    lvgl.rectangle(viewport, {
+    viewport:set({
+        y = state.shown and -state.offset or 0,
+        w = width,
+        h = math.max(height, state.total + state.barHeight),
+    })
+    local content = host.debriefContent
+    local rect = { x = 0, y = state.barHeight, w = width, h = math.max(state.travel, state.total), scrollDir = 0 }
+    if content then
+        content:set(rect)
+    else
+        content = lvgl.box(viewport, rect)
+        host.debriefContent = content
+    end
+    lvgl.rectangle(content, {
         x = 0,
         y = 0,
         w = width,
-        h = state.travel,
+        h = rect.h,
         filled = true,
         color = theme.color.canvas,
         opacity = 255,
-    })
-    local content = lvgl.box(viewport, {
-        x = 0,
-        y = -state.offset,
-        w = width,
-        h = math.max(state.travel, state.total),
-        scrollDir = 0,
     })
     state.ui = {
         overlay = overlay,
         viewport = viewport,
         content = content,
         y = state.travel - state.reveal,
-        offset = -state.offset,
+        offset = state.shown and -state.offset or 0,
     }
     buildHeader(host, state, content)
 end
@@ -635,7 +640,7 @@ function view.destroy(host)
     local state = host.debrief
     local overlay = host.debriefOverlay
     if state and state.ui and overlay then
-        host.debriefViewport:clear()
+        state.ui.content:clear()
         host.pillLayer:clear()
         lvgl.hide(overlay)
         host.debriefPill = nil
@@ -794,13 +799,25 @@ function view.pill(host, fullscreen)
         -- Fullscreen-created boxes otherwise consume the widget's gestures.
         lvgl.disable(layer)
         lvgl.disable(host.debriefOverlay)
+        lvgl.disable(host.debriefViewport)
         ui = { builtFullscreen = fullscreen, text = text, x = x, y = y, w = w }
-        -- A line paints the bar without intercepting the sheet's touch events.
-        ui.fill = lvgl.hline(layer, {
+        local radius = math.min(host.theme.spacing.radius, h // 2)
+        ui.fill = lvgl.rectangle(layer, {
             x = 0,
-            y = h // 2,
+            y = 0,
             w = w,
             h = h,
+            color = color.green,
+            filled = true,
+            rounded = radius,
+        })
+        lvgl.disable(ui.fill)
+        -- Fill the bottom corners, leaving only the top corners rounded.
+        ui.bottom = lvgl.hline(layer, {
+            x = 0,
+            y = radius + (h - radius) // 2,
+            w = w,
+            h = h - radius,
             color = color.green,
         })
         local textWidth = host.themeBuilder.measureText(SMLSIZE, text)
@@ -821,6 +838,7 @@ function view.pill(host, fullscreen)
     elseif ui.text ~= text or ui.x ~= x or ui.y ~= y or ui.w ~= w then
         layer:set({ x = x, y = y, w = w, h = h })
         ui.fill:set({ w = w })
+        ui.bottom:set({ w = w })
         local textWidth = host.themeBuilder.measureText(SMLSIZE, text)
         local labelX = (w - textWidth - 10) // 2 + 10
         ui.arrow:set({
@@ -837,7 +855,7 @@ end
 function view.barHit(host, touch)
     local bar, state = host.debriefPill, host.debrief
     local ui = bar and bar.fullscreen == true and bar.ui
-    local y = state and state.travel - state.reveal or 0
+    local y = state and state.travel - state.reveal - (state.shown and state.offset or 0) or 0
     return ui
         and state
         and not state.stale
