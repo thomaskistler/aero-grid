@@ -13,6 +13,7 @@ local context = fixture.createLoaded(nil, { Layout = "review-navigation", Theme 
 fixture.pump(context, 40)
 
 EVT_TOUCH_FIRST, EVT_TOUCH_SLIDE, EVT_TOUCH_TAP, EVT_TOUCH_BREAK = 9101, 9102, 9103, 9104
+EVT_TOUCH_LONG = 9105
 EVT_VIRTUAL_EXIT, EVT_ROT_LEFT, EVT_ROT_RIGHT = 9106, 9107, 9108
 
 local worst = 0
@@ -114,7 +115,13 @@ local function makeResult(title)
                     levels = levels,
                 },
                 {
-                    config = { source = "Alt", statistic = "max", unit = "m", precision = 0 },
+                    config = {
+                        source = "Alt",
+                        statistic = "max",
+                        label = index == 4 and "Max altitude" or "Altitude",
+                        unit = "m",
+                        precision = 0,
+                    },
                     unit = "ft",
                     value = 1840,
                     level = "normal",
@@ -279,6 +286,13 @@ assert(has(texts, "NOV 17, 14:24 - Edge 540"), "header shows date and model as s
 assert(has(texts, "12:03"), "header shows the flight time")
 assert(has(texts, "TILE 1") and has(texts, "3.48") and has(texts, "1,840"), "tiles show uppercase title and statistics")
 assert(current.tiles[1].config.title == "Tile 1", "display casing must not change saved titles")
+assert(has(labelsOf(state.items[1].box), "MAX ALTITUDE"), "a custom series name must not hide its statistic")
+assert(has(labelsOf(state.items[4].box), "MAX ALTITUDE"), "a label that already names its statistic is not doubled")
+local compactLabels = labelsOf(state.items[2].box)
+assert(
+    has(compactLabels, "MIN") and has(compactLabels, "MAX"),
+    "compact legends retain the statistics when the full names do not fit"
+)
 assert(has(texts, "V") and has(texts, "m") and not has(texts, "ft"), "recorded units fill in absent overrides")
 assert(has(texts, "CRIT") and has(texts, "WARN"), "tiles badge their highest recorded severity")
 for index, expected in ipairs({ context.theme.color.critical, context.theme.color.amber, context.theme.color.cyan }) do
@@ -402,6 +416,34 @@ input(EVT_TOUCH_SLIDE, touch(80, 50, { swipeDown = true }))
 assert(state.shown and state.reveal == state.travel - 30, "a downward swipe follows the finger before release")
 input(EVT_TOUCH_BREAK, touch(80, 50))
 assert(not context.debrief.shown, "release after hiding does not reopen")
+
+-- Reaching the closed position before lifting must not pass the rest of
+-- the swipe to the dashboard's long-press editor or menu.
+input(EVT_TOUCH_FIRST, touch(H - 5, H - 5, { x = 300 }))
+input(EVT_TOUCH_SLIDE, touch(H - 40, H - 5, { x = 300, swipeUp = true }))
+input(EVT_TOUCH_BREAK, touch(H - 40, H - 5, { x = 300 }))
+input(EVT_TOUCH_FIRST, touch(5, 5, { x = 300 }))
+input(EVT_TOUCH_SLIDE, touch(H - 5, 5, { x = 300, slideY = H - 10 }))
+assert(not state.shown, "the held downward drag completely closes the sheet")
+fixture.pump(context, 10)
+assert(not context.editorUi and not context.editorTransitionRequest, "closing must not resume a stale dashboard hold")
+local closedTouch = touch(H - 5, 5, { x = 300 })
+assert(
+    context.editorController.editorEntryHit(context, EVT_TOUCH_LONG, closedTouch),
+    "the closing gesture ends over an editable dashboard panel"
+)
+input(EVT_TOUCH_LONG, closedTouch)
+assert(not context.editorUi and not context.editorTransitionRequest, "closing a debrief must not enter editing")
+input(EVT_TOUCH_BREAK, touch(0, 5, { x = 0 }))
+input(EVT_TOUCH_TAP, touch(10, 5, { x = 10 }))
+fixture.pump(context, 10)
+assert(not context.aerogridMenu.open and not context.modelSettingsUi, "release must not tap the dashboard menu")
+input(EVT_TOUCH_FIRST, touch(10, 10, { x = 10 }))
+input(EVT_TOUCH_TAP, touch(10, 10, { x = 10 }))
+fixture.pump(context, 10)
+assert(context.aerogridMenu.open, "a fresh gesture can still open the dashboard menu")
+input(EVT_VIRTUAL_EXIT)
+fixture.pump(context, 10)
 
 -- Leaving fullscreen hides the view without destroying it.
 drag(H - 5, H - 40, { swipeUp = true })

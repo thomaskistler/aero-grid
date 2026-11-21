@@ -122,6 +122,7 @@ press **RTN** or swipe down at the top to return to the dashboard.
 Tile accents and badges show the worst recorded severity: red for critical,
 yellow for warning, and blue otherwise. Values include the recorded source's
 units unless the series overrides them.
+Minimum and maximum values are marked **MIN** and **MAX**.
 
 Leaving with changes offers **Save layout**, **Save layout as...**, or
 **Discard changes**. These save the layout, including its debrief settings;

@@ -329,10 +329,19 @@ local function legendItems(host, series, font)
     for index, entry in ipairs(series) do
         local config = entry.config
         local label = string.upper(config.label and config.label ~= "" and config.label or config.statistic)
+        local statistic = string.upper(config.statistic)
+        if
+            (statistic == "MIN" or statistic == "MAX")
+            and label ~= statistic
+            and string.sub(label, 1, #statistic + 1) ~= statistic .. " "
+        then
+            label = statistic .. " " .. label
+        end
         local value = view.valueText(host.themeBuilder, entry.value, config.precision)
         local unit = config.unit or entry.unit or ""
         items[index] = {
             labelText = label,
+            statisticText = statistic,
             valueText = value,
             unitText = unit,
             label = measure(SMLSIZE, label),
@@ -403,7 +412,17 @@ local function buildBase(host, state, item)
     end
 
     local items = legendItems(host, tile.series, valueFont)
-    local labels, count = view.legendFit(items, (compact and headerRight or right) - legendX)
+    local legendWidth = (compact and headerRight or right) - legendX
+    local labels, count = view.legendFit(items, legendWidth)
+    if not labels then
+        for _, legend in ipairs(items) do
+            local statistic = legend.statisticText
+            if statistic == "MIN" or statistic == "MAX" then
+                legend.labelText, legend.label = statistic, measure(SMLSIZE, statistic)
+            end
+        end
+        labels, count = view.legendFit(items, legendWidth)
+    end
     local x = legendX
     for index = 1, count do
         local legend = items[index]
@@ -591,6 +610,8 @@ end
 --- Show the view, revealed by `reveal` pixels.
 function view.show(host, reveal)
     local state = host.debrief
+    -- The opening drag must not resume a dashboard edit hold after closing.
+    host.editorPress = nil
     state.shown, state.closing = true, nil
     state.reveal = math.max(0, math.min(state.travel, reveal))
     if state.ui then
