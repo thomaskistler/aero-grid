@@ -172,6 +172,7 @@ local function nextSeries(self, job)
             local spec = job.thresholds[config.source]
             local result = {
                 config = config,
+                unit = feed.unitText,
                 -- A copy, so later threshold edits cannot restyle this debrief.
                 thresholds = spec and {
                     warning = spec.warning,

@@ -22,6 +22,7 @@ A new layout should use version 5 and exactly a 4 × 4 grid. `col` and `row` are
 | `version` | integer | yes | Layout schema version. Write `5`. |
 | `grid` | mapping | yes | Must contain `columns: 4` and `rows: 4`. Other grid dimensions are rejected. |
 | `panels` | sequence of mappings | yes | Ordered panel placements. Use `[]` for an empty layout. |
+| `debrief` | mapping | no | Post-flight tiles; see [Flight debrief](#flight-debrief). |
 | `session` | mapping | no | Legacy compatibility only; see [Session](#session). |
 | `theme` | mapping | no | **Not supported.** A layout that has this key is reported as invalid. Choose a theme in widget settings instead. |
 
@@ -40,6 +41,28 @@ Each `panels` entry has these placement keys:
 A placement must fit the 4 × 4 grid: `col + colSpan <= 4` and `row + rowSpan <= 4`. Placements may touch edges but may not occupy the same cell. If two placements overlap, the first valid placement in the sequence wins and the later one is dropped. A panel must also support its exact span, written as `<colSpan>x<rowSpan>` (for example, `2x1`); the word `any` in a panel's span list accepts every in-bounds span.
 
 Panel IDs and types are case-sensitive. Unknown top-level keys and extra placement keys are preserved rather than rejected. In contrast, a key inside `config` that the panel does not declare is reported as an unknown setting; spelling and case must match exactly.
+
+## Flight debrief
+
+`debrief.size` selects one size for every tile: `compact` (2 × 2) or `wide`
+(4 × 2). A tile has a `title` and one to three `series`, each with a telemetry
+`source` and a `statistic`: `min`, `max`, `avg`, or `delta`.
+Series also accept `label`, `rangeMin`, `rangeMax`, `unit`, `precision` (0–3),
+and `accent` (`cyan`, `green`, `orange`, or `amber`).
+
+```yaml
+debrief:
+  size: wide
+  tiles:
+    - title: RX battery
+      series:
+        - source: VCel
+          statistic: min
+```
+
+There are at most 12 tiles. An empty `tiles: []` disables the debrief.
+Older files without `size` retain their per-tile `colSpan` and `rowSpan` until
+a shared size is chosen on the radio.
 
 ## Session
 

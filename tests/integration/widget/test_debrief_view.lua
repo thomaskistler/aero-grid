@@ -64,6 +64,9 @@ end
 local function drag(from, to, extra)
     input(EVT_TOUCH_FIRST, touch(from, from))
     input(EVT_TOUCH_SLIDE, touch(to, from, extra))
+    if extra and extra.swipeUp then
+        input(EVT_TOUCH_BREAK, touch(to, from))
+    end
 end
 
 -- A fake debrief at the 12-tile maximum: two compact tiles, the rest wide,
@@ -100,9 +103,10 @@ local function makeResult(title)
             config = { title = title .. " " .. index, colSpan = size[1], rowSpan = size[2] },
             series = {
                 {
-                    config = { source = "RxBt", statistic = "min", unit = "V", label = "Min" },
+                    config = { source = "RxBt", statistic = "min", label = "Min" },
+                    unit = "V",
                     value = 3.48,
-                    level = "critical",
+                    level = index == 2 and "warning" or index == 3 and "normal" or "critical",
                     thresholds = { warning = 3.6, critical = 3.5, falling = true },
                     columns = store(width, function(at)
                         return 4.2 - at / 1500
@@ -111,6 +115,7 @@ local function makeResult(title)
                 },
                 {
                     config = { source = "Alt", statistic = "max", unit = "m", precision = 0 },
+                    unit = "ft",
                     value = 1840,
                     level = "normal",
                     columns = store(width, function(at)
@@ -177,10 +182,16 @@ local layoutTiles = {
 local items, headerHeight, total = view.layout(layoutTiles, { w = 480, h = 272 }, context.grid)
 local row = (272 + 4) // 4
 assert(headerHeight == row - 4)
-assert(items[1].x == 0 and items[1].y == 10 + row, "compact tiles start at the left")
-assert(items[2].x == 0 and items[2].y == 10 + 3 * row, "a wide tile leaves a lone compact tile's right half empty")
-assert(items[3].y == 10 + 4 * row and items[4].y == items[3].y and items[4].x > items[3].x, "compact tiles pair up")
-assert(total == 10 + 6 * row)
+assert(items[1].x == 0 and items[1].y == view.TOP + row, "compact tiles start at the left")
+assert(
+    items[2].x == 0 and items[2].y == view.TOP + 3 * row,
+    "a wide tile leaves a lone compact tile's right half empty"
+)
+assert(
+    items[3].y == view.TOP + 4 * row and items[4].y == items[3].y and items[4].x > items[3].x,
+    "compact tiles pair up"
+)
+assert(total == view.TOP + 6 * row)
 
 -- Outside fullscreen nothing opens, and without a debrief neither does a drag.
 drag(250, 100)
@@ -206,9 +217,13 @@ drag(H - 5, H - 60)
 input(EVT_TOUCH_BREAK, touch(H - 60, H - 5))
 assert(not state.shown, "an unfinished view does not open")
 local callbacks = build()
-assert(context.debrief == state and state.ui.overlay.hidden and not state.shown)
+assert(context.debrief == state and not state.shown)
+assert(state.ui.overlay.properties.y == state.travel, "only the bar peeks above the bottom when closed")
+assert(state.ui.overlay.properties.scrollDir == 0, "native scrolling must not move the sheet's background")
+assert(state.ui.content.properties.scrollDir == 0, "Lua alone scrolls the debrief content")
 for _, item in ipairs(state.items) do
     assert(item.built and item.complete, "every tile is built before the view opens")
+    assert(item.box.properties.scrollDir == 0, "tile containers must not consume drag gestures")
 end
 
 -- Every tile size keeps a third of its height for the plot, with each label
@@ -233,11 +248,11 @@ end
 -- A drag past the halfway point snaps the sheet open on release.
 drag(H - 5, H - 60)
 assert(state.shown and state.reveal == 55, "the sheet follows the finger")
-assert(state.ui.overlay.properties.y == H - 55)
+assert(state.ui.overlay.properties.y == state.travel - 55)
 input(EVT_TOUCH_SLIDE, touch(20, H - 5))
 assert(state.reveal == H - 25)
 input(EVT_TOUCH_BREAK, touch(20, H - 5))
-assert(state.reveal == H and state.offset == 0, "release past halfway opens fully")
+assert(state.reveal == state.travel and state.offset == 0, "release past halfway opens fully")
 assert(state.ui.overlay.properties.y == 0)
 
 local function labelsOf(object, found)
@@ -259,13 +274,46 @@ local function has(list, text)
     return false
 end
 local texts = labelsOf(state.ui.overlay)
-assert(has(texts, "Edge 540"), "header shows the model")
-assert(has(texts, "Flight 42 - Nov 17, 14:24"), "header shows flight number and date")
+assert(has(texts, "FLIGHT DEBRIEF") and has(texts, "FLIGHT 42"), "header makes the flight the focal text")
+assert(has(texts, "NOV 17, 14:24 - Edge 540"), "header shows date and model as supporting text")
 assert(has(texts, "12:03"), "header shows the flight time")
-assert(has(texts, "Tile 1") and has(texts, "3.48") and has(texts, "1,840"), "tiles show title and statistics")
+assert(has(texts, "TILE 1") and has(texts, "3.48") and has(texts, "1,840"), "tiles show uppercase title and statistics")
+assert(current.tiles[1].config.title == "Tile 1", "display casing must not change saved titles")
+assert(has(texts, "V") and has(texts, "m") and not has(texts, "ft"), "recorded units fill in absent overrides")
+assert(has(texts, "CRIT") and has(texts, "WARN"), "tiles badge their highest recorded severity")
+for index, expected in ipairs({ context.theme.color.critical, context.theme.color.amber, context.theme.color.cyan }) do
+    local card = state.items[index].box
+    local accent
+    for _, child in ipairs(card.children) do
+        if child.kind == "box" and child.properties.w == context.theme.spacing.accentWidth then
+            accent = child.children[1].properties.color
+        elseif child.kind == "label" then
+            local p = child.properties
+            if p.text == "3.48" or p.text == "1,840" then
+                assert(p.color == context.theme.color.text, "statistic numbers use the primary text color")
+            elseif p.text == "V" or p.text == "m" or p.text == "MIN" or p.text == "MAX" then
+                assert(p.color == context.theme.color.textMuted, "units and statistic labels stay muted")
+            end
+        end
+    end
+    assert(accent == expected, "the worst series determines the tile accent")
+end
+assert(#state.ui.overlay.children == 2, "the open debrief has no handle above its header")
 
 local first = state.items[1]
 assert(first.built and first.complete)
+local markers = {}
+for _, child in ipairs(first.box.children) do
+    local p = child.properties
+    if child.kind == "rectangle" and p.w == 4 and p.h == 4 then
+        markers[#markers + 1] = p.color
+    end
+end
+assert(
+    markers[1] == themeBuilder.seriesColor(context.theme, 1)
+        and markers[2] == themeBuilder.seriesColor(context.theme, 2),
+    "legend markers retain trace colors independently of critical and warning status"
+)
 local amber, critical, shades, dashes = context.theme.color.amber, context.theme.color.critical, 0, 0
 for _, child in ipairs(first.box.children) do
     local properties = child.properties
@@ -278,12 +326,27 @@ for _, child in ipairs(first.box.children) do
 end
 assert(shades == 2, "warning and critical periods are shaded: " .. shades)
 assert(dashes == 2, "warning and critical thresholds are dashed lines: " .. dashes)
-assert(has(labelsOf(first.box), "Min"), "wide tiles label their statistics")
+assert(has(labelsOf(first.box), "MIN"), "wide tiles label their statistics in uppercase")
 
 -- Dragging further up scrolls; the rotary scrolls and never hides.
 drag(200, 120)
-assert(state.offset == 80 and state.reveal == H, "an upward drag scrolls the open sheet")
+assert(state.offset == 80 and state.reveal == state.travel, "an upward drag scrolls the open sheet")
+assert(state.ui.viewport.properties.y == state.barHeight, "scrolling cannot cover the leading bar")
+assert(
+    context.pillLayer.parent == state.ui.overlay and context.pillLayer.properties.y == 0,
+    "the bar stays pinned to the sheet"
+)
 input(EVT_TOUCH_BREAK, touch(120, 200))
+-- Native coordinates follow the touched tile as it moves, but slideY remains
+-- the finger's delta. Holding the finger still must not reverse the scroll.
+input(EVT_TOUCH_FIRST, touch(120, 120))
+input(EVT_TOUCH_SLIDE, touch(80, 120, { slideY = -40 }))
+assert(state.offset == 120, "native finger movement scrolls once")
+input(EVT_TOUCH_SLIDE, touch(120, 120, { slideY = 0 }))
+assert(state.offset == 120, "a moving tile must not move a stationary finger")
+input(EVT_TOUCH_SLIDE, touch(110, 120, { slideY = 20 }))
+assert(state.offset == 100, "a downward finger movement scrolls back regardless of tile coordinates")
+input(EVT_TOUCH_BREAK, touch(110, 120))
 input(EVT_ROT_LEFT)
 input(EVT_ROT_LEFT)
 input(EVT_ROT_LEFT)
@@ -304,9 +367,12 @@ local offset = state.offset
 -- RTN hides without destroying; reopening keeps the scroll position.
 local overlay = state.ui.overlay
 input(EVT_VIRTUAL_EXIT)
-assert(context.debrief == state and not state.shown and overlay.hidden, "RTN hides the debrief")
+assert(
+    context.debrief == state and not state.shown and overlay.properties.y == state.travel,
+    "RTN lowers the sheet to its bar"
+)
 drag(H - 5, H - 40, { swipeUp = true })
-assert(context.debrief == state and state.shown and state.reveal == H, "a swipe up opens fully")
+assert(context.debrief == state and state.shown and state.reveal == state.travel, "a swipe up opens fully")
 assert(state.ui.overlay == overlay and state.offset == offset, "the hidden view is reused as it was")
 
 -- At the top, a downward drag slides the sheet away; a swipe hides it.
@@ -314,12 +380,12 @@ for _ = 1, 20 do
     input(EVT_ROT_LEFT)
 end
 drag(50, 100)
-assert(state.shown and state.reveal == H - 50, "a downward drag at the top slides the sheet")
+assert(state.shown and state.reveal == state.travel - 50, "a downward drag at the top slides the sheet")
 input(EVT_TOUCH_BREAK, touch(100, 50))
-assert(state.reveal == H, "a short slide snaps back")
+assert(state.reveal == state.travel, "a short slide snaps back")
 input(EVT_TOUCH_FIRST, touch(50, 50))
 input(EVT_TOUCH_SLIDE, touch(80, 50, { swipeDown = true }))
-assert(not state.shown and context.debrief == state, "a swipe down at the top hides")
+assert(state.shown and state.reveal == state.travel - 30, "a downward swipe follows the finger before release")
 input(EVT_TOUCH_BREAK, touch(80, 50))
 assert(not context.debrief.shown, "release after hiding does not reopen")
 
@@ -332,7 +398,7 @@ offset = state.offset
 fixture.lvglMock.setFullScreen(false)
 fixture.pump(context, 40)
 assert(context.debrief == state and not state.shown, "leaving fullscreen closes the debrief")
-assert(not state.ui or state.ui.overlay.hidden)
+assert(not state.ui or state.ui.overlay.properties.y == state.travel)
 fixture.lvglMock.setFullScreen(true)
 fixture.pump(context, 40)
 drag(H - 5, H - 40, { swipeUp = true })
@@ -347,7 +413,7 @@ assert(context.debrief ~= state, "a new debrief replaces the view")
 build()
 drag(H - 5, H - 40, { swipeUp = true })
 assert(context.debrief and context.debrief.result == current and context.debrief.offset == 0)
-assert(has(labelsOf(context.debrief.ui.overlay), "Next 1"))
+assert(has(labelsOf(context.debrief.ui.overlay), "NEXT 1"))
 local pageChildren = #context.page.children
 input(EVT_VIRTUAL_EXIT)
 current = nil

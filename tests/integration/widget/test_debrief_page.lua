@@ -90,6 +90,13 @@ settle()
 assert(state().debrief and state().debriefTarget.kind == "list")
 assert(state().mode == "debrief" and state().nativeDrawer)
 assert(active("Add tile"))
+-- EdgeTX stops polling `active` beneath a hidden object, which would leave
+-- every row disabled and the dialog deaf to RTN.
+local ancestor = state().nativeDrawer
+while ancestor do
+    assert(not ancestor.hidden, "the debrief dialog sits under a hidden object")
+    ancestor = ancestor.parent or ancestor.registeredParent
+end
 local note = context.debriefPageModule.FLIGHT_NOTE
 local unconfigured = context.flightFactory.broker.view.status == "unconfigured"
 
@@ -97,7 +104,7 @@ local unconfigured = context.flightFactory.broker.view.status == "unconfigured"
 -- its panels; deriving is not an edit.
 assert(context.debriefGenerated and state().session.debriefDerived and not state().session.dirty)
 assert(#tiles() == 1 and tiles()[1].title == "Alt" and tiles()[1].series[1].source == "Alt")
-assert((row("Alt").field.description == note) == unconfigured, "the note follows flight detection")
+assert((row("Tile size").field.description == note) == unconfigured, "the note follows flight detection")
 
 -- Fill from dashboard asks before it replaces tiles, then makes them the layout's own.
 tiles()[1].title = "Renamed"
@@ -127,25 +134,28 @@ press("Fill from dashboard")
 state().session.draft.panels = panels
 assert(#tiles() == 0 and state().session.draft.debrief)
 assert(
-    row("Add tile").field.description == context.debriefPageModule.FILL_EMPTY .. (unconfigured and " " .. note or "")
+    row("Tile size").field.description == context.debriefPageModule.FILL_EMPTY .. (unconfigured and " " .. note or "")
 )
 state().status = nil
 state().drawerPending = { action = "list" }
 settle()
-assert((row("Add tile").field.description == note) == unconfigured, "the note follows flight detection")
+assert((row("Tile size").field.description == note) == unconfigured, "the note follows flight detection")
 for _, configured in ipairs({ false, true }) do
     local fields = context.debriefPageModule.listFields(state(), { configured = configured, canAdd = true })
     assert(fields[1].description == (not configured and note or nil))
 end
 
+row("Tile size").object.properties.set(2)
+settle()
+assert(state().session.draft.debrief.size == "wide", "the shared size survives an empty debrief")
 press("Add tile")
 assert(#tiles() == 1 and state().debriefTarget.kind == "tile", "Add opens the new tile")
 row("Title").object.properties.set("Battery")
 settle()
-row("Size").object.properties.set(3)
-settle()
-assert(tiles()[1].title == "Battery" and tiles()[1].colSpan == 4 and tiles()[1].rowSpan == 1)
-assert(row("Size").object.properties.get() == 3, "the Size control shows the edited size")
+assert(tiles()[1].title == "Battery" and tiles()[1].colSpan == 4 and tiles()[1].rowSpan == 2)
+for _, entry in ipairs(state().drawerView.controls) do
+    assert(entry.field.label ~= "Size", "tile settings have no individual size")
+end
 assert(active("Add series"))
 
 press("min")
@@ -170,10 +180,19 @@ press("Remove series")
 assert(#tiles()[1].series == 1 and state().debriefTarget.kind == "tile")
 back()
 assert(state().debriefTarget.kind == "list")
+assert(row("Tile size").object.properties.get() == 2, "the shared size remains Wide")
+row("Tile size").object.properties.set(1)
+settle()
+assert(tiles()[1].colSpan == 2 and tiles()[1].rowSpan == 2)
+assert(row("Battery").object.properties.text == "Compact 2 x 2", "the list immediately reflects the shared size")
+row("Tile size").object.properties.set(2)
+settle()
+assert(row("Battery").object.properties.text == "Wide 4 x 2")
 
 press("Add tile")
 back()
 assert(#tiles() == 2 and tiles()[2].title == "Tile 2")
+assert(tiles()[2].colSpan == 4 and tiles()[2].rowSpan == 2, "new tiles inherit the debrief size")
 press("Battery")
 choose("Copy")
 assert(string.find(row("Battery").object.properties.text, "(copy)", 1, true))
@@ -227,12 +246,18 @@ tiles()[1].series[1].source = "Alt"
 
 back()
 assert(state().mode == "exit", "leaving with changes asks to Save or Discard")
+assert(state().nativeDrawer.properties.title == "Unsaved layout changes")
+local hasSaveAs = false
 local save
 for _, object in ipairs(fixture.lvglMock.objects) do
-    if object.kind == "button" and object.properties.text == "Save" and not object.cleared then
+    if object.kind == "button" and object.properties.text == "Save layout" and not object.cleared then
         save = object
     end
+    if object.kind == "button" and object.properties.text == "Save layout as..." and not object.cleared then
+        hasSaveAs = true
+    end
 end
+assert(hasSaveAs, "Save As explicitly names the layout")
 assert(save).properties.press()
 assert(
     fixture.pumpUntil(context, function(host)
@@ -250,7 +275,7 @@ for index = 1, #tiles() do
 end
 back()
 for _, object in ipairs(fixture.lvglMock.objects) do
-    if object.kind == "button" and object.properties.text == "Save" and not object.cleared then
+    if object.kind == "button" and object.properties.text == "Save layout" and not object.cleared then
         save = object
     end
 end
@@ -268,4 +293,58 @@ assert(not context.debriefGenerated, "the saved debrief is the layout's own")
 local saved = assert(fixture.hostIo.open(context.layoutPath, "r"))
 local text = saved:read("*a")
 saved:close()
-assert(string.find(text, "debrief:\n  tiles:\n", 1, true), "Save writes the edited debrief")
+local persisted = assert(context.yaml.parse(text))
+assert(persisted.debrief.size == "wide" and #persisted.debrief.tiles == 2, "Save writes the shared size and tiles")
+
+-- Saving the largest supported debrief must stay below the radio's CPU limit,
+-- including the editor's panel checks and adopting the saved layout.
+context.aeroMenuHandlers.debrief()
+assert(fixture.pumpUntil(context, function(host)
+    return host.editorUi ~= nil
+end, 300))
+settle()
+while #tiles() < 12 do
+    assert(editDebrief(state().session, "addTile"))
+end
+for index = 1, #tiles() do
+    local tile = tiles()[index]
+    while #tile.series < 3 do
+        assert(editDebrief(state().session, "addSeries", index))
+    end
+    for position = 1, 3 do
+        for key, value in pairs({
+            source = "Alt",
+            statistic = "max",
+            label = "Altitude",
+            unit = "m",
+            precision = 1,
+            rangeMin = 0,
+            rangeMax = 100,
+            accent = "cyan",
+        }) do
+            assert(editDebrief(state().session, "setSeriesValue", index, position, key, value))
+        end
+    end
+end
+back()
+local worst, refresh = 0, definition.refresh
+definition.refresh = function(...)
+    local count = 0
+    debug.sethook(function()
+        count = count + 100
+    end, "", 100)
+    refresh(...)
+    debug.sethook()
+    worst = math.max(worst, count)
+end
+state().exitCommand = { action = "save" }
+assert(
+    fixture.pumpUntil(context, function(host)
+        return not host.editorUi and not host.editorRestore
+    end, 1000),
+    "maximum debrief Save did not finish"
+)
+definition.refresh = refresh
+assert(worst < 18000, "debrief Save callback exceeded its budget: " .. worst)
+assert(#context.document.debrief.tiles == 12 and context.serviceRuntime.byId.debrief.count == 36)
+assert(context.page == page and context.serviceRuntime == runtime, "maximum debrief Save keeps the dashboard")

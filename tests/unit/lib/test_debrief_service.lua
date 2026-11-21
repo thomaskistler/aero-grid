@@ -106,7 +106,7 @@ local function poll(now, armed, curves)
             fresh = value ~= nil,
             updatedAt = now,
             precision = 2,
-            unitText = "",
+            unitText = name == "V" and "V" or "",
         }, now)
     end
     history:update(now)
@@ -199,6 +199,13 @@ near(first[2].value, (finish - start) / 200, "time-weighted average of a ramp")
 equal(second[1].value, 10, "min")
 near(second[2].value, (finish - start) / 100, "delta is end minus start")
 equal(first[1].config.source, "V")
+equal(first[1].unit, "V", "capture the history source's unit alongside its statistic")
+equal(first[2].unit, "", "unknown units stay empty")
+history:sample(
+    { name = "V", value = 30, kind = "number", fresh = true, updatedAt = 4000, precision = 2, unitText = "mV" },
+    4000
+)
+equal(first[1].unit, "V", "later telemetry metadata cannot restyle a recorded debrief")
 equal(result.tiles[2].config, debrief.tiles[2])
 local columns = first[2].columns
 equal(columns.width, 40)

@@ -1,8 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
--- The "debrief ready" pill: shown at the bottom center once the debrief view
--- is fully built, worded for fullscreen or not, and gone for good once that
--- debrief has been opened. A new debrief brings it back; a reset removes it.
+-- The debrief bottom bar stays until reset, hides while open, and supports
+-- tapping or pulling up without taking the widget's App-mode long press.
 
 local root = ... or "."
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
@@ -16,8 +15,8 @@ fixture.pump(other, 40)
 EVT_TOUCH_FIRST, EVT_TOUCH_SLIDE, EVT_TOUCH_TAP, EVT_TOUCH_BREAK = 9101, 9102, 9103, 9104
 EVT_VIRTUAL_EXIT = 9106
 
-local LONG = "Debrief ready - long-press, then swipe up"
-local SHORT = "Debrief ready - swipe up"
+local LONG = "DEBRIEF READY (LONG-PRESS, THEN SCROLL UP)"
+local SHORT = "DEBRIEF READY (SCROLL UP)"
 
 local worst = 0
 local current
@@ -77,7 +76,8 @@ local function pill(host)
     if not ui or host.pillLayer.hidden then
         return nil
     end
-    return ui.label.properties.text, host.pillLayer.properties
+    local p = host.pillLayer.properties
+    return ui.label.properties.text, { x = p.x, y = p.y + host.debriefOverlay.properties.y, w = p.w, h = p.h }
 end
 
 local chartColumns = context.chartColumns
@@ -120,22 +120,35 @@ local view = context.debriefModule or assert(loadfile(root .. "/src/WIDGETS/Aero
 local measure = context.themeBuilder.measureText
 assert(view.pillFit(context, false, 480, 272) == LONG)
 assert(view.pillFit(context, true, 480, 272) == SHORT)
-local narrow = measure(SMLSIZE, "Debrief ready") + 40
-assert(view.pillFit(context, false, narrow, 272) == "Debrief ready", "a narrow zone shows the short text")
+local narrow = measure(SMLSIZE, "DEBRIEF READY") + 18
+assert(view.pillFit(context, false, narrow, 272) == "DEBRIEF READY", "a narrow zone shows the short text")
 assert(view.pillFit(context, false, narrow - 10, 272) == nil, "a too narrow zone shows no pill")
 assert(view.pillFit(context, false, 480, 20) == nil, "a too short zone shows no pill")
 
--- No debrief, no pill; the pill waits until every tile is built. The first
--- debrief arrives in fullscreen, on the page built in App mode.
+-- The bar appears as soon as a result is available. A tap can wait for the
+-- background build to finish before opening the complete view.
 local page = context.page
 assert(not context.pageBuiltFullscreen, "the page was built in App mode")
 fixture.lvglMock.setFullScreen(true)
 settle(20)
 assert(context.page == page and not pill(), "no debrief, no pill")
 current = makeResult("Pack")
+settle(4)
+assert(
+    context.debrief and not context.debriefModule.ready(context.debrief) and pill() == SHORT,
+    "the bar appears while the view builds"
+)
+input(EVT_TOUCH_FIRST, touch(H - 5, H - 5))
+fixture.tick(20)
+callback(EVT_TOUCH_BREAK, touch(H - 5, H - 5))
 settle(2)
-assert(context.debrief and not context.debriefModule.ready(context.debrief) and not pill(), "pill waits for the view")
+assert(context.debriefRequest and not context.debrief.shown, "a tap waits for the complete view")
 build()
+assert(context.debrief.shown and pill() == SHORT, "the queued tap opens with the same bar still visible")
+assert(context.pillLayer.parent == context.debrief.ui.overlay, "the bar belongs to the debrief sheet")
+assert(context.debriefOverlay.properties.y == 0, "the bar reaches the top when the sheet is open")
+input(EVT_VIRTUAL_EXIT)
+settle()
 assert(pill() == SHORT, "fullscreen pill says swipe up: " .. tostring(pill()))
 
 -- Leaving fullscreen keeps the page. A pill built in fullscreen would take
@@ -144,8 +157,8 @@ fixture.lvglMock.setFullScreen(false)
 settle(20)
 local text, box = pill()
 assert(context.page == page and text == LONG, "outside fullscreen the pill says to long-press: " .. tostring(text))
-assert(box.x == (context.zone.w - box.w) // 2, "the pill is centered")
-assert(box.y + box.h < H and box.y > H - 40, "the pill sits at the bottom")
+assert(box.x == 0 and box.w == context.zone.w, "the bar spans the dashboard")
+assert(box.y + box.h == H and box.y > H - 40, "the bar meets the bottom edge")
 assert(not pill(other), "each dashboard shows its own pill")
 local function builtOutside(object)
     if object.builtFullscreen then
@@ -192,32 +205,45 @@ worst = pillWorst
 assert(context.panels[1].container ~= containers, "panels got new containers")
 assert(#page.children == pageObjects, "panel rebuilds left objects on the page: " .. #page.children)
 assert(context.panels[1].container.parent == context.panelLayer, "panels sit in the panel layer")
-assert(indexOf(context.panelLayer) < indexOf(context.pillLayer) and pill() == LONG, "the pill stays above the panels")
+assert(
+    indexOf(context.panelLayer) < indexOf(context.debriefOverlay) and pill() == LONG,
+    "the sheet stays above the panels"
+)
 
 fixture.lvglMock.setFullScreen(true)
 settle(20)
 assert(pill() == SHORT, "back in fullscreen the pill says swipe up")
 
--- A drag that snaps back still counts as opened; the pill is gone for good.
+-- A short pull that snaps closed restores the persistent bar.
 input(EVT_TOUCH_FIRST, touch(H - 5, H - 5))
 input(EVT_TOUCH_SLIDE, touch(H - 40, H - 5))
-assert(context.debrief.shown and not pill(), "the pill hides while the debrief shows")
+assert(context.debrief.shown and pill() == SHORT, "the leading bar stays visible during a pull")
+local _, moving = pill()
+assert(moving.y == context.debrief.travel - 35, "the bar moves by the same distance as the finger")
+assert(context.debrief.ui.viewport.properties.y == moving.h, "the body starts below the leading bar")
 assert(indexOf(context.panelLayer) < indexOf(context.debriefOverlay), "the debrief covers the panels")
 input(EVT_TOUCH_BREAK, touch(H - 40, H - 5))
 settle()
-assert(not context.debrief.shown and not pill(), "an opened debrief has no pill")
+assert(not context.debrief.shown and pill() == SHORT, "the bar returns when a short pull closes")
 
--- Swipe up still works without the pill, and leaving and returning to
--- fullscreen does not bring the pill back.
+-- A swipe up opens; closing and leaving fullscreen retain the same available
+-- debrief until it is cleared.
 input(EVT_TOUCH_FIRST, touch(H - 5, H - 5))
 input(EVT_TOUCH_SLIDE, touch(H - 40, H - 5, { swipeUp = true }))
-assert(context.debrief.shown and context.debrief.reveal == H, "swipe up opens without the pill")
+assert(context.debrief.shown and context.debrief.reveal == 35, "a swipe still follows the finger until release")
 input(EVT_TOUCH_BREAK, touch(H - 40, H - 5))
+assert(context.debrief.reveal == context.debrief.travel, "releasing an upward swipe opens the whole sheet")
+local _, raised = pill()
+assert(raised.y == 0, "the same bar stays at the top of the open sheet")
 input(EVT_VIRTUAL_EXIT)
+settle()
 fixture.lvglMock.setFullScreen(false)
 fixture.pump(context, 40)
 build()
-assert(not pill(), "the opened debrief keeps its pill hidden after a reload")
+assert(pill() == LONG, "the bar survives viewing, leaving fullscreen and rebuilding")
+input(EVT_TOUCH_FIRST, touch(H - 5, H - 5))
+input(EVT_TOUCH_BREAK, touch(H - 5, H - 5))
+assert(not context.debrief.shown and not context.debriefRequest, "a bar tap outside fullscreen cannot open the debrief")
 
 -- The next flight's debrief brings a new pill; a session reset removes it.
 current = makeResult("Next")
