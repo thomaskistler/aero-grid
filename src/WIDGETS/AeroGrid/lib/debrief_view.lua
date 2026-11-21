@@ -79,7 +79,7 @@ function view.legendFit(items, width)
         local total = 0
         for index = 1, count do
             local item = items[index]
-            total = total + (index > 1 and ITEM_GAP or 0) + (item.marker or 0) + item.value + item.unit
+            total = total + (index > 1 and ITEM_GAP or 0) + item.value + item.unit
             if labels and item.label > 0 then
                 total = total + item.label + LEGEND_GAP
             end
@@ -338,7 +338,6 @@ local function legendItems(host, series, font)
             label = measure(SMLSIZE, label),
             value = measure(font, value),
             unit = unit ~= "" and measure(SMLSIZE, unit) + 1 or 0,
-            marker = #series > 1 and 7 or 0,
         }
     end
     return items
@@ -410,17 +409,6 @@ local function buildBase(host, state, item)
         local legend = items[index]
         if index > 1 then
             x = x + ITEM_GAP
-        end
-        if legend.marker > 0 then
-            lvgl.rectangle(box, {
-                x = x,
-                y = legendY + smallOffset + titleHeight // 2 - 2,
-                w = 4,
-                h = 4,
-                filled = true,
-                color = themeBuilder.seriesColor(theme, index, tile.series[index].config.accent),
-            })
-            x = x + legend.marker
         end
         if labels and legend.label > 0 then
             primitives.label(box, theme, {

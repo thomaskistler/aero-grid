@@ -302,18 +302,15 @@ assert(#state.ui.overlay.children == 1, "the open debrief contains just one scro
 
 local first = state.items[1]
 assert(first.built and first.complete)
-local markers = {}
-for _, child in ipairs(first.box.children) do
-    local p = child.properties
-    if child.kind == "rectangle" and p.w == 4 and p.h == 4 then
-        markers[#markers + 1] = p.color
+for _, item in ipairs(state.items) do
+    for _, child in ipairs(item.box.children) do
+        local p = child.properties
+        assert(
+            not (child.kind == "rectangle" and p.w == 4 and p.h == 4),
+            "statistic legends must not include colored dots"
+        )
     end
 end
-assert(
-    markers[1] == themeBuilder.seriesColor(context.theme, 1)
-        and markers[2] == themeBuilder.seriesColor(context.theme, 2),
-    "legend markers retain trace colors independently of critical and warning status"
-)
 local amber, critical, shades, dashes = context.theme.color.amber, context.theme.color.critical, 0, 0
 for _, child in ipairs(first.box.children) do
     local properties = child.properties
