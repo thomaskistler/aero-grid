@@ -207,8 +207,11 @@ input(EVT_TOUCH_BREAK, touch(H - 60, H - 5))
 assert(not state.shown, "an unfinished view does not open")
 local callbacks = build()
 assert(context.debrief == state and state.ui.overlay.hidden and not state.shown)
+assert(state.ui.overlay.properties.scrollDir == 0, "native scrolling must not move the sheet's background")
+assert(state.ui.content.properties.scrollDir == 0, "Lua alone scrolls the debrief content")
 for _, item in ipairs(state.items) do
     assert(item.built and item.complete, "every tile is built before the view opens")
+    assert(item.box.properties.scrollDir == 0, "tile containers must not consume drag gestures")
 end
 
 -- Every tile size keeps a third of its height for the plot, with each label
@@ -284,6 +287,16 @@ assert(has(labelsOf(first.box), "Min"), "wide tiles label their statistics")
 drag(200, 120)
 assert(state.offset == 80 and state.reveal == H, "an upward drag scrolls the open sheet")
 input(EVT_TOUCH_BREAK, touch(120, 200))
+-- Native coordinates follow the touched tile as it moves, but slideY remains
+-- the finger's delta. Holding the finger still must not reverse the scroll.
+input(EVT_TOUCH_FIRST, touch(120, 120))
+input(EVT_TOUCH_SLIDE, touch(80, 120, { slideY = -40 }))
+assert(state.offset == 120, "native finger movement scrolls once")
+input(EVT_TOUCH_SLIDE, touch(120, 120, { slideY = 0 }))
+assert(state.offset == 120, "a moving tile must not move a stationary finger")
+input(EVT_TOUCH_SLIDE, touch(110, 120, { slideY = 20 }))
+assert(state.offset == 100, "a downward finger movement scrolls back regardless of tile coordinates")
+input(EVT_TOUCH_BREAK, touch(110, 120))
 input(EVT_ROT_LEFT)
 input(EVT_ROT_LEFT)
 input(EVT_ROT_LEFT)

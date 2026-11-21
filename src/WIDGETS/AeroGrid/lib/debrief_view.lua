@@ -273,7 +273,9 @@ local function buildOverlay(host, state)
     if overlay then
         overlay:set({ x = 0, y = height - state.reveal, w = width, h = height })
     else
-        overlay = lvgl.box(host.page, { x = 0, y = height - state.reveal, w = width, h = height })
+        -- The sheet and its content move in Lua; native scrolling would also
+        -- move the background and expose the dashboard underneath.
+        overlay = lvgl.box(host.page, { x = 0, y = height - state.reveal, w = width, h = height, scrollDir = 0 })
         host.debriefOverlay = overlay
     end
     lvgl.rectangle(overlay, {
@@ -285,7 +287,13 @@ local function buildOverlay(host, state)
         color = theme.color.canvas,
         opacity = 255,
     })
-    local content = lvgl.box(overlay, { x = 0, y = -state.offset, w = width, h = math.max(height, state.total) })
+    local content = lvgl.box(overlay, {
+        x = 0,
+        y = -state.offset,
+        w = width,
+        h = math.max(height, state.total),
+        scrollDir = 0,
+    })
     lvgl.rectangle(overlay, {
         x = (width - 36) // 2,
         y = 3,
@@ -328,7 +336,7 @@ local function buildBase(host, state, item)
     local fontHeight, measure = themeBuilder.fontHeight, themeBuilder.measureText
     local tile = item.tile
     local config = tile.config
-    local box = lvgl.box(state.ui.content, { x = item.x, y = item.y, w = item.w, h = item.h })
+    local box = lvgl.box(state.ui.content, { x = item.x, y = item.y, w = item.w, h = item.h, scrollDir = 0 })
     item.box = box
     lvgl.rectangle(box, {
         x = 0,
@@ -657,7 +665,10 @@ function view.handle(host, event, touch)
         elseif matches(event, "EVT_TOUCH_SLIDE") then
             local top = state.offset == 0
             if state.dragY and point then
-                view.move(state, state.dragY - touch.y)
+                -- EdgeTX reports y relative to the touched object, which
+                -- moves while scrolling; slideY is the finger's movement.
+                local delta = type(touch.slideY) == "number" and -touch.slideY or state.dragY - touch.y
+                view.move(state, delta)
                 state.dragY = touch.y
             end
             if touch and touch.swipeUp and state.reveal < state.height then
