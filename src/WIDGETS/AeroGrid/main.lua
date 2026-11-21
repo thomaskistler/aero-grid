@@ -681,7 +681,6 @@ local function create(zone, widgetOptions, path)
         errors = {},
         notices = {},
         -- Debriefs already opened; their pill is gone for good.
-        debriefOpened = setmetatable({}, { __mode = "k" }),
         width = zone.w,
         height = zone.h,
         left = zone.xabs or 0,
@@ -1166,9 +1165,7 @@ local function debriefReady(context)
     return state ~= nil and state.result == debriefResult(context) and context.debriefModule.ready(state)
 end
 
---- Whether the "debrief ready" pill should show, and in which wording: nil for
---- no pill, else whether the zone is fullscreen. The pill marks a debrief
---- that is fully built and not yet opened.
+--- Show the bottom bar whenever a debrief is available and not open.
 local function debriefPillWanted(context)
     if
         not context.page
@@ -1179,8 +1176,10 @@ local function debriefPillWanted(context)
         or context.logViewer
         or context.locationDetails
         or debriefShown(context)
-        or not debriefReady(context)
-        or context.debriefOpened[context.debrief.result]
+        or not context.debrief
+        or context.debrief.stale
+        or context.debrief.result ~= debriefResult(context)
+        or context.debriefFailure == context.debrief.result
     then
         return nil
     end
@@ -2556,7 +2555,7 @@ local function modelSettingsOpenStep(task)
 end
 
 local function debriefOpenReady(task, _, hidden)
-    return not hidden and task.host.debriefRequest ~= nil
+    return not hidden and task.host.debriefRequest ~= nil and debriefReady(task.host)
 end
 
 local function debriefFailed(context, message)
@@ -2580,9 +2579,7 @@ local function debriefOpenStep(task)
         debriefFailed(context, openError)
         return
     end
-    -- Any reveal counts as opened, even one that snaps closed again. The pill
-    -- lies above the sheet, so it goes in the same turn.
-    context.debriefOpened[result] = true
+    -- The bar lies above the sheet, so hide it in the same turn.
     if context.debriefPill then
         context.debriefModule.pill(context, nil)
     end

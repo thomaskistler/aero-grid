@@ -100,9 +100,10 @@ local function makeResult(title)
             config = { title = title .. " " .. index, colSpan = size[1], rowSpan = size[2] },
             series = {
                 {
-                    config = { source = "RxBt", statistic = "min", unit = "V", label = "Min" },
+                    config = { source = "RxBt", statistic = "min", label = "Min" },
+                    unit = "V",
                     value = 3.48,
-                    level = "critical",
+                    level = index == 2 and "warning" or index == 3 and "normal" or "critical",
                     thresholds = { warning = 3.6, critical = 3.5, falling = true },
                     columns = store(width, function(at)
                         return 4.2 - at / 1500
@@ -111,6 +112,7 @@ local function makeResult(title)
                 },
                 {
                     config = { source = "Alt", statistic = "max", unit = "m", precision = 0 },
+                    unit = "ft",
                     value = 1840,
                     level = "normal",
                     columns = store(width, function(at)
@@ -177,10 +179,16 @@ local layoutTiles = {
 local items, headerHeight, total = view.layout(layoutTiles, { w = 480, h = 272 }, context.grid)
 local row = (272 + 4) // 4
 assert(headerHeight == row - 4)
-assert(items[1].x == 0 and items[1].y == 10 + row, "compact tiles start at the left")
-assert(items[2].x == 0 and items[2].y == 10 + 3 * row, "a wide tile leaves a lone compact tile's right half empty")
-assert(items[3].y == 10 + 4 * row and items[4].y == items[3].y and items[4].x > items[3].x, "compact tiles pair up")
-assert(total == 10 + 6 * row)
+assert(items[1].x == 0 and items[1].y == view.TOP + row, "compact tiles start at the left")
+assert(
+    items[2].x == 0 and items[2].y == view.TOP + 3 * row,
+    "a wide tile leaves a lone compact tile's right half empty"
+)
+assert(
+    items[3].y == view.TOP + 4 * row and items[4].y == items[3].y and items[4].x > items[3].x,
+    "compact tiles pair up"
+)
+assert(total == view.TOP + 6 * row)
 
 -- Outside fullscreen nothing opens, and without a debrief neither does a drag.
 drag(250, 100)
@@ -262,13 +270,46 @@ local function has(list, text)
     return false
 end
 local texts = labelsOf(state.ui.overlay)
-assert(has(texts, "Edge 540"), "header shows the model")
-assert(has(texts, "Flight 42 - Nov 17, 14:24"), "header shows flight number and date")
+assert(has(texts, "FLIGHT DEBRIEF") and has(texts, "FLIGHT 42"), "header makes the flight the focal text")
+assert(has(texts, "NOV 17, 14:24 - Edge 540"), "header shows date and model as supporting text")
 assert(has(texts, "12:03"), "header shows the flight time")
-assert(has(texts, "Tile 1") and has(texts, "3.48") and has(texts, "1,840"), "tiles show title and statistics")
+assert(has(texts, "TILE 1") and has(texts, "3.48") and has(texts, "1,840"), "tiles show uppercase title and statistics")
+assert(current.tiles[1].config.title == "Tile 1", "display casing must not change saved titles")
+assert(has(texts, "V") and has(texts, "m") and not has(texts, "ft"), "recorded units fill in absent overrides")
+assert(has(texts, "CRIT") and has(texts, "WARN"), "tiles badge their highest recorded severity")
+for index, expected in ipairs({ context.theme.color.critical, context.theme.color.amber, context.theme.color.cyan }) do
+    local card = state.items[index].box
+    local accent
+    for _, child in ipairs(card.children) do
+        if child.kind == "box" and child.properties.w == context.theme.spacing.accentWidth then
+            accent = child.children[1].properties.color
+        elseif child.kind == "label" then
+            local p = child.properties
+            if p.text == "3.48" or p.text == "1,840" then
+                assert(p.color == context.theme.color.text, "statistic numbers use the primary text color")
+            elseif p.text == "V" or p.text == "m" or p.text == "MIN" or p.text == "MAX" then
+                assert(p.color == context.theme.color.textMuted, "units and statistic labels stay muted")
+            end
+        end
+    end
+    assert(accent == expected, "the worst series determines the tile accent")
+end
+assert(#state.ui.overlay.children == 2, "the open debrief has no handle above its header")
 
 local first = state.items[1]
 assert(first.built and first.complete)
+local markers = {}
+for _, child in ipairs(first.box.children) do
+    local p = child.properties
+    if child.kind == "rectangle" and p.w == 4 and p.h == 4 then
+        markers[#markers + 1] = p.color
+    end
+end
+assert(
+    markers[1] == themeBuilder.seriesColor(context.theme, 1)
+        and markers[2] == themeBuilder.seriesColor(context.theme, 2),
+    "legend markers retain trace colors independently of critical and warning status"
+)
 local amber, critical, shades, dashes = context.theme.color.amber, context.theme.color.critical, 0, 0
 for _, child in ipairs(first.box.children) do
     local properties = child.properties
@@ -281,7 +322,7 @@ for _, child in ipairs(first.box.children) do
 end
 assert(shades == 2, "warning and critical periods are shaded: " .. shades)
 assert(dashes == 2, "warning and critical thresholds are dashed lines: " .. dashes)
-assert(has(labelsOf(first.box), "Min"), "wide tiles label their statistics")
+assert(has(labelsOf(first.box), "MIN"), "wide tiles label their statistics in uppercase")
 
 -- Dragging further up scrolls; the rotary scrolls and never hides.
 drag(200, 120)
@@ -360,7 +401,7 @@ assert(context.debrief ~= state, "a new debrief replaces the view")
 build()
 drag(H - 5, H - 40, { swipeUp = true })
 assert(context.debrief and context.debrief.result == current and context.debrief.offset == 0)
-assert(has(labelsOf(context.debrief.ui.overlay), "Next 1"))
+assert(has(labelsOf(context.debrief.ui.overlay), "NEXT 1"))
 local pageChildren = #context.page.children
 input(EVT_VIRTUAL_EXIT)
 current = nil

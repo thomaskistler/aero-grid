@@ -8,7 +8,7 @@
 -- rectangle, a scanned shading column, and a tile's lines and renderer.
 local view = {
     RUNTIME_API = 1,
-    TOP = 10,
+    TOP = 4,
     GUTTER = 4,
     PAINT_COST = 250,
     SHADE_COST = 300,
@@ -79,7 +79,7 @@ function view.legendFit(items, width)
         local total = 0
         for index = 1, count do
             local item = items[index]
-            total = total + (index > 1 and ITEM_GAP or 0) + item.value + item.unit
+            total = total + (index > 1 and ITEM_GAP or 0) + (item.marker or 0) + item.value + item.unit
             if labels and item.label > 0 then
                 total = total + item.label + LEGEND_GAP
             end
@@ -199,70 +199,87 @@ function view.new(host, result)
     return state
 end
 
+local function panel(host, parent, rect, level)
+    local presentation = host.themeBuilder.state(host.theme, level, "cyan")
+    presentation.opacity = 255
+    local card = host.primitives.panel(parent, rect, host.theme, presentation)
+    card.root:set({ scrollDir = 0 })
+    card.column:set({ scrollDir = 0 })
+    return card.root, presentation
+end
+
 local function buildHeader(host, state, parent)
     local theme, measure = host.theme, host.themeBuilder.measureText
     local fontHeight = host.themeBuilder.fontHeight
     local color = theme.color
-    local x, y, w, h = view.GUTTER, view.TOP, state.width - 2 * view.GUTTER, state.headerHeight
-    lvgl.rectangle(parent, {
-        x = x,
-        y = y,
-        w = w,
-        h = h,
-        filled = true,
-        rounded = theme.spacing.radius,
-        color = color.surface,
-    })
+    local x, y, w, h = 0, view.TOP, state.width, state.headerHeight
+    local box = panel(host, parent, { x = x, y = y, w = w, h = h }, "normal")
+    local frame = host.themeBuilder.frame(theme, { w = w, h = h }, { label = SMLSIZE, badge = SMLSIZE })
+    x, y = frame.pad, frame.labelY
     local result = state.result
     local time = durationText(host, result.duration)
-    local timeWidth = measure(DBLSIZE, time)
-    local timeX = x + w - 8 - timeWidth
-    host.primitives.label(parent, theme, {
+    local timeFont = MIDSIZE
+    local timeWidth = measure(timeFont, time)
+    local timeX = w - frame.padRight - timeWidth
+    host.primitives.label(box, theme, {
         x = timeX,
-        y = y + (h - fontHeight(DBLSIZE)) // 2,
+        y = y + fontHeight(SMLSIZE),
         w = timeWidth + 2,
         text = time,
-        font = DBLSIZE,
+        font = timeFont,
         color = color.text,
     })
     local caption = "FLIGHT TIME"
     local captionWidth = measure(SMLSIZE, caption)
-    local textWidth = timeX - x - 16
-    if captionWidth + 8 <= textWidth // 2 then
-        host.primitives.label(parent, theme, {
-            x = timeX - 6 - captionWidth,
-            y = y + (h - fontHeight(SMLSIZE)) // 2 + 4,
+    local rightWidth = math.max(timeWidth, captionWidth)
+    local textWidth = math.max(1, w - frame.padRight - rightWidth - x - 8)
+    local heading, headingFont = host.themeBuilder.fitHeading("FLIGHT DEBRIEF", textWidth, SMLSIZE, TINSIZE)
+    if captionWidth < w // 2 then
+        host.primitives.label(box, theme, {
+            x = w - frame.padRight - captionWidth,
+            y = y,
             w = captionWidth + 2,
             text = caption,
             font = SMLSIZE,
             color = color.textMuted,
         })
-        textWidth = timeX - 14 - captionWidth - x - 8
     end
-    local lines = {}
+    host.primitives.label(box, theme, {
+        x = x,
+        y = y,
+        w = textWidth,
+        text = heading,
+        font = headingFont,
+        color = color.textMuted,
+    })
+    local flight = type(result.flight) == "number" and string.format("FLIGHT %d", result.flight) or "FLIGHT"
+    local flightText, flightFont = host.themeBuilder.fitHeading(flight, textWidth, MIDSIZE, SMLSIZE)
+    host.primitives.label(box, theme, {
+        x = x,
+        y = y + fontHeight(SMLSIZE),
+        w = textWidth,
+        text = flightText,
+        font = flightFont,
+        color = color.text,
+    })
+    local metadata = view.dateText(result.started)
     if type(result.model) == "string" and result.model ~= "" then
-        lines[#lines + 1] = { text = result.model, font = MIDSIZE, color = color.text }
+        metadata = metadata and (string.upper(metadata) .. " - " .. result.model) or result.model
+    elseif metadata then
+        metadata = string.upper(metadata)
     end
-    local flight = view.flightText(result)
-    if flight then
-        lines[#lines + 1] = { text = flight, font = SMLSIZE, color = color.textMuted }
-    end
-    local total = 0
-    for _, line in ipairs(lines) do
-        total = total + fontHeight(line.font)
-    end
-    local lineY = y + math.max(0, (h - total) // 2)
-    for _, line in ipairs(lines) do
-        host.primitives.label(parent, theme, {
-            x = x + 8,
-            y = lineY,
-            w = math.max(1, textWidth),
-            text = line.text,
-            font = line.font,
-            color = line.color,
-        })
-        lineY = lineY + fontHeight(line.font)
-    end
+    host.primitives.label(box, theme, {
+        x = x,
+        y = y + fontHeight(SMLSIZE) + fontHeight(MIDSIZE),
+        w = w - frame.padRight - x,
+        text = host.themeBuilder.fitLabel(
+            { metadata or "", string.upper(view.dateText(result.started) or ""), "" },
+            TINSIZE,
+            w - frame.padRight - x
+        ),
+        font = TINSIZE,
+        color = color.textMuted,
+    })
 end
 
 local function buildOverlay(host, state)
@@ -294,15 +311,6 @@ local function buildOverlay(host, state)
         h = math.max(height, state.total),
         scrollDir = 0,
     })
-    lvgl.rectangle(overlay, {
-        x = (width - 36) // 2,
-        y = 3,
-        w = 36,
-        h = 4,
-        filled = true,
-        rounded = 2,
-        color = theme.color.textFaint,
-    })
     state.ui = { overlay = overlay, content = content, y = height - state.reveal, offset = -state.offset }
     buildHeader(host, state, content)
 end
@@ -312,9 +320,9 @@ local function legendItems(host, series, font)
     local items = {}
     for index, entry in ipairs(series) do
         local config = entry.config
-        local label = config.label and config.label ~= "" and config.label or config.statistic
+        local label = string.upper(config.label and config.label ~= "" and config.label or config.statistic)
         local value = view.valueText(host.themeBuilder, entry.value, config.precision)
-        local unit = config.unit or ""
+        local unit = config.unit or entry.unit or ""
         items[index] = {
             labelText = label,
             valueText = value,
@@ -322,6 +330,7 @@ local function legendItems(host, series, font)
             label = measure(SMLSIZE, label),
             value = measure(font, value),
             unit = unit ~= "" and measure(SMLSIZE, unit) + 1 or 0,
+            marker = #series > 1 and 7 or 0,
         }
     end
     return items
@@ -336,17 +345,17 @@ local function buildBase(host, state, item)
     local fontHeight, measure = themeBuilder.fontHeight, themeBuilder.measureText
     local tile = item.tile
     local config = tile.config
-    local box = lvgl.box(state.ui.content, { x = item.x, y = item.y, w = item.w, h = item.h, scrollDir = 0 })
+    local level = "normal"
+    for _, entry in ipairs(tile.series) do
+        if entry.level == "critical" then
+            level = "critical"
+            break
+        elseif entry.level == "warning" then
+            level = "warning"
+        end
+    end
+    local box, presentation = panel(host, state.ui.content, item, level)
     item.box = box
-    lvgl.rectangle(box, {
-        x = 0,
-        y = 0,
-        w = item.w,
-        h = item.h,
-        filled = true,
-        rounded = theme.spacing.radius,
-        color = color.surface,
-    })
     local fonts = themeBuilder.typography(config.colSpan, config.rowSpan)
     local frame = themeBuilder.frame(theme, { x = 0, y = 0, w = item.w, h = item.h }, fonts)
     local pad, right = frame.pad, item.w - frame.padRight
@@ -356,11 +365,13 @@ local function buildBase(host, state, item)
     local valueFont = compact and STD_FONT or MIDSIZE
     local valueHeight = fontHeight(valueFont)
     local smallOffset = valueHeight - titleHeight - 2
-    local title = config.title or ""
-    local legendX, legendY, titleWidth = pad, frame.labelY + titleHeight, right - pad
+    local title = string.upper(config.title or "")
+    local badgeWidth = presentation.badge and measure(SMLSIZE, presentation.badge) or 0
+    local headerRight = right - (badgeWidth > 0 and badgeWidth + 4 or 0)
+    local legendX, legendY, titleWidth = pad, frame.labelY + titleHeight, headerRight - pad
     if compact then
         legendY = frame.labelY
-        titleWidth = title ~= "" and measure(SMLSIZE, title) + 1 or 0
+        titleWidth = title ~= "" and math.min(measure(SMLSIZE, title) + 1, (headerRight - pad) // 2) or 0
         legendX = titleWidth > 0 and pad + titleWidth + ITEM_GAP or pad
     end
     if titleWidth > 0 then
@@ -368,23 +379,40 @@ local function buildBase(host, state, item)
             x = pad,
             y = compact and legendY + smallOffset or frame.labelY,
             w = math.max(1, titleWidth),
-            text = title,
+            text = themeBuilder.fitHeading(title, titleWidth, SMLSIZE, SMLSIZE),
             font = SMLSIZE,
-            color = color.text,
+            color = color.textMuted,
+        })
+    end
+    if presentation.badge then
+        primitives.label(box, theme, {
+            x = right - badgeWidth,
+            y = frame.labelY,
+            w = badgeWidth + 1,
+            text = presentation.badge,
+            font = SMLSIZE,
+            color = presentation.accent,
         })
     end
 
-    -- Legend: label, statistic and unit per series, coloured by its worst level.
     local items = legendItems(host, tile.series, valueFont)
-    local labels, count = view.legendFit(items, right - legendX)
+    local labels, count = view.legendFit(items, (compact and headerRight or right) - legendX)
     local x = legendX
     for index = 1, count do
-        local entry, legend = tile.series[index], items[index]
-        local ink = entry.level == "critical" and color.critical
-            or entry.level == "warning" and color.amber
-            or themeBuilder.seriesColor(theme, index, entry.config.accent)
+        local legend = items[index]
         if index > 1 then
             x = x + ITEM_GAP
+        end
+        if legend.marker > 0 then
+            lvgl.rectangle(box, {
+                x = x,
+                y = legendY + smallOffset + titleHeight // 2 - 2,
+                w = 4,
+                h = 4,
+                filled = true,
+                color = themeBuilder.seriesColor(theme, index, tile.series[index].config.accent),
+            })
+            x = x + legend.marker
         end
         if labels and legend.label > 0 then
             primitives.label(box, theme, {
@@ -403,7 +431,7 @@ local function buildBase(host, state, item)
             w = legend.value + 1,
             text = legend.valueText,
             font = valueFont,
-            color = ink,
+            color = color.text,
         })
         x = x + legend.value
         if legend.unit > 0 then
@@ -413,7 +441,7 @@ local function buildBase(host, state, item)
                 w = legend.unit,
                 text = legend.unitText,
                 font = SMLSIZE,
-                color = ink,
+                color = color.textMuted,
             })
             x = x + legend.unit
         end
@@ -694,31 +722,28 @@ function view.handle(host, event, touch)
 end
 
 local PILL_TEXTS = {
-    [true] = { "Debrief ready - swipe up", "Debrief ready" },
-    [false] = { "Debrief ready - long-press, then swipe up", "Debrief ready" },
+    [true] = { "DEBRIEF READY (SCROLL UP)", "DEBRIEF READY" },
+    [false] = { "DEBRIEF READY (LONG-PRESS, THEN SCROLL UP)", "DEBRIEF READY" },
 }
-local PILL_PAD, PILL_MARGIN = 10, 6
+local PILL_PAD = 4
 
---- The pill's text and size for a zone, or nil when even the short text does
---- not fit. Outside fullscreen the widget gets no touch until a long press.
+--- Fit the bottom bar to the zone. Outside fullscreen, opening needs a long press.
 function view.pillFit(host, fullscreen, width, height)
     local themeBuilder = host.themeBuilder
-    local h = themeBuilder.fontHeight(SMLSIZE) + 8
-    if h + 2 * PILL_MARGIN > height then
+    local h = themeBuilder.fontHeight(SMLSIZE) + 4
+    if h > height then
         return nil
     end
     for _, text in ipairs(PILL_TEXTS[fullscreen == true]) do
-        local w = themeBuilder.measureText(SMLSIZE, text) + 2 * PILL_PAD
-        if w + 2 * PILL_MARGIN <= width then
-            return text, w, h
+        local w = themeBuilder.measureText(SMLSIZE, text) + 10 + 2 * PILL_PAD
+        if w <= width then
+            return text, width, h
         end
     end
     return nil
 end
 
---- Show the "debrief ready" pill at the bottom center of the page, worded for
---- `fullscreen`, or hide it when `fullscreen` is nil. It is drawn in the
---- host's pill layer, which the page keeps above its panels.
+--- Keep the latest debrief discoverable in a full-width bottom bar.
 function view.pill(host, fullscreen)
     local zone, layer, pill = host.zone, host.pillLayer, host.debriefPill
     if not pill then
@@ -737,7 +762,7 @@ function view.pill(host, fullscreen)
         return
     end
     local ui = pill.ui
-    if ui and ui.builtFullscreen and not fullscreen then
+    if ui and ui.builtFullscreen ~= fullscreen then
         -- EdgeTX keeps objects built in fullscreen touchable, so outside it they
         -- would take the widget's long press. EdgeTX sweeps whatever is made
         -- under a cleared object in the same callback, so rebuild in the next.
@@ -746,43 +771,74 @@ function view.pill(host, fullscreen)
         pill.ui, pill.fullscreen = nil, nil
         return
     end
-    local x, y = (zone.w - w) // 2, zone.h - h - PILL_MARGIN
+    local x, y = 0, zone.h - h
     if not ui then
         local color = host.theme.color
-        local radius = h // 2
-        layer:set({ x = x, y = y, w = w, h = h })
-        ui = {
-            fill = lvgl.rectangle(layer, {
+        local textColor = host.theme.light and color.text or color.canvas
+        layer:set({ x = x, y = y, w = w, h = h, scrollDir = 0 })
+        ui = { builtFullscreen = fullscreen, text = text, x = x, y = y, w = w }
+        if fullscreen then
+            ui.button = lvgl.button(layer, {
+                x = 0,
+                y = 0,
+                w = w,
+                h = h,
+                text = "",
+                color = color.green,
+                textColor = textColor,
+                cornerRadius = 0,
+                press = function()
+                    if
+                        host.debriefPill == pill
+                        and host.pillLayer == layer
+                        and pill.fullscreen == true
+                        and host.debrief
+                        and not host.debrief.stale
+                        and not host.debrief.shown
+                    then
+                        host.debriefRequest = { page = host.page, swipe = true, released = true }
+                        host.panelPress = host.gesture.cancel(host.panelPress)
+                    end
+                end,
+            })
+        else
+            ui.fill = lvgl.rectangle(layer, {
                 x = 0,
                 y = 0,
                 w = w,
                 h = h,
                 filled = true,
-                rounded = radius,
-                color = color.surfaceRaised,
-            }),
-            outline = lvgl.rectangle(layer, { x = 0, y = 0, w = w, h = h, rounded = radius, color = color.border }),
-            label = host.primitives.label(layer, host.theme, {
-                x = PILL_PAD,
-                y = (h - host.themeBuilder.fontHeight(SMLSIZE)) // 2,
-                w = w - 2 * PILL_PAD,
-                text = text,
-                font = SMLSIZE,
-                color = color.text,
-            }),
-            builtFullscreen = fullscreen,
+                color = color.green,
+            })
+        end
+        local textWidth = host.themeBuilder.measureText(SMLSIZE, text)
+        local labelX = (w - textWidth - 10) // 2 + 10
+        ui.arrow = lvgl.triangle(layer, {
+            pts = { { labelX - 10, h // 2 + 2 }, { labelX - 6, h // 2 - 2 }, { labelX - 2, h // 2 + 2 } },
+            color = textColor,
+        })
+        ui.label = host.primitives.label(layer, host.theme, {
+            x = labelX,
+            y = (h - host.themeBuilder.fontHeight(SMLSIZE)) // 2,
+            w = textWidth,
             text = text,
-            x = x,
-            y = y,
-            w = w,
-        }
+            font = SMLSIZE,
+            color = textColor,
+        })
         pill.ui = ui
     elseif ui.text ~= text or ui.x ~= x or ui.y ~= y or ui.w ~= w then
-        -- The height is fixed by the font, so the construction-time radius holds.
         layer:set({ x = x, y = y, w = w, h = h })
-        ui.fill:set({ w = w })
-        ui.outline:set({ w = w })
-        ui.label:set({ w = w - 2 * PILL_PAD, text = text })
+        if ui.button then
+            ui.button:set({ w = w })
+        else
+            ui.fill:set({ w = w })
+        end
+        local textWidth = host.themeBuilder.measureText(SMLSIZE, text)
+        local labelX = (w - textWidth - 10) // 2 + 10
+        ui.arrow:set({
+            pts = { { labelX - 10, h // 2 + 2 }, { labelX - 6, h // 2 - 2 }, { labelX - 2, h // 2 + 2 } },
+        })
+        ui.label:set({ x = labelX, w = textWidth, text = text })
         ui.text, ui.x, ui.y, ui.w = text, x, y, w
     end
     lvgl.show(layer)
