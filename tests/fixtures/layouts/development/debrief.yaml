@@ -1,0 +1,112 @@
+# Debrief testing dashboard, on AG Debrief.
+version: 3
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: receiver-battery
+    type: rx-battery
+    col: 0
+    row: 1
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: RX battery
+      source: RxBt
+      cells: 2
+      reading: cell
+      visual: none
+      showCount: true
+      showPack: true
+  - id: navigation
+    type: navigation
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: Navigation
+      source: GPS
+      satelliteSource: Sats
+  - id: transmitter-battery
+    type: tx-battery
+    col: 3
+    row: 0
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: TX battery
+  - id: altitude
+    type: metric
+    col: 0
+    row: 3
+    colSpan: 2
+    rowSpan: 1
+    config:
+      metrics:
+        - source: GAlt
+          label: Altitude
+          precision: 1
+        - source: GAlt+
+          label: MAX ALT
+          precision: 1
+        - source: VSpd+
+          label: MAX VS
+          precision: 1
+      visual: none
+  - id: flight-clock
+    type: flight-timer
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      timer: 0
+      label: Flight timer
+  - id: flight-count
+    type: flight-counter
+    col: 2
+    row: 1
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: Flights
+      armSwitch: SFv
+      motorSource: ch3
+  - id: link
+    type: link-status
+    col: 3
+    row: 1
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: Link
+      reading: quality
+      qualitySource: RQly
+      rssiSource: 1RSS
+      protocol: elrs4
+      modeSource: RFMD
+      visual: none
+  - id: identity
+    type: model-identity
+    col: 2
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      presentation: image
+  - id: mode
+    type: state
+    col: 2
+    row: 0
+    colSpan: 1
+    rowSpan: 1
+    config:
+      entries:
+        - label: Mode
+          states:
+            - switch: SF^
+              text: DISARMED
+            - switch: SFv
+              text: ARMED
+              background: warning

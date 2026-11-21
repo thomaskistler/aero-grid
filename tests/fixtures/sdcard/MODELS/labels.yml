@@ -26,3 +26,7 @@ Models:
     name: "AG System"
     labels: ""
     bitmap: "04530_x10.png"
+  model7.yml:
+    name: "AG Debrief"
+    labels: ""
+    bitmap: "04530_x10.png"
