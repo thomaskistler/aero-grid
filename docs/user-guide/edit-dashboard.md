@@ -107,3 +107,13 @@ so you can retry.
 
 See [Understand layouts](add-dashboard.md#understand-layouts) for where saved
 layouts live and how multiple dashboards share them.
+
+## Flight debrief
+
+**AeroGrid → Flight debrief** configures the current layout's post-flight tiles.
+**Tile size** applies to the whole debrief: **Compact 2 × 2** or **Wide 4 × 1**.
+Each tile has a title and up to three series.
+
+Leaving with changes offers **Save layout**, **Save layout as...**, or
+**Discard changes**. These save the layout, including its debrief settings;
+they do not save a flight recording.

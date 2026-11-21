@@ -5,7 +5,7 @@
 
 local debrief = { RUNTIME_API = 1, MAX_TILES = 12, MAX_SERIES = 3 }
 
--- Compact 2 x 2, Wide 4 x 2, and Wide 4 x 1, in setup page order.
+-- Legacy per-tile sizes, accepted when the layout has no shared size.
 debrief.SIZES = { "2x2", "4x2", "4x1" }
 local TILE_KEYS = { title = true, colSpan = true, rowSpan = true, series = true }
 
@@ -124,7 +124,7 @@ end
 ---@return table? tile
 ---@return string[] errors Problems, including those of dropped series.
 ---@return string[] warnings
-function debrief.validateTile(value)
+function debrief.validateTile(value, size)
     if not isMapping(value) then
         return nil, { "must be a mapping" }, {}
     end
@@ -135,10 +135,13 @@ function debrief.validateTile(value)
         end
         tile[key] = field
     end
+    if size ~= nil then
+        tile.colSpan, tile.rowSpan = size == "wide" and 4 or 2, size == "wide" and 1 or 2
+    end
     if type(value.title) ~= "string" or value.title == "" then
         return nil, { "title is required" }, warnings
     end
-    if not debrief.size(value) then
+    if not debrief.size(tile) then
         return nil, { "size must be 2 x 2, 4 x 2, or 4 x 1" }, warnings
     end
     if not isSequence(value.series) then
@@ -169,14 +172,12 @@ function debrief.validateTile(value)
     return tile, errors, warnings
 end
 
---- Validate a debrief section. Invalid tiles and series are reported and
---- dropped, so the valid remainder can still be shown; `tiles: []` is a valid,
---- empty debrief.
+--- Validate a section's settings and tile sequence without walking its tiles.
 ---@param value any
 ---@return table? debrief Nil when the section itself is unusable.
 ---@return string[] errors
 ---@return string[] warnings
-function debrief.validate(value)
+function debrief.validateHeader(value)
     if not isMapping(value) then
         return nil, { "debrief must be a mapping" }, {}
     end
@@ -186,6 +187,9 @@ function debrief.validate(value)
         result[key] = field
     end
     result.tiles = {}
+    if value.size ~= nil and value.size ~= "compact" and value.size ~= "wide" then
+        errors[#errors + 1] = "debrief size must be compact or wide"
+    end
     if value.tiles == nil then
         return result, errors, warnings
     end
@@ -193,21 +197,50 @@ function debrief.validate(value)
         errors[#errors + 1] = "debrief tiles must be a sequence"
         return result, errors, warnings
     end
+    return result, errors, warnings
+end
+
+function debrief.validate(value)
+    local result, errors, warnings = debrief.validateHeader(value)
+    if not result or value.tiles == nil or not isSequence(value.tiles) then
+        return result, errors, warnings
+    end
     for index, entry in ipairs(value.tiles) do
         if #result.tiles == debrief.MAX_TILES then
             errors[#errors + 1] = "debrief has more than " .. debrief.MAX_TILES .. " tiles; the rest were dropped"
             break
         end
-        local tile, tileErrors, tileWarnings = debrief.validateTile(entry)
+        local tile, tileErrors, tileWarnings = debrief.validateTile(entry, result.size)
         for _, message in ipairs(tileErrors) do
             errors[#errors + 1] = "debrief tile " .. index .. ": " .. message
         end
+
         for _, message in ipairs(tileWarnings) do
             warnings[#warnings + 1] = "debrief tile " .. index .. ": " .. message
         end
         result.tiles[#result.tiles + 1] = tile
     end
     return result, errors, warnings
+end
+
+--- Older layouts retain their per-tile sizes until a shared size is chosen.
+function debrief.viewSize(section)
+    if section.size then
+        return section.size
+    end
+    local first = section.tiles[1]
+    return first and first.colSpan == 4 and "wide" or "compact"
+end
+
+function debrief.setSize(section, size)
+    if size ~= "compact" and size ~= "wide" then
+        return false, "debrief size must be compact or wide"
+    end
+    section.size = size
+    for _, tile in ipairs(section.tiles) do
+        tile.colSpan, tile.rowSpan = size == "wide" and 4 or 2, size == "wide" and 1 or 2
+    end
+    return true
 end
 
 ---@param section table?
@@ -237,7 +270,13 @@ function debrief.addTile(section)
         return false, "a debrief has at most " .. debrief.MAX_TILES .. " tiles"
     end
     local index = #section.tiles + 1
-    section.tiles[index] = { title = "Tile " .. index, colSpan = 2, rowSpan = 2, series = { { statistic = "min" } } }
+    local wide = section.size == "wide"
+    section.tiles[index] = {
+        title = "Tile " .. index,
+        colSpan = wide and 4 or 2,
+        rowSpan = wide and 1 or 2,
+        series = { { statistic = "min" } },
+    }
     return index
 end
 
@@ -547,7 +586,7 @@ function debrief.fromPanels(panels, present, thresholds)
             break
         end
     end
-    return { tiles = tiles }
+    return { size = "compact", tiles = tiles }
 end
 
 --- Replace a section's tiles with those built from the panels.
@@ -558,6 +597,7 @@ end
 ---@return integer count
 function debrief.fill(section, panels, present, thresholds)
     section.tiles = debrief.fromPanels(panels, present, thresholds).tiles
+    debrief.setSize(section, section.size or "compact")
     return #section.tiles
 end
 

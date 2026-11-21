@@ -284,6 +284,9 @@ function uiModule.advance(context)
                     single[key] = value
                 end
                 single.panels = { placement }
+                -- The store validates debrief tiles incrementally. Including
+                -- them here repeats the entire debrief for every panel.
+                single.debrief = nil
                 local checked, errors = editor.validate({
                     draft = single,
                     layout = session.layout,

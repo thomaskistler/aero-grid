@@ -30,7 +30,16 @@ end
 ---@param state table Editor state: `session`, `debriefMark`, `status`.
 ---@param config table `configured` (flight detection) and `canAdd`.
 function page.listFields(state, config)
-    local fields, mark = {}, state.debriefMark
+    local fields, mark =
+        {
+            {
+                key = "size",
+                label = "Tile size",
+                type = "string",
+                choices = { "compact", "wide" },
+                choiceLabels = { "Compact 2 x 2", "Wide 4 x 1" },
+            },
+        }, state.debriefMark
     for index, tile in ipairs(tiles(state)) do
         local text = SIZE_LABELS[tostring(tile.colSpan) .. "x" .. tostring(tile.rowSpan)] or "?"
         if mark and mark.index == index then
@@ -57,14 +66,9 @@ function page.listFields(state, config)
 end
 
 --- Rows of one tile's settings.
-function page.tileFields(tile, sizes, maxSeries)
-    local labels = {}
-    for index, size in ipairs(sizes) do
-        labels[index] = SIZE_LABELS[size]
-    end
+function page.tileFields(tile, maxSeries)
     local fields = {
         { key = "title", label = "Title", type = "string", required = true },
-        { key = "size", label = "Size", type = "string", choices = sizes, choiceLabels = labels },
     }
     for index, series in ipairs(tile.series) do
         fields[#fields + 1] = {
@@ -111,12 +115,18 @@ local function show(context, state, target)
             configured = configured(context),
             canAdd = module.canAdd(state.session.draft.debrief),
         })
+        read = function()
+            return module.viewSize(state.session.draft.debrief)
+        end
+        write = function(_, value)
+            return editor.editDebrief(state.session, "setSize", value)
+        end
         state.status = ""
     elseif target.kind == "tile" then
         title = tile.title
-        fields = page.tileFields(tile, module.SIZES, module.MAX_SERIES)
+        fields = page.tileFields(tile, module.MAX_SERIES)
         read = function(field)
-            return field.key == "size" and module.size(tile) or tile[field.key]
+            return tile[field.key]
         end
         write = function(field, value)
             return editor.editDebrief(state.session, "setTileValue", target.tile, field.key, value)
@@ -301,6 +311,9 @@ function page.advance(context, state)
         end
     elseif command.action == "write" then
         ok, err = context.editorDrawerModule.applyWrite(state, command)
+        if ok and target.kind == "list" and command.field.key == "size" then
+            show(context, state, { kind = "list" })
+        end
     elseif command.action == "error" then
         ok, err = false, command.message
         if command.control and state.nativeDrawer then

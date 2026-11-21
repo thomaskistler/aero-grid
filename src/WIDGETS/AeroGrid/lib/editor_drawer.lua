@@ -402,9 +402,9 @@ function drawer.openExit(context, state)
     closeDialog(state)
     local actions, values = {}, {}
     if not state.handlers.isEmpty(state.handlers.layoutName()) then
-        actions[#actions + 1], values[#values + 1] = "save", "Save"
+        actions[#actions + 1], values[#values + 1] = "save", state.debrief and "Save layout" or "Save"
     end
-    actions[#actions + 1], values[#values + 1] = "save-as", "Save as..."
+    actions[#actions + 1], values[#values + 1] = "save-as", state.debrief and "Save layout as..." or "Save as..."
     actions[#actions + 1], values[#values + 1] = "discard", "Discard changes"
     local generation = state.drawerGeneration
     if state.debrief then
@@ -412,7 +412,7 @@ function drawer.openExit(context, state)
         state.mode = "exit"
         state.nativeDrawer = assert(
             hostedDialog(context, state, {
-                title = "Unsaved changes",
+                title = "Unsaved layout changes",
                 close = function()
                     if generation == state.drawerGeneration then
                         state.nativeDrawer = nil
@@ -513,7 +513,7 @@ function drawer.openName(context, state, name, message)
         y = math.floor(height * 1.8) + 8,
         w = width,
         h = height,
-        text = "Save",
+        text = state.debrief and "Save layout" or "Save",
         active = active,
         press = function()
             exitCommand(context, state, generation, { action = "name", name = state.saveAsName })

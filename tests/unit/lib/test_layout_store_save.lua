@@ -209,7 +209,7 @@ end
 local function stagedSave(name, document, operations)
     local state = layoutStore.startSave("/widget", name, document, yaml, layout, grid, operations)
     local done, saved, saveError
-    for _ = 1, 20 do
+    for _ = 1, 120 do
         done, saved, saveError = layoutStore.advanceSave(state)
         if done then
             break
@@ -217,6 +217,55 @@ local function stagedSave(name, document, operations)
     end
     assert(done, "save did not finish")
     return saved, saveError, state.filename
+end
+
+local function testDebriefSaveBudget()
+    local files, operations = memoryFiles()
+    local document = makeDocument("maximum debrief")
+    document.version = layout.VERSION
+    document.debrief = { size = "wide", future = { enabled = true }, tiles = {} }
+    for index = 1, 12 do
+        local tile = { title = "Tile " .. index, series = {} }
+        for position = 1, 3 do
+            tile.series[position] = {
+                source = "Alt",
+                statistic = "max",
+                label = "Altitude",
+                unit = "m",
+                precision = 1,
+                rangeMin = 0,
+                rangeMax = 100,
+                accent = "cyan",
+            }
+        end
+        document.debrief.tiles[index] = tile
+    end
+    local state = layoutStore.startSave("/widget", "maximum", document, yaml, layout, grid, operations)
+    local worst, done, saved, saveError = 0, false, nil, nil
+    for _ = 1, 120 do
+        local count = 0
+        debug.sethook(function()
+            count = count + 100
+        end, "", 100)
+        done, saved, saveError = layoutStore.advanceSave(state)
+        debug.sethook()
+        worst = math.max(worst, count)
+        if done then
+            break
+        end
+        assert(next(files) == nil, "no writes until every tile and panel is validated")
+    end
+    assert(done and saved, saveError)
+    assert(worst < 10000, "debrief save step exceeded budget: " .. worst)
+    local parsed = assert(yaml.parse(files[state.filename]))
+    assert(parsed.debrief.size == "wide" and parsed.debrief.future.enabled and #parsed.debrief.tiles == 12)
+    assert(#layout.validateDebrief(parsed) == 0)
+    for _, tile in ipairs(parsed.debrief.tiles) do
+        assert(tile.colSpan == 4 and tile.rowSpan == 1 and #tile.series == 3)
+    end
+    document.debrief.tiles[5] = false
+    local ok, err, filename = stagedSave("invalid-tile", document, operations)
+    assert(not ok and string.find(err, "mapping", 1, true) and not files[filename])
 end
 
 local function testDebriefRoundTrip()
@@ -357,6 +406,7 @@ testFutureVersionIsNotSaved()
 testExplicitSavePersistsMigratedBattery()
 testStagedSave()
 testDebriefRoundTrip()
+testDebriefSaveBudget()
 testStagedSaveMigratesLegacyBattery()
 testRadioFileOperations()
 testTemporaryMismatch()
