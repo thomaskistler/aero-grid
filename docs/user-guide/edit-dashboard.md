@@ -113,6 +113,7 @@ layouts live and how multiple dashboards share them.
 **AeroGrid → Flight debrief** configures the current layout's post-flight tiles.
 **Tile size** applies to the whole debrief: **Compact 2 × 2** or **Wide 4 × 2**.
 Each tile has a title and up to three series.
+**Fill from dashboard** places RX battery and Link first, when present.
 
 After a recorded flight, a green **Debrief ready** bar stays at the bottom
 until the debrief is cleared. In fullscreen, tap it or drag it up to open.

@@ -286,10 +286,10 @@ local function testFromPanels()
     assert(valid and #valid.tiles == #section.tiles, "derived tiles validate")
     local expected = {
         { "Flight pack", "VCel:min,Capa:delta" },
-        { "LINK", "RQly:min,RSSI:min" },
-        { "SPEED & ALTITUDE", "GSpd:max,GAlt:max" },
-        { "NAV", "HDst:max,FDst:delta" },
-        { "SATELLITES", "Sats:min" },
+        { "Link", "RQly:min,RSSI:min" },
+        { "Speed", "GSpd:max" },
+        { "Navigation", "HDst:max,FDst:delta" },
+        { "Satellites", "Sats:min" },
         { "Power", "Curr:max,RQly:min,Vspd:max" },
         { "ESC", "Tmp1:min" },
     }
@@ -312,8 +312,8 @@ local function testFromPanels()
         return false
     end)
     assert(#bare.tiles == 2, "only the battery and distance tiles remain")
-    assert(bare.tiles[1].title == "PACK" and sources(bare.tiles[1]) == "VCel:min")
-    assert(bare.tiles[2].title == "NAV" and sources(bare.tiles[2]) == "HDst:max,FDst:delta")
+    assert(bare.tiles[1].title == "RX battery" and sources(bare.tiles[1]) == "VCel:min")
+    assert(bare.tiles[2].title == "Navigation" and sources(bare.tiles[2]) == "HDst:max,FDst:delta")
 
     -- A layout without mappable panels derives an empty debrief.
     assert(#debrief.fromPanels({}, present).tiles == 0)
@@ -329,10 +329,50 @@ local function testFromPanels()
     end)
     assert(#capped.tiles == debrief.MAX_TILES and capped.tiles[debrief.MAX_TILES].title == "M" .. debrief.MAX_TILES)
 
+    many[#many + 1] = panel("link-status", { label = "Receiver link" })
+    many[#many + 1] = panel("rx-battery", { label = "Receiver battery" })
+    many[#many + 1] = panel("rx-battery", { label = "Second battery" })
+    capped = debrief.fromPanels(many, function()
+        return true
+    end)
+    equal(#capped.tiles, debrief.MAX_TILES)
+    equal(capped.tiles[1].title, "Receiver battery", "the first battery leads even beyond the tile limit")
+    equal(capped.tiles[2].title, "Receiver link", "Link follows the battery regardless of dashboard order")
+    equal(capped.tiles[3].title, "M1", "the other panels retain their order")
+    equal(capped.tiles[debrief.MAX_TILES].title, "M" .. (debrief.MAX_TILES - 2))
+
+    local altitudeSettings = {
+        metrics = {
+            { source = "GAlt", label = "Altitude" },
+            { source = "GAlt+", label = "MAX ALT" },
+            { source = "VSpd+", label = "VSpeed", precision = 1 },
+        },
+    }
+    local altitude = debrief.fromPanels({ panel("metric", altitudeSettings) }, function(name)
+        return name == "GAlt" or name == "VSpd"
+    end).tiles[1]
+    equal(altitude.title, "Altitude")
+    equal(sources(altitude), "GAlt:max,VSpd:max", "altitude and VSpeed use flight readings, not radio maxima")
+    equal(altitude.series[2].label, "VSpeed")
+    equal(altitude.series[2].precision, 1)
+    equal(altitudeSettings.metrics[3].source, "VSpd+", "deriving does not change the dashboard")
+    local paired = debrief.fromPanels({
+        panel("metric", { metrics = { { source = "Alt", label = "Altitude" } } }),
+    }, function(name)
+        return name == "Alt" or name == "VSpd"
+    end).tiles[1]
+    equal(sources(paired), "Alt:max,VSpd:max", "an altitude tile includes available VSpeed")
+    local minimum = debrief.fromPanels({
+        panel("metric", { metrics = { { source = "GAlt-" } } }),
+    }, function(name)
+        return name == "GAlt"
+    end).tiles[1]
+    equal(sources(minimum), "GAlt:min", "a radio minimum becomes a flight minimum")
+
     -- Fill replaces the existing tiles and keeps unknown settings.
     local filled = { tiles = { tile("Old") }, future = true }
     assert(debrief.fill(filled, { panel("rx-battery") }, present) == 1)
-    assert(filled.tiles[1].title == "PACK" and filled.future == true)
+    assert(filled.tiles[1].title == "RX battery" and filled.future == true)
     assert(debrief.fill(filled, {}, present) == 0 and #filled.tiles == 0)
 
     -- Link readings are independent: either source may be unset.

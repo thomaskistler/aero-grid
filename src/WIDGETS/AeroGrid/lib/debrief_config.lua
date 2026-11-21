@@ -529,7 +529,22 @@ function debrief.fromPanels(panels, present, thresholds)
         return named(label) and label or fallback
     end
 
+    local ordered = {}
+    for _, kind in ipairs({ "rx-battery", "link-status" }) do
+        for _, panel in ipairs(panels) do
+            if type(panel) == "table" and panel.type == kind then
+                ordered[#ordered + 1] = panel
+                break
+            end
+        end
+    end
     for _, panel in ipairs(panels) do
+        if type(panel) ~= "table" or panel.type ~= "rx-battery" and panel.type ~= "link-status" then
+            ordered[#ordered + 1] = panel
+        end
+    end
+
+    for _, panel in ipairs(ordered) do
         local kind, settings = type(panel) == "table" and panel.type, config(panel)
         -- Only the first Battery, Link, and Navigation panel publishes.
         local first = kind and not seen[kind]
@@ -541,7 +556,7 @@ function debrief.fromPanels(panels, present, thresholds)
             if has("Capa") then
                 list[2] = { source = "Capa", statistic = "delta", label = "used" }
             end
-            add(title(settings.label, "PACK"), list)
+            add(title(settings.label, "RX battery"), list)
         elseif kind == "link-status" and first then
             local list = {}
             for _, source in ipairs(linkSources(settings)) do
@@ -549,33 +564,47 @@ function debrief.fromPanels(panels, present, thresholds)
                     list[#list + 1] = { source = source, statistic = "min" }
                 end
             end
-            add(title(settings.label, "LINK"), list)
+            add(title(settings.label, "Link"), list)
         elseif kind == "navigation" and first then
-            local motion = {}
-            if has("GSpd") then
-                motion[#motion + 1] = { source = "GSpd", statistic = "max" }
-            end
-            local altitude = has("Alt") and "Alt" or has("GAlt") and "GAlt"
-            if altitude then
-                motion[#motion + 1] = { source = altitude, statistic = "max" }
-            end
-            add("SPEED & ALTITUDE", motion)
-            add(title(settings.label, "NAV"), {
+            add("Speed", has("GSpd") and { { source = "GSpd", statistic = "max" } } or {})
+            add(title(settings.label, "Navigation"), {
                 { source = "HDst", statistic = "max" },
                 { source = "FDst", statistic = "delta", label = "flown" },
             })
             local satellites = satelliteSource(settings)
-            add("SATELLITES", has(satellites) and { { source = satellites, statistic = "min" } } or {})
+            add("Satellites", has(satellites) and { { source = satellites, statistic = "min" } } or {})
         elseif kind == "chart" or kind == "metric" then
-            local readings = {}
+            local readings, statistics, used = {}, {}, {}
             for _, entry in ipairs(entries(settings)) do
-                if #readings < debrief.MAX_SERIES and has(entry.source) then
-                    readings[#readings + 1] = entry
+                local source, statistic = entry.source, nil
+                if kind == "metric" then
+                    local base, suffix = string.match(source, "^(.-)([+-])$")
+                    if base and has(base) then
+                        source, statistic = base, suffix == "+" and "max" or "min"
+                    end
                 end
+                if #readings < debrief.MAX_SERIES and has(source) and (kind == "chart" or not used[source]) then
+                    local reading = entry
+                    if source ~= entry.source then
+                        reading = copy(entry)
+                        reading.source = source
+                    end
+                    readings[#readings + 1] = reading
+                    statistics[#readings], used[source] = statistic, true
+                end
+            end
+            if
+                kind == "metric"
+                and (used.Alt or used.GAlt)
+                and not used.VSpd
+                and has("VSpd")
+                and #readings < debrief.MAX_SERIES
+            then
+                readings[#readings + 1] = { source = "VSpd", label = "VSpeed" }
             end
             local list = {}
             for index, entry in ipairs(readings) do
-                local statistic = falling[entry.source] and "min" or "max"
+                local statistic = statistics[index] or (falling[entry.source] and "min" or "max")
                 list[index] = readingSeries(entry, statistic, kind == "chart", #readings > 1)
             end
             local head = readings[1]

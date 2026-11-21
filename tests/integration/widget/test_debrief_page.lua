@@ -104,6 +104,15 @@ local unconfigured = context.flightFactory.broker.view.status == "unconfigured"
 -- its panels; deriving is not an edit.
 assert(context.debriefGenerated and state().session.debriefDerived and not state().session.dirty)
 assert(#tiles() == 1 and tiles()[1].title == "Alt" and tiles()[1].series[1].source == "Alt")
+local tileRow = row("Alt")
+assert(tileRow.object.properties.text == "Alt" and tileRow.object.properties.x == 0)
+assert(
+    tileRow.object.properties.w == state().drawerView.width - state().drawerView.controlInset,
+    "a tile button spans the drawer row"
+)
+for _, child in ipairs(tileRow.row.children or {}) do
+    assert(child.kind ~= "label", "a full-width tile has no separate caption")
+end
 assert((row("Tile size").field.description == note) == unconfigured, "the note follows flight detection")
 
 -- Fill from dashboard asks before it replaces tiles, then makes them the layout's own.
@@ -184,10 +193,11 @@ assert(row("Tile size").object.properties.get() == 2, "the shared size remains W
 row("Tile size").object.properties.set(1)
 settle()
 assert(tiles()[1].colSpan == 2 and tiles()[1].rowSpan == 2)
-assert(row("Battery").object.properties.text == "Compact 2 x 2", "the list immediately reflects the shared size")
+assert(row("Battery").object.properties.text == "Battery", "the title remains the button caption")
 row("Tile size").object.properties.set(2)
 settle()
-assert(row("Battery").object.properties.text == "Wide 4 x 2")
+assert(tiles()[1].colSpan == 4 and tiles()[1].rowSpan == 2)
+assert(row("Battery").object.properties.text == "Battery")
 
 press("Add tile")
 back()

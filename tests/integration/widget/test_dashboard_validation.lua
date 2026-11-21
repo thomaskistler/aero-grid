@@ -345,7 +345,7 @@ local function testDebriefErrorsAreNotices()
     -- A layout that has never had a debrief derives one from its panels.
     assert(bare.debriefGenerated, "a layout without a debrief section must derive one")
     assertEqual(#bare.document.debrief.tiles, 1)
-    assertEqual(bare.document.debrief.tiles[1].title, "PACK")
+    assertEqual(bare.document.debrief.tiles[1].title, "RX battery")
     local empty = createLoaded(
         { x = 0, y = 0, w = 480, h = 272 },
         DEFAULT_OPTIONS,

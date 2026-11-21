@@ -5,7 +5,6 @@
 
 local page = { RUNTIME_API = 1 }
 
-local SIZE_LABELS = { ["2x2"] = "Compact 2 x 2", ["4x2"] = "Wide 4 x 2", ["4x1"] = "Wide 4 x 1" }
 page.FLIGHT_NOTE = "A debrief needs flight detection. Choose Armed in Model settings."
 page.SENSOR_HINT = "Run Discover new sensors in Model > Telemetry"
 page.FILL_EMPTY = "No dashboard panels map to debrief tiles."
@@ -41,11 +40,11 @@ function page.listFields(state, config)
             },
         }, state.debriefMark
     for index, tile in ipairs(tiles(state)) do
-        local text = SIZE_LABELS[tostring(tile.colSpan) .. "x" .. tostring(tile.rowSpan)] or "?"
+        local text = tile.title
         if mark and mark.index == index then
             text = text .. (mark.duplicate and " (copy)" or " (move)")
         end
-        fields[#fields + 1] = { action = "item", index = index, label = tile.title, text = text }
+        fields[#fields + 1] = { action = "item", index = index, label = tile.title, text = text, fullWidth = true }
         if missing(tile) then
             fields[#fields + 1] = { type = "section", label = page.SENSOR_HINT }
         end
