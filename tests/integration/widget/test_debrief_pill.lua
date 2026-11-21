@@ -216,9 +216,22 @@ assert(
     "the sheet stays above the panels"
 )
 
+local header = context.debriefPill.ui
+local fillWrites, bottomWrites = header.fill.writes, header.bottom.writes
 fixture.lvglMock.setFullScreen(true)
-settle(20)
+for _ = 1, 20 do
+    settle(1)
+    assert(
+        context.debriefPill.ui == header and not context.pillLayer.hidden,
+        "entering fullscreen must not rebuild or hide the header"
+    )
+end
+assert(
+    header.fill.writes == fillWrites and header.bottom.writes == bottomWrites,
+    "a text-only change must not update the green background"
+)
 assert(pill() == SHORT, "back in fullscreen the pill says swipe up")
+assert(header.label.properties.w == measure(SMLSIZE, SHORT), "the existing label is resized to the short wording")
 
 -- A short pull that snaps closed restores the persistent bar.
 input(EVT_TOUCH_FIRST, touch(H - 5, H - 5))

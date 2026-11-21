@@ -791,7 +791,7 @@ function view.pill(host, fullscreen)
         return
     end
     local ui = pill.ui
-    if ui and ui.builtFullscreen ~= fullscreen then
+    if ui and ui.builtFullscreen and not fullscreen then
         -- EdgeTX keeps objects built in fullscreen touchable, so outside it they
         -- would take the widget's long press. EdgeTX sweeps whatever is made
         -- under a cleared object in the same callback, so rebuild in the next.
@@ -845,9 +845,11 @@ function view.pill(host, fullscreen)
         })
         pill.ui = ui
     elseif ui.text ~= text or ui.x ~= x or ui.y ~= y or ui.w ~= w then
-        layer:set({ x = x, y = y, w = w, h = h })
-        ui.fill:set({ w = w })
-        ui.bottom:set({ w = w })
+        if ui.x ~= x or ui.y ~= y or ui.w ~= w then
+            layer:set({ x = x, y = y, w = w, h = h })
+            ui.fill:set({ w = w })
+            ui.bottom:set({ w = w })
+        end
         local textWidth = host.themeBuilder.measureText(SMLSIZE, text)
         local labelX = (w - textWidth - 10) // 2 + 10
         ui.arrow:set({
