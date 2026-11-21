@@ -169,8 +169,11 @@ function uiModule.open(context, session, handlers)
     lvgl.hide(screen)
     if handlers.debrief then
         -- The Flight debrief page is native dialogs over the dashboard; no grid.
+        -- The empty screen still hosts the dialogs, and EdgeTX only updates
+        -- their controls (such as `active`) while it is shown.
         state.debrief, state.buildStage = true, nil
         state.drawerPending = { action = "open" }
+        lvgl.show(screen)
     end
     context.editorUi = state
     return state

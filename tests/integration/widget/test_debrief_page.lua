@@ -90,6 +90,13 @@ settle()
 assert(state().debrief and state().debriefTarget.kind == "list")
 assert(state().mode == "debrief" and state().nativeDrawer)
 assert(active("Add tile"))
+-- EdgeTX stops polling `active` beneath a hidden object, which would leave
+-- every row disabled and the dialog deaf to RTN.
+local ancestor = state().nativeDrawer
+while ancestor do
+    assert(not ancestor.hidden, "the debrief dialog sits under a hidden object")
+    ancestor = ancestor.parent or ancestor.registeredParent
+end
 local note = context.debriefPageModule.FLIGHT_NOTE
 local unconfigured = context.flightFactory.broker.view.status == "unconfigured"
 
