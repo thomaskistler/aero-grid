@@ -48,7 +48,7 @@ local function configure(first, count, names, trims, width)
         showTrim = trims,
     })
     pump(180)
-    assert(panel.showRows == panel.area.count, "configured rows never finished mounting")
+    assert(panel.placeIndex == nil and not panel.rowsRoot.hidden, "configured rows never finished mounting")
     assert(panel.rows[1].feed.index == first - 1, "channel range was not exercised")
 end
 

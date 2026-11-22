@@ -1226,9 +1226,11 @@ local function testRenderConsultsWhatIsShown()
 
     -- Panels whose `render` declares only the dominant reading have no
     -- supporting row to gate, and are named rather than detected so that one
-    -- losing its rows is a failure rather than a silent exemption.
+    -- losing its rows is a failure rather than a silent exemption. Output
+    -- paints its channel rows directly and has no render.
     local NO_SUPPORTING_ROW = {
         ["host-diagnostics"] = true,
+        output = true,
         ["flight-counter"] = true,
     }
 

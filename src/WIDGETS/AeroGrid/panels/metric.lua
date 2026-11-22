@@ -184,6 +184,9 @@ local function captionOf(entry)
     return "Metric"
 end
 
+-- Ticks between reads of the supporting row.
+local SUPPORT_INTERVAL = 100
+
 local function readingText(entry, feed)
     local caption = captionOf(entry)
     if not feed or not feed.available or type(feed.value) ~= "number" then
@@ -455,7 +458,7 @@ function metric.render(context, out)
     -- no discard. Now the key is simply absent while the row is shed, and
     -- reappears when it is not, which is what `changed` compares.
     if context.showRange then
-        out.range = metric.detailText(context)
+        out.range = context.rangeLine or metric.detailText(context)
         if
             context.metrics
             and context.themeBuilder.measureText(context.fonts.label, out.range) > context.area.detailWidth
@@ -464,7 +467,7 @@ function metric.render(context, out)
         end
     end
     if context.showSecondary then
-        out.secondary = metric.secondaryText(context)
+        out.secondary = context.secondaryLine or metric.secondaryText(context)
         if
             context.metrics
             and context.themeBuilder.measureText(context.fonts.label, out.secondary) > context.area.rowRightWidth
@@ -578,16 +581,24 @@ function metric.refresh(context)
         metric.update(context, context.rect)
         context.rendered = nil
     end
-    if context.layout.supporting then
+    local supporting = context.layout.supporting
+    local now = context.clock and context.clock()
+    if supporting and (not now or not context.supportDue or now >= context.supportDue) then
+        -- Maximums and secondary sensors change slowly, so the supporting row is
+        -- read once a second. Its text area only grows, so a changed value
+        -- replaces the text without a relayout.
         local first = metric.detailText(context)
         local second = context.metrics[3] and metric.secondaryText(context) or nil
-        local supporting = context.layout.supporting
         local unit = context.suppressSensorUnit and "" or context.settings.unit
         if unit == "" and not context.suppressSensorUnit then
             unit = context.feed.unitText or ""
         end
-        if supporting[1] ~= first or supporting[2] ~= second or context.unitText ~= unit then
+        local builder, font = context.themeBuilder, context.fonts.label
+        local width = math.max(builder.measureText(font, first), second and builder.measureText(font, second) or 0)
+        local captions = captionOf(context.metrics[2]) .. "\n" .. captionOf(context.metrics[3])
+        if supporting.captions ~= captions or width > (supporting.width or -1) or context.unitText ~= unit then
             supporting[1], supporting[2] = first, second
+            supporting.captions, supporting.width = captions, width
             context.unitText = unit
             if context.unit then
                 context.unit:set({ text = unit })
@@ -595,6 +606,9 @@ function metric.refresh(context)
             metric.update(context, context.rect)
             context.rendered = nil
         end
+        context.supportDue = now and now + SUPPORT_INTERVAL
+        context.rangeLine = first
+        context.secondaryLine = second or ""
     end
     local changed, drawn = context.primitives.changed(context, metric.render)
     if changed then
@@ -771,6 +785,7 @@ function metric.create(parent, rect, config, services)
         metrics = entries,
         suppressSensorUnit = primary.unit == "",
         rect = rect,
+        clock = services.clock,
     }
 
     -- The host owns polling. Subscribing here, in create, is what tells the

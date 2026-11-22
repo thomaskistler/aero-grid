@@ -2018,7 +2018,7 @@ Shared data services share the same allowance, and are bounded the same way. The
 
 EdgeTX refreshes widgets on every main loop pass, so steady-state cost is paid tens of times per second and is shared by every panel on the dashboard. Two mechanisms keep it bounded.
 
-A panel declares `refreshInterval`, in 10ms ticks, stating how often it actually needs servicing. A numeric telemetry readout is indistinguishable at 5 Hz and 50 Hz in flight, so `metric` declares 20 ticks, where the `heartbeat` fixture, which animates, declares 10. Absent or zero means every frame.
+A panel declares `refreshInterval`, in 10ms ticks, stating how often it actually needs servicing. A numeric telemetry readout is indistinguishable at 5 Hz and 50 Hz in flight, so `metric` declares 20 ticks (its supporting lines, such as maximums, refresh once per second), where the `heartbeat` fixture, which animates, declares 10. Absent or zero means every frame.
 
 Panels that share an interval are then **phase staggered**: each is assigned an offset derived from its position in the layout, so they fall due on different frames instead of all at once. Staggering preserves each panel's exact declared rate, which simple batching would not.
 
