@@ -681,7 +681,6 @@ local function create(zone, widgetOptions, path)
         themeMode = themeMode,
         radioBackground = themeMode == GLASS_THEME,
         panelOpacity = themeMode == GLASS_THEME and 204 or 255,
-        legacyWidgetArmed = widgetOptions.Armed or 0,
         flightFactory = flightFactory,
         startupThemes = flightFactory.startupThemes,
         panels = {},
@@ -1917,20 +1916,7 @@ local function openModelSettings(context)
         sessionReset = owner.document and owner.document.sessionReset,
     }
     if document.armed == nil then
-        local selections = {}
-        for host in pairs(owner.members) do
-            if host.legacyWidgetArmed and host.legacyWidgetArmed ~= 0 then
-                selections[host.legacyWidgetArmed] = true
-            end
-        end
-        local count = 0
-        for _ in pairs(selections) do
-            count = count + 1
-        end
-        document.status = count > 1
-                and "Conflicting old widget Armed selections were not imported. Choose one model switch."
-            or count == 1 and "Old widget Armed was not imported. Choose the model switch."
-            or "No model Armed set. Legacy panel switches remain until changed; None disables arming model-wide."
+        document.status = "No model Armed set. Legacy panel switches remain until changed; None disables arming model-wide."
     end
     local suspended = context.editorUi ~= nil
     if suspended then

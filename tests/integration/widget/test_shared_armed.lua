@@ -102,11 +102,10 @@ local function finish(context)
     end
     error("model Armed reload did not finish")
 end
-local function loaded(legacy, layout)
+local function loaded(layout)
     return finish(definition.create({ x = 0, y = 0, w = 480, h = 272 }, {
         Layout = layout or "shared-armed",
         Theme = "modern-dark",
-        Armed = legacy,
     }, widgetPath))
 end
 local function pump(...)
@@ -117,7 +116,7 @@ local function pump(...)
         end
     end
 end
-local first, second = loaded(getSwitchIndex("L64")), loaded(getSwitchIndex("L01"), "shared-armed-copy")
+local first, second = loaded(), loaded("shared-armed-copy")
 pump(first, second)
 local armed = first.serviceRuntime.byId.armed
 equal(armed:state().status, "unconfigured")
@@ -135,8 +134,8 @@ local function open(context)
     error("Model settings did not open")
 end
 local state = open(first)
-assert(string.find(state.status.properties.text, "Conflicting old widget Armed", 1, true))
-equal(state.controls.armed.properties.get(), 0, "conflicting old native options must not be guessed")
+assert(string.find(state.status.properties.text, "No model Armed set", 1, true))
+equal(state.controls.armed.properties.get(), 0, "an unset model Armed must not be guessed")
 first.modelSettingsUiModule.handle(first, EVT_VIRTUAL_EXIT)
 measured(definition.refresh, first)
 equal(first.flightBroker.document.armed, nil, "opening and closing does not publish model arming")

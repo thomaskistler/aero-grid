@@ -85,14 +85,10 @@ local function measured(callback, context)
     assert(instructions <= limit, "shared/Smart flight callback exceeded its mock envelope: " .. instructions)
 end
 
-local function create(layout, arm)
-    return definition.create(
-        { x = 0, y = 0, w = 480, h = 272 },
-        { Layout = layout, Theme = "modern-dark", Armed = arm },
-        path
-    )
+local function create(layout)
+    return definition.create({ x = 0, y = 0, w = 480, h = 272 }, { Layout = layout, Theme = "modern-dark" }, path)
 end
-local first, second = create("shared-flight", 0), create("shared-flight", armed)
+local first, second = create("shared-flight"), create("shared-flight")
 local function pump(context, count, other)
     for _ = 1, count or 1 do
         fixture.tick(10)
@@ -241,12 +237,12 @@ local pinned = owner.session
 factory.members[first] = nil
 first = nil
 collectgarbage("collect")
-local conflict = create("Empty", getSwitchIndex("L01"))
+local conflict = create("Empty")
 fixture.radio.logicalSwitches[1] = true
 untilState(second, function()
     return not conflict.stage and owner.state.status == "ready"
 end, conflict)
-assert(owner.session == pinned and owner.state.active, "old widget options cannot replace model arming")
+assert(owner.session == pinned and owner.state.active, "another widget cannot replace model arming")
 assert(fixture.radio.logicalSwitches[20], "another widget must not reset the pinned output")
 full = true
 fixture.radio.values[305] = -1024
@@ -269,7 +265,7 @@ untilState(second, function()
     return owner.state.status == "ready"
 end)
 
-definition.update(second, { Layout = "Empty", Theme = "modern-dark", Armed = armed })
+definition.update(second, { Layout = "Empty", Theme = "modern-dark" })
 untilState(second, function()
     return not second.stage and not second.reloadState and #second.panels == 0
 end)
@@ -351,7 +347,7 @@ end)
 persisted = assert(owner.store:load(owner.filename))
 assert(persisted.revision == 8 and persisted.flight.smartDetection)
 assert(owner.view.smartStatus and string.find(owner.view.smartStatus, "baro ready", 1, true))
-local third = create("Empty", armed)
+local third = create("Empty")
 untilState(second, function()
     return not third.stage
         and third.flightBroker == owner

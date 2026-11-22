@@ -800,13 +800,6 @@ function module.new(dependencies)
                     local owner = context.flightFactory.broker
                     context.modelArmed = owner and owner.document and owner.document.armed
                     runtime.modelArmed = context.modelArmed
-                    if context.modelArmed == nil and (context.legacyWidgetArmed or 0) ~= 0 then
-                        addNotice(
-                            context,
-                            "warning",
-                            "Armed moved to Model settings; old widget selections are not imported. Choose the model switch and Save."
-                        )
-                    end
                 end
                 local ok, instance = pcall(constructor, runtime.env, context.servicesModule, runtime)
                 if ok and type(instance) == "table" then

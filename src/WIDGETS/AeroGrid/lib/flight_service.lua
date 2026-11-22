@@ -394,9 +394,9 @@ function broker:settingsDisarmed(proposed)
     if condition ~= nil then
         return disarmed(condition)
     end
-    for host, member in pairs(self.members) do
+    for _, member in pairs(self.members) do
         if member.modelFilename == self.filename then
-            if member.pending or not disarmed(nil, host.legacyWidgetArmed or 0) then
+            if member.pending then
                 return false
             end
             for _, declaration in ipairs(member.declarations or {}) do
