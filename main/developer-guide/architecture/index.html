@@ -444,7 +444,7 @@ Put a module at <code>panels/&lt;type&gt;.lua</code>, with an <code>id</code> ma
 </tr>
 <tr>
 <td><code>background(instance, creating, slots)</code></td>
-<td>Hidden-dashboard work; variable-cost when <code>backgroundMinCost</code> is declared, otherwise one slot. Returns an ignored first result, continuation, and consumed slots.</td>
+<td>Hidden-dashboard work; variable-cost when <code>backgroundMinCost</code> is declared, otherwise one slot. Returns an optional delay in ticks before the next call, continuation, and consumed slots.</td>
 </tr>
 <tr>
 <td><code>resetSession(instance, now)</code></td>
@@ -465,6 +465,10 @@ Put a module at <code>panels/&lt;type&gt;.lua</code>, with an <code>id</code> ma
 <tr>
 <td><code>validateSettings(settings, span, config, modelArmed)</code></td>
 <td>Cross-field or span-dependent validation, with the effective model arm condition.</td>
+</tr>
+<tr>
+<td><code>thresholds(settings)</code></td>
+<td>Configured <code>{ sensor, warning, critical, falling, strict }</code> list, registered with telemetry when the layout is built or saved; for each sensor the first panel in layout order wins.</td>
 </tr>
 </tbody>
 </table>

@@ -277,6 +277,12 @@ For custom palettes, see <a href="#theme-files">Theme files</a>.</p>
 <td>Ordered panel placements. Use <code>[]</code> for an empty layout.</td>
 </tr>
 <tr>
+<td><code>debrief</code></td>
+<td>mapping</td>
+<td>no</td>
+<td>Post-flight tiles; see <a href="#flight-debrief">Flight debrief</a> and <a href="../../user-guide/customize-debrief/">Customize flight debrief</a>.</td>
+</tr>
+<tr>
 <td><code>session</code></td>
 <td>mapping</td>
 <td>no</td>
@@ -347,6 +353,23 @@ For custom palettes, see <a href="#theme-files">Theme files</a>.</p>
 </table>
 <p>A placement must fit the 4 × 4 grid: <code>col + colSpan &lt;= 4</code> and <code>row + rowSpan &lt;= 4</code>. Placements may touch edges but may not occupy the same cell. If two placements overlap, the first valid placement in the sequence wins and the later one is dropped. A panel must also support its exact span, written as <code>&lt;colSpan&gt;x&lt;rowSpan&gt;</code> (for example, <code>2x1</code>); the word <code>any</code> in a panel's span list accepts every in-bounds span.</p>
 <p>Panel IDs and types are case-sensitive. Unknown top-level keys and extra placement keys are preserved rather than rejected. In contrast, a key inside <code>config</code> that the panel does not declare is reported as an unknown setting; spelling and case must match exactly.</p>
+<h2 id="flight-debrief">Flight debrief</h2>
+<p><code>debrief.size</code> selects one size for every tile: <code>compact</code> (2 × 2) or <code>wide</code>
+(4 × 2). A tile has a <code>title</code> and one to three <code>series</code>, each with a telemetry
+<code>source</code> and a <code>statistic</code>: <code>min</code>, <code>max</code>, <code>avg</code>, or <code>delta</code>.
+Series also accept <code>label</code>, <code>rangeMin</code>, <code>rangeMax</code>, <code>unit</code>, <code>precision</code> (0–3),
+and <code>accent</code> (<code>cyan</code>, <code>green</code>, <code>orange</code>, or <code>amber</code>).</p>
+<pre><code class="language-yaml">debrief:
+  size: wide
+  tiles:
+    - title: RX battery
+      series:
+        - source: VCel
+          statistic: min
+</code></pre>
+<p>There are at most 12 tiles. An empty <code>tiles: []</code> disables the debrief.
+Older files without <code>size</code> retain their per-tile <code>colSpan</code> and <code>rowSpan</code> until
+a shared size is chosen on the radio.</p>
 <h2 id="session">Session</h2>
 <p><code>session</code> is optional and must be a mapping when present. Its only declared key is <code>armSource</code>; unknown session keys are not reported and are not retained in the normalized session:</p>
 <table>

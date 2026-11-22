@@ -361,6 +361,12 @@ and critical takes priority.</p>
 for a monitored cell headline, it uses the lowest cell. This is voltage
 headroom, not remaining capacity. Values outside the range keep the visual
 empty or full while the number still shows the actual voltage.</p>
+<h3 id="edgetx-sensor">EdgeTX sensor</h3>
+<p>The panel publishes the cell voltage as the EdgeTX sensor <strong>VCel</strong>: the lowest
+cell for a cells monitor, otherwise the average cell voltage. Logical
+switches, logs and other screens can use it.
+To create the sensors, open the model's <strong>Telemetry</strong> page with telemetry live
+and run <strong>Discover new sensors</strong> once.</p>
 <h3 id="visualization-and-details">Visualization and details</h3>
 <p><strong>battery</strong> never shows supporting readings. <strong>bar</strong> and <strong>details</strong> show
 available details when they fit, prioritizing cell count, then cell delta,

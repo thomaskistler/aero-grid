@@ -302,9 +302,9 @@ Switch positions describe transmitter controls, not confirmed aircraft state.</p
 </tr>
 </tbody>
 </table>
-<p>Use <strong>Remove entry</strong> in the entry's settings dialog to delete a reading.</p>
+<p>Tap a reading to edit, move, or delete it.</p>
 <h3 id="state-condition">State condition</h3>
-<p>Tap a condition under <strong>States</strong> to open its settings.</p>
+<p>Tap a condition under <strong>States</strong> and choose <strong>Edit</strong> to open its settings.</p>
 <p><img alt="State condition settings" src="../../assets/editor/state-condition.png" /></p>
 <table>
 <thead>
@@ -332,14 +332,13 @@ Switch positions describe transmitter controls, not confirmed aircraft state.</p
 </tr>
 </tbody>
 </table>
-<p>Use <strong>Remove state</strong> in the condition's settings dialog to delete it.</p>
+<p>Tap a condition to move or delete it.</p>
 <h2 id="behavior">Behavior</h2>
 <p>Conditions are evaluated in insertion order. The first true condition wins.
 An unknown, unavailable, or stale earlier condition stops evaluation rather
 than silently falling through. If none matches, the entry is unmapped; it
 never retains the previous state. New states append at the bottom. To change
-priority, delete a state and recreate it at the bottom; there are no reorder
-controls.</p>
+priority, use <strong>Move up</strong> or <strong>Move down</strong>.</p>
 <p>Switch readings work without receiver telemetry. Texts such as <code>ARMED</code> are
 your own labels: verify their relationship to your model's configuration.
 No text implies an alarm color. The main entry's winning <strong>Background</strong> selects
