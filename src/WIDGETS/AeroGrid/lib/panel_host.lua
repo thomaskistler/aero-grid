@@ -12,7 +12,6 @@
 
 ---@class AeroGridPanelModule
 ---@field id string Must equal the panel type name used in YAML.
----@field apiVersion integer Must equal the host panel API version.
 ---@field supportedSpans? string[] Span strings such as "2x1", or "any".
 ---@field refreshInterval? integer Ticks of 10ms between refreshes. 0 or absent
 ---  means every frame. Telemetry rarely needs more than a few hertz, and the
@@ -50,9 +49,7 @@
 ---@field failed? boolean Set after a lifecycle failure disables the panel.
 ---@field error? string First lifecycle failure message.
 
-local panelHost = { RUNTIME_API = 1 }
---- Host-side panel API version. Modules declaring anything else are rejected.
-panelHost.API_VERSION = 1
+local panelHost = {}
 
 --- Optional lifecycle callbacks, in a fixed order so errors stay deterministic.
 local OPTIONAL_CALLBACKS = {
@@ -102,10 +99,6 @@ function panelHost.validateModule(module, typeName)
     if type(module) ~= "table" then
         return false, "panel module must return a table"
     end
-    if field(module, "apiVersion") ~= panelHost.API_VERSION then
-        return false, "incompatible panel API"
-    end
-
     local id = field(module, "id")
     if not isSafeIdentifier(id) then
         return false, "panel module declares an invalid id"

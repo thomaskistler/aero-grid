@@ -47,9 +47,8 @@ Glass shares sampled background brightness through
 `/AEROGRID/cache/backgrounds.yml`. This generated cache survives widget updates
 and can be deleted to regenerate it.
 
-`lib/package.lua` declares package, runtime API, panel API, and layout versions.
-Runtime modules expose `RUNTIME_API`; panels expose `apiVersion`. Deploy the
-complete widget directory: these checks do not detect every mixed package.
+`lib/package.lua` declares the package and layout versions. Deploy the
+complete widget directory; modules carry no separate API versions.
 
 Layout conversion uses adjacent header and panel steps in `layout.lua`, at
 most one transition per respective loader/save turn. Unsupported versions or
@@ -148,7 +147,7 @@ Put a module at `panels/<type>.lua`, with an `id` matching that layout type.
 
 | Declaration or callback | Contract |
 | --- | --- |
-| `id`, `apiVersion`, `supportedSpans` | Identity, compatibility, and supported grid spans. |
+| `id`, `supportedSpans` | Identity and supported grid spans. |
 | `settings` | Typed fields, defaults, bounds, and choices shared by validation and the editor. |
 | `refreshInterval` | Interval in 10 ms ticks; zero or absent means every frame. |
 | `refreshCost`, `refreshMinCost` | Fixed cost of 0-8 slots (default 1), or `"variable"` with a minimum of 1-8. |

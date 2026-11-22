@@ -488,7 +488,7 @@ panels:
 ]],
         {
             ["raiser.lua"] = [==[
-local raiser = {id = "raiser", apiVersion = 1, supportedSpans = {"any"},
+local raiser = {id = "raiser", supportedSpans = {"any"},
   settings = {{key = "label", type = "string", default = ""}}}
 function raiser.create() error("deliberate failure") end
 return raiser
@@ -496,7 +496,7 @@ return raiser
             -- Builds, then raises on its first refresh, which is the other way a
             -- panel dies and the only one the host keeps an entry for.
             ["latebreak.lua"] = [==[
-local latebreak = {id = "latebreak", apiVersion = 1, supportedSpans = {"any"},
+local latebreak = {id = "latebreak", supportedSpans = {"any"},
   settings = {{key = "label", type = "string", default = ""}}}
 function latebreak.create() return {ticks = 0} end
 function latebreak.refresh() error("deliberate late failure") end

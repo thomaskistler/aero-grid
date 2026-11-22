@@ -6,7 +6,6 @@ local validSwitch = assert(armedConfig, "flight counter requires switch validati
 --- Presentation only; the shared flight service owns tracking and effects.
 local flightCounter = {
     id = "flight-counter",
-    apiVersion = 1,
     supportedSpans = { "any" },
     refreshInterval = 20,
     settings = {

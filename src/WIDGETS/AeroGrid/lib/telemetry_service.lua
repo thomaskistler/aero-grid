@@ -49,7 +49,7 @@
 ---@field age? number Seconds since the last live reading.
 ---@field revision integer Incremented whenever the reading changes.
 
-local telemetryService = { RUNTIME_API = 1 }
+local telemetryService = {}
 telemetryService.__index = telemetryService
 telemetryService.updateCost = "variable"
 telemetryService.updateMinCost = 1

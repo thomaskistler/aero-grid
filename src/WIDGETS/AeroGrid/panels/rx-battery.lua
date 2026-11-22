@@ -40,7 +40,6 @@
 
 local rxBattery = {
     id = "rx-battery",
-    apiVersion = 1,
     supportedSpans = { "any" },
     -- A pack voltage moves over a flight, not over a frame, and every refresh
     -- walks the cells table. Five hertz is already far more than a pilot reads.

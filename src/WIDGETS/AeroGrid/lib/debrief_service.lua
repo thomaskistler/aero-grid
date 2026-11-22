@@ -5,7 +5,7 @@
 --- columns, with its statistic, worst threshold level and per-column levels.
 --- Only the latest debrief is kept, in memory, until the model is armed with
 --- no flight in progress.
-local debrief = { RUNTIME_API = 1, UNITS_PER_SLOT = 4 }
+local debrief = { UNITS_PER_SLOT = 4 }
 debrief.updateCost = "variable"
 debrief.updateMinCost = 1
 debrief.__index = debrief

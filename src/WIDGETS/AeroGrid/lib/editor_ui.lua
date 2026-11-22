@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local uiModule = { RUNTIME_API = 1 }
+local uiModule = {}
 
 local function label(parent, rect, text, color, font)
     return lvgl.label(parent, {

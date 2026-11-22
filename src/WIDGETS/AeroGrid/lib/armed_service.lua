@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 --- Saved model Armed takes precedence over retained panel switches.
-local armed = { RUNTIME_API = 1 }
+local armed = {}
 armed.__index = armed
 
 local function valid(name)

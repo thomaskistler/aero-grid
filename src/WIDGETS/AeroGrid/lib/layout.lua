@@ -17,7 +17,7 @@
 -- never pay for it.
 local loadDebrief = ...
 
-local layout = { RUNTIME_API = 1 }
+local layout = {}
 
 layout.VERSION = 5
 

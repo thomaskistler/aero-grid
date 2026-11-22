@@ -2,7 +2,7 @@
 
 -- Conservative Lua instructions for append work, measured on the test runtime:
 -- per series visited, per queued sample taken, and per column drawn.
-local renderer = { RUNTIME_API = 1, PAINT_LIMIT = 10, SERIES_COST = 200, SAMPLE_COST = 300, PAINT_COST = 125 }
+local renderer = { PAINT_LIMIT = 10, SERIES_COST = 200, SAMPLE_COST = 300, PAINT_COST = 125 }
 renderer.__index = renderer
 
 function renderer.new(context)

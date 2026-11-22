@@ -9,7 +9,7 @@
 ---@field content string
 ---@field line integer
 
-local yaml = { RUNTIME_API = 1 }
+local yaml = {}
 
 --- Remove surrounding whitespace.
 ---@param value string

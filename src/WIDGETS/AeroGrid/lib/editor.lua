@@ -2,7 +2,7 @@
 
 --- In-memory dashboard editing and all-or-nothing layout validation.
 
-local editor = { RUNTIME_API = 1 }
+local editor = {}
 
 editor.CATALOG = {
     { type = "output", label = "Channel output" },

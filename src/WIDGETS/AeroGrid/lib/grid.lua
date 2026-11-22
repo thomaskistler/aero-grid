@@ -18,7 +18,7 @@
 ---@field w integer
 ---@field h integer
 
-local grid = { RUNTIME_API = 1 }
+local grid = {}
 
 --- Return whether a value is a finite Lua integer representation.
 ---@param value any

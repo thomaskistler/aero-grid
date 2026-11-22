@@ -7,7 +7,7 @@
 local reading = ...
 assert(type(reading) == "table" and type(reading.install) == "function", "lib/reading.lua has no installer")
 
-local primitives = { RUNTIME_API = 1 }
+local primitives = {}
 
 local labelFonts = setmetatable({}, { __mode = "k" })
 local headers = setmetatable({}, { __mode = "k" })

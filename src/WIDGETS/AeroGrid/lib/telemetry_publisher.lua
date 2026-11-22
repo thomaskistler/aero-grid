@@ -3,7 +3,7 @@
 --- Publish AeroGrid-derived values into the EdgeTX telemetry sensor table.
 --- One publisher serves every AeroGrid widget, so counters advance once
 --- however many panels report the same link or position.
-local publisher = { RUNTIME_API = 1 }
+local publisher = {}
 publisher.__index = publisher
 
 local MAX_INTEGER = 2147483647

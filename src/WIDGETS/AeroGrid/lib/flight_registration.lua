@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local registration = { RUNTIME_API = 1 }
+local registration = {}
 
 function registration.configure(context)
     local member = context.flightFactory.members[context]

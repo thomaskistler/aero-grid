@@ -56,7 +56,7 @@ panels:
 ]],
         {
             ["halfbuilt.lua"] = [==[
-local halfbuilt = {id = "halfbuilt", apiVersion = 1, supportedSpans = {"any"}}
+local halfbuilt = {id = "halfbuilt", supportedSpans = {"any"}}
 function halfbuilt.create(parent, rect, settings, services)
   services.primitives.panel(parent, rect, services.theme,
     services.state("normal", "cyan"))
@@ -98,7 +98,7 @@ panels:
 ]],
         {
             ["exploder.lua"] = [==[
-local exploder = {id = "exploder", apiVersion = 1, supportedSpans = {"any"}}
+local exploder = {id = "exploder", supportedSpans = {"any"}}
 function exploder.create(parent, rect, settings, services)
   return {panel = services.primitives.panel(parent, rect, services.theme,
     services.state("normal", "cyan"))}
@@ -149,7 +149,7 @@ panels:
 ]],
         {
             ["exploder.lua"] = [==[
-local exploder = {id = "exploder", apiVersion = 1, supportedSpans = {"any"}}
+local exploder = {id = "exploder", supportedSpans = {"any"}}
 function exploder.create(parent, rect, settings, services)
   return {panel = services.primitives.panel(parent, rect, services.theme,
     services.state("normal", "cyan"))}
@@ -260,7 +260,7 @@ panels:
 ]],
         {
             ["exploder.lua"] = [==[
-local exploder = {id = "exploder", apiVersion = 1, supportedSpans = {"any"}}
+local exploder = {id = "exploder", supportedSpans = {"any"}}
 function exploder.create(parent, rect, settings, services)
   return {panel = services.primitives.panel(parent, rect, services.theme,
     services.state("normal", "cyan"))}

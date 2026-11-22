@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local ui = { RUNTIME_API = 1 }
+local ui = {}
 
 local function retireHost(view)
     if view.host then

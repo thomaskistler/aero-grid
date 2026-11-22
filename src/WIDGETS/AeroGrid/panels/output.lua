@@ -2,7 +2,6 @@
 
 local output = {
     id = "output",
-    apiVersion = 1,
     supportedSpans = { "any" },
     refreshInterval = 10,
     settings = {

@@ -31,7 +31,6 @@
 
 local txBattery = {
     id = "tx-battery",
-    apiVersion = 1,
     supportedSpans = { "any" },
     -- A transmitter pack moves over minutes, not frames.
     refreshInterval = 50,

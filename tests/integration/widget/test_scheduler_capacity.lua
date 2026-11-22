@@ -23,7 +23,7 @@ local definition = fixture.module("main.lua")
 assert(context.scheduler.budget.capacity == 12)
 assert(context.scheduler.budget.slots == 8)
 assert(context.panelHost.SLOTS == 8)
-local panel = { id = "test", apiVersion = 1, create = function() end, refreshCost = 12 }
+local panel = { id = "test", create = function() end, refreshCost = 12 }
 assert(not context.panelHost.validateModule(panel, "test"))
 panel.refreshCost = 13
 assert(not context.panelHost.validateModule(panel, "test"))

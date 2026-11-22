@@ -7,7 +7,7 @@ local panelHost = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/panel_host.
 panelHost.SLOTS = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.lua"))().SLOTS
 
 local function testPanelContract()
-    local valid = { id = "demo", apiVersion = 1, create = function() end }
+    local valid = { id = "demo", create = function() end }
     assert(panelHost.validateModule(valid, "demo"))
     valid.refreshCost = "variable"
     valid.refreshMinCost = 1
@@ -22,42 +22,32 @@ local function testPanelContract()
     end
 
     rejects("not a table", "demo", "must return a table")
-    rejects({ id = "demo", apiVersion = 2, create = function() end }, "demo", "incompatible")
-    rejects({ id = "../evil", apiVersion = 1, create = function() end }, "../evil", "invalid id")
-    rejects({ id = "other", apiVersion = 1, create = function() end }, "demo", "does not match type")
-    rejects({ id = "demo", apiVersion = 1 }, "demo", "no create function")
-    rejects({ id = "demo", apiVersion = 1, create = function() end, refresh = 5 }, "demo", "refresh must be a function")
-    rejects(
-        { id = "demo", apiVersion = 1, create = function() end, thresholds = {} },
-        "demo",
-        "thresholds must be a function"
-    )
-    rejects({ id = "demo", apiVersion = 1, create = function() end, supportedSpans = 5 }, "demo", "supportedSpans")
+    rejects({ id = "../evil", create = function() end }, "../evil", "invalid id")
+    rejects({ id = "other", create = function() end }, "demo", "does not match type")
+    rejects({ id = "demo" }, "demo", "no create function")
+    rejects({ id = "demo", create = function() end, refresh = 5 }, "demo", "refresh must be a function")
+    rejects({ id = "demo", create = function() end, thresholds = {} }, "demo", "thresholds must be a function")
+    rejects({ id = "demo", create = function() end, supportedSpans = 5 }, "demo", "supportedSpans")
     valid.refreshCost = 0
     valid.refreshMinCost = nil
     assert(panelHost.validateModule(valid, "demo"))
-    rejects(
-        { id = "demo", apiVersion = 1, create = function() end, refreshCost = "variable" },
-        "demo",
-        "requires refreshMinCost"
-    )
+    rejects({ id = "demo", create = function() end, refreshCost = "variable" }, "demo", "requires refreshMinCost")
     for _, minimum in ipairs({ 0, 1.5, 9, "1" }) do
         rejects({
             id = "demo",
-            apiVersion = 1,
             create = function() end,
             refreshCost = "variable",
             refreshMinCost = minimum,
         }, "demo", "refreshMinCost")
     end
     for _, cost in ipairs({ -1, 9, 1.5, "6", 0 / 0 }) do
-        rejects({ id = "demo", apiVersion = 1, create = function() end, refreshCost = cost }, "demo", "refreshCost")
+        rejects({ id = "demo", create = function() end, refreshCost = cost }, "demo", "refreshCost")
     end
 end
 
 local function testFinishAndBackgroundContract()
     local function base(extra)
-        local module = { id = "demo", apiVersion = 1, create = function() end }
+        local module = { id = "demo", create = function() end }
         for key, value in pairs(extra) do
             module[key] = value
         end

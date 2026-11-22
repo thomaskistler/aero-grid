@@ -435,7 +435,7 @@ Panels consume immutable snapshots. A service mutates its own state table in pla
 
 EdgeTX automatically registers `/WIDGETS/AeroGrid/main.lua`. Files under `panels/` are loaded by the dashboard and are not independently registered widgets.
 
-The package ships with bundled panels. Advanced users may add compatible panel files directly under `/WIDGETS/AeroGrid/panels/`. The host loads only panel types referenced by the active YAML, requires a compatible panel API version, and rejects unsafe names and paths.
+The package ships with bundled panels. Advanced users may add compatible panel files directly under `/WIDGETS/AeroGrid/panels/`. The host loads only panel types referenced by the active YAML and rejects unsafe names and paths.
 
 The widget `create(zone, options, path)` callback receives the widget folder path. Panel scripts can therefore be loaded with:
 
@@ -1107,18 +1107,14 @@ The UI should expose enough error information to identify the layout file and in
 
 - Distribute AeroGrid as one versioned `/WIDGETS/AeroGrid/` package so host, services, editor, and bundled panels are upgraded together.
 - Keep `main.lua` small and load implementation modules on demand.
-- Define a dashboard package version, layout schema version, and panel API version independently.
-- `lib/package.lua` is the package identity source (`0.10.0`); runtime API,
-  panel API, and layout schema are independently versioned at `1`.
-  Internal modules declare `RUNTIME_API`; increment it when changing their
-  contract incompatibly. The host rejects missing or incompatible core modules
-  with a visible error and prevents reloading a failed runtime. Incompatible
-  services are reported while unrelated panels continue to operate.
-  Panels remain governed by their public `apiVersion`, including third-party
-  modules. This is API compatibility checking, not a checksum of the installation:
-  API-compatible release mixtures and stale bytecode are not proven absent.
-  Upgrade the complete package and remove old `.luac` files.
-- Every panel declares the panel API version it requires. Incompatible panels render an error placeholder instead of executing.
+- Define a dashboard package version and layout schema version independently.
+- `lib/package.lua` is the package identity source and declares the layout
+  schema version. The installer replaces the whole widget directory, so
+  modules and panels carry no separate API versions. The host rejects a
+  missing or incompatible package and missing core modules with a visible
+  error and prevents reloading a failed runtime. Failed services are reported
+  while unrelated panels continue to operate. Upgrade the complete package
+  and remove old `.luac` files.
 - Phase 2 layout migrations operate on an in-memory copy, preserve the original file as a backup, and write only after successful validation.
 - A newer unsupported layout version must not be rewritten by an older dashboard release.
 - The dashboard provides a diagnostics view showing package version, active layout path, loaded panels, unresolved sources, and panel failures. See [The host diagnostics view](#the-host-diagnostics-view).
@@ -1950,7 +1946,6 @@ A panel file under `panels/<type>.lua` returns a table describing itself:
 | Field | Required | Purpose |
 | --- | --- | --- |
 | `id` | Yes | Must equal the `type` name used in YAML, so a renamed file cannot load silently. |
-| `apiVersion` | Yes | Must equal the host panel API version. Anything else is rejected visibly. |
 | `create(parent, rect, settings, services)` | Yes | Builds LVGL objects and returns the panel's own context. |
 | `supportedSpans` | No | Span strings such as `"2x1"`, or `"any"`. Absent means every span is accepted. |
 | `settings` | No | Declared `{key, label, type, default}` entries. Absent and mistyped YAML values fall back to the default. |
@@ -2347,10 +2342,9 @@ The visibility policy is settled even though the feature is not built: **the rai
   API and ID mismatches, unsupported spans, and missing files. A valid panel
   continues running alongside rejected modules; callback failure isolation is
   also covered.
-- Test package and panel API compatibility. Host integration covers missing
-  and malformed package identity, future runtime/panel/layout contracts,
-  missing or unversioned core modules, incompatible core/service modules, and
-  panel-host API mismatch. Diagnostics reads the package version from the
+- Test package compatibility. Host integration covers missing and malformed
+  package identity, future layout contracts, missing core modules, and failed
+  service modules. Diagnostics reads the package version from the
   live host rather than maintaining a separate version constant.
 - Add a diagnostics view for versions, layout path, panels, unresolved sources, and failures. Delivered as `host-diagnostics`; see [The host diagnostics view](#the-host-diagnostics-view).
 - Validate on TX16S v2, TX16S v3, TX15, and GX15 with EdgeTX 2.12+.

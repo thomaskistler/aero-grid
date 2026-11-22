@@ -3,7 +3,7 @@
 --- The Flight debrief setup page: the tile list, tile settings, and series
 --- settings, shown in the shared settings dialogs of the layout editor.
 
-local page = { RUNTIME_API = 1 }
+local page = {}
 
 page.FLIGHT_NOTE = "A debrief needs flight detection. Choose Armed in Model settings."
 page.SENSOR_HINT = "Run Discover new sensors in Model > Telemetry"

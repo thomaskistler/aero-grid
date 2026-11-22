@@ -188,16 +188,13 @@ local function testRefreshScheduling()
 
     -- The contract rejects a nonsensical interval rather than misscheduling.
     local function rejects(interval)
-        local ok = panelHost.validateModule(
-            { id = "d", apiVersion = 1, create = function() end, refreshInterval = interval },
-            "d"
-        )
+        local ok = panelHost.validateModule({ id = "d", create = function() end, refreshInterval = interval }, "d")
         assertEqual(ok, false, "accepted interval " .. tostring(interval))
     end
     rejects(-1)
     rejects(1.5)
     rejects("fast")
-    assert(panelHost.validateModule({ id = "d", apiVersion = 1, create = function() end, refreshInterval = 0 }, "d"))
+    assert(panelHost.validateModule({ id = "d", create = function() end, refreshInterval = 0 }, "d"))
 end
 
 --- Every origin wording must fit the width it is given, and must step down

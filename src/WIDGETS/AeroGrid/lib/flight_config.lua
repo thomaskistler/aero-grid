@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local config = { RUNTIME_API = 1 }
+local config = {}
 local defaults = {
     motorSource = "ch3",
     motorReversed = false,

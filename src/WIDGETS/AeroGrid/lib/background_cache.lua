@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local cache = { RUNTIME_API = 1 }
+local cache = {}
 cache.__index = cache
 
 -- Bump when either the file format or the sampling algorithm changes.

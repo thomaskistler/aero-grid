@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local smart = { RUNTIME_API = 1, RECENT_TICKS = 120 }
+local smart = { RECENT_TICKS = 120 }
 smart.__index = smart
 
 local SPEED = { [4] = 0.51444444444444, [5] = 1, [6] = 0.3048, [7] = 1 / 3.6, [8] = 0.44704 }

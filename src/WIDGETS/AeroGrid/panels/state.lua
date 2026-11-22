@@ -5,7 +5,6 @@ local validSwitch = assert(armedConfig, "state requires switch validation").vali
 
 local statePanel = {
     id = "state",
-    apiVersion = 1,
     supportedSpans = { "any" },
     refreshInterval = 20,
     settings = {

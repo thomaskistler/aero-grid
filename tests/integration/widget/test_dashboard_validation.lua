@@ -87,12 +87,6 @@ panels:
     row: 0
     colSpan: 2
     rowSpan: 4
-  - id: oldapi
-    type: legacy
-    col: 2
-    row: 0
-    colSpan: 1
-    rowSpan: 1
   - id: renamed
     type: mismatch
     col: 3
@@ -131,11 +125,8 @@ panels:
     rowSpan: 1
 ]],
         {
-            ["legacy.lua"] = [==[
-return {id = "legacy", apiVersion = 99, create = function() return {} end}
-]==],
             ["mismatch.lua"] = [==[
-return {id = "somethingelse", apiVersion = 1, create = function() return {} end}
+return {id = "somethingelse", create = function() return {} end}
 ]==],
             ["syntax.lua"] = "return {",
             ["execution.lua"] = 'error("module execution failed")',
@@ -147,11 +138,10 @@ return {id = "somethingelse", apiVersion = 1, create = function() return {} end}
 
     assertEqual(#context.panels, 1, "only the valid panel should load")
     assertEqual(context.panels[1].placement.id, "good")
-    assertEqual(#context.errors, 7)
+    assertEqual(#context.errors, 6)
 
     local joined = table.concat(context.errors, "\n")
     assert(string.match(joined, "toobig: panel does not support span 2x4"), joined)
-    assert(string.match(joined, "oldapi: incompatible panel API"), joined)
     assert(string.match(joined, "renamed: panel module id somethingelse"), joined)
     assert(string.match(joined, "absent:"), joined)
     assert(string.match(joined, "syntax:"), joined)
@@ -160,7 +150,7 @@ return {id = "somethingelse", apiVersion = 1, create = function() return {} end}
     assert(context.errorLabel, "module failures were not shown")
     pump(context, 5)
     assertEqual(#context.panels, 1, "module failures disabled the valid panel")
-    assertEqual(#context.errors, 7, "module failures repeated on refresh")
+    assertEqual(#context.errors, 6, "module failures repeated on refresh")
 end
 
 local function testPackageCompatibility()
@@ -170,37 +160,13 @@ local function testPackageCompatibility()
         {
             name = "future-package",
             file = "lib/package.lua",
-            text = 'return {version="next",runtimeApi=2,panelApi=1,layoutVersion=1}',
-            error = "incompatible package contract",
-        },
-        {
-            name = "mixed-core",
-            file = "lib/grid.lua",
-            text = "return {RUNTIME_API=2}",
-            error = "lib/grid.lua:.*incompatible runtime API",
-        },
-        {
-            name = "unversioned-core",
-            file = "lib/grid.lua",
-            text = "return {}",
-            error = "lib/grid.lua:.*incompatible runtime API",
-        },
-        {
-            name = "mixed-panel-host",
-            file = "lib/panel_host.lua",
-            text = "return {RUNTIME_API=1,API_VERSION=99}",
-            error = "panel host: incompatible panel API",
-        },
-        {
-            name = "future-panel-contract",
-            file = "lib/package.lua",
-            text = 'return {version="next",runtimeApi=1,panelApi=2,layoutVersion=1}',
+            text = 'return {version="next",layoutVersion=1}',
             error = "incompatible package contract",
         },
         {
             name = "future-layout-contract",
             file = "lib/package.lua",
-            text = 'return {version="next",runtimeApi=1,panelApi=1,layoutVersion=6}',
+            text = 'return {version="next",layoutVersion=6}',
             error = "incompatible package contract",
         },
         { name = "missing-core", file = "lib/yaml.lua", error = "lib/yaml.lua:" },
@@ -224,10 +190,10 @@ local function testPackageCompatibility()
     end
 
     local path = makeWidget("mixed-service")
-    writeFile(path .. "lib/telemetry_service.lua", "return {RUNTIME_API=99}")
+    writeFile(path .. "lib/telemetry_service.lua", "return {}")
     local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, path)
     assert(
-        string.match(table.concat(context.errors, "\n"), "telemetry:.*incompatible runtime API"),
+        string.match(table.concat(context.errors, "\n"), "telemetry:.*no constructor"),
         table.concat(context.errors, "\n")
     )
     assert(#context.panels > 0, "incompatible service disabled unrelated panels")

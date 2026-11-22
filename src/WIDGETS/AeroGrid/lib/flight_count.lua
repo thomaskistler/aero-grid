@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local count = { RUNTIME_API = 1, MAX = 16777215 }
+local count = { MAX = 16777215 }
 
 function count.valid(value)
     return type(value) == "number" and value >= 0 and value <= count.MAX and value % 1 == 0

@@ -35,7 +35,6 @@ local DEFAULT_LABEL = "MODEL"
 
 local modelIdentity = {
     id = "model-identity",
-    apiVersion = 1,
     supportedSpans = { "any" },
     -- Model identity changes only when the model changes, which reloads the
     -- widget anyway. Five seconds is already generous.

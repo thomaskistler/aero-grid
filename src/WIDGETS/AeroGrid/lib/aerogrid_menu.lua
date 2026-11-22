@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local menu = { RUNTIME_API = 1 }
+local menu = {}
 
 -- EdgeTX v2.12 QuickMenu/QuickMenuGroup is C++ only; lvgl.menu is a list.
 -- Reproduce its monochrome icon tiles with Lua's supported drawing objects,

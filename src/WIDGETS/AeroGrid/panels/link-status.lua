@@ -58,7 +58,6 @@
 
 local linkStatus = {
     id = "link-status",
-    apiVersion = 1,
     supportedSpans = { "any" },
     -- Link quality is the one reading a pilot glances at during a fade, but it
     -- is still a number on a screen: five hertz is indistinguishable from fifty

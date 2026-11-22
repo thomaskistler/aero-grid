@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 --- Stable names and paths for built-in and user-installed themes.
-local registry = { RUNTIME_API = 1 }
+local registry = {}
 
 local function directory(path)
     return string.sub(path, -1) == "/" and path or path .. "/"

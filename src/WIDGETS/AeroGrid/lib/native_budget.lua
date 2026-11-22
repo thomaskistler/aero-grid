@@ -3,7 +3,7 @@
 --- Native callback budget: the one place that knows how EdgeTX enforces its
 --- per-callback instruction limit. The scheduler stays firmware-agnostic.
 
-local nativeBudget = { RUNTIME_API = 1 }
+local nativeBudget = {}
 
 --- Burns VM instructions until EdgeTX's per-callback CPU limit raises an error.
 --- Only the instruction count matters, so the body is cheap register moves

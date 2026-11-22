@@ -22,8 +22,8 @@ for _, relative in ipairs({
     local installer = relative == "lib/typography.lua"
         or relative == "lib/panel_layout.lua"
         or relative == "lib/reading.lua"
-    local failures = installer and { "missing", "incompatible", "no-installer", "constructor-error" }
-        or { "missing", "incompatible", "no-constructor", "constructor-error", "no-operations" }
+    local failures = installer and { "missing", "no-installer", "constructor-error" }
+        or { "missing", "no-constructor", "constructor-error", "no-operations" }
     for _, failure in ipairs(failures) do
         logs = {}
         loadScript = function(filename)
@@ -32,7 +32,7 @@ for _, relative in ipairs({
                     return nil, "deliberately missing " .. relative
                 end
                 return function()
-                    local module = { RUNTIME_API = failure == "incompatible" and 0 or 1 }
+                    local module = {}
                     if failure == "constructor-error" then
                         module.new = function()
                             error("deliberate constructor error: " .. relative)
@@ -83,31 +83,24 @@ loadScript = originalLoadScript
 definition = fixture.module("main.lua")
 
 for _, relative in ipairs({ "lib/chart_columns.lua", "lib/chart_columns_renderer.lua" }) do
-    for _, failure in ipairs({ "missing", "incompatible" }) do
-        logs = {}
-        loadScript = function(filename)
-            if string.sub(filename, -#relative) == relative then
-                if failure == "missing" then
-                    return nil, "deliberately missing " .. relative
-                end
-                return function()
-                    return { RUNTIME_API = 0 }
-                end
-            end
-            return originalLoadScript(filename)
+    logs = {}
+    loadScript = function(filename)
+        if string.sub(filename, -#relative) == relative then
+            return nil, "deliberately missing " .. relative
         end
-        local host = fixture.createLoaded(nil, { Layout = "review-chart", Theme = "modern-dark" })
-        assert(
-            string.find(table.concat(logs, "\n"), relative, 1, true),
-            "missing mandatory chart runtime must reach the console"
-        )
-        assert(
-            string.find(table.concat(host.errors, "\n"), "runtime unavailable", 1, true),
-            "missing mandatory chart runtime must remain visible in the dashboard"
-        )
-        for _, entry in ipairs(host.panels) do
-            assert(entry.placement.type ~= "chart", "missing runtime silently selected another renderer")
-        end
+        return originalLoadScript(filename)
+    end
+    local host = fixture.createLoaded(nil, { Layout = "review-chart", Theme = "modern-dark" })
+    assert(
+        string.find(table.concat(logs, "\n"), relative, 1, true),
+        "missing mandatory chart runtime must reach the console"
+    )
+    assert(
+        string.find(table.concat(host.errors, "\n"), "runtime unavailable", 1, true),
+        "missing mandatory chart runtime must remain visible in the dashboard"
+    )
+    for _, entry in ipairs(host.panels) do
+        assert(entry.placement.type ~= "chart", "missing runtime silently selected another renderer")
     end
 end
 loadScript = originalLoadScript

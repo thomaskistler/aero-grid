@@ -6,7 +6,6 @@ local validSwitch = assert(armedConfig, "chart requires switch validation").vali
 
 local chart = {
     id = "chart",
-    apiVersion = 1,
     supportedSpans = { "2x1", "3x1", "4x1", "2x2", "3x2", "4x2", "3x3", "4x3", "4x4" },
     refreshInterval = 20,
     refreshCost = "variable",

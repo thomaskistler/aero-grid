@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local sidecar = { RUNTIME_API = 1 }
+local sidecar = {}
 local seeded = false
 local alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 local DISARM = "Disarm before linking model settings"

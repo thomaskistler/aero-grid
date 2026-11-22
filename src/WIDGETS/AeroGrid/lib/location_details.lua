@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local details = { RUNTIME_API = 1 }
+local details = {}
 
 function details.close(context)
     if context.locationOverlay then

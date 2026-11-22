@@ -303,11 +303,10 @@ end
 --- Load and execute a Lua module while containing compile/runtime failures.
 ---@param base string
 ---@param relative string
----@param runtimeApi? integer Required internal module API.
 ---@param ... table Composition dependencies passed to the module chunk.
 ---@return table? module
 ---@return string? error
-local function loadModule(base, relative, runtimeApi, ...)
+local function loadModule(base, relative, ...)
     local chunk, loadError = loadChunk(joinPath(base, relative))
     if not chunk then
         return nil, loadError
@@ -319,9 +318,6 @@ local function loadModule(base, relative, runtimeApi, ...)
     end
     if type(module) ~= "table" then
         return nil, relative .. " did not return a module table"
-    end
-    if runtimeApi and rawget(module, "RUNTIME_API") ~= runtimeApi then
-        return nil, relative .. ": incompatible runtime API; copy the complete AeroGrid package"
     end
 
     return module
@@ -701,7 +697,7 @@ local function create(zone, widgetOptions, path)
         fullScreen = isFullScreen(),
     }
 
-    local schedulerModule, schedulerError = loadModule(path, "lib/scheduler.lua", 1)
+    local schedulerModule, schedulerError = loadModule(path, "lib/scheduler.lua")
     if schedulerModule and type(rawget(schedulerModule, "new")) == "function" then
         context.scheduler = newScheduler(context, schedulerModule)
     else
@@ -785,7 +781,7 @@ local function advanceModelSettings(context)
     local store = context.modelSettingsPreload
     if not store then
         local ok, created = pcall(function()
-            local storeModule = assert(loadModule(path, "lib/model_settings_store.lua", 1))
+            local storeModule = assert(loadModule(path, "lib/model_settings_store.lua"))
             return storeModule.new(path, context.yaml, {
                 modelFilename = function()
                     return filename
@@ -827,16 +823,7 @@ initialize = function(context)
     local path, flightFactory = context.path, context.flightFactory
     context.stage = nil
     local package, packageError = loadModule(path, "lib/package.lua")
-    if
-        package
-        and (
-            type(package.version) ~= "string"
-            or package.version == ""
-            or package.runtimeApi ~= 1
-            or package.panelApi ~= 1
-            or package.layoutVersion ~= 5
-        )
-    then
+    if package and (type(package.version) ~= "string" or package.version == "" or package.layoutVersion ~= 5) then
         package = nil
         packageError = "incompatible package contract; copy the complete AeroGrid package"
     end
@@ -845,7 +832,7 @@ initialize = function(context)
         addError(context, "package: " .. tostring(packageError))
     else
         local function runtimeModule(relative, ...)
-            local module, err = loadModule(path, relative, package.runtimeApi, ...)
+            local module, err = loadModule(path, relative, ...)
             if not module then
                 addError(context, relative .. ": " .. tostring(err))
             end
@@ -864,7 +851,7 @@ initialize = function(context)
         context.grid = runtimeModule("lib/grid.lua")
         context.yaml = runtimeModule("lib/yaml.lua")
         context.layoutValidator = runtimeModule("lib/layout.lua", function()
-            return loadModule(path, "lib/debrief_config.lua", package.runtimeApi)
+            return loadModule(path, "lib/debrief_config.lua")
         end)
         context.layoutStore = runtimeModule("lib/layout_store.lua")
         context.flightConfig = runtimeModule("lib/flight_config.lua")
@@ -918,8 +905,7 @@ initialize = function(context)
                 if not (section and section.tiles and #section.tiles > 0) then
                     return
                 end
-                local module, moduleError =
-                    loadModule(host.path, "lib/debrief_service.lua", host.packageInfo.runtimeApi)
+                local module, moduleError = loadModule(host.path, "lib/debrief_service.lua")
                 local ok, instance = false, moduleError
                 if module then
                     ok, instance = pcall(module.new, registry.env, host.servicesModule, registry)
@@ -1026,10 +1012,6 @@ initialize = function(context)
                 registerThresholds = context.dashboardLoader.registerThresholds,
                 updateEmptyHint = context.dashboardLifecycle.updateEmptyHint,
             }, { "restorePreview", "openEditor", "advanceEditor", "editorEntryHit" })
-        end
-        if context.panelHost and context.panelHost.API_VERSION ~= package.panelApi then
-            addError(context, "panel host: incompatible panel API")
-            context.panelHost = nil
         end
     end
 
@@ -1752,7 +1734,7 @@ local function pumpFlight(task, now, granted)
     end
     if not owner.documentLoaded then
         if not owner.store then
-            local storeModule, storeError = loadModule(context.path, "lib/model_settings_store.lua", 1)
+            local storeModule, storeError = loadModule(context.path, "lib/model_settings_store.lua")
             if not storeModule then
                 owner.loadError, owner.documentLoaded = storeError, true
                 closeDashboard(context)
@@ -1884,7 +1866,7 @@ local function openModelSettings(context)
         return
     end
     if not context.settingsUiModule then
-        local module, message = loadModule(context.path, "lib/settings_ui.lua", 1)
+        local module, message = loadModule(context.path, "lib/settings_ui.lua")
         if not module then
             addError(context, "Settings UI: " .. tostring(message))
             showErrors(context)
@@ -1893,7 +1875,7 @@ local function openModelSettings(context)
         context.settingsUiModule = module
     end
     if not context.modelSettingsUiModule then
-        local module, message = loadModule(context.path, "lib/model_settings_ui.lua", 1)
+        local module, message = loadModule(context.path, "lib/model_settings_ui.lua")
         if not module then
             addError(context, "Model settings: " .. tostring(message))
             showErrors(context)
@@ -1916,7 +1898,8 @@ local function openModelSettings(context)
         sessionReset = owner.document and owner.document.sessionReset,
     }
     if document.armed == nil then
-        document.status = "No model Armed set. Legacy panel switches remain until changed; None disables arming model-wide."
+        document.status =
+            "No model Armed set. Legacy panel switches remain until changed; None disables arming model-wide."
     end
     local suspended = context.editorUi ~= nil
     if suspended then
@@ -2003,7 +1986,7 @@ local function prepareAeroMenu(context)
         return false
     end
     if not context.aeroMenuModule then
-        local module, message = loadModule(context.path, "lib/aerogrid_menu.lua", 1)
+        local module, message = loadModule(context.path, "lib/aerogrid_menu.lua")
         if not module then
             addError(context, "AeroGrid menu: " .. tostring(message))
             return
@@ -2693,7 +2676,7 @@ end
 local function debriefBuildStep(task, _, granted)
     local context = task.host
     if not context.debriefModule then
-        local loaded, message = loadModule(context.path, "lib/debrief_view.lua", 1)
+        local loaded, message = loadModule(context.path, "lib/debrief_view.lua")
         if not loaded then
             debriefFailed(context, message)
             return
@@ -2722,7 +2705,7 @@ local function logOpenStep(task)
     local module = context.logViewerModule
     local message
     if not module then
-        module, message = loadModule(context.path, "lib/log_viewer.lua", 1)
+        module, message = loadModule(context.path, "lib/log_viewer.lua")
     end
     if not module then
         addError(context, "diagnostics log: " .. tostring(message))
@@ -2757,7 +2740,7 @@ local function locationStep(task)
     local module = context.locationDetailsModule
     local message
     if not module then
-        module, message = loadModule(context.path, "lib/location_details.lua", 1)
+        module, message = loadModule(context.path, "lib/location_details.lua")
     end
     if not module then
         addError(context, "location details: " .. tostring(message))

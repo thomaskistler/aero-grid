@@ -462,7 +462,6 @@ local function testInstructionBudget()
         ["greedy.lua"] = [==[
 local greedy = {
   id = "greedy",
-  apiVersion = 1,
   supportedSpans = {"any"},
   refreshInterval = 0,
   -- Declared because the shared grid layout writes them, and an undeclared

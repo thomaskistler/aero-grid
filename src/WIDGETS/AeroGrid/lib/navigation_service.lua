@@ -25,7 +25,7 @@
 ---@field bearing? number Initial bearing from home to model, 0 to 359 degrees.
 ---@field age? number Seconds since the fix was last updated.
 
-local navigationService = { RUNTIME_API = 1 }
+local navigationService = {}
 navigationService.__index = navigationService
 
 --- Ticks of 10ms between updates. Telemetry GPS rarely exceeds a few hertz.

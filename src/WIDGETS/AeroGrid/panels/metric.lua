@@ -40,7 +40,6 @@
 
 local metric = {
     id = "metric",
-    apiVersion = 1,
     supportedSpans = { "any" },
     -- A numeric readout is indistinguishable at 5 Hz and 50 Hz in flight, and
     -- the host pays every panel's refresh inside one instruction budget.

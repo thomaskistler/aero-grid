@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local viewer = { RUNTIME_API = 1 }
+local viewer = {}
 
 local function matches(event, name)
     return _G[name] ~= nil and event == _G[name]

@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local module = { RUNTIME_API = 1 }
+local module = {}
 
 --- Bind host operations once; callbacks retain their original work limits.
 ---@param dependencies table
@@ -228,7 +228,6 @@ function module.new(dependencies)
         local panel, panelError = loadModule(
             context.path,
             "panels/" .. placement.type .. ".lua",
-            nil,
             context.scheduler.budget,
             context.armedConfig
         )
@@ -671,7 +670,7 @@ function module.new(dependencies)
         if stage == "glass" then
             if not context.glassWork then
                 if not context.glassModule then
-                    local analyzer, message = loadModule(context.path, "lib/glass.lua", context.packageInfo.runtimeApi)
+                    local analyzer, message = loadModule(context.path, "lib/glass.lua")
                     if not analyzer then
                         return fail("glass: " .. tostring(message))
                     end
@@ -679,8 +678,7 @@ function module.new(dependencies)
                     return true
                 end
                 if not context.backgroundCacheModule then
-                    local cache, message =
-                        loadModule(context.path, "lib/background_cache.lua", context.packageInfo.runtimeApi)
+                    local cache, message = loadModule(context.path, "lib/background_cache.lua")
                     if not cache then
                         return fail("glass cache: " .. tostring(message))
                     end
@@ -688,8 +686,7 @@ function module.new(dependencies)
                     return true
                 end
                 if not context.glassFile then
-                    local file, message =
-                        loadModule(context.path, "lib/verified_file.lua", context.packageInfo.runtimeApi)
+                    local file, message = loadModule(context.path, "lib/verified_file.lua")
                     if not file then
                         return fail("glass cache: " .. tostring(message))
                     end
@@ -729,8 +726,7 @@ function module.new(dependencies)
             local index = context.serviceIndex
 
             if index == 0 then
-                local support, supportError =
-                    loadModule(context.path, "lib/services.lua", context.packageInfo.runtimeApi)
+                local support, supportError = loadModule(context.path, "lib/services.lua")
                 if not support then
                     -- A dashboard without services still renders: every panel sees
                     -- nil and must degrade to an unavailable presentation.
@@ -758,8 +754,7 @@ function module.new(dependencies)
                 -- Shared by every widget and rebuilt when the model changes,
                 -- since sensor sources belong to the model.
                 if not sharedTelemetry.publisher or sharedTelemetry.model ~= context.modelFilename then
-                    local module, moduleError =
-                        loadModule(context.path, "lib/telemetry_publisher.lua", context.packageInfo.runtimeApi)
+                    local module, moduleError = loadModule(context.path, "lib/telemetry_publisher.lua")
                     local ok, instance = false, moduleError
                     if module then
                         ok, instance = pcall(module.new, context.serviceRuntime.env)
@@ -787,7 +782,7 @@ function module.new(dependencies)
             if definition.id == "armed" then
                 module = context.armedConfig
             else
-                module, moduleError = loadModule(context.path, definition.file, context.packageInfo.runtimeApi)
+                module, moduleError = loadModule(context.path, definition.file)
             end
             local constructor = module and rawget(module, "new") or nil
             if type(constructor) == "function" then

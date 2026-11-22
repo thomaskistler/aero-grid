@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local storeModule = { RUNTIME_API = 1, VERSION = 1 }
+local storeModule = { VERSION = 1 }
 
 local function copy(value)
     if type(value) ~= "table" then

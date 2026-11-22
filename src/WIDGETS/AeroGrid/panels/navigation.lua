@@ -40,7 +40,6 @@ local validSwitch = assert(armedConfig, "navigation requires switch validation")
 
 local navigation = {
     id = "navigation",
-    apiVersion = 1,
     supportedSpans = { "any" },
     -- Telemetry GPS arrives at a few hertz at best, and the navigation service
     -- is itself rate limited because every update costs trigonometry.

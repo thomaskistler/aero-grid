@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 --- Connected, error-bounded recordings of cumulative recording time.
-local history = { RUNTIME_API = 1, CAPACITY = 6144, FLIGHT_CAPACITY = 64 }
+local history = { CAPACITY = 6144, FLIGHT_CAPACITY = 64 }
 history.updateCost = 1
 history.__index = history
 

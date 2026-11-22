@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local module = { RUNTIME_API = 1 }
+local module = {}
 
 --- Bind host operations once; callbacks retain their original work limits.
 ---@param dependencies table
@@ -401,9 +401,8 @@ function module.new(dependencies)
         then
             return false
         end
-        local runtimeApi = context.packageInfo and context.packageInfo.runtimeApi or 1
         if not context.settingsUiModule then
-            local module, moduleError = loadModule(context.path, "lib/settings_ui.lua", runtimeApi)
+            local module, moduleError = loadModule(context.path, "lib/settings_ui.lua")
             if not module then
                 addError(context, "settings UI: " .. tostring(moduleError))
                 showErrors(context)
@@ -412,7 +411,7 @@ function module.new(dependencies)
             context.settingsUiModule = module
         end
         if not context.editorModule then
-            local module, moduleError = loadModule(context.path, "lib/editor.lua", runtimeApi)
+            local module, moduleError = loadModule(context.path, "lib/editor.lua")
             if not module then
                 addError(context, "editor: " .. tostring(moduleError))
                 showErrors(context)
@@ -421,7 +420,7 @@ function module.new(dependencies)
             context.editorModule = module
         end
         if not context.editorUiModule then
-            local module, moduleError = loadModule(context.path, "lib/editor_ui.lua", runtimeApi)
+            local module, moduleError = loadModule(context.path, "lib/editor_ui.lua")
             if not module then
                 addError(context, "editor UI: " .. tostring(moduleError))
                 showErrors(context)
@@ -430,7 +429,7 @@ function module.new(dependencies)
             context.editorUiModule = module
         end
         if not context.editorDrawerModule then
-            local module, moduleError = loadModule(context.path, "lib/editor_drawer.lua", runtimeApi)
+            local module, moduleError = loadModule(context.path, "lib/editor_drawer.lua")
             if not module then
                 addError(context, "editor drawer: " .. tostring(moduleError))
                 showErrors(context)
@@ -444,7 +443,7 @@ function module.new(dependencies)
             debrief = resumed ~= nil and resumed.debriefMode == true
         end
         if debrief and not context.debriefPageModule then
-            local module, moduleError = loadModule(context.path, "lib/debrief_page.lua", runtimeApi)
+            local module, moduleError = loadModule(context.path, "lib/debrief_page.lua")
             if not module then
                 addError(context, "debrief page: " .. tostring(moduleError))
                 showErrors(context)
@@ -461,13 +460,8 @@ function module.new(dependencies)
             if type(typeName) ~= "string" or not string.match(typeName, "^[%w_-]+$") then
                 return nil, "invalid panel type"
             end
-            local panel, panelError = loadModule(
-                context.path,
-                "panels/" .. typeName .. ".lua",
-                nil,
-                context.scheduler.budget,
-                context.armedConfig
-            )
+            local panel, panelError =
+                loadModule(context.path, "panels/" .. typeName .. ".lua", context.scheduler.budget, context.armedConfig)
             if panel then
                 context.editorPanelCache[typeName] = panel
             end

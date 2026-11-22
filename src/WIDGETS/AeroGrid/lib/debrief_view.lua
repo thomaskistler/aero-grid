@@ -7,7 +7,6 @@
 -- Instruction costs the build charges: a painted column, a shading
 -- rectangle, a scanned shading column, and a tile's lines and renderer.
 local view = {
-    RUNTIME_API = 1,
     TOP = 4,
     GUTTER = 4,
     PAINT_COST = 250,

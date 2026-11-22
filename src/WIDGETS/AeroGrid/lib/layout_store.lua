@@ -2,7 +2,7 @@
 
 --- Layout path resolution and validated, recoverable persistence.
 
-local layoutStore = { RUNTIME_API = 1 }
+local layoutStore = {}
 local verifiedFile = ...
 
 local function writer(widgetPath)

@@ -44,7 +44,7 @@ assert(
     "lib/panel_layout.lua has no installer"
 )
 
-local theme = { RUNTIME_API = 1 }
+local theme = {}
 local catalog = {}
 
 --- Record something the host did on its own behalf, rather than a failure.

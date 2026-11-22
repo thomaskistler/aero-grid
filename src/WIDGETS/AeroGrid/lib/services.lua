@@ -28,7 +28,7 @@
 ---@field update fun(self: AeroGridServiceInstance, now: integer, slots: integer): integer?, boolean? Slots used and whether more work is ready.
 ---@field resetSession? fun(self: AeroGridServiceInstance, now: integer, index: integer): integer? Next reset item, or nil when finished.
 
-local services = { RUNTIME_API = 1 }
+local services = {}
 --- Maximum cached sample age in 10 ms ticks when a poller stops updating.
 services.MAX_SAMPLE_AGE = 500
 

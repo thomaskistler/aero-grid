@@ -26,7 +26,7 @@
 
 local MAX_TASK_SLOTS = 8
 --- `SLOTS` caps one turn; `CAPACITY` is the default allowance of one callback segment.
-local scheduler = { RUNTIME_API = 1, SLOTS = MAX_TASK_SLOTS, CAPACITY = MAX_TASK_SLOTS, INSTRUCTIONS_PER_SLOT = 2000 }
+local scheduler = { SLOTS = MAX_TASK_SLOTS, CAPACITY = MAX_TASK_SLOTS, INSTRUCTIONS_PER_SLOT = 2000 }
 
 --- Slots a task is granted, zero when it does not fit, or nil when its cost is invalid.
 ---@param cost any

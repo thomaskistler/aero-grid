@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local module = { RUNTIME_API = 1 }
+local module = {}
 
 --- Bind host operations once; callbacks retain their original work limits.
 ---@param dependencies table

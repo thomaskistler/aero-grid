@@ -39,7 +39,7 @@
 ---@field flightMode integer Flight mode the value was read for.
 ---@field state "normal"|"unavailable"
 
-local controlService = { RUNTIME_API = 1 }
+local controlService = {}
 controlService.updateCost = 1
 controlService.__index = controlService
 
