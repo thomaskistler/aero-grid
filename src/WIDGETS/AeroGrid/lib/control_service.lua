@@ -46,10 +46,10 @@ controlService.__index = controlService
 --- Ticks of 10ms between updates, matching the output panel's repaint rate.
 local INTERVAL = 20
 
---- Subscriptions refreshed per update, served round robin.
+--- Subscriptions refreshed per update, served round robin. Each poll reads at
+--- most one mix or input line, so they all fit the update's first step.
 local POLL_CAP = 6
 local OUTPUT_BATCH = 8
-local CONTROL_BATCH = 2
 
 --- Ticks between attempts to resolve a source or switch the radio rejects.
 local RESOLVE_RETRY = 500
@@ -604,13 +604,13 @@ function controlService:update(now)
         self:readOutputValue(self.outputEntries[index])
     end
     self.outputIndex = last + 1
-    local polls = math.min(self.pollRemaining, CONTROL_BATCH)
+    local polls = self.pollRemaining
     if polls > 0 then
         self.cursor = self.support.roundRobin(self.entries, self.cursor, polls, readEntry, self, now)
-        self.pollRemaining = self.pollRemaining - polls
+        self.pollRemaining = 0
         used = true
     end
-    local again = self.outputIndex <= self.outputLimit or self.pollRemaining > 0
+    local again = self.outputIndex <= self.outputLimit
     if not again then
         self.outputIndex, self.outputLimit, self.pollRemaining = nil, nil, nil
     end
