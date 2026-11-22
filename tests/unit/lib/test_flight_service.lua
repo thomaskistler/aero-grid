@@ -4,6 +4,7 @@ local root = assert(...)
 local load = assert(loadfile(root .. "/tests/support/module_loader.lua"))(root)
 local support, detector, config =
     load("lib/services.lua"), load("lib/flight_service.lua"), load("lib/flight_config.lua")
+local scheduler = load("lib/scheduler.lua")
 local equal = assert(loadfile(root .. "/tests/support/assertions.lua"))().assertEqual
 local modules = {
     telemetry = load("lib/telemetry_service.lua"),
@@ -11,27 +12,36 @@ local modules = {
     smart = load("lib/smart_flight.lua"),
 }
 
---- Run one tick the way a widget callback does: setup, then each ready
---- broker task with a full grant, continuing a task that asks for more.
---- The second pass checks that nothing runs twice in a tick.
+--- Run one tick the way a widget callback does: setup, then the broker's
+--- tasks through a scheduler with room for all of them. The second pass
+--- checks that nothing runs twice in a tick.
+local queues = setmetatable({}, { __mode = "k" })
 local function pump(owner, now)
     local filename = owner:identity()
     if filename ~= owner.filename then
         owner:reset(filename)
     end
+    local queue = queues[owner]
+    if not queue then
+        queue = { scheduler = scheduler.new({ capacity = 1000 }), list = {} }
+        queues[owner] = queue
+    end
+    local runner = queue.scheduler
+    owner.schedulers[runner] = true
     for _ = 1, 2 do
         owner:setup(now, true)
         local tasks = owner:tasks()
-        for index = 1, #tasks do
-            local task = tasks[index]
-            if now >= (task.due or 0) and task.ready(task, now) then
-                local turns, _, again = 0, nil, true
-                while again and turns < 8 do
-                    turns = turns + 1
-                    _, again = task.step(task, now, 8)
-                end
+        if tasks ~= queue.list then
+            for index = 1, #queue.list do
+                runner.remove(queue.list[index])
             end
+            for index = 1, #tasks do
+                runner.add(tasks[index])
+            end
+            queue.list = tasks
         end
+        owner:queueDecision(now)
+        runner.run(now, 1000)
     end
 end
 
@@ -809,15 +819,16 @@ for _, task in ipairs(owner:tasks()) do
 end
 assert(decision and poll)
 radio.now = radio.now + 100
-assert(poll.ready(poll, radio.now), "a due poll runs without this callback's setup")
+assert(poll.due <= radio.now and not poll.hold.on, "a due poll runs without this callback's setup")
 poll.step(poll, radio.now, 8)
-assert(not decision.ready(decision, radio.now), "decide waits for a setup after its last decision")
+assert(decision.due > radio.now, "decide waits for a setup after its last decision")
 owner:setup(radio.now, true)
 for _, task in ipairs(owner:tasks()) do
-    if task ~= decision and radio.now >= task.due and task.ready(task, radio.now) then
+    if task ~= decision and radio.now >= task.due and not (task.hold and task.hold.on) then
         task.step(task, radio.now, 8)
     end
 end
-assert(decision.ready(decision, radio.now), "a fresh setup with polled readings lets detection decide")
+owner:queueDecision(radio.now)
+assert(decision.due <= radio.now, "a fresh setup with polled readings lets detection decide")
 decision.step(decision, radio.now, 8)
-assert(not decision.ready(decision, radio.now + 1))
+assert(decision.due > radio.now + 1)

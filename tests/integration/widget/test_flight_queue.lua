@@ -40,7 +40,7 @@ context.dashboardLoader.advanceLoad = function()
     calls[#calls + 1] = "load"
     context.stage = nil
 end
-context.scheduler.cursor = 1
+fixture.requeue(context)
 definition.refresh(context)
 assert(table.concat(calls, ",") == "identity,setup")
 assert(context.stage == "probe" and context.remainingSlots == 7)
@@ -59,7 +59,7 @@ owner.store = {
 owner.setDocument = function()
     owner.documentLoaded = true
 end
-context.scheduler.cursor = 1
+fixture.requeue(context)
 definition.background(context)
 assert(calls[#calls] == "document" and context.remainingSlots == 0)
 
@@ -72,7 +72,7 @@ owner.reset = function(_, filename)
     reset = true
     owner.filename, owner.documentLoaded = filename, false
 end
-context.scheduler.cursor = 1
+fixture.requeue(context)
 definition.refresh(context)
 assert(reset and not owner.documentLoaded and context.scheduler.state(context.flightTask).pending)
 assert(context.remainingSlots == 7, "identity reset must defer document work until a full grant fits")

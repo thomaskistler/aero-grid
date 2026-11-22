@@ -167,6 +167,21 @@ function services.step(task, now, slots)
     return used, again
 end
 
+--- Make an idle service's task due now when a subscriber arrives.
+---@param owner table Service instance.
+function services.subscribed(owner)
+    local task = owner.task
+    if task and task.due == math.huge then
+        task.due = 0
+        local scheduler = task.host and task.host.scheduler
+        if task.broker then
+            task.broker:wake(task)
+        elseif scheduler then
+            scheduler.reschedule(task)
+        end
+    end
+end
+
 --- Publish service-owned state and append one subscription in polling order.
 --- Name lookup and duplicate detection remain with the domain service.
 ---@param owner table Service with support and count fields.
@@ -177,6 +192,7 @@ function services.addSubscription(owner, entries, entry)
     entry.view = owner.support.snapshot(entry.state)
     entries[#entries + 1] = entry
     owner.count = owner.count + 1
+    services.subscribed(owner)
     return entry
 end
 

@@ -111,13 +111,15 @@ return exploder
         }
     )
 
-    local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
+    local context = fixture.createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath, definition)
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
     assertEqual(#context.panels, 2)
 
-    pump(context, 1)
-
     local boom = entryById(context, "boom")
+    assert(fixture.pumpUntil(context, function()
+        return boom.failed
+    end, 20))
+
     local safe = entryById(context, "safe")
     assertEqual(boom.failed, true, "failing panel was not disabled")
     assert(string.match(boom.error, "exploder failed"), boom.error)
@@ -275,7 +277,12 @@ return exploder
     addTheme(custom, "notice-test", { colors = { surface = 0xFFFFFF } })
 
     resetRadio()
-    local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "main", Theme = "notice-test" }, custom)
+    local context = fixture.createLoaded(
+        { x = 0, y = 0, w = 480, h = 272 },
+        { Layout = "main", Theme = "notice-test" },
+        custom,
+        definition
+    )
     assertEqual(context.theme.mode, "notice-test")
 
     -- The deliberately light mock roles guarantee the legibility pass engages,

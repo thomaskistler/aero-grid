@@ -278,6 +278,7 @@ function module.new(dependencies)
                 for index, current in ipairs(context.panels) do
                     if current == entry then
                         table.remove(context.panels, index)
+                        context.tasksDirty = true
                         break
                     end
                 end

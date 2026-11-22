@@ -43,7 +43,7 @@ assert(definition.event(context, 9401))
 assert(calls == 0 and #context.inputQueue == 1)
 definition.background(context)
 assert(calls == 0 and #context.inputQueue == 1, "hidden callbacks retain input")
-context.scheduler.cursor = 1
+fixture.requeue(context)
 definition.refresh(context, 9402)
 assert(calls == 0 and #context.inputQueue == 2, "flight must defer the whole-capacity input turn")
 local chargedFlights = flights

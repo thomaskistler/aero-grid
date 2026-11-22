@@ -58,8 +58,12 @@ an upgrade notice; explicit editor **Save** persists the current schema.
 ## Scheduling and callback budgets
 
 `scheduler.lua` is firmware-independent. Flight, host transitions, services,
-and panels share a fair round-robin ring. Host readiness gates enforce input
-and lifecycle ordering; transitions can hold service or panel work.
+and panels share one persistent list ordered by due tick, which changes only
+when the dashboard changes. Each callback runs due tasks from the front and
+stops at the first task that is not due; ties go to the task that ran least
+recently. Tasks set their own next due tick; a source that makes a task due
+early moves it forward. Host readiness gates enforce input and lifecycle
+ordering; transitions can hold service or panel work.
 
 The default callback segment has eight nominal 2,000-instruction slots
 (`CAPACITY` and `INSTRUCTIONS_PER_SLOT`). A task receives at most eight slots

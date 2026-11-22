@@ -19,7 +19,7 @@ context.flightTask = {
     end,
 }
 local function tick()
-    context.scheduler.cursor = 1
+    fixture.requeue(context)
     definition.refresh(context)
 end
 local state = {}

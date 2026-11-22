@@ -71,6 +71,7 @@ function debrief:configure(section, widths)
         self.count = self.count + #feeds
     end
     if self.count > 0 then
+        self.support.subscribed(self)
         local session = history:session()
         -- Flights that ended before the series were recorded are skipped; a
         -- Save keeps the cursor, so a finished flight is still captured.

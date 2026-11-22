@@ -50,7 +50,7 @@ noGrant(context, fixture.lvglMock.objects, function()
     definition.background(context)
     assert(items == 0 and panelTurns == 0 and liveTurns == 0 and not context.sessionResetJob)
 end)
-context.scheduler.cursor = 1
+fixture.requeue(context)
 definition.refresh(context)
 assert(items == 8 and panelTurns == 0 and liveTurns == 0)
 assert(context.scheduler.state(context.sessionResetTask).pending and context.remainingSlots == 0)
@@ -109,7 +109,7 @@ context.flightReportedRevision, context.flightReportedEpoch = 0, 1
 context.sessionResetPending, context.sessionResetJob = true, nil
 items, panelTurns = 0, 0
 now = getTime()
-context.scheduler.cursor = 1
+fixture.requeue(context)
 definition.refresh(context)
 assert(flightTurns == 1 and items == 0, "reset cannot run after flight consumed a slot")
 definition.refresh(context)

@@ -56,7 +56,7 @@ end)
 untilState(function()
     return not (context.aerogridMenu and context.aerogridMenu.selectionDirty)
 end)
-context.scheduler.cursor = 1
+fixture.requeue(context)
 local before = flights
 definition.refresh(context)
 assert(flights == before + 1 and not context.locationDetails, "location opening waits for a whole-capacity grant")

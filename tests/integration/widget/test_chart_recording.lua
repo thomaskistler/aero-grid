@@ -514,6 +514,8 @@ first.module.refresh = function()
     return 37, false, 1
 end
 first.nextRefresh = 0
+first.refreshTask.due = 0
+context.scheduler.reschedule(first.refreshTask)
 for _ = 1, 4 do
     runCallback(definition.refresh, context)
     if first.interval == 37 then

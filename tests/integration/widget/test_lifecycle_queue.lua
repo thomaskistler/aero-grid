@@ -33,7 +33,7 @@ context.dashboardLoader.advanceLoad = function()
     end
 end
 context.reloadState = "clear"
-context.scheduler.cursor = 1
+fixture.requeue(context)
 noGrant(context, fixture.lvglMock.objects, function()
     definition.refresh(context)
     definition.background(context)

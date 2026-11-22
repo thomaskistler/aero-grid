@@ -49,7 +49,7 @@ noGrant(context, fixture.lvglMock.objects, function()
     definition.background(context)
     assert(context.logOpenRequest and not context.logViewer)
 end)
-context.scheduler.cursor = 1
+fixture.requeue(context)
 local before = flights
 definition.refresh(context)
 assert(flights == before + 1 and not context.logViewer, "opening must wait for its whole-capacity grant")
@@ -72,7 +72,7 @@ assert(state.dragY == 100, "granted input must keep its arrival coordinates")
 definition.event(context, EVT_ROT_LEFT)
 assert(state.index == position and state.offset == offset, "viewer input cannot scroll synchronously")
 local inputTask = context.inputTask
-context.scheduler.cursor = 1
+fixture.requeue(context)
 definition.refresh(context)
 assert(context.inputQueue and context.scheduler.state(inputTask).refused == context.scheduler.callbacks)
 definition.refresh(context)

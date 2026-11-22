@@ -603,7 +603,7 @@ local function newScheduler(context, schedulerModule)
         addError(context, "lib/scheduler.lua: " .. tostring(ok and "constructor did not return a table" or scheduler))
         return nil
     end
-    for _, operation in ipairs({ "add", "clear", "run", "state", "stats" }) do
+    for _, operation in ipairs({ "add", "remove", "has", "reschedule", "clear", "run", "state", "stats" }) do
         if type(rawget(scheduler, operation)) ~= "function" then
             addError(context, "lib/scheduler.lua: missing operation " .. operation)
             return nil
@@ -683,6 +683,9 @@ local function create(zone, widgetOptions, path)
         rejected = {},
         errors = {},
         notices = {},
+        -- Holds shared by every service task and every panel task.
+        serviceGate = {},
+        panelGate = {},
         width = zone.w,
         height = zone.h,
         left = zone.xabs or 0,
@@ -1092,11 +1095,11 @@ local function update(context, widgetOptions)
 end
 
 --- Stop dashboard services and panels for the rest of this callback. Host
---- work that may replace or retire their owners calls this; they are enrolled
---- afresh on the next callback.
+--- work that may replace or retire their owners calls this.
 ---@param context AeroGridContext
 local function closeDashboard(context)
     context.dashboardClosed, context.servicesHold, context.panelsHold = true, true, true
+    context.serviceGate.on, context.panelGate.on = true, true
 end
 
 local function optionsStep(task)
@@ -1453,8 +1456,10 @@ end
 --- decides the lifecycle barrier at callback start, so `runCallback` skips it.
 local function updateHolds(context, hidden, keepLifecycle)
     local services = servicesHeld(context, hidden)
-    context.servicesHold = services
-    context.panelsHold = services or panelsHeld(context, hidden)
+    local panels = services or panelsHeld(context, hidden)
+    context.servicesHold, context.panelsHold = services, panels
+    -- Service and panel tasks share these gates, so a hold reaches them mid-callback.
+    context.serviceGate.on, context.panelGate.on = services, panels
     if not keepLifecycle then
         context.lifecycleHold = context.lifecycleRequest ~= nil and lifecycleHeld(context, hidden)
     end
@@ -1462,10 +1467,27 @@ end
 
 --- Task steps that adapt the panel and service contracts to the scheduler.
 --- Each task's `owner` is the service instance or panel entry it runs for.
-local function serviceReady(task, _, hidden)
+--- A service without subscribers waits at no cost; a failed one retires its task.
+local function serviceStep(task, now, slots)
     local instance = task.owner
-    task.cost, task.minCost = instance.updateCost, instance.updateMinCost
-    return not task.host.servicesHold and not instance.failed and instance.count ~= 0
+    if instance.failed then
+        task.failed = true
+        return 0
+    end
+    if instance.count == 0 then
+        -- Idle until `services.subscribed` wakes it.
+        task.cost, task.due = 0, math.huge
+        return 0
+    end
+    if task.cost == 0 and instance.updateCost ~= 0 then
+        -- A first subscriber arrived; take a paid turn.
+        task.cost, task.minCost = instance.updateCost, instance.updateMinCost
+        return 0, true
+    end
+    local used, again = task.support.step(task, now, slots)
+    -- An update may move its own due tick or change its cost.
+    task.due, task.cost, task.minCost = instance.due, instance.updateCost, instance.updateMinCost
+    return used, again
 end
 
 --- Whether a panel's finishing work is ready now; it then runs before refreshes resume.
@@ -1490,22 +1512,37 @@ local function instanceField(entry, key)
     end
 end
 
-local function refreshReady(task, _, hidden)
-    local entry = task.owner
-    if hidden or entry.failed or task.host.panelsHold then
-        return false
+--- Copy a panel's slot costs onto its tasks, and retire them once it fails.
+--- The panel host calls this after the callbacks that may change costs.
+local function panelCosts(entry)
+    local task = entry.refreshTask
+    if task then
+        task.cost = instanceField(entry, "refreshCost") or rawget(entry.module, "refreshCost") or 1
+        task.minCost = instanceField(entry, "refreshMinCost") or rawget(entry.module, "refreshMinCost")
+        task.failed = entry.failed or task.failed
     end
-    task.cost = instanceField(entry, "refreshCost") or rawget(entry.module, "refreshCost") or 1
-    task.minCost = instanceField(entry, "refreshMinCost") or rawget(entry.module, "refreshMinCost")
+    task = entry.backgroundTask
+    if task then
+        -- A panel that declares a minimum is charged what it reports.
+        local minimum = instanceField(entry, "backgroundMinCost") or rawget(entry.module, "backgroundMinCost")
+        task.cost, task.minCost = minimum and "variable" or 1, minimum
+        task.failed = entry.failed or task.failed
+    end
+    task = entry.finishTask
+    if task then
+        task.failed = entry.failed or task.failed
+    end
+end
+
+--- A panel with finishing work decides on every due turn whether refreshes wait.
+local function refreshReady(task)
+    local entry = task.owner
     local pending = finishPending(task.host, entry)
     return not entry.failed and not pending
 end
 
-local function finishReady(task, _, hidden)
+local function finishReady(task)
     local entry = task.owner
-    if hidden or entry.failed or task.host.panelsHold then
-        return false
-    end
     local pending, minimum = finishPending(task.host, entry)
     if entry.failed or not pending then
         return false
@@ -1515,15 +1552,14 @@ local function finishReady(task, _, hidden)
     return true
 end
 
-local function backgroundReady(task, _, hidden)
-    local entry = task.owner
-    if not hidden or entry.failed or task.host.panelsHold then
-        return false
+--- Move a panel's next refresh; an earlier one moves its task forward.
+local function scheduleRefresh(context, entry, tick)
+    entry.nextRefresh = tick
+    local task = entry.refreshTask
+    if task then
+        task.due = tick
+        context.scheduler.reschedule(task)
     end
-    -- A panel that declares a minimum is charged what it reports.
-    local minimum = instanceField(entry, "backgroundMinCost") or rawget(entry.module, "backgroundMinCost")
-    task.cost, task.minCost = minimum and "variable" or 1, minimum
-    return true
 end
 
 local function panelStep(task, now, granted)
@@ -1532,13 +1568,11 @@ local function panelStep(task, now, granted)
     if eventName == "finish" then
         -- Ending a cycle sets when the next refresh is due.
         if ok and type(interval) == "number" then
-            entry.nextRefresh = now + entry.interval
-            if entry.refreshTask then
-                entry.refreshTask.due = entry.nextRefresh
-            end
+            scheduleRefresh(context, entry, now + entry.interval)
         end
     elseif eventName == "refresh" then
         entry.nextRefresh = now + entry.interval
+        task.due = entry.nextRefresh
     elseif eventName == "background" and ok and type(interval) == "number" then
         -- A background hook that returns an interval sleeps that many ticks.
         task.due = now + interval
@@ -1554,91 +1588,166 @@ end
 
 local NONE = {}
 
---- Enrol the services that have subscribers and the live panels, in that
---- order, for one run. Membership is read from the host's own tables on every
---- callback, so a panel added, replaced or retired by the loader or editor
---- needs no registration, and a service gains its first subscriber's turn on
---- the next callback.
---- Held owners wait for the next callback; a hold that starts later in the
---- callback is seen by the ready checks.
----@param context AeroGridContext
-local function enrolTasks(context, registry, support)
-    local scheduler = context.scheduler
-    local order = context.servicesHold and NONE or registry.order
-    for index = 1, #order do
-        local instance = order[index]
-        if instance.count ~= 0 then
-            local task = instance.task
-            if not task or task.registry ~= registry then
-                task = {
-                    name = instance.id,
-                    owner = instance,
-                    onError = serviceError,
-                    registry = registry,
-                    host = context,
-                    step = support.step,
-                    ready = serviceReady,
-                }
-                instance.task = task
-            end
-            task.due, task.failed = instance.due, instance.failed
-            scheduler.add(task)
+local function serviceTask(context, instance, registry, support)
+    local task = instance.task
+    if not task or task.registry ~= registry then
+        task = {
+            name = instance.id,
+            owner = instance,
+            onError = serviceError,
+            registry = registry,
+            host = context,
+            support = support,
+            hold = context.serviceGate,
+            step = serviceStep,
+        }
+        instance.task = task
+    elseif task.due == math.huge then
+        -- An idle task stays asleep until a subscriber wakes it.
+        if instance.count > 0 then
+            task.due = 0
+            context.scheduler.reschedule(task)
         end
+        return task
     end
-    local panels = context.panelsHold and NONE or context.panels
-    for index = 1, #panels do
-        local entry = panels[index]
-        local module = entry.module
-        if type(rawget(module, "refresh")) == "function" then
-            local task = entry.refreshTask
-            if not task then
-                task = {
-                    name = entry.placement.id .. ": refresh",
-                    owner = entry,
-                    onError = panelError,
-                    host = context,
-                    event = "refresh",
-                    step = panelStep,
-                    ready = refreshReady,
-                }
-                entry.refreshTask = task
-            end
-            task.due, task.failed = entry.nextRefresh or 0, entry.failed
-            scheduler.add(task)
+    task.due, task.cost, task.minCost = instance.due, instance.updateCost, instance.updateMinCost
+    return task
+end
+
+local function panelTask(context, entry, field, event, fields)
+    local task = entry[field]
+    if not task then
+        task = {
+            name = entry.placement.id .. ": " .. event,
+            owner = entry,
+            onError = panelError,
+            host = context,
+            event = event,
+            hold = context.panelGate,
+            step = panelStep,
+        }
+        for key, value in pairs(fields) do
+            task[key] = value
         end
-        if type(rawget(module, "finish")) == "function" then
-            local task = entry.finishTask
-            if not task then
-                task = {
-                    name = entry.placement.id .. ": finish",
-                    owner = entry,
-                    onError = panelError,
-                    host = context,
-                    event = "finish",
-                    cost = "variable",
-                    step = panelStep,
-                    ready = finishReady,
-                }
-                entry.finishTask = task
+        entry[field] = task
+    end
+    return task
+end
+
+--- Enrol the flight tasks, the services and the live panels, keeping them
+--- enrolled until the dashboard changes: a new service registry or service,
+--- a panel added, replaced or retired, the flight tasks rebuilt, or the
+--- dashboard hidden or shown. Holds reach the tasks through their gates, and
+--- each task moves itself to its next due tick.
+---@param context AeroGridContext
+local function syncTasks(context, hidden, flightTask, owner)
+    local registry, support = context.serviceRuntime, context.servicesModule
+    local order = registry and support and registry.order or NONE
+    local panels = context.panels or NONE
+    local flightTasks = owner and owner:tasks() or NONE
+    local servicesHeld, panelsHeld = context.serviceGate.on == true, context.panelGate.on == true
+    local sync = context.taskSync
+    local scheduler = context.scheduler
+    if
+        not sync
+        or context.tasksDirty
+        or sync.order ~= order
+        or sync.services ~= #order
+        or sync.panels ~= panels
+        or sync.entries ~= #panels
+        or sync.hidden ~= hidden
+        or sync.flight ~= flightTask
+        or sync.flightTasks ~= flightTasks
+    then
+        context.tasksDirty = nil
+        sync = {
+            order = order,
+            services = #order,
+            panels = panels,
+            entries = #panels,
+            hidden = hidden,
+            flight = flightTask,
+            flightTasks = flightTasks,
+        }
+        context.taskSync = sync
+        local wanted = {}
+        if flightTask then
+            wanted[1] = flightTask
+            for index = 1, #flightTasks do
+                if not flightTasks[index].failed then
+                    wanted[#wanted + 1] = flightTasks[index]
+                end
             end
-            task.failed = entry.failed
-            scheduler.add(task)
+            if owner.schedulers then
+                owner.schedulers[scheduler] = true
+            end
         end
-        if type(rawget(module, "background")) == "function" then
-            local task = entry.backgroundTask
-            if not task then
-                task = {
-                    name = entry.placement.id .. ": background",
-                    owner = entry,
-                    onError = panelError,
-                    host = context,
-                    event = "background",
-                    step = panelStep,
-                    ready = backgroundReady,
-                }
-                entry.backgroundTask = task
+        for index = 1, #order do
+            local instance = order[index]
+            if not instance.failed then
+                wanted[#wanted + 1] = serviceTask(context, instance, registry, support)
             end
-            task.failed = entry.failed
+        end
+        for index = 1, #panels do
+            local entry = panels[index]
+            local module = entry.module
+            if not entry.failed then
+                entry.dispatched = panelCosts
+                local finishing = type(rawget(module, "finishPending")) == "function"
+                if not hidden and type(rawget(module, "refresh")) == "function" then
+                    local task = panelTask(
+                        context,
+                        entry,
+                        "refreshTask",
+                        "refresh",
+                        { ready = finishing and refreshReady or nil }
+                    )
+                    task.due = entry.nextRefresh or 0
+                    wanted[#wanted + 1] = task
+                end
+                if not hidden and finishing and type(rawget(module, "finish")) == "function" then
+                    wanted[#wanted + 1] =
+                        panelTask(context, entry, "finishTask", "finish", { cost = "variable", ready = finishReady })
+                end
+                if hidden and type(rawget(module, "background")) == "function" then
+                    wanted[#wanted + 1] = panelTask(context, entry, "backgroundTask", "background", NONE)
+                end
+                -- The panel host recosts tasks after each dispatch; new tasks and instances start here.
+                local tasks = (entry.refreshTask and 1 or 0) + (entry.backgroundTask and 2 or 0)
+                if entry.costedTasks ~= tasks or entry.costedInstance ~= entry.instance then
+                    panelCosts(entry)
+                    entry.costedTasks, entry.costedInstance = tasks, entry.instance
+                end
+            end
+        end
+        local keep = {}
+        for index = 1, #wanted do
+            keep[wanted[index]] = true
+        end
+        local enrolled = context.enrolledTasks or NONE
+        for index = 1, #enrolled do
+            if not keep[enrolled[index]] then
+                scheduler.remove(enrolled[index])
+            end
+        end
+        context.enrolledTasks = wanted
+    elseif sync.servicesHeld == servicesHeld and sync.panelsHeld == panelsHeld then
+        return
+    end
+    -- Held work leaves the list, so idle callbacks never pass over it; a
+    -- hold that comes or goes only moves the tasks behind its gate.
+    sync.servicesHeld, sync.panelsHeld = servicesHeld, panelsHeld
+    local serviceGate, panelGate = context.serviceGate, context.panelGate
+    local wanted = context.enrolledTasks
+    for index = 1, #wanted do
+        local task = wanted[index]
+        local gate = task.hold
+        if gate == serviceGate and servicesHeld or gate == panelGate and panelsHeld then
+            scheduler.remove(task)
+        elseif not scheduler.has(task) then
+            if task.event == "refresh" then
+                task.due = task.owner.nextRefresh or 0
+            end
             scheduler.add(task)
         end
     end
@@ -1680,7 +1789,6 @@ local function runScheduled(context, hidden, segments)
         addError(context, "extended callback budget: " .. failure)
         context.schedulerFailed = true
     end
-    scheduler.clear()
     if context.schedulerFailed then
         context.schedulerFailed = nil
         ensureShell(context)
@@ -1688,24 +1796,18 @@ local function runScheduled(context, hidden, segments)
     end
 end
 
---- Add services and panels after the tasks already enrolled, and run them
---- all in one fair ring.
+--- Run the enrolled tasks in order of due tick.
 local function runTasks(context, hidden)
-    local registry, support = context.serviceRuntime, context.servicesModule
-    if registry and support then
-        enrolTasks(context, registry, support)
-    end
-
     -- Extra segments run past EdgeTX's per-callback limit in the same
     -- callback; only pending and deferred work continues.
     runScheduled(context, hidden, liveDangerously(context) and EXTENDED_SEGMENTS or 0)
 end
 
-local function flightReady(task)
+--- Flight takes a whole turn while it loads or links model settings.
+local function flightCost(task)
     local owner = task.broker
     local linking = owner.settingsAdoption and owner:settingsDisarmed()
     task.cost = (not owner.documentLoaded or linking) and task.host.scheduler.budget.slots or 1
-    return true
 end
 
 local function pumpFlight(task, now, granted)
@@ -1858,7 +1960,9 @@ local function flightStep(task, now, granted, hidden)
     updateHolds(task.host, hidden)
     if not again and task.broker.setupAt == now then
         task.due = now + FLIGHT_INTERVAL
+        task.broker:queueDecision(now, task.host.scheduler.state(task).key)
     end
+    flightCost(task)
     return used, again
 end
 
@@ -2110,6 +2214,10 @@ local function pumpSessionReset(context)
                 if not ok or not nextItem then
                     service.revision = service.revision + 1
                     service.due = job.now
+                    if service.task then
+                        service.task.due = job.now
+                        context.scheduler.reschedule(service.task)
+                    end
                     job.service, job.item = job.service + 1, 1
                     return true
                 end
@@ -2127,7 +2235,7 @@ local function pumpSessionReset(context)
                 addError(context, entry.placement.id .. ": reset: " .. message)
                 showErrors(context)
             end
-            entry.nextRefresh = job.now
+            scheduleRefresh(context, entry, job.now)
             if not unfinished then
                 job.panel = job.panel + 1
             end
@@ -2767,7 +2875,10 @@ local function editorTransitionReady(task, _, hidden)
     local context = task.host
     local request, state = context.editorTransitionRequest, context.editorUi
     if request == "suspend" then
+        -- Rebinding reads the arming source from the flight document, which a broker reset reloads.
+        local broker = context.flightFactory and context.flightFactory.broker
         return context.modelArmingReload
+            and (state ~= nil or broker ~= nil and broker.document ~= nil)
             and not (context.editorRestore and not (context.stage or context.reloadState))
             and not (state and state.saving)
     end
@@ -2837,7 +2948,7 @@ local function rebindArming(context)
                 addError(context, entry.placement.id .. ": rebindArming: " .. tostring(message))
                 showErrors(context)
             end
-            entry.nextRefresh = 0
+            scheduleRefresh(context, entry, 0)
         end
         job.panel = job.panel + 1
         return
@@ -3322,9 +3433,23 @@ local function pruneRequests(context, hidden, fullscreen)
     end
 end
 
---- Enrol the host tasks with work outstanding, in a fixed order.
+--- Enrol the host tasks with work outstanding. A task stays enrolled, and
+--- keeps its place, while its work is outstanding; new ones join in a fixed
+--- order. Without outstanding host work this costs nothing.
 local function enrolHost(context, hidden)
-    local add = context.scheduler.add
+    local scheduler = context.scheduler
+    local previous, wanted, joined = context.hostTasks, nil, nil
+    local stamp = (context.hostStamp or 0) + 1
+    context.hostStamp = stamp
+    local function add(task)
+        wanted = wanted or {}
+        wanted[#wanted + 1] = task
+        if not previous or task.wanted ~= stamp - 1 then
+            joined = joined or {}
+            joined[#joined + 1] = task
+        end
+        task.wanted = stamp
+    end
     if context.optionsRequest then
         add(hostTask(context, "optionsTask", "native options", optionsReady, optionsStep))
     end
@@ -3426,6 +3551,23 @@ local function enrolHost(context, hidden)
             )
         )
     end
+    if previous then
+        for index = 1, #previous do
+            local task = previous[index]
+            if task.wanted ~= stamp then
+                scheduler.remove(task)
+            end
+        end
+    end
+    -- Tasks wanted last callback are still enrolled.
+    if joined then
+        for index = 1, #joined do
+            if not scheduler.has(joined[index]) then
+                scheduler.add(joined[index])
+            end
+        end
+    end
+    context.hostTasks = wanted
 end
 
 local function runCallback(context, hidden, widgetEvent, touchState)
@@ -3438,6 +3580,7 @@ local function runCallback(context, hidden, widgetEvent, touchState)
         -- later callbacks follow them.
         context.scheduler.add(context.initializationTask)
         runScheduled(context, hidden, 0)
+        context.scheduler.remove(context.initializationTask)
         return
     end
     if not context.scheduler or context.runtimeFailed then
@@ -3492,18 +3635,14 @@ local function runCallback(context, hidden, widgetEvent, touchState)
                 broker = owner,
                 host = context,
                 step = flightStep,
-                ready = flightReady,
             }
             context.flightTask = flightTask
         end
+        flightCost(flightTask)
     end
-    context.scheduler.clear()
-    if flightTask then
-        context.scheduler.add(flightTask)
-        local tasks = owner:tasks()
-        for index = 1, #tasks do
-            context.scheduler.add(tasks[index])
-        end
+    syncTasks(context, hidden, flightTask, owner)
+    if owner and owner.queueDecision then
+        owner:queueDecision(getTime())
     end
     enrolHost(context, hidden)
     runTasks(context, hidden)

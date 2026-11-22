@@ -182,6 +182,12 @@ function WidgetFixture.new()
         error("host work never received a grant")
     end
 
+    function self.requeue(context)
+        -- Enrol every task afresh on the next callback, in enrolment order.
+        context.scheduler.clear()
+        context.taskSync, context.enrolledTasks, context.hostTasks = nil, nil, nil
+    end
+
     function self.isolateWork(context)
         -- Keep a nonempty document without competing flight or service work.
         context.flightFactory = nil

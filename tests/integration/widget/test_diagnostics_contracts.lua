@@ -175,7 +175,7 @@ local function testDiagnosticsFitTheirPanels()
         "rows were not restored when the panel grew again"
     )
 
-    for _ = 1, 4 do
+    for _ = 1, 6 do
         tick(50)
         definition.refresh(context)
     end

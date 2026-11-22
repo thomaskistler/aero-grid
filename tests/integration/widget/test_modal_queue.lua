@@ -127,7 +127,7 @@ context.flightTask = {
         return slots, false
     end,
 }
-context.scheduler.cursor = 1
+fixture.requeue(context)
 definition.refresh(context)
 assert(flightSteps == 1 and steps == 5, "flight's charged turn must defer the full-capacity viewer")
 definition.refresh(context)

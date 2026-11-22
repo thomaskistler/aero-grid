@@ -66,7 +66,7 @@ end
 assert(saves == 1 and opened == 0 and closed == 0 and context.modelSettingsRequest)
 assert(not context.editorUi.saving, "an ongoing editor save finishes before settings suspension")
 
-context.scheduler.cursor = 1
+fixture.requeue(context)
 local flights = flightSteps
 definition.refresh(context)
 assert(flightSteps == flights + 1 and opened == 0, "settings opening must wait for a full-capacity grant")

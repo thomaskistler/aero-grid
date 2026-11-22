@@ -65,6 +65,7 @@ end
 
 function smart:enable()
     self.count = 1
+    self.support.subscribed(self)
     return self.support.snapshot(self.state)
 end
 

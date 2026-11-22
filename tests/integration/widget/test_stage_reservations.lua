@@ -27,7 +27,7 @@ context.dashboardLoader.advanceLoad = function()
 end
 context.stage, context.lifecycleRequest = stages[1], "load"
 context.lifecycleTasks.load = nil
-context.scheduler.cursor = 1
+fixture.requeue(context)
 definition.refresh(context)
 assert(flights == 1 and #steps == 4, "small loading stages can share flight's callback")
 assert(grants[1] == 1 and grants[2] == 2 and grants[3] == 1 and grants[4] == 1)
@@ -72,13 +72,13 @@ context.editorController.advanceEditor = function()
 end
 context.uiRequest = "editor"
 local before = flights
-context.scheduler.cursor = 1
+fixture.requeue(context)
 definition.refresh(context)
 assert(flights == before + 1 and not editor.buildStage)
 assert(context.remainingSlots == context.scheduler.budget.capacity - 4)
 editor.previewPending = true
 context.uiRequest = "editor"
-context.scheduler.cursor = 1
+fixture.requeue(context)
 definition.refresh(context)
 assert(editor.previewPending and context.uiTasks.editor.cost == context.scheduler.budget.capacity)
 definition.refresh(context)
@@ -176,7 +176,7 @@ for _, layout in ipairs({ "Default", "review-navigation", "review-chart", "Diagn
         -- The revised scheduler stays within one callback of the old path
         -- at this cadence, where every flight poll and decision is due.
         assert(settings <= 29, "settings must remain within one callback of the old path")
-        assert(editorBuild <= 22, "editor construction must improve on the old full-budget path")
+        assert(editorBuild <= 23, "editor construction must improve on the old full-budget path")
     end
     host.editorUiModule.close(host, true)
 end

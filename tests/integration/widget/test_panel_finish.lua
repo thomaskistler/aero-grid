@@ -20,7 +20,7 @@ local function entry(module, instance)
 end
 local function run(panels)
     context.panels = panels
-    context.scheduler.cursor = 1
+    fixture.requeue(context)
     calls = {}
     fixture.tick(10)
     definition.refresh(context)

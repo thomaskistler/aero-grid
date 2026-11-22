@@ -48,6 +48,7 @@
 ---@field nextRefresh integer Tick at which this panel is next due.
 ---@field failed? boolean Set after a lifecycle failure disables the panel.
 ---@field error? string First lifecycle failure message.
+---@field dispatched? fun(entry: AeroGridPanelEntry) Called after refresh, background and finish callbacks, which may change slot costs, and after a failure.
 
 local panelHost = {}
 
@@ -346,6 +347,7 @@ function panelHost.dispatch(entry, event, ...)
     end
 
     local ok, resultOrError, again, consumed = pcall(callback, entry.instance, ...)
+    local dispatched = entry.dispatched
     if ok and event == "finishPending" then
         if type(resultOrError) ~= "boolean" then
             ok, resultOrError = false, "finishPending must return a boolean"
@@ -364,11 +366,17 @@ function panelHost.dispatch(entry, event, ...)
         end
     end
     if ok then
+        if dispatched and (event == "refresh" or event == "background" or event == "finish") then
+            dispatched(entry)
+        end
         return true, nil, resultOrError, again, consumed
     end
 
     entry.failed = true
     entry.error = tostring(resultOrError)
+    if dispatched then
+        dispatched(entry)
+    end
     return false, entry.error
 end
 

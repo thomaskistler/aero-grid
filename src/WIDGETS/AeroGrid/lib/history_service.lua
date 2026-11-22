@@ -550,6 +550,7 @@ function history:subscribe(source, options)
     self.sources[source] = tracks
     tracks[#tracks + 1] = entry
     self.count = self.count + 1
+    self.support.subscribed(self)
     local telemetry = self.runtime.byId.telemetry
     if telemetry then
         telemetry:subscribe(source)

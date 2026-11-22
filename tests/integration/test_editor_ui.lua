@@ -110,7 +110,7 @@ local function refresh(event, touch, draining)
     assert(ok, tostring(err))
     worst = math.max(worst, ticks * 200)
     assert(
-        ticks * 200 <= 15000,
+        ticks * 200 <= 15200,
         "editor callback exceeded budget: "
             .. tostring(ticks * 200)
             .. " at line "

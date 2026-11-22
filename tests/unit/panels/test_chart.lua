@@ -415,7 +415,8 @@ assert(#power.series[1].connectors > 0, "rearm adds a faint connector between se
 assert(power.series[1].connectors[1].connector)
 equal(power.status.properties.text, "")
 equal(#power.series[1].markerKeys, 0, "a recording pause must not add a full-height telemetry-gap marker")
-equal(power.axis.map:pixel(paused) - power.axis.map:pixel(paused, true), 24, "resuming must retain trace spacing")
+local spacing = power.axis.map:pixel(paused) - power.axis.map:pixel(paused, true)
+assert(math.abs(spacing - 24) < 1e-6, "resuming must retain trace spacing: " .. spacing)
 equal(power.gapRoot, nil, "recording pauses must not mask flight shading")
 for _, size in ipairs({ { 320, 240 }, { 800, 480 }, { 480, 272 } }) do
     context.zone.w, context.zone.h = size[1], size[2]

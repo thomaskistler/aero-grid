@@ -224,6 +224,7 @@ function telemetryService:link()
         -- A panel referencing the link is a reason to run the service, even
         -- when it subscribed to no source the radio happens to recognize.
         self.count = self.count + 1
+        self.support.subscribed(self)
     end
 
     return self.linkView

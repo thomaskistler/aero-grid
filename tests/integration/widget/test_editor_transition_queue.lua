@@ -51,7 +51,7 @@ noGrant(context, fixture.lvglMock.objects, function()
 end)
 definition.background(context)
 assert(opened == 0 and context.editorTransitionRequest == "open", "hidden callbacks retain pending entry")
-context.scheduler.cursor = 1
+fixture.requeue(context)
 definition.refresh(context)
 assert(opened == 0 and flightSteps == 2, "editor entry must wait for full capacity")
 definition.refresh(context)

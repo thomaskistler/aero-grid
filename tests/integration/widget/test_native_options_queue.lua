@@ -43,7 +43,7 @@ assert(context.optionsRequest.themeMode == "modern-dark", "only the latest optio
 definition.update(context, { Layout = "Empty", Theme = "modern-dark" })
 assert(not context.optionsRequest, "returning to the active options cancels a deferred change")
 definition.update(context, { Layout = "Default", Theme = "modern-light" })
-context.scheduler.cursor = 1
+fixture.requeue(context)
 noGrant(context, fixture.lvglMock.objects, function()
     definition.refresh(context)
     definition.background(context)

@@ -33,7 +33,7 @@ context.flightTask = {
         return slots, false
     end,
 }
-context.scheduler.cursor = 1
+fixture.requeue(context)
 -- EdgeTX calls update while entering fullscreen, before its next redraw.
 fixture.lvglMock.setFullScreen(true)
 definition.update(context, { Layout = "Default", Theme = "modern-dark" })

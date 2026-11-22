@@ -192,6 +192,10 @@ function flight.newBroker(env, support, modules, config, members)
         events = {},
         errors = {},
         state = { phase = "ground", active = false, status = "unconfigured", revision = 0 },
+        -- Members' schedulers that run the shared tasks, woken when a task falls due early.
+        schedulers = setmetatable({}, { __mode = "k" }),
+        -- Detection polls wait while detection is dormant.
+        dormant = { on = true },
     }, broker)
     self.view = support.snapshot(self.state)
     return self
@@ -231,7 +235,9 @@ function broker:reset(filename)
     self.readyAfterDisarmAt = nil
     self.resetCondition, self.resetRuntime, self.resetFeed, self.resetValue, self.resetPolledAt =
         nil, nil, nil, nil, nil
-    self.setupAt, self.detecting, self.decidedAt, self.taskList = nil, nil, nil, nil
+    self.setupAt, self.detecting, self.decidedAt = nil, nil, nil
+    self.dormant.on = true
+    self:dropTasks()
     for key in pairs(self.state) do
         self.state[key] = nil
     end
@@ -281,9 +287,10 @@ function broker:setDocument(document)
     end
     self.document = document
     self.countDirty = true
-    self.taskList = nil
+    self:dropTasks()
     if self.countTask then
         self.countTask.due = 0
+        self:wake(self.countTask)
     end
     self.loadError, self.state.persistenceError = nil, nil
     self.settingsError, self.errors.persistence = nil, nil
@@ -301,9 +308,10 @@ function broker:incrementCount()
     assert(not self.pendingCount, "Previous flight count is not saved; resolve the persistence error")
     local value = current + 1
     self.pendingCount = { previous = current, value = value }
-    self.taskList = nil
+    self:dropTasks()
     if self.countTask then
         self.countTask.due = 0
+        self:wake(self.countTask)
     end
     self:publishCount()
     return value
@@ -587,7 +595,7 @@ function broker:syncReset(now)
     local condition = self.document and self.document.sessionReset or ""
     if condition ~= self.resetCondition then
         self.resetCondition, self.resetRuntime, self.resetFeed, self.resetValue = condition, nil, nil, nil
-        self.taskList = nil
+        self:dropTasks()
     end
     if condition == "" then
         if self.errors.reset then
@@ -601,7 +609,8 @@ function broker:syncReset(now)
         local control = self.modules.control.new(self.env, self.support, runtime)
         self.support.register(runtime, control, now)
         self.resetFeed = control:switch(condition)
-        self.resetRuntime, self.taskList = runtime, nil
+        self.resetRuntime = runtime
+        self:dropTasks()
     elseif self.resetRuntime.byId.control.failed then
         self.resetValue = nil
         self:error("reset", "Session reset switch unavailable: " .. condition)
@@ -700,7 +709,7 @@ function broker:attach(proposal, signature, now)
         self.readyAfterDisarm = true
     end
     self.runtime, self.smartRuntime, self.session, self.signature = runtime, smartRuntime, session, signature
-    self.taskList = nil
+    self:dropTasks()
     if self.errors.detection then
         self.errors.detection, self.state.detectionError = nil, nil
         self.state.diagnosticRevision = (self.state.diagnosticRevision or 0) + 1
@@ -876,6 +885,7 @@ function broker:setup(now, detect)
         return
     end
     self.setupAt, self.detecting = now, detect
+    self.dormant.on = not detect
     self.countStarted = true
     local ok, message = pcall(self.syncReset, self, now)
     if not ok then
@@ -894,19 +904,71 @@ local NONE = {}
 -- Runtimes polled by the broker's tasks, in ring order.
 local RUNTIMES = { "resetRuntime", "runtime", "smartRuntime" }
 
---- A poll runs while its runtime is current; detection polls also need
---- detection to be active. Setup need not share the callback.
-local function pollReady(task, now)
-    local owner, instance = task.broker, task.owner
-    task.cost, task.minCost = instance.updateCost, instance.updateMinCost
-    return owner[task.field] == task.registry
-        and (owner.detecting or task.field == "resetRuntime")
-        and not instance.failed
-        and instance.count ~= 0
+local NEVER = math.huge
+
+--- Move a shared task forward in every member's scheduler that runs it.
+function broker:wake(task, exact)
+    for scheduler in pairs(self.schedulers) do
+        scheduler.reschedule(task, exact)
+    end
+end
+
+--- Retire the current polls and decision list; the next `tasks` call builds
+--- a new one. A retired poll never runs again, even in a scheduler that has
+--- not yet seen the new list.
+function broker:dropTasks()
+    local list = self.taskList
+    if list then
+        for index = 1, #list do
+            if list[index].field then
+                list[index].failed = true
+            end
+        end
+    end
+    self.taskList = nil
+end
+
+--- Detection decides once per setup. A setup that has not decided queues
+--- the decision behind the detection polls due by now, ahead of other
+--- overdue work; given the setup's own tick `at`, they all queue there.
+function broker:queueDecision(now, at)
+    local decision, list = self.decision, self.taskList
+    if
+        decision
+        and decision.due == NEVER
+        and self.detecting
+        and self.session
+        and list
+        and self.decidedAt ~= self.setupAt
+    then
+        local due = at or 0
+        for index = 1, #list do
+            local poll = list[index]
+            local instance = poll.field and poll.field ~= "resetRuntime" and poll.owner
+            if instance and not instance.failed and instance.count ~= 0 and instance.due <= now then
+                if at then
+                    poll.due = at
+                    self:wake(poll, true)
+                else
+                    due = math.max(due, instance.due)
+                end
+            end
+        end
+        decision.due, decision.queuedAt, decision.cost = due, now, self:decisionCost(now)
+        self:wake(decision, true)
+    end
+end
+
+--- Between decisions a turn only flushes queued output; without any it is free.
+function broker:decisionCost(now)
+    local last = self.lastTick
+    return (self.output or not last or now < last or now - last >= DECIDE_INTERVAL) and 1 or 0
 end
 
 local function pollUpdate(task, now, slots)
+    local instance = task.owner
     local used, again = task.broker.support.step(task, now, slots)
+    task.due, task.cost, task.minCost = instance.due, instance.updateCost, instance.updateMinCost
     if task.field == "resetRuntime" then
         task.broker:readReset(now)
     end
@@ -915,7 +977,7 @@ end
 
 local function pollError(task, message)
     local owner = task.broker
-    task.owner.failed = true
+    task.owner.failed, task.failed = true, true
     if task.field == "resetRuntime" then
         owner.resetValue = nil
     end
@@ -923,8 +985,23 @@ local function pollError(task, message)
 end
 
 --- A failed poll retires its service and reports a flight error; it never
---- fails the shared task, which other widgets' schedulers also run.
+--- reports a scheduler failure, since other widgets' schedulers share it. A
+--- service without subscribers waits at no cost.
 local function pollStep(task, now, slots)
+    local instance = task.owner
+    if instance.failed then
+        task.failed = true
+        return 0
+    end
+    if instance.count == 0 then
+        -- Idle until `services.subscribed` wakes it.
+        task.cost, task.due = 0, NEVER
+        return 0
+    end
+    if task.cost == 0 and instance.updateCost ~= 0 then
+        task.cost, task.minCost = instance.updateCost, instance.updateMinCost
+        return 0, true
+    end
     local ok, used, again = pcall(pollUpdate, task, now, slots)
     if not ok then
         pollError(task, used)
@@ -933,38 +1010,29 @@ local function pollStep(task, now, slots)
     return used, again
 end
 
---- Detection decides at most once per setup, after any due poll has taken
---- its reading.
-local function decideReady(task, now)
+--- Detection decides at most once per setup, after every poll due when it
+--- was queued has taken its reading. `queueDecision` wakes it; otherwise it
+--- sleeps.
+local function decideStep(task, now)
     local owner = task.broker
     if not owner.detecting or not owner.session or owner.decidedAt == owner.setupAt then
-        return false
+        task.due = NEVER
+        return 0
     end
-    task.waiting = false
+    local queued = task.queuedAt or now
     for field = 2, #RUNTIMES do
         local runtime = owner[RUNTIMES[field]]
         local order = runtime and runtime.order or NONE
         for index = 1, #order do
             local instance = order[index]
-            if not instance.failed and instance.count ~= 0 and now >= instance.due then
-                -- Revisit after polling even when this decision starts the ring.
-                task.cost, task.waiting = 1, true
-                return true
+            if not instance.failed and instance.count ~= 0 and queued >= instance.due then
+                -- A poll queued ahead of it did not fit; follow it again.
+                task.due = now
+                return 0
             end
         end
     end
-    -- Between decisions a turn only flushes queued output; without any it is free.
-    local last = owner.lastTick
-    task.cost = (owner.output or not last or now < last or now - last >= DECIDE_INTERVAL) and 1 or 0
-    return true
-end
-
-local function decideStep(task, now)
-    if task.waiting then
-        return nil, true
-    end
-    local owner = task.broker
-    task.due, owner.decidedAt = now + 1, owner.setupAt
+    task.due, owner.decidedAt = NEVER, owner.setupAt
     local ok, message = pcall(owner.decide, owner, now)
     if not ok then
         owner:error("detection", message)
@@ -1022,7 +1090,7 @@ local function countStep(task, now)
     if owner.document.flightCount ~= nil and not owner.pendingCount then
         task.due = now + 20
         if owner.state.countSource == "internal" then
-            owner.taskList = nil
+            owner:dropTasks()
         end
     end
 end
@@ -1060,7 +1128,7 @@ function broker:tasks()
         local runtime = self[field]
         if runtime then
             for _, instance in ipairs(runtime.order) do
-                list[#list + 1] = {
+                local poll = {
                     name = "flight." .. instance.id,
                     owner = instance,
                     registry = runtime,
@@ -1068,10 +1136,15 @@ function broker:tasks()
                     kind = field == "resetRuntime" and "reset" or "detection",
                     broker = self,
                     due = instance.due,
-                    ready = pollReady,
+                    cost = instance.updateCost,
+                    minCost = instance.updateMinCost,
+                    -- The reset poller also runs while detection is dormant.
+                    hold = field ~= "resetRuntime" and self.dormant or nil,
                     step = pollStep,
                     onError = pollError,
                 }
+                instance.task = poll
+                list[#list + 1] = poll
             end
         end
     end
@@ -1079,7 +1152,7 @@ function broker:tasks()
     if self.session then
         local decision = self.decision
         if not decision then
-            decision = { name = "flight.decide", owner = self, broker = self, ready = decideReady, step = decideStep }
+            decision = { name = "flight.decide", owner = self, broker = self, due = NEVER, step = decideStep }
             self.decision = decision
         end
         list[#list + 1] = decision

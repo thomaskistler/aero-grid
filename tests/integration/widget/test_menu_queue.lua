@@ -36,7 +36,7 @@ context.flightTask = {
     end,
 }
 menu.pending = true
-context.scheduler.cursor = 1
+fixture.requeue(context)
 definition.refresh(context)
 assert(flightSteps == 1 and advances == 0 and menu.pending, "menu must wait for a full-capacity pre-grant")
 definition.refresh(context)
