@@ -121,6 +121,13 @@ paced.
 - **Let tasks set their own next due time (430–1,900 instructions).** Replace the
   `ready` functions evaluated on every pass; each gate's condition becomes a
   due-time update at its source.
+- **Keep the tasks ordered by due time.** The scheduler runs tasks from the front
+  and stops at the first one that is not due, so idle tasks cost nothing. A task
+  that asks for another step stays at the front. A finished task is re-inserted
+  at its next due time. A source that makes a task due early moves it forward. A
+  task that does not fit keeps its due time, so it stays ahead of later work; ties
+  go to the task that ran least recently. This replaces the ring cursor and
+  deferred-turn tracking. With 20–40 tasks, a sorted array is enough.
 
 ### Group 6: Telemetry polling (about 400 instructions)
 
