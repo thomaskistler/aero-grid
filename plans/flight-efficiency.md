@@ -77,27 +77,22 @@ smaller. Instruction savings are per flight callback.
 
 ### 2. Contained behavior changes
 
-6. **Remove the Pre-release extended segments (107 lines).** `native_budget.lua`
-   (34), segment and carry-over logic in `scheduler.lua` (42), `liveDangerously`
-   in `main.lua` (22), `flight_config.lua`, and the Model settings row (9). Removes
-   every callback over 20k in the measured flights. Risk: low; model settings
-   saved with `liveDangerously` must still load.
-7. **Lower task frequencies** for `history`, `flight`, `flight.decide`, `control`
+6. **Lower task frequencies** for `history`, `flight`, `flight.decide`, `control`
    outputs, `rx-battery`, `navigation`, and `model` (see
    [Task rates](#reference-task-rates)). Mostly interval constants. Together with
-   item 19, saves about 1,500 instructions. Risk: low; check arm/disarm feel and
+   item 18, saves about 1,500 instructions. Risk: low; check arm/disarm feel and
    alarm latency on a radio.
-8. **Metric panel: no relayout on a value change (up to 3,500 instructions per
+7. **Metric panel: no relayout on a value change (up to 3,500 instructions per
    change).** Any change to a supporting line, such as MAX ALT, triggers a full
    `metric.update` relayout. Size the text areas once and only replace their
    text. Risk: low; one panel.
-9. **Output panel: paint all rows in one step (~140 lines est.).** It paints one
+8. **Output panel: paint all rows in one step (~140 lines est.).** It paints one
    channel row per scheduler turn (about 220 instructions, charged a
    2,000-instruction slot), so a refresh needs about 10 turns. Replace `output.refresh`
    and its phase helpers (190 lines; mount, reflow, layout, paint, live, idle)
    with a single paint. Risk: low to medium; one panel, but reflow and caption
    width rules must be kept.
-10. **Drop layout fixes for formats that were never released (~30 lines).**
+9. **Drop layout fixes for formats that were never released (~30 lines).**
     Released layouts are versions 1 to 3 (v0.1.0 to v0.4.0), so steps 1 to 3 stay.
     Remove the chart duration conversion (charts were never released), the
     unreleased rx-battery `sourceType` and threshold renames, and the 4 to 5 step,
@@ -108,45 +103,53 @@ smaller. Instruction savings are per flight callback.
 
 Each is user-visible. Ordered by how contained the removal is.
 
-11. **VCel sensor publishing (~150 lines).** `telemetry_publisher.lua` (116) plus
+10. **VCel sensor publishing (~150 lines).** `telemetry_publisher.lua` (116) plus
     loader and rx-battery code. Depends on EdgeTX's "Discover new sensors" quirks.
-12. **Location QR code (~195 lines).** `location_details.lua` (134), location tasks
+11. **Location QR code (~195 lines).** `location_details.lua` (134), location tasks
     in `main.lua` (37), and navigation hooks.
-13. **Host diagnostics scheduler graph, sources report, and shared log (~500
+12. **Host diagnostics scheduler graph, sources report, and shared log (~500
     lines).** Scheduler section (117), sources (28), log (12), `diagnostics_log.lua`
     (81), `log_viewer.lua` (209), the log-open task in `main.lua` (24), and
     references. The identity, theme, and panels reports stay. Developer tooling,
     not for pilots.
-14. **Smart detection (~330 lines).** `smart_flight.lua` (286) plus broker and
+13. **Smart detection (~330 lines).** `smart_flight.lua` (286) plus broker and
     settings paths. Off by default and off on your models. Touches flight detection.
-15. **Glass theme (~490 lines).** `glass.lua` and `background_cache.lua` (390), the
+14. **Glass theme (~490 lines).** `glass.lua` and `background_cache.lua` (390), the
     loader stage (54), `theme.glassOpacity` (29), and opacity hooks across
     rendering. The Theme option keeps its choice positions.
-16. **Background work on hidden dashboards (~80 lines).** `background` hooks in
+15. **Background work on hidden dashboards (~80 lines).** `background` hooks in
     chart, link-status, rx-battery, flight-counter, and navigation, plus host
     plumbing. Flight detection already runs in the shared flight tracking. Risk:
     confirm that navigation home capture and chart recording do not depend on it.
 
 ### 4. Scheduler and service structure
 
-17. **Keep a persistent task list (400–470 instructions).** Change it only when the
+16. **Keep a persistent task list (400–470 instructions).** Change it only when the
     dashboard changes instead of re-enrolling every task each callback. Risk:
     medium; every dashboard change must update the list.
-18. **Let tasks set their own next due time (430–1,900 instructions).** Replace the
+17. **Let tasks set their own next due time (430–1,900 instructions).** Replace the
     `ready` functions evaluated on every pass. Risk: medium; each gate's condition
     becomes a due-time update at its source.
-19. **Poll telemetry once per sample in a single step.** Poll every subscribed
+18. **Poll telemetry once per sample in a single step.** Poll every subscribed
     source once at its own rate: 10 Hz for charted or debrief sources, 2–5 Hz
     otherwise. Drop the two-sources-per-slot round-robin and polling rounds that
     continue across callbacks; pass the chart history each batch of samples
     instead of a protected call per reading. Risk: medium; charts and debrief
     statistics depend on every sample.
-20. **Fix what a slot costs.** A slot assumes 2,000 instructions; measured costs per
+19. **Fix what a slot costs.** A slot assumes 2,000 instructions; measured costs per
     charged slot are 200–450 for most fixed-cost tasks, 480–740 for chart steps,
     and about 1,100 for telemetry. The scheduler believes it is out of budget after
     about 4–5k real instructions. Keep variable-cost grants for charts, but base
     the unit on measured costs. Risk: medium to high; changes every grant, so
     re-measure every layout.
+20. **Remove the Pre-release extended segments (107 lines).** `native_budget.lua`
+    (34), segment and carry-over logic in `scheduler.lua` (42), `liveDangerously`
+    in `main.lua` (22), `flight_config.lua`, and the Model settings row (9). Removes
+    every callback over 20k in the measured flights. Depends on the slot-cost fix:
+    the extra segments give charts room for horizontal and vertical rescaling,
+    which the steady-flight measurements above do not cover. Measure rescale
+    latency with the corrected slot cost and no extra segments before removing
+    them. Risk: high; rescaling may become much slower.
 21. **Run each task at most once per callback (1,600–4,700 instructions).** A task
     that asks for another turn makes the scheduler pass over every task again.
     Multi-step work, including chart rescaling, continues on the next callback;
@@ -185,8 +188,9 @@ Each is user-visible. Ordered by how contained the removal is.
     replace about half. Risk: highest; touches every overlay, editor, and input
     flow.
 
-Altogether about 3,450 lines, or 11% of the widget's code. Items 1–10 alone remove
-about 850 lines and every callback over 20k.
+Altogether about 3,450 lines, or 11% of the widget's code. Items 1–9 alone remove
+about 740 lines. Every callback over 20k comes from the Pre-release extended segments
+(item 20), which can only go once charts rescale fast enough without them.
 
 ## Reference: task rates
 
