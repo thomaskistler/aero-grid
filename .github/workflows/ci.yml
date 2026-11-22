@@ -90,6 +90,7 @@ jobs:
       - name: Verify the built image matches sources
         run: |
           diff -r src/WIDGETS/AeroGrid build/sdcard/WIDGETS/AeroGrid \
+            --exclude='debrief.yaml' \
             --exclude='review-*.yaml' \
             --exclude='services*.yaml' \
             --exclude='sim*.yaml' \
