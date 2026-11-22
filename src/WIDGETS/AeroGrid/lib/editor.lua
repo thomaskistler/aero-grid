@@ -16,7 +16,6 @@ editor.CATALOG = {
     { type = "model-identity", label = "Model identity" },
     { type = "navigation", label = "Navigation" },
     { type = "rx-battery", label = "RX battery" },
-    { type = "service-probe", label = "Service probe" },
     { type = "state", label = "State" },
     { type = "trim-panel", label = "Trim" },
     { type = "tx-battery", label = "TX battery" },

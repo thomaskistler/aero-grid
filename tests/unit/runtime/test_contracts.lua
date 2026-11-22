@@ -350,13 +350,11 @@ end
 local function testSettingsVocabulary()
     local catalog = settingsCatalog()
     local kinds = panelTypes()
-    -- Sixteen panels ship: thirteen instruments, two diagnostics, and the
-    -- fixed theme showcase. `heartbeat` and
-    -- `placeholder` were built to prove
-    -- the host contract and are fixtures under `tests/fixtures/panels`, so
+    -- Fourteen panels ship: thirteen instruments and host diagnostics.
+    -- Development panels are fixtures under `tests/fixtures/panels`, so
     -- they are not read here: the vocabulary rules below are about what a
     -- person configures on a radio.
-    assertEqual(#kinds, 16, "the catalogue changed size; expected thirteen instruments and three utility panels")
+    assertEqual(#kinds, 14, "the catalogue changed size; expected thirteen instruments and host diagnostics")
 
     for kind, settings in pairs(catalog) do
         local declared = {}
@@ -695,18 +693,6 @@ end
 local function testPanelDocumentationLoads()
     local kinds = panelTypes()
     assert(#kinds > 0, "no panels were found to document")
-    -- The utility is documented as a dashboard, not an instrument reference.
-    for index = #kinds, 1, -1 do
-        if kinds[index] == "theme-showcase" then
-            local handle = assert(io.open(root .. "/docs/user-guide/customize-themes.md", "r"))
-            local page = handle:read("*a")
-            handle:close()
-            assert(string.find(page, "# Customize themes", 1, true))
-            assert(string.find(page, "/WIDGETS/AeroGrid/themes/", 1, true))
-            assert(string.find(page, "/AEROGRID/themes/", 1, true))
-            table.remove(kinds, index)
-        end
-    end
 
     local names = catalogNames()
     for _, kind in ipairs(kinds) do
@@ -776,20 +762,18 @@ local function testYamlReference()
     end
 
     for _, kind in ipairs(kinds) do
-        if kind ~= "theme-showcase" then
-            -- The section runs from its heading to the next heading of any level.
-            local start = string.find(reference, "\n### `" .. kind .. "`\n", 1, true)
-            assert(start, "the YAML reference has no section for " .. kind)
-            local finish = string.find(reference, "\n###? ", start + 1) or #reference
-            local section = string.sub(reference, start, finish)
-            for _, key in ipairs(declaredKeys(loadModule("panels/" .. kind .. ".lua").settings)) do
-                assert(
-                    string.find(section, "`" .. key .. "`", 1, true),
-                    "the YAML reference does not describe " .. kind .. " setting " .. key
-                )
-            end
-            assert(placed[kind], "no YAML reference example places a " .. kind)
+        -- The section runs from its heading to the next heading of any level.
+        local start = string.find(reference, "\n### `" .. kind .. "`\n", 1, true)
+        assert(start, "the YAML reference has no section for " .. kind)
+        local finish = string.find(reference, "\n###? ", start + 1) or #reference
+        local section = string.sub(reference, start, finish)
+        for _, key in ipairs(declaredKeys(loadModule("panels/" .. kind .. ".lua").settings)) do
+            assert(
+                string.find(section, "`" .. key .. "`", 1, true),
+                "the YAML reference does not describe " .. kind .. " setting " .. key
+            )
         end
+        assert(placed[kind], "no YAML reference example places a " .. kind)
     end
 end
 
@@ -1245,9 +1229,7 @@ local function testRenderConsultsWhatIsShown()
     -- losing its rows is a failure rather than a silent exemption.
     local NO_SUPPORTING_ROW = {
         ["host-diagnostics"] = true,
-        ["service-probe"] = true,
         ["flight-counter"] = true,
-        ["theme-showcase"] = true,
     }
 
     local checked, exempt = 0, 0

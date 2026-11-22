@@ -178,6 +178,16 @@ local function testBuiltinNamesKeepPositions()
     assertions.assertEqual(files["/AEROGRID/layout-registry.txt"], "Empty\nSonic1\nDefault\nDiagnostics\n")
 end
 
+local function testRemovedLayoutsKeepPositions()
+    local files = { ["/AEROGRID/layout-registry.txt"] = "Empty\nDefault\nDiagnostics\nPalette\nSonic1\n" }
+    local folders = {
+        ["/WIDGETS/AeroGrid/layouts"] = { "Empty.yaml", "Default.yaml" },
+        ["/AEROGRID/layouts"] = { "Sonic1.yaml", "Glider.yaml" },
+    }
+    local names = registry.load("/", "/WIDGETS/AeroGrid/", fakeCard(files, folders))
+    assertions.assertEqual(table.concat(names, ","), "Empty,Default,Diagnostics,Palette,Sonic1,Glider")
+end
+
 local function testThemeRegistryKeepsPositionsAndAddsNames()
     local files = {}
     local folders = {
@@ -205,6 +215,7 @@ local function run()
     testRegistryIsAppendOnly()
     testRegistryWithoutFileApi()
     testBuiltinNamesKeepPositions()
+    testRemovedLayoutsKeepPositions()
     testThemeRegistryKeepsPositionsAndAddsNames()
 end
 

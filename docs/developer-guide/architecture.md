@@ -10,7 +10,7 @@ signatures; `plans/` contains design material, not the runtime contract.
 | --- | --- |
 | `src/WIDGETS/AeroGrid/main.lua` | EdgeTX entry points, native options, event routing, and task enrollment. |
 | `src/WIDGETS/AeroGrid/lib/` | Loading, scheduling, services, geometry, rendering, themes, persistence, and editor. |
-| `src/WIDGETS/AeroGrid/panels/` | Panel modules, including diagnostics and the fixed-data theme showcase. |
+| `src/WIDGETS/AeroGrid/panels/` | Panel modules, including host diagnostics. |
 | `src/WIDGETS/AeroGrid/layouts/` | Shipped layouts. |
 | `src/WIDGETS/AeroGrid/assets/` | Runtime editor assets and licenses. |
 | `tests/unit/`, `tests/integration/` | Module tests and mocked host/UI tests. |

@@ -149,7 +149,7 @@ REFRESH = """
 EXPECTED = {
     "output", "chart", "flight-counter", "flight-mode", "flight-timer",
     "host-diagnostics", "link-status", "metric", "model-identity", "navigation",
-    "rx-battery", "service-probe", "state", "trim-panel", "tx-battery",
+    "rx-battery", "state", "trim-panel", "tx-battery",
     "metric-entry", "chart-entry", "state-entry", "state-condition",
     "rx-battery-bar", "rx-battery-none", "navigation-tape", "host-diagnostics-log",
 }

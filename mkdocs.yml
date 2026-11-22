@@ -49,7 +49,6 @@ nav:
           - Model identity: panels/model-identity.md
           - Navigation: panels/navigation.md
           - RX battery: panels/rx-battery.md
-          - Service probe: panels/service-probe.md
           - State: panels/state.md
           - Trim: panels/trim-panel.md
           - TX battery: panels/tx-battery.md

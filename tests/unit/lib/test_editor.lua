@@ -80,7 +80,7 @@ local function testCatalogAlphabeticalOrder()
         end
     end
     assert(rxIndex and editor.CATALOG[rxIndex - 1].type == "navigation")
-    assert(editor.CATALOG[rxIndex + 1].type == "service-probe")
+    assert(editor.CATALOG[rxIndex + 1].type == "state")
 end
 
 local function testWorkingCopyCancelAndApply()
@@ -313,7 +313,7 @@ local function testCatalogPanelSizes()
             end
         end
     end
-    local showcase = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/theme-showcase.lua"))()
+    local showcase = assert(loadfile(root .. "/tests/fixtures/panels/theme-showcase.lua"))()
     for rows = 1, 4 do
         for columns = 1, 4 do
             assert(panelHost.supportsSpan(showcase, columns, rows) == (columns == 4 and rows == 4))

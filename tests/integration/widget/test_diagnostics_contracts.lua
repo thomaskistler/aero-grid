@@ -237,7 +237,7 @@ end
 
 local function testHostDiagnosticsReportsTheHost()
     resetRadio()
-    local source = assert(hostIo.open(sourcePath .. "layouts/Diagnostics.yaml", "r"))
+    local source = assert(hostIo.open(root .. "/tests/fixtures/layouts/development/Diagnostics.yaml", "r"))
     local yaml = source:read("a")
     source:close()
 

@@ -11,7 +11,7 @@ import yaml
 RECIPE_DIR = Path(__file__).with_name("capture-recipes")
 PANELS = ("trim-panel", "flight-timer", "metric", "chart", "flight-mode", "tx-battery",
               "model-identity", "rx-battery", "link-status", "navigation", "state", "flight-counter", "output",
-              "host-diagnostics", "service-probe")
+              "host-diagnostics")
 SYNTHETIC_PANELS = ("metric", "chart", "tx-battery", "rx-battery", "link-status", "navigation", "state",
                     "flight-counter", "output")
 
@@ -240,7 +240,7 @@ def load_recipe(path):
         if (not isinstance(sample["name"], str) or len(sample["name"]) > 10
                 or any(ord(c) < 32 or ord(c) > 126 for c in sample["name"])):
             raise ValueError("sample.name must be at most 10 printable ASCII characters")
-    elif recipe["panel"] in ("host-diagnostics", "service-probe"):
+    elif recipe["panel"] == "host-diagnostics":
         fields(sample, ())
     elif recipe["panel"] == "flight-mode":
         fields(sample, ("name",))
@@ -432,7 +432,7 @@ def readiness(recipe):
         return """            local graph = entry.instance and entry.instance.graph
             if not graph or graph.index < 16 then return end
 """
-    if recipe["panel"] in ("host-diagnostics", "service-probe"):
+    if recipe["panel"] == "host-diagnostics":
         return """            if not entry.instance then return end
 """
     if recipe["panel"] == "tx-battery":

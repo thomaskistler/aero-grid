@@ -23,7 +23,7 @@ build/capture-venv/bin/python tools/capture-panels.py --all
 
 Select one of `--panel <type>`, `--recipe <path>`, or `--all`.
 The setup target installs pinned PyYAML. Bundled recipes cover user-facing
-panels, Host diagnostics, and Service probe.
+panels and Host diagnostics.
 
 Outputs go to `build/doc-capture/<panel>/`: gallery crops, `full-frame.png`,
 `frame.rgb565`, `recipe.yaml`, `provenance.json`, `sdcard/`, and `simulator.log`.

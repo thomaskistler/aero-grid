@@ -29,12 +29,6 @@ Themes are stored as individual `.yml` files. Shipped themes live in
 are the filename stems, and user files override shipped files with the same
 name. Restart the radio after adding a theme so it appears in the Theme picker.
 
-Select **Palette** as the layout on a separate App-mode screen. It shows the
-theme with fixed sample data, without
-a receiver or telemetry setup. Switch the widget's **Theme** option between
-Dark, Light, and Glass to compare the same samples. Normal, active,
-warning, critical, stale, and unavailable cards are shown together.
-
 ## Create a custom theme
 
 1. Copy a complete shipped theme to `/AEROGRID/themes/<name>.yml`.
@@ -42,7 +36,7 @@ warning, critical, stale, and unavailable cards are shown together.
 2. Set `name` to the filename stem and `label` to the name you want in the picker.
    Keep `version: 1` and all required color and spacing entries.
 3. Change the colors, restart the radio, and select the new theme.
-   Check its normal and alert states in **Palette** before using it.
+   Check its normal and alert states on a dashboard before using it.
 
 Themes do not inherit from one another. Use spaces for YAML indentation, not
 tabs. See the [theme-file reference](../reference-guide/yaml.md#theme-files) for

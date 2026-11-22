@@ -127,8 +127,10 @@ radio's model-selection UI, just as on a radio.
 | **AG Debrief** (`model7.yml`) | Overview-based debrief testing with 1x1 Link, 2x1 Navigation, and all debrief sensors already registered. Arm with SF down; receiver required is off and the start window is 10 seconds. |
 
 Review and simulator-only layouts live in
-`tests/fixtures/layouts/development/`; `make build` adds them to the disposable
-simulator image without including them in the widget source or release ZIP.
+`tests/fixtures/layouts/development/`, and development-only panels such as
+`service-probe` and `theme-showcase` live in `tests/fixtures/panels/`;
+`make build` adds them to the disposable simulator image without including them
+in the widget source or release ZIP.
 All screens use App mode and Modern Dark. Models share switches, mixes, trims,
 and timer setup, but EdgeTX keeps live timer/trim state per model.
 
