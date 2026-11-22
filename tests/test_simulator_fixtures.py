@@ -16,6 +16,7 @@ REGISTRY = (
     "review-navigation", "review-state", "review-trim-panel",
     "review-tx-battery", "services", "services2", "sim", "sim2", "states",
     "review-flight-counter", "Palette", "review-output", "review-chart",
+    "debrief",
 )
 EXPECTED = (
     ("AG Overview", ("Default", "sim", "sim2")),
@@ -27,6 +28,7 @@ EXPECTED = (
     ("AG Controls", ("review-output", "review-trim-panel")),
     ("AG System", ("Diagnostics", "services", "services2", "review-state",
                    "states", "Palette", "Empty")),
+    ("AG Debrief", ("debrief",)),
 )
 
 
@@ -71,12 +73,12 @@ class SimulatorFixtureTests(unittest.TestCase):
     def test_exact_category_screen_order_and_complete_coverage(self):
         models = FIXTURE / "MODELS"
         self.assertEqual({path.name for path in models.glob("model*.yml")},
-                         {f"model{number}.yml" for number in range(1, 7)})
+                         {f"model{number}.yml" for number in range(1, len(EXPECTED) + 1)})
         seen = []
         labels = (models / "labels.yml").read_text()
         self.assertIn("\nSort: 0\n", labels)
         self.assertEqual(re.findall(r"(?m)^  (model\d+\.yml):$", labels),
-                         [f"model{number}.yml" for number in range(1, 7)])
+                         [f"model{number}.yml" for number in range(1, len(EXPECTED) + 1)])
         for number, (name, expected) in enumerate(EXPECTED, 1):
             with self.subTest(model=name):
                 self.assertLessEqual(len(name), 15)
@@ -134,7 +136,7 @@ class SimulatorFixtureTests(unittest.TestCase):
     def test_flight_model_preserves_requested_settings(self):
         settings = FIXTURE / "AEROGRID/models"
         self.assertEqual({path.name for path in settings.glob("*.yaml")},
-                         {"AGTST2.yaml"})
+                         {"AGTST2.yaml", "AGDBRF.yaml"})
         document = (settings / "AGTST2.yaml").read_text()
         model = (FIXTURE / "MODELS/model2.yml").read_text()
         self.assertIn('limitData:\n   31:\n      name: "AGTST2"\n', model)
@@ -145,7 +147,7 @@ class SimulatorFixtureTests(unittest.TestCase):
         self.assertIn('  flightSwitch: "L01"\n', document)
 
     def test_only_flight_model_has_dedicated_sticky_and_one_shot_announcements(self):
-        for number in range(1, 7):
+        for number in range(1, len(EXPECTED) + 1):
             model = (FIXTURE / f"MODELS/model{number}.yml").read_text()
             if number != 2:
                 self.assertNotIn("logicalSw:", model)
@@ -164,6 +166,54 @@ class SimulatorFixtureTests(unittest.TestCase):
                           '      def: agstart,1,!1x\n', functions)
             self.assertIn('swtch: "!L1"\n      func: PLAY_TRACK\n'
                           '      def: agend,1,!1x\n', functions)
+
+    def test_debrief_model_has_requested_settings_and_published_sensors(self):
+        model = (FIXTURE / "MODELS/model7.yml").read_text()
+        settings = (FIXTURE / "AEROGRID/models/AGDBRF.yaml").read_text()
+        self.assertIn('limitData:\n   31:\n      name: "AGDBRF"\n', model)
+        self.assertIn('modelFilename: "model7.yml"\n', settings)
+        self.assertIn('armed: "SFv"\n', settings)
+        self.assertIn('  requireReceiver: false\n', settings)
+        self.assertIn('  minFlightDuration: 10\n', settings)
+        sensors = model.split("telemetrySensors:\n", 1)[1].split("timers:", 1)[0]
+        blocks = re.split(r"(?m)^   \d+:\n", sensors)[1:]
+        definitions = {}
+        for block in blocks:
+            name = re.search(r'label: "([^"]+)"', block).group(1)
+            definitions[name] = block
+        for offset, (name, unit, precision) in enumerate(
+                (("VCel", 1, 2), ("Mrgn", 17, 0), ("Drop", 37, 0),
+                 ("HDst", 9, 0), ("FDst", 9, 0)), 1):
+            with self.subTest(sensor=name):
+                block = definitions[name]
+                self.assertIn(f'id1:\n         id: {0xAE00 + offset}\n', block)
+                self.assertIn('id2:\n         instance: 0\n', block)
+                self.assertIn('subId: 0\n', block)
+                self.assertIn('type: TYPE_CUSTOM\n', block)
+                self.assertIn(f'unit: {unit}\n', block)
+                self.assertIn(f'prec: {precision}\n', block)
+        self.assertEqual(len(definitions), 29)
+        self.assertEqual(len(blocks), len(definitions))
+        layout = (ROOT / "tests/fixtures/layouts/development/debrief.yaml").read_text()
+        self.assertIn("version: 5\n", layout)
+        panels = dict(block.split("\n", 1) for block in
+                      re.split(r"(?m)^  - id: ", layout)[1:])
+        self.assertNotIn("expo", panels)
+        self.assertNotIn("armSwitch:", panels["flight-count"])
+        self.assertNotIn("motorSource:", panels["flight-count"])
+        self.assertIn("homeMode: edgetx\n", panels["navigation"])
+        for name, kind, geometry in (
+                ("link", "link-status", (3, 1, 1, 1)),
+                ("navigation", "navigation", (0, 2, 2, 1))):
+            with self.subTest(panel=name):
+                block = panels[name]
+                self.assertIn(f"    type: {kind}\n", block)
+                actual = tuple(int(re.search(rf"(?m)^    {key}: (\d+)$", block).group(1))
+                               for key in ("col", "row", "colSpan", "rowSpan"))
+                self.assertEqual(actual, geometry)
+        for source in re.findall(r"(?m)^\s*(?:- )?source: ([\w+-]+)$", layout):
+            self.assertIn(source.rstrip("+-"), definitions,
+                          f"{source} needs a pre-registered sensor")
 
     def test_announcement_audio_contains_exact_beep_counts(self):
         for name, count in (("agstart", 3), ("agend", 4)):

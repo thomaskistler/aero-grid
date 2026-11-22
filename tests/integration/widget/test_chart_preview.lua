@@ -77,6 +77,36 @@ assert(
     "saving a compatible preview must attach observers for new telemetry"
 )
 
+local sections = {
+    { tiles = { { title = "Link", colSpan = 2, rowSpan = 2, series = { { source = "RQly", statistic = "min" } } } } },
+    { tiles = {} },
+    false,
+}
+-- A layout that has never had a debrief records one derived from its chart.
+assert(context.debriefGenerated and #context.document.debrief.tiles > 0, "the charts must derive debrief tiles")
+assert(context.serviceRuntime.byId.debrief, "derived debrief tiles must load the recorder")
+for _, section in ipairs(sections) do
+    draft, handlers = preview(function()
+        context.editorSession.draft.debrief = section or nil
+        context.editorModule.setDebriefDerived(context.editorSession, not section)
+    end)
+    save(draft, handlers)
+    equal(context.reloadState, nil, "a debrief-only save must not reload the dashboard")
+    equal(context.serviceRuntime.byId.history, history)
+    if section then
+        equal(context.document.debrief, section)
+    else
+        -- Without a section of its own the layout derives its debrief again.
+        assert(context.debriefGenerated and #context.document.debrief.tiles > 0, "the debrief must be derived again")
+    end
+    equal(fixture.instanceOf(context, "power"), compatible)
+    assert(context.serviceRuntime.byId.debrief, "a debrief save must load the recorder")
+end
+-- Saving debrief series subscribes them before the next flight; history keeps
+-- subscriptions until the dashboard reloads.
+equal(history.count, subscriptions + 1, "a debrief save must record its series")
+subscriptions, telemetryCount = history.count, telemetry.count
+
 fixture.radio.fields.NewChart = { id = 5100, name = "NewChart", unit = 1 }
 fixture.radio.values[5100] = 55
 fixture.radioMock.indexFields()

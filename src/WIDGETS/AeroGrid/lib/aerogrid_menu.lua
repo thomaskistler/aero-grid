@@ -8,6 +8,7 @@ local menu = { RUNTIME_API = 1 }
 local TILES = {
     { icon = "model", label = "Model\nsettings", action = "modelSettings" },
     { icon = "theme", label = "UI\nsetup", action = "uiSetup" },
+    { icon = "stats", label = "Flight\ndebrief", action = "debrief" },
 }
 
 --- EdgeTX fills its native top-left icon with the theme's FOCUS color.
@@ -121,7 +122,7 @@ local function open(context, state)
             return math.floor(value * scale + 0.5)
         end
         local padding, gap, tileWidth, tileHeight = px(12), px(12), px(88), px(80)
-        local width, height = padding * 2 + tileWidth * 2 + gap, px(32) + tileHeight + padding
+        local width, height = padding * 2 + tileWidth * #TILES + gap * (#TILES - 1), px(32) + tileHeight + padding
         local x, y = math.floor((context.zone.w - width) / 2), state.h + px(4)
         state.bounds = { x = x, y = y, w = width, h = height }
         state.screen = lvgl.box(state.parent, {
@@ -338,13 +339,11 @@ function menu.handle(context, event, touch)
             state.dismiss = true
         elseif matches(event, "EVT_VIRTUAL_ENTER") or matches(event, "EVT_ENTER_BREAK") then
             state.action = TILES[state.selected].action
-        elseif
-            matches(event, "EVT_VIRTUAL_NEXT")
-            or matches(event, "EVT_ROT_RIGHT")
-            or matches(event, "EVT_VIRTUAL_PREV")
-            or matches(event, "EVT_ROT_LEFT")
-        then
-            state.selected = 3 - state.selected
+        elseif matches(event, "EVT_VIRTUAL_NEXT") or matches(event, "EVT_ROT_RIGHT") then
+            state.selected = state.selected % #TILES + 1
+            state.selectionDirty = true
+        elseif matches(event, "EVT_VIRTUAL_PREV") or matches(event, "EVT_ROT_LEFT") then
+            state.selected = (state.selected - 2) % #TILES + 1
             state.selectionDirty = true
         elseif matches(event, "EVT_TOUCH_FIRST") then
             state.press = context.gesture.track(nil, event, touch)

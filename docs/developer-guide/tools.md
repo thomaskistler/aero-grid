@@ -107,6 +107,10 @@ panels and their primary readings. Outputs are under
 Theme samples use `--scene theme-modern-dark`, `theme-modern-light`, or
 `theme-custom`; panel recipes also accept `theme: modern-light`.
 
+Flight debrief scenes are `debrief-settings`, `debrief-tile`, `debrief-ready`,
+and `debrief-view`. The last two fly a scripted flight of about 45 seconds
+through real services, so each takes over a minute.
+
 ### Publish reviewed images
 
 Review the full frame, crops, sample disclosures, and provenance, then copy

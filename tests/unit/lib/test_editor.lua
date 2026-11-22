@@ -4,7 +4,9 @@ local root = (... and ... ~= "" and ...) or "."
 local moduleLoader = assert(loadfile(root .. "/tests/support/module_loader.lua"))(root)
 local editor = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/editor.lua"))()
 local grid = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/grid.lua"))()
-local layout = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/layout.lua"))()
+local layout = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/layout.lua"))(function()
+    return assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/debrief_config.lua"))()
+end)
 local panelHost = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/panel_host.lua"))()
 panelHost.SLOTS = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.lua"))().SLOTS
 
@@ -140,6 +142,59 @@ local function testAddRemoveAndStrictSettings()
     assert(editor.setValue(session, "label", ""))
     local valid, errors = editor.validate(session)
     assert(not valid and string.find(table.concat(errors, "\n"), "label must not be empty", 1, true))
+end
+
+local function testDebriefDraft()
+    local session = newSession()
+    assert(not editor.editDebrief(session, "removeTile", 1), "a layout without a debrief has no tiles")
+    assert(session.draft.debrief == nil and not session.dirty)
+    assert(editor.editDebrief(session, "addTile") == 1 and session.dirty)
+    local valid, errors = editor.validate(session)
+    assert(not valid and string.find(table.concat(errors, "\n"), "series 1: source is required", 1, true))
+    assert(editor.editDebrief(session, "setSeriesValue", 1, 1, "source", "VCel"))
+    local applied, saved = editor.apply(session)
+    assert(applied, table.concat(saved or {}, "; "))
+    assert(saved.debrief.tiles[1].title == "Tile 1")
+
+    assert(editor.editDebrief(session, "removeTile", 1))
+    assert(editor.cancel(session))
+    assert(#session.draft.debrief.tiles == 1, "cancel restores the debrief")
+
+    session.draft.debrief.tiles[1].futureTile = "preserved"
+    session.draft.debrief.tiles[1].series[1].futureSeries = "preserved"
+    local normalized
+    valid, normalized = editor.validate(session)
+    assert(valid, table.concat(normalized, "\n"))
+    assert(normalized.debrief.tiles[1].futureTile == "preserved")
+    assert(normalized.debrief.tiles[1].series[1].futureSeries == "preserved")
+
+    session.draft.debrief.tiles[1].series[1].statistic = "last"
+    valid, errors = editor.validate(session)
+    assert(not valid and string.find(table.concat(errors, "\n"), "debrief tile 1", 1, true))
+    session.draft.debrief = "invalid"
+    valid, errors = editor.validate(session)
+    assert(not valid and string.find(table.concat(errors, "\n"), "debrief must be a mapping", 1, true))
+end
+
+local function testDerivedDebrief()
+    local session = newSession()
+    assert(not editor.deriveDebrief(session), "a layout's own debrief is never derived")
+    assert(session.draft.debrief == nil)
+
+    editor.setDebriefDerived(session, true)
+    assert(editor.deriveDebrief(session) and type(session.draft.debrief) == "table")
+    assert(session.debriefDerived and not session.dirty, "deriving is not an edit")
+
+    assert(editor.editDebrief(session, "addTile"))
+    assert(session.debriefDerived == false and session.dirty, "an edit makes the debrief the layout's own")
+    assert(editor.cancel(session))
+    assert(session.debriefDerived and session.draft.debrief == nil, "cancel restores the derived state")
+
+    -- Fill creates the section, even when the panels map to no tiles.
+    local filled = newSession()
+    filled.draft.panels = {}
+    assert(editor.editDebrief(filled, "fill", filled.draft.panels) == 0)
+    assert(filled.draft.debrief and #filled.draft.debrief.tiles == 0 and filled.dirty)
 end
 
 local function testAddChannelOutput()
@@ -851,6 +906,8 @@ testCompatibleSwaps()
 testWorkingCopyCancelAndApply()
 testPlacementRulesAndResizeAnchor()
 testAddRemoveAndStrictSettings()
+testDebriefDraft()
+testDerivedDebrief()
 testAddChannelOutput()
 testAddSpanDeclarations()
 testCatalogPanelSizes()

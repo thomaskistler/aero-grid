@@ -33,6 +33,9 @@ local function fixture(width, height, size)
             assert(not c.aerogridMenu.open and c.aerogridMenu.screen.hidden, "close before invoking the next UI")
             control.model = control.model + 1
         end,
+        debrief = function()
+            control.debrief = (control.debrief or 0) + 1
+        end,
         uiSetup = function()
             control.layout = control.layout + 1
         end,
@@ -129,7 +132,7 @@ do
         assert(math.abs(state.title.properties.x * 2 + state.title.properties.w - b.w) <= 1)
         assert(b.x >= 0 and b.y >= state.h and b.x + b.w <= c.zone.w and b.y + b.h <= c.zone.h)
         assert(math.abs(b.x * 2 + b.w - c.zone.w) <= 1, "popup is centered below the header")
-        assert(#state.tiles == 2 and state.tiles[1].label.properties.text == "Model\nsettings")
+        assert(#state.tiles == 3 and state.tiles[3].label.properties.text == "Flight\ndebrief")
         assert(state.input.properties.w == c.zone.w and state.input.properties.h == c.zone.h)
         assert(
             state.input.properties.opacity == 0,
@@ -211,7 +214,14 @@ do
     open(c)
     assert(state.screen == screen, "repeated opens reuse the bounded LVGL object tree")
     menu.handle(c, EVT_VIRTUAL_PREV)
-    assert(state.selected == 2)
+    assert(state.selected == 3, "keys wrap around all three tiles")
+    menu.handle(c, EVT_VIRTUAL_NEXT)
+    assert(state.selected == 1)
+    menu.handle(c, EVT_VIRTUAL_PREV)
+    menu.handle(c, EVT_VIRTUAL_ENTER)
+    menu.advance(c)
+    assert(control.debrief == 1 and control.layout == 2, "the third tile opens the Flight debrief page")
+    open(c)
     menu.handle(c, EVT_VIRTUAL_EXIT)
     assert(state.open)
     menu.advance(c)

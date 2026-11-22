@@ -38,7 +38,7 @@ Tap a reading under **Metrics** to open its settings.
 | **Warning** | Off | Value that triggers the warning state, in the source's units, between **Range min** and **Range max**. Steps of 0.1. One step below **Range min** is **Off**. |
 | **Critical** | Off | Value that triggers the critical state, in the source's units, between **Range min** and **Range max**. Steps of 0.1. One step below **Range min** is **Off**. |
 
-Use **Remove entry** in the entry's settings dialog to delete a reading.
+Tap a reading to edit, move, or delete it.
 
 ## Behavior
 

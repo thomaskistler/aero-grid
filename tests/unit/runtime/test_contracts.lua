@@ -657,10 +657,17 @@ local function checkReferenceExample(body, label)
         normalized = checkLayoutExample(body, label)
     elseif string.match(body, "^%- id:") then
         normalized = checkPanelExample(body, label)
+    elseif string.match(body, "^debrief:") then
+        local document, parseError = yaml.parse(body)
+        assert(document, label .. ": " .. tostring(parseError))
+        local errors = layout.validateDebrief(document)
+        assertEqual(#errors, 0, label .. ": " .. table.concat(errors, "; "))
+        assert(document.debrief and #document.debrief.tiles > 0, label .. " declares no debrief tiles")
+        normalized = { panels = {} }
     else
         error(
             label
-                .. " is neither a layout nor a panel entry, so nothing"
+                .. " is neither a layout, panel entry nor debrief, so nothing"
                 .. " checks it. Its first line is: "
                 .. tostring(string.match(body, "^([^\n]*)"))
         )

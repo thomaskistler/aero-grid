@@ -307,6 +307,131 @@ panels:
     assertEqual(unchanged, source, "loading a migrated layout rewrote its source file")
 end
 
+local function testDebriefErrorsAreNotices()
+    resetRadio()
+    local source = table.concat({
+        "version: 5\ngrid:\n  columns: 4\n  rows: 4\n",
+        "panels:\n  - id: clock\n    type: flight-timer\n",
+        "    col: 0\n    row: 0\n    colSpan: 2\n    rowSpan: 2\n",
+        "debrief:\n  tiles:\n",
+        "    - title: Link\n      colSpan: 2\n      rowSpan: 2\n      futureTile: kept\n",
+        "      series:\n        - source: RQly\n          statistic: min\n          futureSeries: kept\n",
+        "    - title: Broken\n      colSpan: 2\n      rowSpan: 2\n",
+        "      series:\n        - source: RQly\n          statistic: last\n",
+    })
+    local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, makeWidget("debrief", source))
+    assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
+    assertEqual(#context.document.debrief.tiles, 1, "the valid debrief tiles were not kept")
+    assertEqual(context.document.debrief.tiles[1].title, "Link")
+    assertEqual(context.document.debrief.tiles[1].futureTile, "kept")
+    assertEqual(context.document.debrief.tiles[1].series[1].futureSeries, "kept")
+    local noticed, futureTile, futureSeries = false, false, false
+    for _, notice in ipairs(context.notices) do
+        noticed = noticed or string.find(notice.text, "debrief tile 2", 1, true) ~= nil
+        futureTile = futureTile or string.find(notice.text, "futureTile", 1, true) ~= nil
+        futureSeries = futureSeries or string.find(notice.text, "futureSeries", 1, true) ~= nil
+    end
+    assert(noticed, "the debrief error was not surfaced as a notice")
+    assert(futureTile and futureSeries, "unknown settings must be reported")
+    assert(entryById(context, "clock"), "a debrief error must not stop the dashboard")
+
+    local battery = table.concat({
+        "version: 5\ngrid:\n  columns: 4\n  rows: 4\n",
+        "panels:\n  - id: pack\n    type: rx-battery\n",
+        "    col: 0\n    row: 0\n    colSpan: 2\n    rowSpan: 2\n",
+    })
+    local bare = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, makeWidget("no-debrief", battery))
+    assertEqual(#bare.errors, 0, table.concat(bare.errors, "\n"))
+    -- A layout that has never had a debrief derives one from its panels.
+    assert(bare.debriefGenerated, "a layout without a debrief section must derive one")
+    assertEqual(#bare.document.debrief.tiles, 1)
+    assertEqual(bare.document.debrief.tiles[1].title, "RX battery")
+    local empty = createLoaded(
+        { x = 0, y = 0, w = 480, h = 272 },
+        DEFAULT_OPTIONS,
+        makeWidget("empty-debrief", battery .. "debrief:\n  tiles: []\n")
+    )
+    assert(not empty.debriefGenerated, "an empty debrief is the layout's own")
+    assertEqual(#empty.document.debrief.tiles, 0, "an empty debrief is never filled")
+    local malformed = createLoaded(
+        { x = 0, y = 0, w = 480, h = 272 },
+        DEFAULT_OPTIONS,
+        makeWidget("bad-debrief", "version: 5\ngrid:\n  columns: 4\n  rows: 4\npanels: []\ndebrief: invalid\n")
+    )
+    assert(malformed.debriefGenerated and #malformed.document.debrief.tiles == 0)
+    assertEqual(#malformed.errors, 0)
+    local badNotice = false
+    for _, notice in ipairs(malformed.notices) do
+        badNotice = badNotice or string.find(notice.text, "debrief must be a mapping", 1, true) ~= nil
+    end
+    assert(badNotice)
+
+    -- The statistic follows the panel owning the sensor's thresholds, as the
+    -- telemetry registry decides, not the first panel naming it.
+    local function metric(id, row, extra)
+        return table.concat({
+            "  - id: " .. id .. "\n    type: metric\n",
+            "    col: 0\n    row: " .. row .. "\n    colSpan: 2\n    rowSpan: 2\n",
+            "    config:\n      metrics:\n        - source: Curr\n" .. extra,
+        })
+    end
+    local owned = createLoaded(
+        { x = 0, y = 0, w = 480, h = 272 },
+        DEFAULT_OPTIONS,
+        makeWidget(
+            "debrief-owner",
+            "version: 5\ngrid:\n  columns: 4\n  rows: 4\npanels:\n"
+                .. metric("plain", 0, "")
+                .. metric("judged", 2, "          warning: 20\n          critical: 10\n")
+        )
+    )
+    assertEqual(#owned.errors, 0, table.concat(owned.errors, "\n"))
+    local derived = owned.document.debrief.tiles
+    assertEqual(#derived, 2)
+    assertEqual(derived[1].series[1].statistic, "min", "the threshold owner judges Curr as falling")
+    assertEqual(derived[2].series[1].statistic, "min")
+
+    -- A derived series shares the recording of an unsmoothed chart; only a
+    -- smoothed chart needs its own track beside the debrief's.
+    local function chart(id, row, smoothing)
+        return table.concat({
+            "  - id: " .. id .. "\n    type: chart\n",
+            "    col: 0\n    row: " .. row .. "\n    colSpan: 4\n    rowSpan: 2\n",
+            "    config:\n      smoothing: " .. smoothing .. "\n      metrics:\n        - source: Curr\n",
+        })
+    end
+    local charts = createLoaded(
+        { x = 0, y = 0, w = 480, h = 272 },
+        DEFAULT_OPTIONS,
+        makeWidget(
+            "debrief-shared",
+            "version: 5\ngrid:\n  columns: 4\n  rows: 4\npanels:\n"
+                .. chart("raw", 0, "off")
+                .. chart("smooth", 2, "medium")
+        )
+    )
+    assertEqual(#charts.errors, 0, table.concat(charts.errors, "\n"))
+    pump(charts, 20)
+    assertEqual(#charts.document.debrief.tiles, 2)
+    assertEqual(charts.serviceRuntime.byId.history.count, 2, "the debrief must reuse the unsmoothed recording")
+
+    -- Reloading a layout with its own debrief forgets the derived one.
+    local switching = makeWidget("debrief-switch", battery)
+    writeFile(switching .. "layouts/Own.yaml", battery .. "debrief:\n  tiles: []\n")
+    local reloaded = createLoaded(
+        { x = 0, y = 0, w = 480, h = 272 },
+        { Layout = "Default", Theme = "modern-dark" },
+        switching
+    )
+    assert(reloaded.debriefGenerated and reloaded.derivedDebrief)
+    definition.update(reloaded, { Layout = "Own", Theme = "modern-dark" })
+    pump(reloaded, 300)
+    assert(not reloaded.stage and not reloaded.reloadState, "the layout must finish loading")
+    assertEqual(#reloaded.document.debrief.tiles, 0)
+    assert(not reloaded.debriefGenerated, "the loaded debrief is the layout's own")
+    assertEqual(reloaded.derivedDebrief, nil, "the obsolete derived debrief must not be retained")
+end
+
 local function testRejectedLayouts()
     local cases = {
         { name = "corrupt", yaml = "version: 1\n\tpanels: []\n", error = "tab" },
@@ -343,4 +468,5 @@ testContractRejections()
 testPackageCompatibility()
 testVersionOneBatteryLoadsWithoutWriting()
 testRejectedLayouts()
+testDebriefErrorsAreNotices()
 testTimerIndexIsRefusedAtLoad()

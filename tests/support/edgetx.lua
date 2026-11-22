@@ -1359,6 +1359,9 @@ function support.lvgl()
         -- so cannot be seen by any assertion about what is drawn.
         hide = countedHide,
         show = countedShow,
+        disable = function(object)
+            rawset(object, "disabled", true)
+        end,
         isAppMode = function()
             return appMode
         end,

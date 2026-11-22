@@ -94,5 +94,5 @@ standard information alongside it. In App mode, a wider top-left panel
 leaves more room beside the menu button.
 
 To arrange and configure panels, continue with
-[Edit a dashboard on the radio](edit-dashboard.md). For palette settings, see
+[Edit a dashboard](edit-dashboard.md). For palette settings, see
 [Customize themes](customize-themes.md).

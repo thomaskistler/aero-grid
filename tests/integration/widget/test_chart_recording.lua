@@ -1,6 +1,8 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local root, independent, withFlights, smartEnabled = ...
+-- `derived` leaves the debrief out of the layout, so one is derived from the
+-- charts and records beside them.
+local root, independent, withFlights, smartEnabled, derived = ...
 assert(root)
 local hostIo = io
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
@@ -31,6 +33,10 @@ for index = 1, 8 do
         fixture.radio.values[5000 + id] = id
         lines[#lines + 1] = "        - source: " .. name .. "\n          precision: 1"
     end
+end
+if not derived then
+    -- Only the charts record here; a derived debrief would record its own series.
+    lines[#lines + 1] = "debrief:\n  tiles: []"
 end
 fixture.radioMock.indexFields()
 if smartEnabled then
@@ -76,11 +82,23 @@ if withFlights or smartEnabled then
 end
 
 local context
+-- Worst callback and worst recording work in one callback, in instructions
+-- counted 100 at a time.
+local worst, counted, recording, worstRecording = 0, 0, 0, 0
+local capture, worstCapture = 0, 0
 local function runCallback(fn, ...)
     fixture.lvglMock.setPropertyValidation(false)
     fixture.lvglMock.setCallCounting(false)
     fixture.lcdMock.setTextMeasurement(false)
+    counted, recording, capture = 0, 0, 0
+    debug.sethook(function()
+        counted = counted + 100
+    end, "", 100)
     local ok, message = pcall(fn, ...)
+    debug.sethook()
+    worst = math.max(worst, counted)
+    worstRecording = math.max(worstRecording, recording)
+    worstCapture = math.max(worstCapture, capture)
     fixture.lcdMock.setTextMeasurement(true)
     fixture.lvglMock.setCallCounting(true)
     fixture.lvglMock.setPropertyValidation(true)
@@ -120,6 +138,28 @@ for _ = 1, 2500 do
     end
 end
 assert(prepared, "all chart frames must be initialized before recording starts")
+worst = 0
+collectgarbage("collect")
+local startHeap = collectgarbage("count")
+local function measure(service, name, add)
+    local original = service[name]
+    service[name] = function(...)
+        local before = counted
+        local a, b, c = original(...)
+        add(counted - before)
+        return a, b, c
+    end
+end
+for _, name in ipairs({ "sample", "update" }) do
+    measure(context.serviceRuntime.byId.history, name, function(spent)
+        recording = recording + spent
+    end)
+end
+if context.serviceRuntime.byId.debrief then
+    measure(context.serviceRuntime.byId.debrief, "update", function(spent)
+        capture = capture + spent
+    end)
+end
 if independent then
     local sessions = {}
     for index, entry in ipairs(context.panels) do
@@ -262,7 +302,14 @@ for _, entry in ipairs(context.panels) do
     end
 end
 local history = context.serviceRuntime.byId.history
-assert(history.count == 24)
+if derived then
+    local section = context.document.debrief
+    assert(context.debriefGenerated and #section.tiles == 8, "each chart derives a debrief tile")
+    -- The debrief records each reading unsmoothed, beside the chart's smoothed one.
+    assert(history.count == 48, "debrief recordings: " .. history.count)
+else
+    assert(history.count == 24)
+end
 if smartEnabled then
     local telemetry = context.serviceRuntime.byId.telemetry
     for id = 1, 24 do
@@ -334,6 +381,50 @@ if withFlights then
     assert(panel.flightBands and panel.flightBands[1], "completed flights must have background bands")
 end
 
+if withFlights then
+    local debrief = context.serviceRuntime.byId.debrief
+    assert((debrief ~= nil) == (derived == true), "only a derived debrief records")
+    collectgarbage("collect")
+    local flightHeap = collectgarbage("count")
+    if derived then
+        local captured
+        for _ = 1, 3000 do
+            pump(1, true)
+            captured = debrief:result()
+            if captured and captured.tiles and #captured.tiles == 8 then
+                break
+            end
+        end
+        assert(captured and #captured.tiles == 8, "the flight's debrief must be captured")
+        for _, tile in ipairs(captured.tiles) do
+            assert(#tile.series == 3 and tile.series[1].value ~= nil, "every reading is summarized")
+        end
+    end
+    collectgarbage("collect")
+    local knots = 0
+    for _, entry in ipairs(history.entries) do
+        knots = knots + entry.state.count
+    end
+    print(
+        string.format(
+            "  %s: %d recordings, %d knots; worst callback %d, recording %d, capture %d instructions;"
+                .. " heap %.0f KiB at start, +%.0f flying, +%.0f captured",
+            derived and "derived debrief" or "charts only",
+            history.count,
+            knots,
+            worst,
+            worstRecording,
+            worstCapture,
+            startHeap,
+            flightHeap - startHeap,
+            collectgarbage("count") - flightHeap
+        )
+    )
+    -- Recording and capture are only part of a callback.
+    local share = fixture.firmware.INSTRUCTION_BUDGET // 2
+    assert(worstRecording < share, "recording took " .. worstRecording .. " instructions in one callback")
+    assert(worstCapture < share, "capture took " .. worstCapture .. " instructions in one callback")
+end
 if withFlights or smartEnabled then
     return
 end

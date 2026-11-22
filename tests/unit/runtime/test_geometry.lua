@@ -768,7 +768,7 @@ local function testClockNeverOutgrowsItsForm()
     assertEqual(timer.formatClock(3599), "59:59")
     assertEqual(timer.formatClock(3600), "60:00", "the clock grew an hours field, so its width is not fixed after all")
     assertEqual(
-        modelService.formatTime(3600),
+        fixture.services.clockText(3600),
         "1:00:00",
         "the service stopped reporting hours, which the diagnostics line wants"
     )
@@ -822,7 +822,7 @@ local function testClockNeverOutgrowsItsForm()
     -- said, and a diagnostics view showing a folded value would be reporting
     -- on a world assembled for it rather than the one the dashboard is in.
     assertEqual(
-        modelService.formatTime(TIMER_MAX),
+        fixture.services.clockText(TIMER_MAX),
         "2330:10:07",
         "the shared formatter was clamped, so the diagnostics view now lies"
     )

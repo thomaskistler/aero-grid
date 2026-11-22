@@ -313,10 +313,11 @@ local function mapped(session, stamp, clipStart)
     return clipped, false
 end
 
-local function addFlight(session, id, at, known)
+--- `stamp` is the flight's start on the service clock, for its wall time.
+local function addFlight(session, id, at, known, stamp)
     local state = session.state
     local index = state.flightLast + 1
-    local interval = { id = id, start = at, startKnown = known }
+    local interval = { id = id, start = at, startKnown = known, startedAt = stamp }
     session.flights[(index - 1) % history.FLIGHT_CAPACITY + 1] = interval
     state.flightLast = index
     state.flightFirst = math.max(state.flightFirst, index - history.FLIGHT_CAPACITY + 1)
@@ -336,7 +337,7 @@ function history:flight(view, index)
     if interval.empty then
         return nil
     end
-    return interval.start, interval.finish, interval.startKnown, interval.endKnown
+    return interval.start, interval.finish, interval.startKnown, interval.endKnown, interval.startedAt
 end
 
 function history:armBoundary(view, index)
@@ -384,7 +385,7 @@ function history:boundaries()
         if session and session.epoch == event.epoch then
             local at, known = mapped(session, event.at, event.kind == "start")
             if event.kind == "start" and at and event.observedAt >= session.attachedAt then
-                addFlight(session, event.flightId, at, known)
+                addFlight(session, event.flightId, at, known, event.at)
             elseif event.kind == "end" then
                 local interval = session.openFlight
                 if interval and interval.id == event.flightId then
@@ -404,7 +405,7 @@ function history:boundaries()
             local at, known = mapped(session, flight.startedAt, true)
             -- Late attachment shows only the portion this runtime recorded,
             -- never a fabricated start marker or pre-attachment samples.
-            addFlight(session, flight.flightId, at or session.state.elapsed, known)
+            addFlight(session, flight.flightId, at or session.state.elapsed, known, flight.startedAt)
         end
         session.openFlight.observed = session.state.elapsed
     end
@@ -624,14 +625,37 @@ local function record(entry, value, at, epsilon, segment)
         entry.lastAt, entry.endpoint = at, value
         entry.low, entry.high = -huge, huge
     else
+        -- Comparisons instead of math calls: this runs for every sample.
+        local size = value < 0 and -value or value
+        if epsilon > size then
+            size = epsilon
+        end
         for attempt = 1, 2 do
+            local anchor = entry.anchor
             local elapsed = at - entry.anchorAt
-            local tolerance = epsilon - max(abs(value), abs(entry.anchor), epsilon) * ROUNDING
-            local low = max(entry.low, (value - entry.anchor - tolerance) / elapsed)
-            local high = min(entry.high, (value - entry.anchor + tolerance) / elapsed)
-            local endpoint = entry.anchor + (low / 2 + high / 2) * elapsed
-            local slope = (endpoint - entry.anchor) / elapsed
-            if tolerance > 0 and finite(endpoint) and low <= slope and slope <= high then
+            local scale = anchor < 0 and -anchor or anchor
+            if size > scale then
+                scale = size
+            end
+            local tolerance = epsilon - scale * ROUNDING
+            local low = (value - anchor - tolerance) / elapsed
+            if entry.low > low then
+                low = entry.low
+            end
+            local high = (value - anchor + tolerance) / elapsed
+            if entry.high < high then
+                high = entry.high
+            end
+            local endpoint = anchor + (low / 2 + high / 2) * elapsed
+            local slope = (endpoint - anchor) / elapsed
+            if
+                tolerance > 0
+                and endpoint == endpoint
+                and endpoint ~= huge
+                and endpoint ~= -huge
+                and low <= slope
+                and slope <= high
+            then
                 entry.low, entry.high = low, high
                 entry.lastAt, entry.endpoint = at, endpoint
                 break
@@ -661,18 +685,24 @@ function history:sample(reading, now)
         return
     end
     local frozen = editing(self, now)
+    local flight, maxAge = self.flightState, self.support.MAX_SAMPLE_AGE
+    local value = reading.value
+    -- Reading checks are shared by every recording of the source.
+    local valid = reading.fresh and reading.updatedAt == now and reading.kind == "number" and finite(value)
+    local readingEpsilon, advanced
     for _, entry in ipairs(entries) do
-        advance(entry.session, now, self.flightState, frozen, self.support.MAX_SAMPLE_AGE)
-        local session = entry.session.state
-        if session.recording then
+        local session = entry.session
+        if session ~= advanced then
+            advance(session, now, flight, frozen, maxAge)
+            advanced = session
+        end
+        local sessionState = session.state
+        if sessionState.recording then
             local state = entry.state
-            local valid = reading.fresh
-                and reading.updatedAt == now
-                and finite(reading.value)
-                and reading.kind == "number"
+            local observers = entry.observers
             if valid then
-                local value = reading.value
-                if entry.segment ~= session.segment or entry.gap or not entry.filtered then
+                local segment = sessionState.segment
+                if entry.segment ~= segment or entry.gap or not entry.filtered then
                     entry.filtered = value
                     entry.gap = true
                 elseif entry.tau > 0 then
@@ -683,30 +713,42 @@ function history:sample(reading, now)
                 end
                 entry.sampledAt = now
                 state.value = value
-                state.min = state.min and min(state.min, value) or value
-                state.max = state.max and max(state.max, value) or value
+                local low, high = state.min, state.max
+                if not low or value < low then
+                    state.min = value
+                end
+                if not high or value > high then
+                    state.max = value
+                end
                 state.unitText, state.precision = reading.unitText, reading.precision
                 state.available, state.stale = true, false
                 local epsilon = entry.epsilon
                 if not epsilon then
-                    local precision = reading.precisionKnown == false and 3 or reading.precision or 0
-                    precision = min(3, max(0, precision))
-                    epsilon = EPSILON[precision] or (0.5 * 10 ^ -precision)
+                    if not readingEpsilon then
+                        local precision = reading.precisionKnown == false and 3 or reading.precision or 0
+                        precision = min(3, max(0, precision))
+                        readingEpsilon = EPSILON[precision] or (0.5 * 10 ^ -precision)
+                    end
+                    epsilon = readingEpsilon
                 end
-                local resumed = entry.segment ~= nil and entry.segment ~= session.segment
-                local broken = entry.gap or entry.segment ~= session.segment or session.elapsed <= entry.lastAt
-                record(entry, entry.filtered, session.elapsed, epsilon, session.segment)
-                if entry.observers and not state.full then
-                    for _, observer in ipairs(entry.observers) do
-                        observer:sample(session.elapsed, entry.filtered, broken, resumed)
+                local elapsed = sessionState.elapsed
+                local resumed, broken
+                if observers then
+                    resumed = entry.segment ~= nil and entry.segment ~= segment
+                    broken = entry.gap or entry.segment ~= segment or elapsed <= entry.lastAt
+                end
+                record(entry, entry.filtered, elapsed, epsilon, segment)
+                if observers and not state.full then
+                    for _, observer in ipairs(observers) do
+                        observer:sample(elapsed, entry.filtered, broken, resumed)
                     end
                 end
                 state.revision = state.revision + 1
             else
                 entry.gap = true
-                if entry.observers and not entry.state.full then
-                    for _, observer in ipairs(entry.observers) do
-                        observer:sample(session.elapsed, nil, true)
+                if observers and not state.full then
+                    for _, observer in ipairs(observers) do
+                        observer:sample(sessionState.elapsed, nil, true)
                     end
                 end
                 if not state.stale then

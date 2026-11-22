@@ -12,6 +12,7 @@ function module.new(dependencies)
     local loadModule = dependencies.loadModule
     local isFullScreen = dependencies.isFullScreen
     local buildPanel = dependencies.buildPanel
+    local registerThresholds = dependencies.registerThresholds
     local updateEmptyHint = dependencies.updateEmptyHint
 
     local function previewLayout(context, document)
@@ -101,12 +102,12 @@ function module.new(dependencies)
             return false
         end
         for key, value in pairs(document) do
-            if key ~= "panels" and not sameConfig(value, current[key]) then
+            if key ~= "panels" and key ~= "debrief" and not sameConfig(value, current[key]) then
                 return false
             end
         end
         for key in pairs(current) do
-            if key ~= "panels" and document[key] == nil then
+            if key ~= "panels" and key ~= "debrief" and document[key] == nil then
                 return false
             end
         end
@@ -180,6 +181,14 @@ function module.new(dependencies)
         end
         context.panels = ordered
         context.document = document
+        -- Previews never register, so Save is where draft thresholds take over.
+        local telemetry = context.serviceRuntime and context.serviceRuntime.byId.telemetry
+        if telemetry then
+            telemetry:clearThresholds()
+            for _, entry in ipairs(ordered) do
+                registerThresholds(context, entry.placement.id, entry.module, entry.settings)
+            end
+        end
         context.flightSources = {}
         for _, placement in ipairs(document.panels) do
             if placement.type == "flight-counter" then
@@ -188,6 +197,9 @@ function module.new(dependencies)
         end
         if context.configureFlight then
             context.configureFlight(context)
+        end
+        if context.configureDebrief then
+            context.configureDebrief(context)
         end
         return true
     end
@@ -255,6 +267,9 @@ function module.new(dependencies)
                 local ok, destroyError = context.panelHost.dispatch(entry, "destroy")
                 if not ok and destroyError then
                     return true, entry.placement.id .. ": preview destroy: " .. destroyError
+                end
+                if not job.preview and not action.placement then
+                    registerThresholds(context, entry.placement.id)
                 end
                 entry.container:clear()
                 lvgl.hide(entry.container)
@@ -332,10 +347,51 @@ function module.new(dependencies)
         updateEmptyHint(context)
     end
 
+    --- The draft's thresholds by sensor, as the telemetry registry would own
+    --- them once saved. Each placement resolves through the module of a panel
+    --- of its type already built for the editor.
+    ---@return table<string, table>?
+    local function draftThresholds(context, panels)
+        local telemetry = context.serviceRuntime and context.serviceRuntime.byId.telemetry
+        if not telemetry or type(panels) ~= "table" then
+            return nil
+        end
+        local modules = {}
+        for _, entry in ipairs(context.panels or {}) do
+            if type(entry.module) == "table" and entry.placement then
+                modules[entry.placement.type] = entry.module
+            end
+        end
+        local owners = {}
+        for index, placement in ipairs(panels) do
+            local panel = type(placement) == "table" and modules[placement.type]
+            local hook = panel and rawget(panel, "thresholds")
+            if type(hook) == "function" then
+                local settings = context.panelHost.resolveSettings(
+                    panel,
+                    placement.config,
+                    { colSpan = placement.colSpan, rowSpan = placement.rowSpan },
+                    context.modelArmed
+                )
+                local ok, list = pcall(hook, settings)
+                owners[index] = ok and type(list) == "table" and list or nil
+            end
+        end
+        local order = {}
+        for index in ipairs(panels) do
+            order[index] = { id = index }
+        end
+        return telemetry.ownedThresholds(order, owners)
+    end
+
     --- Enter the editor while preserving the current dashboard until saving succeeds.
     ---@param context AeroGridContext
     ---@return boolean opened
     local function openEditor(context)
+        -- true opens the Flight debrief page, false the layout grid, and nil
+        -- resumes a set-aside draft where it stopped.
+        local debriefRequest = context.editorDebriefRequest
+        context.editorDebriefRequest = nil
         if
             not isFullScreen()
             or context.stage
@@ -382,6 +438,20 @@ function module.new(dependencies)
             end
             context.editorDrawerModule = module
         end
+        local resumed = context.editorStash
+        local debrief = debriefRequest
+        if debrief == nil then
+            debrief = resumed ~= nil and resumed.debriefMode == true
+        end
+        if debrief and not context.debriefPageModule then
+            local module, moduleError = loadModule(context.path, "lib/debrief_page.lua", runtimeApi)
+            if not module then
+                addError(context, "debrief page: " .. tostring(moduleError))
+                showErrors(context)
+                return false
+            end
+            context.debriefPageModule = module
+        end
 
         context.editorPanelCache = context.editorPanelCache or {}
         local function loadPanel(typeName)
@@ -405,13 +475,22 @@ function module.new(dependencies)
         end
 
         -- A draft set aside when fullscreen was left resumes where it stopped.
-        local resumed = context.editorStash
         context.editorStash = nil
         local created, session, sessionError = true, resumed, nil
         if not resumed then
+            local document = context.document
+            if context.debriefGenerated and document then
+                -- A derived debrief is rebuilt when its page opens, so the
+                -- session need not copy it.
+                document = {}
+                for key, value in pairs(context.document) do
+                    document[key] = value
+                end
+                document.debrief = nil
+            end
             created, session, sessionError = pcall(
                 context.editorModule.new,
-                context.document,
+                document,
                 context.grid,
                 context.layoutValidator,
                 context.panelHost,
@@ -424,10 +503,17 @@ function module.new(dependencies)
             return false
         end
 
+        if not resumed then
+            context.editorModule.setDebriefDerived(session, context.debriefGenerated)
+        end
         context.editorSession = session
         session.modelArmed = context.modelArmed
+        session.debriefMode = debrief
         local handlers = {
             editor = context.editorModule,
+            debriefThresholds = function(panels)
+                return draftThresholds(context, panels)
+            end,
             logError = function(operation, message)
                 local placement = session.draft.panels[session.selected]
                 logError(
@@ -440,6 +526,7 @@ function module.new(dependencies)
                 )
             end,
             resumed = resumed ~= nil,
+            debrief = debrief,
             preview = function(document)
                 return previewLayout(context, document)
             end,
@@ -482,6 +569,15 @@ function module.new(dependencies)
                     end
                 end
                 name = name or context.layoutName
+                if session.debriefDerived and document.debrief ~= nil then
+                    -- A derived debrief is rebuilt from the saved panels.
+                    local saved = {}
+                    for key, value in pairs(document) do
+                        saved[key] = value
+                    end
+                    saved.debrief = nil
+                    document = saved
+                end
                 context.editorSavedDocument = document
                 local state = context.layoutStore.startSave(
                     context.path,

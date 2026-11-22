@@ -12,6 +12,7 @@ function module.new(dependencies)
     local loadModule = dependencies.loadModule
     local isFullScreen = dependencies.isFullScreen
     local readThemeDefinition = dependencies.readThemeDefinition
+    local sharedTelemetry = dependencies.sharedTelemetry or {}
 
     local function applyTheme(context, resolved, opacity)
         context.theme, context.panelOpacity = resolved, opacity
@@ -108,11 +109,12 @@ function module.new(dependencies)
     ---@param context AeroGridContext
     ---@param placement table
     ---@return table services
-    local function buildServices(context, placement)
+    local function buildServices(context, placement, preview)
         local builder = context.themeBuilder
         local theme = context.theme
         local registry = context.serviceRuntime
         local byId = registry and registry.byId or {}
+        local publisher = registry and registry.telemetryPublisher or nil
 
         -- Where the radio paints over us, the theme builder this panel sees
         -- resolves its panel frame around that corner. Binding it here rather than
@@ -156,6 +158,20 @@ function module.new(dependencies)
             -- Shared data services. Any of these may be absent when its module failed
             -- to load, so a panel must tolerate nil rather than assume.
             telemetry = byId.telemetry,
+            telemetryPublisher = publisher,
+            -- Only the first panel of a type in layout order publishes, and
+            -- only on the first widget to claim that type. There is no backup.
+            ownsTelemetry = function()
+                if preview or not publisher then
+                    return false
+                end
+                for _, entry in ipairs(context.panels) do
+                    if entry.placement.type == placement.type then
+                        return entry.placement.id == placement.id and publisher:owns(placement.type, context)
+                    end
+                end
+                return false
+            end,
             model = byId.model,
             control = byId.control,
             armed = byId.armed,
@@ -165,6 +181,22 @@ function module.new(dependencies)
             chartColumnsRenderer = context.chartColumnsRenderer,
             flight = byId.flight,
         }
+    end
+
+    --- Register a saved panel's thresholds with telemetry; no module clears them.
+    ---@param context AeroGridContext
+    ---@param id any
+    ---@param panel? table
+    ---@param settings? table
+    local function registerThresholds(context, id, panel, settings)
+        local runtime = context.serviceRuntime
+        local telemetry = runtime and runtime.byId.telemetry
+        if telemetry then
+            local ok, message = telemetry:registerPanel(id, panel, settings)
+            if not ok then
+                addError(context, tostring(id) .. ": thresholds: " .. tostring(message))
+            end
+        end
     end
 
     --- Load, validate, and instantiate every panel in the selected layout.
@@ -183,6 +215,7 @@ function module.new(dependencies)
         --- that works and no panel that does not, which is the wrong half.
         local function reject(reason)
             if not preview then
+                registerThresholds(context, placement.id)
                 addError(context, placement.id .. ": " .. tostring(reason))
                 context.rejected[#context.rejected + 1] = {
                     placement = placement,
@@ -246,7 +279,7 @@ function module.new(dependencies)
             container:set(geometry)
             lvgl.show(container)
         else
-            container = lvgl.box(context.page, geometry)
+            container = lvgl.box(context.panelLayer or context.page, geometry)
             -- Preview pools reuse containers, so their origin follows the object.
             if isFullScreen() then
                 context.fullscreenContainers = context.fullscreenContainers or setmetatable({}, { __mode = "k" })
@@ -254,10 +287,14 @@ function module.new(dependencies)
             end
         end
 
-        local services = buildServices(context, placement)
+        local services = buildServices(context, placement, preview == true)
         services.preview = preview == true
         local ok, instance =
             pcall(panel.create, container, { x = 0, y = 0, w = rect.w, h = rect.h }, settings, services)
+
+        if not preview then
+            registerThresholds(context, placement.id, ok and panel or nil, settings)
+        end
 
         if ok then
             local interval = host.refreshInterval(panel)
@@ -292,6 +329,7 @@ function module.new(dependencies)
 
     local function completeLoad(context, failed)
         context.pending, context.pendingIndex = nil, nil
+        context.debriefDeriving = nil
         context.stage = nil
         if context.flightFactory then
             context.flightFactory.startupThemes = nil
@@ -605,6 +643,14 @@ function module.new(dependencies)
             end
 
             context.session = validated.session or {}
+            -- A bad debrief must not cost the dashboard; keep its valid tiles.
+            local debriefErrors, debriefWarnings = context.layoutValidator.validateDebrief(validated)
+            for _, message in ipairs(debriefErrors) do
+                addNotice(context, "warning", message)
+            end
+            for _, message in ipairs(debriefWarnings) do
+                addNotice(context, "warning", message)
+            end
             context.document = validated
             if context.layoutSourceVersion < context.layoutValidator.VERSION then
                 addNotice(
@@ -698,11 +744,33 @@ function module.new(dependencies)
                 context.serviceRuntime = support.runtime(support.environment())
                 context.serviceRuntime.host = context
                 context.serviceRuntime.modules = {}
+                context.serviceRuntime.chartColumns = context.chartColumns
                 context.armGeneration = (context.armGeneration or 0) + 1
                 context.serviceRuntime.armGeneration = context.armGeneration
                 context.navigationHomes = context.navigationHomes or {}
                 context.serviceRuntime.navigationHomes = context.navigationHomes
                 context.serviceIndex = 1
+                return true
+            end
+
+            if not context.telemetryPublisherReady then
+                context.telemetryPublisherReady = true
+                -- Shared by every widget and rebuilt when the model changes,
+                -- since sensor sources belong to the model.
+                if not sharedTelemetry.publisher or sharedTelemetry.model ~= context.modelFilename then
+                    local module, moduleError =
+                        loadModule(context.path, "lib/telemetry_publisher.lua", context.packageInfo.runtimeApi)
+                    local ok, instance = false, moduleError
+                    if module then
+                        ok, instance = pcall(module.new, context.serviceRuntime.env)
+                    end
+                    if not ok then
+                        addError(context, "telemetry publisher: " .. tostring(instance))
+                        return true
+                    end
+                    sharedTelemetry.publisher, sharedTelemetry.model = instance, context.modelFilename
+                end
+                context.serviceRuntime.telemetryPublisher = sharedTelemetry.publisher
                 return true
             end
 
@@ -743,6 +811,11 @@ function module.new(dependencies)
                 local ok, instance = pcall(constructor, runtime.env, context.servicesModule, runtime)
                 if ok and type(instance) == "table" then
                     context.servicesModule.register(runtime, instance, getTime())
+                    if definition.id == "telemetry" then
+                        instance:setLayoutOrder(function()
+                            return context.document and context.document.panels
+                        end)
+                    end
                 else
                     addError(context, definition.id .. ": " .. tostring(instance))
                 end
@@ -768,11 +841,22 @@ function module.new(dependencies)
                 if context.configureFlight then
                     context.configureFlight(context)
                 end
+                local document = context.document
+                -- A layout that has never had a debrief derives one once every
+                -- panel has registered its thresholds, just before the load ends.
+                context.debriefDeriving = document and document.debrief == nil and context.deriveDebrief ~= nil
+                if context.configureDebrief and not context.debriefDeriving then
+                    context.configureDebrief(context)
+                end
                 context.loadConfigured = true
                 if context.pending then
                     context.pendingIndex = 1
                     context.pendingPlacement = context.pending[1]
                     context.stage = "panel-build"
+                    return true
+                end
+                if context.debriefDeriving then
+                    context.stage = "debrief"
                     return true
                 end
                 return completeLoad(context)
@@ -790,6 +874,26 @@ function module.new(dependencies)
             context.stage = context.panelMigrationVersion < context.layoutValidator.VERSION and "panel-migrate"
                 or "panel-validate"
             return true
+        end
+
+        -- Deriving a debrief loads its module in one step and derives the
+        -- tiles in the next.
+        if stage == "debrief" then
+            local module = context.debriefDeriving
+            if module == true then
+                module = context.layoutValidator.debrief and context.layoutValidator.debrief()
+                if module then
+                    context.debriefDeriving = module
+                    return true
+                end
+            elseif module then
+                context.deriveDebrief(context, module)
+            end
+            context.debriefDeriving = nil
+            if context.configureDebrief then
+                context.configureDebrief(context)
+            end
+            return completeLoad(context)
         end
 
         if stage == "panel-migrate" then
@@ -848,7 +952,9 @@ function module.new(dependencies)
             if context.pendingIndex then
                 context.pendingIndex = context.pendingIndex + 1
                 context.pendingPlacement = context.pending[context.pendingIndex]
-                context.stage = context.pendingPlacement and "panel-build" or "load-complete"
+                context.stage = context.pendingPlacement and "panel-build"
+                    or context.debriefDeriving and "debrief"
+                    or "load-complete"
             else
                 context.pendingPlacement = nil
                 context.panelMigrationVersion = nil
@@ -890,6 +996,9 @@ function module.new(dependencies)
         context.pending = nil
         context.pendingIndex = nil
         context.loadConfigured = nil
+        context.debriefDeriving = nil
+        context.debriefGenerated = nil
+        context.derivedDebrief = nil
         context.pendingPlacement = nil
         context.panelMigrationVersion = nil
         context.identifiers = nil
@@ -902,6 +1011,7 @@ function module.new(dependencies)
         -- rebuilt with the dashboard rather than reused across a reload.
         context.serviceRuntime = nil
         context.serviceIndex = nil
+        context.telemetryPublisherReady = nil
         context.themeNames = { "modern-dark" }
         if context.radioBackground then
             context.themeNames[#context.themeNames + 1] = "modern-light"
@@ -919,6 +1029,7 @@ function module.new(dependencies)
         reservedFor = reservedFor,
         buildServices = buildServices,
         buildPanel = buildPanel,
+        registerThresholds = registerThresholds,
         advanceLoad = advanceLoad,
         beginLoad = beginLoad,
     }

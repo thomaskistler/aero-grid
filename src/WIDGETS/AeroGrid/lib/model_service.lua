@@ -84,27 +84,6 @@ function modelService:add(state, read)
     return facet.view
 end
 
---- Format a signed second count as a clock reading.
---- Hours appear only when they exist, so a flight timer does not waste width.
----@param seconds any
----@return string
-function modelService.formatTime(seconds)
-    if type(seconds) ~= "number" then
-        return "--:--"
-    end
-
-    local sign = seconds < 0 and "-" or ""
-    local total = math.floor(math.abs(seconds) + 0.5)
-    local hours = math.floor(total / 3600)
-    local minutes = math.floor(total / 60) % 60
-    local secs = total % 60
-
-    if hours > 0 then
-        return string.format("%s%d:%02d:%02d", sign, hours, minutes, secs)
-    end
-    return string.format("%s%d:%02d", sign, minutes, secs)
-end
-
 --- Read model identity, rate limited independently of the service interval.
 ---@param state table
 ---@param now integer
@@ -191,7 +170,7 @@ function modelService:readTimer(state)
         state.expired = false
     end
 
-    state.text = modelService.formatTime(state.showElapsed and state.elapsed or value)
+    state.text = self.support.clockText(state.showElapsed and state.elapsed or value)
 end
 
 --- Subscribe to one model timer.

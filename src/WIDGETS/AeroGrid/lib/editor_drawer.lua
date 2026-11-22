@@ -21,6 +21,7 @@ local function deferredSetter(context, state, generation, apply)
         return queueNative(context, state, generation, callback, value)
     end)
 end
+drawer.deferredSetter = deferredSetter
 
 function drawer.applyNative(context, state)
     local command = state.nativeInput
@@ -56,6 +57,14 @@ local function current(state, field)
     return value
 end
 
+local function writeField(state, field, value)
+    local editor = state.handlers.editor
+    if field.path then
+        return editor.setPath(state.session, field.key, field.path, value)
+    end
+    return editor.setValue(state.session, field.key, value)
+end
+
 local function enqueue(state, action, generation)
     if
         (state.nativeDrawer or state.applyingNative)
@@ -66,6 +75,7 @@ local function enqueue(state, action, generation)
         state.drawerPending = action
     end
 end
+drawer.enqueue = enqueue
 
 local function closeDialog(state)
     state.nativeDrawer = nil
@@ -77,6 +87,7 @@ local function closeDialog(state)
     end
     state.nativeDrawerHost = nil
 end
+drawer.closeDialog = closeDialog
 
 local function hostedDialog(context, state, properties)
     local generation = state.drawerGeneration
@@ -110,12 +121,90 @@ local function hostedDialog(context, state, properties)
     state.nativeDrawerHost = state.drawerView.host
     return state.drawerView.dialog
 end
+drawer.hostedDialog = hostedDialog
+
+--- Open a settings dialog of `fields` whose controls read and write through
+--- `read(field)` and `write(field, value)`. RTN queues `back()`'s command.
+function drawer.settingsDialog(context, state, title, fields, read, write, back)
+    local generation = state.drawerGeneration
+    state.nativeDrawer = assert(
+        hostedDialog(context, state, {
+            title = title,
+            close = function()
+                if generation == state.drawerGeneration then
+                    state.nativeDrawer, state.drawerBuild = nil, nil
+                    local command = back()
+                    if state.drawerPending then
+                        state.drawerDismiss = command
+                    else
+                        state.drawerPending = command
+                    end
+                end
+            end,
+        }),
+        "cannot open editor dialog"
+    )
+    local view = state.drawerView
+    view.fields, view.build = fields, 1
+    view.errorHeight = math.floor((lvgl.UI_ELEMENT_HEIGHT or 32) * 0.56 + 0.5)
+    view.errorColor = context.theme.color.critical
+    view.read, view.writeValue = read, write
+    view.write = function(field, value, control)
+        enqueue(state, { action = "write", field = field, value = value, control = control }, generation)
+    end
+    view.action = function(command)
+        enqueue(state, command, generation)
+    end
+    view.report = function(message, control)
+        enqueue(state, { action = "error", message = message, control = control }, generation)
+    end
+    state.drawerControls, state.drawerBuild = view.controls, 1
+end
 
 function drawer.close(state)
     closeDialog(state)
     state.drawerPending = nil
     state.drawerDismiss = nil
     state.nativeInput = nil
+end
+
+--- Ask what to do with item `index` of a `count`-item list. The chosen
+--- "edit", "up", "down" or "delete" is queued as `command.choice`.
+function drawer.itemMenu(context, state, title, index, count, removable, command)
+    assert(type(lvgl.menu) == "function", "list items require EdgeTX Lua LVGL menu")
+    local choices = { "edit" }
+    if index > 1 then
+        choices[#choices + 1] = "up"
+    end
+    if index < count then
+        choices[#choices + 1] = "down"
+    end
+    if removable then
+        choices[#choices + 1] = "delete"
+    end
+    local labels = { edit = "Edit", up = "Move up", down = "Move down", delete = "Delete" }
+    local values = {}
+    for position, choice in ipairs(choices) do
+        values[position] = labels[choice]
+    end
+    local generation = state.drawerGeneration
+    lvgl.menu({
+        title = title,
+        values = values,
+        get = function()
+            return 1
+        end,
+        set = deferredSetter(context, state, generation, function(position)
+            if context.editorUi == state and generation == state.drawerGeneration and not state.drawerPending then
+                local queued = {}
+                for key, value in pairs(command) do
+                    queued[key] = value
+                end
+                queued.choice = choices[position]
+                state.drawerPending = queued
+            end
+        end),
+    })
 end
 
 local function entrySummary(state, key, index, defaults, path)
@@ -199,30 +288,29 @@ local function fieldsFor(state, listKey, itemIndex, itemPath, groupKey)
                 items = items[part]
             end
             for index, item in ipairs(items) do
-                local title
+                local title = item
                 if type(item) == "table" then
                     title = item.label
                     if title == nil or title == "" then
-                        title = item.source
+                        local summary = entrySummary(state, field.key, index, config, field.path)
+                        -- A summary of only placeholders says nothing; use the list position.
+                        title = string.find(summary, "[^%-/ ]") and summary or nil
                     end
-                else
-                    title = item
                 end
                 if title == nil or title == "" then
                     title = (field.itemLabel or "Entry") .. " " .. index
                 end
                 local path = editor.clone(field.path or {})
                 path[#path + 1] = index
-                local summary = entrySummary(state, field.key, index, config, field.path)
                 result[#result + 1] = {
                     label = tostring(title),
-                    text = function()
-                        return summary
-                    end,
                     action = "item",
                     key = field.key,
                     index = index,
                     itemPath = path,
+                    path = field.path,
+                    count = #items,
+                    removable = #items > (field.minItems or 0),
                 }
             end
             result[#result + 1] = {
@@ -237,17 +325,7 @@ local function fieldsFor(state, listKey, itemIndex, itemPath, groupKey)
             result[#result + 1] = field
         end
     end
-    if listKey then
-        local path = editor.clone(selected)
-        local index = table.remove(path)
-        result[#result + 1] = {
-            label = #selected > 1 and "Remove state" or "Remove entry",
-            action = "remove-item",
-            key = listKey,
-            index = index,
-            path = #path > 0 and path or nil,
-        }
-    else
+    if not listKey then
         result[#result + 1] = { label = "Remove panel", action = "remove" }
     end
     return editor.orderFields(result, listKey ~= nil)
@@ -304,10 +382,26 @@ function drawer.open(context, state, mode, listKey, itemIndex, itemPath, groupKe
             end
         end
     elseif listKey then
-        title = title .. " / " .. listKey .. " " .. itemPath[1]
-    end
-    if itemPath and #itemPath > 1 then
-        title = title .. " / State " .. itemPath[#itemPath]
+        local forms = state.handlers.editor.formFields(state.session) or {}
+        for depth, index in ipairs(itemPath) do
+            if type(index) == "number" then
+                local itemLabel
+                for _, field in ipairs(forms) do
+                    local path = field.path or {}
+                    if field.type == "table-list" and field.key == listKey and #path == depth - 1 then
+                        local same = true
+                        for part = 1, #path do
+                            same = same and path[part] == itemPath[part]
+                        end
+                        if same then
+                            itemLabel = field.itemLabel
+                            break
+                        end
+                    end
+                end
+                title = title .. " / " .. (itemLabel or "Entry") .. " " .. index
+            end
+        end
     end
     local fields = fieldsFor(state, listKey, itemIndex, itemPath, groupKey)
     state.drawerListKey, state.drawerItemIndex, state.drawerGroupKey = listKey, itemIndex, groupKey
@@ -320,51 +414,24 @@ function drawer.open(context, state, mode, listKey, itemIndex, itemPath, groupKe
     state.drawerNextY = state.drawerPadding * 2
     state.drawerErrorHeight = math.floor(state.drawerControlHeight * 0.56 + 0.5)
     -- Native dialogs supply centering, 80%-screen dimensions, scrolling and RTN.
-    state.nativeDrawer = assert(
-        hostedDialog(context, state, {
-            title = title,
-            close = function()
-                if not state.drawerClosing then
-                    state.nativeDrawer = nil
-                    state.drawerBuild = nil
-                    local command = {
-                        action = (listKey or groupKey) and "parent" or "back",
-                        key = listKey,
-                        groupKey = listKey and groupKey or nil,
-                    }
-                    if itemPath and #itemPath > 1 then
-                        command.itemPath = state.handlers.editor.clone(itemPath)
-                        table.remove(command.itemPath)
-                        table.remove(command.itemPath)
-                    end
-                    if state.drawerPending then
-                        state.drawerDismiss = command
-                    else
-                        state.drawerPending = command
-                    end
-                end
-            end,
-        }),
-        "cannot open editor dialog"
-    )
-    state.drawerWidth = math.floor(context.zone.w * 0.8)
-    local view = state.drawerView
-    view.fields, view.build = fields, 1
-    view.errorHeight, view.errorColor = state.drawerErrorHeight, context.theme.color.critical
-    local generation = state.drawerGeneration
-    view.read = function(field)
+    drawer.settingsDialog(context, state, title, fields, function(field)
         return current(state, field)
-    end
-    view.write = function(field, value, control)
-        enqueue(state, { action = "write", field = field, value = value, control = control }, generation)
-    end
-    view.action = function(command)
-        enqueue(state, command, generation)
-    end
-    view.report = function(message, control)
-        enqueue(state, { action = "error", message = message, control = control }, generation)
-    end
-    state.drawerControls = view.controls
+    end, function(field, value)
+        return writeField(state, field, value)
+    end, function()
+        local command = {
+            action = (listKey or groupKey) and "parent" or "back",
+            key = listKey,
+            groupKey = listKey and groupKey or nil,
+        }
+        if itemPath and #itemPath > 1 then
+            command.itemPath = state.handlers.editor.clone(itemPath)
+            table.remove(command.itemPath)
+            table.remove(command.itemPath)
+        end
+        return command
+    end)
+    state.drawerWidth = math.floor(context.zone.w * 0.8)
 end
 
 --- Queue an exit-flow command from a native callback of this generation.
@@ -377,14 +444,48 @@ end
 --- Offer Save, Save As and Discard for a changed draft. RTN keeps editing.
 function drawer.openExit(context, state)
     closeDialog(state)
-    assert(type(lvgl.menu) == "function", "exit dialog requires EdgeTX Lua LVGL menu")
     local actions, values = {}, {}
     if not state.handlers.isEmpty(state.handlers.layoutName()) then
-        actions[#actions + 1], values[#values + 1] = "save", "Save"
+        actions[#actions + 1], values[#values + 1] = "save", state.debrief and "Save layout" or "Save"
     end
-    actions[#actions + 1], values[#values + 1] = "save-as", "Save as..."
+    actions[#actions + 1], values[#values + 1] = "save-as", state.debrief and "Save layout as..." or "Save as..."
     actions[#actions + 1], values[#values + 1] = "discard", "Discard changes"
     local generation = state.drawerGeneration
+    if state.debrief then
+        -- No grid stays behind a native menu, so RTN must return to the tile list.
+        state.mode = "exit"
+        state.nativeDrawer = assert(
+            hostedDialog(context, state, {
+                title = "Unsaved layout changes",
+                close = function()
+                    if generation == state.drawerGeneration then
+                        state.nativeDrawer = nil
+                        state.drawerPending = { action = "list" }
+                    end
+                end,
+            }),
+            "cannot open editor dialog"
+        )
+        local height = lvgl.UI_ELEMENT_HEIGHT or 32
+        local width = math.floor(context.zone.w * 0.8) - 16
+        for index, value in ipairs(values) do
+            lvgl.button(state.nativeDrawer, {
+                x = 4,
+                y = 4 + (index - 1) * (height + 8),
+                w = width,
+                h = height,
+                text = value,
+                active = function()
+                    return generation == state.drawerGeneration and not state.exitCommand
+                end,
+                press = function()
+                    exitCommand(context, state, generation, { action = actions[index] })
+                end,
+            })
+        end
+        return
+    end
+    assert(type(lvgl.menu) == "function", "exit dialog requires EdgeTX Lua LVGL menu")
     state.mode = "menu"
     lvgl.menu({
         title = "Unsaved changes",
@@ -456,7 +557,7 @@ function drawer.openName(context, state, name, message)
         y = math.floor(height * 1.8) + 8,
         w = width,
         h = height,
-        text = "Save",
+        text = state.debrief and "Save layout" or "Save",
         active = active,
         press = function()
             exitCommand(context, state, generation, { action = "name", name = state.saveAsName })
@@ -474,14 +575,6 @@ function drawer.confirmOverwrite(context, state, name)
             exitCommand(context, state, generation, { action = "write", name = name })
         end,
     })
-end
-
-local function writeField(state, field, value)
-    local editor = state.handlers.editor
-    if field.path then
-        return editor.setPath(state.session, field.key, field.path, value)
-    end
-    return editor.setValue(state.session, field.key, value)
 end
 
 local function relayout(state)
@@ -503,6 +596,27 @@ end
 
 local function fieldError(state, control, message)
     state.settingsUi.fieldError(state.drawerView, control, message)
+end
+
+--- Apply a queued `write` command of a settings dialog and refresh its controls.
+function drawer.applyWrite(state, command)
+    local view = state.drawerView
+    local ok, err = view.writeValue(command.field, command.value)
+    -- Return may dismiss the native dialog before its queued edit runs.
+    -- Apply the value, but never refresh controls from a retired dialog.
+    if ok and state.nativeDrawer then
+        refreshVisibility(state)
+    end
+    if command.control and state.nativeDrawer then
+        if not ok and command.control.readNative then
+            command.control.readNative()
+        end
+        if command.control.kind == "textEdit" then
+            command.control.object:set({ value = tostring(view.read(command.field) or "") })
+        end
+        fieldError(state, command.control, not ok and tostring(err) or nil)
+    end
+    return ok, err
 end
 
 function drawer.advance(context, state)
@@ -536,34 +650,31 @@ function drawer.advance(context, state)
     elseif command.action == "group" then
         drawer.open(context, state, "configure", nil, nil, nil, command.drawerGroup)
     elseif command.action == "item" then
+        drawer.itemMenu(context, state, command.label, command.index, command.count, command.removable, {
+            action = "entry",
+            key = command.key,
+            index = command.index,
+            itemPath = command.itemPath,
+            path = command.path,
+        })
+    elseif command.action == "entry" and command.choice == "edit" then
         drawer.open(context, state, "configure", command.key, command.index, command.itemPath)
     elseif command.action == "write" then
-        ok, err = writeField(state, command.field, command.value)
-        -- Return may dismiss the native dialog before its queued edit runs.
-        -- Apply the value, but never refresh controls from a retired dialog.
-        if ok and state.nativeDrawer then
-            refreshVisibility(state)
+        ok, err = drawer.applyWrite(state, command)
+    elseif command.action == "append" or command.action == "entry" then
+        if command.action == "append" then
+            ok, err = editor.appendItem(state.session, command.key, command.path)
+        elseif command.choice == "delete" then
+            ok, err = editor.removeItem(state.session, command.key, command.index, command.path)
+        else
+            ok, err = editor.moveItem(
+                state.session,
+                command.key,
+                command.index,
+                command.choice == "up" and -1 or 1,
+                command.path
+            )
         end
-        if command.control and state.nativeDrawer then
-            if not ok and command.control.readNative then
-                command.control.readNative()
-            end
-            if command.control.kind == "textEdit" then
-                command.control.object:set({ value = tostring(current(state, command.field) or "") })
-            end
-            fieldError(state, command.control, not ok and tostring(err) or nil)
-        end
-    elseif command.action == "append" then
-        ok, err = editor.appendItem(state.session, command.key, command.path)
-        if ok then
-            local parent = command.path and editor.clone(command.path)
-            if parent then
-                table.remove(parent)
-            end
-            drawer.open(context, state, "configure", parent and command.key, nil, parent)
-        end
-    elseif command.action == "remove-item" then
-        ok, err = editor.removeItem(state.session, command.key, command.index, command.path)
         if ok then
             local parent = command.path and editor.clone(command.path)
             if parent then

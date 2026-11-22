@@ -4,6 +4,7 @@ local root = (... and ... ~= "" and ...) or "."
 local moduleLoader = assert(loadfile(root .. "/tests/support/module_loader.lua"))(root)
 
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
+local sweep = assert(loadfile(root .. "/tests/support/threshold_sweep.lua"))(root)
 local rxBattery = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/rx-battery.lua"))()
 local primitives = moduleLoader("lib/primitives.lua")
 -- radio/src/translations/untranslated.h, CHAR_DELTA (U+0088).
@@ -126,6 +127,46 @@ local function testPackSourceAndAutomaticCount()
         assertions.assertEqual(empty.pack, nil)
     end
     assertions.assertEqual(rxBattery.summarizePack(nil, 4, empty).shape, "none")
+end
+
+local function testPublishedCellVoltage()
+    local published = {}
+    local context = {
+        settings = {
+            sourceType = "cells",
+            reading = "pack",
+            cellEmpty = 3.2,
+            cellFull = 4.2,
+            cellWarning = 3.6,
+            cellCritical = 3.4,
+        },
+        summary = {},
+        feed = { available = true, raw = { 4.1, 3.72, 4.08 }, stale = false },
+        publisher = {
+            publish = function(_, name, value)
+                published[#published + 1] = { name, value }
+            end,
+        },
+        ownsTelemetry = function()
+            return true
+        end,
+    }
+    rxBattery.gather(context)
+    rxBattery.publish(context)
+    assertions.assertEqual(published[1][1], "VCel")
+    assertions.assertEqual(published[1][2], 3.72, "VCel is the lowest cell even when the panel displays pack")
+
+    context.feed.raw = 16.4
+    context.settings.cells = 4
+    rxBattery.gather(context)
+    rxBattery.publish(context)
+    assertions.assertEqual(published[2][2], 4.1)
+    context.feed.stale = true
+    rxBattery.gather(context)
+    rxBattery.publish(context)
+    assertions.assertEqual(#published, 2, "stale held values must not be republished as fresh")
+    rxBattery.background(context)
+    assertions.assertEqual(#published, 2, "background uses the same stale-value rule")
 end
 
 local function testConfigurationValidation()
@@ -263,9 +304,21 @@ local function testAutomaticShapesAndDelta()
     assertions.assertEqual(context.estimatedCells, 3, "unavailable then fresh starts a new estimate")
 end
 
+local function testThresholdRegistration()
+    assertions.assertEqual(#rxBattery.thresholds({}), 0)
+    local settings = { cellWarning = 3.6, cellCritical = 3.4 }
+    local spec = rxBattery.thresholds(settings)[1]
+    assertions.assertEqual(spec.sensor, "VCel")
+    sweep(spec, function(cell)
+        return rxBattery.resolveState(settings, cell * 3, cell, false)
+    end, 0.01, "cell")
+end
+
 local function run()
+    testThresholdRegistration()
     testCellShapesAndReadings()
     testPackSourceAndAutomaticCount()
+    testPublishedCellVoltage()
     testConfigurationValidation()
     testSupportingWordings()
     testVisualizationMetadata()

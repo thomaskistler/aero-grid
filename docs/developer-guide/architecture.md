@@ -157,12 +157,13 @@ Put a module at `panels/<type>.lua`, with an `id` matching that layout type.
 | `finish(instance, creating, slots)` | Optional variable-cost finishing task with the same results as refresh. Requires `finishPending` and `finishMinCost`. |
 | `finishPending(instance)` | Whether finishing work is ready; an optional second result sets its next minimum grant. Refresh waits while finishing is pending. |
 | `update(instance, rect, settings, detailsOnly, placement)` | Reflow/configuration update; host reflows and editor resizes pass placement as the fifth argument. |
-| `background(instance, creating, slots)` | Hidden-dashboard work; variable-cost when `backgroundMinCost` is declared, otherwise one slot. Returns an ignored first result, continuation, and consumed slots. |
+| `background(instance, creating, slots)` | Hidden-dashboard work; variable-cost when `backgroundMinCost` is declared, otherwise one slot. Returns an optional delay in ticks before the next call, continuation, and consumed slots. |
 | `resetSession(instance, now)` | Reset session state; second result true requests another bounded reset turn. |
 | `rebindArming(instance, services)` | Reconnect arming-dependent subscriptions after a model arm-switch change, keeping existing native objects. Receives the service registry's `byId` table. |
 | `event(instance, event)` | Return true when consumed. |
 | `destroy(instance)` | Release panel-owned references. |
 | `validateSettings(settings, span, config, modelArmed)` | Cross-field or span-dependent validation, with the effective model arm condition. |
+| `thresholds(settings)` | Configured `{ sensor, warning, critical, falling, strict }` list, registered with telemetry when the layout is built or saved; for each sensor the first panel in layout order wins. |
 
 A lifecycle failure disables the affected panel and reports its error without
 repeatedly invoking the failed panel.

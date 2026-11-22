@@ -821,6 +821,21 @@ function editor.removeItem(session, key, index, path)
     return true
 end
 
+--- Swap a list entry with the one above (`delta` -1) or below (`delta` 1).
+function editor.moveItem(session, key, index, delta, path)
+    local setting, value, err = tableSetting(session, key, path)
+    if not setting or type(value) ~= "table" then
+        return false, err
+    end
+    local target = type(index) == "number" and index + delta or nil
+    if not target or value[index] == nil or value[target] == nil then
+        return false, "table entry cannot move there"
+    end
+    value[index], value[target] = value[target], value[index]
+    session.dirty = true
+    return true
+end
+
 local function flattenFields(value, path, label, result)
     local valueType = type(value)
     if valueType ~= "table" then
@@ -1034,9 +1049,61 @@ end
 
 function editor.cancel(session)
     session.draft = copy(session.original)
+    session.debriefDerived = session.originalDebriefDerived
     session.selected = #session.draft.panels > 0 and 1 or 0
     session.dirty = false
     session.errors = {}
+    return true
+end
+
+--- Apply one debrief_config draft operation, such as "moveTile", to the
+--- draft's debrief. Only adding a tile or a fill creates the section: an
+--- absent debrief and an empty one are different things. Any edit makes a
+--- derived debrief the layout's own, so Save writes it.
+---@return any result The operation's result; false when it failed.
+---@return string? error
+function editor.editDebrief(session, operation, ...)
+    local module, loadError = session.layout.debrief()
+    if not module then
+        return false, loadError
+    end
+    local section = session.draft.debrief
+    if not section and operation ~= "addTile" and operation ~= "fill" then
+        return false, "the layout has no debrief"
+    end
+    section = section or { tiles = {} }
+    local result, message = module[operation](section, ...)
+    if result then
+        session.draft.debrief = section
+        session.dirty = true
+        session.debriefDerived = false
+    end
+    return result, message
+end
+
+--- Mark the draft's debrief as derived from its panels rather than saved in
+--- the layout. Save leaves a derived debrief out of the file.
+---@param session table
+---@param derived boolean
+function editor.setDebriefDerived(session, derived)
+    session.debriefDerived = derived == true
+    session.originalDebriefDerived = session.debriefDerived
+end
+
+--- Rebuild a derived debrief from the draft's panels, which may have changed
+--- since it was derived. Not an edit, so the draft stays clean.
+---@param session table
+---@param thresholds? table<string, table> The draft's thresholds by sensor.
+---@return boolean rebuilt
+function editor.deriveDebrief(session, thresholds)
+    if not session.debriefDerived then
+        return false
+    end
+    local module = session.layout.debrief()
+    if not module then
+        return false
+    end
+    session.draft.debrief = module.fromPanels(session.draft.panels, nil, thresholds)
     return true
 end
 
@@ -1047,6 +1114,9 @@ function editor.validate(session)
     if not normalized then
         session.errors = errors
         return false, copy(errors)
+    end
+    for _, message in ipairs(session.layout.validateDebrief(document)) do
+        errors[#errors + 1] = message
     end
     if type(document.panels) ~= "table" then
         session.errors = { "panels must be a sequence" }

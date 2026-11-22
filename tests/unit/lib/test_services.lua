@@ -13,9 +13,17 @@ local function testEnvironmentAndRuntime()
         getFieldInfo = function()
             return { id = 9 }
         end,
+        getSourceValue = function()
+            return 7
+        end,
+        setTelemetryValue = function()
+            return false
+        end,
     })
     assertions.assertEqual(type(env.getValue), "function")
     assertions.assertEqual(type(env.getFieldInfo), "function")
+    assertions.assertEqual(type(env.getSourceValue), "function")
+    assertions.assertEqual(type(env.setTelemetryValue), "function")
 
     local runtime = services.runtime(env)
     assertions.assertTableHasKey(runtime, "order", "runtime should track service order")

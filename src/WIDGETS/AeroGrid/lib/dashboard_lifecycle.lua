@@ -15,6 +15,7 @@ function module.new(dependencies)
     local panelRect = dependencies.panelRect
     local reservedFor = dependencies.reservedFor
     local buildPanel = dependencies.buildPanel
+    local addPageLayers = dependencies.addPageLayers
 
     --- Empty-state decoration belongs to the page, never the layout document.
     ---@param context AeroGridContext
@@ -115,6 +116,7 @@ function module.new(dependencies)
         context.root:set({ w = context.zone.w, h = context.zone.h })
         context.page:set({ w = context.zone.w, h = context.zone.h })
         context.canvas:set({ w = context.zone.w, h = context.zone.h })
+        context.panelLayer:set({ w = context.zone.w, h = context.zone.h })
 
         -- A zone that moved may have moved out from under the button, or into it.
         context.reserved = reservedCorner(context.zone)
@@ -234,6 +236,13 @@ function module.new(dependencies)
         context.locationOverlay = nil
         context.logViewer = nil
         context.logOverlay = nil
+        context.debriefOverlay = nil
+        context.debriefViewport = nil
+        context.debriefContent = nil
+        context.debriefPill = nil
+        if context.debrief then
+            context.debriefModule.detach(context.debrief)
+        end
         local leavingFullscreen = not isFullScreen()
         if
             not context.retainedPage
@@ -291,6 +300,8 @@ function module.new(dependencies)
 
         context.page = nil
         context.canvas = nil
+        context.panelLayer = nil
+        context.pillLayer = nil
         context.emptyHint = nil
         context.panels = {}
         context.rejected = {}
@@ -302,7 +313,7 @@ function module.new(dependencies)
 
     local function rebuildPage(context)
         if not context.root then
-            context.root = lvgl.box({ x = 0, y = 0, w = context.zone.w, h = context.zone.h })
+            context.root = lvgl.box({ x = 0, y = 0, w = context.zone.w, h = context.zone.h, scrollDir = 0 })
             context.rootBuiltFullscreen = isFullScreen()
         end
         context.page = lvgl.box(context.root, {
@@ -310,6 +321,7 @@ function module.new(dependencies)
             y = 0,
             w = context.zone.w,
             h = context.zone.h,
+            scrollDir = 0,
         })
         context.pageBuiltFullscreen = isFullScreen()
         if context.retainedPage then
@@ -324,6 +336,7 @@ function module.new(dependencies)
             filled = true,
             opacity = context.radioBackground and 0 or 255,
         })
+        addPageLayers(context, context.zone)
         context.reloadState = nil
     end
 

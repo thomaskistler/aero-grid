@@ -1,0 +1,8 @@
+version: 1
+modelFilename: "model7.yml"
+revision: 1
+flightCount: 0
+armed: "SFv"
+flight:
+  requireReceiver: false
+  minFlightDuration: 10

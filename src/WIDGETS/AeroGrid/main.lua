@@ -48,7 +48,7 @@
 ---@field errorLabel? any
 ---@field page any Container holding one generation of the dashboard.
 ---@field reloadState? "clear"|"rebuild"
----@field stage? "theme-read"|"theme-validate"|"read"|"tokenize"|"header"|"header-migrate"|"header-finalize"|"glass"|"services"|"panels"|"panel-migrate"|"panel-validate"|"panel-build"|"load-complete" Staged loader position.
+---@field stage? "theme-read"|"theme-validate"|"read"|"tokenize"|"header"|"header-migrate"|"header-finalize"|"glass"|"services"|"panels"|"debrief"|"panel-migrate"|"panel-validate"|"panel-build"|"load-complete" Staged loader position.
 ---@field foreground? boolean Whether the latest callback was visible.
 ---@field firstRefreshUntil? integer Bounded foreground priority until a regular panel refresh.
 ---@field servicesModule? table Loaded lib/services.lua registry module.
@@ -68,6 +68,11 @@
 ---@field editorUiModule? table LVGL editor controls, loaded only on demand.
 ---@field editorSession? table Uncommitted editor working copy.
 ---@field editorUi? table Active editor screen state.
+---@field editorDebriefRequest? boolean Open the Flight debrief page (true) or the grid (false).
+---@field debriefPageModule? table Flight debrief setup page, loaded only on demand.
+---@field debriefGenerated? boolean The document's debrief was derived from its panels, not loaded.
+---@field derivedDebrief? table The derived debrief section, while it is the document's.
+---@field debriefDeriving? table|boolean The load derives a debrief: true, then its loaded module.
 
 local WIDGET_PATH = "/WIDGETS/AeroGrid/"
 
@@ -555,6 +560,9 @@ local function dispatchAll(context, event, ...)
 end
 
 local sharedDiagnosticsLog
+-- One telemetry publisher for every AeroGrid widget, so derived counters
+-- advance once however many dashboards report the same flight.
+local sharedTelemetry = {}
 local flightFactories = {}
 
 --- Failure handlers: each task's `onError` records a failure on its owner.
@@ -610,16 +618,33 @@ end
 
 local initialize
 
+--- The debrief body and its leading bar share one moving sheet above the panels.
+---@param context AeroGridContext
+local function addPageLayers(context, zone)
+    context.panelLayer = lvgl.box(context.page, { x = 0, y = 0, w = zone.w, h = zone.h, scrollDir = 0 })
+    context.debriefOverlay = lvgl.box(context.page, { x = 0, y = zone.h, w = zone.w, h = zone.h, scrollDir = 0 })
+    context.debriefViewport = lvgl.box(context.debriefOverlay, {
+        x = 0,
+        y = 0,
+        w = zone.w,
+        h = zone.h,
+        scrollDir = 0,
+    })
+    context.pillLayer = lvgl.box(context.debriefViewport, { x = 0, y = 0, w = 1, h = 1, scrollDir = 0 })
+    lvgl.hide(context.debriefOverlay)
+    lvgl.hide(context.pillLayer)
+end
+
 --- Build whatever part of the bare page shell is missing, so errors have
 --- somewhere to be shown.
 ---@param context AeroGridContext
 local function ensureShell(context)
     local zone = context.zone
     if not context.root then
-        context.root = lvgl.box({ x = 0, y = 0, w = zone.w, h = zone.h })
+        context.root = lvgl.box({ x = 0, y = 0, w = zone.w, h = zone.h, scrollDir = 0 })
     end
     if not context.page then
-        context.page = lvgl.box(context.root, { x = 0, y = 0, w = zone.w, h = zone.h })
+        context.page = lvgl.box(context.root, { x = 0, y = 0, w = zone.w, h = zone.h, scrollDir = 0 })
     end
     if not context.canvas then
         context.canvas = lvgl.rectangle(context.page, {
@@ -631,6 +656,9 @@ local function ensureShell(context)
             filled = true,
             opacity = context.radioBackground and 0 or 255,
         })
+    end
+    if not context.panelLayer then
+        addPageLayers(context, zone)
     end
 end
 
@@ -690,9 +718,9 @@ local function create(zone, widgetOptions, path)
             onError = hostError,
             cost = 1,
             step = function()
-                context.root = lvgl.box({ x = 0, y = 0, w = zone.w, h = zone.h })
+                context.root = lvgl.box({ x = 0, y = 0, w = zone.w, h = zone.h, scrollDir = 0 })
                 context.rootBuiltFullscreen = isFullScreen()
-                context.page = lvgl.box(context.root, { x = 0, y = 0, w = zone.w, h = zone.h })
+                context.page = lvgl.box(context.root, { x = 0, y = 0, w = zone.w, h = zone.h, scrollDir = 0 })
                 context.pageBuiltFullscreen = isFullScreen()
                 context.canvas = lvgl.rectangle(context.page, {
                     x = 0,
@@ -703,6 +731,7 @@ local function create(zone, widgetOptions, path)
                     filled = true,
                     opacity = context.radioBackground and 0 or 255,
                 })
+                addPageLayers(context, zone)
             end,
         })
         context.scheduler.run(getTime(), context.scheduler.budget.capacity, false)
@@ -835,7 +864,9 @@ initialize = function(context)
         end
         context.grid = runtimeModule("lib/grid.lua")
         context.yaml = runtimeModule("lib/yaml.lua")
-        context.layoutValidator = runtimeModule("lib/layout.lua")
+        context.layoutValidator = runtimeModule("lib/layout.lua", function()
+            return loadModule(path, "lib/debrief_config.lua", package.runtimeApi)
+        end)
         context.layoutStore = runtimeModule("lib/layout_store.lua")
         context.flightConfig = runtimeModule("lib/flight_config.lua")
         context.armedConfig = runtimeModule("lib/armed_service.lua")
@@ -853,6 +884,68 @@ initialize = function(context)
                     addError(host, "flight: " .. tostring(message))
                 end
             end
+        end
+        --- Hand the debrief recorder the layout's debrief and each tile's width.
+        --- A layout that has never had a debrief gets one derived from its
+        --- panels; it stays out of the file until the pilot edits it. The
+        --- recorder is loaded on first use, so a dashboard without debrief
+        --- tiles spends no load step or heap on it.
+        context.deriveDebrief = function(host, module)
+            local document = host.document
+            local telemetry = host.serviceRuntime and host.serviceRuntime.byId.telemetry
+            local thresholds = telemetry and telemetry:thresholdMap()
+            document.debrief = module.fromPanels(document.panels, nil, thresholds)
+            host.derivedDebrief = document.debrief
+        end
+        context.configureDebrief = function(host)
+            local registry = host.serviceRuntime
+            if not registry then
+                return
+            end
+            local document = host.document
+            if document and document.debrief == nil then
+                local module = host.layoutValidator and host.layoutValidator.debrief()
+                if module then
+                    host.deriveDebrief(host, module)
+                end
+            end
+            local section = document and document.debrief
+            host.debriefGenerated = section ~= nil and section == host.derivedDebrief
+            if not host.debriefGenerated then
+                host.derivedDebrief = nil
+            end
+            local service = registry.byId.debrief
+            if not service then
+                if not (section and section.tiles and #section.tiles > 0) then
+                    return
+                end
+                local module, moduleError =
+                    loadModule(host.path, "lib/debrief_service.lua", host.packageInfo.runtimeApi)
+                local ok, instance = false, moduleError
+                if module then
+                    ok, instance = pcall(module.new, registry.env, host.servicesModule, registry)
+                end
+                if not ok then
+                    addError(host, "debrief: " .. tostring(instance))
+                    return
+                end
+                host.servicesModule.register(registry, instance, getTime())
+                service = instance
+            end
+            local widths, bySize = {}, {}
+            for index, tile in ipairs(section and section.tiles or {}) do
+                local size = tile.colSpan * 8 + tile.rowSpan
+                local width = bySize[size]
+                if not width then
+                    local span = { col = 0, row = 0, colSpan = tile.colSpan, rowSpan = tile.rowSpan }
+                    local rect = host.grid.rect(host.zone, span, 4, 4, 4)
+                    local fonts = host.themeBuilder.typography(tile.colSpan, tile.rowSpan)
+                    width = host.themeBuilder.frame(host.theme, rect, fonts).content
+                    bySize[size] = width
+                end
+                widths[index] = width
+            end
+            service:configure(section, widths)
         end
         context.panelHost = runtimeModule("lib/panel_host.lua")
         if context.panelHost and context.scheduler then
@@ -899,6 +992,7 @@ initialize = function(context)
                 loadModule = loadModule,
                 isFullScreen = isFullScreen,
                 readThemeDefinition = readThemeDefinition,
+                sharedTelemetry = sharedTelemetry,
             }, { "beginLoad", "advanceLoad", "panelRect", "reservedFor", "buildPanel" })
         end
         if context.dashboardLoader then
@@ -912,6 +1006,7 @@ initialize = function(context)
                 panelRect = context.dashboardLoader.panelRect,
                 reservedFor = context.dashboardLoader.reservedFor,
                 buildPanel = context.dashboardLoader.buildPanel,
+                addPageLayers = addPageLayers,
             }, {
                 "updateEmptyHint",
                 "beginReflow",
@@ -929,6 +1024,7 @@ initialize = function(context)
                 loadModule = loadModule,
                 isFullScreen = isFullScreen,
                 buildPanel = context.dashboardLoader.buildPanel,
+                registerThresholds = context.dashboardLoader.registerThresholds,
                 updateEmptyHint = context.dashboardLifecycle.updateEmptyHint,
             }, { "restorePreview", "openEditor", "advanceEditor", "editorEntryHit" })
         end
@@ -1031,7 +1127,9 @@ local function optionsStep(task)
     member.pending = true
     context.flightFactory.revision = (context.flightFactory.revision or 0) + 1
     context.editorStash, context.editorTransitionRequest, context.modelSettingsRequest = nil, nil, nil
+    context.editorDebriefRequest = nil
     context.logOpenRequest = nil
+    context.debrief, context.debriefRequest = nil, nil
     if context.locationRequest and context.locationRequest.kind == "open" then
         context.locationRequest = nil
     end
@@ -1058,6 +1156,86 @@ local function translate(name)
     return name
 end
 
+--- The latest flight debrief, or nil.
+local function debriefResult(context)
+    local runtime = context.serviceRuntime
+    local service = runtime and runtime.byId and runtime.byId.debrief
+    return service and service:result() or nil
+end
+
+local function debriefShown(context)
+    return context.debrief ~= nil and context.debrief.shown
+end
+
+--- Whether the debrief view is fully built for the latest debrief.
+local function debriefReady(context)
+    local state = context.debrief
+    return state ~= nil and state.result == debriefResult(context) and context.debriefModule.ready(state)
+end
+
+--- Keep the sheet's leading bar visible whenever a debrief is available.
+local function debriefPillWanted(context)
+    if
+        not context.page
+        or context.stage
+        or context.reloadState
+        or context.editorUi
+        or context.modelSettingsUi
+        or context.logViewer
+        or context.locationDetails
+        or not context.debrief
+        or context.debrief.stale
+        or context.debrief.result ~= debriefResult(context)
+        or context.debriefFailure == context.debrief.result
+    then
+        return nil
+    end
+    return isFullScreen()
+end
+
+local function debriefPillStale(context)
+    local pill = context.debriefPill
+    if not pill and not context.debrief then
+        return false
+    end
+    local wanted, zone = debriefPillWanted(context), context.zone
+    if wanted == nil then
+        return pill ~= nil and pill.fullscreen ~= nil
+    end
+    return not pill or pill.fullscreen ~= wanted or pill.w ~= zone.w or pill.h ~= zone.h
+end
+
+local function debriefFailed(context, message)
+    if context.debriefModule then
+        pcall(context.debriefModule.destroy, context)
+    end
+    context.debriefFailure = context.debrief and context.debrief.result or debriefResult(context)
+    addError(context, "debrief: " .. tostring(message))
+    showErrors(context)
+end
+
+--- Whether a fullscreen touch is an upward drag that should reveal the debrief.
+local function debriefPull(context, widgetEvent, touchState)
+    if
+        widgetEvent ~= _G.EVT_TOUCH_SLIDE
+        or type(touchState) ~= "table"
+        or not isFullScreen()
+        or not debriefReady(context)
+    then
+        return false
+    end
+    if touchState.swipeUp then
+        return true
+    end
+    local x, y, startX, startY = touchState.x, touchState.y, touchState.startX, touchState.startY
+    if type(y) ~= "number" or type(startY) ~= "number" then
+        return false
+    end
+    local rise = startY - y
+    local across = type(x) == "number" and type(startX) == "number" and math.abs(startX - x) or 0
+    return rise > 2 * context.gesture.SLOP and rise > across
+end
+
 --- Offer an input event to panels until one consumes it.
 ---@param context AeroGridContext
 ---@param widgetEvent any
@@ -1075,14 +1253,40 @@ local function handleEvent(context, widgetEvent, touchState)
     if context.logViewer then
         return context.logViewerModule.handle(context, widgetEvent, touchState)
     end
+    if debriefShown(context) then
+        return context.debriefModule.handle(context, widgetEvent, touchState)
+    end
     if context.editorController.editorEntryHit(context, widgetEvent, touchState) then
         context.editorTransitionRequest = "open"
         return true
+    end
+    if debriefPull(context, widgetEvent, touchState) then
+        local request = {
+            page = context.page,
+            y = touchState.y,
+            startY = touchState.startY,
+            swipe = touchState.swipeUp and true or nil,
+            follow = true,
+        }
+        local ok, message = pcall(context.debriefModule.open, context, debriefResult(context), request)
+        if not ok then
+            debriefFailed(context, message)
+        end
+        context.panelPress = context.gesture.cancel(context.panelPress)
+        return true
+    end
+    if context.debriefRequest and (widgetEvent == _G.EVT_TOUCH_BREAK or widgetEvent == _G.EVT_TOUCH_TAP) then
+        context.debriefRequest.released = true
     end
 
     local tap
     context.panelPress, tap = context.gesture.track(context.panelPress, widgetEvent, touchState)
     if tap and isFullScreen() then
+        if context.debriefModule and context.debriefModule.barHit(context, tap) then
+            context.debriefRequest = { page = context.page, swipe = true, released = true }
+            context.panelPress = context.gesture.cancel(context.panelPress)
+            return true
+        end
         local touchState = tap
         for _, entry in ipairs(context.panels) do
             local logPanel = entry.placement.type == "host-diagnostics" and entry.settings.section == "log"
@@ -1202,7 +1406,7 @@ local function panelsHeld(context, hidden)
         or context.appRebuild ~= nil
         or context.editorRestore ~= nil
         or editorWorkNeeded(context.editorUi)
-        or not hidden and (context.modelSettingsUi ~= nil or context.logViewer ~= nil)
+        or not hidden and (context.modelSettingsUi ~= nil or context.logViewer ~= nil or debriefShown(context))
 end
 
 --- A session reset waits for a load or reload to finish, then runs before other host work.
@@ -1231,11 +1435,13 @@ local function lifecycleHeld(context, hidden)
     end
     local built = not context.reloadState
         and (context.pageBuiltFullscreen or context.rootBuiltFullscreen or context.nativeDialogsCreated)
-    if not (context.locationDetails or context.logViewer or context.editorStash or built) then
+    local debrief = debriefShown(context)
+    if not (context.locationDetails or context.logViewer or debrief or context.editorStash or built) then
         return false
     end
     local fullscreen = isFullScreen()
     return context.locationDetails and (not fullscreen or context.reloadState)
+        or debrief and (not fullscreen or context.reloadState)
         or context.logViewer and (not fullscreen or context.reloadState or context.logViewer.width ~= context.zone.w - 16 or context.logViewer.height ~= context.zone.h)
         or context.editorStash and fullscreen and context.document and not (context.stage or context.reloadState)
         or built and not fullscreen
@@ -1332,6 +1538,9 @@ local function panelStep(task, now, granted)
         end
     elseif eventName == "refresh" then
         entry.nextRefresh = now + entry.interval
+    elseif eventName == "background" and ok and type(interval) == "number" then
+        -- A background hook that returns an interval sleeps that many ticks.
+        task.due = now + interval
     end
     if not ok then
         error(message or "panel failed", 0)
@@ -1808,10 +2017,18 @@ local function prepareAeroMenu(context)
                 context.modelSettingsRequest = { modelFilename = context.aeroMenuHandlers.modelFilename() }
             end,
             uiSetup = function()
+                context.editorDebriefRequest = false
+                context.editorTransitionRequest = "open"
+            end,
+            debrief = function()
+                context.editorDebriefRequest = true
                 context.editorTransitionRequest = "open"
             end,
             modal = function()
-                return context.modelSettingsUi ~= nil or context.locationDetails ~= nil or context.logViewer ~= nil
+                return context.modelSettingsUi ~= nil
+                    or context.locationDetails ~= nil
+                    or context.logViewer ~= nil
+                    or debriefShown(context)
             end,
             editing = function()
                 return context.editorUi ~= nil
@@ -1995,6 +2212,24 @@ local function routeHost(context, hidden)
         context.uiRequest = "log viewer"
         return true
     end
+    local debrief = context.debrief
+    if debrief then
+        local zone = context.zone
+        if
+            debrief.result ~= debriefResult(context)
+            or debrief.document ~= context.document
+            or debrief.width ~= zone.w
+            or debrief.height ~= zone.h
+        then
+            debrief.stale = true
+            context.uiRequest = "debrief"
+            return true
+        elseif debrief.shown and (not isFullScreen() or context.reloadState) then
+            debrief.closing = true
+            context.uiRequest = "debrief"
+            return true
+        end
+    end
 
     -- Leaving fullscreen neither saves nor discards. Editor boxes built in
     -- fullscreen would swallow the long press in App mode, so the editor is
@@ -2069,6 +2304,10 @@ local function routeForeground(context)
         if context.logViewer.prepareIndex or context.logViewer.closing then
             context.uiRequest = "log viewer"
         end
+        return
+    end
+
+    if debriefShown(context) then
         return
     end
 
@@ -2151,6 +2390,7 @@ local function advanceForeground(context)
         context.root:set({ w = context.zone.w, h = context.zone.h })
         context.page:set({ w = context.zone.w, h = context.zone.h })
         context.canvas:set({ w = context.zone.w, h = context.zone.h })
+        context.panelLayer:set({ w = context.zone.w, h = context.zone.h })
         context.reserved = reservedCorner(context.zone)
         if context.errorLabel then
             context.errorLabel:set({ y = errorTop(context), w = math.max(1, context.zone.w - 16) })
@@ -2180,6 +2420,7 @@ local function menuWorkNeeded(context, fullscreen)
     local modal = context.modelSettingsUi ~= nil
         or context.locationDetails ~= nil
         or context.logViewer ~= nil
+        or debriefShown(context)
         or editor ~= nil
     return context.theme
         and (
@@ -2283,7 +2524,7 @@ local function inputStep(task)
         return
     end
     -- Hold timing uses arrival time, not the deferred grant's time.
-    if not context.editorUi and not context.locationDetails and not context.logViewer then
+    if not context.editorUi and not context.locationDetails and not context.logViewer and not debriefShown(context) then
         if
             widgetEvent == _G.EVT_TOUCH_FIRST
             and context.editorController.editorEntryHit(context, widgetEvent, touchState, true)
@@ -2337,6 +2578,93 @@ local function modelSettingsOpenStep(task)
         return
     end
     openModelSettings(context)
+end
+
+local function debriefOpenReady(task, _, hidden)
+    return not hidden and task.host.debriefRequest ~= nil and debriefReady(task.host)
+end
+
+local function debriefOpenStep(task)
+    local context = task.host
+    local request, result = context.debriefRequest, debriefResult(context)
+    context.debriefRequest = nil
+    if not result or not debriefReady(context) then
+        return
+    end
+    local ok, openError = pcall(context.debriefModule.open, context, result, request)
+    if not ok then
+        debriefFailed(context, openError)
+        return
+    end
+end
+
+local function debriefPillReady(task, _, hidden)
+    local context = task.host
+    return not hidden and not context.lifecycleRequest and debriefPillStale(context)
+end
+
+local function debriefPillStep(task)
+    local context = task.host
+    local ok, pillError = pcall(context.debriefModule.pill, context, debriefPillWanted(context))
+    if not ok then
+        debriefFailed(context, pillError)
+    end
+end
+
+-- Lua instructions per scheduler slot, as the load stage costs assume.
+local DEBRIEF_SLOT_INSTRUCTIONS = 2000
+-- Slots per debrief build step: one tile (about 10k instructions) or curves.
+local DEBRIEF_SLOTS = 5
+-- Slots per pill update: a few measured texts and objects.
+local DEBRIEF_PILL_SLOTS = 2
+
+--- Whether the latest debrief's view still has to be built. Building starts
+--- as soon as a debrief exists, so the view opens complete.
+local function debriefBuildDue(context)
+    local result, state = debriefResult(context), context.debrief
+    if not result or context.debriefFailure == result then
+        return false
+    end
+    if not state then
+        return true
+    end
+    return state.result == result and not state.stale and not state.closing and context.debriefModule.pending(state)
+end
+
+local function debriefBuildReady(task, _, hidden)
+    local context = task.host
+    -- Objects created under the overlay in the callback that cleared it are
+    -- swept by EdgeTX after the callback; see the reload comment above.
+    return not hidden
+        and context.page ~= nil
+        and not context.debriefCleared
+        and not context.reloadState
+        and not context.stage
+        and not context.modelSettingsUi
+        and not context.editorUi
+        and debriefBuildDue(context)
+end
+
+local function debriefBuildStep(task, _, granted)
+    local context = task.host
+    if not context.debriefModule then
+        local loaded, message = loadModule(context.path, "lib/debrief_view.lua", 1)
+        if not loaded then
+            debriefFailed(context, message)
+            return
+        end
+        context.debriefModule = loaded
+    end
+    local module = context.debriefModule
+    local ok, buildError = pcall(function()
+        if not context.debrief then
+            context.debrief = module.new(context, debriefResult(context))
+        end
+        module.advance(context, granted * DEBRIEF_SLOT_INSTRUCTIONS)
+    end)
+    if not ok then
+        debriefFailed(context, buildError)
+    end
 end
 
 local function logOpenReady(task, _, hidden)
@@ -2421,6 +2749,7 @@ local function editorTransitionReady(task, _, hidden)
         and not context.editorRestore
         and not context.logViewer
         and not context.locationDetails
+        and not debriefShown(context)
         and context.document ~= nil
         and isFullScreen()
 end
@@ -2481,6 +2810,7 @@ local function rebindArming(context)
     context.armingRebind = nil
     if context.modelArmed == context.flightFactory.broker.document.armed then
         context.configureFlight(context)
+        context.configureDebrief(context)
         context.modelArmingReload = nil
     end
 end
@@ -2493,6 +2823,7 @@ local function editorTransitionStep(task)
     if request == "open" then
         context.editorController.openEditor(context)
     else
+        context.editorDebriefRequest = nil
         if state then
             local session = context.editorSession
             local keep = request == "suspend" or session and session.dirty and not state.buildStage
@@ -2524,6 +2855,8 @@ local function uiField(kind)
         return "modelSettingsUi"
     elseif kind == "editor" then
         return "editorUi"
+    elseif kind == "debrief" then
+        return "debrief"
     end
     return "logViewer"
 end
@@ -2535,6 +2868,8 @@ local function uiCost(task)
     elseif task.kind == "model settings" then
         local cost = context.modelSettingsUiModule.cost
         return cost and math.min(cost(context), slots) or slots
+    elseif task.kind == "debrief" then
+        return 1
     end
     return context.logViewer and context.logViewer.closing and 1 or slots
 end
@@ -2559,6 +2894,15 @@ local function uiReady(task, _, hidden)
     end
     if task.kind == "model settings" then
         return task.ui ~= nil and context.modelSettingsUi == task.ui
+    end
+    if task.kind == "debrief" then
+        local state = context.debrief
+        return not hidden
+            and not context.modelSettingsUi
+            and not context.stage
+            and state ~= nil
+            and state == task.ui
+            and (state.stale or state.closing)
     end
     local viewer = context.logViewer
     return not hidden
@@ -2598,6 +2942,13 @@ local function uiStep(task, _, _, hidden)
                 return nil, true
             end
         end
+    elseif task.kind == "debrief" then
+        local state, module = context.debrief, context.debriefModule
+        if state.stale then
+            module.destroy(context)
+        else
+            module.hide(context)
+        end
     else
         if context.logViewer.closing then
             context.logViewerModule.close(context)
@@ -2623,6 +2974,7 @@ local LOAD_STAGE_COST = {
     ["header"] = 2,
     ["header-finalize"] = 2,
     ["panels"] = 2,
+    ["debrief"] = 3,
     ["load-complete"] = 2,
     ["tokenize"] = 3,
     ["theme-validate"] = 4,
@@ -2660,7 +3012,11 @@ local function lifecycleWanted(context, kind, hidden)
         end
         return not context.reloadState and context.stage ~= nil
     elseif kind == "reflow" then
-        return not hidden and not context.reloadState and not context.stage and not context.logViewer
+        return not hidden
+            and not context.reloadState
+            and not context.stage
+            and not context.logViewer
+            and not debriefShown(context)
     end
     return not hidden and not context.reloadState and not context.stage and context.appRebuild ~= nil
 end
@@ -2810,7 +3166,8 @@ local function kindTask(context, field, kind, gate, run, ui)
         }
         if kind == "model settings" or kind == "log viewer" then
             task.inputFirst = function(self)
-                return not (self.kind == "log viewer" and self.host.logViewer and self.host.logViewer.closing)
+                local host = self.host
+                return not (self.kind == "log viewer" and host.logViewer and host.logViewer.closing)
             end
         end
         tasks[kind] = task
@@ -2865,7 +3222,7 @@ local function pruneRequests(context, hidden, fullscreen)
             { inputFirst = editorOpening }
         )
         if not editorTransitionReady(task, nil, hidden) then
-            context.editorTransitionRequest = nil
+            context.editorTransitionRequest, context.editorDebriefRequest = nil, nil
         end
     end
     local request = context.logOpenRequest
@@ -2882,6 +3239,24 @@ local function pruneRequests(context, hidden, fullscreen)
         )
     then
         context.logOpenRequest = nil
+    end
+    request = context.debriefRequest
+    if
+        request
+        and (
+            request.page ~= context.page
+            or context.reloadState
+            or context.stage
+            or context.modelSettingsUi
+            or context.editorUi
+            or context.logViewer
+            or context.locationDetails
+            or debriefShown(context)
+            or not hidden and not fullscreen
+            or not debriefResult(context)
+        )
+    then
+        context.debriefRequest = nil
     end
     request = context.locationRequest
     if
@@ -2957,6 +3332,30 @@ local function enrolHost(context, hidden)
     if context.logOpenRequest then
         add(hostTask(context, "logOpenTask", "log open", logOpenReady, logOpenStep, { inputFirst = true }))
     end
+    if debriefBuildDue(context) then
+        add(
+            hostTask(
+                context,
+                "debriefBuildTask",
+                "debrief build",
+                debriefBuildReady,
+                debriefBuildStep,
+                { inputFirst = true, cost = DEBRIEF_SLOTS }
+            )
+        )
+    end
+    if context.debriefRequest then
+        add(
+            hostTask(
+                context,
+                "debriefOpenTask",
+                "debrief open",
+                debriefOpenReady,
+                debriefOpenStep,
+                { inputFirst = true }
+            )
+        )
+    end
     if context.locationRequest then
         add(
             hostTask(
@@ -2980,6 +3379,18 @@ local function enrolHost(context, hidden)
     if not hidden and emptyHintStale(context) then
         add(hostTask(context, "hostTask", "host", hintReady, hintStep, { inputFirst = true }))
     end
+    if not hidden and debriefPillStale(context) then
+        add(
+            hostTask(
+                context,
+                "debriefPillTask",
+                "debrief pill",
+                debriefPillReady,
+                debriefPillStep,
+                { inputFirst = true, cost = DEBRIEF_PILL_SLOTS }
+            )
+        )
+    end
 end
 
 local function runCallback(context, hidden, widgetEvent, touchState)
@@ -3002,6 +3413,7 @@ local function runCallback(context, hidden, widgetEvent, touchState)
     end
     local fullscreen = not hidden and isFullScreen()
     context.inputHandled, context.dashboardClosed, context.retireBoundary, context.menuChromeOnly = nil, nil, nil, nil
+    context.debriefCleared = nil
     if not hidden then
         event(context, widgetEvent, touchState)
     end
