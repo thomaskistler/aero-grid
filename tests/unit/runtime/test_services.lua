@@ -140,20 +140,20 @@ local function testTelemetryTextSensor()
     -- comparing declarations would never repaint.
     local before = mode.revision
     harness.values[145] = "ACRO"
-    service:update(1)
+    service:update(20)
     assertEqual(mode.raw, "ACRO")
     assert(mode.revision > before, "a changed string did not count as a new reading")
 
     -- And the same string twice is not.
     local settled = mode.revision
-    service:update(2)
+    service:update(40)
     assertEqual(mode.revision, settled, "an unchanged string counted as a new reading")
 
     -- A dropped link keeps the last string and marks it stale, exactly as a
     -- numeric reading is kept rather than replaced with nothing.
     harness.rssi = 0
     harness.values[145] = nil
-    service:update(3)
+    service:update(60)
     assertEqual(mode.raw, "ACRO", "a dropped link discarded the last mode")
     assertEqual(mode.state, "stale")
 end
@@ -189,7 +189,7 @@ local function testTelemetryFreshness()
 
     -- Precision comes from the model's sensor table, one search at a time.
     for step = 1, 6 do
-        service:update(step)
+        service:update(step * 20)
     end
     assertEqual(pack.precision, 2)
     assertEqual(altitude.precision, 1)
@@ -198,7 +198,7 @@ local function testTelemetryFreshness()
     -- replacing a valid 24.4 V with the zero EdgeTX reports.
     harness.rssi = 0
     harness.values[100] = 0
-    service:update(20)
+    service:update(140)
     assertEqual(pack.value, 24.4, "a stale poll overwrote the cached reading")
     assertEqual(pack.state, "stale")
     assertEqual(pack.stale, true)
@@ -206,14 +206,14 @@ local function testTelemetryFreshness()
 
     harness.rssi = 70
     harness.values[100] = 23.9
-    service:update(30)
+    service:update(160)
     assertEqual(pack.value, 23.9)
     assertEqual(pack.state, "normal")
 
     -- A sensor that appears later must be picked up without a reload.
     harness.fields.Nope = { id = 106, name = "Nope", unit = 13 }
     harness.values[106] = 42
-    service:update(30 + telemetryService.RESOLVE_RETRY)
+    service:update(160 + telemetryService.RESOLVE_RETRY)
     assertEqual(missing.known, true)
     assertEqual(missing.value, 42)
     assertEqual(missing.unitText, "%")
@@ -244,7 +244,7 @@ local function testTelemetryLinkHeuristics()
 
     -- Having learned that, a genuine zero from the same radio is a reading too.
     harness.values[100] = 0
-    service:update(1)
+    service:update(20)
     assertEqual(pack.value, 0)
     assertEqual(pack.state, "normal")
 
@@ -255,7 +255,7 @@ local function testTelemetryLinkHeuristics()
     assertEqual(reading.value, 24.4)
     other.rssi = 0
     other.values[100] = 0
-    other.service:update(1)
+    other.service:update(20)
     assertEqual(reading.state, "stale")
     assertEqual(reading.value, 24.4, "a stale poll overwrote the cached reading")
 
@@ -269,7 +269,7 @@ local function testTelemetryLinkHeuristics()
 
     local cells = service:subscribe("Cels")
     local lowest = service:subscribe("Cels-")
-    service:update(2)
+    service:update(40)
 
     assertEqual(cells.kind, "cells")
     assertEqual(type(cells.raw), "table")
@@ -278,14 +278,15 @@ local function testTelemetryLinkHeuristics()
     assertEqual(lowest.state, "normal")
 end
 
---- Polling must stay bounded no matter how many sources a layout references.
-local function testTelemetryPollingIsBounded()
+--- Every source is polled in one update at its own rate: recorded sources at
+--- 10 Hz, displayed ones at 5 Hz, and the charge covers the next update.
+local function testTelemetryPollsEachSourceAtItsRate()
     local harness = telemetryHarness()
     local service = harness.service
-    local polled = {}
+    local reads = {}
 
     harness.env.getValue = function(id)
-        polled[#polled + 1] = id
+        reads[id] = (reads[id] or 0) + 1
         return harness.values[id]
     end
 
@@ -293,23 +294,29 @@ local function testTelemetryPollingIsBounded()
         local name = "S" .. index
         harness.fields[name] = { id = 200 + index, unit = 0 }
         harness.values[200 + index] = index
-        service:subscribe(name)
+        service:subscribe(name, nil, index <= 4)
     end
+    assertEqual(service.updateCost, 2, "new sources are charged to the next update")
 
     service:update(0)
-    assert(#polled <= telemetryService.POLL_CAP, "one update polled " .. #polled .. " sources")
+    for index = 1, 16 do
+        assertEqual(reads[200 + index], 1, "the first update polls every source")
+    end
+    assertEqual(service.due, 10)
+    assertEqual(service.updateCost, 1, "only the four recorded sources are due next")
 
-    -- Every source must still be served, in rotation, rather than starved.
-    local seen = {}
-    for step = 1, 8 do
-        service:update(step)
-        for _, id in ipairs(polled) do
-            seen[id] = true
-        end
+    -- One second, with updates running a few ticks late on the 10 Hz grid.
+    for step = 1, 10 do
+        service:update(step * 10 + (step % 3))
     end
     for index = 1, 16 do
-        assert(seen[200 + index], "source S" .. index .. " was never polled")
+        assertEqual(reads[200 + index], index <= 4 and 11 or 6, "source S" .. index .. " missed its rate")
     end
+    assertEqual(service.due, 110, "late updates must not slow the grid")
+
+    -- An update later than a whole interval restarts the grid.
+    service:update(150)
+    assertEqual(service.due, 160)
 end
 
 --- Model facets are radio-local, so they never depend on a link, but every one
@@ -649,7 +656,7 @@ testServiceScheduling()
 testTelemetryFreshness()
 testTelemetryTextSensor()
 testTelemetryLinkHeuristics()
-testTelemetryPollingIsBounded()
+testTelemetryPollsEachSourceAtItsRate()
 testModelService()
 testControlService()
 testNavigationService()

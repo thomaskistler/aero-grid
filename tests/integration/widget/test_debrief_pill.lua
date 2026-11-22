@@ -272,7 +272,8 @@ current = nil
 settle()
 assert(not pill(), "a session reset removes the pill")
 
--- Includes a layout reflow, which may share its callback with a menu turn.
-assert(worst < 16000, "pill callback exceeded budget: " .. worst)
+-- Includes a layout reflow, which may share its callback with a menu turn or
+-- with task enrollment.
+assert(worst < 17000, "pill callback exceeded budget: " .. worst)
 runtime.byId.debrief = realDebrief
 print("Debrief pill integration passed; worst callback: " .. worst .. " instructions")

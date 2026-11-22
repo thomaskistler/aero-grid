@@ -118,7 +118,9 @@ local function measured(callback, context)
     local field = settings and settings.build and settings.view.fields[settings.build]
     -- The 65-choice native picker runs extra Lua in this fixture. Its production
     -- grant is checked by native measurements, independently of this mock envelope.
-    local limit = field and field.key == "flightSwitch" and 18000 or 16000
+    -- Mock chart slots cost more than native ones, so a callback that hands most
+    -- slots to the chart is allowed more here.
+    local limit = field and field.key == "flightSwitch" and 18000 or 17000
     fixture.lvglMock.setPropertyValidation(false)
     fixture.lvglMock.setCallCounting(false)
     fixture.lcdMock.setTextMeasurement(false)

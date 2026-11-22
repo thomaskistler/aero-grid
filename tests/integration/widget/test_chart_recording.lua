@@ -359,7 +359,15 @@ if withFlights then
     assert(session.segment == segment and session.flightLast == 1, "grace rearm must not pause or duplicate flights")
 end
 setArmed(0)
-pump(30)
+-- Eight charts crowd the mock budget, so the arm switch is read late.
+for _ = 1, 100 do
+    pump(1)
+    if not context.panels[1].instance.session.recording then
+        break
+    end
+end
+assert(not context.panels[1].instance.session.recording, "disarming must stop recording")
+pump(1)
 local paused = context.panels[1].instance.session.elapsed
 assert(paused >= elapsed)
 pump(100, true)

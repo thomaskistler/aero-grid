@@ -51,17 +51,22 @@
 
 local telemetryService = {}
 telemetryService.__index = telemetryService
-telemetryService.updateCost = "variable"
-telemetryService.updateMinCost = 1
+telemetryService.updateCost = 1
 
---- Ticks of 10ms between polls. Faster than any panel's refresh so a
---- panel never renders a reading older than its own interval.
+--- Ticks of 10ms between polls of a recorded source, the 10 Hz telemetry rate.
+--- Updates run on this grid, so a late update does not slow later ones.
 telemetryService.INTERVAL = 10
 
---- Subscriptions refreshed per update, served round robin. Sixteen sources
---- split across two updates still give every source 5 Hz at the interval above.
-telemetryService.POLL_CAP = 8
-telemetryService.SOURCES_PER_SLOT = 2
+--- Ticks between polls of a source only panels display, 5 Hz.
+telemetryService.DISPLAY_PERIOD = 20
+
+--- Above this many recorded sources, updates run twice as often and each polls
+--- half of them, so every source keeps 10 Hz without one heavy callback.
+telemetryService.SPLIT_AT = 12
+
+--- Sources one slot is charged for. Every due source is polled in one step.
+telemetryService.SOURCES_PER_SLOT = 8
+local MAX_COST = 8
 
 --- Ticks between attempts to resolve a source the radio does not yet know.
 --- Sensors appear when telemetry first arrives, so an unresolved name must be
@@ -136,7 +141,7 @@ function telemetryService.new(env, support)
         support = support,
         names = {},
         entries = {},
-        cursor = 1,
+        batch = {},
         scanCursor = 1,
         precisionScans = 0,
         linkLive = false,
@@ -173,17 +178,30 @@ local function newEntry(name)
         revision = 0,
     }
 
-    return { state = state, base = base, nextResolve = 0, scanIndex = nil }
+    return { state = state, base = base, nextResolve = 0, nextPoll = 0, scanIndex = nil }
+end
+
+--- Charge the next update for the sources it will poll.
+---@param service table
+---@param polls integer
+local function chargeFor(service, polls)
+    local cost = math.ceil(polls / telemetryService.SOURCES_PER_SLOT)
+    service.updateCost = cost < 1 and 1 or cost > MAX_COST and MAX_COST or cost
+    service.nextPolls = polls
 end
 
 --- Subscribe to an EdgeTX source by name.
 --- An absent or empty name yields a permanently unavailable reading rather
 --- than nil, so a panel can render an unconfigured source without
 --- branching and without ever indexing nil.
+---
+--- A recorded source is polled at 10 Hz and handed to observers; any other is
+--- polled at 5 Hz for display.
 ---@param name any
 ---@param linkEvidence? boolean False identifies a transmitter-local source shared by all subscribers.
+---@param recorded? boolean True when observers record every sample of the source.
 ---@return AeroGridReading
-function telemetryService:subscribe(name, linkEvidence)
+function telemetryService:subscribe(name, linkEvidence, recorded)
     if type(name) ~= "string" or name == "" then
         if not self.noneView then
             self.noneView = self.support.snapshot(newEntry("").state)
@@ -195,10 +213,17 @@ function telemetryService:subscribe(name, linkEvidence)
     if not entry then
         entry = self.support.addSubscription(self, self.entries, newEntry(name))
         self.names[name] = entry
+        -- A new source is polled by the next update.
+        chargeFor(self, (self.nextPolls or 0) + 1)
     end
 
     if linkEvidence == false then
         entry.linkEvidence = false
+    end
+    if recorded and not entry.recorded then
+        entry.recorded = true
+        self.recordedCount = (self.recordedCount or 0) + 1
+        entry.half = self.recordedCount % 2
     end
     return entry.view
 end
@@ -238,7 +263,9 @@ function telemetryService:reading(name)
     return entry and entry.view or nil
 end
 
---- Observe completed polls without adding firmware reads.
+--- Observe the samples of recorded sources without adding firmware reads.
+--- `observer:samples(views, count, now)` receives each update's recorded
+--- readings as one batch; a raised error stops that observer only.
 function telemetryService:observe(observer)
     self.observers = self.observers or {}
     self.observers[#self.observers + 1] = observer
@@ -554,24 +581,10 @@ function telemetryService:publishLink(now)
     end
 end
 
---- Poll a bounded slice of the subscriptions.
+--- Poll every due subscription in one step, then hand observers the batch of
+--- recorded samples.
 ---@param now integer
-local function pollEntry(service, entry, now)
-    service:poll(entry, now)
-    if not service.observers then
-        return
-    end
-    for _, observer in ipairs(service.observers) do
-        if not observer.failed and not observer.failure then
-            local ok, message = pcall(observer.sample, observer, entry.view, now)
-            if not ok then
-                observer.failure = tostring(message)
-            end
-        end
-    end
-end
-
-function telemetryService:update(now, slots)
+function telemetryService:update(now)
     local read = self.env.getRSSI
     local rssi = read and read() or 0
     if type(rssi) ~= "number" then
@@ -584,38 +597,74 @@ function telemetryService:update(now, slots)
     self.linkLive = rssi > 0 or self.linkTrusted == false
     self:publishLink(now)
 
-    local entries = self.entries
-    if #entries == 0 then
-        self.unpolled = nil
-        return 1
+    -- Stay on the grid; an update later than a whole interval restarts it.
+    local split = (self.recordedCount or 0) > telemetryService.SPLIT_AT
+    local interval = telemetryService.INTERVAL
+    local half
+    if split then
+        interval = interval // 2
+        half = 1 - (self.half or 1)
+        self.half = half
     end
-    -- Keep an in-progress round across callbacks; only completed rounds restart.
-    local left = math.min(self.unpolled or #entries, #entries)
-    local polls = math.min(
-        left,
-        telemetryService.POLL_CAP,
-        slots and slots * telemetryService.SOURCES_PER_SLOT or self.pollCap or telemetryService.POLL_CAP
-    )
-    local consumed = math.max(1, math.ceil(polls / telemetryService.SOURCES_PER_SLOT))
-    local unpolled = left - polls
-    self.unpolled = unpolled > 0 and unpolled or nil
-    local again = unpolled > 0
-    self.cursor = self.support.roundRobin(entries, self.cursor, polls, pollEntry, self, now)
+    local due = (self.gridDue or now) + interval
+    if due <= now then
+        due = now + interval
+    end
+    self.gridDue, self.due = due, due
+
+    local entries = self.entries
+    local total = #entries
+    local batch, recorded, upcoming = self.batch, 0, 0
+    -- Half an interval of slack still polls a late display source every
+    -- DISPLAY_PERIOD.
+    local displayNext = now + telemetryService.DISPLAY_PERIOD - interval // 2
+    for index = 1, total do
+        local entry = entries[index]
+        if entry.recorded then
+            if entry.half == half or not split then
+                self:poll(entry, now)
+                recorded = recorded + 1
+                batch[recorded] = entry.view
+            end
+            if entry.half ~= half or not split then
+                upcoming = upcoming + 1
+            end
+        else
+            if entry.nextPoll <= now then
+                self:poll(entry, now)
+                entry.nextPoll = displayNext
+            end
+            if entry.nextPoll <= due then
+                upcoming = upcoming + 1
+            end
+        end
+    end
+    chargeFor(self, upcoming)
 
     -- Republished after the polls, because a live reading can prove the
     -- indicator wrong part way through this very update.
     self:publishLink(now)
 
+    local observers = self.observers
+    if observers and recorded > 0 then
+        for _, observer in ipairs(observers) do
+            if not observer.failed and not observer.failure then
+                local ok, message = pcall(observer.samples, observer, batch, recorded, now)
+                if not ok then
+                    observer.failure = tostring(message)
+                end
+            end
+        end
+    end
+
     -- Advance at most one precision search per update, in rotation, so a
     -- dashboard of sixteen sources never pays sixteen table scans at once.
-    local total = #entries
+    if self.precisionScans == 0 or total == 0 then
+        return
+    end
     local scan = self.scanCursor
     if scan > total then
         scan = 1
-    end
-    if self.precisionScans == 0 then
-        self.scanCursor = scan
-        return consumed, again
     end
     for _ = 1, total do
         local entry = entries[scan]
@@ -626,7 +675,6 @@ function telemetryService:update(now, slots)
         end
     end
     self.scanCursor = scan
-    return consumed, again
 end
 
 --- Format a reading for display, honoring its precision.

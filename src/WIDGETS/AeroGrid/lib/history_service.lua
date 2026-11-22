@@ -553,7 +553,7 @@ function history:subscribe(source, options)
     self.support.subscribed(self)
     local telemetry = self.runtime.byId.telemetry
     if telemetry then
-        telemetry:subscribe(source)
+        telemetry:subscribe(source, nil, true)
         if not self.observing then
             telemetry:observe(self)
             self.observing = true
@@ -759,6 +759,16 @@ function history:sample(reading, now)
                 end
             end
         end
+    end
+end
+
+--- Record one update's batch of telemetry readings.
+---@param readings AeroGridReading[]
+---@param count integer
+---@param now integer
+function history:samples(readings, count, now)
+    for index = 1, count do
+        self:sample(readings[index], now)
     end
 end
 
