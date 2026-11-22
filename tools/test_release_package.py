@@ -53,7 +53,7 @@ class ReleaseTests(unittest.TestCase):
                 self.assertEqual(assets, release.ASSETS)
                 self.assertEqual(
                     {name for name in assets if name.startswith("menu-")},
-                    {f"menu-{icon}-{color}-{size}.png" for icon in ("model", "theme")
+                    {f"menu-{icon}-{color}-{size}.png" for icon in ("model", "stats", "theme")
                      for color in ("black", "white") for size in (36, 45, 62)}
                     | {"menu-title.svg", *(f"menu-title-{size}.png" for size in (36, 45, 62))},
                 )
