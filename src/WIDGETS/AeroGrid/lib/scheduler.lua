@@ -23,7 +23,6 @@
 --- earlier calls `reschedule` to move it forward. A later `due` set from
 --- outside takes effect when the task reaches the front.
 ---@field hold? {on: boolean?} Shared hold; the task waits while `hold.on`.
----@field ready? fun(task: AeroGridTask, now: integer, context: any): boolean Extra gate for rare work, read on every pass while the task is due.
 ---@field failed? boolean Set by the host or a step to retire the task, or by the scheduler after a failure.
 ---@field error? string Set by the scheduler with `failed`.
 ---
@@ -236,9 +235,9 @@ function scheduler.new(dependencies)
             and (state.pending and state.refused ~= callback or state.denied == segment)
     end
 
-    local function open(task, now, context)
+    local function open(task)
         local hold = task.hold
-        return not (hold and hold.on) and (not task.ready or task.ready(task, now, context))
+        return not (hold and hold.on)
     end
 
     local function failTask(task, state, message)
@@ -305,11 +304,7 @@ function scheduler.new(dependencies)
                     if link(task, due) >= index then
                         index = index - 1
                     end
-                elseif
-                    state.refused ~= callback
-                    and (state.pending or state.ran ~= callback)
-                    and open(task, now, context)
-                then
+                elseif state.refused ~= callback and (state.pending or state.ran ~= callback) and open(task) then
                     local cost = task.cost
                     if cost == nil then
                         cost = 1
@@ -411,14 +406,14 @@ function scheduler.new(dependencies)
     end
 
     --- Whether another segment of this callback has work to do.
-    local function more(now, context)
+    local function more(now)
         local callback, segment = self.callbacks, self.segments
         for index = 1, count do
             if keys[index] > now then
                 break
             end
             local task = tasks[index]
-            if carries(task, records[task], callback, segment) and open(task, now, context) then
+            if carries(task, records[task], callback, segment) and open(task) then
                 return true
             end
         end
@@ -434,7 +429,7 @@ function scheduler.new(dependencies)
     --- Every allowed segment counts as available, whether or not it was needed.
     ---@param now integer
     ---@param slots integer Slots available to each segment.
-    ---@param context any Passed through to `ready` and `step`.
+    ---@param context any Passed through to `step`.
     ---@param options? {segments?: integer, cross?: fun(fn: function): boolean, any}
     ---@return integer used
     ---@return integer requested Eligible tasks that asked for slots.
@@ -446,10 +441,10 @@ function scheduler.new(dependencies)
         local used, requested, denied = execute(now, slots, context, false)
         self.remaining = slots - used
         local failure
-        if cross and extra > 0 and more(now, context) then
+        if cross and extra > 0 and more(now) then
             local ok, message = cross(function()
                 for _ = 1, extra do
-                    if not more(now, context) then
+                    if not more(now) then
                         break
                     end
                     local segmentUsed, segmentRequested, segmentDenied = execute(now, slots, context, true)

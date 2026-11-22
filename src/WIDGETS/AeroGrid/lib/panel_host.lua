@@ -28,9 +28,6 @@
 --- A second result of true requests another turn in the same callback.
 --- Refreshes receive (instance, false, slots) and may return consumed slots as
 --- a third result. Variable refreshes must declare a minimum and report consumption.
----@field finish? fun(instance: any, creating: boolean, slots: integer) Finishing work after a refresh. Its own variable-cost task, ready while `finishPending` is true; may return the ticks until the next refresh is due, whether it requests another turn now, and slots consumed.
----@field finishPending? fun(instance: any): boolean, integer? While true the finishing task runs and refreshes wait. A second result sets the next stage's minimum grant.
----@field finishMinCost? integer Minimum grant for finishing, 1 to 8, when `finishPending` reports none.
 ---@field background? fun(instance: any, creating: boolean, slots: integer) While the dashboard is hidden. A fixed one-slot task unless `backgroundMinCost` is declared.
 ---@field backgroundMinCost? integer Makes background a variable-cost task with this minimum grant, 1 to 8; an instance may override it. It then reports consumed slots as a third result.
 ---@field resetSession? fun(instance: any, now: integer) Second result true requests another reset turn.
@@ -48,7 +45,7 @@
 ---@field nextRefresh integer Tick at which this panel is next due.
 ---@field failed? boolean Set after a lifecycle failure disables the panel.
 ---@field error? string First lifecycle failure message.
----@field dispatched? fun(entry: AeroGridPanelEntry) Called after refresh, background and finish callbacks, which may change slot costs, and after a failure.
+---@field dispatched? fun(entry: AeroGridPanelEntry) Called after refresh and background callbacks, which may change slot costs, and after a failure.
 
 local panelHost = {}
 
@@ -56,8 +53,6 @@ local panelHost = {}
 local OPTIONAL_CALLBACKS = {
     "update",
     "refresh",
-    "finish",
-    "finishPending",
     "background",
     "resetSession",
     "rebindArming",
@@ -161,21 +156,6 @@ function panelHost.validateModule(module, typeName)
         )
     then
         return false, "backgroundMinCost must be a whole number from 1 to " .. maxSlots
-    end
-    local finishMinimum = field(module, "finishMinCost")
-    if
-        finishMinimum ~= nil
-        and (
-            type(finishMinimum) ~= "number"
-            or finishMinimum < 1
-            or finishMinimum > maxSlots
-            or finishMinimum ~= math.floor(finishMinimum)
-        )
-    then
-        return false, "finishMinCost must be a whole number from 1 to " .. maxSlots
-    end
-    if field(module, "finish") ~= nil and (finishMinimum == nil or field(module, "finishPending") == nil) then
-        return false, "finish requires finishMinCost and finishPending"
     end
     return true
 end
@@ -348,17 +328,7 @@ function panelHost.dispatch(entry, event, ...)
 
     local ok, resultOrError, again, consumed = pcall(callback, entry.instance, ...)
     local dispatched = entry.dispatched
-    if ok and event == "finishPending" then
-        if type(resultOrError) ~= "boolean" then
-            ok, resultOrError = false, "finishPending must return a boolean"
-        elseif
-            again ~= nil
-            and (type(again) ~= "number" or again < 1 or again > maxSlots or again ~= math.floor(again))
-        then
-            ok, resultOrError = false, "finishPending minimum must be a whole number from 1 to " .. maxSlots
-        end
-    end
-    if ok and (event == "refresh" or event == "finish") and type(resultOrError) == "number" then
+    if ok and event == "refresh" and type(resultOrError) == "number" then
         if resultOrError < 1 or resultOrError > 6000 or resultOrError ~= math.floor(resultOrError) then
             ok, resultOrError = false, "refresh interval must be a whole number from 1 to 6000 ticks"
         else
@@ -366,7 +336,7 @@ function panelHost.dispatch(entry, event, ...)
         end
     end
     if ok then
-        if dispatched and (event == "refresh" or event == "background" or event == "finish") then
+        if dispatched and (event == "refresh" or event == "background") then
             dispatched(entry)
         end
         return true, nil, resultOrError, again, consumed

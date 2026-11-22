@@ -91,6 +91,7 @@ noGrant(context, fixture.lvglMock.objects, function()
     definition.refresh(context)
     assert(context.locationDetails == state and not context.locationOverlay.hidden)
 end)
+local spent = context.scheduler.state(context.locationTask).spent
 untilState(function()
     return not context.locationDetails
 end)
@@ -99,7 +100,7 @@ assert(
         and not context.locationRequest
         and not context.scheduler.state(context.locationTask).pending
 )
-assert(context.locationTask.cost == 1, "location close only reserves one slot")
+assert(context.scheduler.state(context.locationTask).spent == spent + 1, "location close only reserves one slot")
 
 requestOpen()
 untilState(function()

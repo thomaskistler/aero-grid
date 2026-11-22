@@ -157,8 +157,6 @@ Put a module at `panels/<type>.lua`, with an `id` matching that layout type.
 | `refreshCost`, `refreshMinCost` | Fixed cost of 0-8 slots (default 1), or `"variable"` with a minimum of 1-8. |
 | `create(parent, rect, settings, services)` | Construct objects, subscribe, and return instance state. |
 | `refresh(instance, creating, slots)` | Update objects; scheduled calls pass `false`. Returns next interval (1-6000 ticks, or nil to retain it), continuation, and consumed slots. Variable work must report consumption. |
-| `finish(instance, creating, slots)` | Optional variable-cost finishing task with the same results as refresh. Requires `finishPending` and `finishMinCost`. |
-| `finishPending(instance)` | Whether finishing work is ready; an optional second result sets its next minimum grant. Refresh waits while finishing is pending. |
 | `update(instance, rect, settings, detailsOnly, placement)` | Reflow/configuration update; host reflows and editor resizes pass placement as the fifth argument. |
 | `background(instance, creating, slots)` | Hidden-dashboard work; variable-cost when `backgroundMinCost` is declared, otherwise one slot. Returns an optional delay in ticks before the next call, continuation, and consumed slots. |
 | `resetSession(instance, now)` | Reset session state; second result true requests another bounded reset turn. |

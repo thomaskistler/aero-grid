@@ -889,16 +889,12 @@ do
         error("readout updates must yield before drawing")
     end
     gridPanel.metadataReady, gridPanel.columnsDecorating = nil, nil
-    -- Readouts and legend belong to the finishing task and need two slots.
+    -- Readouts and legend are finished first and need two slots.
     assert(select(2, chartModule.finishPending(gridPanel)) == 2, "readouts must declare their minimum")
-    local _, unfinished, used = chartModule.finish(gridPanel, false, 1)
+    local _, unfinished, used = chartModule.refreshOnly(gridPanel, false, 1)
     assert(unfinished and used == 1 and rendered == 0, "a grant below the minimum must not run readouts")
-    _, unfinished, used = chartModule.finish(gridPanel, false, 2)
+    _, unfinished, used = chartModule.refreshOnly(gridPanel, false, 2)
     assert(not unfinished and used == 2 and rendered == 1, "readouts must be charged their two slots without drawing")
-    -- A refresh waits while overlays or readouts are pending.
-    gridPanel.metadataReady = nil
-    _, again, used = chartModule.refreshOnly(gridPanel, false, 8)
-    assert(not again and used == 1 and rendered == 1, "a refresh must leave pending readouts to the finishing task")
     gridPanel.metadataReady = true
     gridPanel.gridVersion = gridPanel.version
     local appended = false

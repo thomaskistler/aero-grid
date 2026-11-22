@@ -27,17 +27,12 @@ local function queued(current)
     end
     return false
 end
--- One callback of the chart's two tasks: the refresh is offered `grant` slots,
--- and the finishing task, when pending, gets at least its declared minimum.
+-- One chart refresh, offered `grant` slots or at least its declared minimum.
 local function settle(current, grant)
     for _ = 1, 2000 do
         local pending, used
         local offered = chart.offered(current, grant)
-        if chart.finishPending(current) then
-            _, pending, used = chart.finish(current, false, offered)
-        else
-            _, pending, used = chart.refresh(current, false, offered)
-        end
+        _, pending, used = chart.refresh(current, false, offered)
         assert(used >= 1 and used <= offered, "chart exceeded scheduler grant")
         if not pending and not queued(current) and view.finished(current) then
             return
@@ -64,7 +59,7 @@ first.columnRenderer.append = function()
     error("readout pass attempted plot work")
 end
 assert(select(2, chart.finishPending(first)) == 2, "readouts must declare a two-slot minimum")
-local _, metadataPending, metadataSlots = chart.finish(first, false, 2)
+local _, metadataPending, metadataSlots = chart.refreshOnly(first, false, 2)
 assert(not metadataPending and metadataSlots == 2 and first.metadataReady)
 assert(first.series[1].valueText == "45.000", "the readout pass did not update its readout")
 first.columnRenderer.append = draw

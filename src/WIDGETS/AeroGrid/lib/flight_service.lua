@@ -1038,10 +1038,9 @@ local function decideStep(task, now)
         owner:error("detection", message)
     end
 end
-local function countReady(task, now)
-    local owner = task.broker
+--- Whether the count has work it can do now.
+local function countWork(owner, now)
     local pending = owner.pendingCount
-    task.cost = pending and not pending.failed and 8 or owner.countImport and 4 or 1
     return owner.countStarted
         and owner.documentLoaded
         and owner.document ~= nil
@@ -1060,8 +1059,20 @@ local function countReady(task, now)
         )
 end
 
-local function countStep(task, now)
+--- The count checks for work in a free turn, sleeping without any, and pays
+--- for the work in the turn that follows.
+local function countStep(task, now, granted)
     local owner = task.broker
+    if not countWork(owner, now) then
+        task.cost, task.due = 0, now + 20
+        return 0, false
+    end
+    if granted == 0 then
+        local pending = owner.pendingCount
+        task.cost = pending and not pending.failed and 8 or owner.countImport and 4 or 1
+        return 0, true
+    end
+    task.cost = 0
     owner.countDue, task.due = now + 20, now
     local ok, message = pcall(function()
         assert(owner:identity() == owner.filename, "Model changed during flight count save")
@@ -1093,6 +1104,7 @@ local function countStep(task, now)
             owner:dropTasks()
         end
     end
+    return granted, false
 end
 
 --- The broker's scheduler tasks: one per polled service, then the decision.
@@ -1108,7 +1120,7 @@ function broker:tasks()
         self.countTask = {
             name = "flight.count",
             broker = self,
-            ready = countReady,
+            cost = 0,
             step = countStep,
             onError = function(task, message)
                 task.broker:error("count", message)

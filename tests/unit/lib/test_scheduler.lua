@@ -326,32 +326,6 @@ for _, invalid in ipairs({ false, -1, 1.5, 9, math.huge, 0 / 0, "1" }) do
 end
 
 do
-    local queue, calls, task = fixture()
-    local future = task("future")
-    future.due = 10
-    local hidden = task("hidden")
-    hidden.ready = function(_, _, context)
-        return context.hidden
-    end
-    assert(queue.run(0, 8, { hidden = false }) == 0)
-    assert(queue.run(1, 8, { hidden = true }) == 1)
-    assert(queue.run(10, 8, { hidden = false }) == 1)
-    assert(table.concat(calls, ",") == "hidden,future")
-end
-
-do
-    local queue, calls, task = fixture()
-    local a = task("A", 1, 2)
-    a.ready = function(self)
-        return self.turns == 0
-    end
-    assert(queue.run(0, 8) == 1 and queue.state(a).pending)
-    assert(#calls == 1, "a pending task must still obey its readiness gate")
-    a.ready = nil
-    assert(queue.run(1, 8) == 1 and not queue.state(a).pending)
-end
-
-do
     local queue = module.new({ capacity = 12 })
     local granted
     queue.add({
@@ -456,11 +430,6 @@ do
     queue.add(late)
     queue.add(never)
     queue.add(early)
-    local checked = 0
-    never.ready = function()
-        checked = checked + 1
-        return true
-    end
     local function step(self, now)
         calls[#calls + 1] = self.name
         self.due = now + 30
@@ -469,7 +438,7 @@ do
     late.step, early.step, never.step = step, step, step
     assert(queue.run(5, 8) == 0 and #calls == 0)
     assert(queue.run(10, 8) == 1 and queue.run(20, 8) == 1 and queue.run(25, 8) == 0)
-    assert(table.concat(calls, ",") == "early,late" and checked == 0, "tasks not due are never examined")
+    assert(table.concat(calls, ",") == "early,late", "tasks not due are never examined")
     assert(queue.run(40, 8) == 1 and calls[3] == "early" and queue.count == 3)
 
     -- A source that makes a task due earlier moves it forward; later is left to the step.
@@ -477,7 +446,7 @@ do
     queue.reschedule(never)
     late.due = 60
     queue.reschedule(late)
-    assert(queue.run(50, 8) == 1 and calls[4] == "never" and checked == 1)
+    assert(queue.run(50, 8) == 1 and calls[4] == "never")
     queue.remove(early)
     assert(queue.run(1000, 8) == 2 and calls[5] == "late" and calls[6] == "never" and queue.count == 2)
 end

@@ -67,19 +67,15 @@ assert(queued(hidden) < 10, "queued samples must drain while the chart is hidden
 local narrow, narrowRecord = create(1)
 starts = {}
 local function narrowTurn()
-    -- The refresh is offered one slot each callback. The finishing task is a
-    -- separate task: it runs in the same callback, with its declared minimum.
-    if not chart.finishPending(narrow) then
+    -- The refresh is offered one slot, or its declared minimum, up to three turns
+    -- a callback while finishing is pending.
+    for turn = 1, 3 do
+        if turn > 1 and not chart.finishPending(narrow) then
+            break
+        end
         local offered = chart.offered(narrow, 1)
         local _, _, used = chart.refresh(narrow, false, 1)
         assert(used >= 1 and used <= offered, "offers must not be exceeded")
-    end
-    for _ = 1, 2 do
-        local pending, offered = chart.finishPending(narrow)
-        if pending then
-            local _, _, used = chart.finish(narrow, false, offered)
-            assert(used >= 1 and used <= offered, "finishing must stay within its minimum")
-        end
     end
     if narrow.start ~= (starts[#starts] or 0) then
         starts[#starts + 1] = narrow.start

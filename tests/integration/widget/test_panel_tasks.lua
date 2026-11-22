@@ -14,7 +14,6 @@ local function record(id, slots)
     calls[#calls + 1] = { id = id, slots = slots }
 end
 
-local pending = false
 local function entry(module, instance)
     return { placement = { id = "demo" }, module = module, instance = instance or {}, interval = 0, nextRefresh = 0 }
 end
@@ -25,90 +24,6 @@ local function run(panels)
     fixture.tick(10)
     definition.refresh(context)
 end
-
--- Finishing work is its own variable task: refreshes wait while it is pending.
-local module = {
-    id = "demo",
-    refreshCost = "variable",
-    refreshMinCost = 1,
-    finishMinCost = 2,
-    refresh = function(_, creating, slots)
-        assert(creating == false)
-        record("refresh", slots)
-        return 1, false, 1
-    end,
-    finishPending = function(instance)
-        return pending, instance.minimum
-    end,
-    finish = function(_, creating, slots)
-        assert(creating == false)
-        record("finish", slots)
-        return nil, false, 2
-    end,
-}
-pending = true
-run({ entry(module) })
-assert(#calls == 1 and calls[1].id == "finish", "refreshes must wait while finishing work is pending")
-assert(calls[1].slots >= 2, "finishing must receive at least its declared minimum")
-pending = false
-run({ entry(module) })
-assert(#calls == 1 and calls[1].id == "refresh", "refreshes resume once finishing is done")
-
--- A finish can move the next refresh deadline; the refresh task must see it
--- before another scheduler pass in the same callback.
-local refreshesAfterFinish = 0
-pending = true
-local delayedRefresh = {
-    id = "demo",
-    refreshCost = 1,
-    finishMinCost = 1,
-    refresh = function()
-        refreshesAfterFinish = refreshesAfterFinish + 1
-        return 1, false, 1
-    end,
-    finishPending = function()
-        return pending
-    end,
-    finish = function()
-        pending = false
-        return 50, false, 1
-    end,
-}
-local delayedEntry = entry(delayedRefresh)
-run({ delayedEntry })
-assert(refreshesAfterFinish == 0, "finish must defer refresh until its new deadline")
-assert(delayedEntry.refreshTask.due == delayedEntry.nextRefresh)
-
--- The minimum finishPending reports is resolved again before a continuation grant.
-local finishTurns, finishGrants = 0, {}
-pending = true
-local dynamicFinish = {
-    id = "demo",
-    finishMinCost = 8,
-    finishPending = function(instance)
-        return pending, instance.minimum
-    end,
-    finish = function(instance, _, slots)
-        finishTurns = finishTurns + 1
-        finishGrants[#finishGrants + 1] = slots
-        if finishTurns == 1 then
-            instance.minimum = 1
-            return nil, true, 1
-        end
-        pending = false
-        return nil, false, 1
-    end,
-}
-local dynamicEntry = entry(dynamicFinish, { minimum = 8 })
-run({ dynamicEntry })
-assert(finishTurns == 2 and finishGrants[1] == 8 and finishGrants[2] == 7)
-
--- finishPending can report a larger minimum than the module default.
-local instance = { minimum = 8 }
-pending = true
-run({ entry(module, instance) })
-assert(#calls == 1 and calls[1].id == "finish" and calls[1].slots == 8)
-assert(context.remainingSlots == 6, "finishing is charged what it reports: " .. tostring(context.remainingSlots))
 
 -- A refresh result directly requests another turn in the same callback.
 local turns = 0
@@ -122,7 +37,6 @@ local continuing = {
         return 1, true, 1
     end,
 }
-pending = false
 turns = 0
 run({ entry(continuing) })
 assert(turns > 1 and turns <= 8, "a direct continuation runs while slots remain, up to the callback")
@@ -182,47 +96,12 @@ assert(
     "continuing background work must use its updated minimum on each turn"
 )
 
--- A failing readiness callback is isolated and reported rather than escaping the scheduler.
-local broken = entry({
-    id = "demo",
-    refreshCost = "variable",
-    refreshMinCost = 1,
-    finish = function() end,
-    finishMinCost = 1,
-    finishPending = function()
-        error("broken finish check")
-    end,
-    refresh = function()
-        error("failed panels must not refresh after their readiness callback fails")
-    end,
-})
-context.errors = {}
-run({ broken })
-assert(broken.failed, "a failing finishPending callback must disable its panel")
-assert(#context.errors == 1 and string.find(context.errors[1], "broken finish check", 1, true))
-
-local invalid = entry({
-    id = "demo",
-    refreshCost = "variable",
-    refreshMinCost = 1,
-    finish = function() end,
-    finishMinCost = 1,
-    finishPending = function()
-        return "yes"
-    end,
-})
-context.errors = {}
-run({ invalid })
-assert(invalid.failed, "a non-boolean finishPending result must disable its panel")
-assert(#context.errors == 1 and string.find(context.errors[1], "must return a boolean", 1, true))
-
--- Failed readiness disables only that panel; a same-type neighbor keeps refreshing.
+-- A failing panel is isolated; a same-type neighbor keeps refreshing.
 local neighborRefreshes = 0
 local failing = entry({
     id = "demo",
-    refresh = function() end,
-    finishPending = function()
-        error("panel failed readiness")
+    refresh = function()
+        error("panel failed refresh")
     end,
 })
 local neighbor = entry({
@@ -233,7 +112,7 @@ local neighbor = entry({
 })
 context.errors = {}
 run({ failing, neighbor })
-assert(failing.failed)
+assert(failing.failed and #context.errors == 1 and string.find(context.errors[1], "panel failed refresh", 1, true))
 assert(neighborRefreshes == 1, "a failed panel must not block a healthy same-type panel")
 
 -- The create contract permits opaque panel state, including non-tables.

@@ -1490,22 +1490,6 @@ local function serviceStep(task, now, slots)
     return used, again
 end
 
---- Whether a panel's finishing work is ready now; it then runs before refreshes resume.
-local function finishPending(context, entry)
-    local module = entry.module
-    local pending = rawget(module, "finishPending")
-    if type(pending) ~= "function" then
-        return false
-    end
-    local ok, message, result, minimum = context.panelHost.dispatch(entry, "finishPending")
-    if not ok then
-        addError(context, entry.placement.id .. ": finishPending: " .. tostring(message))
-        context.schedulerFailed = true
-        return false
-    end
-    return result, minimum
-end
-
 local function instanceField(entry, key)
     if type(entry.instance) == "table" then
         return rawget(entry.instance, key)
@@ -1528,28 +1512,6 @@ local function panelCosts(entry)
         task.cost, task.minCost = minimum and "variable" or 1, minimum
         task.failed = entry.failed or task.failed
     end
-    task = entry.finishTask
-    if task then
-        task.failed = entry.failed or task.failed
-    end
-end
-
---- A panel with finishing work decides on every due turn whether refreshes wait.
-local function refreshReady(task)
-    local entry = task.owner
-    local pending = finishPending(task.host, entry)
-    return not entry.failed and not pending
-end
-
-local function finishReady(task)
-    local entry = task.owner
-    local pending, minimum = finishPending(task.host, entry)
-    if entry.failed or not pending then
-        return false
-    end
-    -- The next stage may need more than the module's default minimum.
-    task.minCost = minimum or rawget(entry.module, "finishMinCost")
-    return true
 end
 
 --- Move a panel's next refresh; an earlier one moves its task forward.
@@ -1565,12 +1527,7 @@ end
 local function panelStep(task, now, granted)
     local context, entry, eventName = task.host, task.owner, task.event
     local ok, message, interval, again, used = context.panelHost.dispatch(entry, eventName, false, granted)
-    if eventName == "finish" then
-        -- Ending a cycle sets when the next refresh is due.
-        if ok and type(interval) == "number" then
-            scheduleRefresh(context, entry, now + entry.interval)
-        end
-    elseif eventName == "refresh" then
+    if eventName == "refresh" then
         entry.nextRefresh = now + entry.interval
         task.due = entry.nextRefresh
     elseif eventName == "background" and ok and type(interval) == "number" then
@@ -1614,7 +1571,7 @@ local function serviceTask(context, instance, registry, support)
     return task
 end
 
-local function panelTask(context, entry, field, event, fields)
+local function panelTask(context, entry, field, event)
     local task = entry[field]
     if not task then
         task = {
@@ -1626,9 +1583,6 @@ local function panelTask(context, entry, field, event, fields)
             hold = context.panelGate,
             step = panelStep,
         }
-        for key, value in pairs(fields) do
-            task[key] = value
-        end
         entry[field] = task
     end
     return task
@@ -1693,24 +1647,13 @@ local function syncTasks(context, hidden, flightTask, owner)
             local module = entry.module
             if not entry.failed then
                 entry.dispatched = panelCosts
-                local finishing = type(rawget(module, "finishPending")) == "function"
                 if not hidden and type(rawget(module, "refresh")) == "function" then
-                    local task = panelTask(
-                        context,
-                        entry,
-                        "refreshTask",
-                        "refresh",
-                        { ready = finishing and refreshReady or nil }
-                    )
+                    local task = panelTask(context, entry, "refreshTask", "refresh")
                     task.due = entry.nextRefresh or 0
                     wanted[#wanted + 1] = task
                 end
-                if not hidden and finishing and type(rawget(module, "finish")) == "function" then
-                    wanted[#wanted + 1] =
-                        panelTask(context, entry, "finishTask", "finish", { cost = "variable", ready = finishReady })
-                end
                 if hidden and type(rawget(module, "background")) == "function" then
-                    wanted[#wanted + 1] = panelTask(context, entry, "backgroundTask", "background", NONE)
+                    wanted[#wanted + 1] = panelTask(context, entry, "backgroundTask", "background")
                 end
                 -- The panel host recosts tasks after each dispatch; new tasks and instances start here.
                 local tasks = (entry.refreshTask and 1 or 0) + (entry.backgroundTask and 2 or 0)
@@ -3238,7 +3181,7 @@ end
 --- resets preempt unrelated work; visible menu changes precede dependent work;
 --- input cannot be overtaken by work that replaces its target; and page rebuilds
 --- wait one native callback after retirement.
-local function hostReady(task, now, hidden)
+local function hostOpen(task, now, hidden)
     local context = task.host
     if context.optionsRequest and task ~= context.optionsTask then
         return false
@@ -3261,10 +3204,27 @@ local function hostReady(task, now, hidden)
     return task.gate(task, now, hidden)
 end
 
+--- Enrol the requested host tasks that can run now, and withdraw the rest.
+local function syncHost(context, now, hidden)
+    local scheduler, tasks = context.scheduler, context.hostTasks or {}
+    for index = 1, #tasks do
+        local task = tasks[index]
+        if hostOpen(task, now, hidden) then
+            if not scheduler.has(task) then
+                scheduler.add(task)
+            end
+        else
+            scheduler.remove(task)
+        end
+    end
+end
+
 local function hostStep(task, now, granted, hidden)
     local context = task.host
     local used, again = task.run(task, now, granted, hidden)
     updateHolds(context, hidden)
+    -- A step can open or close the barriers of other host tasks.
+    syncHost(context, now, hidden)
     return used, again
 end
 
@@ -3279,7 +3239,7 @@ local function hostTask(context, field, name, gate, run, fields)
             cost = context.scheduler.budget.slots,
             gate = gate,
             run = run,
-            ready = hostReady,
+            open = hostOpen,
             step = hostStep,
         }
         for key, value in pairs(fields or {}) do
@@ -3307,7 +3267,7 @@ local function kindTask(context, field, kind, gate, run, ui)
             onError = hostError,
             gate = gate,
             run = run,
-            ready = hostReady,
+            open = hostOpen,
             step = hostStep,
         }
         if kind == "model settings" or kind == "log viewer" then
@@ -3433,21 +3393,15 @@ local function pruneRequests(context, hidden, fullscreen)
     end
 end
 
---- Enrol the host tasks with work outstanding. A task stays enrolled, and
---- keeps its place, while its work is outstanding; new ones join in a fixed
---- order. Without outstanding host work this costs nothing.
-local function enrolHost(context, hidden)
-    local scheduler = context.scheduler
-    local previous, wanted, joined = context.hostTasks, nil, nil
+--- Track the host tasks with work outstanding; those that can run now are
+--- enrolled, in a fixed order. Without outstanding host work this costs nothing.
+local function enrolHost(context, now, hidden)
+    local previous, wanted = context.hostTasks, nil
     local stamp = (context.hostStamp or 0) + 1
     context.hostStamp = stamp
     local function add(task)
         wanted = wanted or {}
         wanted[#wanted + 1] = task
-        if not previous or task.wanted ~= stamp - 1 then
-            joined = joined or {}
-            joined[#joined + 1] = task
-        end
         task.wanted = stamp
     end
     if context.optionsRequest then
@@ -3555,19 +3509,12 @@ local function enrolHost(context, hidden)
         for index = 1, #previous do
             local task = previous[index]
             if task.wanted ~= stamp then
-                scheduler.remove(task)
-            end
-        end
-    end
-    -- Tasks wanted last callback are still enrolled.
-    if joined then
-        for index = 1, #joined do
-            if not scheduler.has(joined[index]) then
-                scheduler.add(joined[index])
+                context.scheduler.remove(task)
             end
         end
     end
     context.hostTasks = wanted
+    syncHost(context, now, hidden)
 end
 
 local function runCallback(context, hidden, widgetEvent, touchState)
@@ -3644,7 +3591,7 @@ local function runCallback(context, hidden, widgetEvent, touchState)
     if owner and owner.queueDecision then
         owner:queueDecision(getTime())
     end
-    enrolHost(context, hidden)
+    enrolHost(context, getTime(), hidden)
     runTasks(context, hidden)
     if context.uiTasks then
         for kind, task in pairs(context.uiTasks) do

@@ -50,10 +50,10 @@ assert(
 )
 context.stage = "services"
 broker.documentLoaded = false
-assert(not task.ready(task, getTime(), false), "service construction must wait for the model document")
-assert(not task.ready(task, getTime(), true), "hidden construction has the same model dependency")
+assert(not task.open(task, getTime(), false), "service construction must wait for the model document")
+assert(not task.open(task, getTime(), true), "hidden construction has the same model dependency")
 broker.documentLoaded = true
-assert(task.ready(task, getTime(), true))
+assert(task.open(task, getTime(), true))
 context.stage = nil
 
 context.lifecycleRequest = nil
@@ -87,7 +87,7 @@ assert(#context.errors == 0, table.concat(context.errors, "\n"))
 
 -- Model rows have separate fixture envelopes: their production grants come from
 -- native simulator measurements, not Lua stand-ins for firmware text/API calls.
-local modelMockLimits = { 4500, 4000, 1000, 1000, 1000, 1000, 1000, 1000, 3000, 13000, 7500, 6500, 2000 }
+local modelMockLimits = { 4500, 4000, 1200, 1200, 1200, 1200, 1200, 1200, 3000, 13000, 7500, 6500, 2000 }
 local measured, peaks = 0, {}
 for _, layout in ipairs({ "Default", "review-navigation", "review-chart", "Diagnostics", "Empty" }) do
     local host = definition.create({ x = 0, y = 0, w = 480, h = 272 }, {

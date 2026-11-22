@@ -70,13 +70,13 @@ assert(
 context.stage = "probe"
 local loadTask = context.lifecycleTasks.load
 context.inputPending = true
-assert(loadTask.ready(loadTask, getTime(), false), "loading must finish before retained dashboard input can run")
-assert(loadTask.ready(loadTask, getTime(), true), "hidden loading does not consume foreground input")
+assert(loadTask.open(loadTask, getTime(), false), "loading must finish before retained dashboard input can run")
+assert(loadTask.open(loadTask, getTime(), true), "hidden loading does not consume foreground input")
 context.inputPending = false
 context.editorPress = { started = getTime() }
-assert(loadTask.ready(loadTask, getTime(), false))
+assert(loadTask.open(loadTask, getTime(), false))
 fixture.tick(60)
-assert(loadTask.ready(loadTask, getTime(), false), "a due hold cannot block the loading it needs")
+assert(loadTask.open(loadTask, getTime(), false), "a due hold cannot block the loading it needs")
 context.editorPress = nil
 local previousMenu = context.aerogridMenu
 context.aerogridMenu = { action = "probe" }

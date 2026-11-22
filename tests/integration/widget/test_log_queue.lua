@@ -88,11 +88,12 @@ noGrant(context, fixture.lvglMock.objects, function()
 end)
 definition.background(context)
 assert(context.logViewer == state, "hidden callbacks cannot mutate the log overlay")
+local spent = context.scheduler.state(task).spent
 untilState(function()
     return not context.logViewer
 end)
 assert(context.logOverlay.hidden and not task.ui and not context.scheduler.state(task).pending)
-assert(task.cost == 1, "closing must not retain the viewer's full-budget reservation")
+assert(context.scheduler.state(task).spent == spent + 1, "closing must not retain the viewer's full-budget reservation")
 
 -- Retired buttons cannot close a later viewer that reused the overlay.
 definition.event(context, EVT_TOUCH_FIRST, point)

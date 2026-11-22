@@ -10,7 +10,6 @@ local chart = {
     refreshInterval = 20,
     refreshCost = "variable",
     refreshMinCost = 1,
-    finishMinCost = 1,
     backgroundMinCost = 1,
     settings = {
         { key = "label", label = "Label", type = "string", default = "" },
@@ -2225,7 +2224,7 @@ local function preparationTurn(context, ready)
         and (auto.backgroundTurns or 0) < MAX_PREPARATION_TURNS
 end
 
---- Readouts and overlays are finished after an append, by their own task.
+--- Readouts and overlays are finished after an append, before the next one.
 ---@return boolean pending
 ---@return integer? minimum The smallest grant the next stage can honour.
 function chart.finishPending(context)
@@ -2326,13 +2325,6 @@ local function finishStage(context, slots)
     return nil, chart.finishPending(context), consumed
 end
 
-function chart.finish(context, creating, slots)
-    if creating or not chart.finishPending(context) then
-        return nil, false, 1
-    end
-    return finishStage(context, slots or budget.capacity)
-end
-
 -- Consecutive appends before overlays and readouts are finished.
 local MAX_APPEND_RUNS = 4
 
@@ -2352,7 +2344,7 @@ local function refreshColumns(context, slots)
         return 1, true, 1, false
     end
     if context.columnsDecorating or not context.metadataReady then
-        -- Readouts and overlays belong to the finishing task.
+        -- Readouts and overlays are finished first.
         return 1, true, 1, false
     end
     if remaining < 1 then
@@ -2523,15 +2515,29 @@ function chart.refresh(context, creating, slots)
         -- The visible plot still owes its next refresh.
         return math.max(1, math.min(6000, interval)), false, math.min(slots, slotsFor(PIPELINE, used))
     end
-    local interval, unfinished, consumed, again = refreshChart(context, creating, slots)
-    consumed = consumed or 1
-    if auto then
-        auto.backgroundTurns = 0
+    local interval, unfinished, consumed, again
+    if not creating and chart.finishPending(context) then
+        interval, again, consumed = finishStage(context, slots)
+        if interval then
+            context.appendAt = context.clock() + interval
+        end
+        -- Finishing continues next tick; the next append keeps the cycle's pace.
+        interval = again and 1 or math.max(1, (context.appendAt or 0) - context.clock())
+    else
+        interval, unfinished, consumed, again = refreshChart(context, creating, slots)
+        consumed = consumed or 1
+        if auto then
+            auto.backgroundTurns = 0
+        end
+        if auto and context.auto == auto and not creating then
+            -- A cycle ends when decorations publish, not when the append returns.
+            local idle = not unfinished and not context.columnsDecorating and not context.metadataReady
+            interval, consumed = pace(context, interval, consumed, slots, idle)
+        end
     end
-    if auto and context.auto == auto and not creating then
-        -- A cycle ends when decorations publish, not when the append returns.
-        local idle = not unfinished and not context.columnsDecorating and not context.metadataReady
-        interval, consumed = pace(context, interval, consumed, slots, idle)
+    local pending, minimum = chart.finishPending(context)
+    if pending and not creating then
+        context.refreshMinCost = minimum
     end
     return interval, again, consumed
 end

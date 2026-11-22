@@ -67,8 +67,11 @@ local function step(owner, times)
         now = now + 20
         owner:setup(now, false)
         for _, task in ipairs(owner:tasks()) do
-            if task.name == "flight.count" and now >= (task.due or 0) and task.ready(task, now) then
-                task.step(task, now, 8)
+            if task.name == "flight.count" and now >= (task.due or 0) then
+                local _, again = task.step(task, now, 0)
+                if again then
+                    task.step(task, now, task.cost)
+                end
             end
         end
     end
@@ -138,7 +141,7 @@ owner.members[host] = { modelFilename = filename, declarations = { { armKey = "L
 step(owner)
 assert(owner.pendingCount and owner.pendingCount.deferred and not owner.view.countError)
 assert(output.name == "" and not files[sidecar.path("/WIDGETS/AeroGrid/", "AGNEW1")])
-assert(not owner.countTask.ready(owner.countTask, now), "deferred count must not continuously retry while armed")
+assert(owner.countTask.due > now, "deferred count must not continuously retry while armed")
 owner.countDirty = true
 step(owner)
 assert(owner.pendingCount.deferred and not owner.view.countError, "publishing must not retry a deferred claim")

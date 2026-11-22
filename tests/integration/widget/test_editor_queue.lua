@@ -51,15 +51,15 @@ definition.background(context)
 assert(steps == 4 and context.editorUi.saving == 1, "arming-driven save takes precedence over reset")
 definition.refresh(context)
 assert(steps == 5 and not context.editorUi.saving and context.modelArmingReload)
-assert(not task.ready(task, getTime(), false), "completed save must return to arming suspension")
+assert(not task.open(task, getTime(), false), "completed save must return to arming suspension")
 context.sessionResetPending, context.modelArmingReload = nil, nil
 context.editorUi.previewPending = true
-assert(task.ready(task, getTime(), false))
-assert(not task.ready(task, getTime(), true), "hidden callbacks cannot rebuild previews")
+assert(task.open(task, getTime(), false))
+assert(not task.open(task, getTime(), true), "hidden callbacks cannot rebuild previews")
 fixture.lvglMock.setFullScreen(false)
-assert(not task.ready(task, getTime(), false), "fullscreen exit must return to editor teardown")
+assert(not task.open(task, getTime(), false), "fullscreen exit must return to editor teardown")
 context.editorUi.saving = 1
-assert(task.ready(task, getTime(), true), "hidden callbacks finish an already-started save")
+assert(task.open(task, getTime(), true), "hidden callbacks finish an already-started save")
 context.editorUi = nil
 definition.background(context)
 assert(not task.ui, "closed editors must be released from cached tasks")
