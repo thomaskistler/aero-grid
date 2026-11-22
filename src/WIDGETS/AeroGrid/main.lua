@@ -2459,8 +2459,30 @@ local function chromeOnly(context)
     return context.chromeRoot and context.aerogridMenu and context.menuVisibleFullscreen ~= isFullScreen()
 end
 
+--- Building the button or the popup is costly; re-syncing a built menu,
+--- running an action or moving the selection takes well under a slot.
+local function menuCost(context)
+    if chromeOnly(context) then
+        return 0
+    end
+    local menu = context.aerogridMenu
+    if
+        not menu
+        or not context.aeroMenuModule
+        or not context.chromeRoot
+        or context.aeroMenuParent ~= context.root
+        or context.aeroMenuHeight ~= buttonHeight()
+        or context.aeroMenuWidth ~= context.zone.w
+        or context.aeroMenuZoneHeight ~= context.zone.h
+        or menu.pending and not menu.screen
+    then
+        return context.scheduler.budget.slots
+    end
+    return 1
+end
+
 local function menuReady(task, _, hidden)
-    task.cost = chromeOnly(task.host) and 0 or task.host.scheduler.budget.slots
+    task.cost = menuCost(task.host)
     return not hidden and task.host.menuDue
 end
 
@@ -2477,6 +2499,22 @@ end
 -- Slots the editor's next step reserves: small build stages are cheap.
 local function editorCost(context)
     local state = context.editorUi
+    local pending = state and state.drawerPending
+    if
+        state
+        and state.debrief
+        and pending
+        and (pending.action == "open" or pending.action == "list")
+        and not state.drawerBuild
+        and not state.nativeInput
+        and not state.previewPending
+        and not state.previewRefresh
+        and not state.exitCommand
+        and not state.saving
+    then
+        -- Opening the debrief list only creates its dialog; rows follow.
+        return math.min(3, context.scheduler.budget.slots)
+    end
     if
         state
         and not state.nativeInput
@@ -2488,8 +2526,9 @@ local function editorCost(context)
     then
         local capacity = context.scheduler.budget.slots
         if state.drawerBuild then
-            -- Finalization also renders the editor; only individual rows are cheap.
-            return context.settingsUiModule.cost(state.drawerView, capacity, capacity)
+            -- Finalization also renders the editor; only individual rows are
+            -- cheap. The debrief page has no editor to render.
+            return context.settingsUiModule.cost(state.drawerView, capacity, state.debrief and 1 or capacity)
         elseif state.buildStage and state.buildStage <= 9 then
             return math.min(3, capacity)
         end

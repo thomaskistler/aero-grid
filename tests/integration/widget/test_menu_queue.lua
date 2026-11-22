@@ -15,7 +15,8 @@ context.aeroMenuModule.advance = function(host)
         host.scheduler.state(host.menuTask).ran ~= host.scheduler.callbacks,
         "advance is called before grant attribution"
     )
-    assert(host.menuTask.cost == host.scheduler.budget.capacity)
+    local building = host.aerogridMenu.pending and not host.aerogridMenu.screen
+    assert(host.menuTask.cost == (building and host.scheduler.budget.capacity or 1), "only construction is costly")
     advances = advances + 1
     return advance(host)
 end
@@ -54,7 +55,7 @@ definition.refresh(context)
 assert(advances == 3 and not menu.open)
 local actions = 0
 menu.handlers.uiSetup = function()
-    assert(context.menuTask.cost == context.scheduler.budget.capacity)
+    assert(context.menuTask.cost == 1, "actions only record requests")
     actions = actions + 1
 end
 menu.action = "uiSetup"
