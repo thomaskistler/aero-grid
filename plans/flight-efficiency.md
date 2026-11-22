@@ -43,44 +43,152 @@ Only two rates change: telemetry polls go from 11.8 to 25.8 per second (faster
 than the 10 Hz link), and output-panel row turns go from 16 to 56 per second.
 Every other task, including charts, runs at the same rate.
 
-## Recommendations
+## Recommendations, easiest first
 
-### Flight efficiency
+Ordered from easiest and least risky to hardest and most risky. Line counts are
+production Lua code lines removed (comments, blank lines, and tests excluded; the
+widget has 30,979). "est." marks a net estimate where code is replaced by something
+smaller. Instruction savings are per flight callback.
 
-1. **Remove the Pre-release extended segments.** They burn CPU up to the firmware
-   limit and add no visible benefit. This also removes `native_budget.lua`, the
-   segment and carry-over logic in `scheduler.lua`, and the `liveDangerously` setting.
-2. **Fix what a slot costs.** A slot assumes 2,000 instructions. Measured costs per
-   charged slot are 200–450 for most fixed-cost tasks, 480–740 for chart steps,
-   and about 1,100 for telemetry. The scheduler believes it is out of budget after
-   about 4–5k real instructions, which leaves work pending. Keep variable-cost
-   grants for charts, but base the unit on measured costs.
-3. **Run each task at most once per callback.** A task that asks for another turn
-   makes the scheduler pass over every task again. That loop costs 1.6k (off) to
-   4.7k (on) per callback. Multi-step work, including chart rescaling, can
-   continue on the next callback; at about 19 callbacks per second, charts that
-   refresh 4 times per second do not need extra turns in the same callback.
-4. **Keep a persistent task list.** Change it only when the dashboard changes,
-   instead of re-enrolling every task each callback (400–470 per callback).
-5. **Let tasks set their own next due time** instead of evaluating `ready`
-   functions on every pass (430–1,900 per callback).
-6. **Poll telemetry once per sample in a single step.** Poll every subscribed
-   source once at its rate. Drop the two-sources-per-slot round-robin and the
-   polling rounds that continue across callbacks. Pass the chart history each
-   batch of samples instead of making a protected call per reading.
-7. **Share polling with flight detection.** The flight broker runs its own
-   Telemetry and Control services next to the dashboard's, so the same sources
-   are polled twice. Together with its decision step, this costs about 700
-   instructions per callback.
-8. **Output panel: paint all rows in one step.** It currently paints one channel
-   row per scheduler turn (about 220 instructions, charged a 2,000-instruction
-   slot), so one refresh needs about 10 turns. This also removes its six-state
-   machine (mount, reflow, layout, paint, live, idle).
-9. **Metric panel: no relayout on a value change.** Any change to a supporting
-   line, such as MAX ALT, triggers a full `metric.update` relayout costing up to
-   3,500 instructions. Size the text areas once and only replace their text.
+### 1. Cleanups with no behavior change
 
-### Task frequencies
+1. **Remove unused functions (127 lines).** No callers (66):
+   `layoutStore.loadDefault`, `primitives.setBarMarker`, `primitives.showCompass`,
+   `yaml.buildAt`. Called only from tests or tools (61): `navigation.distanceText`,
+   `theme.fromRgb565`, `theme.modernDark`, `editor.restoreDefault`,
+   `primitives.contentWidth`, `primitives.batteryBackdropRgb`,
+   `primitives.arcAngle`, `primitives.signedFraction`,
+   `navigationService.formatDistance`. Risk: none; delete their tests too.
+2. **Remove the leftover `Armed` widget option code (~25 lines).** `legacyWidgetArmed`
+   still reads `widgetOptions.Armed`, which no longer exists, in `main.lua`,
+   `flight_service.lua`, and `dashboard_loader.lua`. Risk: none; the option can no
+   longer be set.
+3. **Drop per-module API versions (~30 lines).** Remove `apiVersion` from every
+   panel, the `RUNTIME_API` checks in `loadModule` and `panel_host.lua`, and
+   `runtimeApi`/`panelApi` from `package.lua`. The installer replaces the whole
+   widget directory, so one package version check is enough. Risk: low; mechanical.
+4. **Drop the model-settings backend seam (~10 lines).** `env.backend` exists for an
+   EdgeTX 3.0 backend that is not implemented. Risk: low; tests that inject a
+   backend need another seam.
+5. **Move developer-only panels out of the release (377 lines).** `service-probe`
+   (191) and `theme-showcase` (186) move to the development fixture, as do the
+   Palette and Diagnostics layouts. Risk: low; saved layouts that use them show the
+   panel as unknown, and the layout registry must keep its positions.
+
+### 2. Contained behavior changes
+
+6. **Remove the Pre-release extended segments (107 lines).** `native_budget.lua`
+   (34), segment and carry-over logic in `scheduler.lua` (42), `liveDangerously`
+   in `main.lua` (22), `flight_config.lua`, and the Model settings row (9). Removes
+   every callback over 20k in the measured flights. Risk: low; model settings
+   saved with `liveDangerously` must still load.
+7. **Lower task frequencies** for `history`, `flight`, `flight.decide`, `control`
+   outputs, `rx-battery`, `navigation`, and `model` (see
+   [Task rates](#reference-task-rates)). Mostly interval constants. Together with
+   item 19, saves about 1,500 instructions. Risk: low; check arm/disarm feel and
+   alarm latency on a radio.
+8. **Metric panel: no relayout on a value change (up to 3,500 instructions per
+   change).** Any change to a supporting line, such as MAX ALT, triggers a full
+   `metric.update` relayout. Size the text areas once and only replace their
+   text. Risk: low; one panel.
+9. **Output panel: paint all rows in one step (~140 lines est.).** It paints one
+   channel row per scheduler turn (about 220 instructions, charged a
+   2,000-instruction slot), so a refresh needs about 10 turns. Replace `output.refresh`
+   and its phase helpers (190 lines; mount, reflow, layout, paint, live, idle)
+   with a single paint. Risk: low to medium; one panel, but reflow and caption
+   width rules must be kept.
+10. **Drop layout fixes for formats that were never released (~30 lines).**
+    Released layouts are versions 1 to 3 (v0.1.0 to v0.4.0), so steps 1 to 3 stay.
+    Remove the chart duration conversion (charts were never released), the
+    unreleased rx-battery `sourceType` and threshold renames, and the 4 to 5 step,
+    which only exists for legacy flight counters. Risk: medium for developer-build
+    users, whose version 4 layouts would no longer load.
+
+### 3. Feature removals (product decisions)
+
+Each is user-visible. Ordered by how contained the removal is.
+
+11. **VCel sensor publishing (~150 lines).** `telemetry_publisher.lua` (116) plus
+    loader and rx-battery code. Depends on EdgeTX's "Discover new sensors" quirks.
+12. **Location QR code (~195 lines).** `location_details.lua` (134), location tasks
+    in `main.lua` (37), and navigation hooks.
+13. **Host diagnostics scheduler graph, sources report, and shared log (~500
+    lines).** Scheduler section (117), sources (28), log (12), `diagnostics_log.lua`
+    (81), `log_viewer.lua` (209), the log-open task in `main.lua` (24), and
+    references. The identity, theme, and panels reports stay. Developer tooling,
+    not for pilots.
+14. **Smart detection (~330 lines).** `smart_flight.lua` (286) plus broker and
+    settings paths. Off by default and off on your models. Touches flight detection.
+15. **Glass theme (~490 lines).** `glass.lua` and `background_cache.lua` (390), the
+    loader stage (54), `theme.glassOpacity` (29), and opacity hooks across
+    rendering. The Theme option keeps its choice positions.
+16. **Background work on hidden dashboards (~80 lines).** `background` hooks in
+    chart, link-status, rx-battery, flight-counter, and navigation, plus host
+    plumbing. Flight detection already runs in the shared flight tracking. Risk:
+    confirm that navigation home capture and chart recording do not depend on it.
+
+### 4. Scheduler and service structure
+
+17. **Keep a persistent task list (400–470 instructions).** Change it only when the
+    dashboard changes instead of re-enrolling every task each callback. Risk:
+    medium; every dashboard change must update the list.
+18. **Let tasks set their own next due time (430–1,900 instructions).** Replace the
+    `ready` functions evaluated on every pass. Risk: medium; each gate's condition
+    becomes a due-time update at its source.
+19. **Poll telemetry once per sample in a single step.** Poll every subscribed
+    source once at its own rate: 10 Hz for charted or debrief sources, 2–5 Hz
+    otherwise. Drop the two-sources-per-slot round-robin and polling rounds that
+    continue across callbacks; pass the chart history each batch of samples
+    instead of a protected call per reading. Risk: medium; charts and debrief
+    statistics depend on every sample.
+20. **Fix what a slot costs.** A slot assumes 2,000 instructions; measured costs per
+    charged slot are 200–450 for most fixed-cost tasks, 480–740 for chart steps,
+    and about 1,100 for telemetry. The scheduler believes it is out of budget after
+    about 4–5k real instructions. Keep variable-cost grants for charts, but base
+    the unit on measured costs. Risk: medium to high; changes every grant, so
+    re-measure every layout.
+21. **Run each task at most once per callback (1,600–4,700 instructions).** A task
+    that asks for another turn makes the scheduler pass over every task again.
+    Multi-step work, including chart rescaling, continues on the next callback;
+    at about 19 callbacks per second, charts that refresh 4 times per second do
+    not need extra turns. Risk: high; changes chart and loader pacing.
+22. **Move chart-only panel hooks into the chart (~70 lines est.).** `finish`,
+    `finishPending`, `finishMinCost`, `backgroundMinCost`, and `refreshMinCost`
+    exist only for `chart.lua` (88 lines of host plumbing). The chart runs its
+    phases inside one variable-cost refresh, leaving every panel with `create`,
+    `refresh`, `background`, `update`, and `destroy`. Risk: high; the chart is the
+    most complex panel.
+
+### 5. Cross-cutting redesigns
+
+23. **One arm condition (~300 lines).** The Model settings arm condition coexists
+    with per-panel arm switches on `chart`, `navigation`, and `flight-counter`,
+    and the flight counter keeps its own detection settings. Removed:
+    `flight_registration.lua` and its hook (55), `rebindArming` in `main.lua` and
+    three panels (94), the broker's per-layout proposal and conflict resolution
+    (65), flight-counter legacy settings (23), chart and navigation arm settings
+    (12), editor filters and migration guard (20), `flight_count.lua` legacy import
+    (12), history fallback (8), and `modelArmed` plumbing into validation (15).
+    Risk: high; old panel settings must convert once on load, and it touches
+    flight detection, recording, and home capture.
+24. **Share polling with flight detection (~80 lines est., about 700
+    instructions).** The flight broker runs its own reset, detection, and Smart
+    runtimes (83 lines), polling the same sources as the dashboard. Risk: high;
+    the broker is shared across widgets, while dashboard services belong to one
+    widget.
+25. **One request queue in `main.lua` (~400 lines est.).** About 15 request types
+    (options, session reset, menu, input, model settings, editor transition and
+    restore, log, debrief build, open, and pill, location, lifecycle, UI, and the
+    empty-layout hint) each have their own ready, step, and pruning rules, with
+    `servicesHold`, `panelsHold`, `lifecycleHold`, and `inputFirst` on top. They
+    total 824 lines. A single queue for the current overlay or transition would
+    replace about half. Risk: highest; touches every overlay, editor, and input
+    flow.
+
+Altogether about 3,450 lines, or 11% of the widget's code. Items 1–10 alone remove
+about 850 lines and every callback over 20k.
+
+## Reference: task rates
 
 Telemetry arrives at most 10 times per second, and a display needs at most 4–5
 updates per second. Rates below are measured on FMS-Ranger-L1 with Pre-release off.
@@ -111,64 +219,3 @@ Simplification: derive each task's rate from its data source (10 Hz telemetry,
 GPS, switches) and its consumers. Hand-picked intervals of 5, 10, 20, 25, 50, and 100
 ticks are currently spread across services and panels. Services can also update
 only when their inputs have changed rather than on a fixed timer.
-
-### Fewer concepts and less special-casing
-
-1. **One request queue in `main.lua`.** About 15 request types each have their own
-   ready, step, and pruning rules: options, session reset, menu, input, model
-   settings, editor transition and restore, log, debrief build, open, and pill,
-   location, lifecycle, UI, and the empty-layout hint. `servicesHold`,
-   `panelsHold`, `lifecycleHold`, and `inputFirst` sit on top of them. A single
-   queue for the current overlay or transition would replace them.
-2. **Remove chart-only panel hooks.** `finish`, `finishPending`, `finishMinCost`,
-   `backgroundMinCost`, and `refreshMinCost` are used only by `chart.lua`. The
-   chart can run its phases inside one variable-cost refresh, leaving every
-   panel with `create`, `refresh`, `background`, `update`, and `destroy`.
-
-## Code that can be removed
-
-The widget is about 1.5 MB of Lua across 70 files. Most of it is real code (about 25% is comments),
-so a meaningful reduction comes from removing code paths and features, not from
-reformatting.
-
-Counts are production Lua code lines: comments and blank lines are excluded, and
-tests are not counted. The widget has 30,979 such lines. Whole files and functions are
-counted exactly; items marked "est." replace code with something smaller, so they
-are net estimates.
-
-### Remove outright (about 850 lines)
-
-| # | Item | Lines |
-| --- | --- | --- |
-| 1 | **Pre-release extended segments:** `native_budget.lua` (34), segment and carry-over logic in `scheduler.lua` (42), `liveDangerously` in `main.lua` (22), `flight_config.lua` and the Model settings row (9). | 107 |
-| 2 | **Unused functions.** No callers (66): `layoutStore.loadDefault`, `primitives.setBarMarker`, `primitives.showCompass`, `yaml.buildAt`. Called only from tests or tools (61): `navigation.distanceText`, `theme.fromRgb565`, `theme.modernDark`, `editor.restoreDefault`, `primitives.contentWidth`, `primitives.batteryBackdropRgb`, `primitives.arcAngle`, `primitives.signedFraction`, `navigationService.formatDistance`. | 127 |
-| 3 | **The removed `Armed` widget option:** `legacyWidgetArmed` still reads `widgetOptions.Armed`, which no longer exists, in `main.lua`, `flight_service.lua`, and `dashboard_loader.lua`. | ~25 |
-| 4 | **Developer-only panels in the release:** `service-probe` (191) and `theme-showcase` (186) move to the development fixture, as do the Palette and Diagnostics layouts. | 377 |
-| 5 | **Chart-only panel hooks:** `finish`, `finishPending`, `finishMinCost`, `backgroundMinCost`, and `refreshMinCost` plumbing in `main.lua` and `panel_host.lua` (88), partly moved into the chart. | ~70 est. |
-| 6 | **Output-panel state machine:** `output.refresh` and its phase helpers (190), replaced by a single paint of all rows. | ~140 est. |
-
-### Simplify by keeping one way to do each thing (about 850 lines)
-
-| # | Item | Lines |
-| --- | --- | --- |
-| 7 | **One arm condition.** The Model settings arm condition coexists with per-panel arm switches on `chart`, `navigation`, and `flight-counter`, and the flight counter keeps its own detection settings. Removed: `flight_registration.lua` and its hook (55), `rebindArming` in `main.lua` and three panels (94), the broker's per-layout proposal and conflict resolution (65), flight-counter legacy settings (23), chart and navigation arm settings (12), editor filters and migration guard (20), `flight_count.lua` legacy import (12), history fallback (8), and `modelArmed` plumbing into validation (15). Old panel settings are converted once on load. | ~300 |
-| 8 | **Layout fixes for formats that were never released.** Released layouts are versions 1 to 3 (v0.1.0 to v0.4.0), so steps 1 to 3 stay. Removed: the chart duration conversion (charts were never released), the unreleased rx-battery `sourceType` and threshold renames, and the 4 to 5 step, which only exists for legacy flight counters. | ~30 |
-| 9 | **Module API versions:** `apiVersion` in every panel, the `RUNTIME_API` checks in `loadModule` and `panel_host.lua`, and `runtimeApi`/`panelApi` in `package.lua`. The installer replaces the whole widget directory, so one package version check is enough. | ~30 |
-| 10 | **The model-settings backend seam (`env.backend`)** for an EdgeTX 3.0 backend that is not implemented. Small; mostly a test seam. | ~10 |
-| 11 | **Flight-detection polling:** the broker's private reset, detection, and Smart runtimes and their poll tasks (83), replaced by subscriptions to shared services. | ~80 est. |
-| 12 | **Host requests in `main.lua`:** the request, hold, and routing functions total 824 lines; one queue for the current overlay or transition would replace about half. | ~400 est. |
-
-### Features to decide on (about 1,750 lines)
-
-Each is user-visible, so removal is a product decision.
-
-| Feature | Lines | Note |
-| --- | --- | --- |
-| Host diagnostics: scheduler graph, sources report, shared log | ~500 | Scheduler section (117), sources (28), log (12), `diagnostics_log.lua` (81), `log_viewer.lua` (209), log-open task in `main.lua` (24), and references. The identity, theme, and panels reports stay. Developer tooling, not for pilots. |
-| Glass theme | ~490 | `glass.lua` and `background_cache.lua` (390), the loader stage (54), `theme.glassOpacity` (29), and opacity hooks. Samples the background image brightness and caches it on the SD card. |
-| Smart detection | ~330 | `smart_flight.lua` (286) plus broker and settings paths. Off by default and off on your models. |
-| Location QR code | ~195 | `location_details.lua` (134), location tasks in `main.lua` (37), and navigation hooks. |
-| VCel sensor publishing | ~150 | `telemetry_publisher.lua` (116) plus loader and rx-battery code. Depends on EdgeTX's "Discover new sensors" quirks. |
-| Hidden-dashboard background work | ~80 | `background` hooks in chart, link-status, rx-battery, flight-counter, and navigation, plus host plumbing. Flight detection already runs in the shared flight tracking, outside the panels. |
-
-Altogether about 3,450 lines, or 11% of the widget's code.
