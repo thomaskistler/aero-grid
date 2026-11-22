@@ -21,7 +21,7 @@ they do not save a flight recording.
 ## View the debrief
 
 After a recorded flight, a green **Debrief ready** bar stays at the bottom
-until the debrief is cleared. In fullscreen, tap it or drag it up to open.
+until you arm again or reset the session. In fullscreen, tap it or drag it up to open.
 
 ![Dashboard with the Debrief ready bar at the bottom](../assets/editor/debrief-ready.png)
 

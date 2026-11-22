@@ -263,7 +263,7 @@ end
 local previous = result
 local function during()
     equal(drain(debrief, 3900), 0, "an in-progress flight is not captured")
-    equal(debrief:result(), previous, "the last debrief stays until the next flight ends")
+    equal(debrief:result(), nil, "arming with no flight in progress clears the debrief")
 end
 poll(2900, false, {})
 for now = 3000, 4000, 10 do
@@ -320,6 +320,12 @@ assert(empty > 0, "nothing is drawn across the gap")
 local area = (2 + 4.9) / 2 * 290 + (6 + 10.1) / 2 * 410
 near(gap.value, area / 700, "the average skips the gap")
 
+-- Arming on the bench, with no flight in progress, clears the debrief.
+poll(4210, true, {})
+poll(4220, false, {})
+drain(debrief, 4230)
+equal(debrief:result(), nil, "arming clears the debrief")
+
 -- Session reset clears the debrief; the next flight is recorded afresh.
 debrief:resetSession()
 for index = 1, 8 do
@@ -374,6 +380,27 @@ equal(debrief:result(), nil)
 fly(9000, 9500, { V = climb, A = gappy })
 drain(debrief, 9700)
 equal(debrief:result().duration, 510, "the first flight after a reset is captured")
+
+-- Re-arming while a flight is ending continues it, and it is still captured.
+poll(9800, false, {})
+for now = 9900, 10600, 10 do
+    if now == 9920 then
+        event("start", 9900)
+    end
+    poll(now, now < 10200 or now >= 10300, { V = climb })
+    if now == 10400 then
+        equal(drain(debrief, now), 0, "an in-progress flight is not captured")
+    end
+end
+for now = 10610, 10700, 10 do
+    poll(now, false, { V = climb })
+end
+event("end", 10610)
+for now = 10710, 10800, 10 do
+    poll(now, false, {})
+end
+drain(debrief, 10900)
+equal(assert(debrief:result(), "a re-armed flight is captured").duration, 710)
 
 -- An empty flight slice after a long history is searched within budget.
 debrief:configure({
