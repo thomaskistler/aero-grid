@@ -439,15 +439,6 @@ function navigationService:resetSession(_, index)
     return index + 1
 end
 
---- Format a distance with a sensible unit, switching to kilometres when the
---- metre reading stops being readable at a glance.
----@param metres any
----@return string
-function navigationService.formatDistance(metres)
-    local digits, unit = navigationService.distanceParts(metres)
-    return digits .. unit
-end
-
 --- Split a distance into its digits and its unit.
 ---
 --- The unit rides beside the reading in its own label now, so the two are

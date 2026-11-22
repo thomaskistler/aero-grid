@@ -616,9 +616,6 @@ local function testNavigationService()
     local absent = service:subscribe("NoGps")
     service:update(4)
     assertEqual(absent.state, "unavailable")
-    assertEqual(navigationService.formatDistance(nil), "--")
-    assertEqual(navigationService.formatDistance(450), "450m")
-    assertEqual(navigationService.formatDistance(12345), "12.3km")
 end
 
 --- Every line height the dashboard lays out from must be the radio's own.

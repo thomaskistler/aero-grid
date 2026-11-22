@@ -20,11 +20,9 @@ local function createLoaded(zone, options, path)
 end
 local REFERENCE_LAYOUT = assert(loadfile(root .. "/tests/support/layout_fixtures.lua"))().REFERENCE_LAYOUT
 local referencePath = makeWidget("reference", REFERENCE_LAYOUT)
-assert(
-    themeModule.setCatalog(
-        assert(loadfile(root .. "/tests/support/theme_catalog.lua"))()(root, fixture.module("lib/yaml.lua"))
-    )
-)
+local themeCatalog =
+    assert(loadfile(root .. "/tests/support/theme_catalog.lua"))()(root, fixture.module("lib/yaml.lua"))
+assert(themeModule.setCatalog(themeCatalog))
 local appContext
 
 local assertFont = fixture.assertFont
@@ -44,7 +42,7 @@ local function testRendersInBothModes(label, zone, path, expected)
 end
 
 local function testThemeReachesPanels()
-    local modern = themeModule.modernDark()
+    local modern = themeCatalog.themes[1].colors
     assertEqual(appContext.theme.mode, "modern-dark")
     assertEqual(
         appContext.canvas.properties.color,
@@ -103,7 +101,7 @@ end
 
 local function testPanelPresentation()
     local spacing = appContext.theme.spacing
-    local modern = themeModule.modernDark()
+    local modern = themeCatalog.themes[1].colors
 
     -- Panels are told apart from the screen by their fill, so the fill has to
     -- be separable by eye. Measured on the tokens, because contrast arithmetic

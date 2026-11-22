@@ -210,20 +210,6 @@ function navigation.resolveState(settings, view, satellites)
     return view.fix and "normal" or "unavailable"
 end
 
---- Format the dominant distance reading.
----@param view any
----@param formatter fun(view: table): string?
----@return string
-function navigation.distanceText(view, formatter)
-    if type(view) ~= "table" then
-        return "--"
-    end
-    if type(view.distance) ~= "number" then
-        return "--"
-    end
-    return formatter(view) or "--"
-end
-
 --- The distance split into the number and the unit riding beside it.
 ---@param view any
 ---@param formatter fun(view: table): string?, string

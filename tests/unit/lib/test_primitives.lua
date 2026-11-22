@@ -6,11 +6,6 @@ local moduleLoader = assert(loadfile(root .. "/tests/support/module_loader.lua")
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local primitives = moduleLoader("lib/primitives.lua")
 
-local function testContentWidthRespectsPadding()
-    local theme = { spacing = { padding = 8 } }
-    assertions.assertEqual(primitives.contentWidth(theme, 120), 104)
-end
-
 local function testNumericHelpers()
     assertions.assertEqual(primitives.fraction(5, 0, 10), 0.5)
     assertions.assertEqual(primitives.fraction(-5, 0, 10), 0)
@@ -40,7 +35,6 @@ local function testChangedSkipsUnchangedRender()
 end
 
 local function run()
-    testContentWidthRespectsPadding()
     testNumericHelpers()
     testChangedSkipsUnchangedRender()
 end

@@ -1037,16 +1037,6 @@ function editor.settings(session)
     return fields, config, module
 end
 
-function editor.restoreDefault(session, document)
-    if type(document) ~= "table" or type(document.panels) ~= "table" then
-        return false, "default layout is invalid"
-    end
-    session.draft = copy(document)
-    session.selected = #session.draft.panels > 0 and 1 or 0
-    session.dirty = true
-    return true
-end
-
 function editor.cancel(session)
     session.draft = copy(session.original)
     session.debriefDerived = session.originalDebriefDerived

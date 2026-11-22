@@ -470,30 +470,6 @@ local function testDeclaredEntryFieldsAreAlwaysOffered()
     modules.listed = nil
 end
 
-local function testRestoreDefaultDoesNotApply()
-    local session = newSession()
-    local default = {
-        version = layout.VERSION,
-        grid = { columns = 4, rows = 4 },
-        panels = {
-            {
-                id = "default",
-                type = "sample",
-                col = 0,
-                row = 0,
-                colSpan = 1,
-                rowSpan = 1,
-                config = {},
-            },
-        },
-    }
-    assert(editor.restoreDefault(session, default))
-    assert(session.draft.panels[1].id == "default")
-    assert(session.original.panels[1].id == "first")
-    editor.cancel(session)
-    assert(session.draft.panels[1].id == "first")
-end
-
 local function testResizePreservesSpanDependentSettings()
     local flightMode = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/flight-mode.lua"))()
     local input = document()
@@ -913,7 +889,6 @@ testAddSpanDeclarations()
 testCatalogPanelSizes()
 testRxBatteryFormAndSourceDrawers()
 testSinglePrecisionVoltageSteps()
-testRestoreDefaultDoesNotApply()
 testDeclaredEntryFieldsAreAlwaysOffered()
 testResizePreservesSpanDependentSettings()
 testOptionalNumbersCanBeCleared()
