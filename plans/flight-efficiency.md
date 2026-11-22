@@ -131,61 +131,44 @@ The widget is about 1.5 MB of Lua across 70 files. Most of it is real code (abou
 so a meaningful reduction comes from removing code paths and features, not from
 reformatting.
 
-### Remove outright
+Counts are production Lua code lines: comments and blank lines are excluded, and
+tests are not counted. The widget has 30,979 such lines. Whole files and functions are
+counted exactly; items marked "est." replace code with something smaller, so they
+are net estimates.
 
-1. **Pre-release extended segments:** `native_budget.lua`, the segment and
-   carry-over logic in `scheduler.lua`, `liveDangerously` in `main.lua`,
-   `flight_config.lua`, and the Model settings row.
-2. **Unused functions:** `layoutStore.loadDefault`, `primitives.setBarMarker`,
-   `primitives.showCompass`, and `yaml.buildAt` have no callers. These are called
-   only from tests or tools: `navigation.distanceText`, `theme.fromRgb565`,
-   `theme.modernDark`, `editor.restoreDefault`, `primitives.contentWidth`,
-   `primitives.batteryBackdropRgb`, `primitives.arcAngle`,
-   `primitives.signedFraction`, and `navigationService.formatDistance`.
-3. **The removed `Armed` widget option:** `legacyWidgetArmed` still reads
-   `widgetOptions.Armed`, which no longer exists, in `main.lua`,
-   `flight_service.lua`, and `dashboard_loader.lua`.
-4. **Developer-only panels and layouts in the release:** `service-probe`,
-   `theme-showcase`, and the Palette and Diagnostics layouts can move to the
-   development fixture.
-5. **Chart-only panel hooks and the output-panel state machine** (see above).
+### Remove outright (about 850 lines)
 
-### Simplify by keeping one way to do each thing
+| # | Item | Lines |
+| --- | --- | --- |
+| 1 | **Pre-release extended segments:** `native_budget.lua` (34), segment and carry-over logic in `scheduler.lua` (42), `liveDangerously` in `main.lua` (22), `flight_config.lua` and the Model settings row (9). | 107 |
+| 2 | **Unused functions.** No callers (66): `layoutStore.loadDefault`, `primitives.setBarMarker`, `primitives.showCompass`, `yaml.buildAt`. Called only from tests or tools (61): `navigation.distanceText`, `theme.fromRgb565`, `theme.modernDark`, `editor.restoreDefault`, `primitives.contentWidth`, `primitives.batteryBackdropRgb`, `primitives.arcAngle`, `primitives.signedFraction`, `navigationService.formatDistance`. | 127 |
+| 3 | **The removed `Armed` widget option:** `legacyWidgetArmed` still reads `widgetOptions.Armed`, which no longer exists, in `main.lua`, `flight_service.lua`, and `dashboard_loader.lua`. | ~25 |
+| 4 | **Developer-only panels in the release:** `service-probe` (191) and `theme-showcase` (186) move to the development fixture, as do the Palette and Diagnostics layouts. | 377 |
+| 5 | **Chart-only panel hooks:** `finish`, `finishPending`, `finishMinCost`, `backgroundMinCost`, and `refreshMinCost` plumbing in `main.lua` and `panel_host.lua` (88), partly moved into the chart. | ~70 est. |
+| 6 | **Output-panel state machine:** `output.refresh` and its phase helpers (190), replaced by a single paint of all rows. | ~140 est. |
 
-6. **One arm condition.** The Model settings arm condition coexists with per-panel
-   arm switches on `chart`, `navigation`, and `flight-counter`. The flight counter
-   also keeps its own detection settings (`_legacyFlight`, motor source and
-   reversal, thresholds, durations). Supporting both requires
-   `flight_registration.lua`, `legacyFlightArms`, fallbacks in `armed:state` and
-   `history:session`, the editor's `legacyArm` and `legacyFlight` filters, the
-   import path in `flight_count.lua`, and part of `rebindArming`. Make the model
-   arm condition the only one, and convert old panel settings once on load.
-7. **Layout migrations.** `layout.lua` carries four schema steps plus
-   `normalizePanel` fixes for duration strings, removed link-status extrema,
-   removed flight-counter fields, former navigation thresholds, and an
-   unreleased rx-battery schema. Keep the steps needed for released layouts
-   (v0.1.0 to v0.4.0) and drop the fixes for formats that were never released.
-8. **Module API versions.** Every module declares `RUNTIME_API` and every panel
-   declares `apiVersion` (about 70 references). The installer replaces the
-   whole widget directory, and the architecture notes admit these checks do not
-   detect every mixed package. One package version check is enough.
-9. **The model-settings backend abstraction.** The `env.backend` interface
-   (`read`, `check`, `write`, `forkOnRename`) exists for an EdgeTX 3.0 backend
-   that is not implemented. Call the sidecar directly until one exists.
-10. **Flight-detection polling** (see above): reuse the dashboard's Telemetry
-    and Control services instead of running a second copy.
-11. **Host requests in `main.lua`** (see above): one queue instead of about 15
-    request types.
+### Simplify by keeping one way to do each thing (about 850 lines)
 
-### Features to decide on
+| # | Item | Lines |
+| --- | --- | --- |
+| 7 | **One arm condition.** The Model settings arm condition coexists with per-panel arm switches on `chart`, `navigation`, and `flight-counter`, and the flight counter keeps its own detection settings. Removed: `flight_registration.lua` and its hook (55), `rebindArming` in `main.lua` and three panels (94), the broker's per-layout proposal and conflict resolution (65), flight-counter legacy settings (23), chart and navigation arm settings (12), editor filters and migration guard (20), `flight_count.lua` legacy import (12), history fallback (8), and `modelArmed` plumbing into validation (15). Old panel settings are converted once on load. | ~300 |
+| 8 | **Layout fixes for formats that were never released.** Released layouts are versions 1 to 3 (v0.1.0 to v0.4.0), so steps 1 to 3 stay. Removed: the chart duration conversion (charts were never released), the unreleased rx-battery `sourceType` and threshold renames, and the 4 to 5 step, which only exists for legacy flight counters. | ~30 |
+| 9 | **Module API versions:** `apiVersion` in every panel, the `RUNTIME_API` checks in `loadModule` and `panel_host.lua`, and `runtimeApi`/`panelApi` in `package.lua`. The installer replaces the whole widget directory, so one package version check is enough. | ~30 |
+| 10 | **The model-settings backend seam (`env.backend`)** for an EdgeTX 3.0 backend that is not implemented. Small; mostly a test seam. | ~10 |
+| 11 | **Flight-detection polling:** the broker's private reset, detection, and Smart runtimes and their poll tasks (83), replaced by subscriptions to shared services. | ~80 est. |
+| 12 | **Host requests in `main.lua`:** the request, hold, and routing functions total 824 lines; one queue for the current overlay or transition would replace about half. | ~400 est. |
+
+### Features to decide on (about 1,750 lines)
 
 Each is user-visible, so removal is a product decision.
 
-| Feature | Approximate size | Note |
+| Feature | Lines | Note |
 | --- | --- | --- |
-| Glass theme | `glass.lua` (228 lines), `background_cache.lua` (186), and about 20 hooks in `dashboard_loader.lua` | Samples the background image brightness and caches it on the SD card. |
-| Smart detection | `smart_flight.lua` (307) plus broker paths | Off by default and off on your models. |
-| VCel sensor publishing | `telemetry_publisher.lua` (148) plus rx-battery code | Depends on EdgeTX's "Discover new sensors" quirks. |
-| Host diagnostics: scheduler graph, sources report, shared log | most of `host-diagnostics.lua` (649), `diagnostics_log.lua` (92), `log_viewer.lua` (224) | Developer tooling, not for pilots. |
-| Location QR code | `location_details.lua` (142) | Navigation extra. |
-| Hidden-dashboard background work | `background` hooks in chart, link-status, rx-battery, flight-counter, and navigation, plus the hidden path in the host | Flight detection already runs in the shared flight tracking, outside the panels. |
+| Host diagnostics: scheduler graph, sources report, shared log | ~500 | Scheduler section (117), sources (28), log (12), `diagnostics_log.lua` (81), `log_viewer.lua` (209), log-open task in `main.lua` (24), and references. The identity, theme, and panels reports stay. Developer tooling, not for pilots. |
+| Glass theme | ~490 | `glass.lua` and `background_cache.lua` (390), the loader stage (54), `theme.glassOpacity` (29), and opacity hooks. Samples the background image brightness and caches it on the SD card. |
+| Smart detection | ~330 | `smart_flight.lua` (286) plus broker and settings paths. Off by default and off on your models. |
+| Location QR code | ~195 | `location_details.lua` (134), location tasks in `main.lua` (37), and navigation hooks. |
+| VCel sensor publishing | ~150 | `telemetry_publisher.lua` (116) plus loader and rx-battery code. Depends on EdgeTX's "Discover new sensors" quirks. |
+| Hidden-dashboard background work | ~80 | `background` hooks in chart, link-status, rx-battery, flight-counter, and navigation, plus host plumbing. Flight detection already runs in the shared flight tracking, outside the panels. |
+
+Altogether about 3,450 lines, or 11% of the widget's code.
