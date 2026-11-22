@@ -2459,7 +2459,7 @@ local function refreshChart(context, creating, slots)
     return refreshColumns(context, slots)
 end
 
-function chart.refresh(context, creating, slots)
+local function refreshStep(context, creating, slots)
     slots = slots or budget.capacity
     context.refreshMinCost = nil
     if context.resetWork and not creating then
@@ -2535,9 +2535,16 @@ function chart.refresh(context, creating, slots)
             interval, consumed = pace(context, interval, consumed, slots, idle)
         end
     end
+    return interval, again, consumed
+end
+
+function chart.refresh(context, creating, slots)
+    local interval, again, consumed = refreshStep(context, creating, slots)
     local pending, minimum = chart.finishPending(context)
     if pending and not creating then
+        -- Finishing runs in this callback while slots are left.
         context.refreshMinCost = minimum
+        again = true
     end
     return interval, again, consumed
 end

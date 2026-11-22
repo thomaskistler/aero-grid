@@ -75,7 +75,7 @@ first.columnRenderer.append = function(self, ...)
 end
 record.sample(1040, { 46 })
 local _, appendPending, appendSlots = chart.refresh(first, false, 1)
-assert(appendSlots == 1 and not appendPending, "the entire append must finish in one slot")
+assert(appendSlots == 1 and appendPending, "the entire append must finish in one slot, then ask to finish")
 assert(appendCalls == 1)
 assert(first.columnRenderer.published[1].revision == owner.map.revision)
 assert(first.series[1].drawnRevision == first.series[1].feed.plotRevision)

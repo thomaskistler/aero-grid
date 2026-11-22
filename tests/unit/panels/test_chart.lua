@@ -903,7 +903,10 @@ do
         return append(self, ...)
     end
     _, unfinished, used = chartModule.refreshOnly(gridPanel, false, 2)
-    assert(appended and not unfinished and used >= 1 and used <= 2, "the append must charge within its grant")
+    assert(
+        appended and unfinished and used >= 1 and used <= 2,
+        "the append must charge within its grant, then ask to finish"
+    )
     chartModule.render, renderer.append = render, append
 end
 assert(not gridPanel.durationBackground.hidden, "titleless charts need a readable duration annotation")
