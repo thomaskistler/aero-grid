@@ -51,7 +51,7 @@ local storeEnv = {
     end,
 }
 local sidecar = load("lib/model_settings_sidecar.lua")
-storeEnv.backend = sidecar.new("/WIDGETS/AeroGrid/", storeEnv, storeEnv.verifiedFile, operations)
+storeEnv.sidecar = sidecar
 local store = storeModule.new("/WIDGETS/AeroGrid/", load("lib/yaml.lua"), storeEnv, operations)
 
 local function restart()

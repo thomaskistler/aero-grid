@@ -50,7 +50,7 @@ function sidecar.new(widgetPath, env, writer, operations)
         if not id then
             return nil, message
         end
-        local info = { token = id, missing = true, forkOnRename = true }
+        local info = { token = id, missing = true }
         if id == "" then
             return nil, info
         elseif not sidecar.validId(id) then

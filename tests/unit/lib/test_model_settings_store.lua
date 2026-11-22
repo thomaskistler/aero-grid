@@ -51,7 +51,7 @@ local function fixture()
             return state.generate and state.generate() or state.id
         end,
     }
-    env.backend = sidecar.new("/WIDGETS/AeroGrid/", env, writer, operations)
+    env.sidecar = sidecar
     local store = module.new("/WIDGETS/AeroGrid/", yaml, env, operations)
     return store, files, operations, function(value)
         current = value
@@ -479,63 +479,6 @@ do
     saved, message = store:commit(staged)
     assert(not saved and string.find(message, "CH32 name changed", 1, true))
     assert(yaml.parse(files[path()]).revision == 1 and state.writes == 0)
-end
-
--- A model-local backend consumes the identical YAML document and needs no CH32,
--- files, or adoption. Capability selection can change without changing callers.
-do
-    local _, _, operations, switch, _, env = fixture()
-    local text
-    env.backend = {
-        read = function(_, _, backup)
-            return not backup and text or nil, { missing = backup or text == nil, token = "local" }
-        end,
-        check = function()
-            return true
-        end,
-        write = function(_, _, serialized, _, guard)
-            local ok, message = guard()
-            if not ok then
-                return false, message
-            end
-            text = serialized
-            return true
-        end,
-    }
-    local store = module.new("/WIDGETS/AeroGrid/", yaml, env, operations)
-    assert(store:load("plane.yml").revision == 0)
-    assert(store:save("plane.yml", 0, config.defaults(), "!L01"))
-    assert(store:load("plane.yml").armed == "!L01" and yaml.parse(text).revision == 1)
-    assert(store:adopt("plane.yml", store:load("plane.yml")))
-    local ok, prepared = store:prepare("plane.yml", 1, config.defaults())
-    assert(ok and store:save("plane.yml", 1, config.defaults()))
-    assert(not store:commit(prepared))
-    switch("copy.yml")
-    local copied, info = store:load("copy.yml")
-    assert(copied.modelFilename == "copy.yml" and not info.foreign)
-    assert(store:adopt("copy.yml", copied), "model-local backends need no copy fork")
-    assert(store:save("copy.yml", 2, config.defaults()))
-    assert(yaml.parse(text).modelFilename == "copy.yml")
-end
-
-do
-    local _, files, operations, _, _, env = fixture()
-    local previousLoader, previousModel = loadScript, model
-    loadScript = function(filename)
-        return loadfile(base .. "/lib/" .. assert(string.match(filename, "/lib/([^/]+)$")))
-    end
-    model = {
-        getUserData = function()
-            error("unimplemented userData backend must not be selected")
-        end,
-        setUserData = function()
-            error("unimplemented userData backend must not be selected")
-        end,
-    }
-    env.backend = nil
-    local store = module.new("/WIDGETS/AeroGrid/", yaml, env, operations)
-    assert(store:save("plane.yml", 0, config.defaults()) and files[path()])
-    loadScript, model = previousLoader, previousModel
 end
 
 for _, failure in ipairs({ "armed", "channel", "model" }) do
