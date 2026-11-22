@@ -1342,6 +1342,8 @@ local function handleEvent(context, widgetEvent, touchState)
     return false
 end
 
+local SWIPES = { "swipeLeft", "swipeRight", "swipeUp", "swipeDown" }
+
 --- Accept input, not synchronous consumption; EdgeTX supplies it through refresh.
 local function event(context, widgetEvent, touchState)
     if context.runtimeFailed or not isFullScreen() or widgetEvent == nil or widgetEvent == 0 then
@@ -1364,7 +1366,25 @@ local function event(context, widgetEvent, touchState)
         }
     end
     context.inputQueue = context.inputQueue or {}
-    context.inputQueue[#context.inputQueue + 1] = input
+    local queue = context.inputQueue
+    local last = queue[#queue]
+    -- One input is handled per callback, so a drag would trail the finger;
+    -- a queued slide instead absorbs the next one.
+    if widgetEvent == _G.EVT_TOUCH_SLIDE and last and last.event == widgetEvent and input.touch and last.touch then
+        local merged, previous = input.touch, last.touch
+        if type(merged.slideX) == "number" and type(previous.slideX) == "number" then
+            merged.slideX = previous.slideX + merged.slideX
+        end
+        if type(merged.slideY) == "number" and type(previous.slideY) == "number" then
+            merged.slideY = previous.slideY + merged.slideY
+        end
+        for _, name in ipairs(SWIPES) do
+            merged[name] = merged[name] or previous[name]
+        end
+        last.touch, last.now = merged, input.now
+        return true
+    end
+    queue[#queue + 1] = input
     return true
 end
 

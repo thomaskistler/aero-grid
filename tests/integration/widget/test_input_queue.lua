@@ -70,6 +70,16 @@ assert(definition.event(context, EVT_TOUCH_BREAK))
 drain()
 assert(not context.editorPress and not context.editorTransitionRequest, "queued release prevents late hold activation")
 
+EVT_TOUCH_SLIDE = 9304
+assert(definition.event(context, EVT_TOUCH_FIRST, touch))
+assert(definition.event(context, EVT_TOUCH_SLIDE, { x = 1, y = 90, slideX = 0, slideY = -10 }))
+assert(definition.event(context, EVT_TOUCH_SLIDE, { x = 2, y = 70, slideX = 1, slideY = -20, swipeUp = true }))
+assert(#context.inputQueue == 2, "a queued slide absorbs the next one, so a drag keeps up with the finger")
+local slide = context.inputQueue[2].touch
+assert(slide.x == 2 and slide.y == 70 and slide.slideX == 1 and slide.slideY == -30 and slide.swipeUp)
+assert(definition.event(context, EVT_TOUCH_BREAK))
+drain()
+EVT_TOUCH_SLIDE = nil
 assert(definition.event(context, EVT_TOUCH_FIRST, touch))
 drain()
 assert(context.editorPress and context.editorPress.started == getTime())

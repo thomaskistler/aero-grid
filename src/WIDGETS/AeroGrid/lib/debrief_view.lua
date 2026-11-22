@@ -141,6 +141,48 @@ function view.layout(tiles, zone, grid, minimumHeaderHeight)
     return items, headerHeight, rowY(row)
 end
 
+--- Scroll offsets the sheet rests at: the bar at the top of the screen, then
+--- each row of tiles, then the bottom.
+function view.stops(items, barHeight, maxOffset)
+    local stops = { 0 }
+    for _, item in ipairs(items) do
+        local stop = math.min(maxOffset, barHeight + item.y - view.TOP)
+        if stop > stops[#stops] then
+            stops[#stops + 1] = stop
+        end
+    end
+    if maxOffset > stops[#stops] then
+        stops[#stops + 1] = maxOffset
+    end
+    return stops
+end
+
+--- The stop nearest `offset`, or the next one in `direction` (1 down, -1 up).
+function view.stop(stops, offset, direction)
+    if direction == 1 then
+        for _, stop in ipairs(stops) do
+            if stop > offset then
+                return stop
+            end
+        end
+        return stops[#stops]
+    elseif direction == -1 then
+        for index = #stops, 1, -1 do
+            if stops[index] < offset then
+                return stops[index]
+            end
+        end
+        return stops[1]
+    end
+    local best = stops[1]
+    for _, stop in ipairs(stops) do
+        if math.abs(stop - offset) < math.abs(best - offset) then
+            best = stop
+        end
+    end
+    return best
+end
+
 local function apply(state)
     local ui = state.ui
     if not ui then
@@ -148,7 +190,8 @@ local function apply(state)
     end
     local y, offset = state.travel - state.reveal, state.shown and -state.offset or 0
     if ui.y ~= y then
-        ui.overlay:set({ y = y })
+        -- Ending at the zone's bottom keeps the page from scrolling natively.
+        ui.overlay:set({ y = y, h = state.height - y })
         ui.y = y
     end
     if ui.offset ~= offset then
@@ -188,7 +231,6 @@ function view.new(host, result)
         reveal = 0,
         offset = 0,
         shown = false,
-        step = math.max(1, (zone.h + view.GUTTER) // 4),
     }
     local textHeight = host.themeBuilder.fontHeight(SMLSIZE)
         + host.themeBuilder.fontHeight(MIDSIZE)
@@ -208,6 +250,7 @@ function view.new(host, result)
     end
     state.items, state.headerHeight, state.total = view.layout(result.tiles, zone, host.grid, headerHeight)
     state.maxOffset = math.max(0, state.total - state.travel)
+    state.stops = view.stops(state.items, barHeight, state.maxOffset)
     return state
 end
 
@@ -299,7 +342,7 @@ local function buildOverlay(host, state)
     -- One overlay per page, reused by every debrief: EdgeTX frees a page's
     -- children only with the page.
     local overlay, viewport = host.debriefOverlay, host.debriefViewport
-    overlay:set({ x = 0, y = state.travel - state.reveal, w = width, h = height })
+    overlay:set({ x = 0, y = state.travel - state.reveal, w = width, h = height - state.travel + state.reveal })
     viewport:set({
         y = state.shown and -state.offset or 0,
         w = width,
@@ -616,6 +659,25 @@ function view.advance(host, allowance)
     end
 end
 
+--- While the sheet is open, a clickable box over it stays the touch target.
+--- Otherwise LVGL targets a tile and natively scrolls one of the sheet's
+--- boxes: EdgeTX honours `scrollDir` only for boxes built in fullscreen.
+local function shield(host, visible)
+    local box = host.debriefShield
+    if visible and not box and host.page and type(lvgl.isFullScreen) == "function" and lvgl.isFullScreen() then
+        local zone = host.zone
+        box = lvgl.box(host.page, { x = 0, y = 0, w = zone.w, h = zone.h, scrollDir = 0 })
+        host.debriefShield = box
+    end
+    if box then
+        if visible then
+            lvgl.show(box)
+        else
+            lvgl.hide(box)
+        end
+    end
+end
+
 --- Show the view, revealed by `reveal` pixels.
 function view.show(host, reveal)
     local state = host.debrief
@@ -627,6 +689,7 @@ function view.show(host, reveal)
         lvgl.show(state.ui.overlay)
         apply(state)
     end
+    shield(host, true)
 end
 
 --- Slide the view away, keeping it and its scroll position.
@@ -637,6 +700,7 @@ function view.hide(host)
     if state.ui then
         apply(state)
     end
+    shield(host, false)
     host.touchTapHandled = true
 end
 
@@ -664,6 +728,7 @@ function view.destroy(host)
         host.debriefPill = nil
         host.debriefCleared = true
     end
+    shield(host, false)
     host.debrief = nil
 end
 
@@ -697,6 +762,8 @@ function view.release(state)
     state.flick = nil
     if state.reveal < state.travel then
         state.reveal = state.reveal * 2 >= state.travel and state.travel or 0
+    else
+        state.offset = view.stop(state.stops, state.offset)
     end
     return state.reveal > 0
 end
@@ -749,10 +816,10 @@ function view.handle(host, event, touch)
             host.touchTapHandled = true
         end
     elseif matches(event, "EVT_ROT_LEFT") or matches(event, "EVT_VIRTUAL_PREV") then
-        state.offset = math.max(0, state.offset - state.step)
+        state.offset = view.stop(state.stops, state.offset, -1)
         settle(host, state)
     elseif matches(event, "EVT_ROT_RIGHT") or matches(event, "EVT_VIRTUAL_NEXT") then
-        state.offset = math.min(state.maxOffset, state.offset + state.step)
+        state.offset = view.stop(state.stops, state.offset, 1)
         settle(host, state)
     end
     return true
