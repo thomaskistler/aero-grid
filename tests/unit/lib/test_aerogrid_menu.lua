@@ -76,6 +76,7 @@ do
         assert(menu.advance(c), "a release without a TAP must activate the captured tile")
         assert(control.model == (index == 1 and 1 or 0))
         assert(control.layout == (index == 2 and 1 or 0))
+        assert(not state.root.hidden, "choosing a tile must not hide the AeroGrid button")
         menu.handle(c, EVT_TOUCH_TAP, point)
         menu.advance(c)
         assert(control.model + control.layout == 1, "a later bubbled TAP must not invoke the action twice")

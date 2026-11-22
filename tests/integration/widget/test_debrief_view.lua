@@ -256,6 +256,12 @@ assert(state.reveal == H - 25)
 input(EVT_TOUCH_BREAK, touch(20, H - 5))
 assert(state.reveal == state.travel and state.offset == 0, "release past halfway opens fully")
 assert(state.ui.overlay.properties.y == 0)
+local shield = context.debriefShield
+assert(
+    shield and not shield.hidden and context.page.children[#context.page.children] == shield,
+    "an open sheet lies under a touch shield, so LVGL never scrolls its boxes natively"
+)
+assert(state.ui.overlay.properties.h == state.height, "the overlay never extends past the page")
 
 local function labelsOf(object, found)
     found = found or {}
@@ -349,16 +355,24 @@ assert(
     "the header scrolls offscreen without overlapping the summary"
 )
 input(EVT_TOUCH_BREAK, touch(120, 200))
+local stops = state.stops
+assert(
+    stops[1] == 0 and stops[2] == state.barHeight + state.items[1].y - view.TOP and stops[#stops] == state.maxOffset,
+    "the sheet rests with its bar, a row of tiles or its bottom at the top"
+)
+assert(state.offset == stops[2], "release rests at the nearest stop")
 -- Native coordinates follow the touched tile as it moves, but slideY remains
 -- the finger's delta. Holding the finger still must not reverse the scroll.
 input(EVT_TOUCH_FIRST, touch(120, 120))
 input(EVT_TOUCH_SLIDE, touch(80, 120, { slideY = -40 }))
-assert(state.offset == 120, "native finger movement scrolls once")
+assert(state.offset == stops[2] + 40, "native finger movement scrolls once")
 input(EVT_TOUCH_SLIDE, touch(120, 120, { slideY = 0 }))
-assert(state.offset == 120, "a moving tile must not move a stationary finger")
+assert(state.offset == stops[2] + 40, "a moving tile must not move a stationary finger")
 input(EVT_TOUCH_SLIDE, touch(110, 120, { slideY = 20 }))
-assert(state.offset == 100, "a downward finger movement scrolls back regardless of tile coordinates")
+assert(state.offset == stops[2] + 20, "a downward finger movement scrolls back regardless of tile coordinates")
 input(EVT_TOUCH_BREAK, touch(110, 120))
+input(EVT_ROT_RIGHT)
+assert(state.offset == stops[3], "the rotary steps to the next row")
 input(EVT_ROT_LEFT)
 input(EVT_ROT_LEFT)
 input(EVT_ROT_LEFT)
@@ -394,6 +408,7 @@ assert(
     "RTN lowers the sheet to its bar"
 )
 assert(state.ui.viewport.properties.y == 0, "closing restores the discoverable header even after scrolling")
+assert(shield.hidden and overlay.properties.h == state.barHeight, "a closed sheet leaves the dashboard touchable")
 drag(H - 5, H - 40, { swipeUp = true })
 assert(context.debrief == state and state.shown and state.reveal == state.travel, "a swipe up opens fully")
 assert(state.ui.overlay == overlay and state.offset == offset, "the hidden view is reused as it was")

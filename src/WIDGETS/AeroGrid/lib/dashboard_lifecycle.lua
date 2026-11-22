@@ -239,6 +239,7 @@ function module.new(dependencies)
         context.debriefOverlay = nil
         context.debriefViewport = nil
         context.debriefContent = nil
+        context.debriefShield = nil
         context.debriefPill = nil
         if context.debrief then
             context.debriefModule.detach(context.debrief)

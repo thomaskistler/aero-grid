@@ -405,6 +405,7 @@ function menu.advance(context)
         local action = state.action
         menu.close(context)
         state.handlers[action]()
+        setVisible(state, shown(context, state))
         return true
     end
     if state.dismiss then

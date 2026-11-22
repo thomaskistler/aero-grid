@@ -3,7 +3,8 @@
 --- Records the layout's post-flight debrief: at each flight end, the flight
 --- slice of every debrief series is copied from the history into chart pixel
 --- columns, with its statistic, worst threshold level and per-column levels.
---- Only the latest debrief is kept, in memory.
+--- Only the latest debrief is kept, in memory, until the model is armed with
+--- no flight in progress.
 local debrief = { RUNTIME_API = 1, UNITS_PER_SLOT = 4 }
 debrief.updateCost = "variable"
 debrief.updateMinCost = 1
@@ -35,6 +36,18 @@ local function settled(history, session)
     return (start and not finish) and last - 1 or last
 end
 
+--- The newest flight started before recording time `at`, and whether it was
+--- still in progress then.
+local function before(history, session, at)
+    for index = session.flightLast, session.flightFirst, -1 do
+        local start, finish = history:flight(session, index)
+        if start and start < at then
+            return index, not finish or finish >= at
+        end
+    end
+    return session.flightFirst - 1, false
+end
+
 --- Subscribe the debrief series, at layout load and after every Save or
 --- Armed rebind, so the history records them before the flight starts.
 ---@param section? table Validated debrief section of the layout.
@@ -62,7 +75,7 @@ function debrief:configure(section, widths)
         -- Flights that ended before the series were recorded are skipped; a
         -- Save keeps the cursor, so a finished flight is still captured.
         if session ~= attached then
-            self.handled = settled(history, session)
+            self.handled, self.armSeen = settled(history, session), nil
         end
         self.session = session
         -- A capture a Save interrupted starts over with the saved debrief.
@@ -78,7 +91,7 @@ function debrief:result()
 end
 
 function debrief:resetSession()
-    self.latest, self.job = nil, nil
+    self.latest, self.job, self.armSeen = nil, nil, nil
     -- Flights the history has not reset yet are never captured.
     self.handled = self.session and settled(self.history, self.session) or 0
 end
@@ -404,6 +417,21 @@ function debrief:update(now, slots)
     if not session or history ~= self.runtime.byId.history then
         return 1
     end
+    -- Arming with no flight in progress clears the debrief and skips flights
+    -- that ended before; re-arming while a flight is ending continues it.
+    local seen, arms = self.armSeen, session.armLast
+    if seen and arms > seen then
+        for index = math.max(seen + 1, session.armFirst), arms do
+            local at, value = history:armBoundary(session, index)
+            if value then
+                local last, flying = before(history, session, at)
+                if not flying then
+                    self.latest, self.job, self.handled = nil, nil, math.max(self.handled, last)
+                end
+            end
+        end
+    end
+    self.armSeen = arms
     local job = self.job
     if job and job.index > session.flightLast then
         self.job, job = nil, nil
