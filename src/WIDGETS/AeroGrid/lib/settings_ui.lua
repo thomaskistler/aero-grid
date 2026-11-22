@@ -233,8 +233,8 @@ function ui.row(view, field)
         ui.description(view, field.description)
     end
     local fullWidth = field.fullWidth == true
+        or field.action == "item"
         or field.action == "remove"
-        or field.action == "remove-item"
         or field.action == "append"
         or field.action == "fill"
         or field.type == "section"
@@ -244,19 +244,9 @@ function ui.row(view, field)
         y = view.nextY,
         w = view.width,
         h = rowHeight,
-        title = (fullWidth or field.action == "item") and "" or field.label,
+        title = fullWidth and "" or field.label,
     })
-    local controlX = fullWidth and 0
-        or math.floor(view.width * (field.action == "item" and 0.28 or view.controlFraction))
-    if field.action == "item" and not fullWidth then
-        lvgl.label(row, {
-            x = 0,
-            y = math.floor((view.height - view.fontHeight()) / 2),
-            w = controlX - 8,
-            h = view.height,
-            text = field.label,
-        })
-    end
+    local controlX = fullWidth and 0 or math.floor(view.width * view.controlFraction)
     return {
         row = row,
         field = field,

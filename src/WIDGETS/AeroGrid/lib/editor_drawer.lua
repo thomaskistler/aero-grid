@@ -168,6 +168,45 @@ function drawer.close(state)
     state.nativeInput = nil
 end
 
+--- Ask what to do with item `index` of a `count`-item list. The chosen
+--- "edit", "up", "down" or "delete" is queued as `command.choice`.
+function drawer.itemMenu(context, state, title, index, count, removable, command)
+    assert(type(lvgl.menu) == "function", "list items require EdgeTX Lua LVGL menu")
+    local choices = { "edit" }
+    if index > 1 then
+        choices[#choices + 1] = "up"
+    end
+    if index < count then
+        choices[#choices + 1] = "down"
+    end
+    if removable then
+        choices[#choices + 1] = "delete"
+    end
+    local labels = { edit = "Edit", up = "Move up", down = "Move down", delete = "Delete" }
+    local values = {}
+    for position, choice in ipairs(choices) do
+        values[position] = labels[choice]
+    end
+    local generation = state.drawerGeneration
+    lvgl.menu({
+        title = title,
+        values = values,
+        get = function()
+            return 1
+        end,
+        set = deferredSetter(context, state, generation, function(position)
+            if context.editorUi == state and generation == state.drawerGeneration and not state.drawerPending then
+                local queued = {}
+                for key, value in pairs(command) do
+                    queued[key] = value
+                end
+                queued.choice = choices[position]
+                state.drawerPending = queued
+            end
+        end),
+    })
+end
+
 local function entrySummary(state, key, index, defaults, path)
     local config = state.session.draft.panels[state.session.selected].config or {}
     local items = config[key] or defaults[key]
@@ -249,30 +288,29 @@ local function fieldsFor(state, listKey, itemIndex, itemPath, groupKey)
                 items = items[part]
             end
             for index, item in ipairs(items) do
-                local title
+                local title = item
                 if type(item) == "table" then
                     title = item.label
                     if title == nil or title == "" then
-                        title = item.source
+                        local summary = entrySummary(state, field.key, index, config, field.path)
+                        -- A summary of only placeholders says nothing; use the list position.
+                        title = string.find(summary, "[^%-/ ]") and summary or nil
                     end
-                else
-                    title = item
                 end
                 if title == nil or title == "" then
                     title = (field.itemLabel or "Entry") .. " " .. index
                 end
                 local path = editor.clone(field.path or {})
                 path[#path + 1] = index
-                local summary = entrySummary(state, field.key, index, config, field.path)
                 result[#result + 1] = {
                     label = tostring(title),
-                    text = function()
-                        return summary
-                    end,
                     action = "item",
                     key = field.key,
                     index = index,
                     itemPath = path,
+                    path = field.path,
+                    count = #items,
+                    removable = #items > (field.minItems or 0),
                 }
             end
             result[#result + 1] = {
@@ -287,17 +325,7 @@ local function fieldsFor(state, listKey, itemIndex, itemPath, groupKey)
             result[#result + 1] = field
         end
     end
-    if listKey then
-        local path = editor.clone(selected)
-        local index = table.remove(path)
-        result[#result + 1] = {
-            label = #selected > 1 and "Remove state" or "Remove entry",
-            action = "remove-item",
-            key = listKey,
-            index = index,
-            path = #path > 0 and path or nil,
-        }
-    else
+    if not listKey then
         result[#result + 1] = { label = "Remove panel", action = "remove" }
     end
     return editor.orderFields(result, listKey ~= nil)
@@ -354,10 +382,26 @@ function drawer.open(context, state, mode, listKey, itemIndex, itemPath, groupKe
             end
         end
     elseif listKey then
-        title = title .. " / " .. listKey .. " " .. itemPath[1]
-    end
-    if itemPath and #itemPath > 1 then
-        title = title .. " / State " .. itemPath[#itemPath]
+        local forms = state.handlers.editor.formFields(state.session) or {}
+        for depth, index in ipairs(itemPath) do
+            if type(index) == "number" then
+                local itemLabel
+                for _, field in ipairs(forms) do
+                    local path = field.path or {}
+                    if field.type == "table-list" and field.key == listKey and #path == depth - 1 then
+                        local same = true
+                        for part = 1, #path do
+                            same = same and path[part] == itemPath[part]
+                        end
+                        if same then
+                            itemLabel = field.itemLabel
+                            break
+                        end
+                    end
+                end
+                title = title .. " / " .. (itemLabel or "Entry") .. " " .. index
+            end
+        end
     end
     local fields = fieldsFor(state, listKey, itemIndex, itemPath, groupKey)
     state.drawerListKey, state.drawerItemIndex, state.drawerGroupKey = listKey, itemIndex, groupKey
@@ -606,20 +650,31 @@ function drawer.advance(context, state)
     elseif command.action == "group" then
         drawer.open(context, state, "configure", nil, nil, nil, command.drawerGroup)
     elseif command.action == "item" then
+        drawer.itemMenu(context, state, command.label, command.index, command.count, command.removable, {
+            action = "entry",
+            key = command.key,
+            index = command.index,
+            itemPath = command.itemPath,
+            path = command.path,
+        })
+    elseif command.action == "entry" and command.choice == "edit" then
         drawer.open(context, state, "configure", command.key, command.index, command.itemPath)
     elseif command.action == "write" then
         ok, err = drawer.applyWrite(state, command)
-    elseif command.action == "append" then
-        ok, err = editor.appendItem(state.session, command.key, command.path)
-        if ok then
-            local parent = command.path and editor.clone(command.path)
-            if parent then
-                table.remove(parent)
-            end
-            drawer.open(context, state, "configure", parent and command.key, nil, parent)
+    elseif command.action == "append" or command.action == "entry" then
+        if command.action == "append" then
+            ok, err = editor.appendItem(state.session, command.key, command.path)
+        elseif command.choice == "delete" then
+            ok, err = editor.removeItem(state.session, command.key, command.index, command.path)
+        else
+            ok, err = editor.moveItem(
+                state.session,
+                command.key,
+                command.index,
+                command.choice == "up" and -1 or 1,
+                command.path
+            )
         end
-    elseif command.action == "remove-item" then
-        ok, err = editor.removeItem(state.session, command.key, command.index, command.path)
         if ok then
             local parent = command.path and editor.clone(command.path)
             if parent then

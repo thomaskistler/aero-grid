@@ -39,7 +39,7 @@ Tap a reading under **Metrics** to open its settings.
 | **Precision** | Sensor | Decimal places, 0 to 3. Step below 0 to select **Sensor**, using the source's precision. |
 | **Color** | by entry order | Trace and legend color: **cyan**, **green**, **orange**, or **amber**. Defaults to cyan, orange, then green; cyan uses blue ink in Modern Light. An explicit choice keeps that color. |
 
-Use **Remove entry** in the entry's settings dialog to delete a reading.
+Tap a reading to edit, move, or delete it.
 
 ## Behavior
 

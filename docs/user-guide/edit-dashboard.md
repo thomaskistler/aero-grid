@@ -1,4 +1,4 @@
-# Edit a dashboard on the radio
+# Edit a dashboard
 
 <div class="ag-video">
   <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/hJtvJaOf7YY" title="Add, move, and resize AeroGrid panels" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
@@ -107,23 +107,3 @@ so you can retry.
 
 See [Understand layouts](add-dashboard.md#understand-layouts) for where saved
 layouts live and how multiple dashboards share them.
-
-## Flight debrief
-
-**AeroGrid → Flight debrief** configures the current layout's post-flight tiles.
-**Tile size** applies to the whole debrief: **Compact 2 × 2** or **Wide 4 × 2**.
-Each tile has a title and up to three series.
-**Fill from dashboard** places RX battery and Link first, when present.
-
-After a recorded flight, a green **Debrief ready** bar stays at the bottom
-until the debrief is cleared. In fullscreen, tap it or drag it up to open.
-The bar scrolls with the flight summary and tiles, rather than staying at the top;
-press **RTN** or swipe down at the top to return to the dashboard.
-Tile accents and badges show the worst recorded severity: red for critical,
-yellow for warning, and blue otherwise. Values include the recorded source's
-units unless the series overrides them.
-Minimum and maximum values are marked **MIN** and **MAX**.
-
-Leaving with changes offers **Save layout**, **Save layout as...**, or
-**Discard changes**. These save the layout, including its debrief settings;
-they do not save a flight recording.

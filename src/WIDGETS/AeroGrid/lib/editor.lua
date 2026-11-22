@@ -821,6 +821,21 @@ function editor.removeItem(session, key, index, path)
     return true
 end
 
+--- Swap a list entry with the one above (`delta` -1) or below (`delta` 1).
+function editor.moveItem(session, key, index, delta, path)
+    local setting, value, err = tableSetting(session, key, path)
+    if not setting or type(value) ~= "table" then
+        return false, err
+    end
+    local target = type(index) == "number" and index + delta or nil
+    if not target or value[index] == nil or value[target] == nil then
+        return false, "table entry cannot move there"
+    end
+    value[index], value[target] = value[target], value[index]
+    session.dirty = true
+    return true
+end
+
 local function flattenFields(value, path, label, result)
     local valueType = type(value)
     if valueType ~= "table" then
@@ -1041,7 +1056,7 @@ function editor.cancel(session)
     return true
 end
 
---- Apply one debrief_config draft operation, such as "pasteTile", to the
+--- Apply one debrief_config draft operation, such as "moveTile", to the
 --- draft's debrief. Only adding a tile or a fill creates the section: an
 --- absent debrief and an empty one are different things. Any edit makes a
 --- derived debrief the layout's own, so Save writes it.

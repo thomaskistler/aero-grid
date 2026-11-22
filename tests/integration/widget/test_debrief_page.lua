@@ -74,6 +74,9 @@ local function choose(label)
     end
     error("no menu choice " .. label)
 end
+local function choices()
+    return table.concat(assert(fixture.lvglMock.menu()).values, ",")
+end
 local function back()
     lvgl.close(state().nativeDrawer)
     settle()
@@ -89,7 +92,7 @@ end, 300))
 settle()
 assert(state().debrief and state().debriefTarget.kind == "list")
 assert(state().mode == "debrief" and state().nativeDrawer)
-assert(active("Add tile"))
+assert(active("+"))
 -- EdgeTX stops polling `active` beneath a hidden object, which would leave
 -- every row disabled and the dialog deaf to RTN.
 local ancestor = state().nativeDrawer
@@ -157,7 +160,7 @@ end
 row("Tile size").object.properties.set(2)
 settle()
 assert(state().session.draft.debrief.size == "wide", "the shared size survives an empty debrief")
-press("Add tile")
+press("+")
 assert(#tiles() == 1 and state().debriefTarget.kind == "tile", "Add opens the new tile")
 row("Title").object.properties.set("Battery")
 settle()
@@ -165,13 +168,14 @@ assert(tiles()[1].title == "Battery" and tiles()[1].colSpan == 4 and tiles()[1].
 for _, entry in ipairs(state().drawerView.controls) do
     assert(entry.field.label ~= "Size", "tile settings have no individual size")
 end
-assert(active("Add series"))
+assert(active("+"))
+assert(row("min").object.properties.text == "min: Choose source", "an unlabeled series shows its statistic and source")
+assert(row("min").object.properties.x == 0, "a series button spans the drawer row")
 
 press("min")
+assert(choices() == "Edit", "the only series cannot move or be deleted")
+choose("Edit")
 assert(state().debriefTarget.kind == "series")
-for _, entry in ipairs(state().drawerView.controls) do
-    assert(entry.field.label ~= "Remove series", "the only series cannot be removed")
-end
 row("Statistic").object.properties.set(2)
 settle()
 assert(tiles()[1].series[1].statistic == "max" and row("Statistic").object.properties.get() == 2)
@@ -183,10 +187,17 @@ settle()
 assert(tiles()[1].series[1].label == nil, "a cleared label falls back to the statistic")
 back()
 assert(state().debriefTarget.kind == "tile")
-press("Add series")
+press("+")
 assert(#tiles()[1].series == 2 and state().debriefTarget.series == 2)
-press("Remove series")
-assert(#tiles()[1].series == 1 and state().debriefTarget.kind == "tile")
+back()
+press("min")
+assert(choices() == "Edit,Move up,Delete")
+choose("Move up")
+assert(tiles()[1].series[1].statistic == "min" and state().debriefTarget.kind == "tile")
+press("min")
+assert(choices() == "Edit,Move down,Delete")
+choose("Delete")
+assert(#tiles()[1].series == 1 and tiles()[1].series[1].statistic == "max")
 back()
 assert(state().debriefTarget.kind == "list")
 assert(row("Tile size").object.properties.get() == 2, "the shared size remains Wide")
@@ -207,24 +218,20 @@ assert(row("Tile size").object.properties.get() == 2)
 assert(state().nativeDrawer == sizeDrawer and state().drawerGeneration == sizeGeneration)
 assert(row("Battery").object.properties.text == "Battery")
 
-press("Add tile")
+press("+")
 back()
 assert(#tiles() == 2 and tiles()[2].title == "Tile 2")
 assert(tiles()[2].colSpan == 4 and tiles()[2].rowSpan == 2, "new tiles inherit the debrief size")
 press("Battery")
-choose("Copy")
-assert(string.find(row("Battery").object.properties.text, "(copy)", 1, true))
-press("Tile 2")
-choose("Paste after")
-assert(#tiles() == 3 and tiles()[3].title == "Battery" and tiles()[3] ~= tiles()[1])
-press("Tile 2")
-choose("Move")
-press("Battery")
-choose("Paste before")
+assert(choices() == "Edit,Move down,Delete")
+choose("Move down")
 assert(tiles()[1].title == "Tile 2" and tiles()[2].title == "Battery")
-press("Battery")
+press("+")
+back()
+press("Tile 3")
+assert(choices() == "Edit,Move up,Delete")
 choose("Delete")
-assert(#tiles() == 2)
+assert(#tiles() == 2 and tiles()[2].title == "Battery")
 
 local editDebrief = state().handlers.editor.editDebrief
 while #tiles() < 12 do
@@ -232,19 +239,10 @@ while #tiles() < 12 do
 end
 state().drawerPending = { action = "list" }
 settle()
-assert(not active("Add tile"), "Add is disabled at the tile limit")
-press("Battery")
-choose("Copy")
-press("Battery")
-for _, value in ipairs(fixture.lvglMock.menu().values) do
-    assert(value ~= "Paste after", "a copy cannot paste past the tile limit")
-end
-choose("Edit")
-back()
+assert(not active("+"), "Add is disabled at the tile limit")
 while #tiles() > 2 do
     assert(editDebrief(state().session, "removeTile", #tiles()))
 end
-state().debriefMark = nil
 state().drawerPending = { action = "list" }
 settle()
 

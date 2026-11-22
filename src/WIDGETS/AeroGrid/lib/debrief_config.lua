@@ -291,32 +291,38 @@ function debrief.removeTile(section, index)
     return true
 end
 
---- Paste a copy of tile `from`, or move it, before or after tile `target`.
+local function swap(list, index, delta)
+    local target = index + delta
+    if not list[index] or not list[target] then
+        return false, "cannot move there"
+    end
+    list[index], list[target] = list[target], list[index]
+    return target
+end
+
+--- Swap a tile with the one above (`delta` -1) or below (`delta` 1).
 ---@param section table
----@param from integer
----@param target integer
----@param after boolean
----@param duplicate boolean Copy rather than move.
----@return integer|false index The pasted tile's position.
+---@param index integer
+---@param delta integer
+---@return integer|false index The tile's new position.
 ---@return string? error
-function debrief.pasteTile(section, from, target, after, duplicate)
-    local tiles = section.tiles
-    if not tiles[from] or not tiles[target] then
-        return false, "no such tile"
+function debrief.moveTile(section, index, delta)
+    return swap(section.tiles, index, delta)
+end
+
+--- Swap a series with the one above (`delta` -1) or below (`delta` 1).
+---@param section table
+---@param index integer
+---@param seriesIndex integer
+---@param delta integer
+---@return integer|false seriesIndex The series' new position.
+---@return string? error
+function debrief.moveSeries(section, index, seriesIndex, delta)
+    local tile = section.tiles[index]
+    if not tile then
+        return false, "no tile " .. tostring(index)
     end
-    if duplicate and not debrief.canAdd(section) then
-        return false, "a debrief has at most " .. debrief.MAX_TILES .. " tiles"
-    end
-    if not duplicate and from == target then
-        return from
-    end
-    local tile = duplicate and copy(tiles[from]) or table.remove(tiles, from)
-    if not duplicate and from < target then
-        target = target - 1
-    end
-    local index = after and target + 1 or target
-    table.insert(tiles, index, tile)
-    return index
+    return swap(tile.series, seriesIndex, delta)
 end
 
 --- Set a tile's title.

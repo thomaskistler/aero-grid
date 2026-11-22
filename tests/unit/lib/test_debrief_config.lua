@@ -132,10 +132,8 @@ local function testTileLimit()
     assert(not debrief.canAdd(section))
     local added, addError = debrief.addTile(section)
     assert(added == false and string.find(addError, "at most 12", 1, true))
-    added, addError = debrief.pasteTile(section, 1, 2, true, true)
-    assert(added == false and string.find(addError, "at most 12", 1, true))
-    assert(debrief.pasteTile(section, 1, 12, true, false) == 12, "a move is allowed at the limit")
-    assert(section.tiles[12].title == "Tile 1")
+    assert(debrief.moveTile(section, 11, 1) == 12, "a move is allowed at the limit")
+    assert(section.tiles[12].title == "Tile 11")
 end
 
 local function testSharedSize()
@@ -205,25 +203,19 @@ local function testDraftOperations()
     debrief.addTile(section)
     debrief.setTileValue(section, 2, "title", "B")
     debrief.setTileValue(section, 3, "title", "C")
-    assert(debrief.pasteTile(section, 3, 1, false, false) == 1 and titles(section) == "C,A,B")
-    assert(debrief.pasteTile(section, 1, 3, true, false) == 3 and titles(section) == "A,B,C")
-    assert(debrief.pasteTile(section, 1, 2, true, false) == 2 and titles(section) == "B,A,C")
-    assert(debrief.pasteTile(section, 2, 2, false, false) == 2 and titles(section) == "B,A,C")
-    assert(debrief.pasteTile(section, 2, 2, true, false) == 2 and titles(section) == "B,A,C")
-    assert(
-        debrief.pasteTile(section, 3, 3, true, false) == 3 and titles(section) == "B,A,C",
-        "moving the last tile onto itself"
-    )
-    local single = { tiles = { { title = "S" } } }
-    assert(debrief.pasteTile(single, 1, 1, true, false) == 1 and #single.tiles == 1 and single.tiles[1].title == "S")
-    assert(debrief.pasteTile(section, 2, 3, true, true) == 4 and titles(section) == "B,A,C,A")
-    section.tiles[4].series[1].source = "RQly"
-    assert(section.tiles[2].series[1].source == "VCel", "a pasted copy is independent")
-    assert(not debrief.pasteTile(section, 9, 1, true, true))
+    assert(debrief.moveTile(section, 3, -1) == 2 and titles(section) == "A,C,B")
+    assert(debrief.moveTile(section, 1, 1) == 2 and titles(section) == "C,A,B")
+    assert(not debrief.moveTile(section, 1, -1) and not debrief.moveTile(section, 3, 1), "ends stay put")
+    assert(titles(section) == "C,A,B")
+
+    debrief.addSeries(section, 2)
+    section.tiles[2].series[2].statistic = "max"
+    assert(debrief.moveSeries(section, 2, 2, -1) == 1 and section.tiles[2].series[1].statistic == "max")
+    assert(not debrief.moveSeries(section, 2, 2, 1) and not debrief.moveSeries(section, 9, 1, 1))
 
     assert(debrief.removeTile(section, 1))
     assert(not debrief.removeTile(section, 5))
-    assert(titles(section) == "A,C,A")
+    assert(titles(section) == "A,B")
 end
 
 local function panel(kind, config)

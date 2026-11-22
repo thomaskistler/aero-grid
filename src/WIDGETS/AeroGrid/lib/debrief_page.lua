@@ -26,30 +26,25 @@ local function missing(tile)
 end
 
 --- Rows of the tile list.
----@param state table Editor state: `session`, `debriefMark`, `status`.
+---@param state table Editor state: `session` and `status`.
 ---@param config table `configured` (flight detection) and `canAdd`.
 function page.listFields(state, config)
-    local fields, mark =
+    local fields = {
         {
-            {
-                key = "size",
-                label = "Tile size",
-                type = "string",
-                choices = { "compact", "wide" },
-                choiceLabels = { "Compact 2 x 2", "Wide 4 x 2" },
-            },
-        }, state.debriefMark
+            key = "size",
+            label = "Tile size",
+            type = "string",
+            choices = { "compact", "wide" },
+            choiceLabels = { "Compact", "Wide" },
+        },
+    }
     for index, tile in ipairs(tiles(state)) do
-        local text = tile.title
-        if mark and mark.index == index then
-            text = text .. (mark.duplicate and " (copy)" or " (move)")
-        end
-        fields[#fields + 1] = { action = "item", index = index, label = tile.title, text = text, fullWidth = true }
+        fields[#fields + 1] = { action = "item", index = index, label = tile.title }
         if missing(tile) then
             fields[#fields + 1] = { type = "section", label = page.SENSOR_HINT }
         end
     end
-    fields[#fields + 1] = { action = "append", label = "Add tile", active = config.canAdd }
+    fields[#fields + 1] = { action = "append", label = "+", active = config.canAdd }
     fields[#fields + 1] = { action = "fill", label = "Fill from dashboard" }
     local notes = {}
     if state.status and state.status ~= "" then
@@ -68,17 +63,18 @@ end
 function page.tileFields(tile, maxSeries)
     local fields = {
         { key = "title", label = "Title", type = "string", required = true },
+        { type = "section", label = "Series" },
     }
     for index, series in ipairs(tile.series) do
+        local label = series.label or series.statistic or "?"
         fields[#fields + 1] = {
             action = "item",
             series = index,
-            label = series.label or series.statistic or "?",
-            text = series.source or "Choose source",
-            section = index == 1 and "Series" or nil,
+            label = label,
+            text = series.label or label .. ": " .. (series.source or "Choose source"),
         }
     end
-    fields[#fields + 1] = { action = "append", label = "Add series", active = #tile.series < maxSeries }
+    fields[#fields + 1] = { action = "append", label = "+", active = #tile.series < maxSeries }
     return fields
 end
 
@@ -87,9 +83,6 @@ function page.seriesFields(tile, seriesFields)
     local fields = {}
     for index, field in ipairs(seriesFields) do
         fields[index] = field
-    end
-    if #tile.series > 1 then
-        fields[#fields + 1] = { action = "remove-item", label = "Remove series" }
     end
     return fields
 end
@@ -177,7 +170,6 @@ local function fill(context, state, confirmed)
         })
         return true
     end
-    state.debriefMark = nil
     local panels = state.session.draft.panels
     local count, err = state.handlers.editor.editDebrief(state.session, "fill", panels, nil, thresholds(state))
     if not count then
@@ -190,65 +182,39 @@ local function fill(context, state, confirmed)
     return true
 end
 
---- Ask what to do with one tile, like EdgeTX's input and mix lists.
-local function itemMenu(context, state, index)
-    local choices = { "edit", "copy", "move", "delete" }
-    local mark = state.debriefMark
-    if mark then
-        local full = mark.duplicate and not state.session.layout.debrief().canAdd(state.session.draft.debrief)
-        if not full then
-            choices[#choices + 1] = "before"
-            choices[#choices + 1] = "after"
+--- Edit, move or delete one tile, or one series of the shown tile.
+local function itemCommand(context, state, command)
+    local editor, target, choice = state.handlers.editor, state.debriefTarget, command.choice
+    local delta = choice == "up" and -1 or 1
+    if command.series then
+        if choice == "edit" then
+            show(context, state, { kind = "series", tile = target.tile, series = command.series })
+            return true
         end
-    end
-    local labels = {
-        edit = "Edit",
-        copy = "Copy",
-        move = "Move",
-        delete = "Delete",
-        before = "Paste before",
-        after = "Paste after",
-    }
-    local values = {}
-    for position, choice in ipairs(choices) do
-        values[position] = labels[choice]
-    end
-    local generation = state.drawerGeneration
-    lvgl.menu({
-        title = tiles(state)[index].title,
-        values = values,
-        get = function()
-            return 1
-        end,
-        set = context.editorDrawerModule.deferredSetter(context, state, generation, function(position)
-            if context.editorUi == state and generation == state.drawerGeneration and not state.drawerPending then
-                state.drawerPending = { action = "tile", choice = choices[position], index = index }
-            end
-        end),
-    })
-end
-
-local function tileCommand(context, state, command)
-    local editor, index = state.handlers.editor, command.index
-    local mark = state.debriefMark
-    if command.choice == "edit" then
-        show(context, state, { kind = "tile", tile = index })
+        local ok, err
+        if choice == "delete" then
+            ok, err = editor.editDebrief(state.session, "removeSeries", target.tile, command.series)
+        else
+            ok, err = editor.editDebrief(state.session, "moveSeries", target.tile, command.series, delta)
+        end
+        if not ok then
+            return ok, err
+        end
+        show(context, state, { kind = "tile", tile = target.tile })
         return true
-    elseif command.choice == "copy" or command.choice == "move" then
-        state.debriefMark = { index = index, duplicate = command.choice == "copy" }
-    elseif command.choice == "delete" then
-        state.debriefMark = nil
-        local ok, err = editor.editDebrief(state.session, "removeTile", index)
-        if not ok then
-            return ok, err
-        end
-    elseif mark then
-        state.debriefMark = nil
-        local ok, err =
-            editor.editDebrief(state.session, "pasteTile", mark.index, index, command.choice == "after", mark.duplicate)
-        if not ok then
-            return ok, err
-        end
+    end
+    if choice == "edit" then
+        show(context, state, { kind = "tile", tile = command.index })
+        return true
+    end
+    local ok, err
+    if choice == "delete" then
+        ok, err = editor.editDebrief(state.session, "removeTile", command.index)
+    else
+        ok, err = editor.editDebrief(state.session, "moveTile", command.index, delta)
+    end
+    if not ok then
+        return ok, err
     end
     show(context, state, { kind = "list" })
     return true
@@ -278,19 +244,26 @@ function page.advance(context, state)
             show(context, state, { kind = "list" })
         else
             context.editorDrawerModule.closeDialog(state)
-            state.debriefMark = nil
             if state.session.dirty then
                 context.editorDrawerModule.openExit(context, state)
             else
                 state.handlers.close(false)
             end
         end
-    elseif command.action == "item" and target.kind == "list" then
-        itemMenu(context, state, command.index)
     elseif command.action == "item" then
-        show(context, state, { kind = "series", tile = target.tile, series = command.series })
-    elseif command.action == "tile" then
-        ok, err = tileCommand(context, state, command)
+        local list = target.kind == "list" and tiles(state) or tiles(state)[target.tile].series
+        local index = command.series or command.index
+        context.editorDrawerModule.itemMenu(
+            context,
+            state,
+            command.text or command.label,
+            index,
+            #list,
+            target.kind == "list" or #list > 1,
+            { action = "choice", index = command.index, series = command.series }
+        )
+    elseif command.action == "choice" then
+        ok, err = itemCommand(context, state, command)
     elseif command.action == "fill" then
         ok, err = fill(context, state, command.confirmed)
     elseif command.action == "append" and target.kind == "list" then
@@ -302,11 +275,6 @@ function page.advance(context, state)
         ok, err = editor.editDebrief(state.session, "addSeries", target.tile)
         if ok then
             show(context, state, { kind = "series", tile = target.tile, series = ok })
-        end
-    elseif command.action == "remove-item" then
-        ok, err = editor.editDebrief(state.session, "removeSeries", target.tile, target.series)
-        if ok then
-            show(context, state, { kind = "tile", tile = target.tile })
         end
     elseif command.action == "write" then
         ok, err = context.editorDrawerModule.applyWrite(state, command)

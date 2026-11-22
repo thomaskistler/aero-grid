@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import struct
@@ -25,7 +26,7 @@ PANEL_DRAWER_KINDS = ("chart", "flight-counter", "flight-mode", "flight-timer", 
                       "tx-battery")
 PANEL_SETTINGS_SCENES = tuple(f"{kind}-settings" for kind in PANEL_DRAWER_KINDS)
 SCENES = SCENES + PANEL_SETTINGS_SCENES
-STITCHED_SCENES = ("model-settings", "settings", "state-settings", "state-entry", "state-condition", "metric-entry", "chart-metric-entry") + PANEL_SETTINGS_SCENES
+STITCHED_SCENES = ("model-settings", "debrief-settings", "debrief-tile", "settings", "state-settings", "state-entry", "state-condition", "metric-entry", "chart-metric-entry") + PANEL_SETTINGS_SCENES
 THEME_SCENES = ("theme-modern-dark", "theme-modern-light", "theme-custom")
 DASHBOARD_SCENES = ("dashboard",)
 FLIGHT_SETTINGS_SCENES = ("aero-menu", "aero-menu-selected", "aero-ui-setup", "model-settings", "model-settings-motor", "model-settings-reset", "model-settings-bottom", "model-settings-switch", "model-settings-switch-select",
@@ -75,6 +76,100 @@ return {
     },
 }
 """
+# A real flight is armed and recorded through the production services.
+DEBRIEF_SCENES = ("debrief-settings", "debrief-tile", "debrief-ready", "debrief-view")
+DEBRIEF_FLIGHT = (800, 5300)
+DEBRIEF_SECTION = """debrief:
+  size: compact
+  tiles:
+    - title: RX battery
+      series:
+        - source: RxBt
+          statistic: min
+    - title: Link
+      series:
+        - source: RQly
+          statistic: min
+        - source: 1RSS
+          statistic: min
+    - title: Altitude
+      series:
+        - source: Alt
+          statistic: max
+        - source: VSpd
+          statistic: max
+    - title: Current
+      series:
+        - source: Curr
+          statistic: max
+"""
+DEBRIEF_INPUTS = """model.setGlobalVariable(0, 0, 30)
+local START, FINISH = ARM_START, ARM_FINISH
+local function progress()
+    local now = getTime()
+    if now <= START then return 0 end
+    return math.min(1, (now - START) / (FINISH - START))
+end
+local function bump(at, width)
+    local d = (progress() - at) / width
+    return math.exp(-d * d)
+end
+local sources = {
+    { name = "RxBt", id = 30000, unit = 1, prec = 2,
+      value = function() return 8.24 - 0.38 * progress() - 0.22 * bump(0.35, 0.05) end },
+    { name = "RQly", id = 30001, unit = 13, prec = 0,
+      value = function() return math.floor(99 - 31 * bump(0.62, 0.06) + 0.5) end },
+    { name = "1RSS", id = 30002, unit = 29, prec = 0,
+      value = function() return math.floor(-58 - 22 * progress() - 14 * bump(0.62, 0.06) + 0.5) end },
+    { name = "RFMD", id = 30003, unit = 0, prec = 0, value = function() return 6 end },
+    { name = "Alt", id = 30004, unit = 9, prec = 1,
+      value = function() return 2 + 176 * math.sin(math.pi * progress()) ^ 2 end },
+    { name = "Alt+", id = 30005, unit = 9, prec = 1, value = function() return 178.0 end },
+    { name = "VSpd", id = 30006, unit = 5, prec = 1,
+      value = function() return 6.2 * math.sin(2 * math.pi * progress()) end },
+    { name = "VSpd+", id = 30007, unit = 5, prec = 1, value = function() return 6.2 end },
+    { name = "Curr", id = 30008, unit = 2, prec = 1,
+      value = function() return progress() > 0 and progress() < 1 and 14 + 22 * bump(0.12, 0.08) or 0.4 end },
+}
+local function armed()
+    local now = getTime()
+    return now >= START and now < FINISH
+end
+local motor = getFieldInfo("ch3")
+motor = motor and motor.id
+local disarmedSwitch = assert(getSwitchIndex("SF" .. CHAR_UP))
+local armedSwitch = assert(getSwitchIndex("SF" .. CHAR_DOWN))
+return {
+    getFieldInfo = function(name)
+        for _, source in ipairs(sources) do
+            if source.name == name then return source end
+        end
+        return getFieldInfo(name)
+    end,
+    getValue = function(id)
+        if id == "tx-voltage" then return 8.1 end
+        if id == "ch3" or (motor and id == motor) then return armed() and 1024 or -1024 end
+        for _, source in ipairs(sources) do
+            if source.id == id or source.name == id then return source.value() end
+        end
+        return getValue(id)
+    end,
+    getSwitchValue = function(id)
+        if id == disarmedSwitch then return not armed() end
+        if id == armedSwitch then return armed() end
+        return getSwitchValue(id)
+    end,
+    getRSSI = function() return 85 end,
+    model = {
+        getInfo = model.getInfo,
+        getTimer = model.getTimer,
+        getGlobalVariable = model.getGlobalVariable,
+        setGlobalVariable = model.setGlobalVariable,
+        getGlobalVariableDetails = model.getGlobalVariableDetails,
+        getSensor = function(index) return sources[index + 1] end,
+    },
+}
+""".replace("ARM_START", str(DEBRIEF_FLIGHT[0])).replace("ARM_FINISH", str(DEBRIEF_FLIGHT[1]))
 SETUP_SCENES = {
     "screen-menu": [(500, 20, 20, 1), (520, 20, 20, 0)],
     "screens": [(500, 20, 20, 1), (520, 20, 20, 0),
@@ -156,6 +251,45 @@ panels:
 """
 
 
+def instrument_settings_rows(sd, shift):
+    """Hide shared settings rows above ``shift`` and lift the rest, for stitched pages."""
+    shared_ui = sd / "WIDGETS/AeroGrid/lib/settings_ui.lua"
+    shared_source = shared_ui.read_text()
+    shared_source = shared_source.replace(
+        "function ui.description(view, text)",
+        """local function captureNode(view, kind, properties)
+    local node = lvgl[kind](view.dialog, properties)
+    view.captureNodes[#view.captureNodes + 1] = { node = node, y = properties.y }
+    return node
+end
+
+function ui.description(view, text)""")
+    shared_source = shared_source.replace(
+        "lvgl.label(view.dialog, {", 'captureNode(view, "label", {')
+    shared_source = shared_source.replace(
+        "lvgl.setting(view.dialog, {", 'captureNode(view, "setting", {')
+    shared_source = shared_source.replace(
+        "function ui.row(view, field)",
+        "function ui.row(view, field)\n    view.captureNodes = {}")
+    row_needle = "    return entry\nend\n\nfunction ui.advance(view)"
+    if shared_source.count(row_needle) != 1:
+        raise RuntimeError("Shared settings row changed; update stitched capture instrumentation.")
+    shared_source = shared_source.replace(row_needle, """
+    if view.nextY <= CAPTURE_SHIFT then
+        view.captureShift = view.nextY - 4
+        for _, item in ipairs(view.captureNodes) do lvgl.hide(item.node) end
+    else
+        for _, item in ipairs(view.captureNodes) do
+            item.node:set({ y = item.y - (view.captureShift or 0) })
+        end
+    end
+    return entry
+end
+
+function ui.advance(view)""".replace("CAPTURE_SHIFT", str(shift)))
+    shared_ui.write_text(shared_source)
+
+
 def prepare(sd, scene, shift=0):
     shutil.copytree(ROOT / "tests/fixtures/sdcard", sd)
     shutil.copytree(ROOT / "src/WIDGETS/AeroGrid", sd / "WIDGETS/AeroGrid")
@@ -192,7 +326,7 @@ screenData:
                         value:
                            unsignedValue: THEME
 """.replace("THEME", {"theme-modern-light": "2", "theme-custom": "3"}.get(scene, "1")))
-    if scene in DASHBOARD_SCENES:
+    if scene in DASHBOARD_SCENES + DEBRIEF_SCENES:
         model = sd / "MODELS/model1.yml"
         model.write_text(model.read_text().replace('name: "AEROGRID SHOT"', 'name: "Crack Yak"')
                          .replace('bitmap: ""', 'bitmap: "crackyak.png"') + """timers:
@@ -205,7 +339,8 @@ screenData:
 """)
         shutil.copyfile(ROOT / "tools/capture-assets/crackyak.png", sd / "IMAGES/crackyak.png")
         widget = sd / "WIDGETS/AeroGrid"
-        (widget / "capture-inputs.lua").write_text(DASHBOARD_INPUTS)
+        (widget / "capture-inputs.lua").write_text(
+            DEBRIEF_INPUTS if scene in DEBRIEF_SCENES else DASHBOARD_INPUTS)
         loader = widget / "lib/dashboard_loader.lua"
         loader_source = loader.read_text()
         if loader_source.count("support.environment()") != 1:
@@ -244,6 +379,8 @@ screenData:
         layout = "version: 5\ngrid:\n  columns: 4\n  rows: 4\npanels: []\n"
     elif scene in DASHBOARD_SCENES:
         layout = (ROOT / "src/WIDGETS/AeroGrid/layouts/Default.yaml").read_text()
+    elif scene in DEBRIEF_SCENES:
+        layout = (ROOT / "src/WIDGETS/AeroGrid/layouts/Default.yaml").read_text() + DEBRIEF_SECTION
     elif scene in PANEL_SETTINGS_SCENES or scene == "chart-metric-entry":
         from capture_recipes import config_yaml, load_recipe
         kind = "chart" if scene == "chart-metric-entry" else scene.removesuffix("-settings")
@@ -305,6 +442,36 @@ panels:
         settings.mkdir(parents=True, exist_ok=True)
         (settings / "AGCAP1.yaml").write_text(
             'version: 1\nmodelFilename: "model1.yml"\nrevision: 0\nflightCount: 42\n')
+    if scene in DEBRIEF_SCENES:
+        # Discovered sensors, so the debrief page finds every series source.
+        model = sd / "MODELS/model1.yml"
+        sensors = "".join(f"""   {index}:
+      id1:
+         id: {20 + index}
+      id2:
+         instance: 0
+      label: "{label}"
+      subId: 0
+      type: TYPE_CUSTOM
+      unit: {unit}
+      prec: {prec}
+      autoOffset: 0
+      filter: 0
+      logs: 1
+      persistent: 0
+      onlyPositive: 0
+      cfg:
+         custom:
+            ratio: 0
+            offset: 0
+""" for index, (label, unit, prec) in enumerate(
+            (("RxBt", 1, 2), ("RQly", 13, 0), ("1RSS", 17, 0), ("Alt", 9, 1), ("VSpd", 5, 1), ("Curr", 2, 1))))
+        model.write_text(model.read_text() + "telemetrySensors:\n" + sensors)
+        settings = sd / "AEROGRID/models"
+        settings.mkdir(parents=True, exist_ok=True)
+        (settings / "AGCAP1.yaml").write_text(
+            'version: 1\nmodelFilename: "model1.yml"\nrevision: 1\nflightCount: 41\narmed: "SFv"\n'
+            'flight:\n  requireReceiver: false\n  minFlightDuration: 1\n  disarmDuration: 1\n')
     main = sd / "WIDGETS/AeroGrid/main.lua"
     source = main.read_text()
     needle = "    refresh = refresh,"
@@ -367,6 +534,65 @@ panels:
 """)
         main.write_text(source)
         return
+    if scene in DEBRIEF_SCENES:
+        if scene in ("debrief-settings", "debrief-tile"):
+            instrument_settings_rows(sd, shift)
+        source = source.replace(needle, """
+    refresh = function(context, widgetEvent, touchState)
+        refresh(context, widgetEvent, touchState)
+        if #context.errors > 0 then error(table.concat(context.errors, "\\n")) end
+        if not isFullScreen() or context.stage or context.reloadState or context.captureReady then return end
+        local scene = "SCENE"
+        local settle = function()
+            context.captureSettled = (context.captureSettled or 0) + 1
+            if context.captureSettled < 15 then return end
+            local file = assert(io.open("/capture-ready.txt", "w"))
+            io.write(file, "production Flight debrief scene ready")
+            local view = context.editorUi and context.editorUi.drawerView
+            if scene ~= "debrief-ready" and scene ~= "debrief-view" and view then
+                io.write(file, string.format("\\ndrawer shift %d total %d row 0\\n",
+                    view.captureShift or 0, view.nextY))
+            end
+            io.close(file)
+            context.captureReady = true
+        end
+        if scene == "debrief-settings" or scene == "debrief-tile" then
+            context.captureTicks = (context.captureTicks or 0) + 1
+            if not context.editorUi then
+                if context.captureTicks < 12 then return end
+                context.editorDebriefRequest = true
+                assert(context.editorController.openEditor(context), "capture could not open the Flight debrief page")
+                return
+            end
+            local state = context.editorUi
+            if state.buildStage or state.previewPending or state.previewRefresh
+                or state.drawerBuild or state.drawerPending or state.mode ~= "debrief" then return end
+            if scene == "debrief-tile" and not context.captureTileOpened then
+                state.drawerPending = { action = "choice", choice = "edit", index = 2 }
+                context.captureTileOpened = true
+                return
+            end
+            return settle()
+        end
+        local result = debriefResult(context)
+        if not result or not context.debrief or context.debrief.result ~= result then return end
+        if scene == "debrief-ready" then
+            if not context.debriefPill or debriefPillStale(context) then return end
+            return settle()
+        end
+        if not debriefShown(context) then
+            if not context.debriefRequest and not debriefPillStale(context) and context.debriefPill then
+                -- The same request a tap on the Debrief ready bar makes.
+                context.debriefRequest = { page = context.page, swipe = true, released = true }
+            end
+            return
+        end
+        if not debriefReady(context) then return end
+        return settle()
+    end,
+""".replace("SCENE", scene))
+        main.write_text(source)
+        return
     if scene in THEME_SCENES:
         source = source.replace(needle, """
     refresh = function(context, widgetEvent, touchState)
@@ -385,41 +611,7 @@ panels:
         return
     if scene in FLIGHT_SETTINGS_SCENES:
         if scene == "model-settings":
-            shared_ui = sd / "WIDGETS/AeroGrid/lib/settings_ui.lua"
-            shared_source = shared_ui.read_text()
-            shared_source = shared_source.replace(
-                "function ui.description(view, text)",
-                """local function captureNode(view, kind, properties)
-    local node = lvgl[kind](view.dialog, properties)
-    view.captureNodes[#view.captureNodes + 1] = { node = node, y = properties.y }
-    return node
-end
-
-function ui.description(view, text)""")
-            shared_source = shared_source.replace(
-                "lvgl.label(view.dialog, {", 'captureNode(view, "label", {')
-            shared_source = shared_source.replace(
-                "lvgl.setting(view.dialog, {", 'captureNode(view, "setting", {')
-            shared_source = shared_source.replace(
-                "function ui.row(view, field)",
-                "function ui.row(view, field)\n    view.captureNodes = {}")
-            row_needle = "    return entry\nend\n\nfunction ui.advance(view)"
-            if shared_source.count(row_needle) != 1:
-                raise RuntimeError("Shared settings row changed; update stitched capture instrumentation.")
-            shared_source = shared_source.replace(row_needle, """
-    if view.nextY <= CAPTURE_SHIFT then
-        view.captureShift = view.nextY - 4
-        for _, item in ipairs(view.captureNodes) do lvgl.hide(item.node) end
-    else
-        for _, item in ipairs(view.captureNodes) do
-            item.node:set({ y = item.y - (view.captureShift or 0) })
-        end
-    end
-    return entry
-end
-
-function ui.advance(view)""".replace("CAPTURE_SHIFT", str(shift)))
-            shared_ui.write_text(shared_source)
+            instrument_settings_rows(sd, shift)
             settings_ui = sd / "WIDGETS/AeroGrid/lib/model_settings_ui.lua"
             settings_source = settings_ui.read_text()
             settings_source = settings_source.replace(
@@ -735,13 +927,13 @@ def capture(executable, library, directory, scene, shift=0):
         elif scene == "aero-fullscreen-icon":
             script = "500 200 140 1\n600 200 140 0\n"
         if scene.startswith("model-settings"):
-            script += "1100 190 100 1\n1120 190 100 0\n"
+            script += "1100 140 100 1\n1120 140 100 0\n"
         elif scene == "aero-ui-setup":
-            script += "1100 290 100 1\n1120 290 100 0\n"
+            script += "1100 240 100 1\n1120 240 100 0\n"
         elif scene == "aero-menu-selected":
             # Move after pressing so the second tile is highlighted without
             # activating UI setup when the gesture ends.
-            script += "1100 288 120 1\n1110 300 122 1\n1120 300 122 0\n"
+            script += "1100 228 120 1\n1110 240 122 1\n1120 240 122 0\n"
         if scene in ("model-settings-reset", "model-settings-bottom", "model-settings-switch", "model-settings-switch-select"):
             ticks = (1350, 1550, 1750) if scene == "model-settings-reset" else (1350, 1550)
             for tick in ticks:
@@ -780,9 +972,11 @@ def capture(executable, library, directory, scene, shift=0):
         mode = "actions=" + str(actions)
     with (directory / "simulator.log").open("w") as log:
         try:
+            flight = scene in DEBRIEF_SCENES and scene not in ("debrief-settings", "debrief-tile")
+            environment = dict(os.environ, CAPTURE_TICKS="9000") if flight else None
             subprocess.run([str(executable), str(library), str(sd), str(frame),
-                            str(regions), mode], stdout=log,
-                           stderr=subprocess.STDOUT, check=True, timeout=45)
+                            str(regions), mode], stdout=log, env=environment,
+                           stderr=subprocess.STDOUT, check=True, timeout=120 if flight else 45)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
             raise RuntimeError(f"Capture failed; inspect {directory / 'simulator.log'}") from error
     pixels = frame.read_bytes()
@@ -811,7 +1005,8 @@ def capture(executable, library, directory, scene, shift=0):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--companion", type=Path, default=Path("/Applications/EdgeTX Companion 2.12.app"))
-    parser.add_argument("--scene", choices=SCENES + tuple(SETUP_SCENES) + THEME_SCENES + DASHBOARD_SCENES + FLIGHT_SETTINGS_SCENES)
+    parser.add_argument("--scene", choices=SCENES + tuple(SETUP_SCENES) + THEME_SCENES + DASHBOARD_SCENES + FLIGHT_SETTINGS_SCENES
+                        + DEBRIEF_SCENES)
     args = parser.parse_args()
     library = args.companion / "Contents/Resources/libedgetx-tx16s-simulator.dylib"
     if not library.is_file():
@@ -879,6 +1074,12 @@ def main():
         } if args.scene in DASHBOARD_SCENES else None),
         "method": ("Native TX16S framebuffer; fullscreen production Default dashboard with isolated sample inputs."
                    if args.scene in DASHBOARD_SCENES else
+                   "Native TX16S framebuffer; production Default dashboard with a sample debrief section. "
+                   "A scripted flight arms SF and drives the motor channel and synthetic telemetry "
+                   "through real services, which detect, record and show the flight."
+                   + (" Settings drawers are cropped to the dialog and stitched."
+                      if args.scene in ("debrief-settings", "debrief-tile") else "")
+                   if args.scene in DEBRIEF_SCENES else
                    "Native TX16S framebuffer; isolated sample layouts and editor command automation."
                    + (" Configuration drawers are cropped to the dialog and stitched from pages whose "
                       "leading rows are hidden in the isolated copy; the native scrollbar is painted over."

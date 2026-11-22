@@ -22,7 +22,7 @@ A new layout should use version 5 and exactly a 4 × 4 grid. `col` and `row` are
 | `version` | integer | yes | Layout schema version. Write `5`. |
 | `grid` | mapping | yes | Must contain `columns: 4` and `rows: 4`. Other grid dimensions are rejected. |
 | `panels` | sequence of mappings | yes | Ordered panel placements. Use `[]` for an empty layout. |
-| `debrief` | mapping | no | Post-flight tiles; see [Flight debrief](#flight-debrief). |
+| `debrief` | mapping | no | Post-flight tiles; see [Flight debrief](#flight-debrief) and [Customize flight debrief](../user-guide/customize-debrief.md). |
 | `session` | mapping | no | Legacy compatibility only; see [Session](#session). |
 | `theme` | mapping | no | **Not supported.** A layout that has this key is reported as invalid. Choose a theme in widget settings instead. |
 
