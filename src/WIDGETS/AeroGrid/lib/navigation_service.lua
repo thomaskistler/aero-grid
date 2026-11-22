@@ -29,7 +29,7 @@ local navigationService = {}
 navigationService.__index = navigationService
 
 --- Ticks of 10ms between updates. Telemetry GPS rarely exceeds a few hertz.
-local INTERVAL = 20
+local INTERVAL = 50
 
 --- Subscriptions refreshed per update. A dashboard has very few GPS panels,
 --- and each update costs trigonometry, so this cap stays small.

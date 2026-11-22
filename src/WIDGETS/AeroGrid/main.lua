@@ -1847,11 +1847,18 @@ local function pumpFlight(task, now, granted)
     return
 end
 
+--- Ticks between flight setups once settings are loaded; arming and
+--- disarming windows last seconds.
+local FLIGHT_INTERVAL = 20
+
 --- Flight may reset the model identity or request an arming reload or a
 --- session reset, which hold the dashboard for the rest of the callback.
 local function flightStep(task, now, granted, hidden)
     local used, again = pumpFlight(task, now, granted)
     updateHolds(task.host, hidden)
+    if not again and task.broker.setupAt == now then
+        task.due = now + FLIGHT_INTERVAL
+    end
     return used, again
 end
 

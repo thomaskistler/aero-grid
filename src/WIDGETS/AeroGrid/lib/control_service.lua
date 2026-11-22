@@ -43,9 +43,8 @@ local controlService = {}
 controlService.updateCost = 1
 controlService.__index = controlService
 
---- Ticks of 10ms between ordinary control subscription updates.
+--- Ticks of 10ms between updates, matching the output panel's repaint rate.
 local INTERVAL = 20
-local OUTPUT_INTERVAL = 10
 
 --- Subscriptions refreshed per update, served round robin.
 local POLL_CAP = 6
@@ -82,7 +81,6 @@ function controlService.new(env, support)
         revision = 0,
         count = 0,
         due = 0,
-        controlsDue = 0,
         env = env,
         support = support,
         entries = {},
@@ -288,7 +286,6 @@ function controlService:output(index)
         }, controlService.readOutput)
         self.outputs[index] = entry.view
         self.outputEntries[#self.outputEntries + 1] = entry
-        self.interval = OUTPUT_INTERVAL
     end
     return self.outputs[index]
 end
@@ -599,11 +596,7 @@ function controlService:update(now)
     if not self.outputIndex then
         self.outputIndex = 1
         self.outputLimit = #self.outputEntries
-        self.pollRemaining = 0
-        if self.outputLimit == 0 or now >= self.controlsDue then
-            self.controlsDue = now + INTERVAL
-            self.pollRemaining = math.min(POLL_CAP, #self.entries)
-        end
+        self.pollRemaining = math.min(POLL_CAP, #self.entries)
     end
     local last = math.min(self.outputIndex + OUTPUT_BATCH - 1, self.outputLimit)
     local used = self.outputIndex <= last

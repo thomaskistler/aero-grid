@@ -320,6 +320,7 @@ local function testModelService()
     assertEqual(services.clockText(3725), "1:02:05")
     assertEqual(services.clockText(nil), "--:--")
 
+    local txVolts = 7.8
     local timers = {
         [0] = { value = 125, start = 300, name = "Flight", persistent = 1 },
         [1] = { value = 64, start = 0, name = "Up" },
@@ -328,7 +329,7 @@ local function testModelService()
     local env = services.environment({
         getValue = function(source)
             if source == "tx-voltage" then
-                return 7.8
+                return txVolts
             end
             return nil
         end,
@@ -388,6 +389,17 @@ local function testModelService()
     end
     assertEqual(countdown.expired, true)
     assertEqual(countdown.text, "-0:08")
+
+    -- The TX battery is read once a second rather than on every update.
+    txVolts = 7.6
+    for step = 10, 99 do
+        service:update(step)
+    end
+    assertEqual(voltage.value, 7.8)
+    for step = 100, 102 do
+        service:update(step)
+    end
+    assertEqual(voltage.value, 7.6)
 
     -- An unnamed flight mode falls back to its number.
     local unnamed = modelService.new(

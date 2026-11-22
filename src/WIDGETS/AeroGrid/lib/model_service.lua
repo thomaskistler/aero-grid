@@ -50,6 +50,9 @@ local FACET_CAP = 4
 --- changes, which reloads the widget anyway, so it is polled rarely.
 local IDENTITY_INTERVAL = 500
 
+--- Ticks between reads of slow facets such as the TX battery.
+local SLOW_INTERVAL = 100
+
 --- EdgeTX stores model bitmaps in this directory.
 local IMAGE_PATH = "/IMAGES/"
 
@@ -78,9 +81,11 @@ end
 --- Register a facet and publish its immutable view.
 ---@param state table
 ---@param read fun(self: table, state: table, now: integer)
+---@param period? integer Ticks between reads; every update when omitted.
 ---@return table view
-function modelService:add(state, read)
-    local facet = self.support.addSubscription(self, self.facets, { state = state, read = read })
+function modelService:add(state, read, period)
+    local facet =
+        self.support.addSubscription(self, self.facets, { state = state, read = read, period = period, due = 0 })
     return facet.view
 end
 
@@ -392,7 +397,7 @@ function modelService:batteryRange()
         empty = nil,
         full = nil,
         warn = nil,
-    }, modelService.readBatteryRange)
+    }, modelService.readBatteryRange, SLOW_INTERVAL)
 
     return self.batteryRangeView
 end
@@ -422,7 +427,7 @@ function modelService:txVoltage()
         updatedAt = nil,
         age = nil,
         revision = 0,
-    }, modelService.readTxVoltage)
+    }, modelService.readTxVoltage, SLOW_INTERVAL)
 
     return self.txVoltageView
 end
@@ -430,6 +435,13 @@ end
 --- Refresh a bounded slice of the subscribed facets.
 ---@param now integer
 local function readFacet(service, facet, now)
+    local period = facet.period
+    if period then
+        if now < facet.due then
+            return
+        end
+        facet.due = now + period
+    end
     facet.read(service, facet.state, now)
 end
 

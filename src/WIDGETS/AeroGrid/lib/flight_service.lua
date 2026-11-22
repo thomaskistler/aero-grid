@@ -6,6 +6,10 @@ broker.__index = broker
 
 local ROUNDING = string.packsize("n") == 4 and 0.0000005 or 0.000000000000001
 
+--- Minimum ticks between detection decisions. The host sets up flight work
+--- every 20 ticks; a shorter limit keeps a late decision from skipping the next.
+local DECIDE_INTERVAL = 10
+
 local function above(value, threshold)
     -- Unit conversion must not turn equality into "above", including on the
     -- firmware's float32 Lua build and at nonzero altitude references.
@@ -784,7 +788,7 @@ function broker:decide(now)
     session.controlAvailable = not self.runtime.byId.control.failed
     session.smartAvailable = not (self.smartRuntime and self.smartRuntime.byId.smart.failed)
     session.detectionAvailable = session.controlAvailable and not self.runtime.byId.telemetry.failed
-    if self.lastTick and now >= self.lastTick and now - self.lastTick < 20 then
+    if self.lastTick and now >= self.lastTick and now - self.lastTick < DECIDE_INTERVAL then
         self:flushOutput(now)
         return
     end
@@ -951,7 +955,7 @@ local function decideReady(task, now)
     end
     -- Between decisions a turn only flushes queued output; without any it is free.
     local last = owner.lastTick
-    task.cost = (owner.output or not last or now < last or now - last >= 20) and 1 or 0
+    task.cost = (owner.output or not last or now < last or now - last >= DECIDE_INTERVAL) and 1 or 0
     return true
 end
 

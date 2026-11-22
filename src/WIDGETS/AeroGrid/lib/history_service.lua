@@ -93,7 +93,8 @@ function history.new(env, support, runtime)
     return setmetatable({
         id = "history",
         revision = 0,
-        interval = 5,
+        -- Samples arrive through telemetry; updates only advance sessions and expire.
+        interval = 20,
         count = 0,
         due = 0,
         env = env,
