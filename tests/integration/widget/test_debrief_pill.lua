@@ -272,6 +272,38 @@ current = nil
 settle()
 assert(not pill(), "a session reset removes the pill")
 
+-- A reset can retire the view while EdgeTX is not running its reference
+-- cleanup. A later debrief must wait, not build controls that cleanup deletes.
+current = makeResult("Before reset")
+build()
+local viewport = context.debriefViewport
+fixture.lvglMock.setDeferCleanup(true)
+current = nil
+settle()
+assert(not context.debrief and context.debriefCleared, "the reset waits for native cleanup")
+current = makeResult("After reset")
+settle(10)
+assert(not context.debrief, "a new view cannot reuse a viewport awaiting cleanup")
+fixture.lvglMock.setDeferCleanup(false)
+build()
+assert(context.debriefViewport == viewport, "resets reuse the viewport without accumulating page objects")
+assert(pill() == LONG and #context.errors == 0, "the next debrief is usable after delayed cleanup")
+fixture.lvglMock.setFullScreen(true)
+settle(20)
+assert(pill() == SHORT and not context.debriefPill.ui.label.invalid, "the rebuilt pill has live controls")
+input(EVT_TOUCH_FIRST, touch(H - 5, H - 5))
+input(EVT_TOUCH_BREAK, touch(H - 5, H - 5))
+assert(context.debrief.shown, "the next debrief still opens")
+input(EVT_VIRTUAL_EXIT)
+
+-- Exercise the host's real session-reset queue, not just result replacement.
+runtime.byId.debrief = realDebrief
+realDebrief.latest = current
+context.sessionResetPending = true
+settle(40)
+assert(not context.sessionResetPending and not realDebrief:result(), "the flight session was reset")
+assert(not context.debrief and not pill() and #context.errors == 0, "reset removes the debrief without errors")
+
 -- Includes a layout reflow, which may share its callback with a menu turn or
 -- with task enrollment.
 assert(worst < 18500, "pill callback exceeded budget: " .. worst)
