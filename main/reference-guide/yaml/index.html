@@ -208,10 +208,6 @@
 
     
   
-  <a class="ag-guide-link" href="../../panels/service-probe/">Service probe</a>
-
-    
-  
   <a class="ag-guide-link" href="../../panels/state/">State</a>
 
     
@@ -1569,73 +1565,6 @@ flight-active logical switch and EdgeTX Special Functions. See
     source: Cels
     cells: 2
 </code></pre>
-<h3 id="service-probe"><code>service-probe</code></h3>
-<p>Drawer title: <strong>Service probe</strong> · <a href="../../panels/service-probe/">drawer settings and behavior</a> · Supported spans: <code>2x2</code>, <code>3x2</code>, <code>4x2</code>, <code>2x3</code>, <code>3x3</code>, <code>4x3</code>, <code>2x4</code>, <code>3x4</code>, <code>4x4</code>.</p>
-<table>
-<thead>
-<tr>
-<th>Key</th>
-<th>Type</th>
-<th>Default</th>
-<th>Allowed values</th>
-<th>Drawer label</th>
-<th>Notes</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>service</code></td>
-<td>string</td>
-<td><code>telemetry</code></td>
-<td><code>telemetry</code>, <code>model</code>, <code>control</code>, <code>navigation</code></td>
-<td>Service</td>
-<td>Selects the host service under inspection.</td>
-</tr>
-<tr>
-<td><code>source</code></td>
-<td>string</td>
-<td><code>""</code></td>
-<td>Any service/source name or blank</td>
-<td>Source</td>
-<td></td>
-</tr>
-<tr>
-<td><code>index</code></td>
-<td>number</td>
-<td><code>0</code></td>
-<td>Any number</td>
-<td>Index</td>
-<td>Service-specific lookup/index.</td>
-</tr>
-<tr>
-<td><code>label</code></td>
-<td>string</td>
-<td><code>""</code></td>
-<td>Any string</td>
-<td>Label</td>
-<td>Blank derives the heading from the selected service.</td>
-</tr>
-<tr>
-<td><code>accent</code></td>
-<td>string</td>
-<td><code>cyan</code></td>
-<td><code>cyan</code>, <code>green</code>, <code>amber</code>, <code>orange</code></td>
-<td>Accent</td>
-<td></td>
-</tr>
-</tbody>
-</table>
-<p>No panel-specific cross-field validation is declared.</p>
-<pre><code class="language-yaml">- id: probe
-  type: service-probe
-  col: 0
-  row: 0
-  colSpan: 2
-  rowSpan: 2
-  config:
-    service: telemetry
-    source: RSSI
-</code></pre>
 <h3 id="state"><code>state</code></h3>
 <p>Drawer title: <strong>State</strong> · <a href="../../panels/state/">drawer settings and behavior</a> · Supported spans: <code>any</code>.</p>
 <table>
@@ -2107,8 +2036,8 @@ Copy a complete shipped theme from <code>/WIDGETS/AeroGrid/themes/</code> to
 contrast against the panel surface; the chart grid is unchanged. With correction
 disabled, explicit colors are preserved and you must check readability.
 Omitted alert backgrounds still use contrast-checked derived tints.
-Unknown fields and invalid values are rejected. Preview every state in
-<strong>Palette</strong> on the radio before using a custom theme.</p>
+Unknown fields and invalid values are rejected. Check its normal and alert
+states on the radio before using a custom theme.</p>
       </article>
     </div>
   </div>

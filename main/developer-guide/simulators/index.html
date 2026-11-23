@@ -370,8 +370,10 @@ radio's model-selection UI, just as on a radio.</p>
 </tbody>
 </table>
 <p>Review and simulator-only layouts live in
-<code>tests/fixtures/layouts/development/</code>; <code>make build</code> adds them to the disposable
-simulator image without including them in the widget source or release ZIP.
+<code>tests/fixtures/layouts/development/</code>, and development-only panels such as
+<code>service-probe</code> and <code>theme-showcase</code> live in <code>tests/fixtures/panels/</code>;
+<code>make build</code> adds them to the disposable simulator image without including them
+in the widget source or release ZIP.
 All screens use App mode and Modern Dark. Models share switches, mixes, trims,
 and timer setup, but EdgeTX keeps live timer/trim state per model.</p>
 <p>Useful scenarios:</p>

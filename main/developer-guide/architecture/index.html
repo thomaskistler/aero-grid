@@ -218,7 +218,7 @@ signatures; <code>plans/</code> contains design material, not the runtime contra
 </tr>
 <tr>
 <td><code>src/WIDGETS/AeroGrid/panels/</code></td>
-<td>Panel modules, including diagnostics and the fixed-data theme showcase.</td>
+<td>Panel modules, including host diagnostics.</td>
 </tr>
 <tr>
 <td><code>src/WIDGETS/AeroGrid/layouts/</code></td>
@@ -285,34 +285,31 @@ firmware budget or invalidate deferred native objects.</p>
 <p>Glass shares sampled background brightness through
 <code>/AEROGRID/cache/backgrounds.yml</code>. This generated cache survives widget updates
 and can be deleted to regenerate it.</p>
-<p><code>lib/package.lua</code> declares package, runtime API, panel API, and layout versions.
-Runtime modules expose <code>RUNTIME_API</code>; panels expose <code>apiVersion</code>. Deploy the
-complete widget directory: these checks do not detect every mixed package.</p>
+<p><code>lib/package.lua</code> declares the package and layout versions. Deploy the
+complete widget directory; modules carry no separate API versions.</p>
 <p>Layout conversion uses adjacent header and panel steps in <code>layout.lua</code>, at
 most one transition per respective loader/save turn. Unsupported versions or
 missing transitions are rejected. Loading converts only in memory and reports
 an upgrade notice; explicit editor <strong>Save</strong> persists the current schema.</p>
 <h2 id="scheduling-and-callback-budgets">Scheduling and callback budgets</h2>
 <p><code>scheduler.lua</code> is firmware-independent. Flight, host transitions, services,
-and panels share a fair round-robin ring. Host readiness gates enforce input
-and lifecycle ordering; transitions can hold service or panel work.</p>
-<p>The default callback segment has eight nominal 2,000-instruction slots
-(<code>CAPACITY</code> and <code>INSTRUCTIONS_PER_SLOT</code>). A task receives at most eight slots
+and panels share one persistent list ordered by due tick, which changes only
+when the dashboard changes. Each callback runs due tasks from the front and
+stops at the first task that is not due; ties go to the task that ran least
+recently. Tasks set their own next due tick; a source that makes a task due
+early moves it forward. Host readiness gates enforce input and lifecycle
+ordering; transitions can hold service or panel work.</p>
+<p>A callback has 32 nominal 500-instruction slots
+(<code>CAPACITY</code> and <code>INSTRUCTIONS_PER_SLOT</code>). A task receives at most 32 slots
 per turn (<code>SLOTS</code>). Fixed-cost tasks reserve their declared cost; variable-cost
 tasks declare a minimum and report consumption. Unused slots become available
 to later tasks. Unfinished work retains its place across callbacks.</p>
 <p>A continuation requests another turn after the other tasks have had theirs;
 it needs no separate opt-in. Pending work can run before its next due time.
 Return no continuation when work should wait for that time.</p>
-<p>The model's <strong>Pre-release features</strong> setting permits up to four additional
-segments for pending/deferred work in the same callback. It is disabled by
-default and also requires an explicitly enabled saved setting during startup.
-<code>native_budget.lua</code> owns the EdgeTX-specific mechanism for running those
-segments beyond the firmware instruction limit; the scheduler does not.</p>
 <p>Slots are estimates, not measured instruction limits, and exclude scheduler
 overhead. Keep normal callbacks within the
-<a href="../testing/#performance-and-resource-regressions">regression budgets</a>, rather
-than relying on the pre-release extension to hide excessive work.</p>
+<a href="../testing/#performance-and-resource-regressions">regression budgets</a>.</p>
 <h2 id="shared-services-own-firmware-reads">Shared services own firmware reads</h2>
 <p>Panels subscribe in <code>create</code>, retain read-only live views, and render them.
 Do not poll firmware independently or mutate service-owned data. Shared
@@ -407,8 +404,8 @@ Put a module at <code>panels/&lt;type&gt;.lua</code>, with an <code>id</code> ma
 </thead>
 <tbody>
 <tr>
-<td><code>id</code>, <code>apiVersion</code>, <code>supportedSpans</code></td>
-<td>Identity, compatibility, and supported grid spans.</td>
+<td><code>id</code>, <code>supportedSpans</code></td>
+<td>Identity and supported grid spans.</td>
 </tr>
 <tr>
 <td><code>settings</code></td>
@@ -429,14 +426,6 @@ Put a module at <code>panels/&lt;type&gt;.lua</code>, with an <code>id</code> ma
 <tr>
 <td><code>refresh(instance, creating, slots)</code></td>
 <td>Update objects; scheduled calls pass <code>false</code>. Returns next interval (1-6000 ticks, or nil to retain it), continuation, and consumed slots. Variable work must report consumption.</td>
-</tr>
-<tr>
-<td><code>finish(instance, creating, slots)</code></td>
-<td>Optional variable-cost finishing task with the same results as refresh. Requires <code>finishPending</code> and <code>finishMinCost</code>.</td>
-</tr>
-<tr>
-<td><code>finishPending(instance)</code></td>
-<td>Whether finishing work is ready; an optional second result sets its next minimum grant. Refresh waits while finishing is pending.</td>
 </tr>
 <tr>
 <td><code>update(instance, rect, settings, detailsOnly, placement)</code></td>
@@ -496,23 +485,15 @@ Add a <a href="../../reference-guide/">panel reference page</a> and, when needed
 <code>layout_registry.lua</code> maintains choice positions. <strong>Save</strong> writes under
 <code>/AEROGRID/layouts/</code>, never over bundled layouts. New <strong>Save as...</strong> names need a
 script restart to enter the native Layout picker. Failed saves preserve drafts.</p>
-<p><code>model_settings_store.lua</code> validates and serializes revisioned documents through
-a replaceable persistence backend. On EdgeTX 2.x, <code>model_settings_sidecar.lua</code>
-stores <code>/AEROGRID/models/&lt;ID&gt;.yaml</code>, linked by the CH32 name. Reads never write;
-after the broker accepts settings, filename changes fork the record while
-disarmed. Verified records are installed before claiming CH32, preserving all
+<p><code>model_settings_store.lua</code> validates and serializes revisioned documents;
+<code>model_settings_sidecar.lua</code> stores <code>/AEROGRID/models/&lt;ID&gt;.yaml</code>, linked by the CH32 name. Reads never write;
+after the broker accepts settings, filename changes fork the record.
+Verified records are installed before claiming CH32, preserving all
 channel fields. Saves guard model identity, CH32 name, and revision.
 Layout saves and previews do not write model settings.
 Changing the arm condition rebuilds registered dashboards and clears captured
 homes, while preserving layouts and active-flight completion/cleanup.</p>
-<p>An eventual EdgeTX 3.0 backend can store the same document in model userData
-without changing callers; it is not selected or implemented yet. Legacy
-filename-encoded development records are not imported.
-<code>env.backend</code> supplies <code>read(filename, backup)</code>, <code>check(info)</code>, and
-<code>write(filename, text, info, guard, armedCondition)</code>. Reads return text and
-metadata (<code>missing</code>, identity <code>token</code>, optional <code>recovered</code>/<code>blocked</code>);
-<code>forkOnRename</code> opts into sidecar-style adoption. The store guards the original
-bytes and filename; the backend guards its identity and installation boundary.</p>
+<p>Legacy filename-encoded development records are not imported.</p>
 <p>A model change or session reset advances the flight epoch. Session reset
 cancels detection, releases its owned output, and clears dashboard session
 data in bounded callbacks without replacing subscriptions, objects, or drafts.
