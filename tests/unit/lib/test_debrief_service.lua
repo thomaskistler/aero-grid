@@ -195,11 +195,13 @@ local result = assert(debrief:result() == nil and drain(debrief, 3000) > 0 and d
 equal(result.duration, finish - start)
 local first, second = result.tiles[1].series, result.tiles[2].series
 equal(first[1].value, 20, "max")
-near(first[2].value, (finish - start) / 200, "time-weighted average of a ramp")
+near(first[2].value, (finish - start - 10) / 200, "time-weighted average of a ramp, each reading held")
 equal(second[1].value, 10, "min")
 near(second[2].value, (finish - start) / 100, "delta is end minus start")
 equal(first[1].config.source, "V")
 equal(first[1].unit, "V", "capture the history source's unit alongside its statistic")
+equal(first[1].precision, 2, "min and max keep the sensor precision")
+equal(first[2].precision, nil, "an average falls between readings")
 equal(first[2].unit, "", "unknown units stay empty")
 history:sample(
     { name = "V", value = 30, kind = "number", fresh = true, updatedAt = 4000, precision = 2, unitText = "mV" },
@@ -210,10 +212,10 @@ equal(result.tiles[2].config, debrief.tiles[2])
 local columns = first[2].columns
 equal(columns.width, 40)
 for slot = 1, 40 do
-    equal(columns.kinds[slot], "data", "a straight segment fills every column")
-    -- Each column starts with the line's value at the column's first tick.
+    equal(columns.kinds[slot], "data", "readings in every column fill it")
+    -- Each reading holds until the next, 10 ticks later.
     local at = ((slot - 1) * (finish - start + 1) + 39) // 40
-    near(columns.low[slot], at / 100, "column " .. slot)
+    assert(math.abs(columns.low[slot] - at / 100) <= 0.1, "column " .. slot)
 end
 equal(first[1].level, "normal", "no thresholds means normal")
 equal(next(first[1].levels), nil)
@@ -290,7 +292,7 @@ assert(result ~= previous, "a new flight replaces the debrief")
 equal(result.duration, 810)
 first = result.tiles[1].series
 near(first[1].value, 20.2, "max ignores samples after the flight")
-near(first[2].value, 2, "min starts at the interpolated flight start")
+near(first[2].value, 2, "min starts at the value held at the flight start")
 near(first[2].columns.low[1], 2, "the first column starts at the flight start")
 equal(first[1].level, "critical", "the worst level is kept")
 equal(first[1].thresholds.warning, 15, "series carry their threshold spec")
@@ -318,7 +320,8 @@ assert(empty > 0, "nothing is drawn across the gap")
 -- Average over the recorded time only: the ramp from 2 to 10.1 with
 -- 3500..3600 missing (the line resumes at 3600, value 6).
 local area = (2 + 4.9) / 2 * 290 + (6 + 10.1) / 2 * 410
-near(gap.value, area / 700, "the average skips the gap")
+-- Each reading holds for 10 ticks, 5 behind the line on average.
+near(gap.value, area / 700 - 0.05, "the average skips the gap")
 
 -- Arming on the bench, with no flight in progress, clears the debrief.
 poll(4210, true, {})
@@ -511,10 +514,24 @@ do
     local series = fake({ { 0, 0 }, { 400000000, 100 } }, 0, 400000000, { { source = "X", statistic = "avg" } }, 400)[1]
     local store = series.columns
     assert(store.window * store.width < 0x7fffffff, "column times must fit int32")
-    for slot = 1, 400 do
-        equal(store.kinds[slot], "data", "column " .. slot)
+    equal(store.kinds[1], "data", "the first value is drawn")
+    equal(store.kinds[2], "hold", "the value holds across the rest")
+    near(series.value, 0, "the value holds until the next change")
+end
+
+-- Whole-number readings stay whole: the minimum is a value that was read and
+-- every column holds one, never a slope between two.
+do
+    local steps = fake({ { 0, 11 }, { 100, 10 }, { 300, 12 } }, 0, 400, all, 40)
+    equal(steps[1].value, 10, "min is a reading")
+    equal(steps[2].value, 12, "max is a reading")
+    near(steps[3].value, (11 * 100 + 10 * 200 + 12 * 100) / 400, "avg weights each value by how long it held")
+    local store = steps[1].columns
+    for slot = 1, 40 do
+        if store.kinds[slot] then
+            assert(store.low[slot] == math.floor(store.low[slot]), "column " .. slot .. " is whole")
+        end
     end
-    near(series.value, 50, "average of a long ramp")
 end
 
 -- A flight with a single sample.
@@ -526,14 +543,14 @@ near(single[4].value, 0, "delta of one sample")
 
 -- Integer readings at int32 scale: clipping and averaging must not overflow.
 local clipped = fake({ { 0, 0 }, { 60000, 100000 } }, 30000, 60000, all)
-near(clipped[1].value, 50000, "min at the interpolated flight start")
+near(clipped[1].value, 0, "min is the value held at the flight start")
 near(clipped[2].value, 100000, "max")
-near(clipped[3].value, 75000, "avg")
-near(clipped[4].value, 50000, "delta")
+near(clipped[3].value, 0, "avg")
+near(clipped[4].value, 100000, "delta")
 local wide = fake({ { 0, 2000000000 }, { 1000, 2000000000 }, { 2000, -2000000000 } }, 0, 2000, all)
 near(wide[1].value, -2e9, "min")
 near(wide[2].value, 2e9, "max")
-near(wide[3].value, 1e9, "avg")
+near(wide[3].value, 2e9, "avg")
 near(wide[4].value, -4e9, "delta")
 
 -- The start date counts back by the time since the flight started, not by

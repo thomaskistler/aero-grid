@@ -388,7 +388,7 @@ local function legendItems(host, series, font)
         then
             label = statistic .. " " .. label
         end
-        local value = view.valueText(host.themeBuilder, entry.value, config.precision)
+        local value = view.valueText(host.themeBuilder, entry.value, config.precision or entry.precision)
         local unit = config.unit or entry.unit or ""
         items[index] = {
             labelText = label,
