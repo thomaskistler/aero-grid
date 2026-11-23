@@ -522,7 +522,7 @@ end
 -- Whole-number readings stay whole: the minimum is a value that was read and
 -- every column holds one, never a slope between two.
 do
-    local steps = fake({ { 0, 11 }, { 100, 10 }, { 300, 12 } }, 0, 400, all, 40)
+    local steps = fake({ { 0, 11 }, { 100, 10 }, { 300, 12 }, { 400, 12 } }, 0, 400, all, 40)
     equal(steps[1].value, 10, "min is a reading")
     equal(steps[2].value, 12, "max is a reading")
     near(steps[3].value, (11 * 100 + 10 * 200 + 12 * 100) / 400, "avg weights each value by how long it held")
@@ -532,6 +532,27 @@ do
             assert(store.low[slot] == math.floor(store.low[slot]), "column " .. slot .. " is whole")
         end
     end
+end
+
+-- A critical value holds, so it shades every column until the next entry.
+do
+    thresholds.X = { sensor = "X", warning = 15, critical = 18, falling = false }
+    local held = fake({ { 0, 20 }, { 1000, 20 } }, 0, 1000, { { source = "X", statistic = "max" } }, 20)[1]
+    for slot = 1, 20 do
+        equal(held.levels[slot], 2, "critical shading at column " .. slot)
+    end
+    thresholds.X = nil
+end
+
+-- Readings that stop before the flight ends are not extended to its end.
+do
+    local dropped = fake({ { 0, 10 }, { 400, 10 } }, 0, 1000, { { source = "X", statistic = "avg" } }, 20)[1]
+    near(dropped.value, 10, "avg of a held value")
+    local drawn = 0
+    for slot = 1, 20 do
+        drawn = drawn + (dropped.columns.kinds[slot] and 1 or 0)
+    end
+    assert(drawn < 20, "nothing is drawn after the signal was last seen")
 end
 
 -- A flight with a single sample.

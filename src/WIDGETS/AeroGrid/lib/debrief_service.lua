@@ -256,18 +256,31 @@ local function accumulate(series, at, value, connected)
     series.knotTime = at
 end
 
+local function levelOf(job, spec, value)
+    return spec and job.level and LEVELS[job.level(spec, value)] or 0
+end
+
 --- Add one sample at flight time `at` (scaled ticks) to the pixel columns.
 local function sample(job, series, at, value, connected)
     local store = series.result.columns
+    local spec, levels = series.spec, series.result.levels
+    local last = series.lastAt
     store:sample(at, value, not connected, false, 0)
-    if not connected and series.lastAt then
+    if not connected and last then
         store:breakAt(at)
     end
+    -- A level holds with its value, so a held value shades every column up to
+    -- the next entry, not only the column where it began.
+    local from = connected and last and levelOf(job, spec, series.lastValue) or 0
+    if from > 0 then
+        for slot = store:bucketOf(last, 0) + 2, store:bucketOf(at, 0) do
+            levels[slot] = math.max(levels[slot] or 0, from)
+        end
+    end
     series.lastAt, series.lastValue = at, value
-    local level = series.spec and job.level and LEVELS[job.level(series.spec, value)] or 0
+    local level = levelOf(job, spec, value)
     if level > 0 then
         local slot = store:bucketOf(at, 0) + 1
-        local levels = series.result.levels
         levels[slot] = math.max(levels[slot] or 0, level)
         series.worst = math.max(series.worst, level)
     end
@@ -330,11 +343,6 @@ local function work(self, job, series)
         at, value, broken = self.history:point(series.feed, index)
     end
     if at == nil then
-        -- The last value holds to the end of the flight.
-        if series.samples > 0 and series.knotTime < job.finish then
-            accumulate(series, job.finish, series.lastValue, true)
-            sample(job, series, (job.finish - job.start) // job.scale, series.lastValue, true)
-        end
         return true
     end
     series.index = index + 1
