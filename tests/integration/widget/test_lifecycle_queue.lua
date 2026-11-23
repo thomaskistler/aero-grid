@@ -10,8 +10,8 @@ fixture.pump(context, 10)
 fixture.isolateWork(context)
 local calls, loadSteps, reflowSteps = {}, 0, 0
 local function record(kind)
-    local task = assert(context.lifecycleTasks[kind])
-    assert(task.cost == (kind == "rebuild" and 4 or context.scheduler.budget.capacity))
+    local task = context.hostTask
+    assert(task.kind == kind and task.cost == (kind == "rebuild" and 4 or context.scheduler.budget.capacity))
     calls[#calls + 1] = { kind = kind, callback = context.scheduler.callbacks }
 end
 context.dashboardLifecycle.retirePage = function()
@@ -37,38 +37,33 @@ fixture.requeue(context)
 noGrant(context, fixture.lvglMock.objects, function()
     definition.refresh(context)
     definition.background(context)
-    assert(#calls == 0 and context.reloadState == "clear" and context.lifecycleRequest == "retire")
+    assert(#calls == 0 and context.reloadState == "clear" and context.hostKind == "retire")
 end)
 definition.refresh(context)
-assert(#calls == 1 and calls[1].kind == "retire" and context.lifecycleRequest == "rebuild")
-assert(
-    not context.scheduler.state(context.lifecycleTasks.retire).pending,
-    "retirement must not ask for a same-callback rebuild"
-)
+assert(#calls == 1 and calls[1].kind == "retire" and context.hostKind == "rebuild")
+assert(not context.scheduler.state(context.hostTask).pending, "retirement must not ask for a same-callback rebuild")
 noGrant(context, fixture.lvglMock.objects, function()
     definition.background(context)
     assert(#calls == 1 and context.reloadState == "rebuild")
 end)
 definition.background(context)
 assert(#calls == 2 and calls[2].kind == "rebuild" and calls[2].callback > calls[1].callback)
-assert(context.stage == "probe" and context.lifecycleRequest == "load")
+assert(context.stage == "probe" and context.hostKind == "load")
 noGrant(context, fixture.lvglMock.objects, function()
     definition.background(context)
     assert(loadSteps == 0 and context.stage == "probe")
 end)
-local spentBefore = context.lifecycleTasks.load and context.scheduler.state(context.lifecycleTasks.load).spent or 0
+local spentBefore = context.scheduler.state(context.hostTask).spent
 for index = 1, 3 do
     definition.background(context)
     assert(loadSteps == index, "one full-capacity stage runs per callback")
     assert(context.remainingSlots == 0)
-    assert(context.scheduler.state(context.lifecycleTasks.load).pending == (index < 3))
+    assert(context.scheduler.state(context.hostTask).pending == (index < 3))
 end
-assert(not context.stage and not context.lifecycleRequest)
-assert(
-    context.scheduler.state(context.lifecycleTasks.load).spent - spentBefore == 3 * context.scheduler.budget.capacity
-)
-context.stage = "probe"
-local loadTask = context.lifecycleTasks.load
+assert(not context.stage and not context.hostKind)
+assert(context.scheduler.state(context.hostTask).spent - spentBefore == 3 * context.scheduler.budget.capacity)
+context.stage, context.hostKind = "probe", "load"
+local loadTask = context.hostTask
 context.inputPending = true
 assert(loadTask.open(loadTask, getTime(), false), "loading must finish before retained dashboard input can run")
 assert(loadTask.open(loadTask, getTime(), true), "hidden loading does not consume foreground input")
@@ -80,14 +75,13 @@ assert(loadTask.open(loadTask, getTime(), false), "a due hold cannot block the l
 context.editorPress = nil
 local previousMenu = context.aerogridMenu
 context.aerogridMenu = { action = "probe" }
-context.lifecycleRequest = "load"
 local stepsBefore = loadSteps
 definition.refresh(context)
 assert(loadSteps == stepsBefore, "native menu intents must preempt continued loading")
 context.aerogridMenu = previousMenu
 definition.refresh(context)
 assert(loadSteps == stepsBefore + 1, "loading continues once the menu intent is gone")
-context.stage, context.lifecycleRequest = nil, nil
+context.stage = nil
 
 context.dashboardLifecycle.beginReflow = function()
     record("reflow")
@@ -100,13 +94,12 @@ context.dashboardLifecycle.advanceReflow = function()
     context.reflowIndex = reflowSteps < 2 and 2 or nil
 end
 context.zone.w = 320
-context.lifecycleRequest = "reflow"
 definition.background(context)
 assert(reflowSteps == 0, "hidden callbacks must not advance reflow")
 definition.refresh(context)
-assert(reflowSteps == 1 and context.scheduler.state(context.lifecycleTasks.reflow).pending)
+assert(reflowSteps == 1 and context.scheduler.state(context.hostTask).pending)
 definition.refresh(context)
-assert(reflowSteps == 2 and not context.scheduler.state(context.lifecycleTasks.reflow).pending)
+assert(reflowSteps == 2 and not context.scheduler.state(context.hostTask).pending)
 
 local retiredAt
 context.appRebuild = { retired = false }
@@ -120,11 +113,10 @@ context.dashboardLifecycle.advanceAppRebuild = function()
         context.appRebuild = nil
     end
 end
-context.lifecycleRequest = "app rebuild"
 definition.refresh(context)
-assert(context.appRebuild.retired and not context.scheduler.state(context.lifecycleTasks["app rebuild"]).pending)
+assert(context.appRebuild.retired and not context.scheduler.state(context.hostTask).pending)
 definition.background(context)
 assert(context.appRebuild, "hidden callbacks must not advance App-mode reconstruction")
 definition.refresh(context)
 definition.refresh(context)
-assert(not context.appRebuild and not context.lifecycleRequest)
+assert(not context.appRebuild and not context.hostKind)

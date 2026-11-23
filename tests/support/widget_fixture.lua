@@ -179,15 +179,14 @@ function WidgetFixture.new()
         local definition = definitions[context] or self.module("main.lua")
         for _ = 1, 20 do
             definition.refresh(context)
-            if context.hostTask and context.scheduler.state(context.hostTask).ran == context.scheduler.callbacks then
-                if not context.lifecycleRequest then
-                    return
-                end
-            end
-            for _, task in pairs(context.lifecycleTasks or {}) do
-                if context.scheduler.state(task).ran == context.scheduler.callbacks then
-                    return
-                end
+            local ran = context.scheduler.callbacks
+            if
+                context.hostTask and context.scheduler.state(context.hostTask).ran == ran
+                or not context.hostKind
+                    and context.hintTask
+                    and context.scheduler.state(context.hintTask).ran == ran
+            then
+                return
             end
         end
         error("host work never received a grant")

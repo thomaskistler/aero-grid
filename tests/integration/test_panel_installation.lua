@@ -94,7 +94,7 @@ local function frame(event, touch, draining)
         for _ = 1, 100 do
             if
                 not context.inputQueue
-                and not context.editorTransitionRequest
+                and not context.openRequest
                 and not (
                     context.hostTask
                     and context.scheduler.state(context.hostTask).refused == context.scheduler.callbacks
@@ -215,7 +215,7 @@ for catalogIndex, item in ipairs(editor.CATALOG) do
             wrapped[task] = true
             local step = task.step
             task.step = function(work, now, slots, hidden)
-                local state = work.ui
+                local state = work.kind == "editor" and context.editorUi or {}
                 local building = state.drawerBuild
                     and not state.nativeInput
                     and not state.drawerPending

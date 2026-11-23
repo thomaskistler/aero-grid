@@ -130,7 +130,6 @@ function viewer.open(host)
         press = function()
             if host.logViewer == state then
                 state.closing = true
-                host.uiRequest = "log viewer"
             end
         end,
     })

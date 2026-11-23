@@ -18,7 +18,7 @@ EVT_VIRTUAL_EXIT, EVT_ROT_LEFT, EVT_ROT_RIGHT = 9106, 9107, 9108
 
 local worst = 0
 local function busy()
-    return context.inputQueue or context.debriefRequest or context.uiRequest
+    return context.inputQueue or context.openRequest or context.hostKind
 end
 local function callback(event, touch)
     local instructions = 0
@@ -436,14 +436,14 @@ input(EVT_TOUCH_FIRST, touch(5, 5, { x = 300 }))
 input(EVT_TOUCH_SLIDE, touch(H - 5, 5, { x = 300, slideY = H - 10 }))
 assert(not state.shown, "the held downward drag completely closes the sheet")
 fixture.pump(context, 10)
-assert(not context.editorUi and not context.editorTransitionRequest, "closing must not resume a stale dashboard hold")
+assert(not context.editorUi and not context.openRequest, "closing must not resume a stale dashboard hold")
 local closedTouch = touch(H - 5, 5, { x = 300 })
 assert(
     context.editorController.editorEntryHit(context, EVT_TOUCH_LONG, closedTouch),
     "the closing gesture ends over an editable dashboard panel"
 )
 input(EVT_TOUCH_LONG, closedTouch)
-assert(not context.editorUi and not context.editorTransitionRequest, "closing a debrief must not enter editing")
+assert(not context.editorUi and not context.openRequest, "closing a debrief must not enter editing")
 input(EVT_TOUCH_BREAK, touch(0, 5, { x = 0 }))
 input(EVT_TOUCH_TAP, touch(10, 5, { x = 10 }))
 fixture.pump(context, 10)

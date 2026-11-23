@@ -68,7 +68,7 @@ assert(input.touch.swipeLeft, "firmware swipe flags must survive deferral")
 fixture.tick(100)
 assert(definition.event(context, EVT_TOUCH_BREAK))
 drain()
-assert(not context.editorPress and not context.editorTransitionRequest, "queued release prevents late hold activation")
+assert(not context.editorPress and not context.openRequest, "queued release prevents late hold activation")
 
 EVT_TOUCH_SLIDE = 9304
 assert(definition.event(context, EVT_TOUCH_FIRST, touch))

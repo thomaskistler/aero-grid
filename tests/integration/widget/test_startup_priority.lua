@@ -105,7 +105,7 @@ untilDone(function()
 end, function()
     return not visible.stage
 end)
-local task = hidden.lifecycleTasks.load
+local task = hidden.hostTask
 local gate = task.gate
 -- Leave construction queued to check that the broker no longer waits for it.
 task.gate = function()

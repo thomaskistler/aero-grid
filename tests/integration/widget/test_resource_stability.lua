@@ -25,7 +25,7 @@ local function finish()
     until not context.optionsRequest
         and not context.stage
         and not context.reloadState
-        and not context.lifecycleRequest
+        and not context.hostKind
         and not context.reflowIndex
         and context.width == zone.w
         and context.height == zone.h

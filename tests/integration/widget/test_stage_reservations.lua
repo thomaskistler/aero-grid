@@ -22,17 +22,17 @@ local stages = { "header-migrate", "services", "panel-migrate", "panel-validate"
 context.dashboardLoader.advanceLoad = function()
     local stage = context.stage
     steps[#steps + 1] = stage
-    grants[#grants + 1] = context.lifecycleTasks.load.cost
+    grants[#grants + 1] = context.hostTask.cost
     context.stage = stages[#steps + 1]
 end
-context.stage, context.lifecycleRequest = stages[1], "load"
-context.lifecycleTasks.load = nil
+context.stage = stages[1]
+context.hostTask = nil
 fixture.requeue(context)
 definition.refresh(context)
 assert(flights == 1 and #steps == 4, "small loading stages can share flight's callback")
 assert(grants[1] == 4 and grants[2] == 8 and grants[3] == 4 and grants[4] == 4)
 assert(context.remainingSlots == 11 and context.stage == "panel-build")
-local task = context.lifecycleTasks.load
+local task = context.hostTask
 assert(
     context.scheduler.state(task).spent == 20
         and task.cost == context.scheduler.budget.capacity
@@ -48,7 +48,7 @@ assert(
     context.scheduler.state(task).spent == 20 + context.scheduler.budget.capacity
         and not context.scheduler.state(task).pending
 )
-context.stage = "services"
+context.stage, context.hostKind = "services", "load"
 broker.documentLoaded = false
 assert(not task.open(task, getTime(), false), "service construction must wait for the model document")
 assert(not task.open(task, getTime(), true), "hidden construction has the same model dependency")
@@ -56,12 +56,11 @@ broker.documentLoaded = true
 assert(task.open(task, getTime(), true))
 context.stage = nil
 
-context.lifecycleRequest = nil
 context.aeroMenuModal = true
 local editor = { buildStage = 1 }
 context.editorUi = editor
 context.editorController.advanceEditor = function()
-    local cost = context.uiTasks.editor.cost
+    local cost = context.hostTask.cost
     if editor.buildStage then
         assert(cost == 12)
         editor.buildStage = nil
@@ -70,17 +69,15 @@ context.editorController.advanceEditor = function()
         editor.previewPending = nil
     end
 end
-context.uiRequest = "editor"
 local before = flights
 fixture.requeue(context)
 definition.refresh(context)
 assert(flights == before + 1 and not editor.buildStage)
 assert(context.remainingSlots == context.scheduler.budget.capacity - 13)
 editor.previewPending = true
-context.uiRequest = "editor"
 fixture.requeue(context)
 definition.refresh(context)
-assert(editor.previewPending and context.uiTasks.editor.cost == context.scheduler.budget.capacity)
+assert(editor.previewPending and context.hostTask.cost == context.scheduler.budget.capacity)
 definition.refresh(context)
 assert(not editor.previewPending)
 assert(#context.errors == 0, table.concat(context.errors, "\n"))
@@ -101,15 +98,17 @@ for _, layout in ipairs({ "Default", "review-navigation", "review-chart", "Diagn
             wrapped[work] = true
             local step = work.step
             work.step = function(task, now, slots, hidden)
-                local row = task.kind == "model settings" and task.ui.build
+                local ui = task.kind == "model settings" and host.modelSettingsUi
+                    or task.kind == "editor" and host.editorUi
+                local row = task.kind == "model settings" and ui.build
                 if row then
                     assert(row == modelRows + 1, "contention must neither skip nor repeat drawer rows")
                     assert(slots == host.modelSettingsUiModule.cost(host), "each row needs its own reservation")
                     modelRows, modelSlots = row, modelSlots + slots
                 end
-                local name = task.name .. "/" .. tostring(host.stage or host.uiRequest or "")
-                if task.ui then
-                    name = name .. "/" .. tostring(task.ui.build or task.ui.buildStage)
+                local name = task.name .. "/" .. tostring(host.stage or "")
+                if ui then
+                    name = name .. "/" .. tostring(ui.build or ui.buildStage)
                 end
                 local count = 0
                 if
@@ -127,7 +126,7 @@ for _, layout in ipairs({ "Default", "review-navigation", "review-chart", "Diagn
                 assert(ok, used)
                 if row then
                     assert(
-                        task.ui.build == row + 1 or row == 12 and not task.ui.build,
+                        ui.build == row + 1 or row == 12 and not ui.build,
                         "one advancement must build only one row, even with slots left"
                     )
                 end

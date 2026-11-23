@@ -12,7 +12,7 @@ local factory, broker = context.flightFactory, context.flightFactory.broker
 local member, revision = factory.members[context], factory.revision
 local closed, restored, flightSteps = 0, 0, 0
 context.editorSession, context.editorStash, context.editorUi = {}, {}, { saving = {} }
-context.editorTransitionRequest, context.modelSettingsRequest = "open", true
+context.openRequest = { kind = "model settings", page = context.page, modelFilename = model.getInfo().filename }
 context.editorUiModule = {
     close = function(_, discard)
         assert(context.optionsTask.cost == context.scheduler.budget.capacity)
@@ -56,8 +56,8 @@ definition.background(context)
 assert(flightSteps == 1 and closed == 1 and restored == 1)
 assert(context.layoutName == "Default" and context.themeMode == "modern-light")
 assert(member.pending and factory.revision == revision + 1)
-assert(not context.editorSession and not context.editorStash and not context.editorTransitionRequest)
-assert(not context.modelSettingsRequest and not context.optionsRequest)
+assert(not context.editorSession and not context.editorStash)
+assert(not context.openRequest and not context.optionsRequest)
 assert(context.reloadState == "clear" and context.page and not context.page.cleared)
 assert(
     not context.scheduler.state(context.optionsTask).pending,

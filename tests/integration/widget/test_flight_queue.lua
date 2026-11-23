@@ -35,9 +35,8 @@ if context.aerogridMenu then
 end
 context.flightReportedRevision, context.flightReportedEpoch = 0, 1
 context.stage = "probe"
-context.lifecycleRequest = "load"
 context.dashboardLoader.advanceLoad = function()
-    assert(context.lifecycleTasks.load.cost == context.scheduler.budget.capacity)
+    assert(context.hostTask.kind == "load" and context.hostTask.cost == context.scheduler.budget.capacity)
     calls[#calls + 1] = "load"
     context.stage = nil
 end

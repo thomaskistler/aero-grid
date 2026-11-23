@@ -69,6 +69,8 @@
 ---@field editorSession? table Uncommitted editor working copy.
 ---@field editorUi? table Active editor screen state.
 ---@field editorDebriefRequest? boolean Open the Flight debrief page (true) or the grid (false).
+---@field openRequest? table Pending overlay or editor entry: `kind`, the page and model it was made on.
+---@field hostKind? string The host's exclusive work this callback, chosen by `route`.
 ---@field debriefPageModule? table Flight debrief setup page, loaded only on demand.
 ---@field debriefGenerated? boolean The document's debrief was derived from its panels, not loaded.
 ---@field derivedDebrief? table The derived debrief section, while it is the document's.
@@ -1109,13 +1111,7 @@ local function optionsStep(task)
     local member = context.flightFactory.members[context]
     member.pending = true
     context.flightFactory.revision = (context.flightFactory.revision or 0) + 1
-    context.editorStash, context.editorTransitionRequest, context.modelSettingsRequest = nil, nil, nil
-    context.editorDebriefRequest = nil
-    context.logOpenRequest = nil
-    context.debrief, context.debriefRequest = nil, nil
-    if context.locationRequest and context.locationRequest.kind == "open" then
-        context.locationRequest = nil
-    end
+    context.editorStash, context.openRequest, context.debrief = nil, nil, nil
     if context.editorUi then
         context.editorUiModule.close(context, true)
         context.editorController.restorePreview(context)
@@ -1197,6 +1193,33 @@ local function debriefFailed(context, message)
     showErrors(context)
 end
 
+local function modelFilename()
+    local info = model and model.getInfo and model.getInfo()
+    return info and info.filename
+end
+
+--- Record a request to open an overlay or the editor. It waits for its own
+--- grant, tied to the page and model it was made on.
+local function requestOpen(context, kind, request)
+    request = request or {}
+    request.kind, request.page, request.modelFilename = kind, context.page, modelFilename()
+    context.openRequest = request
+end
+
+--- Whether an open request has lost its page, model or fullscreen, or another
+--- overlay now covers the dashboard. Model settings open over the editor and
+--- wait for loading.
+local function openStale(context, request, hidden, fullscreen)
+    return request.page ~= context.page
+        or request.modelFilename ~= modelFilename()
+        or not hidden and not fullscreen
+        or context.modelSettingsUi ~= nil
+        or request.kind ~= "model settings"
+            and (context.stage or context.reloadState or context.editorUi or context.logViewer or context.locationDetails or debriefShown(
+                context
+            ) or request.kind == "debrief" and not debriefResult(context))
+end
+
 --- Whether a fullscreen touch is an upward drag that should reveal the debrief.
 local function debriefPull(context, widgetEvent, touchState)
     if
@@ -1240,7 +1263,7 @@ local function handleEvent(context, widgetEvent, touchState)
         return context.debriefModule.handle(context, widgetEvent, touchState)
     end
     if context.editorController.editorEntryHit(context, widgetEvent, touchState) then
-        context.editorTransitionRequest = "open"
+        requestOpen(context, "editor")
         return true
     end
     if debriefPull(context, widgetEvent, touchState) then
@@ -1258,15 +1281,20 @@ local function handleEvent(context, widgetEvent, touchState)
         context.panelPress = context.gesture.cancel(context.panelPress)
         return true
     end
-    if context.debriefRequest and (widgetEvent == _G.EVT_TOUCH_BREAK or widgetEvent == _G.EVT_TOUCH_TAP) then
-        context.debriefRequest.released = true
+    local request = context.openRequest
+    if
+        request
+        and request.kind == "debrief"
+        and (widgetEvent == _G.EVT_TOUCH_BREAK or widgetEvent == _G.EVT_TOUCH_TAP)
+    then
+        request.released = true
     end
 
     local tap
     context.panelPress, tap = context.gesture.track(context.panelPress, widgetEvent, touchState)
     if tap and isFullScreen() then
         if context.debriefModule and context.debriefModule.barHit(context, tap) then
-            context.debriefRequest = { page = context.page, swipe = true, released = true }
+            requestOpen(context, "debrief", { swipe = true, released = true })
             context.panelPress = context.gesture.cancel(context.panelPress)
             return true
         end
@@ -1283,19 +1311,14 @@ local function handleEvent(context, widgetEvent, touchState)
                     and touchState.y < rect.y + rect.h
                 then
                     if logPanel then
-                        local info = model and model.getInfo and model.getInfo()
-                        context.logOpenRequest = { page = context.page, modelFilename = info and info.filename }
+                        requestOpen(context, "log")
                         return true
                     end
                     if not entry.instance.feed or not entry.instance.feed.fix then
                         return true
                     end
                     local view = entry.instance.feed
-                    local info = model and model.getInfo and model.getInfo()
-                    context.locationRequest = {
-                        kind = "open",
-                        page = context.page,
-                        modelFilename = info and info.filename,
+                    requestOpen(context, "location", {
                         accent = entry.settings.accent,
                         view = {
                             fix = view.fix,
@@ -1303,7 +1326,7 @@ local function handleEvent(context, widgetEvent, touchState)
                             latitude = view.latitude,
                             longitude = view.longitude,
                         },
-                    }
+                    })
                     return true
                 end
             end
@@ -1398,13 +1421,25 @@ local function servicesHeld(context, hidden)
         or hidden and context.reflowIndex ~= nil
 end
 
+--- Host work that replaces the dashboard holds its panels; lifecycle work
+--- also defers the menu, the empty-layout hint and the debrief pill.
+local REPLACES = {
+    retire = "lifecycle",
+    rebuild = "lifecycle",
+    load = "lifecycle",
+    reflow = "lifecycle",
+    ["app rebuild"] = "lifecycle",
+    suspend = "editor",
+    leave = "editor",
+    enter = "editor",
+}
+
 --- Panels also wait while their placement or previews change, stay behind a
 --- visible modal overlay, and yield callbacks with queued fullscreen input
 --- to the surface that input targets.
 local function panelsHeld(context, hidden)
     return not hidden and context.inputPending
-        or context.lifecycleRequest ~= nil
-        or context.editorTransitionRequest ~= nil
+        or REPLACES[context.hostKind] ~= nil
         or context.reflowIndex ~= nil
         or context.appRebuild ~= nil
         or context.editorRestore ~= nil
@@ -1417,51 +1452,14 @@ local function sessionResetDue(context)
     return context.sessionResetPending and not (context.stage or context.reloadState)
 end
 
---- Lifecycle steps wait for arming reloads, due session resets, open modals
---- and editors, and for the foreground surface to settle.
-local function lifecycleHeld(context, hidden)
-    if
-        context.modelArmingReload
-        or sessionResetDue(context)
-        or context.modelSettingsUi
-        or context.editorRestore and not (context.stage or context.reloadState)
-        or context.editorUi and (hidden and context.editorUi.saving or not hidden)
-    then
-        return true
-    end
-    if hidden then
-        return false
-    end
-    local menu = context.aerogridMenu
-    if menu and (menu.pending or menu.action or menu.dismiss or menu.selectionDirty) then
-        return true
-    end
-    local built = not context.reloadState
-        and (context.pageBuiltFullscreen or context.rootBuiltFullscreen or context.nativeDialogsCreated)
-    local debrief = debriefShown(context)
-    if not (context.locationDetails or context.logViewer or debrief or context.editorStash or built) then
-        return false
-    end
-    local fullscreen = isFullScreen()
-    return context.locationDetails and (not fullscreen or context.reloadState)
-        or debrief and (not fullscreen or context.reloadState)
-        or context.logViewer and (not fullscreen or context.reloadState or context.logViewer.width ~= context.zone.w - 16 or context.logViewer.height ~= context.zone.h)
-        or context.editorStash and fullscreen and context.document and not (context.stage or context.reloadState)
-        or built and not fullscreen
-end
-
 --- Decide the holds once per callback and again after every step that may
---- change them, so each task's readiness only reads a flag. `pruneRequests`
---- decides the lifecycle barrier at callback start, so `runCallback` skips it.
-local function updateHolds(context, hidden, keepLifecycle)
+--- change them, so each task's readiness only reads a flag.
+local function updateHolds(context, hidden)
     local services = servicesHeld(context, hidden)
     local panels = services or panelsHeld(context, hidden)
     context.servicesHold, context.panelsHold = services, panels
     -- Service and panel tasks share these gates, so a hold reaches them mid-callback.
     context.serviceGate.on, context.panelGate.on = services, panels
-    if not keepLifecycle then
-        context.lifecycleHold = context.lifecycleRequest ~= nil and lifecycleHeld(context, hidden)
-    end
 end
 
 --- Task steps that adapt the panel and service contracts to the scheduler.
@@ -2022,20 +2020,15 @@ local function prepareAeroMenu(context)
     if not context.aeroMenuHandlers then
         context.aeroMenuHandlers = {
             fullscreen = isFullScreen,
-            modelFilename = function()
-                local info = model and model.getInfo and model.getInfo()
-                return info and info.filename
-            end,
+            modelFilename = modelFilename,
             modelSettings = function()
-                context.modelSettingsRequest = { modelFilename = context.aeroMenuHandlers.modelFilename() }
+                requestOpen(context, "model settings")
             end,
             uiSetup = function()
-                context.editorDebriefRequest = false
-                context.editorTransitionRequest = "open"
+                requestOpen(context, "editor", { debrief = false })
             end,
             debrief = function()
-                context.editorDebriefRequest = true
-                context.editorTransitionRequest = "open"
+                requestOpen(context, "editor", { debrief = true })
             end,
             modal = function()
                 return context.modelSettingsUi ~= nil
@@ -2083,18 +2076,6 @@ local function prepareAeroMenu(context)
     context.aeroMenuModule.advance(context)
     if not fullscreen then
         lvgl.hide(context.chromeRoot)
-    end
-    return false
-end
-
-local function suspendArmingEditor(context)
-    if context.modelArmingReload then
-        if context.editorUi and context.editorUi.saving then
-            context.uiRequest = "editor"
-            return true
-        end
-        context.editorTransitionRequest = "suspend"
-        return true
     end
     return false
 end
@@ -2163,8 +2144,7 @@ end
 
 --- A session reset runs before other host work.
 local function sessionResetReady(task)
-    local context = task.host
-    return sessionResetDue(context) and not context.modelArmingReload
+    return sessionResetDue(task.host)
 end
 
 local function sessionResetStep(task)
@@ -2174,77 +2154,80 @@ local function sessionResetStep(task)
     return nil, context.sessionResetPending == true
 end
 
--- Routing records intent only; native work still needs its own task grant.
-local function routeHost(context, hidden)
-    if context.editorRestore and not (context.stage or context.reloadState) then
-        return true
+--- Choose the host's exclusive work from the current state, in priority
+--- order: the first kind that applies is the only one that may run. Routing
+--- marks overlays to close; each kind's step does the native work. Only the
+--- callback's first routing starts a reload or an App-mode rebuild.
+local function route(context, hidden, fullscreen, start)
+    local loading = context.stage or context.reloadState
+    if context.editorRestore and not loading then
+        -- Reused containers need a foreground paint between clear and construction.
+        return not hidden and "restore" or nil
     end
-    if suspendArmingEditor(context) then
-        return true
+    local editor = context.editorUi
+    if context.modelArmingReload then
+        -- A save finishes first; then the editor is set aside and the dashboard reloads.
+        return editor and editor.saving and "editor" or "suspend"
     end
-    if context.modelSettingsUi then
-        local state = context.modelSettingsUi
+    local settings = context.modelSettingsUi
+    if settings then
         local broker = context.flightFactory and context.flightFactory.broker
         if
-            state.build
-            or state.pending
-            or state.closing
-            or broker and broker.filename ~= state.modelFilename
-            or not isFullScreen()
+            settings.build
+            or settings.pending
+            or settings.closing
+            or broker and broker.filename ~= settings.modelFilename
+            or not (fullscreen or hidden and isFullScreen())
         then
-            context.uiRequest = "model settings"
+            return "model settings"
         end
-        return true
+        return nil
     end
     if context.stage == "retained-release" then
-        context.lifecycleRequest = "load"
-        return true
+        return "load"
     end
     if hidden then
-        if context.editorUi and context.editorUi.saving then
-            context.uiRequest = "editor"
-        elseif context.reloadState == "clear" then
-            context.lifecycleRequest = "retire"
-        elseif context.reloadState == "rebuild" then
-            context.lifecycleRequest = "rebuild"
-        elseif context.stage then
-            context.lifecycleRequest = "load"
+        if editor and editor.saving then
+            return "editor"
         end
-        return true
+        return context.reloadState == "clear" and "retire"
+            or context.reloadState == "rebuild" and "rebuild"
+            or context.stage and "load"
+            or nil
     end
-    if context.locationDetails and (not isFullScreen() or context.reloadState) then
-        context.locationRequest = { kind = "close", state = context.locationDetails }
-        return true
+    local zone = context.zone
+    local location = context.locationDetails
+    if location and (location.closing or not fullscreen or context.reloadState) then
+        return "location"
     end
+    local viewer = context.logViewer
     if
-        context.logViewer
+        viewer
         and (
-            not isFullScreen()
+            viewer.closing
+            or not fullscreen
             or context.reloadState
-            or context.logViewer.width ~= context.zone.w - 16
-            or context.logViewer.height ~= context.zone.h
+            or viewer.width ~= zone.w - 16
+            or viewer.height ~= zone.h
         )
     then
-        context.logViewer.closing = true
-        context.uiRequest = "log viewer"
-        return true
+        viewer.closing = true
+        return "log viewer"
     end
     local debrief = context.debrief
     if debrief then
-        local zone = context.zone
         if
-            debrief.result ~= debriefResult(context)
+            debrief.stale
+            or debrief.result ~= debriefResult(context)
             or debrief.document ~= context.document
             or debrief.width ~= zone.w
             or debrief.height ~= zone.h
         then
             debrief.stale = true
-            context.uiRequest = "debrief"
-            return true
-        elseif debrief.shown and (not isFullScreen() or context.reloadState) then
+            return "debrief"
+        elseif debrief.closing or debrief.shown and (not fullscreen or context.reloadState) then
             debrief.closing = true
-            context.uiRequest = "debrief"
-            return true
+            return "debrief"
         end
     end
 
@@ -2252,27 +2235,24 @@ local function routeHost(context, hidden)
     -- fullscreen would swallow the long press in App mode, so the editor is
     -- torn down and a changed draft is set aside until fullscreen returns.
     -- A save already running finishes first, in `background`.
-    if context.editorUi and not isFullScreen() and not context.editorUi.saving then
-        context.editorTransitionRequest = "leave"
-        return true
-    elseif
-        context.editorStash
-        and not context.editorUi
-        and isFullScreen()
-        and not context.stage
-        and not context.reloadState
-        and context.document
-    then
-        context.editorTransitionRequest = "open"
-        return true
+    if editor then
+        if not fullscreen and not editor.saving then
+            return "leave"
+        elseif editorWorkNeeded(editor) then
+            return "editor"
+        end
+        -- Model settings open over the editor, which they set aside.
+        return context.openRequest and "open" or nil
+    elseif context.editorStash and fullscreen and not loading and context.document then
+        return "enter"
     end
 
     -- EdgeTX 2.12 only makes Lua boxes touch-transparent when constructing
     -- them in App mode. Fullscreen-built boxes otherwise consume the native
     -- widget's long press after exit; the Lua API cannot change that flag.
     if
-        not isFullScreen()
-        and not context.editorUi
+        start
+        and not fullscreen
         and not context.reloadState
         and (context.pageBuiltFullscreen or context.rootBuiltFullscreen or context.nativeDialogsCreated)
     then
@@ -2284,52 +2264,24 @@ local function routeHost(context, hidden)
     -- invalidates every object in the cleared object's child list, including
     -- ones created after the clear in the same callback. Anything rebuilt here
     -- would therefore be swept before it was ever drawn.
-    if context.reloadState == "clear" then
-        context.lifecycleRequest = "retire"
-        return true
+    if context.reloadState then
+        return context.reloadState == "clear" and "retire" or "rebuild"
+    elseif context.stage then
+        return "load"
     end
 
-    if context.reloadState == "rebuild" then
-        context.lifecycleRequest = "rebuild"
-        return true
-    end
-
-    if context.stage then
-        context.lifecycleRequest = "load"
-        return true
-    end
-    return false
-end
-
---- Record the next host request from the current state. Routing only reads
---- state and records intent; each request's task does the native work.
-local function routeForeground(context)
-    if routeHost(context, false) then
-        return
-    end
-
-    if not isFullScreen() then
+    if not fullscreen then
         context.editorPress = nil
     end
-
-    if editorWorkNeeded(context.editorUi) then
-        context.uiRequest = "editor"
-        return
+    if viewer and viewer.prepareIndex then
+        return "log viewer"
     end
-
-    if context.logViewer then
-        if context.logViewer.prepareIndex or context.logViewer.closing then
-            context.uiRequest = "log viewer"
-        end
-        return
+    local request = context.openRequest
+    if request then
+        return request.kind == "editor" and "enter" or "open"
     end
-
-    if debriefShown(context) then
-        return
-    end
-
-    if context.editorUi then
-        return
+    if viewer or debrief and debrief.shown then
+        return nil
     end
 
     -- A zone change repositions every panel, which a full grid cannot
@@ -2347,20 +2299,16 @@ local function routeForeground(context)
     -- (widgets_container.cpp:91), so the change is seen on the next callback,
     -- which is one `MENU_TASK_PERIOD` -- 50 ms (radio/src/tasks.cpp:50).
     if
-        context.width ~= context.zone.w
-        or context.height ~= context.zone.h
-        or context.left ~= (context.zone.xabs or 0)
-        or context.top ~= (context.zone.yabs or 0)
-        or context.fullScreen ~= isFullScreen()
+        context.reflowIndex
+        or context.width ~= zone.w
+        or context.height ~= zone.h
+        or context.left ~= (zone.xabs or 0)
+        or context.top ~= (zone.yabs or 0)
+        or context.fullScreen ~= fullscreen
     then
-        context.lifecycleRequest = "reflow"
-        return
+        return "reflow"
     end
-    if context.reflowIndex then
-        context.lifecycleRequest = "reflow"
-        return
-    end
-    if not context.appRebuild and not isFullScreen() and not context.editorUi then
+    if start and not context.appRebuild and not fullscreen then
         for index, entry in ipairs(context.panels) do
             if entry.builtFullscreen then
                 context.appRebuild = { entry = entry, index = index }
@@ -2368,10 +2316,7 @@ local function routeForeground(context)
             end
         end
     end
-    if context.appRebuild then
-        context.lifecycleRequest = "app rebuild"
-        return
-    end
+    return context.appRebuild and "app rebuild" or nil
 end
 
 --- Whether the empty-dashboard hint differs from what the page should show.
@@ -2394,7 +2339,7 @@ local function emptyHintStale(context)
 end
 
 local function hintReady(task, _, hidden)
-    return not hidden and not task.host.lifecycleRequest and emptyHintStale(task.host)
+    return not hidden and REPLACES[task.host.hostKind] ~= "lifecycle" and emptyHintStale(task.host)
 end
 
 local function hintStep(task)
@@ -2414,7 +2359,6 @@ local function advanceForeground(context)
         end
         return
     end
-    routeForeground(context)
     context.dashboardLifecycle.updateEmptyHint(context)
 end
 
@@ -2427,7 +2371,7 @@ local function menuWorkNeeded(context, fullscreen)
         context.runtimeFailed
         or context.stage
         or context.reloadState
-        or not fullscreen and (context.lifecycleRequest or emptyHintStale(context))
+        or not fullscreen and (REPLACES[context.hostKind] == "lifecycle" or emptyHintStale(context))
     then
         return false
     end
@@ -2557,8 +2501,6 @@ local function inputReady(task, _, hidden)
     task.cost = context.modelSettingsUi and 1 or context.scheduler.budget.slots
     return inputWaiting(context, hidden)
         and isFullScreen()
-        and not context.modelArmingReload
-        and not sessionResetDue(context)
         and (context.modelSettingsUi or not context.stage and not context.reloadState)
         and not editorWorkNeeded(context.editorUi)
 end
@@ -2569,10 +2511,6 @@ local function inputStep(task)
     context.inputHandled = context.inputPending
     if context.modelSettingsUi then
         context.modelSettingsUiModule.handle(context, widgetEvent, touchState)
-        local state = context.modelSettingsUi
-        if state and (state.build or state.pending or state.closing) then
-            context.uiRequest = "model settings"
-        end
         return
     end
     if context.aeroMenuModule and context.aeroMenuModule.handle(context, widgetEvent, touchState) then
@@ -2595,7 +2533,7 @@ local function inputStep(task)
             and (context.inputTime or getTime()) - context.editorPress.started >= 60
         then
             context.editorPress = nil
-            context.editorTransitionRequest = "open"
+            requestOpen(context, "editor")
             return
         end
     end
@@ -2613,50 +2551,9 @@ local function inputStep(task)
     end
 end
 
-local function modelSettingsOpenReady(task, _, hidden)
-    local context = task.host
-    return context.modelSettingsRequest
-        and not hidden
-        and isFullScreen()
-        and not context.modelArmingReload
-        and not context.sessionResetPending
-        and not context.stage
-        and not context.reloadState
-        and not context.modelSettingsUi
-        and not (context.editorUi and context.editorUi.saving)
-end
-
-local function modelSettingsOpenStep(task)
-    local context = task.host
-    local request, owner = context.modelSettingsRequest, context.flightFactory.broker
-    context.modelSettingsRequest = nil
-    if owner and (owner.filename ~= request.modelFilename or owner:identity() ~= request.modelFilename) then
-        return
-    end
-    openModelSettings(context)
-end
-
-local function debriefOpenReady(task, _, hidden)
-    return not hidden and task.host.debriefRequest ~= nil and debriefReady(task.host)
-end
-
-local function debriefOpenStep(task)
-    local context = task.host
-    local request, result = context.debriefRequest, debriefResult(context)
-    context.debriefRequest = nil
-    if not result or not debriefReady(context) then
-        return
-    end
-    local ok, openError = pcall(context.debriefModule.open, context, result, request)
-    if not ok then
-        debriefFailed(context, openError)
-        return
-    end
-end
-
 local function debriefPillReady(task, _, hidden)
     local context = task.host
-    return not hidden and not context.lifecycleRequest and debriefPillStale(context)
+    return not hidden and REPLACES[context.hostKind] ~= "lifecycle" and debriefPillStale(context)
 end
 
 local function debriefPillStep(task)
@@ -2723,94 +2620,45 @@ local function debriefBuildStep(task, _, granted)
     end
 end
 
-local function logOpenReady(task, _, hidden)
-    return not hidden and task.host.logOpenRequest ~= nil
-end
+--- Overlays the dashboard opens from a tap: the context field holding the
+--- module, its path, and the label errors carry.
+local OVERLAYS = {
+    log = { "logViewerModule", "lib/log_viewer.lua", "diagnostics log" },
+    location = { "locationDetailsModule", "lib/location_details.lua", "location details" },
+}
 
-local function logOpenStep(task)
-    local context = task.host
-    context.logOpenRequest = nil
-    local module = context.logViewerModule
-    local message
-    if not module then
-        module, message = loadModule(context.path, "lib/log_viewer.lua")
-    end
-    if not module then
-        addError(context, "diagnostics log: " .. tostring(message))
-        showErrors(context)
+local function openOverlay(context, request)
+    local kind = request.kind
+    if kind == "model settings" then
+        local owner = context.flightFactory.broker
+        if not owner or owner.filename == request.modelFilename and owner:identity() == request.modelFilename then
+            openModelSettings(context)
+        end
         return
-    end
-    context.logViewerModule = module
-    local ok, openError = pcall(module.open, context)
-    if not ok then
-        module.close(context)
-        addError(context, "diagnostics log: " .. tostring(openError))
-        showErrors(context)
-    end
-end
-
-local function locationReady(task, _, hidden)
-    local request = task.host.locationRequest
-    task.cost = request and request.kind == "close" and 1 or task.host.scheduler.budget.slots
-    return not hidden and request ~= nil
-end
-
-local function locationStep(task)
-    local context = task.host
-    local request = context.locationRequest
-    context.locationRequest = nil
-    if request.kind == "close" then
-        if context.locationDetails == request.state then
-            context.locationDetailsModule.close(context)
+    elseif kind == "debrief" then
+        local ok, openError = pcall(context.debriefModule.open, context, debriefResult(context), request)
+        if not ok then
+            debriefFailed(context, openError)
         end
         return
     end
-    local module = context.locationDetailsModule
-    local message
+    local field, path, label = OVERLAYS[kind][1], OVERLAYS[kind][2], OVERLAYS[kind][3]
+    local module, message = context[field], nil
     if not module then
-        module, message = loadModule(context.path, "lib/location_details.lua")
+        module, message = loadModule(context.path, path)
     end
     if not module then
-        addError(context, "location details: " .. tostring(message))
+        addError(context, label .. ": " .. tostring(message))
         showErrors(context)
         return
     end
-    context.locationDetailsModule = module
+    context[field] = module
     local ok, openError = pcall(module.open, context, request.view, request.accent)
     if not ok then
         module.close(context)
-        addError(context, "location details: " .. tostring(openError))
+        addError(context, label .. ": " .. tostring(openError))
         showErrors(context)
     end
-end
-
-local function editorTransitionReady(task, _, hidden)
-    local context = task.host
-    local request, state = context.editorTransitionRequest, context.editorUi
-    if request == "suspend" then
-        -- Rebinding reads the arming source from the flight document, which a broker reset reloads.
-        local broker = context.flightFactory and context.flightFactory.broker
-        return context.modelArmingReload
-            and (state ~= nil or broker ~= nil and broker.document ~= nil)
-            and not (context.editorRestore and not (context.stage or context.reloadState))
-            and not (state and state.saving)
-    end
-    if hidden or context.modelArmingReload or sessionResetDue(context) or context.modelSettingsUi then
-        return false
-    end
-    if request == "leave" then
-        return state ~= nil and not state.saving and not isFullScreen()
-    end
-    return request == "open"
-        and not state
-        and not context.stage
-        and not context.reloadState
-        and not context.editorRestore
-        and not context.logViewer
-        and not context.locationDetails
-        and not debriefShown(context)
-        and context.document ~= nil
-        and isFullScreen()
 end
 
 --- A new Armed condition reaches the services and panels through a reload.
@@ -2818,153 +2666,6 @@ local function rebindArming(context)
     context.retainForReload = true
     context.reloadState = "clear"
     context.modelArmingReload = nil
-end
-
-local function editorTransitionStep(task)
-    local context = task.host
-    local request, state = context.editorTransitionRequest, context.editorUi
-    context.editorTransitionRequest = nil
-    closeDashboard(context)
-    if request == "open" then
-        context.editorController.openEditor(context)
-    else
-        context.editorDebriefRequest = nil
-        if state then
-            local session = context.editorSession
-            local keep = request == "suspend" or session and session.dirty and not state.buildStage
-            context.editorUiModule.close(context, false)
-            context.editorController.restorePreview(context)
-            context.editorSession = nil
-            context.editorStash = keep and session or nil
-        end
-        if request == "suspend" then
-            if not state then
-                rebindArming(context)
-            end
-        end
-    end
-end
-
-local function editorRestoreReady(task, _, hidden)
-    local context = task.host
-    -- Reused containers need a foreground paint between clear and construction.
-    return not hidden and context.editorRestore ~= nil and not (context.stage or context.reloadState)
-end
-
-local function editorRestoreStep(task)
-    task.host.editorController.advanceRestore(task.host)
-end
-
-local function uiField(kind)
-    if kind == "model settings" then
-        return "modelSettingsUi"
-    elseif kind == "editor" then
-        return "editorUi"
-    elseif kind == "debrief" then
-        return "debrief"
-    end
-    return "logViewer"
-end
-
-local function uiCost(task)
-    local context, slots = task.host, task.host.scheduler.budget.slots
-    if task.kind == "editor" then
-        return editorCost(context)
-    elseif task.kind == "model settings" then
-        local cost = context.modelSettingsUiModule.cost
-        return cost and math.min(cost(context), slots) or slots
-    elseif task.kind == "debrief" then
-        return 1
-    end
-    return context.logViewer and context.logViewer.closing and 1 or slots
-end
-
-local function uiReady(task, _, hidden)
-    local context = task.host
-    task.cost = uiCost(task)
-    if task.kind == "editor" then
-        local state = context.editorUi
-        if not state or state ~= task.ui or not editorWorkNeeded(state) then
-            return false
-        end
-        if context.modelArmingReload then
-            return state.saving ~= nil
-        end
-        return not sessionResetDue(context)
-            and not context.modelSettingsUi
-            and (hidden and state.saving ~= nil or not hidden and (isFullScreen() or state.saving ~= nil))
-    end
-    if context.modelArmingReload or sessionResetDue(context) then
-        return false
-    end
-    if task.kind == "model settings" then
-        return task.ui ~= nil and context.modelSettingsUi == task.ui
-    end
-    if task.kind == "debrief" then
-        local state = context.debrief
-        return not hidden
-            and not context.modelSettingsUi
-            and not context.stage
-            and state ~= nil
-            and state == task.ui
-            and (state.stale or state.closing)
-    end
-    local viewer = context.logViewer
-    return not hidden
-        and not context.modelSettingsUi
-        and not context.stage
-        and viewer ~= nil
-        and viewer == task.ui
-        and (
-            viewer.closing
-            or not context.reloadState
-                and isFullScreen()
-                and viewer.width == context.zone.w - 16
-                and viewer.height == context.zone.h
-                and viewer.prepareIndex ~= nil
-        )
-end
-
-local function uiStep(task, _, _, hidden)
-    local context = task.host
-    context.uiRequest = nil
-    if task.kind == "editor" then
-        local continues = editorContinues(context.editorUi)
-        context.editorController.advanceEditor(context)
-        if editorWorkNeeded(context.editorUi) then
-            context.uiRequest = task.kind
-            if continues and editorContinues(context.editorUi) then
-                return nil, true
-            end
-        end
-    elseif task.kind == "model settings" then
-        context.modelSettingsUiModule.advance(context)
-        local state = context.modelSettingsUi
-        if state and (state.build or state.pending or state.closing) then
-            context.uiRequest = task.kind
-            -- Fields only create controls; commands and closing keep their boundary.
-            if state.build and not state.pending and not state.closing then
-                return nil, true
-            end
-        end
-    elseif task.kind == "debrief" then
-        local state, module = context.debrief, context.debriefModule
-        if state.stale then
-            module.destroy(context)
-        else
-            module.hide(context)
-        end
-    else
-        if context.logViewer.closing then
-            context.logViewerModule.close(context)
-            return
-        end
-        context.logViewerModule.advance(context)
-        if context.logViewer and context.logViewer.prepareIndex then
-            context.uiRequest = task.kind
-            return nil, true
-        end
-    end
 end
 
 -- Slots reserved per load stage, from peak mocked-VM instruction counts at
@@ -2985,89 +2686,141 @@ local LOAD_STAGE_COST = {
     ["theme-validate"] = 16,
 }
 
-local function lifecycleWanted(context, kind, hidden)
-    if kind == "retire" then
-        return context.reloadState == "clear"
-    elseif kind == "rebuild" then
-        return context.reloadState == "rebuild" and not context.retireBoundary
-    elseif kind == "load" then
-        if context.stage == "retained-release" then
-            return true
-        end
-        local broker = context.flightFactory and context.flightFactory.broker
-        if context.stage == "services" and broker and not broker.documentLoaded then
-            return false
-        end
-        if hidden and context.stage == "panel-build" and context.loadConfigured then
-            for peer in pairs(context.flightFactory.members) do
-                if
-                    peer ~= context
-                    and peer.foreground
-                    and not peer.runtimeFailed
-                    and (
-                        peer.initializing
-                        or peer.stage
-                        or peer.reloadState
-                        or peer.firstRefreshUntil and getTime() < peer.firstRefreshUntil
-                    )
-                then
-                    return false
-                end
+--- Whether a load step may run: services wait for the flight document, and
+--- a hidden dashboard builds panels only once visible peers have settled.
+local function loadReady(context, hidden)
+    local stage, broker = context.stage, context.flightFactory and context.flightFactory.broker
+    if stage == "services" and broker and not broker.documentLoaded then
+        return false
+    end
+    if hidden and stage == "panel-build" and context.loadConfigured then
+        for peer in pairs(context.flightFactory.members) do
+            if
+                peer ~= context
+                and peer.foreground
+                and not peer.runtimeFailed
+                and (
+                    peer.initializing
+                    or peer.stage
+                    or peer.reloadState
+                    or peer.firstRefreshUntil and getTime() < peer.firstRefreshUntil
+                )
+            then
+                return false
             end
         end
-        return not context.reloadState and context.stage ~= nil
-    elseif kind == "reflow" then
-        return not hidden
-            and not context.reloadState
-            and not context.stage
-            and not context.logViewer
-            and not debriefShown(context)
     end
-    return not hidden and not context.reloadState and not context.stage and context.appRebuild ~= nil
+    return true
 end
 
---- Each lifecycle step checks its own work, then the shared lifecycle hold
---- and any input it must not run ahead of.
-local function lifecycleReady(task, _, hidden)
+--- The routed kind may run now: it sets its cost, and kinds that replace or
+--- open what input targets wait for that input first.
+local function hostReady(task, _, hidden)
     local context, kind = task.host, task.kind
-    if context.lifecycleHold or not lifecycleWanted(context, kind, hidden) then
+    if kind ~= context.hostKind then
+        return false
+    end
+    local menu = context.aerogridMenu
+    if
+        not hidden
+        and REPLACES[kind] == "lifecycle"
+        and menu
+        and (menu.pending or menu.action or menu.dismiss or menu.selectionDirty)
+    then
+        -- Native menu intents preempt replacing the dashboard.
         return false
     end
     local slots = context.scheduler.budget.slots
+    task.cost = slots
     if kind == "load" then
         task.cost = math.min(LOAD_STAGE_COST[context.stage] or slots, slots)
+        return context.stage == "retained-release" or loadReady(context, hidden)
     elseif kind == "rebuild" then
         task.cost = 4
-    else
-        task.cost = slots
+        -- The page cleared in this callback is swept after it returns.
+        return not context.retireBoundary
+    elseif kind == "editor" then
+        task.cost = editorCost(context)
+        return true
+    elseif kind == "model settings" then
+        local cost = context.modelSettingsUiModule.cost
+        task.cost = cost and math.min(cost(context), slots) or slots
+    elseif kind == "log viewer" then
+        if context.logViewer.closing then
+            task.cost = 1
+            return true
+        end
+    elseif kind == "debrief" or kind == "location" then
+        task.cost = 1
+        return kind == "location" or not context.stage
+    elseif kind == "suspend" then
+        -- Rebinding reads the arming source from the flight document, which a broker reset reloads.
+        local broker = context.flightFactory and context.flightFactory.broker
+        return context.editorUi ~= nil or broker ~= nil and broker.document ~= nil
+    elseif kind == "open" then
+        if context.openRequest.kind == "debrief" and not debriefReady(context) then
+            return false
+        end
+    elseif kind ~= "enter" and kind ~= "reflow" and kind ~= "app rebuild" then
+        return true
     end
-    return context.stage or context.reloadState or not inputWaiting(context, hidden)
+    return not inputWaiting(context, hidden)
 end
 
-local function lifecycleStep(task, _, _, hidden)
+local function hostWork(task, _, _, hidden)
     local context, kind = task.host, task.kind
-    context.lifecycleRequest = nil
+    if kind == "editor" then
+        local continues = editorContinues(context.editorUi)
+        context.editorController.advanceEditor(context)
+        return nil, continues and editorContinues(context.editorUi)
+    elseif kind == "model settings" then
+        context.modelSettingsUiModule.advance(context)
+        local state = context.modelSettingsUi
+        -- Fields only create controls; commands and closing keep their boundary.
+        return nil, state ~= nil and state.build ~= nil and not state.pending and not state.closing
+    elseif kind == "log viewer" then
+        if context.logViewer.closing then
+            context.logViewerModule.close(context)
+            return
+        end
+        context.logViewerModule.advance(context)
+        return nil, context.logViewer ~= nil and context.logViewer.prepareIndex ~= nil
+    elseif kind == "debrief" then
+        if context.debrief.stale then
+            context.debriefModule.destroy(context)
+        else
+            context.debriefModule.hide(context)
+        end
+        return
+    elseif kind == "location" then
+        context.locationDetailsModule.close(context)
+        return
+    elseif kind == "open" then
+        local request = context.openRequest
+        context.openRequest = nil
+        openOverlay(context, request)
+        return
+    elseif kind == "restore" then
+        context.editorController.advanceRestore(context)
+        return
+    end
+    -- Every other kind replaces the dashboard's services and panels.
     closeDashboard(context)
-    if kind == "retire" then
-        context.dashboardLifecycle.retirePage(context)
-        context.retireBoundary = true
-        context.lifecycleRequest = "rebuild"
-    elseif kind == "rebuild" then
-        context.dashboardLifecycle.rebuildPage(context)
-        startLoad(context)
-        context.lifecycleRequest = "load"
-    elseif kind == "load" then
+    if kind == "load" then
         local firstPanel = not hidden and #context.panels == 0
         if context.stage == "model-settings" then
             advanceModelSettings(context)
         else
             context.dashboardLoader.advanceLoad(context, hidden)
         end
-        if context.stage then
-            context.lifecycleRequest = "load"
-            -- Let firmware paint the first panel before another construction burst.
-            return nil, not (firstPanel and #context.panels > 0)
-        end
+        -- Let firmware paint the first panel before another construction burst.
+        return nil, context.stage ~= nil and not (firstPanel and #context.panels > 0)
+    elseif kind == "retire" then
+        context.dashboardLifecycle.retirePage(context)
+        context.retireBoundary = true
+    elseif kind == "rebuild" then
+        context.dashboardLifecycle.rebuildPage(context)
+        startLoad(context)
     elseif kind == "reflow" then
         if
             context.width ~= context.zone.w
@@ -3081,40 +2834,53 @@ local function lifecycleStep(task, _, _, hidden)
         if context.reflowIndex then
             context.dashboardLifecycle.advanceReflow(context)
         end
-        if context.reflowIndex then
-            context.lifecycleRequest = "reflow"
-            return nil, true
-        end
-    else
+        return nil, context.reflowIndex ~= nil
+    elseif kind == "app rebuild" then
         context.dashboardLifecycle.advanceAppRebuild(context)
-        if context.appRebuild then
-            context.lifecycleRequest = "app rebuild"
+    elseif kind == "enter" then
+        local request = context.openRequest
+        if request and request.kind == "editor" then
+            context.openRequest = nil
+        end
+        -- true opens the Flight debrief page, false the layout grid, and nil
+        -- resumes a set-aside draft where it stopped.
+        context.editorDebriefRequest = request and request.debrief
+        context.editorController.openEditor(context)
+    else
+        local state, session = context.editorUi, context.editorSession
+        if state then
+            local keep = kind == "suspend" or session and session.dirty and not state.buildStage
+            context.editorUiModule.close(context, false)
+            context.editorController.restorePreview(context)
+            context.editorSession = nil
+            context.editorStash = keep and session or nil
+        elseif kind == "suspend" then
+            rebindArming(context)
         end
     end
 end
 
---- Host tasks share only real ordering barriers: options and due session
---- resets preempt unrelated work; visible menu changes precede dependent work;
---- input cannot be overtaken by work that replaces its target; and page rebuilds
---- wait one native callback after retirement.
+--- Host tasks share only real ordering barriers: options preempt all other
+--- work; an arming reload holds input and session resets back, and a due
+--- session reset otherwise preempts the rest; visible menu changes precede
+--- dependent work; and input cannot be overtaken by work that replaces its
+--- target.
 local function hostOpen(task, now, hidden)
     local context = task.host
-    if context.optionsRequest and task ~= context.optionsTask then
-        return false
+    if context.optionsRequest then
+        return task == context.optionsTask
     end
-    if
-        sessionResetDue(context)
-        and not context.modelArmingReload
-        and task ~= context.optionsTask
-        and task ~= context.sessionResetTask
-    then
+    if context.modelArmingReload then
+        if task == context.inputTask or task == context.sessionResetTask then
+            return false
+        end
+    elseif sessionResetDue(context) and task ~= context.sessionResetTask then
         return false
     end
     if context.menuDue and task ~= context.menuTask and not context.menuChromeOnly then
         return false
     end
-    local first = task.inputFirst
-    if first and (first == true or first(task)) and inputWaiting(context, hidden) then
+    if task.inputFirst and inputWaiting(context, hidden) then
         return false
     end
     return task.gate(task, now, hidden)
@@ -3122,7 +2888,10 @@ end
 
 --- Enrol the requested host tasks that can run now, and withdraw the rest.
 local function syncHost(context, now, hidden)
-    local scheduler, tasks = context.scheduler, context.hostTasks or {}
+    local scheduler, tasks = context.scheduler, context.hostTasks
+    if not tasks then
+        return
+    end
     for index = 1, #tasks do
         local task = tasks[index]
         if hostOpen(task, now, hidden) then
@@ -3138,288 +2907,87 @@ end
 local function hostStep(task, now, granted, hidden)
     local context = task.host
     local used, again = task.run(task, now, granted, hidden)
+    -- A step can change the routed work, the holds and the other tasks' barriers.
+    -- An opened overlay replaces nothing, so routing waits for the next callback.
+    context.hostKind = task.kind ~= "open" and route(context, hidden, context.fullscreenNow) or nil
     updateHolds(context, hidden)
-    -- A step can open or close the barriers of other host tasks.
     syncHost(context, now, hidden)
     return used, again
-end
-
-local function hostTask(context, field, name, gate, run, fields)
-    local task = context[field]
-    if not task then
-        task = {
-            name = name,
-            owner = name,
-            host = context,
-            onError = hostError,
-            cost = context.scheduler.budget.slots,
-            gate = gate,
-            run = run,
-            open = hostOpen,
-            step = hostStep,
-        }
-        for key, value in pairs(fields or {}) do
-            task[key] = value
-        end
-        context[field] = task
-    end
-    return task
-end
-
-local function kindTask(context, field, kind, gate, run, ui)
-    local tasks = context[field]
-    if not tasks then
-        tasks = {}
-        context[field] = tasks
-    end
-    local task = tasks[kind]
-    if not task or ui and task.ui ~= ui then
-        task = {
-            name = kind,
-            owner = kind,
-            kind = kind,
-            ui = ui,
-            host = context,
-            onError = hostError,
-            gate = gate,
-            run = run,
-            open = hostOpen,
-            step = hostStep,
-        }
-        if kind == "model settings" or kind == "log viewer" then
-            task.inputFirst = function(self)
-                local host = self.host
-                return not (self.kind == "log viewer" and host.logViewer and host.logViewer.closing)
-            end
-        end
-        tasks[kind] = task
-    end
-    return task
 end
 
 local function optionsReady(task)
     return task.host.optionsRequest ~= nil
 end
 
-local function editorOpening(task)
-    return task.host.editorTransitionRequest == "open"
-end
+-- Host tasks by context field: name, gate, step, slot cost (default: a full
+-- callback), and whether queued input goes first.
+local HOST_TASKS = {
+    optionsTask = { "native options", optionsReady, optionsStep },
+    sessionResetTask = { "session reset", sessionResetReady, sessionResetStep },
+    menuTask = { "menu", menuReady, menuStep },
+    inputTask = { "input", inputReady, inputStep },
+    hostTask = { "host", hostReady, hostWork },
+    debriefBuildTask = { "debrief build", debriefBuildReady, debriefBuildStep, DEBRIEF_SLOTS, true },
+    hintTask = { "empty hint", hintReady, hintStep, nil, true },
+    debriefPillTask = { "debrief pill", debriefPillReady, debriefPillStep, DEBRIEF_PILL_SLOTS, true },
+}
 
-local function locationOpening(task)
-    local request = task.host.locationRequest
-    return request ~= nil and request.kind == "open"
-end
-
---- Drop requests whose target has gone, so routing can record new ones.
-local function pruneRequests(context, hidden, fullscreen)
-    local filename
-    if context.logOpenRequest or context.locationRequest then
-        local info = model and model.getInfo and model.getInfo()
-        filename = info and info.filename
+--- Add a host task, created on first use, to this callback's wanted list.
+local function want(context, wanted, field, stamp)
+    local task = context[field]
+    if not task then
+        local spec = HOST_TASKS[field]
+        task = {
+            name = spec[1],
+            owner = spec[1],
+            host = context,
+            onError = hostError,
+            cost = spec[4] or context.scheduler.budget.slots,
+            inputFirst = spec[5],
+            gate = spec[2],
+            run = spec[3],
+            open = hostOpen,
+            step = hostStep,
+        }
+        context[field] = task
     end
-    if context.modelSettingsRequest then
-        local task = hostTask(
-            context,
-            "modelSettingsOpenTask",
-            "model settings open",
-            modelSettingsOpenReady,
-            modelSettingsOpenStep,
-            { inputFirst = true }
-        )
-        if not modelSettingsOpenReady(task, nil, hidden) then
-            if not hidden and (not fullscreen or context.modelSettingsUi) then
-                context.modelSettingsRequest = nil
-            elseif context.editorUi and context.editorUi.saving then
-                context.uiRequest = "editor"
-            end
-        end
-    end
-    if context.editorTransitionRequest and not hidden then
-        local task = hostTask(
-            context,
-            "editorTransitionTask",
-            "editor transition",
-            editorTransitionReady,
-            editorTransitionStep,
-            { inputFirst = editorOpening }
-        )
-        if not editorTransitionReady(task, nil, hidden) then
-            context.editorTransitionRequest, context.editorDebriefRequest = nil, nil
-        end
-    end
-    local request = context.logOpenRequest
-    if
-        request
-        and (
-            request.page ~= context.page
-            or request.modelFilename ~= filename
-            or context.reloadState
-            or context.stage
-            or context.modelSettingsUi
-            or context.editorUi
-            or not hidden and not fullscreen
-        )
-    then
-        context.logOpenRequest = nil
-    end
-    request = context.debriefRequest
-    if
-        request
-        and (
-            request.page ~= context.page
-            or context.reloadState
-            or context.stage
-            or context.modelSettingsUi
-            or context.editorUi
-            or context.logViewer
-            or context.locationDetails
-            or debriefShown(context)
-            or not hidden and not fullscreen
-            or not debriefResult(context)
-        )
-    then
-        context.debriefRequest = nil
-    end
-    request = context.locationRequest
-    if
-        request
-        and (
-            request.kind == "close" and context.locationDetails ~= request.state
-            or request.kind == "open"
-                and (request.page ~= context.page or request.modelFilename ~= filename or context.reloadState or context.stage or context.modelSettingsUi or context.editorUi or context.logViewer or not hidden and not fullscreen)
-        )
-    then
-        context.locationRequest = nil
-    end
-    local kind = context.lifecycleRequest
-    -- The cached barrier is from the previous callback; judge with a fresh one.
-    context.lifecycleHold = kind ~= nil and lifecycleHeld(context, hidden)
-    if
-        kind
-        and not lifecycleReady(kindTask(context, "lifecycleTasks", kind, lifecycleReady, lifecycleStep), nil, hidden)
-    then
-        context.lifecycleRequest = nil
-    end
-    kind = context.uiRequest
-    if kind then
-        local ui = context[uiField(kind)]
-        if not ui or not uiReady(kindTask(context, "uiTasks", kind, uiReady, uiStep, ui), nil, hidden) then
-            context.uiRequest = nil
-        end
-    end
+    wanted = wanted or {}
+    wanted[#wanted + 1] = task
+    task.wanted = stamp
+    return wanted, task
 end
 
 --- Track the host tasks with work outstanding; those that can run now are
 --- enrolled, in a fixed order. Without outstanding host work this costs nothing.
 local function enrolHost(context, now, hidden)
-    local previous, wanted = context.hostTasks, nil
+    local previous, wanted, kind = context.hostTasks, nil, context.hostKind
     local stamp = (context.hostStamp or 0) + 1
     context.hostStamp = stamp
-    local function add(task)
-        wanted = wanted or {}
-        wanted[#wanted + 1] = task
-        task.wanted = stamp
-    end
     if context.optionsRequest then
-        add(hostTask(context, "optionsTask", "native options", optionsReady, optionsStep))
+        wanted = want(context, wanted, "optionsTask", stamp)
     end
     if context.sessionResetPending then
-        add(hostTask(context, "sessionResetTask", "session reset", sessionResetReady, sessionResetStep))
+        wanted = want(context, wanted, "sessionResetTask", stamp)
     end
     if context.menuDue then
-        add(hostTask(context, "menuTask", "menu", menuReady, menuStep))
+        wanted = want(context, wanted, "menuTask", stamp)
     end
     if context.inputPending or context.editorPress then
-        add(hostTask(context, "inputTask", "input", inputReady, inputStep))
+        wanted = want(context, wanted, "inputTask", stamp)
     end
-    if context.modelSettingsRequest then
-        add(
-            hostTask(
-                context,
-                "modelSettingsOpenTask",
-                "model settings open",
-                modelSettingsOpenReady,
-                modelSettingsOpenStep,
-                { inputFirst = true }
-            )
-        )
-    end
-    if context.editorRestore then
-        add(hostTask(context, "editorRestoreTask", "editor restore", editorRestoreReady, editorRestoreStep))
-    end
-    if context.editorTransitionRequest then
-        add(
-            hostTask(
-                context,
-                "editorTransitionTask",
-                "editor transition",
-                editorTransitionReady,
-                editorTransitionStep,
-                { inputFirst = editorOpening }
-            )
-        )
-    end
-    if context.logOpenRequest then
-        add(hostTask(context, "logOpenTask", "log open", logOpenReady, logOpenStep, { inputFirst = true }))
+    if kind then
+        local task
+        wanted, task = want(context, wanted, "hostTask", stamp)
+        task.kind, task.name = kind, kind
     end
     if debriefBuildDue(context) then
-        add(
-            hostTask(
-                context,
-                "debriefBuildTask",
-                "debrief build",
-                debriefBuildReady,
-                debriefBuildStep,
-                { inputFirst = true, cost = DEBRIEF_SLOTS }
-            )
-        )
-    end
-    if context.debriefRequest then
-        add(
-            hostTask(
-                context,
-                "debriefOpenTask",
-                "debrief open",
-                debriefOpenReady,
-                debriefOpenStep,
-                { inputFirst = true }
-            )
-        )
-    end
-    if context.locationRequest then
-        add(
-            hostTask(
-                context,
-                "locationTask",
-                "location details",
-                locationReady,
-                locationStep,
-                { inputFirst = locationOpening }
-            )
-        )
-    end
-    local kind = context.lifecycleRequest
-    if kind then
-        add(kindTask(context, "lifecycleTasks", kind, lifecycleReady, lifecycleStep))
-    end
-    kind = context.uiRequest
-    if kind then
-        add(kindTask(context, "uiTasks", kind, uiReady, uiStep, context[uiField(kind)]))
+        wanted = want(context, wanted, "debriefBuildTask", stamp)
     end
     if not hidden and emptyHintStale(context) then
-        add(hostTask(context, "hostTask", "host", hintReady, hintStep, { inputFirst = true }))
+        wanted = want(context, wanted, "hintTask", stamp)
     end
     if not hidden and debriefPillStale(context) then
-        add(
-            hostTask(
-                context,
-                "debriefPillTask",
-                "debrief pill",
-                debriefPillReady,
-                debriefPillStep,
-                { inputFirst = true, cost = DEBRIEF_PILL_SLOTS }
-            )
-        )
+        wanted = want(context, wanted, "debriefPillTask", stamp)
     end
     if previous then
         for index = 1, #previous do
@@ -3463,27 +3031,18 @@ local function runCallback(context, hidden, widgetEvent, touchState)
     context.widgetEvent, context.touchState = input and input.event, input and input.touch
     context.inputTime = input and input.now
     context.inputPending = not not input
-    if
-        not context.optionsRequest
-        and not context.lifecycleRequest
-        and not context.uiRequest
-        and not context.editorTransitionRequest
-        and not context.locationRequest
-    then
-        if hidden then
-            routeHost(context, true)
-        else
-            routeForeground(context)
-        end
+    if context.openRequest and openStale(context, context.openRequest, hidden, fullscreen) then
+        context.openRequest = nil
     end
-    pruneRequests(context, hidden, fullscreen)
+    context.fullscreenNow = fullscreen
+    context.hostKind = route(context, hidden, fullscreen, true)
     context.menuDue = not hidden
         and not context.optionsRequest
         and not context.modelArmingReload
         and not context.sessionResetPending
         and menuWorkNeeded(context, fullscreen)
     context.menuChromeOnly = context.menuDue and chromeOnly(context)
-    updateHolds(context, hidden, true)
+    updateHolds(context, hidden)
     local flightTask
     local owner = context.flightFactory and context.flightFactory.broker
     if owner then
@@ -3504,14 +3063,6 @@ local function runCallback(context, hidden, widgetEvent, touchState)
     syncTasks(context, hidden, flightTask, owner)
     enrolHost(context, getTime(), hidden)
     runTasks(context, hidden)
-    if context.uiTasks then
-        for kind, task in pairs(context.uiTasks) do
-            local ui = context[uiField(kind)]
-            if task.ui ~= ui then
-                task.ui = nil
-            end
-        end
-    end
     if not hidden and context.inputQueue and context.inputHandled then
         table.remove(context.inputQueue, 1)
         if #context.inputQueue == 0 then

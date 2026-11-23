@@ -581,9 +581,9 @@ panels:
             return settle()
         end
         if not debriefShown(context) then
-            if not context.debriefRequest and not debriefPillStale(context) and context.debriefPill then
+            if not context.openRequest and not debriefPillStale(context) and context.debriefPill then
                 -- The same request a tap on the Debrief ready bar makes.
-                context.debriefRequest = { page = context.page, swipe = true, released = true }
+                requestOpen(context, "debrief", { swipe = true, released = true })
             end
             return
         end

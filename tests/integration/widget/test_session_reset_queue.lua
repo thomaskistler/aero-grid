@@ -77,7 +77,6 @@ assert(liveTurns == 2, "normal queued work resumes after reset completion")
 local runs = context.scheduler.state(context.sessionResetTask).ran
 context.sessionResetPending = true
 context.stage = "probe"
-context.lifecycleRequest = "load"
 context.dashboardLoader.advanceLoad = function()
     context.stage = nil
 end

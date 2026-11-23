@@ -272,7 +272,7 @@ end)
 local layoutDraft = second.editorSession
 assert(second.editorModule.add(layoutDraft, "flight-timer"))
 second.aeroMenuHandlers.modelSettings()
-assert(second.editorUi and second.modelSettingsRequest, "menu entry must only record the settings request")
+assert(second.editorUi and second.openRequest, "menu entry must only record the settings request")
 untilState(second, function()
     return second.modelSettingsUi and not second.modelSettingsUi.build
 end)
