@@ -194,9 +194,11 @@ Risk: highest. Touches every overlay, editor, and input flow.
 - **One request queue in `main.lua`.** About 15 request types (options, session
   reset, menu, input, model settings, editor transition and restore, log, debrief
   build, open, and pill, location, lifecycle, UI, and the empty-layout hint) each
-  have their own ready, step, and pruning rules, with `servicesHold`,
-  `panelsHold`, `lifecycleHold`, and `inputFirst` on top. They total 824 lines. A
-  single queue for the current overlay or transition would replace about half.
+  have their own enrolment, step, and pruning rules, with `servicesHold`,
+  `panelsHold`, `lifecycleHold`, and `inputFirst` on top. They totalled 824
+  lines before Group 5 replaced `ready` gates with enrolment while open; recount
+  before starting. A single queue for the current overlay or transition would
+  replace about half.
 
 Together with the feature removals below, about 3,450 lines, or 11% of the
 widget's code. Groups 1–3 alone remove about 710 lines.
