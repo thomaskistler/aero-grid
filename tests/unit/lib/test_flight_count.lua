@@ -185,6 +185,12 @@ assert(result.count == 123 and result.armed == "SFv", "radio-saved Flights optio
 assert(result.flight.motorSource == "ch3" and result.flight.minFlightDuration == 30 and result.flight.requireReceiver)
 local inverted = string.gsub(saved, "unsignedValue: 18", "unsignedValue: 4294967255")
 assert(import(inverted).armed == "!L01", "unsigned representation of an inverted switch is decoded")
+local signed = string.gsub(
+    inverted,
+    "type: Unsigned(\r\n +value: \r\n +)unsignedValue: 4294967255",
+    "type: Signed%1signedValue: -41"
+)
+assert(import(signed).armed == "!L01", "signed inverted switches remain supported")
 local lastChannel = string.gsub(saved, "source: ch%(2%)", "source: ch(31)")
 assert(import(lastChannel).flight.motorSource == "ch32")
 local invalidChannel = string.gsub(saved, "source: ch%(2%)", "source: ch(32)")
