@@ -140,28 +140,23 @@ Risk: medium. Charts and debrief statistics depend on every sample.
 - **Pass the chart history each batch of samples** instead of a protected call per
   reading.
 
-### Group 7: Chart budget and Pre-release (about 180 lines, 1,600–4,700 instructions)
+### Group 7: Chart budget and Pre-release (about 110 lines)
 
 Risk: high. Changes how much work charts and loaders get per callback; the
 extra segments currently give charts room for horizontal and vertical rescaling,
 which the steady-flight measurements above do not cover. Measure rescale latency
 at each step.
 
-- **Fix what a slot costs.** A slot assumes 2,000 instructions; measured costs per
-  charged slot are 200–450 for most fixed-cost tasks, 480–740 for chart steps,
-  and about 1,100 for telemetry. The scheduler believes it is out of budget after
-  about 4–5k real instructions. Keep variable-cost grants for charts, but base
-  the unit on measured costs. Re-measure every layout.
-- **Run each task at most once per callback (1,600–4,700 instructions).** A task
-  that asks for another turn makes the scheduler pass over every task again.
-  Multi-step work, including chart rescaling, continues on the next callback; at
-  about 19 callbacks per second, charts that refresh 4 times per second do not
-  need extra turns.
-- **Move chart-only panel hooks into the chart (~70 lines est.).** `finish`,
-  `finishPending`, `finishMinCost`, `backgroundMinCost`, and `refreshMinCost`
-  exist only for `chart.lua` (88 lines of host plumbing). The chart runs its
-  phases inside one variable-cost refresh, leaving every panel with `create`,
-  `refresh`, `background`, `update`, and `destroy`.
+Groups 5 and 6 already moved chart finishing into refresh and removed the
+ring rescans, so the remaining work is slot costs and Pre-release.
+
+- **Fix what a slot costs.** A slot assumes 2,000 instructions, but real costs
+  differ widely: most fixed-cost tasks use 200–450 per charged slot, while a
+  telemetry step (8 sources per slot) uses 2,200–2,700. Re-measure on the current
+  code and base the unit on measured costs. Keep variable-cost grants for charts
+  (`refreshMinCost`, `backgroundMinCost`). Check two effects left over from
+  Group 6: at takeoff the third of three rescaling charts finishes 5–32 ticks
+  later, and FMS-Ranger-L2 with Pre-release on has more callbacks over 20k.
 - **Remove the Pre-release extended segments (107 lines), last.**
   `native_budget.lua` (34), segment and carry-over logic in `scheduler.lua` (42),
   `liveDangerously` in `main.lua` (22), `flight_config.lua`, and the Model
