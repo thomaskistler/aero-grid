@@ -25,7 +25,6 @@
 
 local flightMode = {
     id = "flight-mode",
-    apiVersion = 1,
     supportedSpans = { "any" },
     -- A flight mode changes when a switch moves, which is rare, and the reading
     -- is radio-local rather than telemetry. Two hertz is responsive enough and

@@ -3,7 +3,6 @@
 --- Fixed samples of the live host theme; never subscribes to telemetry.
 local showcase = {
     id = "theme-showcase",
-    apiVersion = 1,
     supportedSpans = { "4x4" },
     settings = {},
 }

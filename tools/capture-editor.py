@@ -19,10 +19,9 @@ SCENES = ("overview", "settings", "state-settings", "state-entry", "state-condit
 PANEL_DRAWER_CONFIG = {
     "chart": {"label": "CHART", "metrics": [{"source": "gvar1", "label": "Reading"}]},
     "host-diagnostics": {"label": "Host", "section": "identity"},
-    "service-probe": {"service": "telemetry", "source": "RxBt", "label": "Probe"},
 }
 PANEL_DRAWER_KINDS = ("chart", "flight-counter", "flight-mode", "flight-timer", "host-diagnostics", "link-status",
-                      "model-identity", "navigation", "output", "rx-battery", "service-probe", "trim-panel",
+                      "model-identity", "navigation", "output", "rx-battery", "trim-panel",
                       "tx-battery")
 PANEL_SETTINGS_SCENES = tuple(f"{kind}-settings" for kind in PANEL_DRAWER_KINDS)
 SCENES = SCENES + PANEL_SETTINGS_SCENES
@@ -298,6 +297,7 @@ def prepare(sd, scene, shift=0):
         sd / "WIDGETS/AeroGrid/layouts",
         dirs_exist_ok=True,
     )
+    shutil.copytree(ROOT / "tests/fixtures/panels", sd / "WIDGETS/AeroGrid/panels", dirs_exist_ok=True)
     # Keep capture scenes independent of the development model's extra screens.
     (sd / "MODELS/model1.yml").write_text("""semver: 3.0.0
 header:
@@ -353,13 +353,13 @@ screenData:
         # Show only the layouts included in the installation ZIP, not the
         # development fixture's review and diagnostic screens.
         for layout in (sd / "WIDGETS/AeroGrid/layouts").glob("*.yaml"):
-            if layout.stem not in ("Empty", "Default", "Diagnostics", "Palette"):
+            if layout.stem not in ("Empty", "Default"):
                 layout.unlink()
         (sd / "AEROGRID/layout-registry.txt").write_text("Empty\nDefault\nHost\nTheme\n")
         (sd / "capture-ready.txt").write_text("native setup capture")
         return
     if scene in THEME_SCENES:
-        layout = (ROOT / "src/WIDGETS/AeroGrid/layouts/Palette.yaml").read_text()
+        layout = (ROOT / "tests/fixtures/layouts/development/Palette.yaml").read_text()
         mode = scene.removeprefix("theme-")
         if mode == "custom":
             source = sd / "WIDGETS/AeroGrid/themes/modern-dark.yml"
@@ -581,9 +581,9 @@ panels:
             return settle()
         end
         if not debriefShown(context) then
-            if not context.debriefRequest and not debriefPillStale(context) and context.debriefPill then
+            if not context.openRequest and not debriefPillStale(context) and context.debriefPill then
                 -- The same request a tap on the Debrief ready bar makes.
-                context.debriefRequest = { page = context.page, swipe = true, released = true }
+                requestOpen(context, "debrief", { swipe = true, released = true })
             end
             return
         end

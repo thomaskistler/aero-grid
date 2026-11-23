@@ -251,7 +251,7 @@ panels:
 ]],
         {
             ["eater.lua"] = [==[
-local eater = {id = "eater", apiVersion = 1, supportedSpans = {"any"}}
+local eater = {id = "eater", supportedSpans = {"any"}}
 function eater.create(parent, rect, settings, services)
   return {panel = services.primitives.panel(parent, rect, services.theme,
     services.state("normal", "cyan")), seen = 0}

@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local config = { RUNTIME_API = 1 }
+local config = {}
 local defaults = {
     motorSource = "ch3",
     motorReversed = false,
@@ -10,10 +10,9 @@ local defaults = {
     minFlightDuration = 30,
     disarmDuration = 10,
     flightSwitch = "",
-    liveDangerously = false,
     countSource = "internal",
 }
-local booleanKeys = { "motorReversed", "requireReceiver", "smartDetection", "liveDangerously" }
+local booleanKeys = { "motorReversed", "requireReceiver", "smartDetection" }
 local durationKeys = { "minFlightDuration", "disarmDuration" }
 local signatureKeys = {
     "motorSource",

@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local ui = { RUNTIME_API = 1 }
+local ui = {}
 
 local fields = {
     {
@@ -34,7 +34,7 @@ local fields = {
         key = "flightSwitch",
         label = "Flight status switch",
         kind = "choice",
-        slots = 2,
+        slots = 8,
         description = "On during a detected flight. Use for your own special functions. Choose a dedicated Sticky logical switch, or None.",
     },
     {
@@ -43,13 +43,6 @@ local fields = {
         kind = "switch",
         section = "Session reset",
         description = "Clears session data across all dashboards. Keeps flight totals and radio data.",
-    },
-    {
-        key = "liveDangerously",
-        label = "Pre-release features",
-        kind = "toggle",
-        section = "Pre-release",
-        description = "Enable pre-release features that are not fully validated yet.",
     },
 }
 

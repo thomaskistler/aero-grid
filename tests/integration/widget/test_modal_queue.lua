@@ -20,7 +20,7 @@ context.modelSettingsUiModule = {
         end
     end,
     advance = function()
-        local task = assert(context.uiTasks["model settings"])
+        local task = assert(context.hostTask)
         assert(task.cost == context.scheduler.budget.capacity)
         steps = steps + 1
         local state = context.modelSettingsUi
@@ -45,11 +45,11 @@ noGrant(context, fixture.lvglMock.objects, function()
 end)
 definition.background(context)
 assert(steps == 1 and inputs == 0, "hidden modal work must not handle foreground input")
-local modelTask = context.uiTasks["model settings"]
+local modelTask = context.hostTask
 assert(context.scheduler.state(modelTask).pending, "settings fields continue when the grant is used up")
 definition.refresh(context)
 definition.refresh(context)
-assert(steps == 3 and not context.uiRequest and not context.modelSettingsUi.build)
+assert(steps == 3 and not context.hostKind and not context.modelSettingsUi.build)
 definition.refresh(context, 991)
 assert(not context.inputQueue and steps == 3 and context.modelSettingsUi.closing)
 assert(
@@ -58,7 +58,6 @@ assert(
 )
 definition.refresh(context)
 assert(not context.modelSettingsUi and not context.inputQueue and steps == 4)
-assert(not modelTask.ui, "closed modal objects must not stay reachable through a cached task")
 
 local services = fixture.module("lib/services.lua")
 context.serviceRuntime = services.runtime({})
@@ -85,7 +84,7 @@ context.modelSettingsUiModule = {
     end,
 }
 definition.refresh(context, 992)
-assert(not context.uiRequest, "ordinary modal input must not schedule a no-op UI turn")
+assert(not context.hostKind, "ordinary modal input must not schedule a no-op UI turn")
 assert(serviceUpdates > 0, "ordinary modal input must leave slots for subscribed services")
 local updatesBeforeIdle = serviceUpdates
 for _ = 1, 5 do
@@ -99,7 +98,7 @@ context.modelSettingsUi, context.modelSettingsUiModule = nil, settingsUiModule
 context.logViewer = { width = context.zone.w - 16, height = context.zone.h, prepareIndex = 3 }
 context.logViewerModule = {
     advance = function()
-        local task = assert(context.uiTasks["log viewer"])
+        local task = assert(context.hostTask)
         assert(task.cost == context.scheduler.budget.capacity)
         steps = steps + 1
         context.logViewer.prepareIndex = context.logViewer.prepareIndex > 1 and context.logViewer.prepareIndex - 1
@@ -107,7 +106,7 @@ context.logViewerModule = {
     end,
 }
 definition.refresh(context)
-assert(context.uiRequest == "log viewer" and steps == 5, "routing and preparation share a callback")
+assert(context.hostKind == "log viewer" and steps == 5, "routing and preparation share a callback")
 definition.background(context)
 assert(steps == 5, "hidden callbacks must not prepare log text")
 
@@ -127,25 +126,23 @@ context.flightTask = {
         return slots, false
     end,
 }
-context.scheduler.cursor = 1
+fixture.requeue(context)
 definition.refresh(context)
 assert(flightSteps == 1 and steps == 5, "flight's charged turn must defer the full-capacity viewer")
 definition.refresh(context)
 assert(flightSteps == 1 and steps == 6, "the deferred viewer gets first turn next callback")
-local viewerTask = context.uiTasks["log viewer"]
+local viewerTask = context.hostTask
 assert(context.scheduler.state(viewerTask).pending)
 context.flightFactory = nil
 definition.refresh(context)
 definition.refresh(context)
-assert(steps == 7 and not context.uiRequest and not context.scheduler.state(viewerTask).pending)
+assert(steps == 7 and not context.hostKind and not context.scheduler.state(viewerTask).pending)
 
--- A native close can invalidate a retained request before its next grant.
-context.uiRequest = "log viewer"
+-- A native close leaves no viewer work behind.
+context.logViewer = { width = context.zone.w - 16, height = context.zone.h, prepareIndex = 3 }
 context.logViewer = nil
 definition.refresh(context)
-definition.refresh(context)
-assert(steps == 7 and not context.uiRequest)
-assert(not viewerTask.ui, "a native close must release the cached viewer reference")
+assert(steps == 7 and not context.hostKind)
 
 context.modelSettingsUi, context.reloadState = {}, "clear"
 definition.refresh(context, 991)

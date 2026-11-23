@@ -267,8 +267,8 @@ panels:
       source: Cels
       label: Pack
       visual: bar
-      warning: 3.5
-      critical: 3.3
+      cellWarning: 3.5
+      cellCritical: 3.3
   - id: link
     type: link-status
     col: 2

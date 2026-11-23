@@ -33,7 +33,7 @@ context.flightTask = {
         return slots, false
     end,
 }
-context.scheduler.cursor = 1
+fixture.requeue(context)
 -- EdgeTX calls update while entering fullscreen, before its next redraw.
 fixture.lvglMock.setFullScreen(true)
 definition.update(context, { Layout = "Default", Theme = "modern-dark" })
@@ -48,7 +48,7 @@ assert(shown(), "the button must appear in the first fullscreen callback")
 context.flightFactory, context.flightTask = nil, nil
 fixture.pump(context, 20)
 
-context.editorTransitionRequest = "open"
+context.openRequest = { kind = "editor", page = context.page, modelFilename = model.getInfo().filename }
 fixture.pump(context, 30)
 assert(context.editorUi and not context.editorUi.buildStage, "the editor must open")
 assert(shown(), "the button stays while editing")

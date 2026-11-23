@@ -5,7 +5,7 @@
 --- EdgeTX sends no TAP when a press outlasts its tap time, and BREAK reports
 --- (0, 0), so a release taps at the point captured by FIRST. A press taps at
 --- most once; moving more than SLOP pixels or a long press cancels the tap.
-local gesture = { RUNTIME_API = 1, SLOP = 10 }
+local gesture = { SLOP = 10 }
 
 local function matches(event, name)
     local value = _G[name]

@@ -11,13 +11,16 @@ fixture.pump(context, 20)
 context.document.panels, context.emptyHint = { {} }, nil
 context.serviceRuntime = context.servicesModule.runtime({})
 local opened, closed, restored, flightSteps = 0, 0, 0, 0
+local function entry()
+    return context.openRequest ~= nil and context.openRequest.kind == "editor"
+end
 context.editorController.openEditor = function()
-    assert(context.editorTransitionTask.cost == context.scheduler.budget.capacity)
+    assert(context.hostTask.kind == "enter" and context.hostTask.cost == context.scheduler.budget.capacity)
     opened = opened + 1
     return true
 end
 context.editorController.restorePreview = function()
-    assert(context.editorTransitionTask.cost == context.scheduler.budget.capacity)
+    assert(context.hostTask.cost == context.scheduler.budget.capacity)
     restored = restored + 1
 end
 context.editorUiModule = {
@@ -43,20 +46,20 @@ context.flightTask = {
     end,
 }
 context.aeroMenuHandlers.uiSetup()
-assert(opened == 0 and context.editorTransitionRequest == "open", "menu action only records editor entry")
+assert(opened == 0 and entry(), "menu action only records editor entry")
 noGrant(context, fixture.lvglMock.objects, function()
     definition.refresh(context)
     definition.background(context)
-    assert(opened == 0 and flightSteps == 0 and context.editorTransitionRequest == "open")
+    assert(opened == 0 and flightSteps == 0 and entry())
 end)
 definition.background(context)
-assert(opened == 0 and context.editorTransitionRequest == "open", "hidden callbacks retain pending entry")
-context.scheduler.cursor = 1
+assert(opened == 0 and entry(), "hidden callbacks retain pending entry")
+fixture.requeue(context)
 definition.refresh(context)
 assert(opened == 0 and flightSteps == 2, "editor entry must wait for full capacity")
 definition.refresh(context)
-assert(opened == 1 and flightSteps == 2 and not context.editorTransitionRequest)
-local task = context.editorTransitionTask
+assert(opened == 1 and flightSteps == 2 and not entry())
+local task = context.hostTask
 assert(not context.scheduler.state(task).pending, "opening cannot advance editor construction in the same callback")
 context.flightFactory = nil
 
@@ -72,7 +75,6 @@ for _ = 1, 10 do
 end
 assert(closed == 1 and restored == 1 and context.editorStash == draft)
 assert(not context.editorSession and not context.scheduler.state(task).pending)
-context.editorTransitionRequest = "open"
 fixture.lvglMock.setFullScreen(true)
 for _ = 1, 10 do
     definition.refresh(context)
@@ -93,12 +95,12 @@ assert(
 )
 context.modelArmingReload, context.sessionResetPending, context.editorStash = nil, nil, nil
 
-context.editorTransitionRequest = "open"
+context.aeroMenuHandlers.uiSetup()
 fixture.lvglMock.setFullScreen(false)
 for _ = 1, 10 do
     definition.refresh(context)
-    if not context.editorTransitionRequest then
+    if not entry() then
         break
     end
 end
-assert(opened == 2 and not context.editorTransitionRequest, "stale entry must not open an editor in App mode")
+assert(opened == 2 and not entry(), "stale entry must not open an editor in App mode")

@@ -2,7 +2,7 @@
 
 --- Layout path resolution and validated, recoverable persistence.
 
-local layoutStore = { RUNTIME_API = 1 }
+local layoutStore = {}
 local verifiedFile = ...
 
 local function writer(widgetPath)
@@ -281,34 +281,6 @@ function layoutStore.load(widgetPath, name, yaml, layout, grid)
     end
     local fallback = candidates[#candidates - 1]
     return nil, lastErrors, fallback and fallback.filename or "", "none"
-end
-
---- Load the shipped default layout, falling back to its last committed backup.
-function layoutStore.loadDefault(widgetPath, yaml, layout, grid)
-    local base = string.sub(widgetPath, -1) == "/" and widgetPath or widgetPath .. "/"
-    local candidates = {
-        base .. "layouts/Default.yaml",
-        base .. "layouts/Default.yaml.bak",
-    }
-    local lastErrors = {}
-    for _, filename in ipairs(candidates) do
-        local content, readError = readFile(filename)
-        if content then
-            local document, parseError = yaml.parse(content)
-            if document then
-                local normalized, errors = layout.validate(document, grid)
-                if normalized and #errors == 0 then
-                    return normalized, nil, filename
-                end
-                lastErrors = errors
-            else
-                lastErrors = { parseError }
-            end
-        else
-            lastErrors = { readError }
-        end
-    end
-    return nil, lastErrors, candidates[1]
 end
 
 --- Install prevalidated content only after a byte-for-byte readback check.

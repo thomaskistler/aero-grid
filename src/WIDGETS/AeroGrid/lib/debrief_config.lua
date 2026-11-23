@@ -3,7 +3,7 @@
 --- Validation, draft edits, and automatic population of a layout's
 --- post-flight debrief section.
 
-local debrief = { RUNTIME_API = 1, MAX_TILES = 12, MAX_SERIES = 3 }
+local debrief = { MAX_TILES = 12, MAX_SERIES = 3 }
 
 -- Legacy per-tile sizes, accepted when the layout has no shared size.
 debrief.SIZES = { "2x2", "4x2", "4x1" }

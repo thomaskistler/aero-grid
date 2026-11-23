@@ -29,7 +29,6 @@
 
 local flightTimer = {
     id = "flight-timer",
-    apiVersion = 1,
     supportedSpans = { "any" },
     -- A clock advances once a second, so anything faster is wasted work charged
     -- to the same instruction budget as every other panel on the dashboard.

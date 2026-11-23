@@ -9,7 +9,7 @@
 ---@field content string
 ---@field line integer
 
-local yaml = { RUNTIME_API = 1 }
+local yaml = {}
 
 --- Remove surrounding whitespace.
 ---@param value string
@@ -392,17 +392,6 @@ parseBlock = function(tokens, index, indent)
         return parseList(tokens, index, indent)
     end
     return parseMap(tokens, index, indent)
-end
-
---- Parse one block starting at a token index and indentation level.
----@param tokens AeroGridYamlToken[]
----@param index integer
----@param indent integer
----@return any value
----@return integer nextIndex
----@return string? error
-function yaml.buildAt(tokens, index, indent)
-    return parseBlock(tokens, index, indent)
 end
 
 --- Parse exactly one sequence entry at a token index.

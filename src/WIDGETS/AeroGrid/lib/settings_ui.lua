@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local ui = { RUNTIME_API = 1 }
+local ui = {}
 
 local function retireHost(view)
     if view.host then
@@ -547,7 +547,7 @@ end
 
 function ui.cost(view, capacity, finish)
     local field = view.fields[view.build]
-    return math.min(field and (field.slots or 1) or finish or 1, capacity)
+    return math.min(field and (field.slots or 4) or finish or 4, capacity)
 end
 
 return ui

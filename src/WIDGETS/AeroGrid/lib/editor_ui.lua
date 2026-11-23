@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local uiModule = { RUNTIME_API = 1 }
+local uiModule = {}
 
 local function label(parent, rect, text, color, font)
     return lvgl.label(parent, {
@@ -293,7 +293,6 @@ function uiModule.advance(context)
                     grid = session.grid,
                     panelHost = session.panelHost,
                     loadPanel = session.loadPanel,
-                    modelArmed = session.modelArmed,
                 })
                 if not checked then
                     failed(table.concat(errors, "; "))

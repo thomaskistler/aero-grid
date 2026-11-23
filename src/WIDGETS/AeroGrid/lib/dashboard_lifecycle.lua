@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local module = { RUNTIME_API = 1 }
+local module = {}
 
 --- Bind host operations once; callbacks retain their original work limits.
 ---@param dependencies table
@@ -203,6 +203,7 @@ function module.new(dependencies)
             for index, current in ipairs(context.panels) do
                 if current == entry then
                     table.remove(context.panels, index)
+                    context.tasksDirty = true
                     job.index = index
                     break
                 end
@@ -214,6 +215,7 @@ function module.new(dependencies)
             if rebuilt then
                 table.remove(context.panels)
                 table.insert(context.panels, math.min(job.index, #context.panels + 1), rebuilt)
+                context.tasksDirty = true
             end
             job.built = true
             return

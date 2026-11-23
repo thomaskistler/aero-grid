@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 --- Connected, error-bounded recordings of cumulative recording time.
-local history = { RUNTIME_API = 1, CAPACITY = 6144, FLIGHT_CAPACITY = 64 }
+local history = { CAPACITY = 6144, FLIGHT_CAPACITY = 64 }
 history.updateCost = 1
 history.__index = history
 
@@ -93,7 +93,8 @@ function history.new(env, support, runtime)
     return setmetatable({
         id = "history",
         revision = 0,
-        interval = 5,
+        -- Samples arrive through telemetry; updates only advance sessions and expire.
+        interval = 20,
         count = 0,
         due = 0,
         env = env,
@@ -109,8 +110,8 @@ function history.new(env, support, runtime)
     }, history)
 end
 
-local function sessionFor(service, armSwitch)
-    local armed = assert(service.runtime.byId.armed, "history requires Armed service"):state(armSwitch)
+local function sessionFor(service)
+    local armed = assert(service.runtime.byId.armed, "history requires Armed service"):state()
     local session = service.sessionNames[armed.key]
     if not session then
         local state = {
@@ -149,8 +150,8 @@ local function sessionFor(service, armSwitch)
     return session
 end
 
-function history:session(armSwitch)
-    return sessionFor(self, armSwitch).view
+function history:session()
+    return sessionFor(self).view
 end
 
 function history:destroy()
@@ -466,12 +467,11 @@ function history:preview()
         first = 1,
         last = 0,
     })
-    local function condition(legacy)
-        local modelArm = owner.runtime.byId.armed.condition
-        return modelArm ~= nil and modelArm or legacy or ""
+    local function condition()
+        return owner.runtime.byId.armed.condition or ""
     end
-    function facade:session(legacy)
-        local key = condition(legacy)
+    function facade:session()
+        local key = condition()
         local session = owner.sessionNames[key]
         return session and session.view
             or owner.support.snapshot({
@@ -489,7 +489,7 @@ function history:preview()
         options = options or {}
         local window, mode, smoothing, precision = recordingOptions(options)
         source = type(source) == "string" and source or ""
-        local key = recordingKey(condition(options.armSwitch), source, window, mode, smoothing, precision)
+        local key = recordingKey(condition(), source, window, mode, smoothing, precision)
         return owner.names[key] and owner.names[key].view or empty
     end
     function facade:flight(view, index)
@@ -507,7 +507,7 @@ end
 function history:subscribe(source, options)
     options = options or {}
     local window, mode, smoothing, precision = recordingOptions(options)
-    local session = sessionFor(self, options.armSwitch)
+    local session = sessionFor(self)
     source = type(source) == "string" and source or ""
     local key = recordingKey(session.name, source, window, mode, smoothing, precision)
     if self.names[key] then
@@ -549,9 +549,10 @@ function history:subscribe(source, options)
     self.sources[source] = tracks
     tracks[#tracks + 1] = entry
     self.count = self.count + 1
+    self.support.subscribed(self)
     local telemetry = self.runtime.byId.telemetry
     if telemetry then
-        telemetry:subscribe(source)
+        telemetry:subscribe(source, nil, true)
         if not self.observing then
             telemetry:observe(self)
             self.observing = true
@@ -757,6 +758,16 @@ function history:sample(reading, now)
                 end
             end
         end
+    end
+end
+
+--- Record one update's batch of telemetry readings.
+---@param readings AeroGridReading[]
+---@param count integer
+---@param now integer
+function history:samples(readings, count, now)
+    for index = 1, count do
+        self:sample(readings[index], now)
     end
 end
 

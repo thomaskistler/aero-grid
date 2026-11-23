@@ -49,17 +49,15 @@ local function event(kind, at, observed, id, key)
 end
 local function harness(modelArm)
     local runtime = support.runtime(env)
-    runtime.modelArmed = modelArm
+    runtime.modelArmed = modelArm or "L01"
     runtime.byId.flight = flight
     local control = controlModule.new(env, support, runtime)
     runtime.byId.control = control
     runtime.byId.armed = armedModule.new(env, support, runtime)
     local history = historyModule.new(env, support, runtime)
-    local session = history:session("L01")
-    local independent = history:session("L02")
-    local feed = history:subscribe("V", { armSwitch = "L01", precision = 3 })
-    local second = history:subscribe("A", { armSwitch = "L01", precision = 3 })
-    local other = history:subscribe("V", { armSwitch = "L02", precision = 3 })
+    local session = history:session()
+    local feed = history:subscribe("V", { precision = 3 })
+    local second = history:subscribe("A", { precision = 3 })
     local samples = 0
     local function poll(now, armed, value, independentlyArmed)
         values[1], values[2] = armed, independentlyArmed
@@ -82,15 +80,14 @@ local function harness(modelArm)
         history:update(now)
         return samples
     end
-    return history, session, feed, poll, independent, other, second
+    return history, session, feed, poll, second
 end
 
-local history, session, feed, poll, independent, other, second = harness()
+local history, session, feed, poll, second = harness()
 assert(type(history.armBoundary) == "function", "arm boundaries must exist before any flight has been recognized")
 poll(0, false, 0, false)
 poll(100, true, 1, true)
 equal(session.armLast, 0, "the first arming must not create a boundary")
-equal(independent.armLast, 0, "independent recordings also omit the first arm boundary")
 poll(200, true, 2, true)
 state.active, state.startedAt, state.flightId = true, 200, 1
 event("start", 200, 300, 1)
@@ -110,8 +107,6 @@ equal(select(2, history:armBoundary(session, session.armLast)), false, "arm boun
 equal(session.flightActive, true, "disarm markers also exist during flight grace")
 poll(500, false, 5, false)
 equal(feed.value, 5, "grace samples are recorded")
-equal(other.value, 3, "an independently armed chart must pause without shared grace")
-equal(independent.recording, false)
 equal(session.recording, true)
 equal(session.stoppedAt, nil, "disarm grace must not create a recording-stop band")
 poll(550, true, 6, false)
@@ -166,7 +161,6 @@ state.armKey = "L02"
 event("start", 200, 1500, 99, "L01")
 poll(1500, false, 16, false)
 equal(session.flightLast, 3)
-equal(independent.flightLast, 0)
 state.armKey = "L01"
 
 -- Both the interval ring and the wall/axis mapping stay bounded.
@@ -243,14 +237,6 @@ latePoll(10300, false, 23, false)
 equal(lateSession.flightLast, 0, "model epochs remove old flight overlays even for a nonmatching arm")
 equal(late:flight(lateSession, 1), nil)
 
--- Native Armed deliberately collapses legacy arms to the widget condition.
-state.armKey, state.active, state.startedAt, state.flightId = "L01", true, 10400, 201
-local native, nativeSession, _, nativePoll, nativeOther = harness("L01")
-equal(nativeSession, nativeOther)
-nativePoll(10400, false, 24, false)
-equal(nativeSession.recording, true)
-equal(native:flight(nativeSession, 1), 0)
-
 -- With no shared detector, the established arm-only behavior remains intact.
 state.active, state.armKey, state.status = false, nil, "unconfigured"
 local legacy, legacySession, legacyFeed, legacyPoll = harness()
@@ -265,15 +251,14 @@ equal(legacy:flight(legacySession, 1), nil)
 local subscriptions, sessions = legacy.count, #legacy.sessions
 local controls = #legacy.runtime.byId.control.entries
 local preview = legacy:preview()
-equal(preview:session("L01"), legacySession)
+equal(preview:session(), legacySession)
 equal(
     preview:armBoundary(legacySession, legacySession.armLast),
     legacy:armBoundary(legacySession, legacySession.armLast)
 )
-equal(preview:subscribe("V", { armSwitch = "L01", precision = 3 }), legacyFeed)
-equal(preview:subscribe("unconfigured", { armSwitch = "L03" }).previewMissing, true)
-equal(preview:subscribe("V", { armSwitch = "L01", smoothing = "strong" }).previewMissing, true)
-equal(preview:session("L03").elapsed, 0)
+equal(preview:subscribe("V", { precision = 3 }), legacyFeed)
+equal(preview:subscribe("unconfigured", {}).previewMissing, true)
+equal(preview:subscribe("V", { smoothing = "strong" }).previewMissing, true)
 equal(legacy.count, subscriptions, "draft-only sources must not create live recordings")
 equal(#legacy.sessions, sessions, "draft-only arms must not create live sessions")
 equal(#legacy.runtime.byId.control.entries, controls, "draft arms must not create live control pollers")

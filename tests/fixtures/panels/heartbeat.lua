@@ -21,7 +21,6 @@
 
 local heartbeat = {
     id = "heartbeat",
-    apiVersion = 1,
     -- Restricted on purpose: the host must reject unsupported spans visibly.
     supportedSpans = { "1x1", "2x1", "2x2", "4x1" },
     -- Faster than a telemetry readout because it animates, but still far below

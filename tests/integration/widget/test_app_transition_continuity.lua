@@ -10,7 +10,7 @@ local definition = fixture.module("main.lua")
 local path = root .. "/build/test-widget-fixture/"
 local file = assert(hostIo.open(path .. "layouts/app-continuity.yaml", "w"))
 file:write([[
-version: 4
+version: 5
 grid:
   columns: 4
   rows: 4
@@ -81,7 +81,7 @@ assert(not context.panels[1].container.builtFullscreen, "replacement panels pres
 
 file = assert(hostIo.open(path .. "layouts/arming-recovery.yaml", "w"))
 file:write([[
-version: 4
+version: 5
 grid:
   columns: 4
   rows: 4
@@ -101,7 +101,7 @@ file:close()
 fixture.lvglMock.setFullScreen(true)
 local recovering = fixture.createLoaded(nil, { Layout = "arming-recovery", Theme = "modern-dark" })
 fixture.pump(recovering, 40)
-assert(#recovering.rejected == 1, "an invalid legacy arm source rejects the chart before model arming is configured")
+assert(#recovering.rejected == 0 and #recovering.panels == 1, "an invalid legacy arm source is ignored")
 local recoveryPage = recovering.page
 recovering.aeroMenuHandlers.modelSettings()
 assert(fixture.pumpUntil(recovering, function(host)
@@ -118,11 +118,11 @@ for _ = 1, 300 do
     fixture.lvglMock.settle()
     assert(
         visible(recoveryPage) or recovering.page and visible(recovering.page),
-        "recovering rejected panels after an arming change must not blank the dashboard"
+        "reloading after an arming change must not blank the dashboard"
     )
     if not recovering.modelSettingsUi and not recovering.stage and not recovering.reloadState then
         break
     end
 end
-assert(#recovering.panels == 1 and #recovering.rejected == 0, "model arming must recover rejected legacy-arm panels")
+assert(#recovering.panels == 1 and #recovering.rejected == 0, "the chart survives the arming reload")
 assert(#recovering.errors == 0, table.concat(recovering.errors, "\n"))

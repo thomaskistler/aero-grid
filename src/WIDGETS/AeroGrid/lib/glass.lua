@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local glass = { RUNTIME_API = 1 }
+local glass = {}
 glass.__index = glass
 
 local SAMPLE_SIZE = 16

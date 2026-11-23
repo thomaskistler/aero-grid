@@ -18,7 +18,6 @@ This does not change saved settings or disable alarms.
 | [Model identity](../panels/model-identity.md) | Model name and picture. |
 | [Navigation](../panels/navigation.md) | GPS position, distance from home, and bearing toward the model. |
 | [RX battery](../panels/rx-battery.md) | Aircraft cell or pack voltage. |
-| [Service probe](../panels/service-probe.md) | Troubleshooting view of one shared data service. |
 | [State](../panels/state.md) | Up to three readings selected by ordered switch conditions. |
 | [Trim](../panels/trim-panel.md) | Aileron, elevator, and rudder trims. |
 | [TX battery](../panels/tx-battery.md) | TX battery voltage and an optional voltage-based estimate. |

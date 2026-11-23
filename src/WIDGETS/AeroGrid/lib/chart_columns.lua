@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 -- 18 auto steps reach 512 minutes, keeping tick-times-pixel products within int32.
-local columns = { RUNTIME_API = 1, BREAK_WIDTH = 24, AUTO_STEPS = 18, APPEND_LIMIT = 10 }
+local columns = { BREAK_WIDTH = 24, AUTO_STEPS = 18, APPEND_LIMIT = 10 }
 columns.__index = columns
 local consumer = {}
 consumer.__index = consumer

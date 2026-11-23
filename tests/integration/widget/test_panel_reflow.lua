@@ -79,7 +79,7 @@ local function reflow(context, width, height, fullscreen)
     fixture.lvglMock.setFullScreen(fullscreen)
     definition.refresh(context)
     local guard = 0
-    while context.reflowIndex or context.lifecycleRequest do
+    while context.reflowIndex or context.hostKind do
         definition.refresh(context)
         guard = guard + 1
         assert(guard < 100, "reflow did not finish")
@@ -232,7 +232,7 @@ do
         end
         definition.refresh(context)
         local guard = 0
-        while context.reflowIndex or context.lifecycleRequest do
+        while context.reflowIndex or context.hostKind do
             definition.refresh(context)
             guard = guard + 1
             assert(guard < 100, "reflow did not finish")

@@ -493,32 +493,6 @@ Cross-field rules:
     cells: 2
 ```
 
-### `service-probe`
-
-Drawer title: **Service probe** · [drawer settings and behavior](../panels/service-probe.md) · Supported spans: `2x2`, `3x2`, `4x2`, `2x3`, `3x3`, `4x3`, `2x4`, `3x4`, `4x4`.
-
-| Key | Type | Default | Allowed values | Drawer label | Notes |
-| --- | --- | --- | --- | --- | --- |
-| `service` | string | `telemetry` | `telemetry`, `model`, `control`, `navigation` | Service | Selects the host service under inspection. |
-| `source` | string | `""` | Any service/source name or blank | Source | |
-| `index` | number | `0` | Any number | Index | Service-specific lookup/index. |
-| `label` | string | `""` | Any string | Label | Blank derives the heading from the selected service. |
-| `accent` | string | `cyan` | `cyan`, `green`, `amber`, `orange` | Accent | |
-
-No panel-specific cross-field validation is declared.
-
-```yaml
-- id: probe
-  type: service-probe
-  col: 0
-  row: 0
-  colSpan: 2
-  rowSpan: 2
-  config:
-    service: telemetry
-    source: RSSI
-```
-
 ### `state`
 
 Drawer title: **State** · [drawer settings and behavior](../panels/state.md) · Supported spans: `any`.
@@ -744,5 +718,5 @@ With contrast correction enabled, chart inks are adjusted to at least 4.5:1
 contrast against the panel surface; the chart grid is unchanged. With correction
 disabled, explicit colors are preserved and you must check readability.
 Omitted alert backgrounds still use contrast-checked derived tints.
-Unknown fields and invalid values are rejected. Preview every state in
-**Palette** on the radio before using a custom theme.
+Unknown fields and invalid values are rejected. Check its normal and alert
+states on the radio before using a custom theme.

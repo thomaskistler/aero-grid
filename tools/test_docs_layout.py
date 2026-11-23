@@ -15,7 +15,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[1]
 PAGES = ("developer-guide/build/", "panels/metric/", "reference-guide/yaml/",
          "user-guide/model-settings/", "panels/chart/", "panels/flight-counter/",
-         "panels/navigation/", "panels/service-probe/")
+         "panels/navigation/")
 
 
 class DocumentationLayoutTests(unittest.TestCase):

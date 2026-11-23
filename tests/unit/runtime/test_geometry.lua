@@ -188,16 +188,13 @@ local function testRefreshScheduling()
 
     -- The contract rejects a nonsensical interval rather than misscheduling.
     local function rejects(interval)
-        local ok = panelHost.validateModule(
-            { id = "d", apiVersion = 1, create = function() end, refreshInterval = interval },
-            "d"
-        )
+        local ok = panelHost.validateModule({ id = "d", create = function() end, refreshInterval = interval }, "d")
         assertEqual(ok, false, "accepted interval " .. tostring(interval))
     end
     rejects(-1)
     rejects(1.5)
     rejects("fast")
-    assert(panelHost.validateModule({ id = "d", apiVersion = 1, create = function() end, refreshInterval = 0 }, "d"))
+    assert(panelHost.validateModule({ id = "d", create = function() end, refreshInterval = 0 }, "d"))
 end
 
 --- Every origin wording must fit the width it is given, and must step down
@@ -688,7 +685,7 @@ local function testBatteryStaysVisible()
     for _, mode in ipairs({ "modern-dark", "modern-light" }) do
         local resolved = theme.build(mode)
         for _, state in ipairs({ "normal", "warning", "critical", "stale", "unavailable" }) do
-            local backdrop = primitives.batteryBackdropRgb(resolved, state)
+            local backdrop = (resolved.alertRgb and resolved.alertRgb[state]) or resolved.rgb.surface
             for _, accent in ipairs({ "cyan", "green", "amber", "orange" }) do
                 local ratio = theme.contrast(cellRgb(resolved, state, accent), backdrop)
                 local minimum = LEAST
@@ -1416,15 +1413,6 @@ end
 --- A bipolar bar grows outward from its own centre and keeps its neutral
 --- marker visible at every deflection.
 local function testBipolarGeometry()
-    assertEqual(primitives.signedFraction(50, -100, 100), 0.5)
-    assertEqual(primitives.signedFraction(-50, -100, 100), -0.5)
-    -- Each side is measured against its own bound, so an asymmetric range is
-    -- still centred at zero rather than at the middle of its span.
-    assertEqual(primitives.signedFraction(-10, -20, 100), -0.5)
-    assertEqual(primitives.signedFraction(500, -100, 100), 1)
-    assertEqual(primitives.signedFraction(0 / 0, -100, 100), 0)
-    assertEqual(primitives.signedFraction(5, -100, 0), 0, "a bound of zero cannot produce a fraction")
-
     -- setBipolarBar is pure geometry, so it is checked against a recording stub
     -- rather than against a live LVGL object.
     local bar = {
@@ -1822,7 +1810,7 @@ local function testTelemetryLinkView()
 
     harness.rssi = 0
     harness.values[100] = 0
-    service:update(1)
+    service:update(20)
     assertEqual(link.live, false, "a dead link was reported as live")
     assertEqual(link.indicator, true)
     assertEqual(pack.state, "stale")
@@ -1849,13 +1837,6 @@ end
 
 --- A compass is north-up and says nothing when there is nothing to say.
 local function testCompassGeometry()
-    -- LVGL measures zero at three o'clock; a compass measures zero at twelve.
-    assertEqual(primitives.arcAngle(0), 270)
-    assertEqual(primitives.arcAngle(90), 0)
-    assertEqual(primitives.arcAngle(180), 90)
-    assertEqual(primitives.arcAngle(270), 180)
-    assertEqual(primitives.arcAngle(359.6), 270)
-
     local compass = {
         centreX = 50,
         centreY = 50,

@@ -51,7 +51,7 @@ local storeEnv = {
     end,
 }
 local sidecar = load("lib/model_settings_sidecar.lua")
-storeEnv.backend = sidecar.new("/WIDGETS/AeroGrid/", storeEnv, storeEnv.verifiedFile, operations)
+storeEnv.sidecar = sidecar
 local store = storeModule.new("/WIDGETS/AeroGrid/", load("lib/yaml.lua"), storeEnv, operations)
 
 local function restart()
@@ -67,8 +67,11 @@ local function step(owner, times)
         now = now + 20
         owner:setup(now, false)
         for _, task in ipairs(owner:tasks()) do
-            if task.name == "flight.count" and now >= (task.due or 0) and task.ready(task, now) then
-                task.step(task, now, 8)
+            if task.name == "flight.count" and now >= (task.due or 0) then
+                local _, again = task.step(task, now, 0)
+                if again then
+                    task.step(task, now, task.cost)
+                end
             end
         end
     end
@@ -134,17 +137,10 @@ assert(output.name == "AGTEST")
 filename, output, disarmed = "fresh.yml", { name = "" }, false
 owner = restart()
 local host = {}
-owner.members[host] = { modelFilename = filename, declarations = { { armKey = "L01", armIndex = 1 } } }
+owner.members[host] = { modelFilename = filename, legacy = { armed = "L01" } }
 step(owner)
-assert(owner.pendingCount and owner.pendingCount.deferred and not owner.view.countError)
-assert(output.name == "" and not files[sidecar.path("/WIDGETS/AeroGrid/", "AGNEW1")])
-assert(not owner.countTask.ready(owner.countTask, now), "deferred count must not continuously retry while armed")
-owner.countDirty = true
-step(owner)
-assert(owner.pendingCount.deferred and not owner.view.countError, "publishing must not retry a deferred claim")
-disarmed = true
-step(owner)
-assert(owner.pendingCount == nil and owner.view.count == 0 and output.name == "AGNEW1")
-assert(store:load(filename).flightCount == 0, "deferred initial count persists after disarming")
+assert(owner.pendingCount == nil and owner.view.count == 0 and output.name == "AGNEW1" and not owner.view.countError)
+assert(store:load(filename).flightCount == 0, "initial count persists while armed")
+assert(store:load(filename).armed == "L01", "released layout arm switches convert once into model settings")
 
 print("Flight count initialization, restart, source switching and persistence recovery passed")

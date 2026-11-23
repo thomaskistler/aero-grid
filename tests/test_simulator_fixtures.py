@@ -55,7 +55,7 @@ class SimulatorFixtureTests(unittest.TestCase):
         self.assertLessEqual(layouts, set(REGISTRY))
 
     def test_panel_reviews_cover_each_user_facing_type(self):
-        excluded = {"host-diagnostics", "service-probe", "theme-showcase"}
+        excluded = {"host-diagnostics"}
         panels = ROOT / "src/WIDGETS/AeroGrid/panels"
         for panel in panels.glob("*.lua"):
             if panel.stem in excluded:

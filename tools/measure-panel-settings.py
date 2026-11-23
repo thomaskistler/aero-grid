@@ -73,7 +73,7 @@ REFRESH = """
                 local tag = index and (field and "row:" .. index or "finish") or s.drawerPending.action
                 local slots = MEASURE_ROWS
                     and (index and c.settingsUiModule.cost(s.drawerView, 8, 8) or 8)
-                    or c.uiTasks.editor.cost
+                    or c.hostTask.cost
                 local result = advance(c)
                 if field then tag = tag .. ":" .. s.drawerControls[index].kind end
                 c.measureSteps[#c.measureSteps + 1] = tag .. "=" .. slots
@@ -149,7 +149,7 @@ REFRESH = """
 EXPECTED = {
     "output", "chart", "flight-counter", "flight-mode", "flight-timer",
     "host-diagnostics", "link-status", "metric", "model-identity", "navigation",
-    "rx-battery", "service-probe", "state", "trim-panel", "tx-battery",
+    "rx-battery", "state", "trim-panel", "tx-battery",
     "metric-entry", "chart-entry", "state-entry", "state-condition",
     "rx-battery-bar", "rx-battery-none", "navigation-tape", "host-diagnostics-log",
 }

@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local module = { RUNTIME_API = 1 }
+local module = {}
 
 --- Bind host operations once; callbacks retain their original work limits.
 ---@param dependencies table
@@ -150,8 +150,7 @@ function module.new(dependencies)
                 local resolved, warnings = context.panelHost.resolveSettings(
                     entry.module,
                     placement.config,
-                    { colSpan = placement.colSpan, rowSpan = placement.rowSpan },
-                    context.modelArmed
+                    { colSpan = placement.colSpan, rowSpan = placement.rowSpan }
                 )
                 if #warnings > 0 or not sameConfig(resolved, entry.settings) then
                     return false
@@ -189,12 +188,6 @@ function module.new(dependencies)
                 registerThresholds(context, entry.placement.id, entry.module, entry.settings)
             end
         end
-        context.flightSources = {}
-        for _, placement in ipairs(document.panels) do
-            if placement.type == "flight-counter" then
-                context.flightSources[#context.flightSources + 1] = placement
-            end
-        end
         if context.configureFlight then
             context.configureFlight(context)
         end
@@ -224,8 +217,7 @@ function module.new(dependencies)
                     local resolved, warnings = context.panelHost.resolveSettings(
                         entry.module,
                         placement.config,
-                        { colSpan = placement.colSpan, rowSpan = placement.rowSpan },
-                        context.modelArmed
+                        { colSpan = placement.colSpan, rowSpan = placement.rowSpan }
                     )
                     changed = #warnings > 0 or not sameConfig(resolved, entry.settings)
                 end
@@ -278,6 +270,7 @@ function module.new(dependencies)
                 for index, current in ipairs(context.panels) do
                     if current == entry then
                         table.remove(context.panels, index)
+                        context.tasksDirty = true
                         break
                     end
                 end
@@ -370,8 +363,7 @@ function module.new(dependencies)
                 local settings = context.panelHost.resolveSettings(
                     panel,
                     placement.config,
-                    { colSpan = placement.colSpan, rowSpan = placement.rowSpan },
-                    context.modelArmed
+                    { colSpan = placement.colSpan, rowSpan = placement.rowSpan }
                 )
                 local ok, list = pcall(hook, settings)
                 owners[index] = ok and type(list) == "table" and list or nil
@@ -401,9 +393,8 @@ function module.new(dependencies)
         then
             return false
         end
-        local runtimeApi = context.packageInfo and context.packageInfo.runtimeApi or 1
         if not context.settingsUiModule then
-            local module, moduleError = loadModule(context.path, "lib/settings_ui.lua", runtimeApi)
+            local module, moduleError = loadModule(context.path, "lib/settings_ui.lua")
             if not module then
                 addError(context, "settings UI: " .. tostring(moduleError))
                 showErrors(context)
@@ -412,7 +403,7 @@ function module.new(dependencies)
             context.settingsUiModule = module
         end
         if not context.editorModule then
-            local module, moduleError = loadModule(context.path, "lib/editor.lua", runtimeApi)
+            local module, moduleError = loadModule(context.path, "lib/editor.lua")
             if not module then
                 addError(context, "editor: " .. tostring(moduleError))
                 showErrors(context)
@@ -421,7 +412,7 @@ function module.new(dependencies)
             context.editorModule = module
         end
         if not context.editorUiModule then
-            local module, moduleError = loadModule(context.path, "lib/editor_ui.lua", runtimeApi)
+            local module, moduleError = loadModule(context.path, "lib/editor_ui.lua")
             if not module then
                 addError(context, "editor UI: " .. tostring(moduleError))
                 showErrors(context)
@@ -430,7 +421,7 @@ function module.new(dependencies)
             context.editorUiModule = module
         end
         if not context.editorDrawerModule then
-            local module, moduleError = loadModule(context.path, "lib/editor_drawer.lua", runtimeApi)
+            local module, moduleError = loadModule(context.path, "lib/editor_drawer.lua")
             if not module then
                 addError(context, "editor drawer: " .. tostring(moduleError))
                 showErrors(context)
@@ -444,7 +435,7 @@ function module.new(dependencies)
             debrief = resumed ~= nil and resumed.debriefMode == true
         end
         if debrief and not context.debriefPageModule then
-            local module, moduleError = loadModule(context.path, "lib/debrief_page.lua", runtimeApi)
+            local module, moduleError = loadModule(context.path, "lib/debrief_page.lua")
             if not module then
                 addError(context, "debrief page: " .. tostring(moduleError))
                 showErrors(context)
@@ -461,13 +452,8 @@ function module.new(dependencies)
             if type(typeName) ~= "string" or not string.match(typeName, "^[%w_-]+$") then
                 return nil, "invalid panel type"
             end
-            local panel, panelError = loadModule(
-                context.path,
-                "panels/" .. typeName .. ".lua",
-                nil,
-                context.scheduler.budget,
-                context.armedConfig
-            )
+            local panel, panelError =
+                loadModule(context.path, "panels/" .. typeName .. ".lua", context.scheduler.budget, context.armedConfig)
             if panel then
                 context.editorPanelCache[typeName] = panel
             end
@@ -507,7 +493,6 @@ function module.new(dependencies)
             context.editorModule.setDebriefDerived(session, context.debriefGenerated)
         end
         context.editorSession = session
-        session.modelArmed = context.modelArmed
         session.debriefMode = debrief
         local handlers = {
             editor = context.editorModule,
@@ -553,21 +538,6 @@ function module.new(dependencies)
                 return context.layoutStore.suggestName(context.path, info and info.name)
             end,
             startSave = function(document, name)
-                local owner = context.flightBroker
-                if owner and not (owner.document and owner.document.flight) then
-                    local legacy, remaining = false, false
-                    for _, placement in ipairs(context.flightSources or {}) do
-                        legacy = legacy or placement.config and placement.config._legacyFlight == true
-                    end
-                    for _, placement in ipairs(document.panels) do
-                        remaining = remaining or placement.config and placement.config._legacyFlight == true
-                    end
-                    if legacy and not remaining then
-                        return {
-                            flightMigrationError = "Save Model settings before removing the last legacy Flight counter",
-                        }
-                    end
-                end
                 name = name or context.layoutName
                 if session.debriefDerived and document.debrief ~= nil then
                     -- A derived debrief is rebuilt from the saved panels.
@@ -591,9 +561,6 @@ function module.new(dependencies)
                 return state
             end,
             advanceSave = function(state)
-                if state.flightMigrationError then
-                    return true, false, state.flightMigrationError
-                end
                 local done, saved, saveError = context.layoutStore.advanceSave(state)
                 if saved and state.name == context.layoutName then
                     context.layoutPath = state.filename

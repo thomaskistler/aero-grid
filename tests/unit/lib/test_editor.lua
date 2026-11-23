@@ -13,7 +13,6 @@ panelHost.SLOTS = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.l
 local modules = {
     sample = {
         id = "sample",
-        apiVersion = 1,
         supportedSpans = { "1x1", "2x1", "1x2" },
         settings = {
             { key = "label", type = "string", default = "SAMPLE" },
@@ -81,7 +80,7 @@ local function testCatalogAlphabeticalOrder()
         end
     end
     assert(rxIndex and editor.CATALOG[rxIndex - 1].type == "navigation")
-    assert(editor.CATALOG[rxIndex + 1].type == "service-probe")
+    assert(editor.CATALOG[rxIndex + 1].type == "state")
 end
 
 local function testWorkingCopyCancelAndApply()
@@ -198,7 +197,9 @@ local function testDerivedDebrief()
 end
 
 local function testAddChannelOutput()
-    modules.output = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/output.lua"))()
+    modules.output = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/output.lua"))(
+        assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.lua"))().new().budget
+    )
     local session = newSession({ version = layout.VERSION, grid = { columns = 4, rows = 4 }, panels = {} })
     local added, addError = editor.add(session, "output")
     assert(added, addError)
@@ -314,7 +315,7 @@ local function testCatalogPanelSizes()
             end
         end
     end
-    local showcase = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/theme-showcase.lua"))()
+    local showcase = assert(loadfile(root .. "/tests/fixtures/panels/theme-showcase.lua"))()
     for rows = 1, 4 do
         for columns = 1, 4 do
             assert(panelHost.supportsSpan(showcase, columns, rows) == (columns == 4 and rows == 4))
@@ -424,7 +425,6 @@ end
 local function testDeclaredEntryFieldsAreAlwaysOffered()
     modules.listed = {
         id = "listed",
-        apiVersion = 1,
         supportedSpans = { "1x1" },
         settings = {
             {
@@ -468,30 +468,6 @@ local function testDeclaredEntryFieldsAreAlwaysOffered()
     assert(editor.setPath(session, "items", { 1, "positions", "middle" }, "MID"))
     assert(session.draft.panels[1].config.items[1].positions.middle == "MID")
     modules.listed = nil
-end
-
-local function testRestoreDefaultDoesNotApply()
-    local session = newSession()
-    local default = {
-        version = layout.VERSION,
-        grid = { columns = 4, rows = 4 },
-        panels = {
-            {
-                id = "default",
-                type = "sample",
-                col = 0,
-                row = 0,
-                colSpan = 1,
-                rowSpan = 1,
-                config = {},
-            },
-        },
-    }
-    assert(editor.restoreDefault(session, default))
-    assert(session.draft.panels[1].id == "default")
-    assert(session.original.panels[1].id == "first")
-    editor.cancel(session)
-    assert(session.draft.panels[1].id == "first")
 end
 
 local function testResizePreservesSpanDependentSettings()
@@ -913,7 +889,6 @@ testAddSpanDeclarations()
 testCatalogPanelSizes()
 testRxBatteryFormAndSourceDrawers()
 testSinglePrecisionVoltageSteps()
-testRestoreDefaultDoesNotApply()
 testDeclaredEntryFieldsAreAlwaysOffered()
 testResizePreservesSpanDependentSettings()
 testOptionalNumbersCanBeCleared()

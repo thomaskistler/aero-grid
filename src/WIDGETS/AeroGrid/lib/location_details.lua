@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local details = { RUNTIME_API = 1 }
+local details = {}
 
 function details.close(context)
     if context.locationOverlay then
@@ -134,7 +134,7 @@ function details.handle(context, event, touch)
     context.locationPress, tap = context.gesture.track(context.locationPress, event, touch)
     if event == _G.EVT_VIRTUAL_EXIT or event == _G.EVT_EXIT_BREAK or tap then
         context.locationPress = nil
-        context.locationRequest = { kind = "close", state = context.locationDetails }
+        context.locationDetails.closing = true
     end
     return true
 end

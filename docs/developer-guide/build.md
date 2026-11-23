@@ -88,8 +88,8 @@ make release-package
 
 This writes `AeroGrid-<version>.zip` and `.zip.sha256` to `build/release/`,
 using `lib/package.lua`. The deterministic source-only package includes runtime
-code/assets, the license, and the `Default`, `Empty`, `Diagnostics`, and
-`Palette` layouts. Development fixtures and bytecode are excluded.
+code/assets, the license, and the `Default` and `Empty` layouts. Development
+fixtures and bytecode are excluded.
 
 Use the ZIP to check the actual
 [installation and upgrade procedure](../user-guide/installation.md).

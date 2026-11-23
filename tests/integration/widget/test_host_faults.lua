@@ -56,7 +56,7 @@ panels:
 ]],
         {
             ["halfbuilt.lua"] = [==[
-local halfbuilt = {id = "halfbuilt", apiVersion = 1, supportedSpans = {"any"}}
+local halfbuilt = {id = "halfbuilt", supportedSpans = {"any"}}
 function halfbuilt.create(parent, rect, settings, services)
   services.primitives.panel(parent, rect, services.theme,
     services.state("normal", "cyan"))
@@ -98,7 +98,7 @@ panels:
 ]],
         {
             ["exploder.lua"] = [==[
-local exploder = {id = "exploder", apiVersion = 1, supportedSpans = {"any"}}
+local exploder = {id = "exploder", supportedSpans = {"any"}}
 function exploder.create(parent, rect, settings, services)
   return {panel = services.primitives.panel(parent, rect, services.theme,
     services.state("normal", "cyan"))}
@@ -111,13 +111,15 @@ return exploder
         }
     )
 
-    local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath)
+    local context = fixture.createLoaded({ x = 0, y = 0, w = 480, h = 272 }, DEFAULT_OPTIONS, widgetPath, definition)
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
     assertEqual(#context.panels, 2)
 
-    pump(context, 1)
-
     local boom = entryById(context, "boom")
+    assert(fixture.pumpUntil(context, function()
+        return boom.failed
+    end, 20))
+
     local safe = entryById(context, "safe")
     assertEqual(boom.failed, true, "failing panel was not disabled")
     assert(string.match(boom.error, "exploder failed"), boom.error)
@@ -149,7 +151,7 @@ panels:
 ]],
         {
             ["exploder.lua"] = [==[
-local exploder = {id = "exploder", apiVersion = 1, supportedSpans = {"any"}}
+local exploder = {id = "exploder", supportedSpans = {"any"}}
 function exploder.create(parent, rect, settings, services)
   return {panel = services.primitives.panel(parent, rect, services.theme,
     services.state("normal", "cyan"))}
@@ -260,7 +262,7 @@ panels:
 ]],
         {
             ["exploder.lua"] = [==[
-local exploder = {id = "exploder", apiVersion = 1, supportedSpans = {"any"}}
+local exploder = {id = "exploder", supportedSpans = {"any"}}
 function exploder.create(parent, rect, settings, services)
   return {panel = services.primitives.panel(parent, rect, services.theme,
     services.state("normal", "cyan"))}
@@ -275,7 +277,12 @@ return exploder
     addTheme(custom, "notice-test", { colors = { surface = 0xFFFFFF } })
 
     resetRadio()
-    local context = createLoaded({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "main", Theme = "notice-test" }, custom)
+    local context = fixture.createLoaded(
+        { x = 0, y = 0, w = 480, h = 272 },
+        { Layout = "main", Theme = "notice-test" },
+        custom,
+        definition
+    )
     assertEqual(context.theme.mode, "notice-test")
 
     -- The deliberately light mock roles guarantee the legibility pass engages,

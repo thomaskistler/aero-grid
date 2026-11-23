@@ -6,11 +6,12 @@ local counter = assert(loadfile(base .. "flight_count.lua"))()
 local memory = assert(loadfile(root .. "/tests/support/memory_files.lua"))()
 local values = { [8] = 123, [7] = 4 }
 local precision = {}
+local sfDown = 7
 local env = {
     charUp = "^",
     charDown = "v",
     getSwitchIndex = function(name)
-        return name == "SFv" and 7 or 0
+        return name == "SFv" and sfDown or name == "L01" and 41 or 0
     end,
     getGlobalVariable = function(index, mode)
         assert(mode == 0)
@@ -132,6 +133,72 @@ assert(not pcall(import, top .. widget(true, true), false, function(ops)
         return ""
     end
 end))
+-- Verbatim Flights block from a radio-saved EdgeTX 2.12 model (CRLF, trailing spaces):
+-- the switch is Unsigned and the motor source is the zero-based ch(N).
+local saved = string.gsub(
+    [[
+topbarData:
+   zones:
+      2:
+         widgetName: "Flights"
+         widgetData:
+            options:
+               0:
+                  type: Unsigned
+                  value:
+                     unsignedValue: 1
+               1:
+                  type: Unsigned
+                  value:
+                     unsignedValue: 18
+               2:
+                  type: Source
+                  value:
+                     source: ch(2)
+               3:
+                  type: Color
+                  value:
+                     color: COLIDX11
+               4:
+                  type: Signed
+                  value:
+                     signedValue: 30
+               5:
+                  type: Bool
+                  value:
+                     boolValue: 1
+               6:
+                  type: Bool
+                  value:
+                     boolValue: 1
+               7:
+                  type: Bool
+                  value:
+                     boolValue: 0
+]],
+    "\n",
+    " \r\n"
+)
+sfDown = 18
+result = import(saved)
+assert(result.count == 123 and result.armed == "SFv", "radio-saved Flights options import their count and switch")
+assert(result.flight.motorSource == "ch3" and result.flight.minFlightDuration == 30 and result.flight.requireReceiver)
+local inverted = string.gsub(saved, "unsignedValue: 18", "unsignedValue: 4294967255")
+assert(import(inverted).armed == "!L01", "unsigned representation of an inverted switch is decoded")
+local signed = string.gsub(
+    inverted,
+    "type: Unsigned(\r\n +value: \r\n +)unsignedValue: 4294967255",
+    "type: Signed%1signedValue: -41"
+)
+assert(import(signed).armed == "!L01", "signed inverted switches remain supported")
+local lastChannel = string.gsub(saved, "source: ch%(2%)", "source: ch(31)")
+assert(import(lastChannel).flight.motorSource == "ch32")
+local invalidChannel = string.gsub(saved, "source: ch%(2%)", "source: ch(32)")
+assert(not import(invalidChannel).flight, "out-of-range channels require manual settings")
+local missingKind = string.gsub(saved, "type: Source", "unused: Source")
+assert(not pcall(import, missingKind), "options without a type are rejected")
+sfDown = 7
+
 local long = string.rep("   unrelated: value\n", 600) .. top .. widget(true, true)
 assert(import("header:\n" .. long).count == 4123, "large models are scanned in bounded chunks")
 

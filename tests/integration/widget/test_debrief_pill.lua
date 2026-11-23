@@ -40,7 +40,7 @@ local function input(event, touch)
     fixture.tick(20)
     callback(event, touch)
     for _ = 1, 200 do
-        if not (context.inputQueue or context.debriefRequest or context.uiRequest) then
+        if not (context.inputQueue or context.openRequest or context.hostKind) then
             return
         end
         callback()
@@ -148,7 +148,7 @@ input(EVT_TOUCH_FIRST, touch(H - 5, H - 5))
 fixture.tick(20)
 callback(EVT_TOUCH_BREAK, touch(H - 5, H - 5))
 settle(2)
-assert(context.debriefRequest and not context.debrief.shown, "a tap waits for the complete view")
+assert(context.openRequest and not context.debrief.shown, "a tap waits for the complete view")
 build()
 assert(context.debrief.shown and pill() == SHORT, "the queued tap opens with the same bar still visible")
 assert(context.pillLayer.parent == context.debrief.ui.viewport, "the bar belongs to the scrolling debrief canvas")
@@ -262,7 +262,7 @@ build()
 assert(pill() == LONG, "the bar survives viewing, leaving fullscreen and rebuilding")
 input(EVT_TOUCH_FIRST, touch(H - 5, H - 5))
 input(EVT_TOUCH_BREAK, touch(H - 5, H - 5))
-assert(not context.debrief.shown and not context.debriefRequest, "a bar tap outside fullscreen cannot open the debrief")
+assert(not context.debrief.shown and not context.openRequest, "a bar tap outside fullscreen cannot open the debrief")
 
 -- The next flight's debrief brings a new pill; a session reset removes it.
 current = makeResult("Next")
@@ -272,6 +272,8 @@ current = nil
 settle()
 assert(not pill(), "a session reset removes the pill")
 
-assert(worst < 15000, "pill callback exceeded budget: " .. worst)
+-- Includes a layout reflow, which may share its callback with a menu turn or
+-- with task enrollment.
+assert(worst < 18500, "pill callback exceeded budget: " .. worst)
 runtime.byId.debrief = realDebrief
 print("Debrief pill integration passed; worst callback: " .. worst .. " instructions")

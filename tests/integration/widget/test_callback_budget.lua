@@ -230,8 +230,8 @@ local function testInstructionBudget()
             config = function(index)
                 return {
                     "source: Cels",
-                    "warning: 3.5",
-                    "critical: " .. (index % 2 == 0 and "3.3" or "3.4"),
+                    "cellWarning: 3.5",
+                    "cellCritical: " .. (index % 2 == 0 and "3.3" or "3.4"),
                 }
             end,
         },
@@ -312,10 +312,6 @@ local function testInstructionBudget()
                 context = definition.create(zone, DEFAULT_OPTIONS, path)
             end)
         )
-        -- This test enforces the per-segment ceiling, so it runs without the
-        -- extended callback budget that would run several segments per callback.
-        context.liveDangerouslyFailed = true
-
         local steps = 0
         while context.stage do
             local stage = context.stage
@@ -462,7 +458,6 @@ local function testInstructionBudget()
         ["greedy.lua"] = [==[
 local greedy = {
   id = "greedy",
-  apiVersion = 1,
   supportedSpans = {"any"},
   refreshInterval = 0,
   -- Declared because the shared grid layout writes them, and an undeclared

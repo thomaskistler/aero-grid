@@ -51,7 +51,7 @@ local function fixture()
             return state.generate and state.generate() or state.id
         end,
     }
-    env.backend = sidecar.new("/WIDGETS/AeroGrid/", env, writer, operations)
+    env.sidecar = sidecar
     local store = module.new("/WIDGETS/AeroGrid/", yaml, env, operations)
     return store, files, operations, function(value)
         current = value
@@ -197,16 +197,19 @@ for _, history in ipairs({ true, false }) do
     legacy.requireReceiver = nil
     legacy.announcements = true
     legacy.history = history
+    legacy.liveDangerously = history
     files[path()] = assert(yaml.serialize({ version = 1, modelFilename = "plane.yml", revision = 3, flight = legacy }))
     assert(store:load("plane.yml").flight.smartDetection == false, "existing model files keep standard detection")
     assert(store:load("plane.yml").flight.requireReceiver == true, "existing model files still require a receiver")
     local loaded = store:load("plane.yml")
     assert(loaded.flight.announcements == nil, "obsolete audio settings are ignored")
     assert(loaded.flight.history == nil, "obsolete CSV settings must not prevent loading existing model files")
+    assert(loaded.flight.liveDangerously == nil, "the removed Pre-release setting is ignored")
     assert(config.key(loaded.flight) == config.key(config.defaults()), "obsolete audio settings cannot cause conflicts")
     assert(store:save("plane.yml", 3, loaded.flight))
     assert(yaml.parse(files[path()]).flight.announcements == nil, "obsolete audio settings are not persisted")
     assert(yaml.parse(files[path()]).flight.history == nil, "obsolete CSV settings are not persisted")
+    assert(yaml.parse(files[path()]).flight.liveDangerously == nil)
 end
 
 do
@@ -358,9 +361,6 @@ do
     local document, info = store:load("plane.yml")
     assert(info.missing and document.revision == 0 and state.writes == 0 and next(files) == nil)
     state.disarmed = false
-    local saved, message = store:save("plane.yml", 0, config.defaults())
-    assert(not saved and string.find(message, "Disarm", 1, true) and next(files) == nil and state.writes == 0)
-    state.disarmed = true
     operations.inject("rename")
     assert(not store:save("plane.yml", 0, config.defaults()))
     assert(state.channel.name == "" and state.writes == 0)
@@ -370,7 +370,7 @@ do
         assert(state.channel.name == "", "record is installed before claiming CH32")
         return rename(from, to)
     end
-    assert(store:save("plane.yml", 0, config.defaults()))
+    assert(store:save("plane.yml", 0, config.defaults(), "SFv"), "first save succeeds while armed")
     assert(state.channel.name == "AGNEW1" and state.writes == 1 and files[path("AGNEW1")])
     for key, value in pairs(original) do
         assert(key == "name" or state.channel[key] == value, "CH32 field lost: " .. key)
@@ -398,11 +398,7 @@ do
     assert(info.foreign and document.modelFilename == "copy.yml" and document.revision == 1)
     assert(files[path()] == original and state.writes == 0, "loading a copy must be read-only")
     state.disarmed = false
-    local saved, message, deferred = store:adopt("copy.yml", document)
-    assert(not saved and deferred and string.find(message, "Disarm", 1, true))
-    assert(state.channel.name == "AGTEST" and files[path()] == original)
-    state.disarmed = true
-    assert(store:adopt("copy.yml", document))
+    assert(store:adopt("copy.yml", document), "copy adoption succeeds while armed")
     assert(state.channel.name == "AGNEW1" and state.channel.min == -800 and state.channel.curve == 2)
     assert(files[path()] == original and yaml.parse(files[path("AGNEW1")]).modelFilename == "copy.yml")
     assert(store:adopt("copy.yml", document) and state.writes == 1, "adoption is idempotent")
@@ -481,80 +477,20 @@ do
     assert(yaml.parse(files[path()]).revision == 1 and state.writes == 0)
 end
 
--- A model-local backend consumes the identical YAML document and needs no CH32,
--- files, or adoption. Capability selection can change without changing callers.
-do
-    local _, _, operations, switch, _, env = fixture()
-    local text
-    env.backend = {
-        read = function(_, _, backup)
-            return not backup and text or nil, { missing = backup or text == nil, token = "local" }
-        end,
-        check = function()
-            return true
-        end,
-        write = function(_, _, serialized, _, guard)
-            local ok, message = guard()
-            if not ok then
-                return false, message
-            end
-            text = serialized
-            return true
-        end,
-    }
-    local store = module.new("/WIDGETS/AeroGrid/", yaml, env, operations)
-    assert(store:load("plane.yml").revision == 0)
-    assert(store:save("plane.yml", 0, config.defaults(), "!L01"))
-    assert(store:load("plane.yml").armed == "!L01" and yaml.parse(text).revision == 1)
-    assert(store:adopt("plane.yml", store:load("plane.yml")))
-    local ok, prepared = store:prepare("plane.yml", 1, config.defaults())
-    assert(ok and store:save("plane.yml", 1, config.defaults()))
-    assert(not store:commit(prepared))
-    switch("copy.yml")
-    local copied, info = store:load("copy.yml")
-    assert(copied.modelFilename == "copy.yml" and not info.foreign)
-    assert(store:adopt("copy.yml", copied), "model-local backends need no copy fork")
-    assert(store:save("copy.yml", 2, config.defaults()))
-    assert(yaml.parse(text).modelFilename == "copy.yml")
-end
-
-do
-    local _, files, operations, _, _, env = fixture()
-    local previousLoader, previousModel = loadScript, model
-    loadScript = function(filename)
-        return loadfile(base .. "/lib/" .. assert(string.match(filename, "/lib/([^/]+)$")))
-    end
-    model = {
-        getUserData = function()
-            error("unimplemented userData backend must not be selected")
-        end,
-        setUserData = function()
-            error("unimplemented userData backend must not be selected")
-        end,
-    }
-    env.backend = nil
-    local store = module.new("/WIDGETS/AeroGrid/", yaml, env, operations)
-    assert(store:save("plane.yml", 0, config.defaults()) and files[path()])
-    loadScript, model = previousLoader, previousModel
-end
-
-for _, failure in ipairs({ "armed", "channel", "model" }) do
+for _, failure in ipairs({ "channel", "model" }) do
     local store, files, operations, switch, state = fixture()
     state.channel.name = ""
     operations.inject("read", function(filename)
         if string.match(filename, "%.tmp$") then
-            if failure == "armed" then
-                state.disarmed = false
-            elseif failure == "channel" then
+            if failure == "channel" then
                 state.channel.name = "OTHER"
             else
                 switch("other.yml")
             end
         end
     end)
-    local saved, _, deferred = store:save("plane.yml", 0, config.defaults())
+    local saved = store:save("plane.yml", 0, config.defaults())
     assert(not saved and state.writes == 0 and not files[path("AGNEW1")], failure)
-    assert(deferred == (failure == "armed"), failure)
 end
 
 do

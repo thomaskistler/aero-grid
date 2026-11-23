@@ -68,7 +68,7 @@ For raw-field interpretation, see
 
 Select **scheduler** to see two lines, with one point added each second at most:
 the cyan line is the percentage of scheduler slots used out of the slots a
-callback may run (40 when Pre-release features is on, otherwise 8), and the
+callback may run, and the
 orange line is the percentage of due requests still deferred when the callback
 ends because no slots were left.
 

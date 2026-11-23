@@ -40,11 +40,10 @@
 
 local rxBattery = {
     id = "rx-battery",
-    apiVersion = 1,
     supportedSpans = { "any" },
     -- A pack voltage moves over a flight, not over a frame, and every refresh
-    -- walks the cells table. Five hertz is already far more than a pilot reads.
-    refreshInterval = 20,
+    -- walks the cells table. Twice a second is as often as a pilot reads it.
+    refreshInterval = 50,
     settings = {
         { key = "label", label = "Label", type = "string", default = "PACK" },
         { key = "source", label = "Voltage source", type = "string", default = "RxBat" },

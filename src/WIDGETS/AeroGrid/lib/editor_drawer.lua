@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local drawer = { RUNTIME_API = 1 }
+local drawer = {}
 
 local function queueNative(context, state, generation, apply, value)
     if

@@ -36,18 +36,13 @@ local function harness(options, configured)
     local control = controlModule.new(env, support)
     runtime.byId.telemetry = telemetry
     runtime.byId.control = control
+    runtime.modelArmed = configured ~= false and "L01" or ""
     runtime.byId.armed = armedModule.new(env, support, runtime)
     local history = historyModule.new(env, support, runtime)
-    local armSwitch = configured ~= false and "L01" or ""
-    local session = history:session(armSwitch)
-    options = options or {}
-    options.armSwitch = armSwitch
-    local feed = history:subscribe("V", options)
-    local function poll(now, arm, value, otherArm)
+    local session = history:session()
+    local feed = history:subscribe("V", options or {})
+    local function poll(now, arm, value)
         values[1], values[100] = arm, value
-        if otherArm ~= nil then
-            values[2] = otherArm
-        end
         control:update(now)
         telemetry:update(now)
         history:update(now)
@@ -156,14 +151,10 @@ equal(history:preview():recordingBreak(session, 1), paused, "previews expose the
 equal(history:recordingBreak(session, 0), nil)
 equal(history:recordingBreak(session, 2), nil)
 equal(history:recordingBreak({}, 1), nil)
-equal(history:subscribe("V", { armSwitch = "L01" }), feed, "matching histories share storage")
+equal(history:subscribe("V", {}), feed, "matching histories share storage")
+equal(history:subscribe("V", { windowSeconds = 30 }), feed, "growing durations no longer distinguish recordings")
 equal(
-    history:subscribe("V", { armSwitch = "L01", windowSeconds = 30 }),
-    feed,
-    "growing durations no longer distinguish recordings"
-)
-equal(
-    history:subscribe("V", { armSwitch = "L01", windowSeconds = 600 }),
+    history:subscribe("V", { windowSeconds = 600 }),
     feed,
     "legacy growing windows must share the canonical recording"
 )
@@ -182,18 +173,9 @@ for _, case in ipairs({
     equal(minuteFeed.window, case[2], "history windows must grow by whole minutes without doubling")
 end
 equal(minuteHistory:point(minuteFeed, 1), 0, "minute growth must retain the beginning of the recording")
-assert(
-    history:subscribe("V", { armSwitch = "L01", precision = 0 }) ~= feed,
-    "Sensor and explicit precision subscriptions differ"
-)
-equal(
-    history:subscribe("V", { armSwitch = "L01", precision = 1 }),
-    history:subscribe("V", { armSwitch = "L01", precision = 1 })
-)
-assert(
-    history:subscribe("V", { armSwitch = "L01", precision = 2 })
-        ~= history:subscribe("V", { armSwitch = "L01", precision = 1 })
-)
+assert(history:subscribe("V", { precision = 0 }) ~= feed, "Sensor and explicit precision subscriptions differ")
+equal(history:subscribe("V", { precision = 1 }), history:subscribe("V", { precision = 1 }))
+assert(history:subscribe("V", { precision = 2 }) ~= history:subscribe("V", { precision = 1 }))
 assert(not pcall(function()
     feed.value = 42
 end), "history views must be immutable")
@@ -219,48 +201,16 @@ equal(missingFeed.available, false)
 equal(missing:point(missingFeed, 1), nil)
 
 local independent, firstSession, firstFeed, independentPoll = harness()
-local secondSession = independent:session("L02")
-local secondFeed = independent:subscribe("V", { armSwitch = "L02" })
-assert(firstSession ~= secondSession and firstFeed ~= secondFeed, "different panel switches must isolate recordings")
-equal(independent:session("L01"), firstSession, "matching switch configurations share their clock")
-equal(independent:subscribe("V", { armSwitch = "L02" }), secondFeed)
-independentPoll(0, 1, 12, 0)
-independentPoll(100, 1, 15, 0)
-equal(firstFeed.max, 15)
-equal(secondFeed.available, false, "another panel's switch must not arm this history")
-independentPoll(200, 0, 20, 1)
-local firstElapsed = firstSession.elapsed
-independentPoll(300, 0, 25, 1)
-equal(firstSession.elapsed, firstElapsed, "only the second panel's clock may advance")
-equal(firstFeed.max, 15)
-equal(secondFeed.min, 20)
-equal(secondFeed.max, 25)
-local secondElapsed = secondSession.elapsed
-independentPoll(400, 1, 30, 1)
-independentPoll(500, 1, 35, 0)
-equal(firstFeed.max, 35)
-equal(secondFeed.max, 30, "the second recording must freeze when its own switch is off")
-assert(secondSession.elapsed > secondElapsed)
-local unconfigured = independent:session()
-local unconfiguredFeed = independent:subscribe("V")
-independentPoll(600, 1, 40, 1)
-equal(unconfigured.configured, false, "a blank panel must not inherit another panel's arm switch")
-equal(unconfiguredFeed.available, false)
-local unknownSession = independent:session("L03")
-local unknownFeed = independent:subscribe("V", { armSwitch = "L03" })
-independentPoll(700, nil, 45, 1)
+independentPoll(600, 1, 40)
+independentPoll(700, nil, 45)
 equal(firstSession.available, false, "an unavailable switch must not be treated as a known disarm condition")
 equal(firstSession.recording, false)
 equal(firstFeed.value, 40, "switch loss must freeze the last recorded reading")
 local unavailableElapsed = firstSession.elapsed
 local previousSegment = firstSession.segment
-independentPoll(800, nil, 55, 1)
+independentPoll(800, nil, 55)
 equal(firstSession.elapsed, unavailableElapsed)
-equal(secondFeed.max, 55, "another panel must continue recording during switch loss")
-equal(unknownSession.configured, true)
-equal(unknownSession.available, false)
-equal(unknownFeed.available, false, "unresolved switches must not start a recording")
-independentPoll(900, 1, 50, 0)
+independentPoll(900, 1, 50)
 equal(firstSession.available, true)
 equal(firstSession.segment, previousSegment + 1, "switch recovery must start a disconnected segment")
 equal(firstFeed.value, 50)
@@ -477,8 +427,8 @@ local nextItem = 1
 repeat
     nextItem = resetHistory:resetSession(120, nextItem)
 until not nextItem
-equal(resetHistory:session("L01"), resetView, "reset must retain the session view")
-equal(resetHistory:subscribe("V", { armSwitch = "L01", smoothing = "strong" }), resetFeed)
+equal(resetHistory:session(), resetView, "reset must retain the session view")
+equal(resetHistory:subscribe("V", { smoothing = "strong" }), resetFeed)
 equal(resetView.elapsed, 0)
 equal(resetView.segment, 0)
 equal(resetFeed.count, 0)

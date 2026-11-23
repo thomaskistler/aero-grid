@@ -7,7 +7,7 @@
 local reading = ...
 assert(type(reading) == "table" and type(reading.install) == "function", "lib/reading.lua has no installer")
 
-local primitives = { RUNTIME_API = 1 }
+local primitives = {}
 
 local labelFonts = setmetatable({}, { __mode = "k" })
 local headers = setmetatable({}, { __mode = "k" })
@@ -70,14 +70,6 @@ local function setRound(object, centreX, centreY, changes)
     changes.x = centreX
     changes.y = centreY
     object:set(changes)
-end
-
---- Return the usable content width inside a padded panel.
----@param theme AeroGridTheme
----@param width integer
----@return integer
-function primitives.contentWidth(theme, width)
-    return math.max(1, width - theme.spacing.padding * 2)
 end
 
 --- Create a panel's header row: a quiet label beside a state badge.
@@ -866,30 +858,7 @@ function primitives.placeBar(bar, x, y, width, fraction)
     end
 end
 
---- Move a bar's marker to a new fraction of its track.
---- Bounds are often unknown when a panel is built, because a global variable's
---- range only arrives once EdgeTX has been asked for its details, so the tick
---- has to be placeable after the fact.
----@param bar table
----@param fraction? number Nil hides the marker.
-function primitives.setBarMarker(bar, fraction)
-    local marker = bar.marker
-    if not marker then
-        return
-    end
-
-    if type(fraction) ~= "number" then
-        lvgl.hide(marker)
-        bar.markerFraction = nil
-        return
-    end
-
-    bar.markerFraction = fraction
-    marker:set({ x = (bar.markerX or bar.x or 0) + primitives.barFill(bar.width, fraction) })
-    lvgl.show(marker)
-end
-
---------------------------------------------------------------------------
+-------------------------------------------------------------------------
 -- Battery glyph
 --------------------------------------------------------------------------
 
@@ -916,22 +885,6 @@ end
 
 --- Pixels between the outline and the level inside it.
 primitives.GLYPH_GAP = 1
-
---- The level a cell has to stand out from, in 24 bits.
----
---- The empty part of a cell is the panel showing through, so what the level
---- is read against is whatever tint the panel is wearing. Returned from the
---- theme's `rgb` mirror rather than its display values, because `contrast` is
---- arithmetic on colour channels and a display value is an `LcdFlags` word
---- rather than a colour. The resolved theme keeps both for this reason, and
---- confusing them is how a first pass at this measured the Modern critical
---- accent against its own alarm tint at 1.01 when the true figure is 3.14.
----@param theme AeroGridTheme
----@param state? string State name, for the tint the panel is wearing.
----@return integer
-function primitives.batteryBackdropRgb(theme, state)
-    return (theme.alertRgb and theme.alertRgb[state]) or theme.rgb.surface
-end
 
 --- Line heights per pixel of outline.
 ---
@@ -1392,16 +1345,6 @@ function primitives.setRadial(radial, fraction, color)
     setRound(radial.arc, radial.centreX, radial.centreY, changes)
 end
 
---- Convert a compass bearing into the angle LVGL's arc uses.
---- LVGL measures zero at three o'clock and increases clockwise; a compass
---- measures zero at twelve o'clock and also increases clockwise, so the two
---- differ by a quarter turn.
----@param bearing number Degrees clockwise from north.
----@return integer
-function primitives.arcAngle(bearing)
-    return math.floor((bearing + 270) % 360 + 0.5) % 360
-end
-
 --- Create a north-up bearing dial.
 ---
 --- A continuous outer ring encloses ticks and cardinal labels. Two filled triangles
@@ -1492,30 +1435,6 @@ function primitives.compassTickPoints(compass, index)
         }
     end
     return { point(inner), point(outer) }
-end
-
-function primitives.showCompass(compass, visible)
-    if compass.hidden == not visible then
-        return
-    end
-    compass.hidden = not visible
-    local show = visible and lvgl.show or lvgl.hide
-    for _, object in ipairs(compass.rings) do
-        show(object)
-    end
-    for _, object in ipairs(compass.labels) do
-        show(object)
-    end
-    for _, object in ipairs(compass.ticks) do
-        show(object)
-    end
-    for _, object in ipairs(compass.pointers) do
-        if visible and compass.bearing ~= nil then
-            lvgl.show(object)
-        else
-            lvgl.hide(object)
-        end
-    end
 end
 
 --- Point a compass at a bearing, or at nothing when there is none.
@@ -1611,33 +1530,6 @@ function primitives.image(parent, options)
         file = tostring(options.file or ""),
         fill = options.fill == true,
     })
-end
-
---- Convert a value into a signed -1..1 fraction of a bipolar range.
---- Each side is measured against its own bound, so an asymmetric range such as
---- -20 to 100 still reads as centred at zero.
----@param value any
----@param low any
----@param high any
----@return number
-function primitives.signedFraction(value, low, high)
-    if type(value) ~= "number" or value ~= value then
-        return 0
-    end
-
-    local bound = value >= 0 and high or low
-    if type(bound) ~= "number" or bound == 0 then
-        return 0
-    end
-
-    local fraction = value / (bound < 0 and -bound or bound)
-    if fraction > 1 then
-        return 1
-    end
-    if fraction < -1 then
-        return -1
-    end
-    return fraction
 end
 
 reading.install(primitives)

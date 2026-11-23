@@ -24,7 +24,7 @@ file:write(assert(fixture.module("lib/yaml.lua").serialize({
 file:close()
 file = assert(io.open(path .. "layouts/startup-hidden.yaml", "w"))
 file:write([[
-version: 4
+version: 3
 grid:
   columns: 4
   rows: 4
@@ -96,8 +96,7 @@ end)
 assert(#visible.panels == 0 and #hidden.panels == 0)
 local member = hidden.flightFactory.members[hidden]
 assert(not member.pending and not member.error, "hidden declarations must not wait for UI construction")
-assert(#member.declarations == 1 and member.declarations[1].armKey == "SFv")
-assert(member.declarations[1].settings.minFlightDuration == 1, "migrated flight settings must be retained")
+assert(member.legacy and member.legacy.armed == "SFv", "the released arm switch must be collected for conversion")
 assert(hidden.document.version == hidden.layoutValidator.VERSION)
 untilDone(function()
     callback(hidden, true)
@@ -106,7 +105,7 @@ untilDone(function()
 end, function()
     return not visible.stage
 end)
-local task = hidden.lifecycleTasks.load
+local task = hidden.hostTask
 local gate = task.gate
 -- Leave construction queued to check that the broker no longer waits for it.
 task.gate = function()
@@ -129,14 +128,15 @@ end)
 assert(owner.view.count == 1, "flight detection must not depend on hidden UI construction")
 task.gate = gate
 untilDone(function()
-    local loading = visible.stage ~= nil
+    local loading = visible.stage ~= nil and hidden.stage ~= nil
     callback(hidden, true)
     if loading then
         assert(#hidden.panels == 0)
     end
     callback(visible, false)
 end, function()
-    return not visible.stage and not hidden.stage
+    -- Converting the released arm switch reloads dashboards built before it.
+    return not visible.stage and not hidden.stage and not visible.reloadState and not hidden.reloadState
 end)
 assert(#visible.panels == 9 and #hidden.panels == 2)
 assert(#visible.errors == 0 and #hidden.errors == 0)
@@ -263,28 +263,3 @@ end, function()
     return not visible.stage and not hidden.stage
 end)
 assert(#visible.errors > 0 and #hidden.panels == 9 and #hidden.errors == 0)
-
--- Even an extended callback yields after the first visible constructor.
-setup()
-visible = create()
-untilDone(function()
-    callback(visible, false)
-end, function()
-    return visible.stage == "panel-build" and #visible.panels == 0
-end)
-visible.flightFactory.broker.document.flight = visible.flightConfig.resolve({ liveDangerously = true })
-visible.liveDangerouslyFailed = nil
-visible.nativeBudget.cross = function(step)
-    return pcall(step)
-end
-callback(visible, false)
-assert(#visible.panels == 1 and visible.stage == "panels")
-assert(not visible.scheduler.state(visible.lifecycleTasks.load).pending, "first construction must yield")
-callback(visible, false)
-assert(#visible.panels > 1, "later construction may use the configured extended budget")
-untilDone(function()
-    callback(visible, false)
-end, function()
-    return not visible.stage
-end)
-assert(#visible.panels == 9 and #visible.errors == 0)

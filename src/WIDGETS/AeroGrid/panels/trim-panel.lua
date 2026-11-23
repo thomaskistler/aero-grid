@@ -46,7 +46,6 @@
 
 local trimPanel = {
     id = "trim-panel",
-    apiVersion = 1,
     supportedSpans = { "any" },
     -- A trim moves under the pilot's thumb, so it is refreshed at the same rate
     -- as a telemetry readout rather than at a status-panel rate.

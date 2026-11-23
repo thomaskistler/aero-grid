@@ -100,6 +100,17 @@ function WidgetFixture.new()
         assert(handle:close())
     end
 
+    --- Save model settings for the current fixture model, e.g. its Armed condition.
+    function self.modelSettings(settings, path)
+        local file = assert(self.module("lib/model_settings_store.lua").path(path or fixtureWidgetRoot, "AGTEST"))
+        os.execute("mkdir -p '" .. string.match(file, "^(.*)/[^/]*$") .. "'")
+        local document = { version = 1, revision = 0, modelFilename = model.getInfo().filename }
+        for key, value in pairs(settings) do
+            document[key] = value
+        end
+        self.writeFile(file, assert(self.module("lib/yaml.lua").serialize(document)))
+    end
+
     function self.makeWidget(name, layout, panels)
         assert(type(name) == "string" and string.match(name, "^[%w_.%-]+$") and name ~= "." and name ~= "..")
         local path = root .. "/build/test-widgets/" .. name .. "/"
@@ -168,18 +179,23 @@ function WidgetFixture.new()
         local definition = definitions[context] or self.module("main.lua")
         for _ = 1, 20 do
             definition.refresh(context)
-            if context.hostTask and context.scheduler.state(context.hostTask).ran == context.scheduler.callbacks then
-                if not context.lifecycleRequest then
-                    return
-                end
-            end
-            for _, task in pairs(context.lifecycleTasks or {}) do
-                if context.scheduler.state(task).ran == context.scheduler.callbacks then
-                    return
-                end
+            local ran = context.scheduler.callbacks
+            if
+                context.hostTask and context.scheduler.state(context.hostTask).ran == ran
+                or not context.hostKind
+                    and context.hintTask
+                    and context.scheduler.state(context.hintTask).ran == ran
+            then
+                return
             end
         end
         error("host work never received a grant")
+    end
+
+    function self.requeue(context)
+        -- Enrol every task afresh on the next callback, in enrolment order.
+        context.scheduler.clear()
+        context.taskSync, context.enrolledTasks, context.hostTasks = nil, nil, nil
     end
 
     function self.isolateWork(context)

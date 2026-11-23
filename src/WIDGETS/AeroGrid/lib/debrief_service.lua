@@ -5,7 +5,7 @@
 --- columns, with its statistic, worst threshold level and per-column levels.
 --- Only the latest debrief is kept, in memory, until the model is armed with
 --- no flight in progress.
-local debrief = { RUNTIME_API = 1, UNITS_PER_SLOT = 4 }
+local debrief = { UNITS_PER_SLOT = 1 }
 debrief.updateCost = "variable"
 debrief.updateMinCost = 1
 debrief.__index = debrief
@@ -71,6 +71,7 @@ function debrief:configure(section, widths)
         self.count = self.count + #feeds
     end
     if self.count > 0 then
+        self.support.subscribed(self)
         local session = history:session()
         -- Flights that ended before the series were recorded are skipped; a
         -- Save keeps the cursor, so a finished flight is still captured.

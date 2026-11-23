@@ -12,7 +12,7 @@ local factory, broker = context.flightFactory, context.flightFactory.broker
 local member, revision = factory.members[context], factory.revision
 local closed, restored, flightSteps = 0, 0, 0
 context.editorSession, context.editorStash, context.editorUi = {}, {}, { saving = {} }
-context.editorTransitionRequest, context.modelSettingsRequest = "open", true
+context.openRequest = { kind = "model settings", page = context.page, modelFilename = model.getInfo().filename }
 context.editorUiModule = {
     close = function(_, discard)
         assert(context.optionsTask.cost == context.scheduler.budget.capacity)
@@ -43,7 +43,7 @@ assert(context.optionsRequest.themeMode == "modern-dark", "only the latest optio
 definition.update(context, { Layout = "Empty", Theme = "modern-dark" })
 assert(not context.optionsRequest, "returning to the active options cancels a deferred change")
 definition.update(context, { Layout = "Default", Theme = "modern-light" })
-context.scheduler.cursor = 1
+fixture.requeue(context)
 noGrant(context, fixture.lvglMock.objects, function()
     definition.refresh(context)
     definition.background(context)
@@ -56,8 +56,8 @@ definition.background(context)
 assert(flightSteps == 1 and closed == 1 and restored == 1)
 assert(context.layoutName == "Default" and context.themeMode == "modern-light")
 assert(member.pending and factory.revision == revision + 1)
-assert(not context.editorSession and not context.editorStash and not context.editorTransitionRequest)
-assert(not context.modelSettingsRequest and not context.optionsRequest)
+assert(not context.editorSession and not context.editorStash)
+assert(not context.openRequest and not context.optionsRequest)
 assert(context.reloadState == "clear" and context.page and not context.page.cleared)
 assert(
     not context.scheduler.state(context.optionsTask).pending,

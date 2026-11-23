@@ -34,13 +34,13 @@ local function testBoundedPolling()
         feeds[index] = service:output(index)
     end
     local used, again = service:update(0)
-    assert(used == 1 and again and outputReads == 8 and metadataReads == 2)
+    assert(used == 1 and again and outputReads == 8 and metadataReads == 6, "polls finish in the first step")
     feeds[31] = service:output(31)
     for turn = 2, 4 do
         local beforeOutputs, beforeMetadata = outputReads, metadataReads
         used, again = service:update(0)
         assert(used == 1 and again == (turn < 4))
-        assert(outputReads - beforeOutputs <= 8 and metadataReads - beforeMetadata <= 2)
+        assert(outputReads - beforeOutputs <= 8 and metadataReads == beforeMetadata)
     end
     assert(outputReads == 31 and metadataReads == 6)
     assert(not feeds[31].available, "outputs added mid-cycle wait for the next cycle")
@@ -48,15 +48,11 @@ local function testBoundedPolling()
         assert(feeds[index].available and feeds[index].raw == index * 10)
     end
     repeat
-        used, again = service:update(10)
+        used, again = service:update(20)
         assert(used == 1)
     until not again
-    assert(outputReads == 63 and metadataReads == 6, "output samples retain their faster cadence")
+    assert(outputReads == 63 and metadataReads == 12, "each update samples outputs and polls metadata")
     assert(feeds[31].available and feeds[31].raw == 310)
-    repeat
-        used, again = service:update(20)
-    until not again
-    assert(metadataReads == 12, "metadata polling resumes on the ordinary cadence")
 
     local idle = controlService.new(services.environment({}), services)
     used, again = idle:update(0)

@@ -44,7 +44,7 @@ assert(
     "lib/panel_layout.lua has no installer"
 )
 
-local theme = { RUNTIME_API = 1 }
+local theme = {}
 local catalog = {}
 
 --- Record something the host did on its own behalf, rather than a failure.
@@ -168,18 +168,6 @@ local function pack(red, green, blue)
         return value
     end
     return clamp(red) * 65536 + clamp(green) * 256 + clamp(blue)
-end
-
---- Expand an EdgeTX RGB565 value into a 24-bit color.
---- Used to check palette contrast at the radio's color precision.
----@param value integer
----@return integer
-function theme.fromRgb565(value)
-    local red = math.floor(value / 2048) % 32
-    local green = math.floor(value / 32) % 64
-    local blue = value % 32
-
-    return pack(red * 255 / 31, green * 255 / 63, blue * 255 / 31)
 end
 
 --- Relative luminance using the standard sRGB transfer function.
@@ -909,16 +897,6 @@ function theme.state(resolved, state, accentName)
     end
 
     return presentation
-end
-
---- Expose the Modern palette for tests and documentation.
----@return table
-function theme.modernDark()
-    local copy = {}
-    for key, value in pairs(catalog.themes["modern-dark"].colors) do
-        copy[key] = value
-    end
-    return copy
 end
 
 typography.install(theme)
