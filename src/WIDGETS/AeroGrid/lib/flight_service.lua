@@ -386,14 +386,9 @@ function broker:saveCount()
     end
     if pending.prepared.baseRevision ~= self.document.revision then
         pending.prepared = nil
-        pending.deferred = nil
         return
     end
-    local ok, document, deferred = self.store:commit(pending.prepared)
-    if not ok and deferred then
-        pending.deferred = true
-        return
-    end
+    local ok, document = self.store:commit(pending.prepared)
     assert(ok, document)
     self.pendingCount = nil
     self:setDocument(document)
@@ -422,21 +417,6 @@ function broker:converted()
         end
     end
     return result
-end
-
---- Read live arm conditions before the CH32 read-modify-write.
-function broker:settingsDisarmed(proposed)
-    local function disarmed(name)
-        if name == nil or name == "" then
-            return true
-        end
-        if not self.env.getSwitchValue or not self.env.getSwitchIndex then
-            return false
-        end
-        local index = self.modules.control.switchIndex(self, name)
-        return type(index) == "number" and index ~= 0 and self.env.getSwitchValue(index) == false
-    end
-    return disarmed(proposed) and disarmed(self.document and self.document.armed)
 end
 
 function broker:boundary(kind, at, observedAt)
@@ -957,9 +937,7 @@ local function countWork(owner, now)
         and not owner.settingsAdoption
         and not owner.settingsError
         and (
-            pending
-                and not pending.failed
-                and (not pending.deferred or owner:settingsDisarmed(pending.prepared.document.armed))
+            pending and not pending.failed
             or not pending and not owner.countImportFailed and owner.document.flightCount == nil
             or owner:conversion() ~= nil
             or owner.countDirty
@@ -988,11 +966,7 @@ local function countStep(task, now, granted)
     local ok, message = pcall(function()
         assert(owner:identity() == owner.filename, "Model changed during flight count save")
         local pending = owner.pendingCount
-        if
-            not owner.countImportFailed
-            and not (pending and pending.failed)
-            and not (pending and pending.deferred and not owner:settingsDisarmed(pending.prepared.document.armed))
-        then
+        if not owner.countImportFailed and not (pending and pending.failed) then
             owner:saveCount()
         end
     end)

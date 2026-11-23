@@ -209,16 +209,7 @@ local function fixture(cadence)
 end
 
 do
-    local owner, radio = fixture()
-    radio.arms[1] = false
-    assert(owner:settingsDisarmed())
-    radio.arms[1] = true
-    assert(not owner:settingsDisarmed())
-    owner:setDocument({ revision = 2, armed = "" })
-    assert(owner:settingsDisarmed(), "saved None disables arming")
-    assert(not owner:settingsDisarmed("L01"), "a proposed arm condition must also be disarmed")
-    radio.arms[1] = nil
-    assert(not owner:settingsDisarmed("L01"), "unavailable never counts as disarmed")
+    local owner = fixture()
     owner:setDocument({ revision = 3 })
     owner.settingsError = "record failed"
     owner:prepare(100)

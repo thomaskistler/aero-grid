@@ -3,7 +3,6 @@
 local sidecar = {}
 local seeded = false
 local alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-local DISARM = "Disarm before linking model settings"
 
 function sidecar.validId(id)
     return type(id) == "string" and string.match(id, "^AG[A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9]$") ~= nil
@@ -80,15 +79,12 @@ function sidecar.new(widgetPath, env, writer, operations)
         end
         return true
     end
-    function backend:write(_, text, info, guard, armedCondition)
+    function backend:write(_, text, info, guard)
         local valid, message = self:check(info)
         if not valid then
             return false, message
         end
         local claim = info.token == "" or info.foreign
-        if claim and (not env.isDisarmed or env.isDisarmed(armedCondition) ~= true) then
-            return false, DISARM, true
-        end
         local id = info.token
         if claim then
             id = nil
@@ -113,9 +109,6 @@ function sidecar.new(widgetPath, env, writer, operations)
             if not ok then
                 return false, err
             end
-            if claim and (not env.isDisarmed or env.isDisarmed(armedCondition) ~= true) then
-                return false, DISARM
-            end
             if (claim or afterRotation) and operations.stat(target) then
                 return false, "Model settings changed during save; cancel and reload"
             end
@@ -123,7 +116,7 @@ function sidecar.new(widgetPath, env, writer, operations)
         end
         local saved, saveError = writer.write(target, text, operations, guarded, info.recovered and not claim)
         if not saved then
-            return false, saveError, saveError == DISARM
+            return false, saveError
         end
         if claim then
             local ok, err = self:check(info)
@@ -133,9 +126,6 @@ function sidecar.new(widgetPath, env, writer, operations)
             ok, err = guard(false)
             if not ok then
                 return false, err
-            end
-            if not env.isDisarmed or env.isDisarmed(armedCondition) ~= true then
-                return false, DISARM, true
             end
             local current, output = name()
             if current ~= info.token then

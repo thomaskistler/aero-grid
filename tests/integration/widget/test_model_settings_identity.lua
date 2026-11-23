@@ -26,7 +26,7 @@ local setOutput = model.setOutput
 model.setOutput = function(index, output)
     local owner = first.flightFactory.broker
     assert(owner.documentLoaded and owner.document.modelFilename == owner.filename, "accept before adoption")
-    assert(fixture.radio.values[305] == -1024, "never write CH32 while armed")
+    assert(fixture.radio.values[305] == 1024, "exercise linking while armed")
     assert(fstat(path .. "AEROGRID/models/" .. output.name .. ".yaml"), "install the record first")
     writes = writes + 1
     setOutput(index, output)
@@ -48,13 +48,10 @@ local function pump(count)
         definition.background(second)
     end
 end
-pump(150)
+pump(250)
 local owner = first.flightFactory.broker
-assert(owner == second.flightFactory.broker and owner.documentLoaded and owner.settingsAdoption)
+assert(owner == second.flightFactory.broker and owner.documentLoaded)
 assert(owner.document.revision == 3 and owner.document.armed == "SFv")
-assert(fixture.radio.outputs[31].name == "AGTEST" and writes == 0, "preload and armed broker stay read-only")
-fixture.radio.values[305] = -1024
-pump(100)
 local id = fixture.radio.outputs[31].name
 assert(id ~= "AGTEST" and string.match(id, "^AG[A-Z0-9]+$") and writes == 1)
 assert(not owner.settingsAdoption and not owner.loadError and not owner.state.persistenceError)
@@ -72,17 +69,14 @@ assert(writes == 1, "multiple dashboards cannot repeatedly fork")
 fixture.radio.modelFilename = "failed-copy.yml"
 fixture.radio.outputs[31].name = "AGTEST"
 fixture.radio.values[305] = 1024
-pump(150)
-assert(owner.settingsAdoption)
 owner.store.adopt = function()
     return false, "injected record failure"
 end
-fixture.radio.values[305] = -1024
-pump(60)
+pump(150)
 assert(not owner.settingsAdoption and string.find(owner.state.persistenceError, "injected record failure", 1, true))
 assert(writes == 1)
 
--- A model switch drops deferred work rather than claiming its channel later.
+-- A model with an existing CH32 name cannot claim the channel.
 fixture.radio.modelFilename = "new-model.yml"
 fixture.radio.outputs[31].name = "MOTOR"
 pump(150)
@@ -91,12 +85,10 @@ local ok, message = owner.store:save("new-model.yml", 0, fixture.module("lib/fli
 assert(not ok and string.find(message, "Clear the CH32 name", 1, true))
 assert(writes == 1 and fixture.radio.outputs[31].name == "MOTOR")
 
--- A first arm-switch selection must be disarmed too, even without saved arming.
+-- Selecting the arm switch while armed can create the first settings link.
 fixture.radio.outputs[31].name = ""
 fixture.radio.values[305] = 1024
 ok, message = owner.store:save("new-model.yml", 0, fixture.module("lib/flight_config.lua").defaults(), "SFv")
-assert(not ok and string.find(message, "Disarm", 1, true) and writes == 1)
-fixture.radio.values[305] = -1024
-ok, message = owner.store:save("new-model.yml", 0, fixture.module("lib/flight_config.lua").defaults(), "SFv")
 assert(ok, message)
-assert(writes == 2)
+assert(writes == 2 and owner.store:load("new-model.yml").armed == "SFv")
+assert(fixture.radio.outputs[31].min == -800 and fixture.radio.outputs[31].curve == 2)

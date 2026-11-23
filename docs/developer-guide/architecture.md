@@ -193,8 +193,8 @@ script restart to enter the native Layout picker. Failed saves preserve drafts.
 
 `model_settings_store.lua` validates and serializes revisioned documents;
 `model_settings_sidecar.lua` stores `/AEROGRID/models/<ID>.yaml`, linked by the CH32 name. Reads never write;
-after the broker accepts settings, filename changes fork the record while
-disarmed. Verified records are installed before claiming CH32, preserving all
+after the broker accepts settings, filename changes fork the record.
+Verified records are installed before claiming CH32, preserving all
 channel fields. Saves guard model identity, CH32 name, and revision.
 Layout saves and previews do not write model settings.
 Changing the arm condition rebuilds registered dashboards and clears captured

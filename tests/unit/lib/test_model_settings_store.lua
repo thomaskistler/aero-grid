@@ -361,9 +361,6 @@ do
     local document, info = store:load("plane.yml")
     assert(info.missing and document.revision == 0 and state.writes == 0 and next(files) == nil)
     state.disarmed = false
-    local saved, message = store:save("plane.yml", 0, config.defaults())
-    assert(not saved and string.find(message, "Disarm", 1, true) and next(files) == nil and state.writes == 0)
-    state.disarmed = true
     operations.inject("rename")
     assert(not store:save("plane.yml", 0, config.defaults()))
     assert(state.channel.name == "" and state.writes == 0)
@@ -373,7 +370,7 @@ do
         assert(state.channel.name == "", "record is installed before claiming CH32")
         return rename(from, to)
     end
-    assert(store:save("plane.yml", 0, config.defaults()))
+    assert(store:save("plane.yml", 0, config.defaults(), "SFv"), "first save succeeds while armed")
     assert(state.channel.name == "AGNEW1" and state.writes == 1 and files[path("AGNEW1")])
     for key, value in pairs(original) do
         assert(key == "name" or state.channel[key] == value, "CH32 field lost: " .. key)
@@ -401,11 +398,7 @@ do
     assert(info.foreign and document.modelFilename == "copy.yml" and document.revision == 1)
     assert(files[path()] == original and state.writes == 0, "loading a copy must be read-only")
     state.disarmed = false
-    local saved, message, deferred = store:adopt("copy.yml", document)
-    assert(not saved and deferred and string.find(message, "Disarm", 1, true))
-    assert(state.channel.name == "AGTEST" and files[path()] == original)
-    state.disarmed = true
-    assert(store:adopt("copy.yml", document))
+    assert(store:adopt("copy.yml", document), "copy adoption succeeds while armed")
     assert(state.channel.name == "AGNEW1" and state.channel.min == -800 and state.channel.curve == 2)
     assert(files[path()] == original and yaml.parse(files[path("AGNEW1")]).modelFilename == "copy.yml")
     assert(store:adopt("copy.yml", document) and state.writes == 1, "adoption is idempotent")
@@ -484,23 +477,20 @@ do
     assert(yaml.parse(files[path()]).revision == 1 and state.writes == 0)
 end
 
-for _, failure in ipairs({ "armed", "channel", "model" }) do
+for _, failure in ipairs({ "channel", "model" }) do
     local store, files, operations, switch, state = fixture()
     state.channel.name = ""
     operations.inject("read", function(filename)
         if string.match(filename, "%.tmp$") then
-            if failure == "armed" then
-                state.disarmed = false
-            elseif failure == "channel" then
+            if failure == "channel" then
                 state.channel.name = "OTHER"
             else
                 switch("other.yml")
             end
         end
     end)
-    local saved, _, deferred = store:save("plane.yml", 0, config.defaults())
+    local saved = store:save("plane.yml", 0, config.defaults())
     assert(not saved and state.writes == 0 and not files[path("AGNEW1")], failure)
-    assert(deferred == (failure == "armed"), failure)
 end
 
 do

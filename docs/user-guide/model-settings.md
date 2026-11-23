@@ -15,7 +15,6 @@ Chart recording time stops while this page is open and resumes with a pause gap.
 On EdgeTX 2.x, AeroGrid uses the **CH32 name** for its settings ID (for example,
 `AGK7Q2`). Leave that name unchanged; CH32's output limits are preserved.
 If CH32 already has another name, clear it before saving Model settings.
-New links and copied models are linked only while disarmed.
 
 Display-name changes keep the same settings. A copied model inherits settings
 when AeroGrid first loads it, then gets its own independent record. Model

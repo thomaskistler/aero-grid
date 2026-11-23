@@ -139,16 +139,8 @@ owner = restart()
 local host = {}
 owner.members[host] = { modelFilename = filename, legacy = { armed = "L01" } }
 step(owner)
-assert(owner.pendingCount and owner.pendingCount.deferred and not owner.view.countError)
-assert(output.name == "" and not files[sidecar.path("/WIDGETS/AeroGrid/", "AGNEW1")])
-assert(owner.countTask.due > now, "deferred count must not continuously retry while armed")
-owner.countDirty = true
-step(owner)
-assert(owner.pendingCount.deferred and not owner.view.countError, "publishing must not retry a deferred claim")
-disarmed = true
-step(owner)
-assert(owner.pendingCount == nil and owner.view.count == 0 and output.name == "AGNEW1")
-assert(store:load(filename).flightCount == 0, "deferred initial count persists after disarming")
+assert(owner.pendingCount == nil and owner.view.count == 0 and output.name == "AGNEW1" and not owner.view.countError)
+assert(store:load(filename).flightCount == 0, "initial count persists while armed")
 assert(store:load(filename).armed == "L01", "released layout arm switches convert once into model settings")
 
 print("Flight count initialization, restart, source switching and persistence recovery passed")

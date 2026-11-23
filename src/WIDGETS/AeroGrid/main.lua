@@ -1718,7 +1718,7 @@ end
 --- second slot while Smart detection reads its sensors.
 local function flightCost(task)
     local owner = task.broker
-    local linking = owner.settingsAdoption and owner:settingsDisarmed()
+    local linking = owner.settingsAdoption
     task.cost = (not owner.documentLoaded or linking) and task.host.scheduler.budget.slots or owner.smart and 2 or 1
 end
 
@@ -1763,9 +1763,6 @@ local function pumpFlight(task, now, granted)
                 getOutput = owner.env.getOutput,
                 setOutput = owner.env.setOutput,
                 getTime = owner.env.getTime,
-                isDisarmed = function(proposed)
-                    return owner:settingsDisarmed(proposed)
-                end,
             })
             if not created then
                 owner.loadError, owner.documentLoaded = tostring(store), true
@@ -1800,15 +1797,15 @@ local function pumpFlight(task, now, granted)
         return nil, true
     end
     local adoption = owner.settingsAdoption
-    if adoption and owner:settingsDisarmed() then
+    if adoption then
         if granted < context.scheduler.budget.slots then
             return nil, true
         end
-        local saved, result, deferred = owner.store:adopt(filename, adoption.document, adoption.info)
+        local saved, result = owner.store:adopt(filename, adoption.document, adoption.info)
         if saved then
             owner.settingsAdoption = nil
             owner:setDocument(result)
-        elseif not deferred then
+        else
             owner.settingsAdoption = nil
             owner.settingsError = "Cannot link model settings: " .. tostring(result)
             owner:error("persistence", owner.settingsError)
@@ -1969,10 +1966,7 @@ local function openModelSettings(context)
                 end
                 return false, latest, true
             end
-            -- A third result from the store means "deferred until disarmed", not the UI's
-            -- "retry with this prepared save"; the user saves again after disarming.
-            local saved, result = owner.store:commit(prepared)
-            return saved, result
+            return owner.store:commit(prepared)
         end,
         saved = function(saved)
             owner.settingsAdoption = nil

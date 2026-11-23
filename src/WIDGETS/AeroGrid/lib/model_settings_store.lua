@@ -49,7 +49,6 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
         getTime = env.getTime or getTime,
         getDateTime = env.getDateTime or getDateTime,
         generateId = env.generateId,
-        isDisarmed = env.isDisarmed,
     }, writer, operations)
     local instance = { counter = counter, operations = operations }
     local function identity(filename)
@@ -283,10 +282,9 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
             end
             return true
         end
-        local saved, saveError, deferred =
-            backend:write(filename, prepared.serialized, prepared.info, guard, prepared.document.armed)
+        local saved, saveError = backend:write(filename, prepared.serialized, prepared.info, guard)
         if not saved then
-            return false, saveError, deferred
+            return false, saveError
         end
         local matches, identityError = identity(filename)
         if not matches then
