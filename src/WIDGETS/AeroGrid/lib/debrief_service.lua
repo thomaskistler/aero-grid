@@ -65,7 +65,7 @@ function debrief:configure(section, widths)
     for index, tile in ipairs(section.tiles) do
         local feeds = {}
         for position, series in ipairs(tile.series) do
-            feeds[position] = history:subscribe(series.source, { precision = series.precision })
+            feeds[position] = history:subscribe(series.source)
         end
         self.tiles[index], self.feeds[index] = tile, feeds
         self.count = self.count + #feeds

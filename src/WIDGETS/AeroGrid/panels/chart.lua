@@ -2576,7 +2576,6 @@ local function subscribeHistory(context, entry)
     return context.history:subscribe(entry.source, {
         windowSeconds = timeWindow(context.settings) / 100,
         timeRange = "growing",
-        precision = entry.precision,
     })
 end
 

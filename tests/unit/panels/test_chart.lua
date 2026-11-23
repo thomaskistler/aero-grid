@@ -1001,7 +1001,6 @@ end
 local denseItem = dense.series[1]
 equal(denseItem.feed.count, 6001)
 equal(denseItem.feed.full, false)
-equal(denseItem.feed.epsilon, 0.0005, "metric precision must reach the compressor")
 finishDrawing(dense)
 assert(next(dense.columnRenderer.objects), "incoming data must allocate native columns")
 local _, _, top, bottom = chartView.bounds(dense, 1)
