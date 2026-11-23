@@ -32,4 +32,6 @@ yellow for warning, and blue otherwise. Values include the recorded source's
 units unless the series overrides them.
 Minimum and maximum values are marked **MIN** and **MAX**.
 
+Each reading is shown until the next one arrives, so whole-number sensors such as satellites appear as steps.
+
 ![Flight debrief showing flight 42 with RX battery, Link, Altitude and Current tiles](../assets/editor/debrief-view.png)
