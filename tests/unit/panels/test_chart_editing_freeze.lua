@@ -38,7 +38,7 @@ local function run(duration, editingKey)
             { source = record.feeds[3].name },
         },
     }, services)
-    local session, grant, due, base = record.session, 1, 0, now
+    local session, grant, due, base = record.session, 4, 0, now
     local function advance(to)
         while now < to do
             now = now + 5
@@ -46,7 +46,7 @@ local function run(duration, editingKey)
                 record.sample(now, { (now * 7) % 997, -(now % 389), (now % 600) - 300 })
             end
             if now >= due then
-                grant = 3 - grant
+                grant = 12 - grant
                 local offered = chart.offered(panel, grant)
                 local interval, _, used = chart.refresh(panel, false, grant)
                 assert(used >= 1 and used <= offered, "refreshes must stay within the grant")
@@ -94,7 +94,7 @@ local function run(duration, editingKey)
     local pauseAt = record.history:recordingBreak(session, session.resumeLast)
     equal(pauseAt, frozenAt, "the pause sits where recording time stopped")
     for _ = 1, 400 do
-        local _, pending = chart.refresh(panel, false, 8)
+        local _, pending = chart.refresh(panel, false, 32)
         local waiting = false
         for _, owner in ipairs(panel.columnConsumers) do
             waiting = waiting or #owner.pending > 0 or owner.tail ~= nil

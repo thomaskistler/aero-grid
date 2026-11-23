@@ -12,7 +12,7 @@ local function testPanelContract()
     valid.refreshCost = "variable"
     valid.refreshMinCost = 1
     assert(panelHost.validateModule(valid, "demo"))
-    valid.refreshCost = 8
+    valid.refreshCost = 32
     assert(panelHost.validateModule(valid, "demo"))
 
     local function rejects(module, typeName, pattern)
@@ -32,7 +32,7 @@ local function testPanelContract()
     valid.refreshMinCost = nil
     assert(panelHost.validateModule(valid, "demo"))
     rejects({ id = "demo", create = function() end, refreshCost = "variable" }, "demo", "requires refreshMinCost")
-    for _, minimum in ipairs({ 0, 1.5, 9, "1" }) do
+    for _, minimum in ipairs({ 0, 1.5, 33, "1" }) do
         rejects({
             id = "demo",
             create = function() end,
@@ -40,14 +40,14 @@ local function testPanelContract()
             refreshMinCost = minimum,
         }, "demo", "refreshMinCost")
     end
-    for _, cost in ipairs({ -1, 9, 1.5, "6", 0 / 0 }) do
+    for _, cost in ipairs({ -1, 33, 1.5, "6", 0 / 0 }) do
         rejects({ id = "demo", create = function() end, refreshCost = cost }, "demo", "refreshCost")
     end
 end
 
 local function testBackgroundContract()
     local function background() end
-    for _, minimum in ipairs({ 0, 1.5, 9, "1" }) do
+    for _, minimum in ipairs({ 0, 1.5, 33, "1" }) do
         local ok, err = panelHost.validateModule(
             { id = "demo", create = function() end, background = background, backgroundMinCost = minimum },
             "demo"

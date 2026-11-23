@@ -226,9 +226,9 @@ for catalogIndex, item in ipairs(editor.CATALOG) do
                 local row = building and state.drawerBuild
                 local field = row and state.drawerFields[row]
                 if building then
-                    assert(slots == (field and 1 or 8), panelType .. ": incorrect drawer reservation")
+                    assert(slots == (field and 4 or 32), panelType .. ": incorrect drawer reservation")
                 elseif state.nativeInput or state.drawerPending then
-                    assert(slots == 8, panelType .. ": drawer commands must retain full grants")
+                    assert(slots == 32, panelType .. ": drawer commands must retain full grants")
                 end
                 local used, again = step(work, now, slots, hidden)
                 if row then

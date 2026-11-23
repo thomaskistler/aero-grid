@@ -51,7 +51,6 @@
 
 local telemetryService = {}
 telemetryService.__index = telemetryService
-telemetryService.updateCost = 1
 
 --- Ticks of 10ms between polls of a recorded source, the 10 Hz telemetry rate.
 --- Updates run on this grid, so a late update does not slow later ones.
@@ -64,9 +63,12 @@ telemetryService.DISPLAY_PERIOD = 20
 --- half of them, so every source keeps 10 Hz without one heavy callback.
 telemetryService.SPLIT_AT = 12
 
---- Sources one slot is charged for. Every due source is polled in one step.
-telemetryService.SOURCES_PER_SLOT = 8
-local MAX_COST = 8
+--- Every due source is polled in one step. Handing samples to observers was
+--- measured at about 1,800 instructions, and each source at under 100.
+telemetryService.OBSERVER_SLOTS = 4
+telemetryService.SOURCES_PER_SLOT = 6
+telemetryService.updateCost = 1
+local MAX_COST = 32
 
 --- Ticks between attempts to resolve a source the radio does not yet know.
 --- Sensors appear when telemetry first arrives, so an unresolved name must be
@@ -186,6 +188,9 @@ end
 ---@param polls integer
 local function chargeFor(service, polls)
     local cost = math.ceil(polls / telemetryService.SOURCES_PER_SLOT)
+    if service.observers and #service.observers > 0 then
+        cost = cost + telemetryService.OBSERVER_SLOTS
+    end
     service.updateCost = cost < 1 and 1 or cost > MAX_COST and MAX_COST or cost
     service.nextPolls = polls
 end
@@ -269,12 +274,14 @@ end
 function telemetryService:observe(observer)
     self.observers = self.observers or {}
     self.observers[#self.observers + 1] = observer
+    chargeFor(self, self.nextPolls or 0)
 end
 
 function telemetryService:unobserve(observer)
     for index, existing in ipairs(self.observers or {}) do
         if existing == observer then
             table.remove(self.observers, index)
+            chargeFor(self, self.nextPolls or 0)
             return
         end
     end

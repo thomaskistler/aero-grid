@@ -1069,7 +1069,8 @@ local function countStep(task, now, granted)
     end
     if granted == 0 then
         local pending = owner.pendingCount
-        task.cost = pending and not pending.failed and 8 or owner.countImport and 4 or 1
+        -- A save measured up to 6.2k instructions natively.
+        task.cost = pending and not pending.failed and 14 or owner.countImport and 16 or 4
         return 0, true
     end
     task.cost = 0

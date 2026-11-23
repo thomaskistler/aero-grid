@@ -197,7 +197,9 @@ local function testDerivedDebrief()
 end
 
 local function testAddChannelOutput()
-    modules.output = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/output.lua"))()
+    modules.output = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/output.lua"))(
+        assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.lua"))().new().budget
+    )
     local session = newSession({ version = layout.VERSION, grid = { columns = 4, rows = 4 }, panels = {} })
     local added, addError = editor.add(session, "output")
     assert(added, addError)

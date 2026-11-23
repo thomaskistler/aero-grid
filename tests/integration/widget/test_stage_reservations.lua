@@ -30,11 +30,11 @@ context.lifecycleTasks.load = nil
 fixture.requeue(context)
 definition.refresh(context)
 assert(flights == 1 and #steps == 4, "small loading stages can share flight's callback")
-assert(grants[1] == 1 and grants[2] == 2 and grants[3] == 1 and grants[4] == 1)
-assert(context.remainingSlots == 2 and context.stage == "panel-build")
+assert(grants[1] == 4 and grants[2] == 8 and grants[3] == 4 and grants[4] == 4)
+assert(context.remainingSlots == 11 and context.stage == "panel-build")
 local task = context.lifecycleTasks.load
 assert(
-    context.scheduler.state(task).spent == 5
+    context.scheduler.state(task).spent == 20
         and task.cost == context.scheduler.budget.capacity
         and context.scheduler.state(task).pending
 )
@@ -45,7 +45,7 @@ assert(
 definition.refresh(context)
 assert(#steps == 5 and not context.stage and grants[5] == context.scheduler.budget.capacity)
 assert(
-    context.scheduler.state(task).spent == 5 + context.scheduler.budget.capacity
+    context.scheduler.state(task).spent == 20 + context.scheduler.budget.capacity
         and not context.scheduler.state(task).pending
 )
 context.stage = "services"
@@ -63,7 +63,7 @@ context.editorUi = editor
 context.editorController.advanceEditor = function()
     local cost = context.uiTasks.editor.cost
     if editor.buildStage then
-        assert(cost == 3)
+        assert(cost == 12)
         editor.buildStage = nil
     else
         assert(cost == context.scheduler.budget.capacity, "preview work cannot inherit a build reservation")
@@ -75,7 +75,7 @@ local before = flights
 fixture.requeue(context)
 definition.refresh(context)
 assert(flights == before + 1 and not editor.buildStage)
-assert(context.remainingSlots == context.scheduler.budget.capacity - 4)
+assert(context.remainingSlots == context.scheduler.budget.capacity - 13)
 editor.previewPending = true
 context.uiRequest = "editor"
 fixture.requeue(context)
@@ -134,7 +134,7 @@ for _, layout in ipairs({ "Default", "review-navigation", "review-chart", "Diagn
                 if count > 0 then
                     measured = measured + 1
                     peaks[name] = math.max(peaks[name] or 0, count)
-                    local limit = row and modelMockLimits[row] or slots * 2000
+                    local limit = row and modelMockLimits[row] or slots * host.scheduler.budget.instructionsPerSlot
                     assert(count + 100 < limit, name .. " exceeds its mock envelope: " .. count)
                 end
                 return used, again
@@ -161,7 +161,7 @@ for _, layout in ipairs({ "Default", "review-navigation", "review-chart", "Diagn
     local settings = untilDone(function()
         return host.modelSettingsUi and not host.modelSettingsUi.build
     end)
-    assert(modelRows == 13 and modelSlots == 14, "drawer construction must reserve exactly 14 slots")
+    assert(modelRows == 13 and modelSlots == 56, "drawer construction must reserve exactly 56 slots")
     host.modelSettingsUi.closing = true
     untilDone(function()
         return not host.modelSettingsUi

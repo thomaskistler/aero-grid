@@ -2,7 +2,7 @@
 
 local root = assert(...)
 local module = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.lua"))()
-assert(module.SLOTS == 8 and module.CAPACITY == 8 and module.INSTRUCTIONS_PER_SLOT == 2000)
+assert(module.SLOTS == 32 and module.CAPACITY == 32 and module.INSTRUCTIONS_PER_SLOT == 500)
 
 for _, capacity in ipairs({ false, 0, -1, 1.5, math.huge, 0 / 0, "8" }) do
     assert(not pcall(module.new, { capacity = capacity }), "invalid capacity must be rejected")
@@ -287,7 +287,7 @@ do
     assert(#failures == 1 and #calls == 2)
 end
 
-for _, invalid in ipairs({ false, -1, 1.5, 9, math.huge, 0 / 0, "1" }) do
+for _, invalid in ipairs({ false, -1, 1.5, 33, math.huge, 0 / 0, "1" }) do
     local queue, _, task = fixture()
     local variable = task("invalid", "variable")
     variable.minCost = 1
@@ -317,7 +317,7 @@ do
     assert(variable.error == "invalid minimum slot cost")
 end
 
-for _, invalid in ipairs({ false, -1, 1.5, 9, math.huge, 0 / 0, "1" }) do
+for _, invalid in ipairs({ false, -1, 1.5, 33, math.huge, 0 / 0, "1" }) do
     local queue, calls, task = fixture()
     local instance = task("invalid", invalid)
     local used, requested, denied = queue.run(0, 8)
@@ -326,7 +326,7 @@ for _, invalid in ipairs({ false, -1, 1.5, 9, math.huge, 0 / 0, "1" }) do
 end
 
 do
-    local queue = module.new({ capacity = 12 })
+    local queue = module.new({ capacity = 48 })
     local granted
     queue.add({
         name = "bounded",
@@ -337,10 +337,10 @@ do
             return slots, false
         end,
     })
-    assert(queue.run(0, 12) == 8 and granted == 8, "one variable turn must never exceed eight slots")
+    assert(queue.run(0, 48) == 32 and granted == 32, "one variable turn must never exceed thirty-two slots")
     queue.clear()
     assert(queue.count == 0 and next(queue.tasks) == nil)
-    local used, requested, denied = queue.run(1, 12)
+    local used, requested, denied = queue.run(1, 48)
     assert(used == 0 and requested == 0 and denied == 0)
     queue.add({
         name = "replacement",
@@ -348,7 +348,7 @@ do
             return slots, false
         end,
     })
-    assert(queue.run(2, 12) == 1 and queue.count == 1)
+    assert(queue.run(2, 48) == 1 and queue.count == 1)
 end
 
 do
@@ -376,7 +376,7 @@ do
     assert(table.concat(calls, ",") == "small:2", "variable tasks must not run below their minimum")
 end
 
-for _, minimum in ipairs({ false, 0, 1.5, 9, math.huge, 0 / 0, "1" }) do
+for _, minimum in ipairs({ false, 0, 1.5, 33, math.huge, 0 / 0, "1" }) do
     local queue, _, task = fixture()
     local variable = task("invalid minimum", "variable")
     variable.minCost = minimum

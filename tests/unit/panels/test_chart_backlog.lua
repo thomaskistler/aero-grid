@@ -28,7 +28,7 @@ local function create(duration)
         },
     }, services)
     for _ = 1, 400 do
-        local _, pending = chart.refresh(panel, false, 8)
+        local _, pending = chart.refresh(panel, false, 32)
         if not pending and view.finished(panel) then
             break
         end
@@ -67,14 +67,14 @@ assert(queued(hidden) < 10, "queued samples must drain while the chart is hidden
 local narrow, narrowRecord = create(1)
 starts = {}
 local function narrowTurn()
-    -- The refresh is offered one slot, or its declared minimum, up to three turns
+    -- The refresh is offered four slots, or its declared minimum, up to three turns
     -- a callback while finishing is pending.
     for turn = 1, 3 do
         if turn > 1 and not chart.finishPending(narrow) then
             break
         end
-        local offered = chart.offered(narrow, 1)
-        local _, _, used = chart.refresh(narrow, false, 1)
+        local offered = chart.offered(narrow, 4)
+        local _, _, used = chart.refresh(narrow, false, 4)
         assert(used >= 1 and used <= offered, "offers must not be exceeded")
     end
     if narrow.start ~= (starts[#starts] or 0) then
@@ -106,7 +106,7 @@ for at = 0, 9000, 25 do
     resetRecord.sample(at, values(at))
     -- Callbacks come every 50 ms: five of them per 250 ms of samples.
     for _ = 1, 5 do
-        chart.refresh(resetPanel, false, 2)
+        chart.refresh(resetPanel, false, 8)
     end
 end
 local auto = resetPanel.auto
@@ -135,7 +135,7 @@ repeat
     local _, unfinished, used = chart.resetSession(resetPanel, 0x3fffffff)
     lvgl.hide = hide
     worstHides = math.max(worstHides, hides)
-    assert(used >= 1 and used <= 2, "a reset turn must stay within two slots")
+    assert(used >= 1 and used <= 8, "a reset turn must stay within its grant")
 until not unfinished or turns > 200
 assert(turns > 1 and worstHides <= 120, "a reset must hide columns in bounded batches")
 assert(next(visibleRenderer.visible) == nil, "the reset must hide every visible column")
@@ -149,7 +149,7 @@ for at = 9025, 12000, 25 do
     now = at
     resetRecord.sample(at, values(at))
     for _ = 1, 5 do
-        chart.refresh(resetPanel, false, 2)
+        chart.refresh(resetPanel, false, 8)
     end
     -- The layers may swap meanwhile; whichever is hidden must have been swept.
     swept = swept or auto.hidden and not auto.hidden.recycle and next(auto.hidden.columnRenderer.visible) == nil
@@ -165,10 +165,10 @@ local gappy, gappyRecord = create(1)
 for at = 0, 5995, 5 do
     now = at
     gappyRecord.sample(at, values(at), at % 10 == 5)
-    chart.refresh(gappy, false, 2)
+    chart.refresh(gappy, false, 8)
 end
 for _ = 1, 400 do
-    local _, pending = chart.refresh(gappy, false, 8)
+    local _, pending = chart.refresh(gappy, false, 32)
     if not pending and view.finished(gappy) then
         break
     end

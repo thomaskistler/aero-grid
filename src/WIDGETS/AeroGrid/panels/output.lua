@@ -1,5 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
+local budget = assert(..., "output requires scheduler budget")
+
 local output = {
     id = "output",
     supportedSpans = { "any" },
@@ -23,10 +25,10 @@ local output = {
 
 local GUTTER = 8
 -- Rows built or placed per step, and rough instructions per row, which set the
--- slots a step is charged.
+-- slots a step is charged. A steady paint measured about 130 per row.
 local PLACE_ROWS = 4
 local PLACE_COST = 850
-local PAINT_COST = 350
+local PAINT_COST = 130
 
 function output.validateSettings(settings)
     local errors = {}
@@ -147,7 +149,7 @@ local function createRow(context, index)
 end
 
 local function slotsFor(instructions)
-    return math.max(1, math.min(8, math.ceil(instructions / 2000)))
+    return math.max(1, math.min(budget.slots, math.ceil(instructions / budget.instructionsPerSlot)))
 end
 
 --- Slots for a placing step: up to PLACE_ROWS rows placed and painted.

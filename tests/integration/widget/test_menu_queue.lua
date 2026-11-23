@@ -16,7 +16,7 @@ context.aeroMenuModule.advance = function(host)
         "advance is called before grant attribution"
     )
     local building = host.aerogridMenu.pending and not host.aerogridMenu.screen
-    assert(host.menuTask.cost == (building and host.scheduler.budget.capacity or 1), "only construction is costly")
+    assert(host.menuTask.cost == (building and host.scheduler.budget.capacity or 4), "only construction is costly")
     advances = advances + 1
     return advance(host)
 end
@@ -55,7 +55,7 @@ definition.refresh(context)
 assert(advances == 3 and not menu.open)
 local actions = 0
 menu.handlers.uiSetup = function()
-    assert(context.menuTask.cost == 1, "actions only record requests")
+    assert(context.menuTask.cost == 4, "actions only record requests")
     actions = actions + 1
 end
 menu.action = "uiSetup"

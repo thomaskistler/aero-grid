@@ -9,8 +9,6 @@ local chart = {
     supportedSpans = { "2x1", "3x1", "4x1", "2x2", "3x2", "4x2", "3x3", "4x3", "4x4" },
     refreshInterval = 20,
     refreshCost = "variable",
-    refreshMinCost = 1,
-    backgroundMinCost = 1,
     settings = {
         { key = "label", label = "Label", type = "string", default = "" },
         { key = "armSwitch", label = "Arm switch position", type = "string", default = "", legacyArm = true },
@@ -220,6 +218,10 @@ end
 local function slotsFor(model, instructions)
     return math.max(1, math.ceil((instructions + model.overhead) / model.slot))
 end
+
+-- The smallest useful grant leaves 700 instructions of chart work.
+local MIN_SLOTS = slotsFor(PIPELINE, 700)
+chart.refreshMinCost, chart.backgroundMinCost = MIN_SLOTS, MIN_SLOTS
 
 -- Plot state owned by one layer. Auto windows prepare the next window in a
 -- hidden layer with the same staged pipeline, then swap the layers.
@@ -1530,7 +1532,7 @@ end
 -- Each reset turn also checks its state and walks the layers: about 300 to 500
 -- instructions beyond the hides, measured on the test runtime.
 local RESET_OVERHEAD = 500
-local RESET_ALLOWANCE = allowance(PIPELINE, 2) - RESET_OVERHEAD
+local RESET_ALLOWANCE = allowance(PIPELINE, 8) - RESET_OVERHEAD
 
 --- Retire the current native presentation in bounded batches.
 function chart.resetSession(context)
@@ -2175,7 +2177,7 @@ local function prepare(context, slots, spent, wanted)
     local used = background(context, math.min(math.max(wanted, declared), room))
     local need = context.auto and context.auto.need
     local minimum = need
-        and math.min(8, math.max(PREP_MIN_SLOTS, slotsFor(PIPELINE, PREP_OVERHEAD + need + INTAKE_MIN)))
+        and math.min(budget.slots, math.max(PREP_MIN_SLOTS, slotsFor(PIPELINE, PREP_OVERHEAD + need + INTAKE_MIN)))
     return used + PREP_OVERHEAD, minimum or PREP_MIN_SLOTS
 end
 
@@ -2192,6 +2194,10 @@ end
 -- Attaching one series to its recorded history.
 local ATTACH_COST = 450
 
+-- Geometry and every series attachment, laid out in one turn.
+local function setupCost(context)
+    return geometryCost(context) + ATTACH_COST * #context.series
+end
 -- A reflow measures again and then lays out the geometry.
 local function layoutCost(context)
     return 2500 + geometryCost(context)
@@ -2248,7 +2254,7 @@ function chart.finishPending(context)
     if busy or preparationTurn(context, ready) then
         return false
     end
-    return true, context.columnsDecorating and 1 or slotsFor(END_TO_END, metadataCost(context))
+    return true, context.columnsDecorating and MIN_SLOTS or slotsFor(END_TO_END, metadataCost(context))
 end
 
 --- Pacing after a stage: a prepared layer takes an extra slot when one is left,
@@ -2412,8 +2418,8 @@ local function refreshChart(context, creating, slots)
         if not context.columnSetupIndex then
             -- The geometry is one piece; it waits for a grant that can pay for it.
             local cost = geometryCost(context)
-            if allowance < cost then
-                context.refreshMinCost = math.min(8, slotsFor(PIPELINE, cost))
+            if allowance < setupCost(context) then
+                context.refreshMinCost = math.min(budget.slots, slotsFor(PIPELINE, setupCost(context)))
                 return 1, true, 1, false
             end
             chart.geometry(context, context.rect)
@@ -2540,6 +2546,7 @@ end
 
 function chart.refresh(context, creating, slots)
     local interval, again, consumed = refreshStep(context, creating, slots)
+    consumed = consumed and math.min(consumed, slots or budget.capacity)
     local pending, minimum = chart.finishPending(context)
     if pending and not creating then
         -- Finishing runs in this callback while slots are left.
@@ -2678,7 +2685,7 @@ function chart.create(parent, rect, settings, services)
         context.checkRange = checkRange
         context.columnSetup = assert(services.chartColumns, "chart column runtime unavailable")
         assert(context.columnRendererModule, "chart column renderer runtime unavailable")
-        context.refreshMinCost = math.min(8, slotsFor(PIPELINE, 1800 + 1500 * #context.series))
+        context.refreshMinCost = math.min(budget.slots, slotsFor(PIPELINE, setupCost(context)))
     else
         chart.geometry(context, rect)
     end

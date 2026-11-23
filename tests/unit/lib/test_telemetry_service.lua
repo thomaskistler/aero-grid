@@ -102,7 +102,7 @@ local function testDeferredUpdatePollsEverySourceInOneStep()
     task.cost = service.updateCost
     local competing = {
         name = "competing",
-        cost = 7,
+        cost = 31,
         due = 50,
         step = function(self, now)
             self.due = now + 5
@@ -111,7 +111,7 @@ local function testDeferredUpdatePollsEverySourceInOneStep()
     queue.add(competing)
     queue.add(task)
     local function tick(now)
-        return queue.run(now, 8)
+        return queue.run(now, 32)
     end
 
     assertions.assertEqual(task.cost, 2, "nine sources are charged two slots")

@@ -13,9 +13,9 @@ function turns.install(chart)
     function chart.offered(panel, grant)
         local pending, minimum = chart.finishPending(panel)
         if not pending then
-            minimum = panel.refreshMinCost
+            minimum = panel.refreshMinCost or chart.refreshMinCost
         end
-        return math.min(8, math.max(grant or 8, minimum or 1))
+        return math.min(32, math.max(grant or 32, minimum or 1))
     end
 
     chart.refresh = function(panel, creating, slots)

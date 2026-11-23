@@ -516,7 +516,7 @@ local earlier = worst
 worst = 0
 current = dense
 build()
-assert(worst < 15000, "dense shading exceeded budget: " .. worst)
+assert(worst < 17500, "dense shading exceeded budget: " .. worst)
 worst = math.max(worst, earlier)
 assert(#context.page.children == pageChildren, "replacements and resets reuse one overlay")
 first = context.debrief.items[1]
@@ -598,7 +598,7 @@ assert(
     "the taller header cannot overlap the first tile"
 )
 
-assert(worst < 15000, "debrief callback exceeded budget: " .. worst)
+assert(worst < 17500, "debrief callback exceeded budget: " .. worst)
 runtime.byId.debrief = realDebrief
 print(
     "Debrief view integration passed; 12 tiles built in "

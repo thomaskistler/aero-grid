@@ -85,7 +85,7 @@ local function fixture(width)
         end,
     })
     assert(state.nextY == 4 and state.smartStatus.hidden)
-    local grants = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1 }
+    local grants = { 4, 4, 4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4 }
     -- Fixture text measurement and firmware API stand-ins execute extra Lua.
     -- These regression envelopes are independent of production reservations.
     local mockLimits = { 4000, 4000, 1000, 1000, 1000, 1000, 1000, 1000, 3000, 13000, 7500, 6000, 1000 }

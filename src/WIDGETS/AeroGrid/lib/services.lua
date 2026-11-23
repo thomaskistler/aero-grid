@@ -23,8 +23,8 @@
 ---@field revision integer Incremented on every completed update.
 ---@field count integer Number of live subscriptions.
 ---@field failed? boolean Set after an update raises, which retires the service.
----@field updateCost? integer|"variable" Nominal 2000-instruction slots, 0 to 8; defaults to 1.
----@field updateMinCost? integer Minimum grant for a variable-cost update, 1 to 8.
+---@field updateCost? integer|"variable" Nominal 500-instruction slots, 0 to 32; defaults to 1.
+---@field updateMinCost? integer Minimum grant for a variable-cost update, 1 to 32.
 ---@field update fun(self: AeroGridServiceInstance, now: integer, slots: integer): integer?, boolean? Slots used and whether more work is ready.
 ---@field resetSession? fun(self: AeroGridServiceInstance, now: integer, index: integer): integer? Next reset item, or nil when finished.
 

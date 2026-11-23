@@ -296,7 +296,7 @@ local function testTelemetryPollsEachSourceAtItsRate()
         harness.values[200 + index] = index
         service:subscribe(name, nil, index <= 4)
     end
-    assertEqual(service.updateCost, 2, "new sources are charged to the next update")
+    assertEqual(service.updateCost, 3, "new sources are charged to the next update")
 
     service:update(0)
     for index = 1, 16 do
@@ -304,6 +304,11 @@ local function testTelemetryPollsEachSourceAtItsRate()
     end
     assertEqual(service.due, 10)
     assertEqual(service.updateCost, 1, "only the four recorded sources are due next")
+    local observer = { samples = function() end }
+    service:observe(observer)
+    assertEqual(service.updateCost, 5, "observers are charged with the sources")
+    service:unobserve(observer)
+    assertEqual(service.updateCost, 1)
 
     -- One second, with updates running a few ticks late on the 10 Hz grid.
     for step = 1, 10 do

@@ -48,7 +48,7 @@ local worst, callbacks = 0, 0
 local function measured(callback, context, draining)
     -- Native controls execute Lua stand-ins here; construction has separate
     -- mock envelopes and native reservation checks in the Model UI coverage.
-    local limit = context.modelSettingsUi and context.modelSettingsUi.build and 33000 or 15000
+    local limit = context.modelSettingsUi and context.modelSettingsUi.build and 33000 or 17500
     fixture.lvglMock.setPropertyValidation(false)
     fixture.lvglMock.setCallCounting(false)
     fixture.lcdMock.setTextMeasurement(false)

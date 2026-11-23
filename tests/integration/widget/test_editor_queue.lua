@@ -14,7 +14,7 @@ context.aeroMenuModal = true
 local steps = 0
 context.editorController.advanceEditor = function()
     local task = assert(context.uiTasks.editor)
-    assert(task.cost == (context.editorUi.saving and context.scheduler.budget.capacity or 3))
+    assert(task.cost == (context.editorUi.saving and context.scheduler.budget.capacity or 12))
     steps = steps + 1
     local state = context.editorUi
     if state.saving then

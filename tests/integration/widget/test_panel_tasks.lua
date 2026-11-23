@@ -39,7 +39,7 @@ local continuing = {
 }
 turns = 0
 run({ entry(continuing) })
-assert(turns > 1 and turns <= 8, "a direct continuation runs while slots remain, up to the callback")
+assert(turns > 1 and turns <= 32, "a direct continuation runs while slots remain, up to the callback")
 assert(#context.errors == 0, "continuation must not raise errors")
 
 local dynamicRefreshTurns, dynamicRefreshGrants = 0, {}
@@ -54,10 +54,10 @@ local dynamicRefresh = {
         return 1, dynamicRefreshTurns < 2, 1
     end,
 }
-local dynamicRefreshEntry = entry(dynamicRefresh, { refreshMinCost = 8 })
+local dynamicRefreshEntry = entry(dynamicRefresh, { refreshMinCost = 32 })
 run({ dynamicRefreshEntry })
 assert(
-    dynamicRefreshTurns == 2 and dynamicRefreshGrants[1] == 8 and dynamicRefreshGrants[2] == 7,
+    dynamicRefreshTurns == 2 and dynamicRefreshGrants[1] == 32 and dynamicRefreshGrants[2] == 31,
     "a continuing refresh must use its updated minimum on each turn"
 )
 
@@ -87,12 +87,12 @@ local dynamicBackground = {
         return nil, dynamicBackgroundTurns < 2, 1
     end,
 }
-local dynamicBackgroundEntry = entry(dynamicBackground, { backgroundMinCost = 8 })
+local dynamicBackgroundEntry = entry(dynamicBackground, { backgroundMinCost = 32 })
 context.panels = { dynamicBackgroundEntry }
 fixture.tick(10)
 definition.background(context)
 assert(
-    dynamicBackgroundTurns == 2 and dynamicBackgroundGrants[1] == 8 and dynamicBackgroundGrants[2] == 7,
+    dynamicBackgroundTurns == 2 and dynamicBackgroundGrants[1] == 32 and dynamicBackgroundGrants[2] == 31,
     "continuing background work must use its updated minimum on each turn"
 )
 
@@ -126,4 +126,4 @@ local scalarEntry = entry({
     end,
 }, 17)
 run({ scalarEntry })
-assert(scalarRefreshes == 8 and not scalarEntry.failed, "non-table panel state remains supported")
+assert(scalarRefreshes == 32 and not scalarEntry.failed, "non-table panel state remains supported")

@@ -2,7 +2,9 @@
 
 local root = ... or "."
 local equal = assert(loadfile(root .. "/tests/support/assertions.lua"))().assertEqual
-local panel = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/output.lua"))()
+local panel = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/output.lua"))(
+    assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.lua"))().new().budget
+)
 local host = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/panel_host.lua"))()
 host.SLOTS = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.lua"))().SLOTS
 local settings, errors = host.resolveSettings(panel, {})

@@ -40,8 +40,8 @@ local function settle(current, grant)
     end
     error("fixed chart failed to settle")
 end
-settle(first, 1)
-settle(second, 2)
+settle(first, 4)
+settle(second, 8)
 local owner, sibling = first.columnConsumers[1], second.columnConsumers[1]
 local originalWidth = owner.map.width
 for at = 0, 1000, 20 do
@@ -58,9 +58,10 @@ local draw = first.columnRenderer.append
 first.columnRenderer.append = function()
     error("readout pass attempted plot work")
 end
-assert(select(2, chart.finishPending(first)) == 2, "readouts must declare a two-slot minimum")
-local _, metadataPending, metadataSlots = chart.refreshOnly(first, false, 2)
-assert(not metadataPending and metadataSlots == 2 and first.metadataReady)
+local readoutSlots = select(2, chart.finishPending(first))
+assert(readoutSlots == 7, "readouts must declare their minimum")
+local _, metadataPending, metadataSlots = chart.refreshOnly(first, false, readoutSlots)
+assert(not metadataPending and metadataSlots == readoutSlots and first.metadataReady)
 assert(first.series[1].valueText == "45.000", "the readout pass did not update its readout")
 first.columnRenderer.append = draw
 settle(first)
@@ -74,8 +75,8 @@ first.columnRenderer.append = function(self, ...)
     return draw(self, ...)
 end
 record.sample(1040, { 46 })
-local _, appendPending, appendSlots = chart.refresh(first, false, 1)
-assert(appendSlots == 1 and appendPending, "the entire append must finish in one slot, then ask to finish")
+local _, appendPending, appendSlots = chart.refresh(first, false, 4)
+assert(appendSlots <= 4 and appendPending, "the entire append must finish in four slots, then ask to finish")
 assert(appendCalls == 1)
 assert(first.columnRenderer.published[1].revision == owner.map.revision)
 assert(first.series[1].drawnRevision == first.series[1].feed.plotRevision)
@@ -95,7 +96,7 @@ assert(first.series[1].feed.max == 100000, "clipping changed recorded extrema")
 local before, other = owner.map, sibling.map
 chart.update(first, { x = 0, y = 0, w = 320, h = 134 })
 assert(owner.map ~= before and sibling.map == other)
-settle(first, 2)
+settle(first, 8)
 assert(first.start == 0 and first.window == 6000)
 assert(next(owner.map.kinds) == nil, "resize must not reconstruct old telemetry")
 for at = 1200, 5900, 100 do
@@ -132,22 +133,22 @@ assert(attached.start == 18000, "a late fixed window starts where sliding would 
 for at = 20100, 21000, 100 do
     record.sample(at, { -at })
     settle(first)
-    settle(attached, 1)
+    settle(attached, 4)
 end
 drawsNewest(attached, 21000, "late attachment")
 assert(attached.start == first.start, "late and continuous charts show the same window")
 chart.update(attached, { x = 0, y = 0, w = 320, h = 134 })
-settle(attached, 1)
+settle(attached, 4)
 for at = 21100, 22000, 100 do
     record.sample(at, { -at })
     settle(first)
-    settle(attached, 1)
+    settle(attached, 4)
 end
 drawsNewest(attached, 22000, "resize after overflow")
 for at = 22100, 26000, 100 do
     record.sample(at, { -at })
     settle(first)
-    settle(attached, 1)
+    settle(attached, 4)
 end
 assert(attached.start > 18000, "a late fixed window keeps sliding")
 drawsNewest(attached, 26000, "late window after sliding")
@@ -164,12 +165,12 @@ local three = chart.create(dashboard.page, { x = 0, y = 0, w = 472, h = 196 }, {
         { source = triple.feeds[3].name },
     },
 }, services)
-settle(three, 1)
+settle(three, 4)
 triple.sample(0, { -2000, 0, 2000 })
 triple.sample(1, { -500, 500, -500 })
 -- Two samples for each of three series cost about 3,200 instructions.
-local _, triplePending, tripleSlots = chart.refresh(three, false, 3)
-assert(not triplePending and tripleSlots <= 3, "all three series must finish appending in three slots")
+local _, triplePending, tripleSlots = chart.refresh(three, false, 12)
+assert(not triplePending and tripleSlots <= 12, "all three series must finish appending in twelve slots")
 for index, consumer in ipairs(three.columnConsumers) do
     assert(#consumer.pending == 0 and #consumer.map.dirtyList == 0)
     assert(three.series[index].drawnRevision == triple.feeds[index].plotRevision)
@@ -190,5 +191,5 @@ chart.destroy(first)
 chart.destroy(second)
 assert(record.history.views[record.feeds[1]].observers == nil)
 print(
-    "Fixed charts slide, start late or resized windows in place, finish each append in one slot and never reconstruct history"
+    "Fixed charts slide, start late or resized windows in place, finish each append in four slots and never reconstruct history"
 )

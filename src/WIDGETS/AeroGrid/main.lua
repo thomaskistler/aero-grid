@@ -714,7 +714,7 @@ local function create(zone, widgetOptions, path)
             owner = "startup background",
             host = context,
             onError = hostError,
-            cost = 1,
+            cost = 4,
             step = function()
                 context.root = lvgl.box({ x = 0, y = 0, w = zone.w, h = zone.h, scrollDir = 0 })
                 context.rootBuiltFullscreen = isFullScreen()
@@ -1496,12 +1496,17 @@ local function instanceField(entry, key)
     end
 end
 
+-- A panel's first paint builds every value; later refreshes change few.
+local FIRST_PAINT_SLOTS = 4
+
 --- Copy a panel's slot costs onto its tasks, and retire them once it fails.
 --- The panel host calls this after the callbacks that may change costs.
 local function panelCosts(entry)
     local task = entry.refreshTask
     if task then
-        task.cost = instanceField(entry, "refreshCost") or rawget(entry.module, "refreshCost") or 1
+        task.cost = instanceField(entry, "refreshCost")
+            or rawget(entry.module, "refreshCost")
+            or (entry.painted and 1 or FIRST_PAINT_SLOTS)
         task.minCost = instanceField(entry, "refreshMinCost") or rawget(entry.module, "refreshMinCost")
         task.failed = entry.failed or task.failed
     end
@@ -1539,6 +1544,10 @@ local function panelStep(task, now, granted)
     end
     if eventName == "refresh" then
         context.firstRefreshUntil = nil
+        if not entry.painted then
+            entry.painted = true
+            panelCosts(entry)
+        end
     end
     return used, again
 end
@@ -2505,7 +2514,7 @@ local function menuCost(context)
     then
         return context.scheduler.budget.slots
     end
-    return 1
+    return 4
 end
 
 local function menuReady(task, _, hidden)
@@ -2540,7 +2549,7 @@ local function editorCost(context)
         and not state.saving
     then
         -- Opening the debrief list only creates its dialog; rows follow.
-        return math.min(3, context.scheduler.budget.slots)
+        return math.min(12, context.scheduler.budget.slots)
     end
     if
         state
@@ -2555,9 +2564,9 @@ local function editorCost(context)
         if state.drawerBuild then
             -- Finalization also renders the editor; only individual rows are
             -- cheap. The debrief page has no editor to render.
-            return context.settingsUiModule.cost(state.drawerView, capacity, state.debrief and 1 or capacity)
+            return context.settingsUiModule.cost(state.drawerView, capacity, state.debrief and 4 or capacity)
         elseif state.buildStage and state.buildStage <= 9 then
-            return math.min(3, capacity)
+            return math.min(12, capacity)
         end
     end
     return context.scheduler.budget.slots
@@ -2698,11 +2707,11 @@ local function debriefPillStep(task)
 end
 
 -- Lua instructions per scheduler slot, as the load stage costs assume.
-local DEBRIEF_SLOT_INSTRUCTIONS = 2000
+local DEBRIEF_SLOT_INSTRUCTIONS = 500
 -- Slots per debrief build step: one tile (about 10k instructions) or curves.
-local DEBRIEF_SLOTS = 5
+local DEBRIEF_SLOTS = 20
 -- Slots per pill update: a few measured texts and objects.
-local DEBRIEF_PILL_SLOTS = 2
+local DEBRIEF_PILL_SLOTS = 8
 
 --- Whether the latest debrief's view still has to be built. Building starts
 --- as soon as a debrief exists, so the view opens complete.
@@ -3052,21 +3061,21 @@ local function uiStep(task, _, _, hidden)
 end
 
 -- Slots reserved per load stage, from peak mocked-VM instruction counts at
--- about 2000 instructions per slot; stages not listed reserve a full segment.
+-- about 500 instructions per slot; stages not listed reserve a full segment.
 local LOAD_STAGE_COST = {
-    ["header-migrate"] = 1,
-    ["panel-migrate"] = 1,
-    ["panel-validate"] = 1,
-    ["model-settings"] = 2,
-    ["read"] = 2,
-    ["services"] = 2,
-    ["header"] = 2,
-    ["header-finalize"] = 2,
-    ["panels"] = 2,
-    ["debrief"] = 3,
-    ["load-complete"] = 2,
-    ["tokenize"] = 3,
-    ["theme-validate"] = 4,
+    ["header-migrate"] = 4,
+    ["panel-migrate"] = 4,
+    ["panel-validate"] = 4,
+    ["model-settings"] = 8,
+    ["read"] = 8,
+    ["services"] = 8,
+    ["header"] = 8,
+    ["header-finalize"] = 8,
+    ["panels"] = 8,
+    ["debrief"] = 12,
+    ["load-complete"] = 8,
+    ["tokenize"] = 12,
+    ["theme-validate"] = 16,
 }
 
 local function lifecycleWanted(context, kind, hidden)
@@ -3121,7 +3130,7 @@ local function lifecycleReady(task, _, hidden)
     if kind == "load" then
         task.cost = math.min(LOAD_STAGE_COST[context.stage] or slots, slots)
     elseif kind == "rebuild" then
-        task.cost = 1
+        task.cost = 4
     else
         task.cost = slots
     end

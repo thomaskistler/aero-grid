@@ -16,10 +16,10 @@
 ---@field refreshInterval? integer Ticks of 10ms between refreshes. 0 or absent
 ---  means every frame. Telemetry rarely needs more than a few hertz, and the
 ---  host pays every panel's cost inside one instruction budget.
----@field refreshCost? integer|"variable" Nominal 2000-instruction slots, 0 to 8; defaults to 1.
+---@field refreshCost? integer|"variable" Nominal 500-instruction slots, 0 to 32; defaults to 1.
 --- An instance may override refreshCost and refreshMinCost; zero-cost refreshes
 --- run when due even without remaining slots.
----@field refreshMinCost? integer Minimum grant for a variable-cost refresh, 1 to 8.
+---@field refreshMinCost? integer Minimum grant for a variable-cost refresh, 1 to 32.
 ---@field settings? AeroGridPanelSetting[]
 ---@field create fun(parent: any, rect: table, settings: table, services: table): any
 ---@field update? fun(instance: any, rect: table, settings: table)
@@ -29,7 +29,7 @@
 --- Refreshes receive (instance, false, slots) and may return consumed slots as
 --- a third result. Variable refreshes must declare a minimum and report consumption.
 ---@field background? fun(instance: any, creating: boolean, slots: integer) While the dashboard is hidden. A fixed one-slot task unless `backgroundMinCost` is declared.
----@field backgroundMinCost? integer Makes background a variable-cost task with this minimum grant, 1 to 8; an instance may override it. It then reports consumed slots as a third result.
+---@field backgroundMinCost? integer Makes background a variable-cost task with this minimum grant, 1 to 32; an instance may override it. It then reports consumed slots as a third result.
 ---@field resetSession? fun(instance: any, now: integer) Second result true requests another reset turn.
 ---@field rebindArming? fun(instance: any, services: table) Reconnect arming-dependent subscriptions without replacing native objects.
 ---@field event? fun(instance: any, event: any): boolean

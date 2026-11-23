@@ -865,11 +865,12 @@ do
     local setup = gridPanel.columnSetup
     assert(setup, "recording panel must require initial attachment")
     -- The geometry is laid out in one piece, so the panel declares the grant it needs.
-    equal(gridPanel.refreshMinCost, 3, "geometry must declare the grant it needs")
-    local _, again, used = chartModule.refreshOnly(gridPanel, false, 1)
+    local need = gridPanel.refreshMinCost
+    equal(need, 12, "geometry must declare the grant it needs")
+    local _, again, used = chartModule.refreshOnly(gridPanel, false, need - 1)
     assert(not again and used == 1 and not gridPanel.columnSetupIndex, "a smaller grant must not lay out the geometry")
-    _, again, used = chartModule.refreshOnly(gridPanel, false, 3)
-    assert(not again and used <= 3 and not gridPanel.columnSetup, "geometry and attachment must fit that grant")
+    _, again, used = chartModule.refreshOnly(gridPanel, false, need)
+    assert(not again and used <= need and not gridPanel.columnSetup, "geometry and attachment must fit that grant")
 end
 gridPanel.session = { configured = true, available = true, recording = false, elapsed = 65000 }
 for _ = 1, 24 do
@@ -889,12 +890,13 @@ do
         error("readout updates must yield before drawing")
     end
     gridPanel.metadataReady, gridPanel.columnsDecorating = nil, nil
-    -- Readouts and legend are finished first and need two slots.
-    assert(select(2, chartModule.finishPending(gridPanel)) == 2, "readouts must declare their minimum")
-    local _, unfinished, used = chartModule.refreshOnly(gridPanel, false, 1)
+    -- Readouts and legend are finished first and need a minimum grant.
+    local need = select(2, chartModule.finishPending(gridPanel))
+    equal(need, 7, "readouts must declare their minimum")
+    local _, unfinished, used = chartModule.refreshOnly(gridPanel, false, need - 1)
     assert(unfinished and used == 1 and rendered == 0, "a grant below the minimum must not run readouts")
-    _, unfinished, used = chartModule.refreshOnly(gridPanel, false, 2)
-    assert(not unfinished and used == 2 and rendered == 1, "readouts must be charged their two slots without drawing")
+    _, unfinished, used = chartModule.refreshOnly(gridPanel, false, need)
+    assert(not unfinished and used == need and rendered == 1, "readouts must be charged their grant without drawing")
     gridPanel.metadataReady = true
     gridPanel.gridVersion = gridPanel.version
     local appended = false
@@ -902,9 +904,9 @@ do
         appended = true
         return append(self, ...)
     end
-    _, unfinished, used = chartModule.refreshOnly(gridPanel, false, 2)
+    _, unfinished, used = chartModule.refreshOnly(gridPanel, false, 8)
     assert(
-        appended and unfinished and used >= 1 and used <= 2,
+        appended and unfinished and used >= 1 and used <= 8,
         "the append must charge within its grant, then ask to finish"
     )
     chartModule.render, renderer.append = render, append

@@ -34,7 +34,7 @@ local fields = {
         key = "flightSwitch",
         label = "Flight status switch",
         kind = "choice",
-        slots = 2,
+        slots = 8,
         description = "On during a detected flight. Use for your own special functions. Choose a dedicated Sticky logical switch, or None.",
     },
     {

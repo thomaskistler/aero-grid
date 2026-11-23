@@ -2,7 +2,8 @@
 
 --- Slot scheduler: shares a callback's slots among tasks in order of due time.
 --- It knows nothing about panels, services or EdgeTX; the host wraps its work
---- as tasks. One slot is a nominal 2000 Lua instructions.
+--- as tasks. One slot is a nominal 500 Lua instructions, about what a typical
+--- fixed-cost step uses.
 ---
 --- Tasks stay enrolled until removed, sorted by the tick they are due. A run
 --- takes tasks from the front and stops at the first one that is not due, so
@@ -16,8 +17,8 @@
 ---@field step fun(task: AeroGridTask, now: integer, slots: integer, context: any): integer?, boolean? Returns slots used and whether more work is ready now.
 --- A fixed-cost step that returns no consumption used its whole grant; a
 --- variable-cost step must report it. No continuation means none is wanted.
----@field cost? integer|"variable" Slots one step needs, 0 to 8. Defaults to 1. Read before every step.
----@field minCost? integer Minimum grant for a variable-cost step, 1 to 8.
+---@field cost? integer|"variable" Slots one step needs, 0 to 32. Defaults to 1. Read before every step.
+---@field minCost? integer Minimum grant for a variable-cost step, 1 to 32.
 ---@field due? integer Tick from which the task is eligible. Ignored while pending.
 --- A step may change its own `due`; any other source that makes a task due
 --- earlier calls `reschedule` to move it forward. A later `due` set from
@@ -34,13 +35,15 @@
 ---@field denied? integer Segment in which the task did not fit its grant.
 ---@field spun? integer Callback in which the task was stopped after repeated free turns.
 
-local MAX_TASK_SLOTS = 8
+local MAX_TASK_SLOTS = 32
+-- Consecutive zero-charge turns one task may take per callback.
+local FREE_TURNS = 8
 --- `SLOTS` caps one turn; `CAPACITY` is the default allowance of one callback segment.
 --- A task due `NEVER` sleeps until a source wakes it.
 local scheduler = {
     SLOTS = MAX_TASK_SLOTS,
     CAPACITY = MAX_TASK_SLOTS,
-    INSTRUCTIONS_PER_SLOT = 2000,
+    INSTRUCTIONS_PER_SLOT = 500,
     NEVER = math.huge,
 }
 
@@ -256,7 +259,6 @@ function scheduler.new(dependencies)
     --- to at most eight per task per callback; unfinished work resumes on the
     --- next callback.
     local function execute(now, slots, context, resuming)
-        local turnSlots = self.budget.slots
         if count == 0 then
             return 0, 0, 0
         end
@@ -371,7 +373,7 @@ function scheduler.new(dependencies)
                             if ok and again and not task.failed then
                                 state.pending = true
                                 progressed = true
-                                if state.zeroTurns >= turnSlots then
+                                if state.zeroTurns >= math.min(FREE_TURNS, self.budget.slots) then
                                     state.refused, state.spun = callback, callback
                                 end
                                 if position then

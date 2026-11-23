@@ -94,7 +94,7 @@ equal(
     outputEntry.module.refreshInterval,
     "placement must not leave the panel at its placing rate"
 )
-equal(outputEntry.refreshTask.cost, math.max(1, math.ceil(panel.area.count * 350 / 2000)))
+equal(outputEntry.refreshTask.cost, math.max(1, math.ceil(panel.area.count * 130 / 500)))
 equal(#context.errors, 0, table.concat(context.errors, "\n"))
 pump()
 -- A slow metadata scan must not delay a five-channel panel's first display.

@@ -87,8 +87,8 @@ before = flights
 tick()
 assert(rebuilds == 1 and flights == before + 1 and context.stage == "probe")
 assert(
-    context.scheduler.state(context.lifecycleTasks.rebuild).spent == 1
+    context.scheduler.state(context.lifecycleTasks.rebuild).spent == 4
         and not context.scheduler.state(context.lifecycleTasks.rebuild).pending
 )
-assert(context.remainingSlots == context.scheduler.budget.capacity - 2)
+assert(context.remainingSlots == context.scheduler.budget.capacity - 5)
 assert(#context.errors == 0, table.concat(context.errors, "\n"))

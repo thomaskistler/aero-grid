@@ -25,6 +25,7 @@ local function loadModule(relative)
         or relative == "panels/state.lua"
         or relative == "panels/navigation.lua"
         or relative == "panels/flight-counter.lua"
+        or relative == "panels/output.lua"
     then
         return chunk(loadModule("lib/scheduler.lua").new().budget, loadModule("lib/armed_service.lua"))
     end
