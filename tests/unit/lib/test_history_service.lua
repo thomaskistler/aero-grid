@@ -238,19 +238,6 @@ equal(select(2, bounded:preview():armBoundary(boundedSession, boundedSession.arm
 assert(#bounded.entries[1].resumeBits <= historyModule.CAPACITY // 32, "break reasons must use a bounded bitset")
 equal(select(4, bounded:point(boundedFeed, boundedFeed.last)), true, "resume bits survive physical ring reuse")
 
-local smoothed, _, smoothFeed, smoothPoll = harness({ smoothing = "medium", windowSeconds = 30 })
-smoothPoll(0, 1, 0)
-smoothPoll(100, 1, 10)
-equal(smoothFeed.value, 10)
-equal(smoothFeed.min, 0)
-equal(smoothFeed.max, 10)
-local _, filtered = smoothed:point(smoothFeed, smoothFeed.last)
-assert(filtered > 6.3 and filtered < 6.4, "smoothing must use elapsed time rather than redraw count")
-smoothPoll(200, 0, 10)
-smoothPoll(10000, 1, 20)
-_, filtered = smoothed:point(smoothFeed, smoothFeed.last)
-equal(filtered, 20, "filters restart at rearm boundaries")
-
 for precision = 0, 3 do
     local compressor, output, sample = recorder({ precision = precision })
     local originals = {}
@@ -401,7 +388,7 @@ equal(integerValue, math.maxinteger, "native integers must not be truncated thro
 _, integerValue = integers:point(integerFeed, integerFeed.last)
 equal(integerValue, math.maxinteger - 1)
 
-local extremes, extremesFeed, extremesSample = recorder({ precision = 3, smoothing = "medium" })
+local extremes, extremesFeed, extremesSample = recorder({ precision = 3 })
 extremesSample(0, 1e308)
 extremesSample(100, -1e308)
 local _, extremeValue = extremes:point(extremesFeed, extremesFeed.last)
@@ -419,7 +406,7 @@ failures.failure = "history observer failed"
 local ok, message = pcall(failures.update, failures, 10)
 assert(not ok and string.find(message, "history observer failed", 1, true))
 
-local resetHistory, resetFeed, resetSample, _, resetView = recorder({ smoothing = "strong" })
+local resetHistory, resetFeed, resetSample, _, resetView = recorder()
 resetSample(0, 10)
 resetSample(100, 20)
 local oldRevision, oldPlotRevision = resetFeed.revision, resetFeed.plotRevision
@@ -428,7 +415,7 @@ repeat
     nextItem = resetHistory:resetSession(120, nextItem)
 until not nextItem
 equal(resetHistory:session(), resetView, "reset must retain the session view")
-equal(resetHistory:subscribe("V", { smoothing = "strong" }), resetFeed)
+equal(resetHistory:subscribe("V"), resetFeed)
 equal(resetView.elapsed, 0)
 equal(resetView.segment, 0)
 equal(resetFeed.count, 0)
@@ -440,7 +427,7 @@ resetSample(140, 50)
 equal(resetFeed.min, 50)
 equal(resetFeed.max, 50)
 local _, resetValue = resetHistory:point(resetFeed, resetFeed.last)
-equal(resetValue, 50, "the first post-reset sample must not inherit smoothing from old recordings")
+equal(resetValue, 50, "the first post-reset sample must not inherit old recordings")
 print(
     string.format(
         "  chart history: 6001 worst-case samples fit; %d bytes/knot on this runtime",

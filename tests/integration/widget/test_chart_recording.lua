@@ -19,7 +19,7 @@ local lines = { "version: 3", "grid:", "  columns: 4", "  rows: 4", "panels:" }
 for index = 1, 8 do
     lines[#lines + 1] = string.format(
         "  - id: chart%d\n    type: chart\n    col: %d\n    row: %d\n    colSpan: 2\n    rowSpan: 1\n"
-            .. "    config:\n      armSwitch: %s\n      scaling: independent\n      timeRange: %s\n      smoothing: medium\n      metrics:",
+            .. "    config:\n      armSwitch: %s\n      scaling: independent\n      timeRange: %s\n      metrics:",
         index,
         (index - 1) % 2 * 2,
         math.floor((index - 1) / 2),
@@ -305,11 +305,9 @@ local history = context.serviceRuntime.byId.history
 if derived then
     local section = context.document.debrief
     assert(context.debriefGenerated and #section.tiles == 8, "each chart derives a debrief tile")
-    -- The debrief records each reading unsmoothed, beside the chart's smoothed one.
-    assert(history.count == 48, "debrief recordings: " .. history.count)
-else
-    assert(history.count == 24)
+    -- The derived debrief shares the charts' recordings.
 end
+assert(history.count == 24, "recordings: " .. history.count)
 if smartEnabled then
     local telemetry = context.serviceRuntime.byId.telemetry
     for id = 1, 24 do

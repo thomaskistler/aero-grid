@@ -73,13 +73,6 @@ local chart = {
             end,
         },
         {
-            key = "smoothing",
-            label = "Line smoothing",
-            type = "string",
-            default = "off",
-            choices = { "off", "light", "medium", "strong" },
-        },
-        {
             key = "accent",
             label = "Accent",
             type = "string",
@@ -2583,7 +2576,6 @@ local function subscribeHistory(context, entry)
     return context.history:subscribe(entry.source, {
         windowSeconds = timeWindow(context.settings) / 100,
         timeRange = "growing",
-        smoothing = context.settings.smoothing or "off",
         precision = entry.precision,
     })
 end

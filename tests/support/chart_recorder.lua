@@ -33,7 +33,6 @@ return function(count, options)
     for index = 1, count do
         feeds[index] = history:subscribe("Columns" .. index, {
             precision = 3,
-            smoothing = options and options.smoothing,
             timeRange = options and options.timeRange,
             windowSeconds = options and options.windowSeconds,
         })

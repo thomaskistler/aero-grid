@@ -258,7 +258,7 @@ equal(
 )
 equal(preview:subscribe("V", { precision = 3 }), legacyFeed)
 equal(preview:subscribe("unconfigured", {}).previewMissing, true)
-equal(preview:subscribe("V", { smoothing = "strong" }).previewMissing, true)
+equal(preview:subscribe("V", { windowSeconds = 30 }).previewMissing, true)
 equal(legacy.count, subscriptions, "draft-only sources must not create live recordings")
 equal(#legacy.sessions, sessions, "draft-only arms must not create live sessions")
 equal(#legacy.runtime.byId.control.entries, controls, "draft arms must not create live control pollers")

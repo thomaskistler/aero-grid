@@ -1992,7 +1992,7 @@ local function chartDrawerOrder()
 end
 equal(
     chartDrawerOrder(),
-    "Label,Metrics,item,+,Window minutes,Series scales,Line smoothing,Accent,Remove panel",
+    "Label,Metrics,item,+,Window minutes,Series scales,Accent,Remove panel",
     "Fixed chart drawer exposes duration without a time-range selector"
 )
 equal(context.editorSession.draft.panels[1].config.armSwitch, nil, "released Chart arm switches are dropped")

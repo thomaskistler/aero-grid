@@ -713,7 +713,7 @@ end
 local function testAllPanelDrawersStartWithLabel()
     local expectedOrder = {
         output = { "label", "firstChannel", "channelCount", "showNames", "showTrim", "accent" },
-        chart = { "label", "metrics", "timeRange", "duration", "scaling", "range", "smoothing", "accent" },
+        chart = { "label", "metrics", "timeRange", "duration", "scaling", "range", "accent" },
         ["flight-counter"] = {
             "label",
         },

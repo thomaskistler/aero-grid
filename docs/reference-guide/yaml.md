@@ -124,7 +124,6 @@ Drawer title: **Chart** · [drawer settings and behavior](../panels/chart.md) ·
 | `metrics` | sequence | `[]` | 0-3 contiguous entries | Metrics | Entry fields follow. |
 | `duration` | number | Unset (drawer: `Auto`) | Whole minutes `1`-`60` | Window minutes | Omit for a growing window. Earlier strings such as `30s` or `5m` round up to whole minutes; values above 60 are limited to 60. |
 | `scaling` | string | `shared` | `shared`, `independent` | Series scales | Independent scales suit unlike units. |
-| `smoothing` | string | `off` | `off`, `light`, `medium`, `strong` | Line smoothing | Changes the line, not raw readouts or extrema. |
 | `accent` | string | `cyan` | `cyan`, `green`, `orange`, `amber` | Accent | Panel accent only. |
 | `timeRange` | string | `fixed` | Any string | Not shown | Obsolete and ignored. |
 | `range` | string | `auto` | `auto`, `fixed` | Not shown | Obsolete and ignored. |
@@ -161,7 +160,6 @@ panels:
     config:
       label: Power
       scaling: independent
-      smoothing: light
       metrics:
         - source: RxBt
           label: RX

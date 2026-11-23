@@ -5,7 +5,6 @@ local history = { CAPACITY = 6144, FLIGHT_CAPACITY = 64 }
 history.updateCost = 1
 history.__index = history
 
-local TAU = { off = 0, light = 50, medium = 100, strong = 200 }
 local NUMBER_FORMAT, INTEGER_FORMAT, CHUNK = "<I4n", "<I4j", 64
 local BROKEN, INTEGER = 0x80000000, 0x40000000
 local BYTES = math.max(string.packsize(NUMBER_FORMAT), string.packsize(INTEGER_FORMAT))
@@ -190,7 +189,7 @@ function history:resetSession(now, index)
         entry.chunks, entry.resumeBits = {}, {}
         entry.last, entry.anchorAt, entry.lastAt = 0, 0, 0
         entry.anchor, entry.endpoint, entry.low, entry.high = nil, nil, nil, nil
-        entry.segment, entry.filtered, entry.sampledAt, entry.gap = nil, nil, nil, true
+        entry.segment, entry.gap = nil, true
         state.available, state.stale, state.full = false, false, false
         state.value, state.min, state.max, state.epsilon = nil, nil, nil, nil
         state.first, state.last, state.count = 1, 0, 0
@@ -425,10 +424,9 @@ end
 local function recordingOptions(options)
     local window = options.windowSeconds or 60
     local mode = options.timeRange or "growing"
-    local smoothing, precision = options.smoothing or "off", options.precision
+    local precision = options.precision
     assert(finite(window) and window >= 30 and window <= 600, "history window must be 30 to 600 seconds")
     assert(mode == "growing" or mode == "rolling", "invalid history time range")
-    assert(TAU[smoothing], "invalid history smoothing")
     assert(
         precision == nil or finite(precision) and precision >= 0 and precision <= 3 and precision % 1 == 0,
         "invalid history precision"
@@ -436,21 +434,11 @@ local function recordingOptions(options)
     if mode == "growing" then
         window = 60
     end
-    return window, mode, smoothing, precision
+    return window, mode, precision
 end
 
-local function recordingKey(name, source, window, mode, smoothing, precision)
-    return name
-        .. "\0"
-        .. source
-        .. "\0"
-        .. mode
-        .. "\0"
-        .. window
-        .. "\0"
-        .. smoothing
-        .. "\0"
-        .. tostring(precision or "sensor")
+local function recordingKey(name, source, window, mode, precision)
+    return name .. "\0" .. source .. "\0" .. mode .. "\0" .. window .. "\0" .. tostring(precision or "sensor")
 end
 
 --- Drafts can read compatible live recordings, but cannot create pollers,
@@ -487,9 +475,9 @@ function history:preview()
     end
     function facade:subscribe(source, options)
         options = options or {}
-        local window, mode, smoothing, precision = recordingOptions(options)
+        local window, mode, precision = recordingOptions(options)
         source = type(source) == "string" and source or ""
-        local key = recordingKey(condition(), source, window, mode, smoothing, precision)
+        local key = recordingKey(condition(), source, window, mode, precision)
         return owner.names[key] and owner.names[key].view or empty
     end
     function facade:flight(view, index)
@@ -506,10 +494,10 @@ end
 
 function history:subscribe(source, options)
     options = options or {}
-    local window, mode, smoothing, precision = recordingOptions(options)
+    local window, mode, precision = recordingOptions(options)
     local session = sessionFor(self)
     source = type(source) == "string" and source or ""
-    local key = recordingKey(session.name, source, window, mode, smoothing, precision)
+    local key = recordingKey(session.name, source, window, mode, precision)
     if self.names[key] then
         return self.names[key].view
     end
@@ -538,7 +526,6 @@ function history:subscribe(source, options)
         mode = mode,
         precision = precision,
         epsilon = precision and EPSILON[precision],
-        tau = TAU[smoothing],
         gap = true,
         session = session,
     }
@@ -576,7 +563,7 @@ function history:point(view, index, retainedFirst)
     return read(entry, index)
 end
 
---- Observe the chart's filtered samples without polling again or changing knots.
+--- Observe the chart's samples without polling again or changing knots.
 --- Observers reset with their recording; consumers must detach when destroyed.
 function history:observeSamples(view, observer)
     local entry = assert(self.views[view], "unknown history subscription")
@@ -703,16 +690,6 @@ function history:sample(reading, now)
             local observers = entry.observers
             if valid then
                 local segment = sessionState.segment
-                if entry.segment ~= segment or entry.gap or not entry.filtered then
-                    entry.filtered = value
-                    entry.gap = true
-                elseif entry.tau > 0 then
-                    local alpha = 1 - math.exp(-math.max(0, now - entry.sampledAt) / entry.tau)
-                    entry.filtered = entry.filtered * (1 - alpha) + value * alpha
-                else
-                    entry.filtered = value
-                end
-                entry.sampledAt = now
                 state.value = value
                 local low, high = state.min, state.max
                 if not low or value < low then
@@ -738,10 +715,10 @@ function history:sample(reading, now)
                     resumed = entry.segment ~= nil and entry.segment ~= segment
                     broken = entry.gap or entry.segment ~= segment or elapsed <= entry.lastAt
                 end
-                record(entry, entry.filtered, elapsed, epsilon, segment)
+                record(entry, value, elapsed, epsilon, segment)
                 if observers and not state.full then
                     for _, observer in ipairs(observers) do
-                        observer:sample(elapsed, entry.filtered, broken, resumed)
+                        observer:sample(elapsed, value, broken, resumed)
                     end
                 end
                 state.revision = state.revision + 1

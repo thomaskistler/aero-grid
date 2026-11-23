@@ -31,7 +31,6 @@ panels:
       label: Recorded
       armSwitch: SAv
       scaling: independent
-      smoothing: light
       metrics:
         - source: GAlt
           label: ALT
