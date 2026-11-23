@@ -1697,14 +1697,14 @@ for index = 1, #context.editorSession.draft.panels do
         equal(context.editorSession.draft.panels[index].config.label, "Elapsed", "native text updates draft")
         equal(control("label").properties.value, "Elapsed", "text input reflects accepted draft value")
     elseif panelType == "flight-counter" then
-        equal(control("armSwitch").kind, "switch", "arm position uses native switch selection")
         control("label").properties.set("Trips")
         settleDrawer()
         for _, row in ipairs(context.editorUi.drawerControls) do
             assert(
                 row.field.key ~= "motorSource"
                     and row.field.key ~= "announcements"
-                    and row.field.key ~= "minFlightDuration",
+                    and row.field.key ~= "minFlightDuration"
+                    and row.field.key ~= "armSwitch",
                 "detector settings belong in Model settings"
             )
         end
@@ -1750,7 +1750,6 @@ panels:
     colSpan: 2
     rowSpan: 2
     config:
-      sourceType: cells
       source: Cels
       reading: cell
       visual: bar
@@ -1834,7 +1833,6 @@ equal(countRow.row.properties.y - sourceRow.row.properties.y, 36, "corrected fie
 control("cells").properties.set(6)
 settleDrawer()
 equal(context.editorSession.draft.panels[1].config.cells, 6, "series count remains stored for numeric readings")
-equal(context.editorSession.draft.panels[1].config.sourceType, nil, "old schema-2 selector is centrally removed")
 local validRx, rxErrors = context.editorUi.handlers.editor.validate(context.editorSession)
 assert(validRx, table.concat(rxErrors or {}, "; "))
 back()
@@ -1847,7 +1845,6 @@ context = widget.createLoaded(nil, { Layout = "edit-rx-battery", Theme = "modern
 equal(context.document.panels[1].config.showDelta, true, "cell delta survives save/load")
 equal(context.document.panels[1].config.showPack, true, "secondary preference survives save/load")
 equal(context.document.panels[1].config.cells, 6, "numeric count survives save/load")
-equal(context.document.panels[1].config.sourceType, nil, "save/load omits the retired selector")
 widget.lvglMock.setFullScreen(false)
 
 -- A panel created small must gain its visualization during editor resize,
@@ -1998,23 +1995,10 @@ local function chartDrawerOrder()
 end
 equal(
     chartDrawerOrder(),
-    "Label,Arm switch position,Metrics,item,+,Window minutes,Series scales,Line smoothing,Accent,Remove panel",
+    "Label,Metrics,item,+,Window minutes,Series scales,Line smoothing,Accent,Remove panel",
     "Fixed chart drawer exposes duration without a time-range selector"
 )
-equal(control("armSwitch").kind, "switch", "Chart must use the native switch-position picker")
-equal(control("armSwitch").properties.get(), getSwitchIndex("SA" .. CHAR_DOWN), "legacy Chart switch remains visible")
-control("armSwitch").properties.set(getSwitchIndex("SA" .. CHAR_DOWN))
-settleDrawer()
-equal(context.editorSession.draft.panels[1].config.armSwitch, "SAv", "physical positions must be stored on the panel")
-control("armSwitch").properties.set(getSwitchIndex("L01"))
-settleDrawer()
-equal(context.editorSession.draft.panels[1].config.armSwitch, "L01", "logical arm conditions must also be selectable")
-control("armSwitch").properties.set(getSwitchIndex("!L01"))
-settleDrawer()
-equal(context.editorSession.draft.panels[1].config.armSwitch, "!L01", "negated legacy arm conditions are selectable")
-equal(control("armSwitch").properties.get(), -getSwitchIndex("L01"), "negated legacy selection stays selected")
-control("armSwitch").properties.set(getSwitchIndex("SA" .. CHAR_DOWN))
-settleDrawer()
+equal(context.editorSession.draft.panels[1].config.armSwitch, nil, "released Chart arm switches are dropped")
 itemChoice("metrics", "Edit")
 equal(
     chartDrawerOrder(),
@@ -2078,16 +2062,10 @@ settleDrawer()
 equal(context.editorSession.draft.panels[1].config.duration, 2, "fixed window must remain editable")
 back()
 equal(context.panels[1].instance.window, 12000, "fixed preview must use the selected duration")
-equal(context.panels[1].settings.armSwitch, "SAv", "preview rebuilds must preserve the panel's arm switch")
 rect = state.controls[1].rect
 tap(rect.x + rect.w - 12, rect.y + 12)
 settleDrawer()
 equal(drawerRow("duration").row.hidden, false, "reopening must retain the duration control")
-equal(
-    control("armSwitch").properties.get(),
-    getSwitchIndex("SA" .. CHAR_DOWN),
-    "reopening the drawer must restore the selected physical switch position"
-)
 back()
 equal(context.panels[1].instance.window, 12000, "preview must use its saved fixed window")
 exitWith("Discard changes")

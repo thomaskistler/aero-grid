@@ -1,8 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 local budget = assert(..., "chart requires scheduler budget")
-local _, armedConfig = ...
-local validSwitch = assert(armedConfig, "chart requires switch validation").valid
 
 local chart = {
     id = "chart",
@@ -11,7 +9,6 @@ local chart = {
     refreshCost = "variable",
     settings = {
         { key = "label", label = "Label", type = "string", default = "" },
-        { key = "armSwitch", label = "Arm switch position", type = "string", default = "", legacyArm = true },
         {
             key = "metrics",
             label = "Metrics",
@@ -103,12 +100,8 @@ local function finite(value)
     return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
 end
 
-function chart.validateSettings(settings, _, _, modelArmed)
+function chart.validateSettings(settings)
     local warnings = {}
-    local arm = settings.armSwitch
-    if modelArmed == nil and arm ~= nil and arm ~= "" and not validSwitch(arm) then
-        warnings[#warnings + 1] = "armSwitch must be blank, a physical switch position, or a logical switch"
-    end
     if type(settings.metrics) ~= "table" then
         return { "metrics must contain a contiguous list of up to 3 sources" }
     end
@@ -2588,7 +2581,6 @@ end
 
 local function subscribeHistory(context, entry)
     return context.history:subscribe(entry.source, {
-        armSwitch = context.settings.armSwitch,
         windowSeconds = timeWindow(context.settings) / 100,
         timeRange = "growing",
         smoothing = context.settings.smoothing or "off",
@@ -2597,7 +2589,7 @@ local function subscribeHistory(context, entry)
 end
 
 function chart.create(parent, rect, settings, services)
-    local warnings = chart.validateSettings(settings, nil, nil, services.host and services.host.modelArmed)
+    local warnings = chart.validateSettings(settings)
     assert(#warnings == 0, table.concat(warnings, "; "))
     local context = {
         theme = services.theme,
@@ -2632,7 +2624,7 @@ function chart.create(parent, rect, settings, services)
     context.plotRoot = lvgl.box(context.layerHost, { x = 0, y = 0, w = rect.w, h = rect.h })
     context.flightRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
     context.gridRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
-    context.session = context.history and context.history:session(settings.armSwitch)
+    context.session = context.history and context.history:session()
         or { elapsed = 0, configured = false, available = false, recording = false }
     if context.preview then
         context.previewMissing = context.session.previewMissing
@@ -2774,31 +2766,6 @@ function chart.destroy(context)
         end
         context.columnConsumers = nil
     end
-end
-
-function chart.rebindArming(context, services)
-    if not context.history then
-        return
-    end
-    chart.destroy(context)
-    local hidden = context.auto and context.auto.hidden
-    if hidden then
-        if hidden.columnRenderer then
-            hidden.columnRenderer:destroy()
-        end
-        hidden.layerHost:clear()
-        lvgl.hide(hidden.layerHost)
-    end
-    context.auto, context.resetWork = nil, nil
-    resetPresentation(context, 0)
-    context.history = services.history
-    context.session = context.history:session(context.settings.armSwitch)
-    for _, item in ipairs(context.series) do
-        item.feed = subscribeHistory(context, item.settings)
-    end
-    context.columnSetup, context.columnSetupIndex = context.columnModule, nil
-    context.columnsReadonly, context.frameThrough = nil, nil
-    context.window, context.start, context.pixelStart = timeWindow(context.settings), 0, 0
 end
 
 return chart

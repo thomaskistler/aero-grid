@@ -23,7 +23,6 @@ for index = 1, 2 do
         colSpan = 4,
         rowSpan = 2,
         config = {
-            armSwitch = "L64",
             timeRange = index == 1 and "growing" or "rolling",
             metrics = { { source = "Alt" } },
         },
@@ -67,10 +66,11 @@ assert(owner == second.flightBroker)
 owner:setDocument({
     revision = 1,
     modelFilename = owner.filename,
+    armed = "L64",
     sessionReset = "L03",
 })
-pump(20)
-assert(not owner.session, "legacy chart arming must not require a flight detector")
+untilState(settled)
+assert(not owner.session, "chart arming must not require a flight detector")
 fixture.radio.logicalSwitches[64] = true
 fixture.radio.values[fixture.radio.fields.Alt.id] = 10
 pump(300)
@@ -86,7 +86,7 @@ for index, context in ipairs({ first, second }) do
         canvasWrites = context.canvas.writes,
     }
     charts[index] = {}
-    elapsed[index] = context.serviceRuntime.byId.history:session("L64").elapsed
+    elapsed[index] = context.serviceRuntime.byId.history:session().elapsed
     assert(elapsed[index] > 0)
     for position, entry in ipairs(context.panels) do
         assert(entry.instance.series[1].feed.available)

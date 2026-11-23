@@ -31,7 +31,6 @@
 ---@field background? fun(instance: any, creating: boolean, slots: integer) While the dashboard is hidden. A fixed one-slot task unless `backgroundMinCost` is declared.
 ---@field backgroundMinCost? integer Makes background a variable-cost task with this minimum grant, 1 to 32; an instance may override it. It then reports consumed slots as a third result.
 ---@field resetSession? fun(instance: any, now: integer) Second result true requests another reset turn.
----@field rebindArming? fun(instance: any, services: table) Reconnect arming-dependent subscriptions without replacing native objects.
 ---@field event? fun(instance: any, event: any): boolean
 ---@field destroy? fun(instance: any)
 ---@field thresholds? fun(settings: table): AeroGridThreshold[] Configured thresholds per sensor, registered with telemetry.
@@ -55,7 +54,6 @@ local OPTIONAL_CALLBACKS = {
     "refresh",
     "background",
     "resetSession",
-    "rebindArming",
     "event",
     "destroy",
     "thresholds",
@@ -221,7 +219,7 @@ end
 ---@param config any Raw config mapping from the layout file.
 ---@return table settings
 ---@return string[] warnings
-function panelHost.resolveSettings(module, config, span, modelArmed)
+function panelHost.resolveSettings(module, config, span)
     local settings = {}
     local warnings = {}
     local declared = {}
@@ -291,7 +289,7 @@ function panelHost.resolveSettings(module, config, span, modelArmed)
     -- Limited display space is not a settings error: panels shed optional
     -- content at render time without changing the stored preferences.
     if type(rawget(module, "validateSettings")) == "function" then
-        local ok, reported = pcall(module.validateSettings, settings, span, config, modelArmed)
+        local ok, reported = pcall(module.validateSettings, settings, span, config)
         if not ok then
             warnings[#warnings + 1] = "validateSettings raised: " .. tostring(reported)
         elseif type(reported) == "table" then

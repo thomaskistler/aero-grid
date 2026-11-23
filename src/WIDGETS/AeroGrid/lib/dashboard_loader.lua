@@ -2,6 +2,38 @@
 
 local module = {}
 
+local function validArmName(switch)
+    local logical = type(switch) == "string" and tonumber(string.match(switch, "^!?L(%d%d)$"))
+    return type(switch) == "string"
+        and (string.match(switch, "^S[A-Z][%^v%-]$") ~= nil or logical ~= nil and logical >= 1 and logical <= 64)
+end
+
+--- Released layouts set the arm switch on panels, preferring the Flight counter's;
+--- model settings adopt it once. Services are built before panels, so the raw
+--- source is searched before it is parsed.
+local function legacyArmSwitch(source)
+    if not string.find(source, "armSwitch:", 1, true) then
+        return nil
+    end
+    local starts, kinds = {}, {}
+    for at, kind in string.gmatch(source, "()\n[ %-]*type:[ ]*[\"']?([%w%-]+)") do
+        starts[#starts + 1], kinds[#kinds + 1] = at, kind
+    end
+    local armed, index = nil, 0
+    for at, switch in string.gmatch(source, "()\n[ ]*armSwitch:[ ]*[\"']?([^\"'%s]+)") do
+        while starts[index + 1] and starts[index + 1] < at do
+            index = index + 1
+        end
+        if validArmName(switch) then
+            if kinds[index] == "flight-counter" then
+                return switch
+            end
+            armed = armed or switch
+        end
+    end
+    return armed
+end
+
 --- Bind host operations once; callbacks retain their original work limits.
 ---@param dependencies table
 ---@return table
@@ -252,12 +284,8 @@ function module.new(dependencies)
             return reject(rectError)
         end
 
-        local settings, warnings = host.resolveSettings(
-            panel,
-            placement.config,
-            { colSpan = placement.colSpan, rowSpan = placement.rowSpan },
-            context.modelArmed
-        )
+        local settings, warnings =
+            host.resolveSettings(panel, placement.config, { colSpan = placement.colSpan, rowSpan = placement.rowSpan })
         if preview and #warnings > 0 then
             return reject(table.concat(warnings, "; "))
         end
@@ -532,6 +560,7 @@ function module.new(dependencies)
                 return true
             end
 
+            context.legacyFlight.armed = legacyArmSwitch(context.source)
             context.source = nil
             context.stage = "header"
             return true
@@ -642,6 +671,9 @@ function module.new(dependencies)
             end
 
             context.session = validated.session or {}
+            if not context.legacyFlight.armed and validArmName(context.session.armSource) then
+                context.legacyFlight.armed = context.session.armSource
+            end
             -- A bad debrief must not cost the dashboard; keep its valid tiles.
             local debriefErrors, debriefWarnings = context.layoutValidator.validateDebrief(validated)
             for _, message in ipairs(debriefErrors) do
@@ -741,8 +773,6 @@ function module.new(dependencies)
                 context.serviceRuntime.host = context
                 context.serviceRuntime.modules = {}
                 context.serviceRuntime.chartColumns = context.chartColumns
-                context.armGeneration = (context.armGeneration or 0) + 1
-                context.serviceRuntime.armGeneration = context.armGeneration
                 context.navigationHomes = context.navigationHomes or {}
                 context.serviceRuntime.navigationHomes = context.navigationHomes
                 context.serviceIndex = 1
@@ -793,8 +823,9 @@ function module.new(dependencies)
                 runtime.modules[definition.id] = module
                 if definition.id == "armed" then
                     local owner = context.flightFactory.broker
-                    context.modelArmed = owner and owner.document and owner.document.armed
-                    runtime.modelArmed = context.modelArmed
+                    local legacy = context.legacyFlight
+                    runtime.modelArmed = owner and owner.document and owner.document.armed or legacy and legacy.armed
+                    context.builtArmed = { value = runtime.modelArmed }
                 end
                 local ok, instance = pcall(constructor, runtime.env, context.servicesModule, runtime)
                 if ok and type(instance) == "table" then
@@ -902,8 +933,16 @@ function module.new(dependencies)
             if type(placement) ~= "table" then
                 return fail("pending panel migration is missing")
             end
-            if placement.type == "flight-counter" then
-                context.flightSources[#context.flightSources + 1] = placement
+            -- Released layouts set flight detection on the counter; model settings adopt it once.
+            local config, legacy = placement.config, context.legacyFlight
+            if type(config) == "table" then
+                if
+                    placement.type == "flight-counter"
+                    and ((context.layoutSourceVersion or 5) < 5 or config._legacyFlight)
+                    and not legacy.flight
+                then
+                    legacy.flight = context.flightConfig.resolve(config)
+                end
             end
             local valid, panelError = context.layoutValidator.validatePanel(
                 placement,
@@ -994,7 +1033,8 @@ function module.new(dependencies)
         context.loadCandidates = nil
         context.loadCandidateIndex = nil
         context.itemNumber = 0
-        context.flightSources = {}
+        context.legacyFlight = {}
+        context.builtArmed = nil
         -- Subscriptions belong to the panels that made them, so the registry is
         -- rebuilt with the dashboard rather than reused across a reload.
         context.serviceRuntime = nil

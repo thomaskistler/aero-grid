@@ -1,8 +1,5 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local _, armedConfig = ...
-local validSwitch = assert(armedConfig, "flight counter requires switch validation").valid
-
 --- Presentation only; the shared flight service owns tracking and effects.
 local flightCounter = {
     id = "flight-counter",
@@ -10,43 +7,8 @@ local flightCounter = {
     refreshInterval = 20,
     settings = {
         { key = "label", label = "Label", type = "string", default = "FLT" },
-        {
-            key = "armSwitch",
-            label = "Arm switch position",
-            type = "string",
-            default = "",
-            legacyArm = true,
-        },
-        { key = "_legacyFlight", type = "boolean", default = false, legacyFlight = true },
-        { key = "motorSource", type = "string", default = "ch3", legacyFlight = true },
-        { key = "motorReversed", type = "boolean", default = false, legacyFlight = true },
-        { key = "minMotorPercent", type = "number", default = 25, legacyFlight = true },
-        { key = "minFlightDuration", type = "number", default = 30, legacyFlight = true },
-        { key = "disarmDuration", type = "number", default = 10, legacyFlight = true },
     },
 }
-
-function flightCounter.validateSettings(settings, _, _, modelArmed)
-    local errors = {}
-    local arm = settings.armSwitch
-    if modelArmed == nil and arm ~= nil and arm ~= "" and not validSwitch(arm) then
-        errors[#errors + 1] = "armSwitch must be blank, a physical switch position, or a logical switch"
-    end
-    if type(settings.motorSource) ~= "string" or settings.motorSource == "" then
-        errors[#errors + 1] = "motorSource must name a radio source"
-    end
-    for _, key in ipairs({ "minFlightDuration", "disarmDuration" }) do
-        local value = settings[key]
-        if type(value) ~= "number" or value ~= value or value <= 0 or value > 3600 then
-            errors[#errors + 1] = key .. " must be greater than 0 and at most 3600 seconds"
-        end
-    end
-    local percent = settings.minMotorPercent
-    if type(percent) ~= "number" or percent ~= percent or percent < 0 or percent >= 100 then
-        errors[#errors + 1] = "minMotorPercent must be in the range 0..<100"
-    end
-    return errors
-end
 
 function flightCounter.regionsFor(theme, builder, rect, fonts, digits)
     return builder.panel(theme, rect, fonts, {
@@ -91,12 +53,7 @@ function flightCounter.apply(context, drawn)
 end
 
 function flightCounter.create(parent, rect, settings, services)
-    local errors = flightCounter.validateSettings(settings, nil, nil, services.host and services.host.modelArmed)
-    assert(#errors == 0, table.concat(errors, "; "))
-    assert(
-        services.control and services.flight and services.clock and services.armed,
-        "flight counter services unavailable"
-    )
+    assert(services.flight and services.clock, "flight counter services unavailable")
     local shared = services.flight:state()
     local digits = math.max(3, #tostring(shared.displayCount or 0))
     local area = flightCounter.regionsFor(services.theme, services.themeBuilder, rect, services.fonts, digits)
@@ -112,7 +69,6 @@ function flightCounter.create(parent, rect, settings, services)
         preview = services.preview == true,
         rect = rect,
         digits = digits,
-        arm = services.armed:state(settings.armSwitch),
         flight = shared,
         area = area,
     }
@@ -153,11 +109,6 @@ end
 
 flightCounter.refresh = tick
 flightCounter.background = tick
-
-function flightCounter.rebindArming(context, services)
-    context.arm = services.armed:state(context.settings.armSwitch)
-    context.lastTick = nil
-end
 
 function flightCounter.update(context, rect)
     local area = flightCounter.regionsFor(context.theme, context.themeBuilder, rect, context.fonts, context.digits)

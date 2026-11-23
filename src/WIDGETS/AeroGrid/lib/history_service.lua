@@ -110,8 +110,8 @@ function history.new(env, support, runtime)
     }, history)
 end
 
-local function sessionFor(service, armSwitch)
-    local armed = assert(service.runtime.byId.armed, "history requires Armed service"):state(armSwitch)
+local function sessionFor(service)
+    local armed = assert(service.runtime.byId.armed, "history requires Armed service"):state()
     local session = service.sessionNames[armed.key]
     if not session then
         local state = {
@@ -150,8 +150,8 @@ local function sessionFor(service, armSwitch)
     return session
 end
 
-function history:session(armSwitch)
-    return sessionFor(self, armSwitch).view
+function history:session()
+    return sessionFor(self).view
 end
 
 function history:destroy()
@@ -467,12 +467,11 @@ function history:preview()
         first = 1,
         last = 0,
     })
-    local function condition(legacy)
-        local modelArm = owner.runtime.byId.armed.condition
-        return modelArm ~= nil and modelArm or legacy or ""
+    local function condition()
+        return owner.runtime.byId.armed.condition or ""
     end
-    function facade:session(legacy)
-        local key = condition(legacy)
+    function facade:session()
+        local key = condition()
         local session = owner.sessionNames[key]
         return session and session.view
             or owner.support.snapshot({
@@ -490,7 +489,7 @@ function history:preview()
         options = options or {}
         local window, mode, smoothing, precision = recordingOptions(options)
         source = type(source) == "string" and source or ""
-        local key = recordingKey(condition(options.armSwitch), source, window, mode, smoothing, precision)
+        local key = recordingKey(condition(), source, window, mode, smoothing, precision)
         return owner.names[key] and owner.names[key].view or empty
     end
     function facade:flight(view, index)
@@ -508,7 +507,7 @@ end
 function history:subscribe(source, options)
     options = options or {}
     local window, mode, smoothing, precision = recordingOptions(options)
-    local session = sessionFor(self, options.armSwitch)
+    local session = sessionFor(self)
     source = type(source) == "string" and source or ""
     local key = recordingKey(session.name, source, window, mode, smoothing, precision)
     if self.names[key] then

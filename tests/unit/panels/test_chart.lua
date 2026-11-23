@@ -35,12 +35,7 @@ assert(host.supportsSpan(chart, 2, 2))
 assert(not host.supportsSpan(chart, 1, 2))
 assert(not host.supportsSpan(chart, 2, 3))
 assert(not host.supportsSpan(chart, 1, 1))
-for _, armSwitch in ipairs({ "", "SA^", "SA-", "SAv", "L01" }) do
-    equal(#chart.validateSettings({ metrics = {}, armSwitch = armSwitch }), 0)
-end
-for _, armSwitch in ipairs({ "sa", "ch5", "invalid", 1, true }) do
-    assert(#chart.validateSettings({ metrics = {}, armSwitch = armSwitch }) > 0)
-end
+assert(#select(2, host.resolveSettings(chart, { metrics = {}, armSwitch = "SAv" })) > 0, "charts use model Armed")
 local numbers = {}
 fixture.module("lib/typography.lua").install(numbers)
 equal(numbers.numberText(12.345, 2), "12.35")
@@ -155,6 +150,19 @@ equal(scales.series[2].high, 30)
 
 fixture.reset()
 fixture.radio.values[300] = 0
+local empty = fixture.createLoaded(nil, { Layout = "Empty", Theme = "modern-dark" })
+local built, message = empty.dashboardLoader.buildPanel(empty, {
+    id = "unconfigured",
+    type = "chart",
+    col = 0,
+    row = 0,
+    colSpan = 2,
+    rowSpan = 1,
+    config = {},
+})
+assert(built, message)
+equal(built.instance.status.properties.text, "SET ARM SOURCE")
+
 local context = fixture.createLoaded(nil, { Layout = "review-chart", Theme = "modern-dark" })
 fixture.pump(context, 120)
 equal(#context.errors, 0, table.concat(context.errors, "\n"))
@@ -551,7 +559,7 @@ local function typographyPanel(count, top)
         row = 0,
         colSpan = top and 2 or 4,
         rowSpan = 2,
-        config = { metrics = metrics, armSwitch = "SAv" },
+        config = { metrics = metrics },
     })
     assert(entry, message)
     chart.refresh(entry.instance)
@@ -835,7 +843,6 @@ local function recordingPanel(id, range, duration)
         colSpan = 2,
         rowSpan = 2,
         config = {
-            armSwitch = "SAv",
             timeRange = range,
             duration = duration or (range == "rolling" and 1 or 10),
             metrics = { { source = id, precision = 3, rangeMin = -100, rangeMax = 100 } },
@@ -1034,19 +1041,6 @@ assert(clipped.start > 0 and clipped.start <= newest, "a late fixed window must 
 assert(newest < clipped.start + clipped.window, "a late fixed window must show its newest input")
 equal(#chartView.rectangles(clipped, 1), 0, "a late chart must not replay retained history")
 
-local empty = fixture.createLoaded(nil, { Layout = "Empty", Theme = "modern-dark" })
-local built, message = empty.dashboardLoader.buildPanel(empty, {
-    id = "unconfigured",
-    type = "chart",
-    col = 0,
-    row = 0,
-    colSpan = 2,
-    rowSpan = 1,
-    config = {},
-})
-assert(built, message)
-equal(built.instance.status.properties.text, "SET ARM SOURCE")
-
 fixture.reset()
 fixture.radio.values[300] = 1024
 local light = fixture.createLoaded(nil, { Layout = "review-chart", Theme = "modern-light" })
@@ -1155,7 +1149,7 @@ local incompatible, incompatibleError = light.dashboardLoader.buildPanel(light, 
     row = 0,
     colSpan = 2,
     rowSpan = 1,
-    config = { armSwitch = "L64", metrics = { { source = "draft-only-source" } } },
+    config = { metrics = { { source = "draft-only-source" } } },
 }, nil, true)
 assert(incompatible, incompatibleError)
 finishDrawing(incompatible.instance)

@@ -6,9 +6,10 @@ local panel = assert(loadfile(root .. "/tests/support/module_loader.lua"))(root)
 local detector = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/flight_service.lua"))()
 local support = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/services.lua"))()
 local host = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/panel_host.lua"))()
+local flightConfig = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/flight_config.lua"))()
 
 local function new()
-    local settings = host.resolveSettings(panel, {})
+    local settings = flightConfig.defaults()
     local context = {
         settings = settings,
         phase = "ground",
@@ -62,7 +63,7 @@ for _, source in ipairs({ "arm", "motor", "link" }) do
         )
     end
 end
-equal(#panel.validateSettings(context.settings), 0)
+equal(#flightConfig.validate(context.settings), 0)
 step(0)
 equal(context.phase, "ground")
 context.arm.value, context.motor.value = true, 0
@@ -153,13 +154,15 @@ equal(context.phase, "ground", "old samples must not qualify a flight")
 context.feed.raw = -1
 assert(pcall(step, 4000), "flight detection does not validate or depend on external GVs")
 for _, key in ipairs({ "minFlightDuration", "disarmDuration" }) do
-    local settings = host.resolveSettings(panel, { [key] = 0 })
-    equal(#panel.validateSettings(settings), 1)
+    local settings = flightConfig.defaults()
+    settings[key] = 0
+    equal(#flightConfig.validate(settings), 1)
 end
-equal(#panel.validateSettings(host.resolveSettings(panel, { minMotorPercent = 100 })), 1)
-for _, name in ipairs({ "", "SF^", "SA-", "SFv", "L01" }) do
-    equal(#panel.validateSettings(host.resolveSettings(panel, { armSwitch = name })), 0)
-end
-for _, name in ipairs({ "sf", "SF", "SFx", "L1" }) do
-    equal(#panel.validateSettings(host.resolveSettings(panel, { armSwitch = name })), 1)
-end
+local threshold = flightConfig.defaults()
+threshold.minMotorPercent = 100
+equal(#flightConfig.validate(threshold), 1)
+local settings, warnings = host.resolveSettings(panel, { label = "FLT" })
+equal(#warnings, 0)
+equal(settings.label, "FLT")
+local _, rejected = host.resolveSettings(panel, { armSwitch = "SFv" })
+assert(#rejected > 0, "Flight counter has no arm switch; the model Armed condition is used")

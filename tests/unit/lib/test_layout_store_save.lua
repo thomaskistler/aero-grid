@@ -149,14 +149,12 @@ local function testStagedSaveMigratesLegacyBattery()
         elseif calls == 3 then
             assert(not done and state.header.version == 3, "second header step runs in its own save cycle")
         elseif calls == 4 then
-            assert(not done and state.header.version == 4, "third header step runs in its own save cycle")
-        elseif calls == 5 then
-            assert(not done and state.header.version == 5, "fourth header step runs in its own save cycle")
-        elseif calls == 7 then
+            assert(not done and state.header.version == 5, "third header step runs in its own save cycle")
+        elseif calls == 6 then
             assert(not done and state.pendingPanel.type == "rx-battery", "one panel step runs in one save cycle")
         end
     until done
-    assert(calls == 12, "staged legacy save should use separate header, panel, validation and persistence cycles")
+    assert(calls == 10, "staged legacy save should use separate header, panel, validation and persistence cycles")
     assert(saved, saveError)
     local persisted = assert(yaml.parse(files[state.filename]))
     assert(persisted.version == 5)
@@ -169,7 +167,7 @@ end
 local function testStagedSave()
     local files, operations = memoryFiles()
     local document = makeDocument("staged")
-    document.version = 4
+    document.version = 3
     document.panels[2] = {
         id = "second",
         type = "example",
@@ -193,7 +191,7 @@ local function testStagedSave()
     local previousContent = files[state.filename]
 
     local broken = makeDocument("broken")
-    broken.version = 4
+    broken.version = 3
     broken.panels[2] = broken.panels[1]
     state = layoutStore.startSave("/widget", "main", broken, yaml, layout, grid, operations)
     for _ = 1, 7 do
@@ -353,48 +351,6 @@ local function testRadioFileOperations()
     io, os, fstat, rename, del = originalIo, originalOs, originalStat, originalRename, originalDelete
 end
 
-local function testCurrentBatteryNormalization()
-    local files, operations = memoryFiles()
-    local document = makeDocument("RX")
-    document.version = 2
-    local panel = document.panels[1]
-    panel.type = "rx-battery"
-    panel.config = {
-        sourceType = "pack",
-        source = "RxBt",
-        cells = 6,
-        reading = "cell",
-        visual = "none",
-        showPack = false,
-        showCount = true,
-        showDelta = true,
-        cellFull = 4.15,
-        warning = 3.55,
-        critical = 3.25,
-        cellEmpty = 3.1,
-    }
-    local saved, err, filename = layoutStore.save("/widget", "rx", document, yaml, layout, grid, operations)
-    assert(saved, err)
-    assert(
-        not string.find(files[filename], "sourceType", 1, true),
-        "current-version Save must strip selector before encoding"
-    )
-    local persisted = assert(yaml.parse(files[filename]))
-    local config = persisted.panels[1].config
-    assert(persisted.version == 5 and config.sourceType == nil)
-    assert(config.source == "RxBt" and config.cells == 6 and config.visual == "none")
-    assert(config.showDelta == true and config.showPack == false and config.showCount == true)
-    assert(
-        config.cellFull == 4.15
-            and config.cellWarning == 3.55
-            and config.cellCritical == 3.25
-            and config.cellEmpty == 3.1
-    )
-    assert(config.warning == nil and config.critical == nil, "Save must persist only current threshold keys")
-    local loaded, errors = layout.validate(persisted, grid)
-    assert(loaded and #errors == 0 and loaded.panels[1].config.showDelta == true)
-end
-
 local function testTemporaryMismatch()
     local files, operations = memoryFiles()
     local filename = layoutStore.path("/widget", "verify")
@@ -421,4 +377,3 @@ testDebriefSaveBudget()
 testStagedSaveMigratesLegacyBattery()
 testRadioFileOperations()
 testTemporaryMismatch()
-testCurrentBatteryNormalization()

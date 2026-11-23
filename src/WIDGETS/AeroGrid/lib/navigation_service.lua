@@ -343,9 +343,9 @@ end
 
 --- Subscribe to a GPS source.
 ---@param name any GPS source name.
----@param armSwitch? string Empty or omitted uses EdgeTX home.
+---@param homeMode? "edgetx"|"first-arm" First-arm captures home when the model arms.
 ---@return AeroGridNavigation
-function navigationService:subscribe(name, armSwitch, homeMode)
+function navigationService:subscribe(name, homeMode)
     if type(name) ~= "string" or name == "" then
         if not self.noneView then
             self.noneView = self.support.snapshot({
@@ -360,9 +360,8 @@ function navigationService:subscribe(name, armSwitch, homeMode)
         return self.noneView
     end
 
-    local customHome = homeMode == "first-arm" or homeMode == nil and type(armSwitch) == "string" and armSwitch ~= ""
-    local arm = customHome and assert(self.runtime.byId.armed, "navigation requires Armed service"):state(armSwitch)
-        or nil
+    local customHome = homeMode == "first-arm"
+    local arm = customHome and assert(self.runtime.byId.armed, "navigation requires Armed service"):state() or nil
     local key = arm and (name .. "\0" .. arm.key) or name
     local existing = self.sources[key]
     if existing then

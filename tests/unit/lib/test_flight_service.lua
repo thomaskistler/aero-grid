@@ -40,7 +40,6 @@ local function pump(owner, now)
             end
             queue.list = tasks
         end
-        owner:queueDecision(now)
         runner.run(now, 1000)
     end
 end
@@ -168,6 +167,9 @@ local function fixture(cadence)
     local publish = owner.setDocument
     function owner:setDocument(document)
         document.flightCount = document.flightCount or radio.count
+        if document.armed == nil then
+            document.armed = "L01"
+        end
         return publish(self, document)
     end
     owner.store = {
@@ -193,14 +195,10 @@ local function fixture(cadence)
     owner:setDocument({ revision = 1, flight = settings })
     local first, second = {}, {}
     radio.participants = { first, second }
-    local function participant(key)
-        return {
-            modelFilename = radio.filename,
-            layoutName = "Test",
-            declarations = { { armKey = key, armIndex = tonumber(string.sub(key, 2)), source = "Armed" } },
-        }
+    local function participant()
+        return { modelFilename = radio.filename, layoutName = "Test" }
     end
-    owner.members[first], owner.members[second] = participant("L01"), participant("L01")
+    owner.members[first], owner.members[second] = participant(), participant()
     local function step(count)
         for _ = 1, count or 1 do
             radio.now = radio.now + (cadence or 20)
@@ -211,19 +209,17 @@ local function fixture(cadence)
 end
 
 do
-    local owner, radio, _, first = fixture()
+    local owner, radio = fixture()
     radio.arms[1] = false
     assert(owner:settingsDisarmed())
     radio.arms[1] = true
     assert(not owner:settingsDisarmed())
     owner:setDocument({ revision = 2, armed = "" })
-    assert(owner:settingsDisarmed(), "saved None disables legacy arming")
+    assert(owner:settingsDisarmed(), "saved None disables arming")
     assert(not owner:settingsDisarmed("L01"), "a proposed arm condition must also be disarmed")
     radio.arms[1] = nil
     assert(not owner:settingsDisarmed("L01"), "unavailable never counts as disarmed")
     owner:setDocument({ revision = 3 })
-    owner.members[first].pending = true
-    assert(not owner:settingsDisarmed(), "legacy switches must be known before linking")
     owner.settingsError = "record failed"
     owner:prepare(100)
     equal(owner.view.persistenceError, "record failed", "ordinary detection must not hide adoption failures")
@@ -398,7 +394,7 @@ do
     equal(radio.writes, 0, "reset cancels an unqualified start without counting it later")
 end
 
-local owner, radio, step, first, second, participant = fixture()
+local owner, radio, step = fixture()
 radio.arms[1] = true
 step(15)
 equal(owner.view.active, true)
@@ -413,11 +409,9 @@ assert(start[1].at < start[1].observedAt)
 assert(not pcall(function()
     start[1].at = 0
 end))
-owner.members[first] = nil
-owner.members[second] = participant("L02")
+owner:setDocument({ revision = 2, flight = owner.document.flight, armed = "L02" })
 step(5)
-equal(owner.view.status, "ready", "a pending configuration does not replace the pinned flight")
-equal(owner.view.active, true)
+equal(owner.view.active, true, "changing the Armed condition does not end the pinned flight")
 equal(radio.writes, 1)
 radio.rssi = 0
 step(10)
@@ -433,33 +427,8 @@ equal(radio.dateReads, 0, "flight detection must not read the wall clock for CSV
 local boundaries = owner:boundaries(0)
 equal(#boundaries, 2)
 equal(boundaries[2].kind, "end")
-equal(boundaries[2].armKey, "L01", "completion retains the pinned arm despite changed proposals")
+equal(boundaries[2].armKey, "L01", "completion retains the pinned arm despite changed settings")
 assert(boundaries[2].at < boundaries[2].observedAt)
-
-owner, radio, step, first, second, participant = fixture()
-owner.members[second] = participant("L02")
-radio.arms[1], radio.arms[2] = true, true
-step(20)
-equal(owner.view.status, "conflict")
-equal(radio.writes, 0)
-equal(#radio.commands, 0, "cold conflicts cannot commandeer an output")
-owner.members[second] = participant("L01")
-step(3)
-equal(radio.writes, 0, "conflict time is not qualification time")
-step(15)
-equal(radio.writes, 1)
-owner.members[second] = participant("L02")
-radio.full = true
-radio.arms[1] = false
-step(15)
-equal(owner.view.active, false)
-equal(owner.view.outputStatus, "pending")
-equal(radio.sticky, true)
-radio.full = false
-step(5)
-equal(radio.sticky, false, "a conflict cannot strand pending output cleanup")
-equal(owner.view.outputStatus, "applied")
-equal(radio.writes, 1)
 
 owner, radio, step = fixture()
 radio.arms[1] = true
@@ -487,23 +456,6 @@ equal(owner.view.modelFilename, "model2.yml")
 equal(owner.view.active, false)
 equal(#owner:boundaries(0), 0)
 equal(radio.writes, 1, "old-model work cannot increment in a new model")
-
-owner, radio, step, first, second, participant = fixture()
-local dead = {}
-owner.members[dead] = participant("L02")
-step()
-equal(owner.view.status, "conflict")
-dead = nil
-collectgarbage("collect")
-step()
-equal(owner.view.status, "ready", "dead participants must not retain configuration conflicts")
-owner.members[first].pending = true
-radio.arms[1] = true
-step(15)
-equal(radio.writes, 0, "a rebuild declaration must resolve before new qualification")
-owner.members[first].pending = false
-step(15)
-equal(radio.writes, 1)
 
 owner, radio, step = fixture()
 radio.arms[1] = true
@@ -540,17 +492,6 @@ radio.arms[1] = true
 step(15)
 equal(radio.writes, 2, "a new arm cycle can recover after explicit model Save")
 equal(owner.view.countError, nil)
-
-owner, radio, step, first, second, participant = fixture()
-radio.full = true
-step(15)
-assert(owner.output and not owner.output.flightId)
-owner.members[second] = participant("L02")
-radio.full = false
-step(10)
-equal(#radio.commands, 0, "idle initialization cannot acquire an output during a conflict")
-equal(owner.output, nil)
-equal(owner.view.outputError, nil, "a canceled idle write is no longer waiting for queue capacity")
 
 owner, radio, step = fixture()
 step(3)
@@ -805,30 +746,10 @@ step(150)
 equal(radio.writes, 1)
 equal(owner.view.reason, "standard")
 
--- Broker tasks need no same-callback setup to poll, and decide once per setup.
+-- Detection runs in each widget's setup; the broker schedules no polling or decision tasks.
 owner, radio, step = fixture()
 owner:setDocument({ revision = 2, flight = settings })
 step(45)
-local decision, poll
 for _, task in ipairs(owner:tasks()) do
-    if task.name == "flight.decide" then
-        decision = task
-    elseif task.name == "flight.control" then
-        poll = poll or task
-    end
+    assert(task.name ~= "flight.decide" and task.name ~= "flight.control", "detection polls inline")
 end
-assert(decision and poll)
-radio.now = radio.now + 100
-assert(poll.due <= radio.now and not poll.hold.on, "a due poll runs without this callback's setup")
-poll.step(poll, radio.now, 8)
-assert(decision.due > radio.now, "decide waits for a setup after its last decision")
-owner:setup(radio.now, true)
-for _, task in ipairs(owner:tasks()) do
-    if task ~= decision and radio.now >= task.due and not (task.hold and task.hold.on) then
-        task.step(task, radio.now, 8)
-    end
-end
-owner:queueDecision(radio.now)
-assert(decision.due <= radio.now, "a fresh setup with polled readings lets detection decide")
-decision.step(decision, radio.now, 8)
-assert(decision.due > radio.now + 1)

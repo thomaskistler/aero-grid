@@ -24,14 +24,13 @@ local function placement(id, kind, col, row, height, config)
     return { id = id, type = kind, col = col, row = row, colSpan = 2, rowSpan = height, config = config }
 end
 local document = {
-    version = 4,
+    version = 5,
     grid = { columns = 4, rows = 4 },
-    session = { armSource = "L02" },
     panels = {
-        placement("one", "chart", 0, 0, 1, { armSwitch = "L01", metrics = { { source = "Alt" } } }),
-        placement("two", "chart", 2, 0, 1, { armSwitch = "L02", metrics = { { source = "Alt" } } }),
-        placement("counter", "flight-counter", 0, 1, 1, { armSwitch = "L02" }),
-        placement("capture", "navigation", 2, 1, 2, { homeMode = "first-arm", armSwitch = "L01" }),
+        placement("one", "chart", 0, 0, 1, { metrics = { { source = "Alt" } } }),
+        placement("two", "chart", 2, 0, 1, { metrics = { { source = "Alt" } } }),
+        placement("counter", "flight-counter", 0, 1, 1, {}),
+        placement("capture", "navigation", 2, 1, 2, { homeMode = "first-arm" }),
         placement("link", "link-status", 0, 2, 2, {}),
         placement("edgetx", "navigation", 2, 3, 1, { homeMode = "edgetx" }),
     },
@@ -120,8 +119,6 @@ local first, second = loaded(), loaded("shared-armed-copy")
 pump(first, second)
 local armed = first.serviceRuntime.byId.armed
 equal(armed:state().status, "unconfigured")
-assert(armed:state("L01") ~= armed:state("L02"), "unsaved model arming preserves legacy panel sessions")
-equal(fixture.instanceOf(first, "counter").arm.condition, "L02")
 
 local function open(context)
     context.aeroMenuHandlers.modelSettings()
@@ -143,16 +140,6 @@ assert(first.serviceRuntime.byId.armed == armed, "closing unchanged settings doe
 
 local function save(context, index)
     local dialog = open(context)
-    local original = {}
-    for _, host in ipairs({ first, second }) do
-        local panels = {}
-        if not host.editorUi then
-            for position, panel in ipairs(host.panels) do
-                panels[position] = panel.instance
-            end
-        end
-        original[host] = { page = host.page, root = host.root, panels = panels }
-    end
     dialog.controls.armed.properties.set(index)
     measured(definition.refresh, context)
     if index ~= 0 then
@@ -164,12 +151,10 @@ local function save(context, index)
     finish(first)
     finish(second)
     pump(first, second)
-    for host, previous in pairs(original) do
-        equal(host.page, previous.page, "arming changes keep the dashboard page")
-        equal(host.root, previous.root, "arming changes keep the dashboard root")
-        assert(not previous.page.cleared and not previous.page.hidden, "arming changes never blank the dashboard")
-        for position, instance in ipairs(previous.panels) do
-            equal(host.panels[position].instance, instance, "arming changes keep native panel instances")
+    for _, host in ipairs({ first, second }) do
+        if not host.editorUi then
+            assert(not host.page.cleared and not host.page.hidden, "arming changes never blank the dashboard")
+            equal(#host.panels, 6, "arming changes rebuild every panel")
         end
         equal(#host.serviceRuntime.byId.telemetry.observers, 1, "old history services must stop observing telemetry")
     end
@@ -181,16 +166,13 @@ equal(assert(owner.store:load(owner.filename)).armed, "L64", "arming is durable 
 armed = first.serviceRuntime.byId.armed
 local shared = armed:state()
 equal(shared.condition, "L64")
-equal(shared.origin, "model")
 equal(shared.fresh, true)
-assert(armed:state("L01") == shared and armed:state("ch5") == shared)
 assert(fixture.instanceOf(first, "one").session == fixture.instanceOf(first, "two").session)
-assert(fixture.instanceOf(first, "counter").arm == shared)
 equal(second.serviceRuntime.byId.armed:state().condition, "L64")
 equal(owner.session.armKey, "L64", "the shared flight detector uses model arming")
 local navigation = first.serviceRuntime.byId.navigation
-assert(navigation:subscribe("GPS", "L01", "first-arm") == navigation:subscribe("GPS", "L02", "first-arm"))
-assert(navigation:subscribe("GPS", nil, "edgetx") ~= navigation:subscribe("GPS", nil, "first-arm"))
+assert(navigation:subscribe("GPS", "first-arm") == navigation:subscribe("GPS", "first-arm"))
+assert(navigation:subscribe("GPS", "edgetx") ~= navigation:subscribe("GPS", "first-arm"))
 
 local custom = first.serviceRuntime.byId.control:switch("L03")
 fixture.radio.logicalSwitches[3] = true
@@ -207,14 +189,12 @@ equal(fixture.instanceOf(second, "capture").feed.homeStatus, "captured")
 local session = assert(editor.new(first.document, first.grid, first.layoutValidator, first.panelHost, function(kind)
     return fixture.module("panels/" .. kind .. ".lua")
 end))
-session.modelArmed = "L64"
 for _, field in ipairs(assert(editor.settings(session))) do
-    assert(field.key ~= "armSwitch", "saved model arming hides retained panel fields")
+    assert(field.key ~= "armSwitch", "panels have no arm switch")
 end
 assert(editor.setValue(session, "label", "SAVED"))
 local valid, saved = editor.apply(session)
 assert(valid, table.concat(saved or {}, "\n"))
-equal(saved.panels[1].config.armSwitch, "L01", "editing preserves hidden legacy values")
 write("shared-armed", saved)
 
 local homes = first.navigationHomes
@@ -234,14 +214,13 @@ local liveDraft = assert(first.editorSession)
 assert(editor.setValue(liveDraft, "label", "UNSAVED"))
 save(second, 0)
 assert(first.editorSession == liveDraft and liveDraft.dirty, "another dashboard's arming Save preserves layout drafts")
-equal(liveDraft.modelArmed, "")
 first.editorUiModule.close(first, false)
 first.editorController.restorePreview(first)
 first.editorSession = nil
 equal(owner.document.armed, "")
-equal(first.serviceRuntime.byId.armed:state("L01").configured, false, "saved None disables legacy arming")
+equal(first.serviceRuntime.byId.armed:state().configured, false, "saved None disables arming")
 assert(first.navigationHomes ~= homes, "changing model arming invalidates captured homes")
-equal(second.serviceRuntime.byId.armed:state("L02").configured, false)
+equal(second.serviceRuntime.byId.armed:state().configured, false)
 equal(owner.state.status, "unconfigured")
 
 save(first, -getSwitchIndex("L64"))

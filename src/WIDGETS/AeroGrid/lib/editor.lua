@@ -126,11 +126,11 @@ local function settingsFor(module, config)
     return values, knownConfig, errors
 end
 
-local function validatePanelSettings(module, settings, knownConfig, span, modelArmed)
+local function validatePanelSettings(module, settings, knownConfig, span)
     if type(module.validateSettings) ~= "function" then
         return true
     end
-    local ok, reported = pcall(module.validateSettings, settings, span, knownConfig, modelArmed)
+    local ok, reported = pcall(module.validateSettings, settings, span, knownConfig)
     if not ok then
         return false, "validateSettings raised: " .. tostring(reported)
     end
@@ -304,7 +304,7 @@ function editor.sizes(session)
                 and placement.col + colSpan <= 4
                 and placement.row + rowSpan <= 4
                 and not overlapsAny(session.grid, session.draft.panels, candidate, session.selected)
-                and validatePanelSettings(module, settings, knownConfig, candidate, session.modelArmed)
+                and validatePanelSettings(module, settings, knownConfig, candidate)
             then
                 sizes[#sizes + 1] = tostring(colSpan) .. "x" .. tostring(rowSpan)
             end
@@ -348,7 +348,6 @@ function editor.add(session, typeName)
             and type(setting.key) == "string"
             and setting.default ~= nil
             and not setting.drawerField
-            and not setting.legacyFlight
         then
             config[setting.key] = copy(setting.default)
         end
@@ -530,7 +529,7 @@ function editor.resize(session, colDelta, rowDelta, col, row)
         return false, "panel does not support span " .. tostring(resized.colSpan) .. "x" .. tostring(resized.rowSpan)
     end
     local settings, knownConfig = settingsFor(module, placement.config or {})
-    local compatible, settingError = validatePanelSettings(module, settings, knownConfig, resized, session.modelArmed)
+    local compatible, settingError = validatePanelSettings(module, settings, knownConfig, resized)
     if not compatible then
         return false, settingError
     end
@@ -567,7 +566,7 @@ function editor.resizePositions(session, left, top)
                 session.grid.validatePlacement(candidate, 4, 4)
                 and supportsSpan(module, width, height)
                 and not overlapsAny(session.grid, session.draft.panels, candidate, index)
-                and validatePanelSettings(module, settings, knownConfig, candidate, session.modelArmed)
+                and validatePanelSettings(module, settings, knownConfig, candidate)
             then
                 positions[#positions + 1] = candidate
             end
@@ -1026,12 +1025,7 @@ function editor.settings(session)
     end
     local fields = {}
     for _, setting in ipairs(module.settings or {}) do
-        if
-            not setting.legacyFlight
-            and (not setting.legacyArm or (session.modelArmed == nil and config[setting.key] ~= ""))
-        then
-            fields[#fields + 1] = setting
-        end
+        fields[#fields + 1] = setting
     end
     return fields, config, module
 end
@@ -1142,8 +1136,7 @@ function editor.validate(session)
                         module.validateSettings,
                         settings,
                         { colSpan = placement.colSpan, rowSpan = placement.rowSpan },
-                        knownConfig,
-                        session.modelArmed
+                        knownConfig
                     )
                     if not ok then
                         errors[#errors + 1] = "panel "

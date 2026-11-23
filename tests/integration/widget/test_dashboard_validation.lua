@@ -251,8 +251,8 @@ panels:
     end
     validator.migrateHeaderStep, validator.migratePanelStep = headerStep, panelStep
     assertEqual(#context.errors, 0, table.concat(context.errors, "\n"))
-    assertEqual(headers, 4, "each adjacent header migration still gets its own step")
-    assertEqual(panels, 4, "each adjacent panel migration still gets its own step")
+    assertEqual(headers, 3, "each adjacent header migration still gets its own step")
+    assertEqual(panels, 3, "each adjacent panel migration still gets its own step")
     assertEqual(context.document.version, 5)
     local placement = context.document.panels[1]
     assertEqual(placement.type, "rx-battery")

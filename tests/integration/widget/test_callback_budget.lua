@@ -230,8 +230,8 @@ local function testInstructionBudget()
             config = function(index)
                 return {
                     "source: Cels",
-                    "warning: 3.5",
-                    "critical: " .. (index % 2 == 0 and "3.3" or "3.4"),
+                    "cellWarning: 3.5",
+                    "cellCritical: " .. (index % 2 == 0 and "3.3" or "3.4"),
                 }
             end,
         },

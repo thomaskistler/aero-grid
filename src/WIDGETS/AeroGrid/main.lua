@@ -859,16 +859,18 @@ initialize = function(context)
         context.armedConfig = runtimeModule("lib/armed_service.lua")
         context.aeroMenuModule = runtimeModule("lib/aerogrid_menu.lua")
         context.gesture = runtimeModule("lib/gesture.lua")
-        local flightRegistration = runtimeModule("lib/flight_registration.lua")
-        if flightRegistration then
-            context.configureFlight = function(host)
-                local ok, message = pcall(flightRegistration.configure, host)
-                if not ok then
-                    local member = host.flightFactory.members[host]
-                    member.pending, member.error = false, tostring(message)
-                    host.flightFactory.revision = (host.flightFactory.revision or 0) + 1
-                    addError(host, "flight: " .. tostring(message))
-                end
+        --- Tell the flight broker this widget's layout is loaded, with any arm
+        --- and flight settings converted from a released layout.
+        context.configureFlight = function(host)
+            local member = host.flightFactory.members[host]
+            if not member then
+                return
+            end
+            member.legacy, member.pending, member.error = host.legacyFlight, false, nil
+            member.modelFilename, member.layoutName = host.modelFilename or member.modelFilename, host.layoutName
+            host.flightFactory.revision = (host.flightFactory.revision or 0) + 1
+            if host.flightFactory.broker then
+                host.flightFactory.broker:dropTasks()
             end
         end
         --- Hand the debrief recorder the layout's debrief and each tile's width.
@@ -1714,11 +1716,12 @@ local function runTasks(context, hidden)
     end
 end
 
---- Flight takes a whole turn while it loads or links model settings.
+--- Flight takes a whole turn while it loads or links model settings, and a
+--- second slot while Smart detection reads its sensors.
 local function flightCost(task)
     local owner = task.broker
     local linking = owner.settingsAdoption and owner:settingsDisarmed()
-    task.cost = (not owner.documentLoaded or linking) and task.host.scheduler.budget.slots or 1
+    task.cost = (not owner.documentLoaded or linking) and task.host.scheduler.budget.slots or owner.smart and 2 or 1
 end
 
 local function pumpFlight(task, now, granted)
@@ -1871,7 +1874,6 @@ local function flightStep(task, now, granted, hidden)
     updateHolds(task.host, hidden)
     if not again and task.broker.setupAt == now then
         task.due = now + FLIGHT_INTERVAL
-        task.broker:queueDecision(now, task.host.scheduler.state(task).key)
     end
     flightCost(task)
     return used, again
@@ -2811,65 +2813,11 @@ local function editorTransitionReady(task, _, hidden)
         and isFullScreen()
 end
 
-local ARMING_SERVICES = { "armed", "navigation", "history" }
-
+--- A new Armed condition reaches the services and panels through a reload.
 local function rebindArming(context)
-    if context.stage or context.reloadState or not context.serviceRuntime or #context.rejected > 0 then
-        context.retainForReload = true
-        context.reloadState = "clear"
-        context.modelArmingReload = nil
-        context.armingRebind = nil
-        return
-    end
-    local runtime = context.serviceRuntime
-    local job = context.armingRebind
-    if not job then
-        context.modelArmed = context.flightFactory.broker.document.armed
-        context.armGeneration = (context.armGeneration or 0) + 1
-        runtime.modelArmed, runtime.armGeneration = context.modelArmed, context.armGeneration
-        context.navigationHomes = {}
-        runtime.navigationHomes = context.navigationHomes
-        job = { service = 1, panel = 1 }
-        context.armingRebind = job
-    end
-    local id = ARMING_SERVICES[job.service]
-    if id then
-        local previous = runtime.byId[id]
-        if previous then
-            if previous.destroy then
-                previous:destroy()
-            end
-            local replacement = runtime.modules[id].new(runtime.env, context.servicesModule, runtime)
-            for index, instance in ipairs(runtime.order) do
-                if instance == previous then
-                    runtime.order[index] = replacement
-                    break
-                end
-            end
-            runtime.byId[id] = replacement
-        end
-        job.service = job.service + 1
-        return
-    end
-    local entry = context.panels[job.panel]
-    if entry then
-        if not entry.failed and rawget(entry.module, "rebindArming") then
-            local ok, message = context.panelHost.dispatch(entry, "rebindArming", runtime.byId)
-            if not ok then
-                addError(context, entry.placement.id .. ": rebindArming: " .. tostring(message))
-                showErrors(context)
-            end
-            scheduleRefresh(context, entry, 0)
-        end
-        job.panel = job.panel + 1
-        return
-    end
-    context.armingRebind = nil
-    if context.modelArmed == context.flightFactory.broker.document.armed then
-        context.configureFlight(context)
-        context.configureDebrief(context)
-        context.modelArmingReload = nil
-    end
+    context.retainForReload = true
+    context.reloadState = "clear"
+    context.modelArmingReload = nil
 end
 
 local function editorTransitionStep(task)
@@ -3554,9 +3502,6 @@ local function runCallback(context, hidden, widgetEvent, touchState)
         flightCost(flightTask)
     end
     syncTasks(context, hidden, flightTask, owner)
-    if owner and owner.queueDecision then
-        owner:queueDecision(getTime())
-    end
     enrolHost(context, getTime(), hidden)
     runTasks(context, hidden)
     if context.uiTasks then

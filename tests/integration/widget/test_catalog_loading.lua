@@ -82,13 +82,14 @@ local function testSessionArmsTheFlight()
         local registry = context.serviceRuntime
         local armed = registry and registry.byId and registry.byId.armed
         assert(armed, "the dashboard built no armed service")
-        return armed:state(context.session.armSource)
+        return armed:state()
     end
 
     -- Configured is the service's own word for "an arm source was supplied",
     -- so it is the value the contract names rather than a proxy for it.
     local armed = flightOf(dashboard("session:\n  armSource: SFv"))
     assertEqual(armed.configured, true, "the layout named an arm switch and the flight session did not see it")
+    assertEqual(armed.condition, "SFv", "a released session arm switch converts to the model Armed condition")
 
     local unarmed = flightOf(dashboard("# no session block"))
     assertEqual(unarmed.configured, false, "a dashboard that names no arm switch reported one anyway")

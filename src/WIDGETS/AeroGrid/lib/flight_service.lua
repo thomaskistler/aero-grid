@@ -194,8 +194,6 @@ function flight.newBroker(env, support, modules, config, members)
         state = { phase = "ground", active = false, status = "unconfigured", revision = 0 },
         -- Members' schedulers that run the shared tasks, woken when a task falls due early.
         schedulers = setmetatable({}, { __mode = "k" }),
-        -- Detection polls wait while detection is dormant.
-        dormant = { on = true },
     }, broker)
     self.view = support.snapshot(self.state)
     return self
@@ -227,16 +225,14 @@ function broker:reset(filename)
     self.countDue, self.countImportFailed = nil, nil
     self.countStarted = nil
     self.filename, self.epoch = filename, self.epoch + 1
-    self.session, self.runtime, self.smartRuntime, self.signature, self.output = nil, nil, nil, nil, nil
+    self.session, self.smart, self.signature, self.output = nil, nil, nil, nil
     self.document, self.loadError, self.settingsAdoption = nil, nil, nil
     self.settingsError = nil
     self.events, self.errors = {}, {}
     self.lastTick, self.readyAfterDisarm = nil, nil
     self.readyAfterDisarmAt = nil
-    self.resetCondition, self.resetRuntime, self.resetFeed, self.resetValue, self.resetPolledAt =
-        nil, nil, nil, nil, nil
-    self.setupAt, self.detecting, self.decidedAt = nil, nil, nil
-    self.dormant.on = true
+    self.resetCondition, self.resetFeed, self.resetValue = nil, nil, nil
+    self.setupAt = nil
     self:dropTasks()
     for key in pairs(self.state) do
         self.state[key] = nil
@@ -246,7 +242,6 @@ function broker:reset(filename)
     self.state.revision = 0
     self.documentLoaded = false
     self.dormantRevision = nil
-    self.cachedRevision, self.cachedProposal, self.cachedSignature, self.cachedStatus = nil, nil, nil, nil
 end
 
 function broker:setDocument(document)
@@ -255,10 +250,11 @@ function broker:setDocument(document)
         "Model changed; reopen model settings"
     )
     if self.document and self.document.armed ~= document.armed then
-        for host, member in pairs(self.members) do
+        for host in pairs(self.members) do
             host.navigationHomes = {}
-            if host.modelFilename == nil or host.modelFilename == self.filename then
-                member.pending = true
+            local mine = host.modelFilename == nil or host.modelFilename == self.filename
+            -- Only dashboards whose armed service used a different switch need a reload.
+            if mine and host.builtArmed and host.builtArmed.value ~= document.armed then
                 host.modelArmingReload = true
             end
         end
@@ -336,21 +332,37 @@ function broker:publishCount()
     end
 end
 
+--- Converted settings that would fill a gap in the model's settings.
+function broker:conversion()
+    local document = self.document
+    if not document or document.flightCount == nil or self.pendingCount or self:loading() then
+        return nil
+    end
+    local converted = self:converted()
+    if document.armed == nil and converted.armed or document.flight == nil and converted.flight then
+        return converted
+    end
+end
+
 function broker:saveCount()
     local pending = self.pendingCount
     if not pending then
+        if self:loading() then
+            return
+        end
+        local converted = self:conversion()
+        if converted then
+            -- Settings models saved before conversion get it once, with an unchanged count.
+            local count = self.document.flightCount
+            self.pendingCount = { previous = count, value = count, imported = converted }
+            return
+        end
         if self.document.flightCount ~= nil then
             return
         end
+        converted = self:converted()
         if not self.countImport then
-            local legacy = self.document.flight ~= nil or self.document.armed ~= nil
-            for _, member in pairs(self.members) do
-                if member.modelFilename == self.filename then
-                    for _, declaration in ipairs(member.declarations or {}) do
-                        legacy = legacy or declaration.settings ~= nil
-                    end
-                end
-            end
+            local legacy = self.document.flight ~= nil or self.document.armed ~= nil or converted.flight ~= nil
             self.countImport = self.store.counter.begin(self.store.operations, self.filename, legacy, self.env)
             return
         end
@@ -359,6 +371,9 @@ function broker:saveCount()
             return
         end
         self.countImport = nil
+        -- Arm and flight settings converted from released layouts are saved once, with the first count.
+        imported.armed = imported.armed or converted.armed
+        imported.flight = imported.flight or converted.flight
         pending = { value = imported.count, imported = imported }
         self.pendingCount = pending
         return
@@ -386,39 +401,42 @@ function broker:saveCount()
     self.state.diagnosticRevision = (self.state.diagnosticRevision or 0) + 1
 end
 
---- Read live arm conditions before the CH32 read-modify-write.
-function broker:settingsDisarmed(proposed)
-    local condition = self.document and self.document.armed
-    local control = self.modules.control.new(self.env, self.support)
-    local function disarmed(name, index)
-        if name == "" or index == 0 then
+--- Whether any member widget of this model is still loading its layout.
+function broker:loading()
+    for _, member in pairs(self.members) do
+        if member.modelFilename == self.filename and member.pending then
             return true
         end
-        if not self.env.getSwitchValue or (not index and not self.env.getSwitchIndex) then
+    end
+    return false
+end
+
+--- Arm and flight settings converted from this model's released layouts.
+function broker:converted()
+    local result = {}
+    for _, member in pairs(self.members) do
+        local legacy = member.modelFilename == self.filename and member.legacy
+        if legacy then
+            result.armed = result.armed or legacy.armed
+            result.flight = result.flight or legacy.flight
+        end
+    end
+    return result
+end
+
+--- Read live arm conditions before the CH32 read-modify-write.
+function broker:settingsDisarmed(proposed)
+    local function disarmed(name)
+        if name == nil or name == "" then
+            return true
+        end
+        if not self.env.getSwitchValue or not self.env.getSwitchIndex then
             return false
         end
-        index = index or control:switchIndex(name)
+        local index = self.modules.control.switchIndex(self, name)
         return type(index) == "number" and index ~= 0 and self.env.getSwitchValue(index) == false
     end
-    if proposed ~= nil and not disarmed(proposed) then
-        return false
-    end
-    if condition ~= nil then
-        return disarmed(condition)
-    end
-    for _, member in pairs(self.members) do
-        if member.modelFilename == self.filename then
-            if member.pending then
-                return false
-            end
-            for _, declaration in ipairs(member.declarations or {}) do
-                if not disarmed(declaration.armKey or "", declaration.armIndex) then
-                    return false
-                end
-            end
-        end
-    end
-    return true
+    return disarmed(proposed) and disarmed(self.document and self.document.armed)
 end
 
 function broker:boundary(kind, at, observedAt)
@@ -453,70 +471,31 @@ function broker:boundaries(afterSequence, epoch)
         (epoch ~= nil and epoch ~= self.epoch) or (afterSequence ~= nil and afterSequence < oldest - 1)
 end
 
-function broker:resolveProposals()
-    local selected, signature, pending, conflict
-    local candidates = {}
-    for _, participant in pairs(self.members) do
-        if participant.modelFilename == self.filename then
-            if participant.error then
-                self.state.configurationError = participant.error
-                return nil, nil, "error"
-            elseif participant.pending then
-                pending = true
-            else
-                for _, declaration in ipairs(participant.declarations or {}) do
-                    local settings = self.document and self.document.flight or declaration.settings
-                    local modelArm = self.document and self.document.armed
-                    local armKey = modelArm ~= nil and modelArm or declaration.armKey
-                    if settings and armKey ~= "" then
-                        local key = self.config.key(settings) .. ":" .. armKey
-                        candidates[#candidates + 1] = participant.layoutName
-                            .. "/"
-                            .. declaration.source
-                            .. " ("
-                            .. armKey
-                            .. ")"
-                        if signature and signature ~= key then
-                            conflict = true
-                        end
-
-                        signature, selected =
-                            key, {
-                                settings = settings,
-                                armKey = armKey,
-                                armIndex = modelArm == nil and declaration.armIndex or nil,
-                            }
-                    end
-                end
-            end
+--- The model's flight settings and Armed condition, once both are set.
+function broker:proposal()
+    local failure
+    for _, member in pairs(self.members) do
+        if member.modelFilename == self.filename and member.error then
+            failure = member.error
+            break
         end
     end
-    if conflict then
-        table.sort(candidates)
-        self.state.configurationError = "Conflicting flight conditions: "
-            .. table.concat(candidates, ", ")
-            .. ". Choose Armed in Model settings and save one model flight configuration."
-        return nil, nil, "conflict"
-    end
-    self.state.configurationError = nil
-    if pending then
-        return nil, nil, "loading"
-    end
-    return selected, signature, selected and "ready" or "unconfigured"
-end
-
-function broker:proposals(now)
-    if self.factory and self.cachedRevision == self.factory.revision and now < (self.proposalsDue or 0) then
-        return self.cachedProposal, self.cachedSignature, self.cachedStatus
-    end
-    local previous = self.state.configurationError
-    local proposal, signature, status = self:resolveProposals()
-    if previous ~= self.state.configurationError then
+    if failure ~= self.state.configurationError then
+        self.state.configurationError = failure
         self.state.diagnosticRevision = (self.state.diagnosticRevision or 0) + 1
     end
-    self.cachedProposal, self.cachedSignature, self.cachedStatus = proposal, signature, status
-    self.cachedRevision, self.proposalsDue = self.factory and self.factory.revision, now + 100
-    return proposal, signature, status
+    if failure then
+        return nil, nil, "error"
+    end
+    local document = self.document
+    if self.proposalDocument ~= document then
+        local settings, armKey = document and document.flight, document and document.armed
+        local ready = settings and armKey and armKey ~= ""
+        self.proposalDocument = document
+        self.cachedProposal = ready and { settings = settings, armKey = armKey } or nil
+        self.cachedSignature = ready and self.config.key(settings) .. ":" .. armKey or nil
+    end
+    return self.cachedProposal, self.cachedSignature, self.cachedProposal and "ready" or "unconfigured"
 end
 
 function broker:validateOutput(name, armKey, resetCondition)
@@ -589,46 +568,77 @@ function broker:resetSession(now)
     end
 end
 
---- The reset input has its own poller, including when flight detection is
---- dormant. Setup keeps the poller in step with the configured condition.
-function broker:syncReset(now)
-    local condition = self.document and self.document.sessionReset or ""
-    if condition ~= self.resetCondition then
-        self.resetCondition, self.resetRuntime, self.resetFeed, self.resetValue = condition, nil, nil, nil
-        self:dropTasks()
-    end
-    if condition == "" then
-        if self.errors.reset then
-            self.errors.reset, self.state.resetError = nil, nil
-            self.state.diagnosticRevision = (self.state.diagnosticRevision or 0) + 1
+local RESOLVE_RETRY = 500
+
+--- Read a switch condition straight from EdgeTX. An unknown switch reads as
+--- unavailable, never as false, and is looked up again every five seconds.
+local function readSwitch(owner, reading, now)
+    local index = reading.index
+    if not index then
+        reading.available, reading.fresh = false, false
+        if now < (reading.retryAt or 0) then
+            return
         end
-        return
+        index = owner.modules.control.switchIndex(owner, reading.name)
+        if type(index) ~= "number" or index == 0 then
+            reading.retryAt = now + RESOLVE_RETRY
+            return
+        end
+        reading.index = index
     end
-    if not self.resetRuntime then
-        local runtime = self.support.runtime(self.env)
-        local control = self.modules.control.new(self.env, self.support, runtime)
-        self.support.register(runtime, control, now)
-        self.resetFeed = control:switch(condition)
-        self.resetRuntime = runtime
-        self:dropTasks()
-    elseif self.resetRuntime.byId.control.failed then
-        self.resetValue = nil
-        self:error("reset", "Session reset switch unavailable: " .. condition)
+    local value = owner.env.getSwitchValue(index)
+    local known = type(value) == "boolean"
+    reading.available, reading.fresh = known, known
+    if known then
+        reading.value, reading.updatedAt = value, now
     end
 end
 
---- Read the reset switch right after its poll, so a press is never decided
---- on a stale sample.
+--- Read the motor channel straight from EdgeTX.
+local function readMotor(owner, reading, now)
+    local id = reading.id
+    if not id then
+        reading.fresh = false
+        if now < (reading.retryAt or 0) then
+            return
+        end
+        local info = owner.env.getFieldInfo(reading.name)
+        if type(info) ~= "table" or type(info.id) ~= "number" then
+            reading.retryAt = now + RESOLVE_RETRY
+            return
+        end
+        id, reading.telemetry = info.id, type(info.unit) == "number"
+        reading.id = id
+    end
+    local value = owner.env.getValue(id)
+    reading.fresh = type(value) == "number"
+    if reading.fresh then
+        reading.value, reading.updatedAt, reading.available = value, now, true
+    end
+end
+
+--- Read the reset switch at each setup, including while detection is dormant.
 function broker:readReset(now)
+    local condition = self.document and self.document.sessionReset or ""
+    if condition ~= self.resetCondition then
+        self.resetCondition, self.resetValue = condition, nil
+        self.resetFeed = condition ~= "" and { name = condition, value = false, updatedAt = 0 } or nil
+    end
     local feed = self.resetFeed
-    if not reliable(feed, now, self.support.MAX_SAMPLE_AGE) then
-        self.resetValue = nil
-        self:error("reset", "Session reset switch unavailable: " .. self.resetCondition)
-        return
+    if feed then
+        local ok, message = pcall(readSwitch, self, feed, now)
+        if not ok or not feed.fresh then
+            self.resetValue = nil
+            self:error("reset", ok and "Session reset switch unavailable: " .. condition or message)
+            return
+        end
     end
     if self.errors.reset then
         self.errors.reset, self.state.resetError = nil, nil
         self.state.diagnosticRevision = (self.state.diagnosticRevision or 0) + 1
+    end
+    if not feed then
+        return
     end
     local previous = self.resetValue
     self.resetValue = feed.value
@@ -657,25 +667,22 @@ function broker:attach(proposal, signature, now)
     local errors = self.config.validate(settings)
     assert(#errors == 0, table.concat(errors, "; "))
     self:validateOutput(settings.flightSwitch, proposal.armKey)
-    local runtime = self.support.runtime(self.env)
-    for _, id in ipairs({ "telemetry", "control" }) do
-        local instance = self.modules[id].new(self.env, self.support, runtime)
-        self.support.register(runtime, instance, now)
-    end
-    local control, telemetry = runtime.byId.control, runtime.byId.telemetry
-    local smartSensors, smartRuntime
+    local env = self.env
+    assert(
+        env.getSwitchIndex and env.getSwitchValue and env.getFieldInfo and env.getValue,
+        "Flight detection requires switch and source APIs"
+    )
+    local smart, smartSensors
     if settings.smartDetection then
-        smartRuntime = self.support.runtime(self.env)
-        local instance = self.modules.smart.new(self.env, self.support, smartRuntime)
-        self.support.register(smartRuntime, instance, now)
-        smartSensors = instance:enable()
+        smart = self.modules.smart.new(env, self.support)
+        smartSensors = smart:enable()
     end
     local session = {
         settings = settings,
         phase = "ground",
-        arm = control:switch(proposal.armKey, proposal.armIndex),
-        motor = telemetry:subscribe(settings.motorSource, false),
-        link = telemetry:link(),
+        arm = { name = proposal.armKey, value = false, updatedAt = 0 },
+        motor = { name = settings.motorSource },
+        link = { live = false },
         armKey = proposal.armKey,
         smart = smartSensors,
     }
@@ -708,8 +715,7 @@ function broker:attach(proposal, signature, now)
     if self.signature and self.signature ~= signature then
         self.readyAfterDisarm = true
     end
-    self.runtime, self.smartRuntime, self.session, self.signature = runtime, smartRuntime, session, signature
-    self:dropTasks()
+    self.smart, self.session, self.signature = smart, session, signature
     if self.errors.detection then
         self.errors.detection, self.state.detectionError = nil, nil
         self.state.diagnosticRevision = (self.state.diagnosticRevision or 0) + 1
@@ -762,7 +768,7 @@ end
 
 --- Resolve the configuration and attach detection before this tick's polls.
 function broker:prepare(now)
-    local proposal, signature, status = self:proposals(now)
+    local proposal, signature, status = self:proposal()
     self.state.status = self.loadError and "error" or status
     self.state.persistenceError = self.loadError or self.settingsError
     local active = self.session and (self.session.phase == "active" or self.session.phase == "ending")
@@ -790,13 +796,37 @@ function broker:prepare(now)
     end
 end
 
---- Advance detection from the readings this tick's polls took.
-function broker:decide(now)
-    local proposal, signature = self:proposals(now)
+--- Read the detection inputs, which only flight detection uses.
+function broker:readInputs(now)
     local session = self.session
-    session.controlAvailable = not self.runtime.byId.control.failed
-    session.smartAvailable = not (self.smartRuntime and self.smartRuntime.byId.smart.failed)
-    session.detectionAvailable = session.controlAvailable and not self.runtime.byId.telemetry.failed
+    local ok, message = pcall(function()
+        readSwitch(self, session.arm, now)
+        readMotor(self, session.motor, now)
+        local rssi = self.env.getRSSI and self.env.getRSSI() or 0
+        session.link.live = type(rssi) == "number" and rssi > 0
+        if session.link.live then
+            session.link.updatedAt = now
+        end
+    end)
+    session.controlAvailable, session.detectionAvailable = ok, ok
+    if not ok then
+        self:error("detection", message)
+    end
+    local smart = self.smart
+    if smart and not smart.failed then
+        local updated, failure = pcall(smart.update, smart, now)
+        if not updated then
+            smart.failed = true
+            self:error("detection", "smart: " .. tostring(failure))
+        end
+    end
+    session.smartAvailable = not (smart and smart.failed)
+end
+
+--- Advance detection from the inputs just read.
+function broker:decide(now)
+    local proposal, signature = self:proposal()
+    local session = self.session
     if self.lastTick and now >= self.lastTick and now - self.lastTick < DECIDE_INTERVAL then
         self:flushOutput(now)
         return
@@ -878,16 +908,15 @@ function broker:decide(now)
     self.state.revision = self.state.revision + 1
 end
 
---- Prepare this tick's flight work once, whichever widget reaches it first.
---- `detect` is false while detection is dormant; the reset poller still runs.
+--- Run this tick's flight work once, whichever widget reaches it first.
+--- `detect` is false while detection is dormant; the reset switch is still read.
 function broker:setup(now, detect)
     if self.setupAt == now then
         return
     end
-    self.setupAt, self.detecting = now, detect
-    self.dormant.on = not detect
+    self.setupAt = now
     self.countStarted = true
-    local ok, message = pcall(self.syncReset, self, now)
+    local ok, message = pcall(self.readReset, self, now)
     if not ok then
         self:error("reset", message)
     end
@@ -896,15 +925,15 @@ function broker:setup(now, detect)
         if not ok then
             self:error("detection", message)
         end
+        if self.session then
+            self:readInputs(now)
+            ok, message = pcall(self.decide, self, now)
+            if not ok then
+                self:error("detection", message)
+            end
+        end
     end
 end
-
-local NONE = {}
-
--- Runtimes polled by the broker's tasks, in ring order.
-local RUNTIMES = { "resetRuntime", "runtime", "smartRuntime" }
-
-local NEVER = math.huge
 
 --- Move a shared task forward in every member's scheduler that runs it.
 function broker:wake(task, exact)
@@ -913,131 +942,11 @@ function broker:wake(task, exact)
     end
 end
 
---- Retire the current polls and decision list; the next `tasks` call builds
---- a new one. A retired poll never runs again, even in a scheduler that has
---- not yet seen the new list.
+--- Retire the task list; the next `tasks` call builds a new one.
 function broker:dropTasks()
-    local list = self.taskList
-    if list then
-        for index = 1, #list do
-            if list[index].field then
-                list[index].failed = true
-            end
-        end
-    end
     self.taskList = nil
 end
 
---- Detection decides once per setup. A setup that has not decided queues
---- the decision behind the detection polls due by now, ahead of other
---- overdue work; given the setup's own tick `at`, they all queue there.
-function broker:queueDecision(now, at)
-    local decision, list = self.decision, self.taskList
-    if
-        decision
-        and decision.due == NEVER
-        and self.detecting
-        and self.session
-        and list
-        and self.decidedAt ~= self.setupAt
-    then
-        local due = at or 0
-        for index = 1, #list do
-            local poll = list[index]
-            local instance = poll.field and poll.field ~= "resetRuntime" and poll.owner
-            if instance and not instance.failed and instance.count ~= 0 and instance.due <= now then
-                if at then
-                    poll.due = at
-                    self:wake(poll, true)
-                else
-                    due = math.max(due, instance.due)
-                end
-            end
-        end
-        decision.due, decision.queuedAt, decision.cost = due, now, self:decisionCost(now)
-        self:wake(decision, true)
-    end
-end
-
---- Between decisions a turn only flushes queued output; without any it is free.
-function broker:decisionCost(now)
-    local last = self.lastTick
-    return (self.output or not last or now < last or now - last >= DECIDE_INTERVAL) and 1 or 0
-end
-
-local function pollUpdate(task, now, slots)
-    local instance = task.owner
-    local used, again = task.broker.support.step(task, now, slots)
-    task.due, task.cost, task.minCost = instance.due, instance.updateCost, instance.updateMinCost
-    if task.field == "resetRuntime" then
-        task.broker:readReset(now)
-    end
-    return used, again
-end
-
-local function pollError(task, message)
-    local owner = task.broker
-    task.owner.failed, task.failed = true, true
-    if task.field == "resetRuntime" then
-        owner.resetValue = nil
-    end
-    owner:error(task.kind, task.owner.id .. ": " .. tostring(message))
-end
-
---- A failed poll retires its service and reports a flight error; it never
---- reports a scheduler failure, since other widgets' schedulers share it. A
---- service without subscribers waits at no cost.
-local function pollStep(task, now, slots)
-    local instance = task.owner
-    if instance.failed then
-        task.failed = true
-        return 0
-    end
-    if instance.count == 0 then
-        -- Idle until `services.subscribed` wakes it.
-        task.cost, task.due = 0, NEVER
-        return 0
-    end
-    if task.cost == 0 and instance.updateCost ~= 0 then
-        task.cost, task.minCost = instance.updateCost, instance.updateMinCost
-        return 0, true
-    end
-    local ok, used, again = pcall(pollUpdate, task, now, slots)
-    if not ok then
-        pollError(task, used)
-        return slots, false
-    end
-    return used, again
-end
-
---- Detection decides at most once per setup, after every poll due when it
---- was queued has taken its reading. `queueDecision` wakes it; otherwise it
---- sleeps.
-local function decideStep(task, now)
-    local owner = task.broker
-    if not owner.detecting or not owner.session or owner.decidedAt == owner.setupAt then
-        task.due = NEVER
-        return 0
-    end
-    local queued = task.queuedAt or now
-    for field = 2, #RUNTIMES do
-        local runtime = owner[RUNTIMES[field]]
-        local order = runtime and runtime.order or NONE
-        for index = 1, #order do
-            local instance = order[index]
-            if not instance.failed and instance.count ~= 0 and queued >= instance.due then
-                -- A poll queued ahead of it did not fit; follow it again.
-                task.due = now
-                return 0
-            end
-        end
-    end
-    task.due, owner.decidedAt = NEVER, owner.setupAt
-    local ok, message = pcall(owner.decide, owner, now)
-    if not ok then
-        owner:error("detection", message)
-    end
-end
 --- Whether the count has work it can do now.
 local function countWork(owner, now)
     local pending = owner.pendingCount
@@ -1052,6 +961,7 @@ local function countWork(owner, now)
                 and not pending.failed
                 and (not pending.deferred or owner:settingsDisarmed(pending.prepared.document.armed))
             or not pending and not owner.countImportFailed and owner.document.flightCount == nil
+            or owner:conversion() ~= nil
             or owner.countDirty
             or owner.document.flight
                 and owner.document.flight.countSource ~= "internal"
@@ -1108,9 +1018,8 @@ local function countStep(task, now, granted)
     return granted, false
 end
 
---- The broker's scheduler tasks: one per polled service, then the decision.
---- They are shared by every member widget's scheduler; each poll's `due`
---- keeps a tick from running it twice.
+--- The broker's scheduler tasks, shared by every member widget's scheduler.
+--- Only the count has work of its own; detection runs in the flight task.
 function broker:tasks()
     local list = self.taskList
     if list then
@@ -1132,43 +1041,11 @@ function broker:tasks()
         not self.document
         or self.document.flightCount == nil
         or self.pendingCount
+        or self:conversion() ~= nil
         or self.countDirty
         or self.document.flight and self.document.flight.countSource ~= "internal"
     then
         list[#list + 1] = self.countTask
-    end
-    for _, field in ipairs(RUNTIMES) do
-        local runtime = self[field]
-        if runtime then
-            for _, instance in ipairs(runtime.order) do
-                local poll = {
-                    name = "flight." .. instance.id,
-                    owner = instance,
-                    registry = runtime,
-                    field = field,
-                    kind = field == "resetRuntime" and "reset" or "detection",
-                    broker = self,
-                    due = instance.due,
-                    cost = instance.updateCost,
-                    minCost = instance.updateMinCost,
-                    -- The reset poller also runs while detection is dormant.
-                    hold = field ~= "resetRuntime" and self.dormant or nil,
-                    step = pollStep,
-                    onError = pollError,
-                }
-                instance.task = poll
-                list[#list + 1] = poll
-            end
-        end
-    end
-    -- Only a session has anything to decide; attach and reset rebuild the list.
-    if self.session then
-        local decision = self.decision
-        if not decision then
-            decision = { name = "flight.decide", owner = self, broker = self, due = NEVER, step = decideStep }
-            self.decision = decision
-        end
-        list[#list + 1] = decision
     end
     self.taskList = list
     return list

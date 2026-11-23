@@ -6,7 +6,7 @@ local path = root .. "/build/test-widget-fixture/"
 local definition = fixture.module("main.lua")
 local file = assert(io.open(path .. "layouts/shared-flight.yaml", "w"))
 file:write([[
-version: 4
+version: 3
 grid:
   columns: 4
   rows: 4
@@ -130,21 +130,10 @@ assert(
     "the detector must not borrow a dashboard runtime"
 )
 
-first.editorController.openEditor(first)
-untilState(first, function()
-    return first.editorUi and not first.editorUi.buildStage
-end, second)
-assert(first.editorModule.remove(first.editorSession, 1))
-local guarded = first.editorUi.handlers.startSave(first.editorSession.draft)
-local done, saved, message = first.editorUi.handlers.advanceSave(guarded)
 assert(
-    done and not saved and string.find(message, "Save Model settings", 1, true),
-    "removing the last legacy detector must require an explicit Model settings Save"
+    owner.document.armed == "SFv" and owner.document.flight.minFlightDuration == 1,
+    "a released layout's arm switch and flight settings convert once into model settings"
 )
-assert(not owner.document.flight, "a layout Save must never implicitly migrate model settings")
-first.editorUiModule.close(first, true)
-first.editorSession = nil
-first.editorController.restorePreview(first)
 
 local function findButton(value, label, seen)
     if type(value) ~= "table" then
@@ -178,10 +167,8 @@ local function changeModel(context, key, value, other)
 end
 changeModel(first, "minMotorPercent", 30, second)
 changeModel(first, "flightSwitch", 21, second)
-assert(owner.document.armed == nil, "flight output can be selected before configuring model arming")
-changeModel(first, "armed", armed, second)
-changeModel(first, "minFlightDuration", 1, second)
-changeModel(first, "disarmDuration", 1, second)
+changeModel(first, "minFlightDuration", 2, second)
+changeModel(first, "disarmDuration", 2, second)
 assert(not findButton(first.modelSettingsUi, "Save"), "Model settings must save without form buttons")
 definition.refresh(first, EVT_VIRTUAL_EXIT)
 untilState(first, function()
@@ -192,11 +179,11 @@ untilState(first, function()
         and not second.reloadState
 end, second)
 assert(
-    owner.document.revision == 5 and owner.document.flight.flightSwitch == "L20",
+    owner.document.revision == 4 and owner.document.flight.flightSwitch == "L20",
     "each native field change must publish the durable model document"
 )
 local persisted = assert(owner.store:load(owner.filename))
-assert(persisted.revision == 5 and persisted.flight.flightSwitch == "L20")
+assert(persisted.revision == 4 and persisted.flight.flightSwitch == "L20")
 first.editorController.openEditor(first)
 untilState(first, function()
     return first.editorUi and not first.editorUi.buildStage
@@ -215,10 +202,7 @@ handlers.close(true)
 untilState(first, function()
     return not first.stage and not first.reloadState and #first.panels == 0
 end, second)
-assert(
-    first.modelArmed == "SFv" and first.document.legacyFlightArms.flights == "SFv",
-    "counter removal preserves the retained fallback separately from model Armed"
-)
+assert(owner.document.armed == "SFv", "counter removal keeps model Armed")
 pump(first, 40, second)
 writes = {}
 
@@ -301,7 +285,7 @@ untilState(second, function()
 end)
 assert(second.editorSession == layoutDraft and layoutDraft.dirty, "Back must preserve the layout draft")
 persisted = assert(owner.store:load(owner.filename))
-assert(persisted.revision == 6 and persisted.flight.minMotorPercent == 26, "Back retains saved model changes")
+assert(persisted.revision == 5 and persisted.flight.minMotorPercent == 26, "Back retains saved model changes")
 assert(not persisted.flight.smartDetection and not owner.smartRuntime)
 assert(second.document.panels[1] == nil, "model changes must not save the layout draft")
 second.editorUiModule.close(second, false)
@@ -345,14 +329,13 @@ untilState(second, function()
         and string.find(owner.view.smartStatus, "baro ready", 1, true)
 end)
 persisted = assert(owner.store:load(owner.filename))
-assert(persisted.revision == 8 and persisted.flight.smartDetection)
+assert(persisted.revision == 7 and persisted.flight.smartDetection)
 assert(owner.view.smartStatus and string.find(owner.view.smartStatus, "baro ready", 1, true))
 local third = create("Empty")
 untilState(second, function()
     return not third.stage
         and third.flightBroker == owner
         and owner.state.status == "ready"
-        and owner.cachedRevision == factory.revision
         and owner.session.wasArmed == false
         and owner.session.referenceCandidateAt ~= nil
 end, third)

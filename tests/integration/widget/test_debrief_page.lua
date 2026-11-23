@@ -10,7 +10,7 @@ fixture.lvglMock.setAppMode(true)
 fixture.lvglMock.setFullScreen(true)
 local file = assert(fixture.hostIo.open(fixture.path .. "layouts/debrief-setup.yaml", "w"))
 file:write([[
-version: 4
+version: 5
 grid:
   columns: 4
   rows: 4

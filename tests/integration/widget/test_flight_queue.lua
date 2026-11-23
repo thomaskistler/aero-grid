@@ -27,6 +27,7 @@ local owner = {
     tasks = function()
         return {}
     end,
+    dropTasks = function() end,
 }
 context.flightFactory = { broker = owner }
 if context.aerogridMenu then

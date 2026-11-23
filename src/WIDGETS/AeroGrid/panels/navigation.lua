@@ -1,8 +1,5 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local _, armedConfig = ...
-local validSwitch = assert(armedConfig, "navigation requires switch validation").valid
-
 --- GPS position, distance to home, and the north-up bearing from home.
 ---
 --- Direction is measured from home toward the model, not aircraft heading
@@ -20,7 +17,6 @@ local validSwitch = assert(armedConfig, "navigation requires switch validation")
 
 ---@class AeroGridNavigationSettings
 ---@field source? string GPS source name.
----@field armSwitch? string Arm switch position for first-arm home capture.
 ---@field homeMode? "edgetx"|"first-arm"
 ---@field label? string
 ---@field showTape? boolean
@@ -54,7 +50,6 @@ local navigation = {
             default = "edgetx",
             choices = { "edgetx", "first-arm" },
         },
-        { key = "armSwitch", label = "Home arm switch", type = "string", default = "", legacyArm = true },
         { key = "satelliteSource", label = "Satellite count source", type = "string", default = "" },
         { key = "satelliteWarning", label = "Warn below satellites", type = "number", default = 8 },
         { key = "satelliteCritical", label = "Critical below satellites", type = "number", default = 4 },
@@ -79,12 +74,8 @@ local navigation = {
     },
 }
 
-function navigation.validateSettings(settings, _, _, modelArmed)
+function navigation.validateSettings(settings)
     local errors = {}
-    local arm = settings.armSwitch
-    if modelArmed == nil and arm ~= nil and arm ~= "" and not validSwitch(arm) then
-        errors[#errors + 1] = "armSwitch must be blank, a physical switch position, or a logical switch"
-    end
     for _, key in ipairs({ "satelliteWarning", "satelliteCritical" }) do
         local value = settings[key]
         if
@@ -687,7 +678,7 @@ function navigation.create(parent, rect, settings, services)
     local service = services.navigation
     if service then
         context.service = service
-        context.feed = service:subscribe(settings.source, settings.armSwitch, settings.homeMode)
+        context.feed = service:subscribe(settings.source, settings.homeMode)
         context.preview = services.preview
     end
     if settings.satelliteSource and settings.satelliteSource ~= "" then
@@ -1026,14 +1017,6 @@ end
 function navigation.background(context)
     navigation.publish(context)
     return navigation.refreshInterval
-end
-
-function navigation.rebindArming(context, services)
-    if context.service then
-        context.service = services.navigation
-        context.feed =
-            context.service:subscribe(context.settings.source, context.settings.armSwitch, context.settings.homeMode)
-    end
 end
 
 --- Reposition after a zone change.
