@@ -20,8 +20,10 @@ broker.setDocument = function(_, value)
     assert(value == document)
     broker.document = value
 end
+local handlers
 context.modelSettingsUiModule = {
-    open = function(_, value)
+    open = function(_, value, callbacks)
+        handlers = callbacks
         assert(context.hostTask.cost == context.scheduler.budget.capacity)
         assert(value.modelFilename == broker.filename)
         opened = opened + 1
@@ -76,6 +78,17 @@ assert(context.editorStash == draft and not context.editorSession and not contex
 assert(
     not context.scheduler.state(context.hostTask).pending,
     "modal construction waits for a separate advancement grant"
+)
+
+local storeCommit = broker.store.commit
+broker.store.commit = function()
+    return false, "Disarm before linking model settings", true
+end
+local committed, commitMessage, retry = handlers.commit({})
+broker.store.commit = storeCommit
+assert(
+    not committed and commitMessage == "Disarm before linking model settings" and retry == nil,
+    "a claim deferred until disarm must not replace the prepared save with its message"
 )
 
 context.modelSettingsUi, context.editorStash = nil, nil

@@ -99,13 +99,35 @@ function count.begin(operations, filename, legacy, env)
     }
 end
 
-local function option(widget, index, kind)
+local function option(widget, index, kind, other)
     local entry = widget[index]
     assert(
-        entry and entry.kind == kind and entry.value ~= nil,
+        entry and (entry.kind == kind or other ~= nil and entry.kind == other) and entry.value ~= nil,
         "Unrecognized Flights options; review its configuration"
     )
     return entry.value
+end
+
+-- EdgeTX saves the switch option through its unsigned union member, so negative switches wrap.
+local function switchOption(widget)
+    local index = option(widget, 1, "Signed", "Unsigned")
+    if type(index) == "number" and index > 2147483647 then
+        index = index - 4294967296
+    end
+    return index
+end
+
+-- EdgeTX saves channel sources as zero-based ch(N); older files used CHn.
+local function motorChannel(source)
+    if type(source) ~= "string" then
+        return nil
+    end
+    local saved = string.match(source, "^ch%((%d+)%)$")
+    if saved then
+        return tonumber(saved) + 1
+    end
+    local named = string.match(source, "^CH(%d+)$")
+    return named and tonumber(named)
 end
 
 local function switchName(env, index)
@@ -134,17 +156,17 @@ local function settings(job, widget, modern)
         return nil, nil, "Flights count imported; choose AeroGrid arming and detection settings for this trigger type."
     end
     local motor = option(widget, modern and 2 or 1, "Source")
-    local channel = type(motor) == "string" and string.match(motor, "^CH(%d+)$")
-    if channel and tonumber(channel) >= 1 and tonumber(channel) <= 32 then
-        values.motorSource = "ch" .. tonumber(channel)
+    local channel = motorChannel(motor)
+    if channel and channel >= 1 and channel <= 32 then
+        values.motorSource = "ch" .. channel
     end
-    local duration = option(widget, modern and 4 or 2, "Signed")
+    local duration = option(widget, modern and 4 or 2, "Signed", "Unsigned")
     if type(duration) == "number" and duration ~= 0 and math.abs(duration) <= 3600 then
         values.minFlightDuration = math.abs(duration)
     end
     values.requireReceiver = trigger == 1
     if modern then
-        local index = option(widget, 1, "Signed")
+        local index = switchOption(widget)
         if type(index) == "number" and index ~= 0 then
             arm = switchName(job.env, index)
         end
@@ -218,7 +240,7 @@ function count.step(job)
     if modern then
         local trigger = option(widget, 0, "Unsigned")
         assert(type(trigger) == "number" and trigger >= 1 and trigger <= 7, "Unrecognized Flights trigger")
-        option(widget, 1, "Signed")
+        switchOption(widget)
         option(widget, 2, "Source")
         if widget[7] then
             local enabled = option(widget, 7, "Bool")

@@ -1969,7 +1969,10 @@ local function openModelSettings(context)
                 end
                 return false, latest, true
             end
-            return owner.store:commit(prepared)
+            -- A third result from the store means "deferred until disarmed", not the UI's
+            -- "retry with this prepared save"; the user saves again after disarming.
+            local saved, result = owner.store:commit(prepared)
+            return saved, result
         end,
         saved = function(saved)
             owner.settingsAdoption = nil
