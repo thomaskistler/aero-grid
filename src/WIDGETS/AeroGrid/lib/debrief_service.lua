@@ -271,14 +271,14 @@ local function sample(job, series, at, value, connected)
     end
     -- A level holds with its value, so a held value shades every column up to
     -- the next entry, not only the column where it began.
-    local from = connected and last and levelOf(job, spec, series.lastValue) or 0
+    local from = connected and last and series.lastLevel or 0
     if from > 0 then
         for slot = store:bucketOf(last, 0) + 2, store:bucketOf(at, 0) do
             levels[slot] = math.max(levels[slot] or 0, from)
         end
     end
-    series.lastAt, series.lastValue = at, value
     local level = levelOf(job, spec, value)
+    series.lastAt, series.lastValue, series.lastLevel = at, value, level
     if level > 0 then
         local slot = store:bucketOf(at, 0) + 1
         levels[slot] = math.max(levels[slot] or 0, level)
