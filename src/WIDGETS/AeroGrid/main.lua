@@ -621,13 +621,22 @@ local initialize
 local function addPageLayers(context, zone)
     context.panelLayer = lvgl.box(context.page, { x = 0, y = 0, w = zone.w, h = zone.h, scrollDir = 0 })
     context.debriefOverlay = lvgl.box(context.page, { x = 0, y = zone.h, w = zone.w, h = zone.h, scrollDir = 0 })
-    context.debriefViewport = lvgl.box(context.debriefOverlay, {
+    local viewport
+    viewport = lvgl.box(context.debriefOverlay, {
         x = 0,
         y = 0,
         w = zone.w,
         h = zone.h,
         scrollDir = 0,
+        visible = function()
+            -- callRefs skips this callback until the viewport's clear has completed.
+            if context.debriefViewport == viewport then
+                context.debriefCleared = nil
+            end
+            return true
+        end,
     })
+    context.debriefViewport = viewport
     context.pillLayer = lvgl.box(context.debriefViewport, { x = 0, y = 0, w = 1, h = 1, scrollDir = 0 })
     lvgl.hide(context.debriefOverlay)
     lvgl.hide(context.pillLayer)
@@ -2583,8 +2592,8 @@ end
 
 local function debriefBuildReady(task, _, hidden)
     local context = task.host
-    -- Objects created under the overlay in the callback that cleared it are
-    -- swept by EdgeTX after the callback; see the reload comment above.
+    -- The viewport's visible callback acknowledges cleanup, even when EdgeTX
+    -- delays it while the widget is off screen.
     return not hidden
         and context.page ~= nil
         and not context.debriefCleared
@@ -3017,7 +3026,6 @@ local function runCallback(context, hidden, widgetEvent, touchState)
     end
     local fullscreen = not hidden and isFullScreen()
     context.inputHandled, context.dashboardClosed, context.retireBoundary, context.menuChromeOnly = nil, nil, nil, nil
-    context.debriefCleared = nil
     if not hidden then
         event(context, widgetEvent, touchState)
     end

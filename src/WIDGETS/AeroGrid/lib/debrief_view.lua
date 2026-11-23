@@ -355,6 +355,9 @@ local function buildOverlay(host, state)
         content = lvgl.box(viewport, rect)
         host.debriefContent = content
     end
+    if not host.pillLayer then
+        host.pillLayer = lvgl.box(viewport, { x = 0, y = 0, w = 1, h = 1, scrollDir = 0 })
+    end
     lvgl.rectangle(content, {
         x = 0,
         y = 0,
@@ -721,11 +724,13 @@ function view.destroy(host)
     local state = host.debrief
     local overlay = host.debriefOverlay
     if state and state.ui and overlay then
-        state.ui.content:clear()
-        host.pillLayer:clear()
-        lvgl.hide(overlay)
-        host.debriefPill = nil
+        host.debriefViewport:clear()
+        host.debriefContent, host.pillLayer, host.debriefPill = nil, nil, nil
         host.debriefCleared = true
+        -- Hidden ancestors stop EdgeTX's reference cleanup. Keep the empty
+        -- sheet visible but below the zone until its viewport acknowledges it.
+        overlay:set({ y = host.zone.h, h = host.zone.h })
+        lvgl.show(overlay)
     end
     shield(host, false)
     host.debrief = nil
