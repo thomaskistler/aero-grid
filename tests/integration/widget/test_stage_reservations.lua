@@ -87,7 +87,7 @@ assert(#context.errors == 0, table.concat(context.errors, "\n"))
 
 -- Model rows have separate fixture envelopes: their production grants come from
 -- native simulator measurements, not Lua stand-ins for firmware text/API calls.
-local modelMockLimits = { 4500, 4000, 1200, 1200, 1200, 1200, 1200, 1200, 3000, 13000, 7500, 6500, 2000 }
+local modelMockLimits = { 4500, 4000, 1200, 1200, 1200, 1200, 1200, 1200, 3000, 13000, 7500, 2000 }
 local measured, peaks = 0, {}
 for _, layout in ipairs({ "Default", "review-navigation", "review-chart", "Diagnostics", "Empty" }) do
     local host = definition.create({ x = 0, y = 0, w = 480, h = 272 }, {
@@ -127,7 +127,7 @@ for _, layout in ipairs({ "Default", "review-navigation", "review-chart", "Diagn
                 assert(ok, used)
                 if row then
                     assert(
-                        task.ui.build == row + 1 or row == 13 and not task.ui.build,
+                        task.ui.build == row + 1 or row == 12 and not task.ui.build,
                         "one advancement must build only one row, even with slots left"
                     )
                 end
@@ -161,7 +161,7 @@ for _, layout in ipairs({ "Default", "review-navigation", "review-chart", "Diagn
     local settings = untilDone(function()
         return host.modelSettingsUi and not host.modelSettingsUi.build
     end)
-    assert(modelRows == 13 and modelSlots == 56, "drawer construction must reserve exactly 56 slots")
+    assert(modelRows == 12 and modelSlots == 52, "drawer construction must reserve exactly 52 slots")
     host.modelSettingsUi.closing = true
     untilDone(function()
         return not host.modelSettingsUi

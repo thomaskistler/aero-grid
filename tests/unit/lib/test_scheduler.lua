@@ -35,7 +35,7 @@ do
     assert(table.concat(calls, ",") == "A,B,C,A,A")
     assert(used == 8 and requested == 5 and denied == 0)
     assert(queue.state(a).spent == 6 and not queue.state(a).pending)
-    for _, key in ipairs({ "spent", "pending", "refused", "denied", "spun", "ran", "zeroTurns" }) do
+    for _, key in ipairs({ "spent", "pending", "refused", "ran", "zeroTurns" }) do
         assert(rawget(a, key) == nil, "scheduler bookkeeping stays off the task: " .. key)
     end
     assert(a.now == 12 and a.context == context and a.slots == 2)
@@ -153,14 +153,8 @@ do
     local a, b, x = task("A", 8), task("B", 8), task("X", 0)
     queue.add(a)
     queue.add(b)
-    local _, _, _, failure = queue.run(0, 8, nil, {
-        segments = 1,
-        cross = function(run)
-            local ok, message = pcall(run)
-            return ok, message
-        end,
-    })
-    assert(not failure and turns.A == 1 and turns.B == 1, "extended capacity resumes the deferred task")
+    queue.run(0, 16)
+    assert(turns.A == 1 and turns.B == 1)
     queue.add(x)
     queue.run(1, 8)
     assert(turns.A == 2 and turns.B == 1 and turns.X == 1, "the task that ran least recently goes first")
@@ -478,70 +472,15 @@ do
     assert(queue.run(0, 8) == 2 and table.concat(calls, ",") == "source,waiting")
 end
 
--- Further segments run inside `cross`, which reports like pcall.
-local function crossing()
-    local crossings = { count = 0 }
-    function crossings.cross(fn)
-        crossings.count = crossings.count + 1
-        return pcall(fn)
-    end
-    return crossings
-end
-
-do
-    -- A callback continues with new slots: only tasks that asked for another
-    -- step or did not fit run again, and a task that already ran is not rerun.
-    local queue, calls, task = fixture()
-    task("A", 4, 3)
-    task("B", 4)
-    task("C", 4)
-    task("D", 1)
-    local crossings, segments, callbacks = crossing(), queue.segments, queue.callbacks
-    local used, requested, denied, failure = queue.run(0, 8, nil, { segments = 4, cross = crossings.cross })
-    assert(table.concat(calls, ",") == "A,B,C,D,A,A" and used == 21, table.concat(calls, ","))
-    assert(requested == 6 and denied == 0 and failure == nil)
-    assert(queue.callbacks == callbacks + 1, "segments stay in the same callback")
-    assert(queue.segments == segments + 3 and crossings.count == 1, "unneeded segments are not run")
-    assert(queue.remaining == 0)
-    local stats = queue.stats()
-    assert(stats.callbacks == 1 and stats.used == 21 and stats.available == 40, "every allowed segment is available")
-    assert(stats.requested == 6 and stats.denied == 0)
-end
-
-do
-    local queue, calls, task = fixture()
-    task("A", 1)
-    task("B", 1)
-    local crossings = crossing()
-    queue.run(0, 8, nil, { segments = 4, cross = crossings.cross })
-    assert(crossings.count == 0 and #calls == 2 and queue.remaining == 6, "ran tasks do not repeat")
-    local free = task("free", 0, 100)
-    queue.clear()
-    queue.add(free)
-    queue.run(1, 8, nil, { segments = 4, cross = crossings.cross })
-    assert(queue.state(free).pending and queue.state(free).refused == queue.callbacks)
-    assert(crossings.count == 0, "a task stopped after repeated free turns waits for the next callback")
-end
-
 do
     local queue, calls, task = fixture()
     task("A", 4)
     task("heavy", 8)
-    local used, requested, denied = queue.run(0, 8, nil, { segments = 1, cross = crossing().cross })
-    assert(table.concat(calls, ",") == "A,heavy" and used == 12, "a deferred task continues")
-    assert(requested == 2 and denied == 0)
-    used, requested, denied = queue.run(1, 8)
-    assert(used == 4 and requested == 2 and denied == 1, "without further segments a deferred task waits")
-end
-
-do
-    local queue, _, task = fixture()
-    task("A", 8, 2)
-    local _, _, denied, failure = queue.run(0, 8, nil, {
-        segments = 2,
-        cross = function()
-            return false, "CPU limit"
-        end,
-    })
-    assert(failure == "CPU limit" and denied == 1 and queue.remaining == 0)
+    local used, requested, denied = queue.run(0, 8)
+    assert(
+        table.concat(calls, ",") == "A" and used == 4 and requested == 2 and denied == 1,
+        "a task that does not fit waits"
+    )
+    local stats = queue.stats()
+    assert(stats.callbacks == 1 and stats.used == 4 and stats.available == 8 and stats.denied == 1)
 end

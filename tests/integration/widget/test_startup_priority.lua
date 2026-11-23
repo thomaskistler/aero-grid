@@ -263,28 +263,3 @@ end, function()
     return not visible.stage and not hidden.stage
 end)
 assert(#visible.errors > 0 and #hidden.panels == 9 and #hidden.errors == 0)
-
--- Even an extended callback yields after the first visible constructor.
-setup()
-visible = create()
-untilDone(function()
-    callback(visible, false)
-end, function()
-    return visible.stage == "panel-build" and #visible.panels == 0
-end)
-visible.flightFactory.broker.document.flight = visible.flightConfig.resolve({ liveDangerously = true })
-visible.liveDangerouslyFailed = nil
-visible.nativeBudget.cross = function(step)
-    return pcall(step)
-end
-callback(visible, false)
-assert(#visible.panels == 1 and visible.stage == "panels")
-assert(not visible.scheduler.state(visible.lifecycleTasks.load).pending, "first construction must yield")
-callback(visible, false)
-assert(#visible.panels > 1, "later construction may use the configured extended budget")
-untilDone(function()
-    callback(visible, false)
-end, function()
-    return not visible.stage
-end)
-assert(#visible.panels == 9 and #visible.errors == 0)

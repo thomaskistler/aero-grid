@@ -65,8 +65,8 @@ recently. Tasks set their own next due tick; a source that makes a task due
 early moves it forward. Host readiness gates enforce input and lifecycle
 ordering; transitions can hold service or panel work.
 
-The default callback segment has eight nominal 2,000-instruction slots
-(`CAPACITY` and `INSTRUCTIONS_PER_SLOT`). A task receives at most eight slots
+A callback has 32 nominal 500-instruction slots
+(`CAPACITY` and `INSTRUCTIONS_PER_SLOT`). A task receives at most 32 slots
 per turn (`SLOTS`). Fixed-cost tasks reserve their declared cost; variable-cost
 tasks declare a minimum and report consumption. Unused slots become available
 to later tasks. Unfinished work retains its place across callbacks.
@@ -75,16 +75,9 @@ A continuation requests another turn after the other tasks have had theirs;
 it needs no separate opt-in. Pending work can run before its next due time.
 Return no continuation when work should wait for that time.
 
-The model's **Pre-release features** setting permits up to four additional
-segments for pending/deferred work in the same callback. It is disabled by
-default and also requires an explicitly enabled saved setting during startup.
-`native_budget.lua` owns the EdgeTX-specific mechanism for running those
-segments beyond the firmware instruction limit; the scheduler does not.
-
 Slots are estimates, not measured instruction limits, and exclude scheduler
 overhead. Keep normal callbacks within the
-[regression budgets](testing.md#performance-and-resource-regressions), rather
-than relying on the pre-release extension to hide excessive work.
+[regression budgets](testing.md#performance-and-resource-regressions).
 
 ## Shared services own firmware reads
 

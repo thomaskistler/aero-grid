@@ -44,13 +44,6 @@ local fields = {
         section = "Session reset",
         description = "Clears session data across all dashboards. Keeps flight totals and radio data.",
     },
-    {
-        key = "liveDangerously",
-        label = "Pre-release features",
-        kind = "toggle",
-        section = "Pre-release",
-        description = "Enable pre-release features that are not fully validated yet.",
-    },
 }
 
 local nativeProperties

@@ -92,7 +92,7 @@ REFRESH_CALLBACKS = """
 ROWS = (
     "armed", "motorSource", "motorReversed", "requireReceiver",
     "minMotorPercent", "minFlightDuration", "disarmDuration", "smartDetection",
-    "countSource", "flightSwitch", "sessionReset", "liveDangerously", "finish",
+    "countSource", "flightSwitch", "sessionReset", "finish",
 )
 
 

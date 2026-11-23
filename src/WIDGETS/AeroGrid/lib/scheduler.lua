@@ -32,13 +32,11 @@
 ---@field pending? boolean The last step asked for another.
 ---@field spent integer Slots charged so far.
 ---@field refused? integer Callback in which the task was denied slots or spun on free turns.
----@field denied? integer Segment in which the task did not fit its grant.
----@field spun? integer Callback in which the task was stopped after repeated free turns.
 
 local MAX_TASK_SLOTS = 32
 -- Consecutive zero-charge turns one task may take per callback.
 local FREE_TURNS = 8
---- `SLOTS` caps one turn; `CAPACITY` is the default allowance of one callback segment.
+--- `SLOTS` caps one turn; `CAPACITY` is the default allowance of one callback.
 --- A task due `NEVER` sleeps until a source wakes it.
 local scheduler = {
     SLOTS = MAX_TASK_SLOTS,
@@ -97,8 +95,7 @@ function scheduler.new(dependencies)
         tasks = tasks,
         count = 0,
         callbacks = 0,
-        segments = 0,
-        -- Slots left in the last segment of the last run.
+        -- Slots left after the last run.
         remaining = 0,
     }
     -- Cumulative counters since creation; readers take differences.
@@ -229,15 +226,6 @@ function scheduler.new(dependencies)
         self.count = 0
     end
 
-    --- Whether a task carries over into the next segment of this callback:
-    --- it asked for another step or did not fit the last segment, and it did
-    --- not spin on free turns.
-    local function carries(task, state, callback, segment)
-        return not task.failed
-            and state.spun ~= callback
-            and (state.pending and state.refused ~= callback or state.denied == segment)
-    end
-
     local function open(task)
         local hold = task.hold
         return not (hold and hold.on)
@@ -250,40 +238,19 @@ function scheduler.new(dependencies)
         end
     end
 
-    --- Run one segment of a callback's work. Without `resuming` it starts a
-    --- new callback; with it, it continues the same callback with new slots.
-    --- Every eligible task takes a turn per pass, and a task that asks for
+    --- Run one callback's work. Every eligible task takes a turn per pass, and a task that asks for
     --- another step runs again only after the rest of the due tasks have had
     --- their turn. Once a task does not fit, nothing charged runs after it,
     --- though free tasks still do. Consecutive zero-charge turns are limited
     --- to at most eight per task per callback; unfinished work resumes on the
     --- next callback.
-    local function execute(now, slots, context, resuming)
+    local function execute(now, slots, context)
         if count == 0 then
             return 0, 0, 0
         end
-        local callback, previous = self.callbacks, self.segments
-        if not resuming then
-            callback = callback + 1
-            self.callbacks = callback
-        end
-        local segment = previous + 1
-        self.segments = segment
+        local callback = self.callbacks + 1
+        self.callbacks = callback
         current, latest = now, now
-        if resuming then
-            -- Tasks that did not fit the last segment continue with the new
-            -- allowance; tasks that spun on free turns wait for the next callback.
-            for index = 1, count do
-                if keys[index] > now then
-                    break
-                end
-                local task = tasks[index]
-                local state = records[task]
-                if state.denied == previous and carries(task, state, callback, previous) then
-                    state.refused, state.pending = nil, true
-                end
-            end
-        end
         local remaining, deferred, requested, denied = slots, false, 0, 0
 
         local progressed
@@ -320,7 +287,7 @@ function scheduler.new(dependencies)
                         end
                         if granted == 0 and cost ~= 0 then
                             denied = denied + 1
-                            state.refused, state.denied = callback, segment
+                            state.refused = callback
                             deferred = true
                             if state.ran == callback then
                                 -- It already had a turn: it goes behind work due earlier
@@ -374,7 +341,7 @@ function scheduler.new(dependencies)
                                 state.pending = true
                                 progressed = true
                                 if state.zeroTurns >= math.min(FREE_TURNS, self.budget.slots) then
-                                    state.refused, state.spun = callback, callback
+                                    state.refused = callback
                                 end
                                 if position then
                                     index = position + 1
@@ -407,63 +374,20 @@ function scheduler.new(dependencies)
         return slots - remaining, requested, denied
     end
 
-    --- Whether another segment of this callback has work to do.
-    local function more(now)
-        local callback, segment = self.callbacks, self.segments
-        for index = 1, count do
-            if keys[index] > now then
-                break
-            end
-            local task = tasks[index]
-            if carries(task, records[task], callback, segment) and open(task) then
-                return true
-            end
-        end
-        return false
-    end
-
-    --- Run one callback's worth of work in one or more segments of `slots`.
-    --- Later segments only continue work that asked for another step or did
-    --- not fit; a task that already ran does not run again just because it is
-    --- due. `options.segments` allows that many further segments, run inside
-    --- `options.cross(fn)`, which reports `ok, failure` like `pcall`; without
-    --- `cross` no further segment runs.
-    --- Every allowed segment counts as available, whether or not it was needed.
+    --- Run one callback's worth of work within `slots`.
     ---@param now integer
-    ---@param slots integer Slots available to each segment.
+    ---@param slots integer
     ---@param context any Passed through to `step`.
-    ---@param options? {segments?: integer, cross?: fun(fn: function): boolean, any}
     ---@return integer used
     ---@return integer requested Eligible tasks that asked for slots.
-    ---@return integer denied Eligible tasks that did not fit the last segment.
-    ---@return string? failure Why the further segments were abandoned.
-    function self.run(now, slots, context, options)
-        local extra = options and options.segments or 0
-        local cross = options and options.cross
-        local used, requested, denied = execute(now, slots, context, false)
+    ---@return integer denied Eligible tasks that did not fit.
+    function self.run(now, slots, context)
+        local used, requested, denied = execute(now, slots, context)
         self.remaining = slots - used
-        local failure
-        if cross and extra > 0 and more(now) then
-            local ok, message = cross(function()
-                for _ = 1, extra do
-                    if not more(now) then
-                        break
-                    end
-                    local segmentUsed, segmentRequested, segmentDenied = execute(now, slots, context, true)
-                    -- A request denied earlier and retried here is still one request,
-                    -- and only what remains denied after the last segment is deferred.
-                    used, requested, denied = used + segmentUsed, requested + segmentRequested - denied, segmentDenied
-                    self.remaining = slots - segmentUsed
-                end
-            end)
-            if not ok then
-                failure = tostring(message)
-            end
-        end
         totals.callbacks = totals.callbacks + 1
-        totals.used, totals.available = totals.used + used, totals.available + slots * (1 + extra)
+        totals.used, totals.available = totals.used + used, totals.available + slots
         totals.requested, totals.denied = totals.requested + requested, totals.denied + denied
-        return used, requested, denied, failure
+        return used, requested, denied
     end
 
     --- Cumulative counters since creation: callbacks, used, available,

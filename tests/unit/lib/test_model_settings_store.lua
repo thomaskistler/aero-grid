@@ -197,16 +197,19 @@ for _, history in ipairs({ true, false }) do
     legacy.requireReceiver = nil
     legacy.announcements = true
     legacy.history = history
+    legacy.liveDangerously = history
     files[path()] = assert(yaml.serialize({ version = 1, modelFilename = "plane.yml", revision = 3, flight = legacy }))
     assert(store:load("plane.yml").flight.smartDetection == false, "existing model files keep standard detection")
     assert(store:load("plane.yml").flight.requireReceiver == true, "existing model files still require a receiver")
     local loaded = store:load("plane.yml")
     assert(loaded.flight.announcements == nil, "obsolete audio settings are ignored")
     assert(loaded.flight.history == nil, "obsolete CSV settings must not prevent loading existing model files")
+    assert(loaded.flight.liveDangerously == nil, "the removed Pre-release setting is ignored")
     assert(config.key(loaded.flight) == config.key(config.defaults()), "obsolete audio settings cannot cause conflicts")
     assert(store:save("plane.yml", 3, loaded.flight))
     assert(yaml.parse(files[path()]).flight.announcements == nil, "obsolete audio settings are not persisted")
     assert(yaml.parse(files[path()]).flight.history == nil, "obsolete CSV settings are not persisted")
+    assert(yaml.parse(files[path()]).flight.liveDangerously == nil)
 end
 
 do

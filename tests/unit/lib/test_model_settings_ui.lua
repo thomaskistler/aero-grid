@@ -85,10 +85,10 @@ local function fixture(width)
         end,
     })
     assert(state.nextY == 4 and state.smartStatus.hidden)
-    local grants = { 4, 4, 4, 4, 4, 4, 4, 4, 4, 8, 4, 4, 4 }
+    local grants = { 4, 4, 4, 4, 4, 4, 4, 4, 4, 8, 4, 4 }
     -- Fixture text measurement and firmware API stand-ins execute extra Lua.
     -- These regression envelopes are independent of production reservations.
-    local mockLimits = { 4000, 4000, 1000, 1000, 1000, 1000, 1000, 1000, 3000, 13000, 7500, 6000, 1000 }
+    local mockLimits = { 4000, 4000, 1000, 1000, 1000, 1000, 1000, 1000, 3000, 13000, 7500, 1000 }
     for row, grant in ipairs(grants) do
         assert(ui.cost(c) == grant, "each row must reserve its own bounded grant")
         local instructions = 0
@@ -237,7 +237,7 @@ end
 
 do
     local c, state, control, document = fixture()
-    for _, key in ipairs({ "motorReversed", "requireReceiver", "smartDetection", "liveDangerously" }) do
+    for _, key in ipairs({ "motorReversed", "requireReceiver", "smartDetection" }) do
         local properties = state.controls[key].properties
         local selected = properties.get() == 0 and 1 or 0
         properties.set(selected)

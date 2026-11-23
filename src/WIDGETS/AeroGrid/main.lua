@@ -800,12 +800,10 @@ local function advanceModelSettings(context)
     else
         local ok, document, info = pcall(store.load, store, filename)
         if ok and document then
-            local flight = document.flight
             factory.preload = {
                 modelFilename = filename,
                 document = document,
                 info = info,
-                liveDangerously = type(flight) == "table" and flight.liveDangerously == true,
             }
         end
     end
@@ -859,7 +857,6 @@ initialize = function(context)
         context.layoutStore = runtimeModule("lib/layout_store.lua")
         context.flightConfig = runtimeModule("lib/flight_config.lua")
         context.armedConfig = runtimeModule("lib/armed_service.lua")
-        context.nativeBudget = runtimeModule("lib/native_budget.lua")
         context.aeroMenuModule = runtimeModule("lib/aerogrid_menu.lua")
         context.gesture = runtimeModule("lib/gesture.lua")
         local flightRegistration = runtimeModule("lib/flight_registration.lua")
@@ -1705,54 +1702,16 @@ local function syncTasks(context, hidden, flightTask, owner)
     end
 end
 
--- Further segments of scheduler capacity a callback may run past EdgeTX's
--- 20000-instruction limit when the model enables "Pre-release features".
-local EXTENDED_SEGMENTS = 4
-
-local function liveDangerously(context)
-    if context.liveDangerouslyFailed or not context.nativeBudget then
-        return false
-    end
-    local factory = context.flightFactory
-    local owner = factory and factory.broker
-    if owner and owner.documentLoaded then
-        local flight = owner.document and owner.document.flight
-        return type(flight) == "table" and flight.liveDangerously == true
-    end
-    -- Before the flight broker has its document, use the copy read ahead of the layout.
-    local preload, member = factory and factory.preload, factory and factory.members[context]
-    return preload ~= nil
-        and member ~= nil
-        and preload.modelFilename == member.modelFilename
-        and preload.liveDangerously == true
-end
-
---- Run the enrolled tasks for one callback in `1 + segments` segments, then
---- release them and show any failure.
-local function runScheduled(context, hidden, segments)
+--- Run the enrolled tasks in order of due tick, then show any failure.
+local function runTasks(context, hidden)
     local scheduler = context.scheduler
-    local _, _, _, failure = scheduler.run(getTime(), scheduler.budget.capacity, hidden or false, {
-        segments = segments,
-        cross = context.nativeBudget and context.nativeBudget.cross,
-    })
+    scheduler.run(getTime(), scheduler.budget.capacity, hidden or false)
     context.remainingSlots = scheduler.remaining
-    if failure then
-        context.liveDangerouslyFailed = true
-        addError(context, "extended callback budget: " .. failure)
-        context.schedulerFailed = true
-    end
     if context.schedulerFailed then
         context.schedulerFailed = nil
         ensureShell(context)
         showErrors(context)
     end
-end
-
---- Run the enrolled tasks in order of due tick.
-local function runTasks(context, hidden)
-    -- Extra segments run past EdgeTX's per-callback limit in the same
-    -- callback; only pending and deferred work continues.
-    runScheduled(context, hidden, liveDangerously(context) and EXTENDED_SEGMENTS or 0)
 end
 
 --- Flight takes a whole turn while it loads or links model settings.
@@ -3061,7 +3020,7 @@ local function uiStep(task, _, _, hidden)
 end
 
 -- Slots reserved per load stage, from peak mocked-VM instruction counts at
--- about 500 instructions per slot; stages not listed reserve a full segment.
+-- about 500 instructions per slot; stages not listed reserve a full callback.
 local LOAD_STAGE_COST = {
     ["header-migrate"] = 4,
     ["panel-migrate"] = 4,
@@ -3532,10 +3491,8 @@ local function runCallback(context, hidden, widgetEvent, touchState)
         if not hidden then
             event(context, widgetEvent, touchState)
         end
-        -- The first callback reads the model's settings in one segment;
-        -- later callbacks follow them.
         context.scheduler.add(context.initializationTask)
-        runScheduled(context, hidden, 0)
+        runTasks(context, hidden)
         context.scheduler.remove(context.initializationTask)
         return
     end

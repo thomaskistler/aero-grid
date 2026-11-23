@@ -312,10 +312,6 @@ local function testInstructionBudget()
                 context = definition.create(zone, DEFAULT_OPTIONS, path)
             end)
         )
-        -- This test enforces the per-segment ceiling, so it runs without the
-        -- extended callback budget that would run several segments per callback.
-        context.liveDangerouslyFailed = true
-
         local steps = 0
         while context.stage do
             local stage = context.stage

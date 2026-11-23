@@ -107,6 +107,7 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
             end
             document.flight.announcements = nil
             document.flight.history = nil
+            document.flight.liveDangerously = nil
             for key in pairs(document.flight) do
                 if flightDefaults[key] == nil then
                     return nil, "Unknown flight setting: " .. tostring(key)
