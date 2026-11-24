@@ -20,13 +20,16 @@ they do not save a flight recording.
 
 ## View the debrief
 
-After a recorded flight, a green **Debrief ready** bar stays at the bottom
-until you arm again or reset the session. In fullscreen, tap it or drag it up to open.
+After a recorded flight, a **Preparing debrief** bar fills with green for
+about ten seconds, then becomes a **Debrief ready** bar that stays at the bottom
+until you arm again or reset the session. In fullscreen, tap it to open.
 
 ![Dashboard with the Debrief ready bar at the bottom](../assets/editor/debrief-ready.png)
 
-The bar scrolls with the flight summary and tiles, rather than staying at the top;
-press **RTN** or swipe down at the top to return to the dashboard.
+Drag up or down to move one row of charts at a time. A translucent scroll bar
+appears on the right edge and fades after two seconds. The Debrief ready bar
+scrolls with the charts. To return to the dashboard, tap it, press **RTN**, or
+scroll up from the first row.
 Tile accents and badges show the worst recorded severity: red for critical,
 yellow for warning, and blue otherwise. Values include the recorded source's
 units unless the series overrides them.

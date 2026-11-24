@@ -616,7 +616,7 @@ end
 
 local initialize
 
---- The debrief body and its leading bar share one moving sheet above the panels.
+--- The debrief body and its leading bar share one scrolling sheet above the panels.
 ---@param context AeroGridContext
 local function addPageLayers(context, zone)
     context.panelLayer = lvgl.box(context.page, { x = 0, y = 0, w = zone.w, h = zone.h, scrollDir = 0 })
@@ -1190,7 +1190,12 @@ local function debriefPillStale(context)
     if wanted == nil then
         return pill ~= nil and pill.fullscreen ~= nil
     end
-    return not pill or pill.fullscreen ~= wanted or pill.w ~= zone.w or pill.h ~= zone.h
+    return not pill
+        or pill.fullscreen ~= wanted
+        or pill.w ~= zone.w
+        or pill.h ~= zone.h
+        or pill.shown ~= debriefShown(context)
+        or pill.progress ~= context.debriefModule.progress(context.debrief)
 end
 
 local function debriefFailed(context, message)
@@ -1229,28 +1234,6 @@ local function openStale(context, request, hidden, fullscreen)
             ) or request.kind == "debrief" and not debriefResult(context))
 end
 
---- Whether a fullscreen touch is an upward drag that should reveal the debrief.
-local function debriefPull(context, widgetEvent, touchState)
-    if
-        widgetEvent ~= _G.EVT_TOUCH_SLIDE
-        or type(touchState) ~= "table"
-        or not isFullScreen()
-        or not debriefReady(context)
-    then
-        return false
-    end
-    if touchState.swipeUp then
-        return true
-    end
-    local x, y, startX, startY = touchState.x, touchState.y, touchState.startX, touchState.startY
-    if type(y) ~= "number" or type(startY) ~= "number" then
-        return false
-    end
-    local rise = startY - y
-    local across = type(x) == "number" and type(startX) == "number" and math.abs(startX - x) or 0
-    return rise > 2 * context.gesture.SLOP and rise > across
-end
-
 --- Offer an input event to panels until one consumes it.
 ---@param context AeroGridContext
 ---@param widgetEvent any
@@ -1275,21 +1258,6 @@ local function handleEvent(context, widgetEvent, touchState)
         requestOpen(context, "editor")
         return true
     end
-    if debriefPull(context, widgetEvent, touchState) then
-        local request = {
-            page = context.page,
-            y = touchState.y,
-            startY = touchState.startY,
-            swipe = touchState.swipeUp and true or nil,
-            follow = true,
-        }
-        local ok, message = pcall(context.debriefModule.open, context, debriefResult(context), request)
-        if not ok then
-            debriefFailed(context, message)
-        end
-        context.panelPress = context.gesture.cancel(context.panelPress)
-        return true
-    end
     local request = context.openRequest
     if
         request
@@ -1303,7 +1271,7 @@ local function handleEvent(context, widgetEvent, touchState)
     context.panelPress, tap = context.gesture.track(context.panelPress, widgetEvent, touchState)
     if tap and isFullScreen() then
         if context.debriefModule and context.debriefModule.barHit(context, tap) then
-            requestOpen(context, "debrief", { swipe = true, released = true })
+            requestOpen(context, "debrief")
             context.panelPress = context.gesture.cancel(context.panelPress)
             return true
         end
@@ -2503,8 +2471,8 @@ end
 
 local function inputReady(task, _, hidden)
     local context = task.host
-    -- Settings input only records a close request; services share the rest.
-    task.cost = context.modelSettingsUi and 1 or context.scheduler.budget.slots
+    -- Settings record a close request; debrief input only moves existing objects.
+    task.cost = context.modelSettingsUi and 1 or debriefShown(context) and 4 or context.scheduler.budget.slots
     return inputWaiting(context, hidden)
         and isFullScreen()
         and (context.modelSettingsUi or not context.stage and not context.reloadState)
@@ -2557,6 +2525,24 @@ local function inputStep(task)
     end
 end
 
+--- Whether the debrief's scroll bar has a fade step due.
+local function debriefBarDue(context)
+    local state = context.debrief
+    return state ~= nil and state.shown and state.bar ~= nil and context.debriefModule.fadeDue(state, getTime())
+end
+
+local function debriefBarReady(task, _, hidden)
+    return not hidden and debriefBarDue(task.host)
+end
+
+local function debriefBarStep(task)
+    local context = task.host
+    local ok, barError = pcall(context.debriefModule.fade, context)
+    if not ok then
+        debriefFailed(context, barError)
+    end
+end
+
 local function debriefPillReady(task, _, hidden)
     local context = task.host
     return not hidden and REPLACES[context.hostKind] ~= "lifecycle" and debriefPillStale(context)
@@ -2576,6 +2562,8 @@ local DEBRIEF_SLOT_INSTRUCTIONS = 500
 local DEBRIEF_SLOTS = 20
 -- Slots per pill update: a few measured texts and objects.
 local DEBRIEF_PILL_SLOTS = 8
+-- Slots per scroll bar fade step: an opacity change per segment.
+local DEBRIEF_BAR_SLOTS = 4
 
 --- Whether the latest debrief's view still has to be built. Building starts
 --- as soon as a debrief exists, so the view opens complete.
@@ -2935,6 +2923,7 @@ local HOST_TASKS = {
     hostTask = { "host", hostReady, hostWork },
     debriefBuildTask = { "debrief build", debriefBuildReady, debriefBuildStep, DEBRIEF_SLOTS, true },
     hintTask = { "empty hint", hintReady, hintStep, nil, true },
+    debriefBarTask = { "debrief scroll bar", debriefBarReady, debriefBarStep, DEBRIEF_BAR_SLOTS, true },
     debriefPillTask = { "debrief pill", debriefPillReady, debriefPillStep, DEBRIEF_PILL_SLOTS, true },
 }
 
@@ -2994,6 +2983,9 @@ local function enrolHost(context, now, hidden)
     end
     if not hidden and debriefPillStale(context) then
         wanted = want(context, wanted, "debriefPillTask", stamp)
+    end
+    if not hidden and debriefBarDue(context) then
+        wanted = want(context, wanted, "debriefBarTask", stamp)
     end
     if previous then
         for index = 1, #previous do

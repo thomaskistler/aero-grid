@@ -242,6 +242,7 @@ function module.new(dependencies)
         context.debriefViewport = nil
         context.debriefContent = nil
         context.debriefShield = nil
+        context.debriefScrollBar = nil
         context.debriefPill = nil
         context.debriefCleared = nil
         if context.debrief then

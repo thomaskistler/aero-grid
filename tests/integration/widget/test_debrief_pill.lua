@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
--- The debrief bottom bar stays until reset, scrolls with the open sheet, and supports
--- tapping or pulling up without taking the widget's App-mode long press.
+-- The debrief bar stays until reset and supports tapping without taking the
+-- widget's App-mode long press.
 
 local root = ... or "."
 local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().new()
@@ -15,8 +15,9 @@ fixture.pump(other, 40)
 EVT_TOUCH_FIRST, EVT_TOUCH_SLIDE, EVT_TOUCH_TAP, EVT_TOUCH_BREAK = 9101, 9102, 9103, 9104
 EVT_VIRTUAL_EXIT = 9106
 
-local LONG = "DEBRIEF READY (LONG-PRESS, THEN SCROLL UP)"
-local SHORT = "DEBRIEF READY (SCROLL UP)"
+local LONG = "DEBRIEF READY (LONG-PRESS, THEN TAP)"
+local SHORT = "DEBRIEF READY (TAP TO OPEN)"
+local CLOSE = "DEBRIEF READY (TAP TO CLOSE)"
 
 local worst = 0
 local current
@@ -126,13 +127,13 @@ local view = context.debriefModule or assert(loadfile(root .. "/src/WIDGETS/Aero
 local measure = context.themeBuilder.measureText
 assert(view.pillFit(context, false, 480, 272) == LONG)
 assert(view.pillFit(context, true, 480, 272) == SHORT)
+assert(view.pillFit(context, true, 480, 272, true) == CLOSE)
 local narrow = measure(SMLSIZE, "DEBRIEF READY") + 18
 assert(view.pillFit(context, false, narrow, 272) == "DEBRIEF READY", "a narrow zone shows the short text")
 assert(view.pillFit(context, false, narrow - 10, 272) == nil, "a too narrow zone shows no pill")
 assert(view.pillFit(context, false, 480, 20) == nil, "a too short zone shows no pill")
 
--- The bar appears as soon as a result is available. A tap can wait for the
--- background build to finish before opening the complete view.
+-- The bar shows the build's progress, then offers to open the complete view.
 local page = context.page
 assert(not context.pageBuiltFullscreen, "the page was built in App mode")
 fixture.lvglMock.setFullScreen(true)
@@ -140,22 +141,39 @@ settle(20)
 assert(context.page == page and not pill(), "no debrief, no pill")
 current = makeResult("Pack")
 settle(4)
+assert(context.debrief and not context.debriefModule.ready(context.debrief), "the view is still building")
+local preparing = pill()
+assert(string.find(preparing, "^PREPARING DEBRIEF %d+%%$"), "the bar says it is preparing: " .. tostring(preparing))
+local ui = context.debriefPill.ui
+local green = ui.meter.properties.color
+assert(ui.fill.properties.color ~= green and not ui.meter.hidden, "a muted track fills with green as it builds")
 assert(
-    context.debrief and not context.debriefModule.ready(context.debrief) and pill() == SHORT,
-    "the bar appears while the view builds"
+    ui.fill.properties.opacity == nil and ui.bottom.properties.color == ui.fill.properties.color,
+    "one uniform track"
 )
+assert(ui.arrow.hidden, "no open arrow while preparing")
 input(EVT_TOUCH_FIRST, touch(H - 5, H - 5))
 fixture.tick(20)
 callback(EVT_TOUCH_BREAK, touch(H - 5, H - 5))
-settle(2)
-assert(context.openRequest and not context.debrief.shown, "a tap waits for the complete view")
+settle()
+assert(not context.openRequest and not context.debrief.shown, "a tap on the preparing bar does nothing")
+local previousFill = ui.meter.properties.w
 build()
-assert(context.debrief.shown and pill() == SHORT, "the queued tap opens with the same bar still visible")
-assert(context.pillLayer.parent == context.debrief.ui.viewport, "the bar belongs to the scrolling debrief canvas")
+settle()
+assert(context.debriefModule.ready(context.debrief) and pill() == SHORT, "the bar offers to open once complete")
+assert(ui.fill.properties.color == green and ui.meter.hidden and not ui.arrow.hidden, "the ready bar is solid green")
+assert(previousFill < context.zone.w, "the fill had not reached the end while preparing")
+input(EVT_TOUCH_FIRST, touch(H - 5, H - 5))
+fixture.tick(20)
+callback(EVT_TOUCH_BREAK, touch(H - 5, H - 5))
+settle()
+assert(context.debrief.shown and pill() == CLOSE, "the tap opens with the close bar visible")
+assert(context.pillLayer.parent == context.debrief.ui.viewport, "the bar shares the scrolling debrief canvas")
 assert(context.debriefOverlay.properties.y == 0, "the bar reaches the top when the sheet is open")
+assert(context.debrief.ui.content.properties.y == context.debrief.barHeight, "content begins below the bar")
 input(EVT_VIRTUAL_EXIT)
 settle()
-assert(pill() == SHORT, "fullscreen pill says swipe up: " .. tostring(pill()))
+assert(pill() == SHORT, "fullscreen pill says tap to open: " .. tostring(pill()))
 
 -- Leaving fullscreen keeps the page. A pill built in fullscreen would take
 -- the long press there, so it is rebuilt outside fullscreen.
@@ -230,32 +248,28 @@ assert(
     header.fill.writes == fillWrites and header.bottom.writes == bottomWrites,
     "a text-only change must not update the green background"
 )
-assert(pill() == SHORT, "back in fullscreen the pill says swipe up")
+assert(pill() == SHORT, "back in fullscreen the pill says tap to open")
 assert(header.label.properties.w == measure(SMLSIZE, SHORT), "the existing label is resized to the short wording")
 
--- A short pull that snaps closed restores the persistent bar.
+-- A drag does not open the debrief.
 input(EVT_TOUCH_FIRST, touch(H - 5, H - 5))
 input(EVT_TOUCH_SLIDE, touch(H - 40, H - 5))
-assert(context.debrief.shown and pill() == SHORT, "the leading bar stays visible during a pull")
-local _, moving = pill()
-assert(moving.y == context.debrief.travel - 35, "the bar moves by the same distance as the finger")
-assert(context.debrief.ui.content.properties.y == moving.h, "the body starts below the leading bar")
-assert(indexOf(context.panelLayer) < indexOf(context.debriefOverlay), "the debrief covers the panels")
 input(EVT_TOUCH_BREAK, touch(H - 40, H - 5))
 settle()
-assert(not context.debrief.shown and pill() == SHORT, "the bar returns when a short pull closes")
+assert(not context.debrief.shown and pill() == SHORT, "dragging the closed bar does not open it")
 
--- A swipe up opens; closing and leaving fullscreen retain the same available
+-- A tap opens and a tap closes; leaving fullscreen retains the same available
 -- debrief until it is cleared.
 input(EVT_TOUCH_FIRST, touch(H - 5, H - 5))
-input(EVT_TOUCH_SLIDE, touch(H - 40, H - 5, { swipeUp = true }))
-assert(context.debrief.shown and context.debrief.reveal == 35, "a swipe still follows the finger until release")
-input(EVT_TOUCH_BREAK, touch(H - 40, H - 5))
-assert(context.debrief.reveal == context.debrief.travel, "releasing an upward swipe opens the whole sheet")
+input(EVT_TOUCH_BREAK, touch(0, 0))
+settle()
+assert(context.debrief.shown and pill() == CLOSE, "a tap opens and changes the bar")
 local _, raised = pill()
 assert(raised.y == 0, "the same bar stays at the top of the open sheet")
-input(EVT_VIRTUAL_EXIT)
+input(EVT_TOUCH_FIRST, touch(5, 5))
+input(EVT_TOUCH_BREAK, touch(0, 0))
 settle()
+assert(not context.debrief.shown and pill() == SHORT, "tapping the bar closes and restores the open prompt")
 fixture.lvglMock.setFullScreen(false)
 fixture.pump(context, 40)
 build()
