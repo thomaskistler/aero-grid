@@ -1,8 +1,8 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 -- The debrief view: built in the background as soon as a debrief exists, it
--- opens only when complete. An upward drag in fullscreen reveals it over the
--- layout; it scrolls, hides without being destroyed, and is rebuilt only when
+-- opens only when complete. Tapping the bar opens it over the layout; it
+-- scrolls by rows, hides without being destroyed, and is rebuilt only when
 -- the debrief, layout or zone changes.
 
 local root = ... or "."
@@ -68,6 +68,13 @@ local function drag(from, to, extra)
     if extra and extra.swipeUp then
         input(EVT_TOUCH_BREAK, touch(to, from))
     end
+end
+local function tap(y)
+    input(EVT_TOUCH_FIRST, touch(y, y))
+    input(EVT_TOUCH_BREAK, touch(0, 0))
+end
+local function tapBar()
+    tap(context.debrief and context.debrief.shown and 5 or H - 5)
 end
 
 -- A fake debrief at the 12-tile maximum: two compact tiles, the rest wide,
@@ -247,14 +254,9 @@ for _, item in ipairs(state.items) do
     end
 end
 
--- A drag past the halfway point snaps the sheet open on release.
-drag(H - 5, H - 60)
-assert(state.shown and state.reveal == 55, "the sheet follows the finger")
-assert(state.ui.overlay.properties.y == state.travel - 55)
-input(EVT_TOUCH_SLIDE, touch(20, H - 5))
-assert(state.reveal == H - 25)
-input(EVT_TOUCH_BREAK, touch(20, H - 5))
-assert(state.reveal == state.travel and state.offset == 0, "release past halfway opens fully")
+-- A tap opens the sheet completely.
+tapBar()
+assert(state.shown and state.reveal == state.travel and state.offset == 0)
 assert(state.ui.overlay.properties.y == 0)
 local shield = context.debriefShield
 assert(
@@ -313,7 +315,39 @@ for index, expected in ipairs({ context.theme.color.critical, context.theme.colo
     end
     assert(accent == expected, "the worst series determines the tile accent")
 end
-assert(#state.ui.overlay.children == 1, "the open debrief contains just one scrolling canvas")
+local overlayChildren = state.ui.overlay.children
+assert(
+    #overlayChildren == 2 and overlayChildren[1] == state.ui.viewport,
+    "the open debrief holds one scrolling canvas and a scroll bar floating above it"
+)
+
+input(EVT_TOUCH_FIRST, touch(200, 200))
+fixture.requeue(context)
+local sharedTurns = 0
+local sharedTask = {
+    name = "debrief shared work",
+    cost = 2,
+    due = 0,
+    onError = function(_, message)
+        error(message)
+    end,
+    step = function()
+        sharedTurns = sharedTurns + 1
+        assert(state.offset == 0, "shared work runs before the queued drag")
+    end,
+}
+context.scheduler.add(sharedTask)
+fixture.tick(5)
+callback(EVT_TOUCH_SLIDE, touch(192, 200, { slideY = -8 }))
+context.scheduler.remove(sharedTask)
+assert(sharedTurns == 1 and not context.inputQueue, "a debrief drag shares a callback with charged work")
+assert(
+    state.offset == state.stops[2] and state.ui.viewport.properties.y == -state.stops[2],
+    "shared work must not defer scrolling"
+)
+input(EVT_TOUCH_BREAK, touch(200, 200))
+input(EVT_ROT_LEFT)
+assert(state.offset == 0)
 
 local first = state.items[1]
 assert(first.built and first.complete)
@@ -340,47 +374,99 @@ assert(shades == 2, "warning and critical periods are shaded: " .. shades)
 assert(dashes == 2, "warning and critical thresholds are dashed lines: " .. dashes)
 assert(has(labelsOf(first.box), "MIN"), "wide tiles label their statistics in uppercase")
 
--- Dragging further up scrolls; the rotary scrolls and never hides.
-drag(200, 120)
-assert(state.offset == 80 and state.reveal == state.travel, "an upward drag scrolls the open sheet")
-assert(state.ui.viewport.properties.y == -80, "the entire debrief canvas scrolls")
-assert(
-    context.pillLayer.parent == state.ui.viewport and state.ui.content.parent == state.ui.viewport,
-    "the ready header and flight summary share one scrolling canvas"
-)
-local barY = state.ui.overlay.properties.y + state.ui.viewport.properties.y + context.pillLayer.properties.y
-local summaryY = state.ui.overlay.properties.y + state.ui.viewport.properties.y + state.ui.content.properties.y
-assert(
-    barY == -80 and summaryY == barY + state.barHeight,
-    "the header scrolls offscreen without overlapping the summary"
-)
-input(EVT_TOUCH_BREAK, touch(120, 200))
 local stops = state.stops
 assert(
     stops[1] == 0 and stops[2] == state.barHeight + state.items[1].y - view.TOP and stops[#stops] == state.maxOffset,
-    "the sheet rests with its bar, a row of tiles or its bottom at the top"
+    "the sheet rests with its summary or a row of tiles at the top"
 )
-assert(state.offset == stops[2], "release rests at the nearest stop")
--- Native coordinates follow the touched tile as it moves, but slideY remains
--- the finger's delta. Holding the finger still must not reverse the scroll.
+-- One short movement advances once, regardless of later slide events.
 input(EVT_TOUCH_FIRST, touch(120, 120))
-input(EVT_TOUCH_SLIDE, touch(80, 120, { slideY = -40 }))
-assert(state.offset == stops[2] + 40, "native finger movement scrolls once")
+input(EVT_TOUCH_SLIDE, touch(119, 120, { slideY = -1 }))
+assert(state.offset == stops[2], "even a short upward drag advances one row")
 input(EVT_TOUCH_SLIDE, touch(120, 120, { slideY = 0 }))
-assert(state.offset == stops[2] + 40, "a moving tile must not move a stationary finger")
 input(EVT_TOUCH_SLIDE, touch(110, 120, { slideY = 20 }))
-assert(state.offset == stops[2] + 20, "a downward finger movement scrolls back regardless of tile coordinates")
+assert(state.offset == stops[2], "multiple slide events cannot advance or reverse a single drag")
 input(EVT_TOUCH_BREAK, touch(110, 120))
+assert(state.ui.viewport.properties.y == -stops[2], "the chart body scrolls")
+assert(
+    context.pillLayer.parent == state.ui.viewport and state.ui.viewport.properties.y == -stops[2],
+    "the bar scrolls away with the debrief body"
+)
+assert(
+    state.ui.content.properties.y + state.ui.viewport.properties.y + state.items[1].y == view.TOP,
+    "the first chart row reaches the top after the bar scrolls away"
+)
+tap(5)
+assert(state.shown, "tapping the top while the bar is offscreen does not close")
+drag(100, 101, { slideY = 1 })
+input(EVT_TOUCH_BREAK, touch(101, 100))
+assert(state.offset == 0 and state.shown, "a short downward drag returns one row without closing")
+drag(100, 101, { slideY = 1 })
+input(EVT_TOUCH_BREAK, touch(101, 100))
+assert(not state.shown, "scrolling up from the top closes the debrief")
+tapBar()
+assert(state.shown and state.offset == 0, "the debrief reopens at the top")
 input(EVT_ROT_RIGHT)
-assert(state.offset == stops[3], "the rotary steps to the next row")
+assert(state.offset == stops[2], "the rotary steps to the next row")
 input(EVT_ROT_LEFT)
+assert(state.offset == 0 and state.shown, "the rotary returns to the top row")
 input(EVT_ROT_LEFT)
-input(EVT_ROT_LEFT)
-assert(state.offset == 0 and state.shown, "the rotary stops at the top")
+assert(not state.shown, "the rotary scrolling up from the top closes the debrief")
+tapBar()
 for _ = 1, 20 do
     input(EVT_ROT_RIGHT)
 end
 assert(state.offset == state.maxOffset and state.maxOffset > 0, "the rotary stops at the bottom")
+-- The scroll bar has a segment per stop, shows on each step and fades away
+-- two seconds after the last, taking two seconds to do so.
+local bar = context.debriefScrollBar
+local segments = bar and bar.segments
+assert(
+    bar and bar.box.parent == state.ui.overlay and #segments == #state.stops,
+    "a segment per scroll stop floats over the sheet"
+)
+local function lit()
+    local found
+    for index, segment in ipairs(segments) do
+        if segment.properties.opacity == 215 then
+            assert(not found, "one segment is current")
+            found = index
+        else
+            assert(segment.properties.opacity == 77, "other segments are dim")
+        end
+    end
+    return found
+end
+assert(not bar.box.hidden and lit() == #segments, "stepping shows the last stop as current")
+assert(
+    segments[1].properties.x == state.width - 10 and segments[1].properties.x > state.width // 2,
+    "the bar sits on the right"
+)
+assert(
+    segments[1].properties.y >= H // 5
+        and segments[#segments].properties.y + segments[#segments].properties.h <= H - H // 5,
+    "the segments leave a fifth of the screen empty at the top and bottom"
+)
+input(EVT_ROT_LEFT)
+assert(lit() == #segments - 1, "the current segment follows the sheet")
+fixture.tick(150)
+callback()
+assert(not bar.box.hidden and lit() == #segments - 1, "the bar holds for two seconds")
+local previous = 215
+for _ = 1, 60 do
+    fixture.tick(5)
+    callback()
+    local opacity = bar.box.hidden and 0 or segments[#segments - 1].properties.opacity
+    assert(opacity <= previous, "the bar only fades")
+    previous = opacity
+end
+assert(bar.box.hidden and not state.bar, "the bar is hidden once faded")
+input(EVT_ROT_LEFT)
+assert(not bar.box.hidden and lit() == #segments - 2, "stepping brings it back at full strength")
+for _ = 1, 20 do
+    input(EVT_ROT_RIGHT)
+end
+
 local background = state.ui.content.children[1].properties
 local backgroundY = state.ui.overlay.properties.y + state.ui.viewport.properties.y + state.ui.content.properties.y
 assert(
@@ -389,18 +475,18 @@ assert(
 )
 assert(
     background.w == state.width and backgroundY <= 0 and backgroundY + background.h >= state.height,
-    "the background covers the entire screen at the bottom of a long debrief"
+    "the background covers the screen at the last row"
 )
 
--- A downward swipe with content scrolled only scrolls back.
+-- A downward swipe moves exactly one row.
 input(EVT_TOUCH_FIRST, touch(50, 50))
 input(EVT_TOUCH_SLIDE, touch(120, 50, { swipeDown = true }))
-assert(state.shown and state.offset == state.maxOffset - 70)
+assert(state.shown and state.offset == stops[#stops - 1])
 input(EVT_TOUCH_BREAK, touch(120, 50))
 input(EVT_ROT_LEFT)
 local offset = state.offset
 
--- RTN hides without destroying; reopening keeps the scroll position.
+-- RTN hides without destroying; reopening keeps the position.
 local overlay = state.ui.overlay
 input(EVT_VIRTUAL_EXIT)
 assert(
@@ -409,54 +495,33 @@ assert(
 )
 assert(state.ui.viewport.properties.y == 0, "closing restores the discoverable header even after scrolling")
 assert(shield.hidden and overlay.properties.h == state.barHeight, "a closed sheet leaves the dashboard touchable")
-drag(H - 5, H - 40, { swipeUp = true })
-assert(context.debrief == state and state.shown and state.reveal == state.travel, "a swipe up opens fully")
+tapBar()
+assert(context.debrief == state and state.shown and state.reveal == state.travel, "a tap opens fully")
 assert(state.ui.overlay == overlay and state.offset == offset, "the hidden view is reused as it was")
 
--- At the top, a downward drag slides the sheet away; a swipe hides it.
+-- Scrolling back to the top shows the bar, which closes the debrief; taps
+-- elsewhere do nothing.
 for _ = 1, 20 do
+    if state.offset == 0 then
+        break
+    end
     input(EVT_ROT_LEFT)
 end
-drag(50, 100)
-assert(state.shown and state.reveal == state.travel - 50, "a downward drag at the top slides the sheet")
-input(EVT_TOUCH_BREAK, touch(100, 50))
-assert(state.reveal == state.travel, "a short slide snaps back")
-input(EVT_TOUCH_FIRST, touch(50, 50))
-input(EVT_TOUCH_SLIDE, touch(80, 50, { swipeDown = true }))
-assert(state.shown and state.reveal == state.travel - 30, "a downward swipe follows the finger before release")
-input(EVT_TOUCH_BREAK, touch(80, 50))
-assert(not context.debrief.shown, "release after hiding does not reopen")
-
--- Reaching the closed position before lifting must not pass the rest of
--- the swipe to the dashboard's long-press editor or menu.
-input(EVT_TOUCH_FIRST, touch(H - 5, H - 5, { x = 300 }))
-input(EVT_TOUCH_SLIDE, touch(H - 40, H - 5, { x = 300, swipeUp = true }))
-input(EVT_TOUCH_BREAK, touch(H - 40, H - 5, { x = 300 }))
-input(EVT_TOUCH_FIRST, touch(5, 5, { x = 300 }))
-input(EVT_TOUCH_SLIDE, touch(H - 5, 5, { x = 300, slideY = H - 10 }))
-assert(not state.shown, "the held downward drag completely closes the sheet")
-fixture.pump(context, 10)
-assert(not context.editorUi and not context.openRequest, "closing must not resume a stale dashboard hold")
-local closedTouch = touch(H - 5, 5, { x = 300 })
-assert(
-    context.editorController.editorEntryHit(context, EVT_TOUCH_LONG, closedTouch),
-    "the closing gesture ends over an editable dashboard panel"
-)
-input(EVT_TOUCH_LONG, closedTouch)
-assert(not context.editorUi and not context.openRequest, "closing a debrief must not enter editing")
-input(EVT_TOUCH_BREAK, touch(0, 5, { x = 0 }))
-input(EVT_TOUCH_TAP, touch(10, 5, { x = 10 }))
-fixture.pump(context, 10)
-assert(not context.aerogridMenu.open and not context.modelSettingsUi, "release must not tap the dashboard menu")
-input(EVT_TOUCH_FIRST, touch(10, 10, { x = 10 }))
-input(EVT_TOUCH_TAP, touch(10, 10, { x = 10 }))
-fixture.pump(context, 10)
-assert(context.aerogridMenu.open, "a fresh gesture can still open the dashboard menu")
+assert(state.shown and state.offset == 0, "scrolling back reaches the top")
+tapBar()
+assert(not state.shown, "the bar closes the debrief after scrolling back to the top")
+tapBar()
+drag(100, 50)
+input(EVT_TOUCH_BREAK, touch(50, 100))
+assert(state.shown and state.offset == stops[2], "dragging up steps to the next row")
+tap(100)
+assert(state.shown, "a tap outside the bar does not close")
 input(EVT_VIRTUAL_EXIT)
+assert(not state.shown, "RTN still closes")
 fixture.pump(context, 10)
 
 -- Leaving fullscreen hides the view without destroying it.
-drag(H - 5, H - 40, { swipeUp = true })
+tapBar()
 for _ = 1, 3 do
     input(EVT_ROT_RIGHT)
 end
@@ -467,7 +532,7 @@ assert(context.debrief == state and not state.shown, "leaving fullscreen closes 
 assert(not state.ui or state.ui.overlay.properties.y == state.travel)
 fixture.lvglMock.setFullScreen(true)
 fixture.pump(context, 40)
-drag(H - 5, H - 40, { swipeUp = true })
+tapBar()
 assert(context.debrief == state and state.ui and state.offset == offset, "the view opens where it was")
 assert(not state.ui.overlay.hidden)
 input(EVT_VIRTUAL_EXIT)
@@ -477,7 +542,7 @@ current = makeResult("Next")
 fixture.pump(context, 5)
 assert(context.debrief ~= state, "a new debrief replaces the view")
 build()
-drag(H - 5, H - 40, { swipeUp = true })
+tapBar()
 assert(context.debrief and context.debrief.result == current and context.debrief.offset == 0)
 assert(has(labelsOf(context.debrief.ui.overlay), "NEXT 1"))
 local pageChildren = #context.page.children
@@ -485,7 +550,7 @@ input(EVT_VIRTUAL_EXIT)
 current = nil
 fixture.pump(context, 5)
 assert(context.debrief == nil, "a session reset destroys the view")
-drag(H - 5, H - 40, { swipeUp = true })
+tap(H - 5)
 assert(context.debrief == nil, "no debrief, no view")
 
 -- Warning and critical alternating every column on three series, and a

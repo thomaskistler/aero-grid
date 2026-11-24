@@ -1,9 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
---- The debrief view: a sheet below the dashboard layout. Dragging up reveals
---- it and then scrolls its content; dragging down at its top slides it away
---- again. Hiding keeps the built view; the host destroys it when the debrief,
---- the layout or the zone changes.
+--- The debrief view: tap its bar to open or close, and drag to step through
+--- chart rows. Hiding keeps the built view until the debrief or layout changes.
 -- Instruction costs the build charges: a painted column, a shading
 -- rectangle, a scanned shading column, and a tile's lines and renderer.
 local view = {
@@ -14,6 +12,13 @@ local view = {
     SCAN_COST = 15,
     LINES_COST = 4000,
 }
+
+-- The scroll bar floats over the right edge as one segment per scroll stop,
+-- the current one bright. It shows on opening and on each step, holds for
+-- BAR_HOLD ticks (10 ms), then fades in BAR_FADE_STEPS steps.
+local BAR_WIDTH, BAR_INSET, BAR_GAP, BAR_SPAN = 4, 6, 5, 20
+local BAR_ACTIVE_OPACITY, BAR_IDLE_OPACITY = 215, 77
+local BAR_HOLD, BAR_FADE_TICKS, BAR_FADE_STEPS = 200, 200, 12
 
 local MONTHS = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }
 local LEGEND_GAP, ITEM_GAP = 3, 10
@@ -140,18 +145,14 @@ function view.layout(tiles, zone, grid, minimumHeaderHeight)
     return items, headerHeight, rowY(row)
 end
 
---- Scroll offsets the sheet rests at: the bar at the top of the screen, then
---- each row of tiles, then the bottom.
-function view.stops(items, barHeight, maxOffset)
+--- Scroll offsets for the summary and each row of tiles.
+function view.stops(items, barHeight)
     local stops = { 0 }
     for _, item in ipairs(items) do
-        local stop = math.min(maxOffset, barHeight + item.y - view.TOP)
+        local stop = barHeight + item.y - view.TOP
         if stop > stops[#stops] then
             stops[#stops + 1] = stop
         end
-    end
-    if maxOffset > stops[#stops] then
-        stops[#stops + 1] = maxOffset
     end
     return stops
 end
@@ -217,6 +218,18 @@ function view.ready(state)
     return state ~= nil and not state.stale and not view.pending(state)
 end
 
+--- Percent of the view built while it is still preparing, nil once it may open.
+function view.progress(state)
+    if view.ready(state) then
+        return nil
+    end
+    local done = state.ui and 1 or 0
+    for _, item in ipairs(state.items) do
+        done = done + (item.complete and 1 or 0)
+    end
+    return math.min(99, done * 100 // (#state.items + 1))
+end
+
 function view.new(host, result)
     local zone = host.zone
     local barHeight = host.themeBuilder.fontHeight(SMLSIZE) + 4
@@ -248,8 +261,8 @@ function view.new(host, result)
         headerHeight = required
     end
     state.items, state.headerHeight, state.total = view.layout(result.tiles, zone, host.grid, headerHeight)
-    state.maxOffset = math.max(0, state.total - state.travel)
-    state.stops = view.stops(state.items, barHeight, state.maxOffset)
+    state.stops = view.stops(state.items, barHeight)
+    state.maxOffset = state.stops[#state.stops]
     return state
 end
 
@@ -336,6 +349,47 @@ local function buildHeader(host, state, parent)
     })
 end
 
+--- One segment per scroll stop, in a box above the scrolling sheet. They stay
+--- hidden until `wake` and never take touches.
+function view.buildScrollBar(host, state)
+    local bar = host.debriefScrollBar
+    if not bar then
+        local box = lvgl.box(host.debriefOverlay, { x = 0, y = 0, w = state.width, h = state.height, scrollDir = 0 })
+        lvgl.disable(box)
+        lvgl.hide(box)
+        bar = { box = box }
+        host.debriefScrollBar = bar
+    else
+        -- `destroy` already cleared the previous segments; EdgeTX sweeps
+        -- whatever is made under a box cleared in the same callback.
+        bar.box:set({ w = state.width, h = state.height })
+    end
+    local count = #state.stops
+    local top = math.max(state.barHeight, state.height * BAR_SPAN // 100)
+    local height = state.height - 2 * top
+    local x = state.width - BAR_WIDTH - BAR_INSET
+    bar.segments, bar.active = {}, nil
+    if count < 2 then
+        return
+    end
+    local segment = (height - (count - 1) * BAR_GAP) // count
+    for index = 1, count do
+        local object = lvgl.rectangle(bar.box, {
+            x = x,
+            y = top + (index - 1) * (segment + BAR_GAP),
+            w = BAR_WIDTH,
+            h = segment,
+            filled = true,
+            thickness = 0,
+            rounded = BAR_WIDTH // 2,
+            color = host.theme.color.cyan,
+            opacity = BAR_IDLE_OPACITY,
+        })
+        lvgl.disable(object)
+        bar.segments[index] = object
+    end
+end
+
 local function buildOverlay(host, state)
     local theme, width, height = host.theme, state.width, state.height
     -- One overlay per page, reused by every debrief: EdgeTX frees a page's
@@ -345,10 +399,16 @@ local function buildOverlay(host, state)
     viewport:set({
         y = state.shown and -state.offset or 0,
         w = width,
-        h = math.max(height, state.total + state.barHeight),
+        h = math.max(height, state.total + state.barHeight, state.maxOffset + height),
     })
     local content = host.debriefContent
-    local rect = { x = 0, y = state.barHeight, w = width, h = math.max(state.travel, state.total), scrollDir = 0 }
+    local rect = {
+        x = 0,
+        y = state.barHeight,
+        w = width,
+        h = math.max(state.height + state.maxOffset - state.barHeight, state.total),
+        scrollDir = 0,
+    }
     if content then
         content:set(rect)
     else
@@ -367,6 +427,7 @@ local function buildOverlay(host, state)
         color = theme.color.canvas,
         opacity = 255,
     })
+    view.buildScrollBar(host, state)
     state.ui = {
         overlay = overlay,
         viewport = viewport,
@@ -680,16 +741,91 @@ local function shield(host, visible)
     end
 end
 
+local function hideScrollBar(host, state)
+    local bar = host.debriefScrollBar
+    if bar then
+        lvgl.hide(bar.box)
+    end
+    state.bar = nil
+end
+
+--- The segment of the stop the sheet rests on.
+local function currentStop(state)
+    local current = 1
+    for index, stop in ipairs(state.stops) do
+        if stop <= state.offset then
+            current = index
+        end
+    end
+    return current
+end
+
+--- Show the scroll bar at the current stop and restart its hold.
+local function wake(host, state)
+    local bar = host.debriefScrollBar
+    if not (bar and state.ui) or not bar.segments or #bar.segments == 0 then
+        return
+    end
+    local active, shown = currentStop(state), state.bar
+    if not shown or shown.step > 0 then
+        lvgl.show(bar.box)
+        for index, segment in ipairs(bar.segments) do
+            segment:set({ opacity = index == active and BAR_ACTIVE_OPACITY or BAR_IDLE_OPACITY })
+        end
+    elseif bar.active ~= active then
+        bar.segments[bar.active]:set({ opacity = BAR_IDLE_OPACITY })
+        bar.segments[active]:set({ opacity = BAR_ACTIVE_OPACITY })
+    end
+    bar.active = active
+    state.bar = { at = getTime(), step = 0 }
+end
+
+--- The fade step reached at `now`, once the hold is over.
+local function fadeStep(state, now)
+    local bar = state.bar
+    local elapsed = bar and now - bar.at - BAR_HOLD
+    if not elapsed or elapsed < 0 then
+        return nil
+    end
+    return elapsed * BAR_FADE_STEPS // BAR_FADE_TICKS + 1
+end
+
+--- Whether the scroll bar has a fade step to take at `now`.
+function view.fadeDue(state, now)
+    local step = fadeStep(state, now)
+    return step ~= nil and step > state.bar.step
+end
+
+--- Take the next fade step, or hide the bar when it has faded.
+function view.fade(host)
+    local state = host.debrief
+    local step = state and fadeStep(state, getTime())
+    if not step or step <= state.bar.step then
+        return
+    end
+    local bar = host.debriefScrollBar
+    if step >= BAR_FADE_STEPS or not bar then
+        hideScrollBar(host, state)
+        return
+    end
+    local left = BAR_FADE_STEPS - step
+    for index, segment in ipairs(bar.segments) do
+        local opacity = index == bar.active and BAR_ACTIVE_OPACITY or BAR_IDLE_OPACITY
+        segment:set({ opacity = opacity * left // BAR_FADE_STEPS })
+    end
+    state.bar.step = step
+end
+
 --- Show the view, revealed by `reveal` pixels.
 function view.show(host, reveal)
     local state = host.debrief
-    -- The opening drag must not resume a dashboard edit hold after closing.
     host.editorPress = nil
     state.shown, state.closing = true, nil
     state.reveal = math.max(0, math.min(state.travel, reveal))
     if state.ui then
         lvgl.show(state.ui.overlay)
         apply(state)
+        wake(host, state)
     end
     shield(host, true)
 end
@@ -697,11 +833,12 @@ end
 --- Slide the view away, keeping it and its scroll position.
 function view.hide(host)
     local state = host.debrief
-    state.shown, state.closing, state.dragY, state.reveal = false, nil, nil, 0
-    state.follow, state.flick = nil, nil
+    state.shown, state.closing, state.press, state.reveal = false, nil, nil, 0
+    state.dragY, state.dragged = nil, nil
     if state.ui then
         apply(state)
     end
+    hideScrollBar(host, state)
     shield(host, false)
     host.touchTapHandled = true
 end
@@ -712,8 +849,9 @@ function view.detach(state)
     if state.ui then
         lvgl.hide(state.ui.overlay)
     end
-    state.ui, state.shown, state.closing, state.dragY, state.reveal = nil, false, nil, nil, 0
-    state.follow, state.flick = nil, nil
+    state.ui, state.shown, state.closing, state.press, state.reveal = nil, false, nil, nil, 0
+    state.bar = nil
+    state.dragY, state.dragged = nil, nil
     for _, item in ipairs(state.items) do
         item.built, item.complete, item.box, item.renderer, item.shade = nil, nil, nil, nil, nil
     end
@@ -732,55 +870,28 @@ function view.destroy(host)
         overlay:set({ y = host.zone.h, h = host.zone.h })
         lvgl.show(overlay)
     end
+    if state then
+        hideScrollBar(host, state)
+        if host.debriefScrollBar then
+            host.debriefScrollBar.box:clear()
+        end
+    end
     shield(host, false)
     host.debrief = nil
 end
 
---- Move by `delta` pixels, positive up: the sheet rises until it covers the
---- layout, then its content scrolls; down, the content returns to its top,
---- then the sheet slides away.
-function view.move(state, delta)
-    if delta > 0 then
-        local rise = math.min(delta, state.travel - state.reveal)
-        state.reveal = state.reveal + rise
-        state.offset = math.min(state.maxOffset, state.offset + delta - rise)
-    elseif delta < 0 then
-        if state.reveal < state.travel then
-            state.reveal = math.max(0, state.reveal + delta)
-        else
-            local scroll = math.max(delta, -state.offset)
-            state.offset = state.offset + scroll
-            state.reveal = math.max(0, state.reveal + delta - scroll)
-        end
-    end
-end
-
---- Snap a partly revealed sheet open or closed when the touch ends.
----@return boolean open
-function view.release(state)
-    if state.flick == "up" then
-        state.reveal = state.travel
-    elseif state.flick == "down" and state.offset == 0 then
-        state.reveal = 0
-    end
-    state.flick = nil
-    if state.reveal < state.travel then
-        state.reveal = state.reveal * 2 >= state.travel and state.travel or 0
-    else
-        state.offset = view.stop(state.stops, state.offset)
-    end
-    return state.reveal > 0
-end
-
-local function settle(host, state)
-    if state.reveal <= 0 then
+--- Apply one input the host has already granted a scheduler turn.
+--- Move one stop; scrolling up from the top closes the debrief.
+local function step(host, state, direction)
+    if direction < 0 and state.offset <= state.stops[1] then
         view.hide(host)
         return
     end
+    state.offset = view.stop(state.stops, state.offset, direction)
     apply(state)
+    wake(host, state)
 end
 
---- Apply one input the host has already granted a scheduler turn.
 function view.handle(host, event, touch)
     local state = host.debrief
     if not state or not state.shown then
@@ -789,60 +900,62 @@ function view.handle(host, event, touch)
     if matches(event, "EVT_VIRTUAL_EXIT") or matches(event, "EVT_EXIT_BREAK") then
         view.hide(host)
     elseif host.gesture.touch(event) then
-        local point = type(touch) == "table" and type(touch.y) == "number"
         if matches(event, "EVT_TOUCH_FIRST") then
-            state.dragY = point and touch.y or nil
-            state.follow, state.flick = true, nil
+            state.press = host.gesture.track(nil, event, touch)
+            state.dragY = type(touch) == "table" and touch.y or nil
+            state.dragged = false
         elseif matches(event, "EVT_TOUCH_SLIDE") then
-            local top = state.offset == 0
-            if state.dragY and point then
-                -- EdgeTX reports y relative to the touched object, which
-                -- moves while scrolling; slideY is the finger's movement.
-                local delta = type(touch.slideY) == "number" and -touch.slideY or state.dragY - touch.y
-                view.move(state, delta)
-                state.dragY = touch.y
+            state.press = host.gesture.track(state.press, event, touch)
+            if not state.dragged and type(touch) == "table" then
+                local delta = type(touch.slideY) == "number" and touch.slideY
+                    or type(state.dragY) == "number" and type(touch.y) == "number" and touch.y - state.dragY
+                    or 0
+                local direction = delta < 0 and 1 or delta > 0 and -1 or touch.swipeUp and 1 or touch.swipeDown and -1
+                if direction then
+                    state.dragged = true
+                    state.press = host.gesture.cancel(state.press)
+                    step(host, state, direction)
+                end
             end
-            if state.follow and touch and touch.swipeUp then
-                state.flick = "up"
-            elseif state.follow and touch and touch.swipeDown and top then
-                state.flick = "down"
-            elseif touch and touch.swipeUp and state.reveal < state.travel then
-                state.reveal, state.dragY = state.travel, nil
-            elseif touch and touch.swipeDown and top then
-                state.reveal, state.dragY = 0, nil
+        else
+            local tap
+            state.press, tap = host.gesture.track(state.press, event, touch)
+            if tap and view.barHit(host, tap) then
+                view.hide(host)
             end
-            settle(host, state)
-        elseif matches(event, "EVT_TOUCH_BREAK") or matches(event, "EVT_TOUCH_TAP") then
-            state.dragY = nil
-            state.follow = nil
-            view.release(state)
-            settle(host, state)
-            host.touchTapHandled = true
+            if matches(event, "EVT_TOUCH_BREAK") or matches(event, "EVT_TOUCH_TAP") then
+                state.dragY, state.dragged = nil, nil
+                host.touchTapHandled = true
+            end
         end
     elseif matches(event, "EVT_ROT_LEFT") or matches(event, "EVT_VIRTUAL_PREV") then
-        state.offset = view.stop(state.stops, state.offset, -1)
-        settle(host, state)
+        step(host, state, -1)
     elseif matches(event, "EVT_ROT_RIGHT") or matches(event, "EVT_VIRTUAL_NEXT") then
-        state.offset = view.stop(state.stops, state.offset, 1)
-        settle(host, state)
+        step(host, state, 1)
     end
     return true
 end
 
 local PILL_TEXTS = {
-    [true] = { "DEBRIEF READY (SCROLL UP)", "DEBRIEF READY" },
-    [false] = { "DEBRIEF READY (LONG-PRESS, THEN SCROLL UP)", "DEBRIEF READY" },
+    open = { "DEBRIEF READY (TAP TO CLOSE)", "TAP TO CLOSE" },
+    closed = { "DEBRIEF READY (TAP TO OPEN)", "TAP TO OPEN" },
+    outside = { "DEBRIEF READY (LONG-PRESS, THEN TAP)", "DEBRIEF READY" },
 }
 local PILL_PAD = 4
+local PILL_TRACK_MIX = 55
 
 --- Fit the bottom bar to the zone. Outside fullscreen, opening needs a long press.
-function view.pillFit(host, fullscreen, width, height)
+function view.pillFit(host, fullscreen, width, height, shown, progress)
     local themeBuilder = host.themeBuilder
     local h = themeBuilder.fontHeight(SMLSIZE) + 4
     if h > height then
         return nil
     end
-    for _, text in ipairs(PILL_TEXTS[fullscreen == true]) do
+    local texts = fullscreen and (shown and PILL_TEXTS.open or PILL_TEXTS.closed) or PILL_TEXTS.outside
+    if progress then
+        texts = { "PREPARING DEBRIEF " .. progress .. "%", "PREPARING" }
+    end
+    for _, text in ipairs(texts) do
         local w = themeBuilder.measureText(SMLSIZE, text) + 10 + 2 * PILL_PAD
         if w <= width then
             return text, width, h
@@ -858,10 +971,12 @@ function view.pill(host, fullscreen)
         pill = {}
         host.debriefPill = pill
     end
-    pill.fullscreen, pill.w, pill.h = fullscreen, zone.w, zone.h
+    local shown = host.debrief and host.debrief.shown or false
+    local progress = host.debrief and view.progress(host.debrief)
+    pill.fullscreen, pill.w, pill.h, pill.shown, pill.progress = fullscreen, zone.w, zone.h, shown, progress
     local text, w, h
     if fullscreen ~= nil and layer then
-        text, w, h = view.pillFit(host, fullscreen, zone.w, zone.h)
+        text, w, h = view.pillFit(host, fullscreen, zone.w, zone.h, shown, progress)
     end
     if not text then
         if layer then
@@ -881,6 +996,44 @@ function view.pill(host, fullscreen)
         return
     end
     local x, y = 0, 0
+    local radius = math.min(host.theme.spacing.radius, h // 2)
+    -- While preparing, a muted track fills with solid green as the view builds.
+    local function paint()
+        local textWidth = host.themeBuilder.measureText(SMLSIZE, text)
+        local labelX = progress and (w - textWidth) // 2 or (w - textWidth - 10) // 2 + 10
+        local muted = progress ~= nil
+        if ui.muted ~= muted then
+            local fillColor = muted and ui.track or host.theme.color.green
+            ui.fill:set({ color = fillColor })
+            ui.bottom:set({ color = fillColor })
+            ui.muted = muted
+        end
+        -- A rounded left cap and a square body keep the leading edge straight.
+        local meterWidth = progress and w * progress // 100 or 0
+        local cap = math.min(2 * radius, meterWidth)
+        local body = meterWidth - radius
+        local function place(object, width)
+            if width > 0 then
+                object:set({ w = width })
+                lvgl.show(object)
+            else
+                lvgl.hide(object)
+            end
+        end
+        place(ui.meter, cap)
+        place(ui.meterBottom, cap)
+        place(ui.meterBody, body)
+        if progress then
+            lvgl.hide(ui.arrow)
+        else
+            ui.arrow:set({
+                pts = { { labelX - 10, h // 2 + 2 }, { labelX - 6, h // 2 - 2 }, { labelX - 2, h // 2 + 2 } },
+            })
+            lvgl.show(ui.arrow)
+        end
+        ui.label:set({ x = labelX, w = textWidth, text = text })
+        ui.text, ui.progress = text, progress
+    end
     if not ui then
         local color = host.theme.color
         local textColor = host.theme.light and color.text or color.canvas
@@ -890,55 +1043,67 @@ function view.pill(host, fullscreen)
         lvgl.disable(host.debriefOverlay)
         lvgl.disable(host.debriefViewport)
         ui = { builtFullscreen = fullscreen, text = text, x = x, y = y, w = w }
-        local radius = math.min(host.theme.spacing.radius, h // 2)
-        ui.fill = lvgl.rectangle(layer, {
-            x = 0,
-            y = 0,
+        -- A bar is a rounded rectangle with its bottom corners filled square.
+        local function bar(paintColor, width)
+            local top = lvgl.rectangle(layer, {
+                x = 0,
+                y = 0,
+                w = width,
+                h = h,
+                color = paintColor,
+                filled = true,
+                rounded = radius,
+            })
+            lvgl.disable(top)
+            local bottom = lvgl.hline(layer, {
+                x = 0,
+                y = radius + (h - radius) // 2,
+                w = width,
+                h = h - radius,
+                color = paintColor,
+            })
+            return top, bottom
+        end
+        -- One opaque muted green, so the two bar pieces cannot blend differently.
+        local rgb = host.theme.rgb
+        local muted = 0
+        for _, shift in ipairs({ 16, 8, 0 }) do
+            local canvas, green = rgb.canvas >> shift & 255, rgb.green >> shift & 255
+            muted = muted * 256 + (canvas * (100 - PILL_TRACK_MIX) + green * PILL_TRACK_MIX) // 100
+        end
+        ui.track = lcd.RGB(muted)
+        ui.fill, ui.bottom = bar(ui.track, w)
+        ui.meter, ui.meterBottom = bar(color.green, w)
+        ui.meterBody = lvgl.hline(layer, {
+            x = radius,
+            y = h // 2,
             w = w,
             h = h,
             color = color.green,
-            filled = true,
-            rounded = radius,
         })
-        lvgl.disable(ui.fill)
-        -- Fill the bottom corners, leaving only the top corners rounded.
-        ui.bottom = lvgl.hline(layer, {
-            x = 0,
-            y = radius + (h - radius) // 2,
-            w = w,
-            h = h - radius,
-            color = color.green,
-        })
-        local textWidth = host.themeBuilder.measureText(SMLSIZE, text)
-        local labelX = (w - textWidth - 10) // 2 + 10
         ui.arrow = lvgl.triangle(layer, {
-            pts = { { labelX - 10, h // 2 + 2 }, { labelX - 6, h // 2 - 2 }, { labelX - 2, h // 2 + 2 } },
+            pts = { { 0, 0 }, { 0, 0 }, { 0, 0 } },
             color = textColor,
         })
         ui.label = host.primitives.label(layer, host.theme, {
-            x = labelX,
+            x = 0,
             y = (h - host.themeBuilder.fontHeight(SMLSIZE)) // 2,
-            w = textWidth,
+            w = host.themeBuilder.measureText(SMLSIZE, text),
             text = text,
             font = SMLSIZE,
             color = textColor,
         })
         pill.ui = ui
-    elseif ui.text ~= text or ui.x ~= x or ui.y ~= y or ui.w ~= w then
+        paint()
+    elseif ui.text ~= text or ui.progress ~= progress or ui.x ~= x or ui.y ~= y or ui.w ~= w then
         if ui.x ~= x or ui.y ~= y or ui.w ~= w then
             layer:set({ x = x, y = y, w = w, h = h })
             ui.fill:set({ w = w })
             ui.bottom:set({ w = w })
         end
-        local textWidth = host.themeBuilder.measureText(SMLSIZE, text)
-        local labelX = (w - textWidth - 10) // 2 + 10
-        ui.arrow:set({
-            pts = { { labelX - 10, h // 2 + 2 }, { labelX - 6, h // 2 - 2 }, { labelX - 2, h // 2 + 2 } },
-        })
-        ui.label:set({ x = labelX, w = textWidth, text = text })
-        ui.text, ui.x, ui.y, ui.w = text, x, y, w
+        ui.x, ui.y, ui.w = x, y, w
+        paint()
     end
-
     lvgl.show(layer)
     lvgl.show(host.debriefOverlay)
 end
@@ -949,7 +1114,7 @@ function view.barHit(host, touch)
     local y = state and state.travel - state.reveal - (state.shown and state.offset or 0) or 0
     return ui
         and state
-        and not state.stale
+        and view.ready(state)
         and type(touch.x) == "number"
         and type(touch.y) == "number"
         and touch.x >= ui.x
@@ -958,25 +1123,13 @@ function view.barHit(host, touch)
         and touch.y < y + state.barHeight
 end
 
---- Open the fully built view of `result` from an upward drag `request`,
---- where it was last scrolled.
-function view.open(host, result, request)
+--- Open the fully built view where it was last scrolled.
+function view.open(host, result)
     local state = host.debrief
     if not view.ready(state) or state.result ~= result then
         return
     end
-    local reveal = state.travel
-    if request and request.follow and type(request.startY) == "number" and type(request.y) == "number" then
-        reveal = request.startY - request.y
-    end
-    view.show(host, reveal)
-    state.follow = request and request.follow or nil
-    state.flick = state.follow and request.swipe and "up" or nil
-    state.dragY = state.follow and not request.released and request.y or nil
-    if not state.dragY then
-        view.release(state)
-    end
-    settle(host, state)
+    view.show(host, state.travel)
 end
 
 return view
