@@ -65,7 +65,7 @@ function debrief:configure(section, widths)
     for index, tile in ipairs(section.tiles) do
         local feeds = {}
         for position, series in ipairs(tile.series) do
-            feeds[position] = history:subscribe(series.source, { precision = series.precision })
+            feeds[position] = history:subscribe(series.source)
         end
         self.tiles[index], self.feeds[index] = tile, feeds
         self.count = self.count + #feeds
@@ -187,6 +187,8 @@ local function nextSeries(self, job)
             local result = {
                 config = config,
                 unit = feed.unitText,
+                -- Readings are shown as the sensor reports them; an average falls between.
+                precision = config.statistic ~= "avg" and feed.precision or nil,
                 -- A copy, so later threshold edits cannot restyle this debrief.
                 thresholds = spec and {
                     warning = spec.warning,
@@ -222,7 +224,7 @@ local function nextSeries(self, job)
     end
 end
 
---- Fold one flight-clipped knot at flight time `at` into the statistic.
+--- Fold the value `value` held from flight time `at` into the statistic.
 --- Means are updated in place, so no running sum can overflow.
 local function accumulate(series, at, value, connected)
     local statistic, current = series.statistic, series.value
@@ -234,12 +236,11 @@ local function accumulate(series, at, value, connected)
         series.value = current and math.max(current, value) or value
     elseif statistic == "avg" then
         if connected then
-            -- Time-weighted: each segment counts its mean for its duration.
+            -- Time-weighted: the previous value counts for how long it held.
             local span = at - series.knotTime
             series.time = series.time + span
             if span > 0 then
-                local mean = series.knotMean * 0.5 + value * 0.5
-                series.mean = series.mean + (mean - series.mean) * (span / series.time)
+                series.mean = series.mean + (series.knotMean - series.mean) * (span / series.time)
             end
         end
         if series.time == 0 then
@@ -255,18 +256,31 @@ local function accumulate(series, at, value, connected)
     series.knotTime = at
 end
 
+local function levelOf(job, spec, value)
+    return spec and job.level and LEVELS[job.level(spec, value)] or 0
+end
+
 --- Add one sample at flight time `at` (scaled ticks) to the pixel columns.
 local function sample(job, series, at, value, connected)
     local store = series.result.columns
+    local spec, levels = series.spec, series.result.levels
+    local last = series.lastAt
     store:sample(at, value, not connected, false, 0)
-    if not connected and series.lastAt then
+    if not connected and last then
         store:breakAt(at)
     end
-    series.lastAt, series.lastValue = at, value
-    local level = series.spec and job.level and LEVELS[job.level(series.spec, value)] or 0
+    -- A level holds with its value, so a held value shades every column up to
+    -- the next entry, not only the column where it began.
+    local from = connected and last and series.lastLevel or 0
+    if from > 0 then
+        for slot = store:bucketOf(last, 0) + 2, store:bucketOf(at, 0) do
+            levels[slot] = math.max(levels[slot] or 0, from)
+        end
+    end
+    local level = levelOf(job, spec, value)
+    series.lastAt, series.lastValue, series.lastLevel = at, value, level
     if level > 0 then
         local slot = store:bucketOf(at, 0) + 1
-        local levels = series.result.levels
         levels[slot] = math.max(levels[slot] or 0, level)
         series.worst = math.max(series.worst, level)
     end
@@ -304,12 +318,6 @@ local function reported(tiles)
     return shown
 end
 
---- Value at `at` on the line between two knots, in floats so neither the
---- difference nor the product can overflow int32.
-local function interpolate(fromAt, fromValue, toAt, toValue, at)
-    return fromValue + (toValue * 1.0 - fromValue) * ((at - fromAt) / (toAt - fromAt))
-end
-
 --- One unit of capture work: one search step, one knot read or one column
 --- sample. Returns true when the series is done.
 local function work(self, job, series)
@@ -329,22 +337,6 @@ local function work(self, job, series)
         series.index, series.high = low, nil
         return false
     end
-    local store = series.result.columns
-    local target = series.target
-    if target then
-        -- A straight segment gets a sample at the start of each column it
-        -- crosses, so every column shows the line as a chart would.
-        local column = series.column
-        local at = (column * job.window + store.pixels - 1) // store.pixels
-        if column < store.width and at < target then
-            sample(job, series, at, interpolate(series.lastAt, series.lastValue, target, series.targetValue, at), true)
-            series.column = column + 1
-            return false
-        end
-        sample(job, series, target, series.targetValue, true)
-        series.target = nil
-        return series.ended == true
-    end
     local index = series.index
     local at, value, broken = nil, nil, nil
     if index then
@@ -363,25 +355,20 @@ local function work(self, job, series)
     if at > job.finish and not connected then
         return true
     end
+    -- A value holds until the next entry, so the one before the flight began
+    -- is the one in force at its start.
     if connected and previousAt < job.start then
-        local first = interpolate(previousAt, previousValue, at, value, job.start)
-        accumulate(series, job.start, first, false)
-        sample(job, series, 0, first, false)
+        accumulate(series, job.start, previousValue, false)
+        sample(job, series, 0, previousValue, false)
     end
-    local finish = math.min(at, job.finish)
-    if finish < at then
-        value = interpolate(previousAt, previousValue, at, value, finish)
+    if at > job.finish then
+        accumulate(series, job.finish, previousValue, true)
+        sample(job, series, (job.finish - job.start) // job.scale, previousValue, true)
+        return true
     end
-    accumulate(series, finish, value, connected)
-    at = (finish - job.start) // job.scale
-    if connected then
-        series.target, series.targetValue = at, value
-        series.column = store:bucketOf(series.lastAt, 0) + 1
-    else
-        sample(job, series, at, value, false)
-    end
-    series.ended = finish == job.finish
-    return series.ended and not connected
+    accumulate(series, at, value, connected)
+    sample(job, series, (at - job.start) // job.scale, value, connected)
+    return at == job.finish
 end
 
 --- Run capture work within the grant; `used` units are already spent.

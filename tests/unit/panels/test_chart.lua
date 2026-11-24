@@ -75,7 +75,6 @@ for _, case in ipairs({ { "30s", 1 }, { "90s", 2 }, { "5m", 5 }, { 2.5, 3 }, { 9
 end
 assert(#chart.validateSettings({ duration = 2.5, metrics = {} }) > 0)
 equal(#chart.validateSettings({ duration = 60, metrics = {} }), 0)
-equal(settings.smoothing, "off")
 equal(#settings.metrics, 0)
 settings, warnings = host.resolveSettings(chart, { range = "fixed", metrics = { { rangeMin = 200 } } })
 equal(#warnings, 0, "earlier preview layouts must remain loadable")
@@ -1002,7 +1001,6 @@ end
 local denseItem = dense.series[1]
 equal(denseItem.feed.count, 6001)
 equal(denseItem.feed.full, false)
-equal(denseItem.feed.epsilon, 0.0005, "metric precision must reach the compressor")
 finishDrawing(dense)
 assert(next(dense.columnRenderer.objects), "incoming data must allocate native columns")
 local _, _, top, bottom = chartView.bounds(dense, 1)

@@ -21,7 +21,6 @@ For legacy switches, see [Older layouts](../user-guide/model-settings.md#older-l
 | **Metrics** | No entries | Up to three readings. Tap **+** to add one, or tap an entry to edit it. |
 | **Window minutes** | Auto | **Auto** grows the window as recording continues. A whole number of minutes from 1 to 60 fixes it. Step below 1 to select **Auto**. |
 | **Series scales** | shared | **shared** uses one vertical scale; **independent** gives each metric its own scale, useful for unlike units. Independent trace heights are not directly comparable. |
-| **Line smoothing** | off | **off**, **light**, **medium**, or **strong**. Smooths the line only, not the recorded value or extrema. |
 | **Accent** | cyan | Normal panel accent; does not change trace colors. |
 
 ### Metric entry
@@ -81,9 +80,6 @@ the panel is resized or the session is reset. With **shared** scales, the lowest
 configured minimum and highest configured maximum apply to all traces, and Auto
 sides follow all traces. With **independent** scales, each metric uses its own
 bounds. Fixed bounds clip the plot, not recorded values or extrema.
-
-Smoothing changes the line, not readouts or extrema. **Light**, **medium**, and
-**strong** respond over approximately 0.5, 1, and 2 seconds.
 
 ### Clearing and limits
 
