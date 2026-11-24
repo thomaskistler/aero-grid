@@ -110,6 +110,9 @@ end
 
 --- The broker supplies once-only side-effect adapters for every qualification.
 function flight.advance(context, now, maxAge)
+    local link = context.link
+    local linkCurrent = link.updatedAt and now >= link.updatedAt and now - link.updatedAt <= maxAge
+    local live = linkCurrent and link.live
     local armLive = context.controlAvailable ~= false
         and reliable(context.arm, now, maxAge)
         and type(context.arm.value) == "boolean"
@@ -120,7 +123,10 @@ function flight.advance(context, now, maxAge)
         else
             context.disarmedAt = context.disarmedAt or now
             context.phase = "ending"
-            if now - context.disarmedAt >= context.settings.disarmDuration * 100 then
+            if
+                now - context.disarmedAt >= context.settings.disarmDuration * 100
+                and (context.settings.requireReceiver == false or (linkCurrent and link.live == false))
+            then
                 if context.completed then
                     context:completed(now)
                 end
@@ -148,8 +154,6 @@ function flight.advance(context, now, maxAge)
     if context.settings.motorReversed then
         motor = -motor
     end
-    local link = context.link
-    local live = link.updatedAt and now >= link.updatedAt and now - link.updatedAt <= maxAge and link.live
     if
         not (
             armed
@@ -784,9 +788,7 @@ function broker:readInputs(now)
         readMotor(self, session.motor, now)
         local rssi = self.env.getRSSI and self.env.getRSSI() or 0
         session.link.live = type(rssi) == "number" and rssi > 0
-        if session.link.live then
-            session.link.updatedAt = now
-        end
+        session.link.updatedAt = now
     end)
     session.controlAvailable, session.detectionAvailable = ok, ok
     if not ok then

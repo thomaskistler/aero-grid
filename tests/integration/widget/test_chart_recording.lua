@@ -357,6 +357,14 @@ if withFlights then
     assert(session.segment == segment and session.flightLast == 1, "grace rearm must not pause or duplicate flights")
 end
 setArmed(0)
+if withFlights then
+    pump(100)
+    assert(
+        context.panels[1].instance.session.recording and context.flightBroker.state.active,
+        "a connected receiver keeps flight recording open after the disarm window"
+    )
+    fixture.radio.rssi = 0
+end
 -- Eight charts crowd the mock budget, so the arm switch is read late.
 for _ = 1, 100 do
     pump(1)

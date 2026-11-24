@@ -157,6 +157,7 @@ end)
 fixture.tick(300)
 definition.background(context)
 assert(panel.flight.phase ~= "ground", "a scheduling gap must restart the disarm timeout")
+fixture.radio.rssi = 0
 backgroundUntil(context, function()
     return panel.flight.phase == "ground"
 end)
@@ -171,7 +172,7 @@ for _ = 1, 100 do
 end
 equal(context.flightBroker.view.count, 40, "a presentation preview cannot stop the committed flight tracker")
 equal(panel.flight.phase, "active", "the shared tracker is independent of presentation flags")
-fixture.radio.values[305] = -1024
+fixture.radio.values[305], fixture.radio.rssi = -1024, 0
 fixture.pump(context, 30)
 equal(panel.flight.phase, "ground", "the committed tracker completes while its presentation is previewed")
 equal(panel.value.properties.text, "40", "preview displays the shared count")
@@ -228,7 +229,7 @@ backgroundUntil(context, function()
 end)
 equal(owner.view.reason, "smart-altitude")
 equal(panel.value.properties.text, "40")
-fixture.radio.values[305] = -1024
+fixture.radio.values[305], fixture.radio.rssi = -1024, 0
 backgroundUntil(context, function()
     return panel.flight.phase == "ground"
 end)
