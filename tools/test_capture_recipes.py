@@ -164,7 +164,7 @@ class CaptureRecipeTests(unittest.TestCase):
         self.assertEqual({path.stem for path in RECIPE_DIR.glob("*.yaml")}, set(PANELS))
         for path in RECIPE_DIR.glob("*.yaml"):
             recipe = load_recipe(path)
-            if recipe["panel"] in ("host-diagnostics", "service-probe"):
+            if recipe["panel"] == "host-diagnostics":
                 self.assertEqual(list(recipe["panels"]), ["2x2"])
             elif recipe["panel"] == "chart":
                 self.assertEqual(list(recipe["panels"]), ["2x1", "2x2"])

@@ -3,7 +3,9 @@
 local root = (... and ... ~= "" and ...) or "."
 local layoutStore = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/layout_store.lua"))()
 local yaml = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/yaml.lua"))()
-local layout = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/layout.lua"))()
+local layout = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/layout.lua"))(function()
+    return assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/debrief_config.lua"))()
+end)
 local grid = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/grid.lua"))()
 
 local memoryFiles = assert(loadfile(root .. "/tests/support/memory_files.lua"))()
@@ -147,14 +149,12 @@ local function testStagedSaveMigratesLegacyBattery()
         elseif calls == 3 then
             assert(not done and state.header.version == 3, "second header step runs in its own save cycle")
         elseif calls == 4 then
-            assert(not done and state.header.version == 4, "third header step runs in its own save cycle")
-        elseif calls == 5 then
-            assert(not done and state.header.version == 5, "fourth header step runs in its own save cycle")
-        elseif calls == 7 then
+            assert(not done and state.header.version == 5, "third header step runs in its own save cycle")
+        elseif calls == 6 then
             assert(not done and state.pendingPanel.type == "rx-battery", "one panel step runs in one save cycle")
         end
     until done
-    assert(calls == 12, "staged legacy save should use separate header, panel, validation and persistence cycles")
+    assert(calls == 10, "staged legacy save should use separate header, panel, validation and persistence cycles")
     assert(saved, saveError)
     local persisted = assert(yaml.parse(files[state.filename]))
     assert(persisted.version == 5)
@@ -167,7 +167,7 @@ end
 local function testStagedSave()
     local files, operations = memoryFiles()
     local document = makeDocument("staged")
-    document.version = 4
+    document.version = 3
     document.panels[2] = {
         id = "second",
         type = "example",
@@ -191,7 +191,7 @@ local function testStagedSave()
     local previousContent = files[state.filename]
 
     local broken = makeDocument("broken")
-    broken.version = 4
+    broken.version = 3
     broken.panels[2] = broken.panels[1]
     state = layoutStore.startSave("/widget", "main", broken, yaml, layout, grid, operations)
     for _ = 1, 7 do
@@ -202,6 +202,131 @@ local function testStagedSave()
     end
     assert(done and not saved and saveError, "overlapping/duplicate placements must not be saved")
     assert(files[state.filename] == previousContent, "failed staging must preserve primary")
+end
+
+local function stagedSave(name, document, operations)
+    local state = layoutStore.startSave("/widget", name, document, yaml, layout, grid, operations)
+    local done, saved, saveError
+    for _ = 1, 120 do
+        done, saved, saveError = layoutStore.advanceSave(state)
+        if done then
+            break
+        end
+    end
+    assert(done, "save did not finish")
+    return saved, saveError, state.filename
+end
+
+local function testDebriefSaveBudget()
+    local files, operations = memoryFiles()
+    local document = makeDocument("maximum debrief")
+    document.version = layout.VERSION
+    document.debrief = { size = "wide", future = { enabled = true }, tiles = {} }
+    for index = 1, 12 do
+        local tile = { title = "Tile " .. index, series = {} }
+        for position = 1, 3 do
+            tile.series[position] = {
+                source = "Alt",
+                statistic = "max",
+                label = "Altitude",
+                unit = "m",
+                precision = 1,
+                rangeMin = 0,
+                rangeMax = 100,
+                accent = "cyan",
+            }
+        end
+        document.debrief.tiles[index] = tile
+    end
+    local tileSerializations = 0
+    local saveYaml = {
+        parse = yaml.parse,
+        serialize = function(value)
+            if value.tiles then
+                tileSerializations = tileSerializations + 1
+            end
+            return yaml.serialize(value)
+        end,
+    }
+    local state = layoutStore.startSave("/widget", "maximum", document, saveYaml, layout, grid, operations)
+    local worst, done, saved, saveError = 0, false, nil, nil
+    for _ = 1, 120 do
+        local count = 0
+        debug.sethook(function()
+            count = count + 100
+        end, "", 100)
+        done, saved, saveError = layoutStore.advanceSave(state)
+        debug.sethook()
+        worst = math.max(worst, count)
+        if done then
+            break
+        end
+        assert(next(files) == nil, "no writes until every tile and panel is validated")
+    end
+    assert(done and saved, saveError)
+    assert(worst < 10000, "debrief save step exceeded budget: " .. worst)
+    assert(tileSerializations == 12, "each tile is serialized once without dropping round-trip validation")
+    local parsed = assert(yaml.parse(files[state.filename]))
+    assert(parsed.debrief.size == "wide" and parsed.debrief.future.enabled and #parsed.debrief.tiles == 12)
+    assert(#layout.validateDebrief(parsed) == 0)
+    for _, tile in ipairs(parsed.debrief.tiles) do
+        assert(tile.colSpan == 4 and tile.rowSpan == 2 and #tile.series == 3)
+    end
+    document.debrief.tiles[5] = false
+    local ok, err, filename = stagedSave("invalid-tile", document, operations)
+    assert(not ok and string.find(err, "mapping", 1, true) and not files[filename])
+end
+
+local function testDebriefRoundTrip()
+    local files, operations = memoryFiles()
+    local document = makeDocument("debrief")
+    document.version = layout.VERSION
+    document.debrief = {
+        tiles = {
+            {
+                title = "Link",
+                colSpan = 4,
+                rowSpan = 1,
+                futureTile = { mode = "new" },
+                series = { { source = "RQly", statistic = "min", label = "worst", precision = 0, future = "kept" } },
+            },
+        },
+    }
+    local errors, warnings = layout.validateDebrief(document)
+    assert(#errors == 0 and #warnings == 2, "unknown settings should be reported on load")
+    local saved, saveError, filename = stagedSave("main", document, operations)
+    assert(saved, saveError)
+    local parsed = assert(yaml.parse(files[filename]))
+    local tile = parsed.debrief.tiles[1]
+    assert(tile.title == "Link" and tile.colSpan == 4 and tile.series[1].label == "worst")
+    assert(tile.futureTile.mode == "new" and tile.series[1].future == "kept")
+
+    saved, saveError, filename = stagedSave("copy", parsed, operations)
+    assert(saved, saveError)
+    assert(assert(yaml.parse(files[filename])).debrief.tiles[1].series[1].source == "RQly", "Save as keeps the debrief")
+    local copy = assert(yaml.parse(files[filename])).debrief.tiles[1]
+    assert(copy.futureTile.mode == "new" and copy.series[1].future == "kept")
+
+    local empty = makeDocument("empty")
+    empty.version = layout.VERSION
+    empty.debrief = { tiles = {} }
+    saved, saveError, filename = stagedSave("empty", empty, operations)
+    assert(saved, saveError)
+    parsed = assert(yaml.parse(files[filename]))
+    assert(type(parsed.debrief) == "table" and type(parsed.debrief.tiles) == "table" and #parsed.debrief.tiles == 0)
+    assert(#layout.validateDebrief(parsed) == 0, "an empty debrief stays a section")
+
+    local bare = makeDocument("bare")
+    bare.version = layout.VERSION
+    saved, saveError, filename = stagedSave("bare", bare, operations)
+    assert(saved, saveError)
+    assert(assert(yaml.parse(files[filename])).debrief == nil)
+
+    local broken = makeDocument("broken")
+    broken.version = layout.VERSION
+    broken.debrief = { tiles = { { title = "Bad", series = { { source = "VCel", statistic = "last" } } } } }
+    saved, saveError, filename = stagedSave("broken", broken, operations)
+    assert(not saved and saveError and not files[filename], "an invalid debrief must not be saved")
 end
 
 local function testRadioFileOperations()
@@ -226,48 +351,6 @@ local function testRadioFileOperations()
     io, os, fstat, rename, del = originalIo, originalOs, originalStat, originalRename, originalDelete
 end
 
-local function testCurrentBatteryNormalization()
-    local files, operations = memoryFiles()
-    local document = makeDocument("RX")
-    document.version = 2
-    local panel = document.panels[1]
-    panel.type = "rx-battery"
-    panel.config = {
-        sourceType = "pack",
-        source = "RxBt",
-        cells = 6,
-        reading = "cell",
-        visual = "none",
-        showPack = false,
-        showCount = true,
-        showDelta = true,
-        cellFull = 4.15,
-        warning = 3.55,
-        critical = 3.25,
-        cellEmpty = 3.1,
-    }
-    local saved, err, filename = layoutStore.save("/widget", "rx", document, yaml, layout, grid, operations)
-    assert(saved, err)
-    assert(
-        not string.find(files[filename], "sourceType", 1, true),
-        "current-version Save must strip selector before encoding"
-    )
-    local persisted = assert(yaml.parse(files[filename]))
-    local config = persisted.panels[1].config
-    assert(persisted.version == 5 and config.sourceType == nil)
-    assert(config.source == "RxBt" and config.cells == 6 and config.visual == "none")
-    assert(config.showDelta == true and config.showPack == false and config.showCount == true)
-    assert(
-        config.cellFull == 4.15
-            and config.cellWarning == 3.55
-            and config.cellCritical == 3.25
-            and config.cellEmpty == 3.1
-    )
-    assert(config.warning == nil and config.critical == nil, "Save must persist only current threshold keys")
-    local loaded, errors = layout.validate(persisted, grid)
-    assert(loaded and #errors == 0 and loaded.panels[1].config.showDelta == true)
-end
-
 local function testTemporaryMismatch()
     local files, operations = memoryFiles()
     local filename = layoutStore.path("/widget", "verify")
@@ -289,7 +372,8 @@ testFailedCommitLeavesBackup()
 testFutureVersionIsNotSaved()
 testExplicitSavePersistsMigratedBattery()
 testStagedSave()
+testDebriefRoundTrip()
+testDebriefSaveBudget()
 testStagedSaveMigratesLegacyBattery()
 testRadioFileOperations()
 testTemporaryMismatch()
-testCurrentBatteryNormalization()

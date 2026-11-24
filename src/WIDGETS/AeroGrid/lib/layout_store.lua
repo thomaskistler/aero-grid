@@ -2,7 +2,7 @@
 
 --- Layout path resolution and validated, recoverable persistence.
 
-local layoutStore = { RUNTIME_API = 1 }
+local layoutStore = {}
 local verifiedFile = ...
 
 local function writer(widgetPath)
@@ -283,34 +283,6 @@ function layoutStore.load(widgetPath, name, yaml, layout, grid)
     return nil, lastErrors, fallback and fallback.filename or "", "none"
 end
 
---- Load the shipped default layout, falling back to its last committed backup.
-function layoutStore.loadDefault(widgetPath, yaml, layout, grid)
-    local base = string.sub(widgetPath, -1) == "/" and widgetPath or widgetPath .. "/"
-    local candidates = {
-        base .. "layouts/Default.yaml",
-        base .. "layouts/Default.yaml.bak",
-    }
-    local lastErrors = {}
-    for _, filename in ipairs(candidates) do
-        local content, readError = readFile(filename)
-        if content then
-            local document, parseError = yaml.parse(content)
-            if document then
-                local normalized, errors = layout.validate(document, grid)
-                if normalized and #errors == 0 then
-                    return normalized, nil, filename
-                end
-                lastErrors = errors
-            else
-                lastErrors = { parseError }
-            end
-        else
-            lastErrors = { readError }
-        end
-    end
-    return nil, lastErrors, candidates[1]
-end
-
 --- Install prevalidated content only after a byte-for-byte readback check.
 local function persistSerialized(filename, serialized, fileOps, widgetPath)
     return writer(widgetPath).write(filename, serialized, fileOps)
@@ -369,7 +341,7 @@ function layoutStore.advanceSave(state)
         state.sourceVersion = state.document.version
         local header = {}
         for key, value in pairs(state.document) do
-            if key ~= "panels" then
+            if key ~= "panels" and key ~= "debrief" then
                 header[key] = value
             end
         end
@@ -422,7 +394,94 @@ function layoutStore.advanceSave(state)
         state.parts[1] = text
         state.parts[2] = #state.document.panels == 0 and "panels: {}\n" or "panels:\n"
         state.index = 1
-        state.phase = "panels"
+        if state.document.debrief ~= nil then
+            state.parts[2] = nil
+            state.phase = "debrief-header"
+        else
+            state.phase = "panels"
+        end
+        return false
+    end
+    if state.phase == "debrief-header" then
+        local module, loadError = layout.debrief()
+        if not module then
+            return true, false, loadError
+        end
+        local section, errors = module.validateHeader(state.document.debrief)
+        if not section or #errors > 0 then
+            return true, false, table.concat(errors, "; ")
+        end
+        state.debriefInput = state.document.debrief.tiles or {}
+        if #state.debriefInput > module.MAX_TILES then
+            return true, false, "a debrief has at most " .. module.MAX_TILES .. " tiles"
+        end
+        state.debriefModule, state.debriefSection = module, section
+        local metadata = {}
+        for key, value in pairs(section) do
+            if key ~= "tiles" then
+                metadata[key] = value
+            end
+        end
+        local text, encodeError = "debrief:\n", nil
+        if next(metadata) then
+            text, encodeError = yaml.serialize({ debrief = metadata })
+        end
+        if not text then
+            return true, false, encodeError
+        end
+        if next(metadata) then
+            local parsed, parseError = yaml.parse(text)
+            if not parsed then
+                return true, false, parseError
+            end
+        end
+        state.parts[#state.parts + 1] = text .. (#state.debriefInput == 0 and "  tiles: {}\n" or "  tiles:\n")
+        state.debriefIndex, state.phase = 1, "debrief-encode"
+        return false
+    end
+    -- A debrief can contain 36 series. Round-trip one tile in separate
+    -- callbacks, rather than encoding and parsing it as part of the header.
+    if state.phase == "debrief-encode" then
+        local tile = state.debriefInput[state.debriefIndex]
+        if state.debriefIndex > #state.debriefInput then
+            state.document.debrief.tiles = state.debriefSection.tiles
+            state.parts[#state.parts + 1] = #state.document.panels == 0 and "panels: {}\n" or "panels:\n"
+            state.phase = "panels"
+            return false
+        end
+        local normalized, errors = state.debriefModule.validateTile(tile, state.debriefSection.size)
+        if not normalized or #errors > 0 then
+            return true, false, "debrief tile " .. state.debriefIndex .. ": " .. table.concat(errors, "; ")
+        end
+        local text, encodeError = yaml.serialize({ tiles = { normalized } })
+        if not text then
+            return true, false, encodeError
+        end
+        state.debriefText, state.phase = text, "debrief-parse"
+        return false
+    end
+    if state.phase == "debrief-parse" then
+        local parsed, parseError = yaml.parse(state.debriefText)
+        if not parsed then
+            return true, false, parseError
+        end
+        state.debriefTile, state.phase = parsed.tiles[1], "debrief-validate"
+        return false
+    end
+    if state.phase == "debrief-validate" then
+        local tile, errors = state.debriefModule.validateTile(state.debriefTile, state.debriefSection.size)
+        if not tile or #errors > 0 then
+            return true, false, "debrief tile " .. state.debriefIndex .. ": " .. table.concat(errors, "; ")
+        end
+        state.debriefTile, state.phase = tile, "debrief-write"
+        return false
+    end
+    if state.phase == "debrief-write" then
+        local content = string.sub(state.debriefText, #"tiles:\n" + 1)
+        state.parts[#state.parts + 1] = string.gsub(content, "([^\n]*)\n", "  %1\n")
+        state.debriefSection.tiles[state.debriefIndex] = state.debriefTile
+        state.debriefIndex = state.debriefIndex + 1
+        state.debriefText, state.debriefTile, state.phase = nil, nil, "debrief-encode"
         return false
     end
     if state.phase == "panels" and state.index <= #state.document.panels then

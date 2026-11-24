@@ -21,6 +21,14 @@ CATEGORIES = (
     ("AG Controls", ("review-output", "review-trim-panel")),
     ("AG System", ("Diagnostics", "services", "services2", "review-state",
                    "states", "Palette", "Empty")),
+    ("AG Debrief", ("debrief",)),
+)
+DEBRIEF_SENSORS = (
+    ("VCel", 0xAE01, 1, 2),
+    ("Mrgn", 0xAE02, 17, 0),
+    ("Drop", 0xAE03, 37, 0),
+    ("HDst", 0xAE04, 9, 0),
+    ("FDst", 0xAE05, 9, 0),
 )
 FLIGHT_ANNOUNCEMENTS = """logicalSw:
    0:
@@ -79,6 +87,29 @@ def screen(index, position):
 """
 
 
+def debrief_sensor(index, name, sensor_id, unit, precision):
+    return f"""   {index}:
+      id1:
+         id: {sensor_id}
+      id2:
+         instance: 0
+      label: "{name}"
+      subId: 0
+      type: TYPE_CUSTOM
+      unit: {unit}
+      prec: {precision}
+      autoOffset: 0
+      filter: 0
+      logs: 1
+      persistent: 0
+      onlyPositive: 0
+      cfg:
+         custom:
+            ratio: 0
+            offset: 0
+"""
+
+
 def generated_files(fixture=FIXTURE):
     registry = (fixture / "AEROGRID/layout-registry.txt").read_text().splitlines()
     layouts = [layout for _, screens in CATEGORIES for layout in screens]
@@ -97,6 +128,24 @@ def generated_files(fixture=FIXTURE):
         if count != 1:
             raise ValueError("Expected a model name in the common fixture header")
         filename = f"model{number}.yml"
+        if name == "AG Debrief":
+            sensors, timers = header.split("timers:", 1)
+            entries = sensors.split("telemetrySensors:\n", 1)[1]
+            first_index = max(int(index) for index in
+                              re.findall(r"(?m)^   (\d+):$", entries)) + 1
+            header = (sensors + "".join(
+                debrief_sensor(first_index + offset, *sensor)
+                for offset, sensor in enumerate(DEBRIEF_SENSORS))
+                + "timers:" + timers + 'limitData:\n   31:\n      name: "AGDBRF"\n')
+            files[fixture / "AEROGRID/models/AGDBRF.yaml"] = f"""version: 1
+modelFilename: "{filename}"
+revision: 1
+flightCount: 0
+armed: "SFv"
+flight:
+  requireReceiver: false
+  minFlightDuration: 10
+"""
         files[fixture / "MODELS" / filename] = (
             header + ('limitData:\n   31:\n      name: "AGTST2"\n' + FLIGHT_ANNOUNCEMENTS if name == "AG Flight" else "")
             + "screenData:\n"

@@ -98,6 +98,19 @@ Tap anywhere or press **RTN** (Back/Exit on other radios) to return. Location de
 unavailable outside widget fullscreen and while editing. The radio generates the
 QR code without a network connection; following it on a phone uses Google Maps.
 
+### EdgeTX sensors
+
+The panel publishes two EdgeTX sensors that logical switches, logs and other
+screens can use:
+
+- **HDst**: distance from home in metres, using the panel's home.
+- **FDst**: total distance flown in metres since telemetry was last reset.
+
+To create the sensors, open the model's **Telemetry** page with telemetry live
+and run **Discover new sensors** once.
+**FDst** keeps counting across flights and a [Session reset](../user-guide/model-settings.md#session-reset); reset
+telemetry in EdgeTX to clear it.
+
 ## States
 
 | Condition | Presentation |

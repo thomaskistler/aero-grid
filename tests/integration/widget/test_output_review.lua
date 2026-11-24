@@ -56,7 +56,7 @@ local function pump()
         end
         if initialCaptions then
             local instance = fixture.instanceOf(context, "outputs")
-            if instance then
+            if instance and not instance.rowsRoot.hidden then
                 local labeled = 0
                 for index, row in ipairs(instance.rows) do
                     if row.captionText and row.captionText ~= "" then
@@ -82,25 +82,19 @@ resolvingNames = false
 pump()
 local panel = assert(fixture.instanceOf(context, "outputs"))
 local outputEntry = assert(fixture.entryById(context, "outputs"))
-equal(outputEntry.refreshTask.cost, 1, "output refresh uses one nominal scheduler slot per step")
 local originalRefresh = outputEntry.module.refresh
-for _ = 1, 100 do
-    if panel.phase == "idle" then
-        break
-    end
-    originalRefresh(panel)
+-- Building and placing rows continue in later steps; a steady refresh is one step.
+local function refreshStep()
+    local interval, again = originalRefresh(panel)
+    return again or interval == 1
 end
-assert(panel.phase == "idle", "start a complete output refresh cycle before measuring scheduler continuation")
-local refreshSteps = 0
-outputEntry.module.refresh = function(instance, ...)
-    refreshSteps = refreshSteps + 1
-    return originalRefresh(instance, ...)
-end
-outputEntry.nextRefresh = 0
-fixture.tick(20)
-definition.refresh(context)
-outputEntry.module.refresh = originalRefresh
-assert(refreshSteps > 1, "unfinished output work should use consecutive scheduler turns")
+assert(not refreshStep() and panel.placeIndex == nil, "a steady refresh paints every row in one step")
+equal(
+    outputEntry.interval,
+    outputEntry.module.refreshInterval,
+    "placement must not leave the panel at its placing rate"
+)
+equal(outputEntry.refreshTask.cost, math.max(1, math.ceil(panel.area.count * 130 / 500)))
 equal(#context.errors, 0, table.concat(context.errors, "\n"))
 pump()
 -- A slow metadata scan must not delay a five-channel panel's first display.
@@ -148,7 +142,7 @@ firstOutput.nameReady = false
 outputEntry.module.update(panel, { x = 0, y = 0, w = panel.panel.width, h = panel.panel.height }, panel.settings)
 local shown = false
 for _ = 1, 1000 do
-    local _, unfinished = outputEntry.module.refresh(panel)
+    local unfinished = refreshStep()
     if not panel.rowsRoot.hidden then
         shown = true
         for index = 1, panel.area.count do
@@ -165,9 +159,9 @@ end
 assert(shown, "rows must appear without waiting for metadata")
 firstOutput.name, firstOutput.nameReady = "NEW", true
 for _ = 1, 1000 do
-    local _, unfinished = outputEntry.module.refresh(panel)
+    local unfinished = refreshStep()
     assert(not panel.rowsRoot.hidden, "resolving a name must not hide the rows")
-    if not unfinished and panel.phase == "idle" then
+    if not unfinished then
         break
     end
 end
@@ -180,11 +174,10 @@ local function changeCaptions(name)
     for index = 1, panel.area.count do
         control.outputEntries[index].state.name = name
     end
-    panel.phase, panel.liveIndex = "idle", 1
     local reflowed = false
     for _ = 1, 1000 do
-        local _, unfinished = outputEntry.module.refresh(panel)
-        reflowed = reflowed or panel.phase == "reflow"
+        local unfinished = refreshStep()
+        reflowed = reflowed or panel.placeIndex ~= nil
         assert(not panel.rowsRoot.hidden, "metadata reflow must not clear visible output rows")
         for index = 1, panel.area.count do
             local current = panel.rows[index]
@@ -197,7 +190,7 @@ local function changeCaptions(name)
                 )
             end
         end
-        if not unfinished and panel.phase == "idle" then
+        if not unfinished then
             break
         end
     end

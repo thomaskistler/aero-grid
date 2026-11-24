@@ -35,14 +35,12 @@ assert(host.supportsSpan(chart, 2, 2))
 assert(not host.supportsSpan(chart, 1, 2))
 assert(not host.supportsSpan(chart, 2, 3))
 assert(not host.supportsSpan(chart, 1, 1))
-for _, armSwitch in ipairs({ "", "SA^", "SA-", "SAv", "L01" }) do
-    equal(#chart.validateSettings({ metrics = {}, armSwitch = armSwitch }), 0)
-end
-for _, armSwitch in ipairs({ "sa", "ch5", "invalid", 1, true }) do
-    assert(#chart.validateSettings({ metrics = {}, armSwitch = armSwitch }) > 0)
-end
-equal(chart.format(12.345, 2), "12.35")
-equal(chart.format(nil), "--")
+assert(#select(2, host.resolveSettings(chart, { metrics = {}, armSwitch = "SAv" })) > 0, "charts use model Armed")
+local numbers = {}
+fixture.module("lib/typography.lua").install(numbers)
+equal(numbers.numberText(12.345, 2), "12.35")
+equal(numbers.numberText(nil), "--")
+equal(numbers.numberText(0 / 0), "--")
 equal(chart.durationText(3000), "30s")
 equal(chart.durationText(6000), "1m")
 equal(chart.durationText(12000), "2m")
@@ -77,7 +75,6 @@ for _, case in ipairs({ { "30s", 1 }, { "90s", 2 }, { "5m", 5 }, { 2.5, 3 }, { 9
 end
 assert(#chart.validateSettings({ duration = 2.5, metrics = {} }) > 0)
 equal(#chart.validateSettings({ duration = 60, metrics = {} }), 0)
-equal(settings.smoothing, "off")
 equal(#settings.metrics, 0)
 settings, warnings = host.resolveSettings(chart, { range = "fixed", metrics = { { rangeMin = 200 } } })
 equal(#warnings, 0, "earlier preview layouts must remain loadable")
@@ -152,6 +149,19 @@ equal(scales.series[2].high, 30)
 
 fixture.reset()
 fixture.radio.values[300] = 0
+local empty = fixture.createLoaded(nil, { Layout = "Empty", Theme = "modern-dark" })
+local built, message = empty.dashboardLoader.buildPanel(empty, {
+    id = "unconfigured",
+    type = "chart",
+    col = 0,
+    row = 0,
+    colSpan = 2,
+    rowSpan = 1,
+    config = {},
+})
+assert(built, message)
+equal(built.instance.status.properties.text, "SET ARM SOURCE")
+
 local context = fixture.createLoaded(nil, { Layout = "review-chart", Theme = "modern-dark" })
 fixture.pump(context, 120)
 equal(#context.errors, 0, table.concat(context.errors, "\n"))
@@ -412,7 +422,8 @@ assert(#power.series[1].connectors > 0, "rearm adds a faint connector between se
 assert(power.series[1].connectors[1].connector)
 equal(power.status.properties.text, "")
 equal(#power.series[1].markerKeys, 0, "a recording pause must not add a full-height telemetry-gap marker")
-equal(power.axis.map:pixel(paused) - power.axis.map:pixel(paused, true), 24, "resuming must retain trace spacing")
+local spacing = power.axis.map:pixel(paused) - power.axis.map:pixel(paused, true)
+assert(math.abs(spacing - 24) < 1e-6, "resuming must retain trace spacing: " .. spacing)
 equal(power.gapRoot, nil, "recording pauses must not mask flight shading")
 for _, size in ipairs({ { 320, 240 }, { 800, 480 }, { 480, 272 } }) do
     context.zone.w, context.zone.h = size[1], size[2]
@@ -547,7 +558,7 @@ local function typographyPanel(count, top)
         row = 0,
         colSpan = top and 2 or 4,
         rowSpan = 2,
-        config = { metrics = metrics, armSwitch = "SAv" },
+        config = { metrics = metrics },
     })
     assert(entry, message)
     chart.refresh(entry.instance)
@@ -831,7 +842,6 @@ local function recordingPanel(id, range, duration)
         colSpan = 2,
         rowSpan = 2,
         config = {
-            armSwitch = "SAv",
             timeRange = range,
             duration = duration or (range == "rolling" and 1 or 10),
             metrics = { { source = id, precision = 3, rangeMin = -100, rangeMax = 100 } },
@@ -861,11 +871,12 @@ do
     local setup = gridPanel.columnSetup
     assert(setup, "recording panel must require initial attachment")
     -- The geometry is laid out in one piece, so the panel declares the grant it needs.
-    equal(gridPanel.refreshMinCost, 3, "geometry must declare the grant it needs")
-    local _, again, used = chartModule.refreshOnly(gridPanel, false, 1)
+    local need = gridPanel.refreshMinCost
+    equal(need, 12, "geometry must declare the grant it needs")
+    local _, again, used = chartModule.refreshOnly(gridPanel, false, need - 1)
     assert(not again and used == 1 and not gridPanel.columnSetupIndex, "a smaller grant must not lay out the geometry")
-    _, again, used = chartModule.refreshOnly(gridPanel, false, 3)
-    assert(not again and used <= 3 and not gridPanel.columnSetup, "geometry and attachment must fit that grant")
+    _, again, used = chartModule.refreshOnly(gridPanel, false, need)
+    assert(not again and used <= need and not gridPanel.columnSetup, "geometry and attachment must fit that grant")
 end
 gridPanel.session = { configured = true, available = true, recording = false, elapsed = 65000 }
 for _ = 1, 24 do
@@ -885,16 +896,13 @@ do
         error("readout updates must yield before drawing")
     end
     gridPanel.metadataReady, gridPanel.columnsDecorating = nil, nil
-    -- Readouts and legend belong to the finishing task and need two slots.
-    assert(select(2, chartModule.finishPending(gridPanel)) == 2, "readouts must declare their minimum")
-    local _, unfinished, used = chartModule.finish(gridPanel, false, 1)
+    -- Readouts and legend are finished first and need a minimum grant.
+    local need = select(2, chartModule.finishPending(gridPanel))
+    equal(need, 7, "readouts must declare their minimum")
+    local _, unfinished, used = chartModule.refreshOnly(gridPanel, false, need - 1)
     assert(unfinished and used == 1 and rendered == 0, "a grant below the minimum must not run readouts")
-    _, unfinished, used = chartModule.finish(gridPanel, false, 2)
-    assert(not unfinished and used == 2 and rendered == 1, "readouts must be charged their two slots without drawing")
-    -- A refresh waits while overlays or readouts are pending.
-    gridPanel.metadataReady = nil
-    _, again, used = chartModule.refreshOnly(gridPanel, false, 8)
-    assert(not again and used == 1 and rendered == 1, "a refresh must leave pending readouts to the finishing task")
+    _, unfinished, used = chartModule.refreshOnly(gridPanel, false, need)
+    assert(not unfinished and used == need and rendered == 1, "readouts must be charged their grant without drawing")
     gridPanel.metadataReady = true
     gridPanel.gridVersion = gridPanel.version
     local appended = false
@@ -902,8 +910,11 @@ do
         appended = true
         return append(self, ...)
     end
-    _, unfinished, used = chartModule.refreshOnly(gridPanel, false, 2)
-    assert(appended and not unfinished and used >= 1 and used <= 2, "the append must charge within its grant")
+    _, unfinished, used = chartModule.refreshOnly(gridPanel, false, 8)
+    assert(
+        appended and unfinished and used >= 1 and used <= 8,
+        "the append must charge within its grant, then ask to finish"
+    )
     chartModule.render, renderer.append = render, append
 end
 assert(not gridPanel.durationBackground.hidden, "titleless charts need a readable duration annotation")
@@ -990,7 +1001,6 @@ end
 local denseItem = dense.series[1]
 equal(denseItem.feed.count, 6001)
 equal(denseItem.feed.full, false)
-equal(denseItem.feed.epsilon, 0.0005, "metric precision must reach the compressor")
 finishDrawing(dense)
 assert(next(dense.columnRenderer.objects), "incoming data must allocate native columns")
 local _, _, top, bottom = chartView.bounds(dense, 1)
@@ -1028,19 +1038,6 @@ local newest = clipped.session.elapsed
 assert(clipped.start > 0 and clipped.start <= newest, "a late fixed window must start where sliding would have put it")
 assert(newest < clipped.start + clipped.window, "a late fixed window must show its newest input")
 equal(#chartView.rectangles(clipped, 1), 0, "a late chart must not replay retained history")
-
-local empty = fixture.createLoaded(nil, { Layout = "Empty", Theme = "modern-dark" })
-local built, message = empty.dashboardLoader.buildPanel(empty, {
-    id = "unconfigured",
-    type = "chart",
-    col = 0,
-    row = 0,
-    colSpan = 2,
-    rowSpan = 1,
-    config = {},
-})
-assert(built, message)
-equal(built.instance.status.properties.text, "SET ARM SOURCE")
 
 fixture.reset()
 fixture.radio.values[300] = 1024
@@ -1150,7 +1147,7 @@ local incompatible, incompatibleError = light.dashboardLoader.buildPanel(light, 
     row = 0,
     colSpan = 2,
     rowSpan = 1,
-    config = { armSwitch = "L64", metrics = { { source = "draft-only-source" } } },
+    config = { metrics = { { source = "draft-only-source" } } },
 }, nil, true)
 assert(incompatible, incompatibleError)
 finishDrawing(incompatible.instance)

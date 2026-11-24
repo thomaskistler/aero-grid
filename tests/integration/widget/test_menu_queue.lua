@@ -15,7 +15,8 @@ context.aeroMenuModule.advance = function(host)
         host.scheduler.state(host.menuTask).ran ~= host.scheduler.callbacks,
         "advance is called before grant attribution"
     )
-    assert(host.menuTask.cost == host.scheduler.budget.capacity)
+    local building = host.aerogridMenu.pending and not host.aerogridMenu.screen
+    assert(host.menuTask.cost == (building and host.scheduler.budget.capacity or 4), "only construction is costly")
     advances = advances + 1
     return advance(host)
 end
@@ -35,7 +36,7 @@ context.flightTask = {
     end,
 }
 menu.pending = true
-context.scheduler.cursor = 1
+fixture.requeue(context)
 definition.refresh(context)
 assert(flightSteps == 1 and advances == 0 and menu.pending, "menu must wait for a full-capacity pre-grant")
 definition.refresh(context)
@@ -54,7 +55,7 @@ definition.refresh(context)
 assert(advances == 3 and not menu.open)
 local actions = 0
 menu.handlers.uiSetup = function()
-    assert(context.menuTask.cost == context.scheduler.budget.capacity)
+    assert(context.menuTask.cost == 4, "actions only record requests")
     actions = actions + 1
 end
 menu.action = "uiSetup"
@@ -79,4 +80,4 @@ definition.refresh(context)
 assert(context.chromeRoot.hidden and context.stage == "probe", "chrome hiding stays queued even during loading")
 assert(context.scheduler.state(context.menuTask).ran == context.scheduler.callbacks)
 definition.background(context)
-assert(not context.menuTask.ready(context.menuTask, getTime(), true))
+assert(not context.menuTask.open(context.menuTask, getTime(), true))

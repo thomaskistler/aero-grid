@@ -58,7 +58,6 @@
 
 local linkStatus = {
     id = "link-status",
-    apiVersion = 1,
     supportedSpans = { "any" },
     -- Link quality is the one reading a pilot glances at during a fade, but it
     -- is still a number on a screen: five hertz is indistinguishable from fifty
@@ -357,6 +356,25 @@ function linkStatus.resolveState(settings, reading)
     return "normal"
 end
 
+--- Thresholds of the link sources and the published RSSI margin sensor.
+--- Link thresholds always count downward.
+---@param settings AeroGridLinkSettings
+---@return AeroGridThreshold[]
+function linkStatus.thresholds(settings)
+    local list = {}
+    local function add(sensor, warning, critical)
+        if type(sensor) == "string" and sensor ~= "" and (type(warning) == "number" or type(critical) == "number") then
+            list[#list + 1] = { sensor = sensor, warning = warning, critical = critical, falling = true }
+        end
+    end
+    add(settings.qualitySource, settings.qualityWarning, settings.qualityCritical)
+    add(settings.rssiSource, settings.rssiWarning, settings.rssiCritical)
+    if settings.protocol == "elrs4" then
+        add("Mrgn", settings.marginWarning, settings.marginCritical)
+    end
+    return list
+end
+
 --- Validate source-specific thresholds and their required sources.
 ---@param settings AeroGridLinkSettings
 ---@return string[] messages
@@ -455,7 +473,7 @@ function linkStatus.read(context)
     -- Without a link view at all, fall back to the source's own freshness
     -- rather than claiming the link is down on no evidence.
     out.linkDown = type(link) == "table" and not out.linkLive
-    out.qualityValue = type(quality) == "table" and quality.unitText == "%" and quality.value or nil
+    out.qualityValue = type(quality) == "table" and quality.value or nil
     out.margin, out.mode = nil, nil
     if context.settings.protocol == "elrs4" then
         local modeFeed = context.modeFeed
@@ -779,6 +797,9 @@ function linkStatus.create(parent, rect, settings, services)
         -- Reused so a refresh allocates nothing; the host pays this per frame.
         readingCache = {},
         pairedRow = layout.pairedRow,
+        publisher = services.telemetryPublisher,
+        ownsTelemetry = services.ownsTelemetry,
+        clock = services.clock,
     }
 
     local telemetry = services.telemetry
@@ -917,6 +938,19 @@ function linkStatus.create(parent, rect, settings, services)
     local _, drawn = primitives.changed(context, linkStatus.render)
     linkStatus.apply(context, drawn)
     return context
+end
+
+--- Publish derived link telemetry without touching the LVGL tree.
+function linkStatus.publish(context, reading)
+    local publisher = context.publisher
+    if not publisher or not context.ownsTelemetry() then
+        return
+    end
+    reading = reading or linkStatus.read(context)
+    if finite(reading.margin) then
+        publisher:publish("Mrgn", reading.margin)
+    end
+    publisher:drop(context.clock(), reading.linkLive)
 end
 
 --- Repaint the panel from its current subscriptions.
@@ -1103,6 +1137,7 @@ end
 ---@param context AeroGridLinkContext
 function linkStatus.refresh(context)
     if not context.rssiFeed and not context.qualityFeed then
+        linkStatus.publish(context)
         return
     end
     local reading = linkStatus.read(context)
@@ -1118,6 +1153,13 @@ function linkStatus.refresh(context)
     if changed then
         linkStatus.apply(context, drawn)
     end
+    linkStatus.publish(context, reading)
+end
+
+--- Keep publishing while the dashboard is hidden.
+function linkStatus.background(context)
+    linkStatus.publish(context)
+    return linkStatus.refreshInterval
 end
 
 --- Reposition after a zone change.

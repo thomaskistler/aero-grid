@@ -57,6 +57,7 @@ return {
             "model",
             "playNumber",
             "playTone",
+            "setTelemetryValue",
         },
     },
 }

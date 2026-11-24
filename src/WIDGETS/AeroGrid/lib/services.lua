@@ -23,12 +23,12 @@
 ---@field revision integer Incremented on every completed update.
 ---@field count integer Number of live subscriptions.
 ---@field failed? boolean Set after an update raises, which retires the service.
----@field updateCost? integer|"variable" Nominal 2000-instruction slots, 0 to 8; defaults to 1.
----@field updateMinCost? integer Minimum grant for a variable-cost update, 1 to 8.
+---@field updateCost? integer|"variable" Nominal 500-instruction slots, 0 to 32; defaults to 1.
+---@field updateMinCost? integer Minimum grant for a variable-cost update, 1 to 32.
 ---@field update fun(self: AeroGridServiceInstance, now: integer, slots: integer): integer?, boolean? Slots used and whether more work is ready.
 ---@field resetSession? fun(self: AeroGridServiceInstance, now: integer, index: integer): integer? Next reset item, or nil when finished.
 
-local services = { RUNTIME_API = 1 }
+local services = {}
 --- Maximum cached sample age in 10 ms ticks when a poller stops updating.
 services.MAX_SAMPLE_AGE = 500
 
@@ -97,11 +97,13 @@ function services.environment(overrides)
     return {
         getValue = callable(overrides.getValue) or callable(getValue),
         getSourceValue = callable(overrides.getSourceValue) or callable(getSourceValue),
+        setTelemetryValue = callable(overrides.setTelemetryValue) or callable(setTelemetryValue),
         getOutputValue = callable(overrides.getOutputValue) or callable(getOutputValue),
         getFieldInfo = callable(overrides.getFieldInfo) or callable(getFieldInfo),
         getRSSI = callable(overrides.getRSSI) or callable(getRSSI),
         getFlightMode = callable(overrides.getFlightMode) or callable(getFlightMode),
         getTime = callable(overrides.getTime) or callable(getTime),
+        getDateTime = callable(overrides.getDateTime) or callable(getDateTime),
         getSwitchIndex = callable(overrides.getSwitchIndex) or callable(getSwitchIndex),
         getSwitchValue = callable(overrides.getSwitchValue) or callable(getSwitchValue),
         setStickySwitch = callable(overrides.setStickySwitch) or callable(setStickySwitch),
@@ -165,6 +167,21 @@ function services.step(task, now, slots)
     return used, again
 end
 
+--- Make an idle service's task due now when a subscriber arrives.
+---@param owner table Service instance.
+function services.subscribed(owner)
+    local task = owner.task
+    if task and task.due == math.huge then
+        task.due = 0
+        local scheduler = task.host and task.host.scheduler
+        if task.broker then
+            task.broker:wake(task)
+        elseif scheduler then
+            scheduler.reschedule(task)
+        end
+    end
+end
+
 --- Publish service-owned state and append one subscription in polling order.
 --- Name lookup and duplicate detection remain with the domain service.
 ---@param owner table Service with support and count fields.
@@ -175,6 +192,7 @@ function services.addSubscription(owner, entries, entry)
     entry.view = owner.support.snapshot(entry.state)
     entries[#entries + 1] = entry
     owner.count = owner.count + 1
+    services.subscribed(owner)
     return entry
 end
 
@@ -230,6 +248,27 @@ function services.age(now, since)
         return nil
     end
     return (now - since) / 100
+end
+
+--- Format a signed second count as a clock reading.
+--- Hours appear only when they exist, so a flight timer does not waste width.
+---@param seconds any
+---@return string
+function services.clockText(seconds)
+    if type(seconds) ~= "number" then
+        return "--:--"
+    end
+
+    local sign = seconds < 0 and "-" or ""
+    local total = math.floor(math.abs(seconds) + 0.5)
+    local hours = math.floor(total / 3600)
+    local minutes = math.floor(total / 60) % 60
+    local secs = total % 60
+
+    if hours > 0 then
+        return string.format("%s%d:%02d:%02d", sign, hours, minutes, secs)
+    end
+    return string.format("%s%d:%02d", sign, minutes, secs)
 end
 
 --- Fill one diagnostic row in a reusable array, returning the next position.

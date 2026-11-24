@@ -5,7 +5,9 @@ local root = (... and ... ~= "" and ...) or "."
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local yaml = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/yaml.lua"))()
 local grid = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/grid.lua"))()
-local layout = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/layout.lua"))()
+local layout = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/layout.lua"))(function()
+    return assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/debrief_config.lua"))()
+end)
 
 local function testVersionOneBatteryMigration()
     local document = assert(yaml.parse([[
@@ -77,26 +79,10 @@ panels:
 end
 
 local function testCurrentBatteryThresholdNormalization()
-    local panel = { type = "rx-battery", config = { warning = 3.55, critical = 3.25 } }
+    local panel = { type = "rx-battery", config = { cellWarning = 3.6, cellCritical = 3.4 } }
     layout.normalizePanel(panel)
-    assertions.assertEqual(panel.config.cellWarning, 3.55)
-    assertions.assertEqual(panel.config.cellCritical, 3.25)
-    assertions.assertEqual(panel.config.warning, nil)
-    assertions.assertEqual(panel.config.critical, nil)
-    layout.normalizePanel(panel)
-    assertions.assertEqual(panel.config.cellWarning, 3.55, "normalization must be idempotent")
-
-    panel.config = { warning = 3.55, critical = 3.25, cellWarning = 3.6, cellCritical = 3.4 }
-    layout.normalizePanel(panel)
-    assertions.assertEqual(panel.config.cellWarning, 3.6, "current keys take precedence")
+    assertions.assertEqual(panel.config.cellWarning, 3.6)
     assertions.assertEqual(panel.config.cellCritical, 3.4)
-    assertions.assertEqual(panel.config.warning, nil)
-    assertions.assertEqual(panel.config.critical, nil)
-
-    panel.config = {}
-    layout.normalizePanel(panel)
-    assertions.assertEqual(panel.config.cellWarning, nil, "normalization must not materialize defaults")
-    assertions.assertEqual(panel.config.cellCritical, nil)
 
     panel.type = "tx-battery"
     panel.config = { warning = 7.2, critical = 6.8 }
@@ -132,10 +118,6 @@ local function testAdjacentMigrationSteps()
     migrated, nextVersion = layout.migrateHeaderStep(validated)
     assert(migrated)
     assertions.assertEqual(nextVersion, 3)
-    assertions.assertEqual(layout.finalizeHeader(validated), nil, "the version-4 step is required")
-    migrated, nextVersion = layout.migrateHeaderStep(validated)
-    assert(migrated)
-    assertions.assertEqual(nextVersion, 4)
     assertions.assertEqual(layout.finalizeHeader(validated), nil, "the version-5 step is required")
     migrated, nextVersion = layout.migrateHeaderStep(validated)
     assert(migrated)
@@ -246,18 +228,36 @@ local function testNavigationMigration()
     end
 end
 
+local function testDebriefSection()
+    local header = {
+        version = layout.VERSION,
+        grid = { columns = 4, rows = 4 },
+        debrief = { tiles = { { title = "", series = {} } } },
+    }
+    local errors = layout.validateDebrief(header)
+    assert(#errors == 1 and string.find(errors[1], "debrief tile 1", 1, true))
+    local bare = { version = layout.VERSION, grid = { columns = 4, rows = 4 } }
+    assert(#layout.validateDebrief(bare) == 0 and bare.debrief == nil, "no section means no debrief")
+end
+
 local function run()
-    local panel = { type = "flight-counter", config = { announcements = true, history = true, motorSource = "ch7" } }
+    local panel = {
+        type = "flight-counter",
+        config = { label = "FLT", announcements = true, history = true, motorSource = "ch7", armSwitch = "SFv" },
+    }
     layout.normalizePanel(panel)
     assertions.assertEqual(panel.config.announcements, nil, "obsolete audio settings must not reject older panels")
     assertions.assertEqual(panel.config.history, nil, "obsolete CSV settings must not reject older panels")
-    assertions.assertEqual(panel.config.motorSource, "ch7")
+    assertions.assertEqual(panel.config.motorSource, nil, "flight detection moved to model settings")
+    assertions.assertEqual(panel.config.armSwitch, nil, "the model Armed condition replaced panel arm switches")
+    assertions.assertEqual(panel.config.label, "FLT")
     testVersionOneBatteryMigration()
     testCurrentBatteryThresholdNormalization()
     testRemovedFlightMinimumFallsBackToSource()
     testAdjacentMigrationSteps()
     testUnsupportedFutureVersion()
     testNavigationMigration()
+    testDebriefSection()
 end
 
 run()

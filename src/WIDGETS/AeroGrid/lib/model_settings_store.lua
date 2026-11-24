@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local storeModule = { RUNTIME_API = 1, VERSION = 1 }
+local storeModule = { VERSION = 1 }
 
 local function copy(value)
     if type(value) ~= "table" then
@@ -42,18 +42,14 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
     local armed = env.armedConfig or dependency(widgetPath, "armed_service")
     local writer = env.verifiedFile or dependency(widgetPath, "verified_file")
     local operations = writer.operations(fileOps)
-    local backend = env.backend
-    if not backend then
-        local api = model or {}
-        backend = sidecar(widgetPath).new(widgetPath, {
-            getOutput = env.getOutput or api.getOutput,
-            setOutput = env.setOutput or api.setOutput,
-            getTime = env.getTime or getTime,
-            getDateTime = env.getDateTime or getDateTime,
-            generateId = env.generateId,
-            isDisarmed = env.isDisarmed,
-        }, writer, operations)
-    end
+    local api = model or {}
+    local backend = (env.sidecar or sidecar(widgetPath)).new(widgetPath, {
+        getOutput = env.getOutput or api.getOutput,
+        setOutput = env.setOutput or api.setOutput,
+        getTime = env.getTime or getTime,
+        getDateTime = env.getDateTime or getDateTime,
+        generateId = env.generateId,
+    }, writer, operations)
     local instance = { counter = counter, operations = operations }
     local function identity(filename)
         local current
@@ -110,6 +106,7 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
             end
             document.flight.announcements = nil
             document.flight.history = nil
+            document.flight.liveDangerously = nil
             for key in pairs(document.flight) do
                 if flightDefaults[key] == nil then
                     return nil, "Unknown flight setting: " .. tostring(key)
@@ -165,7 +162,7 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
                 if normalized then
                     info.content = content
                     info.primaryContent, info.primaryMissing = firstContent, firstInfo.missing == true
-                    info.foreign = info.forkOnRename == true and normalized.modelFilename ~= filename
+                    info.foreign = normalized.modelFilename ~= filename
                     normalized.modelFilename = filename
                     info.notice = info.recovered and "Recovered previous model settings from backup; review and Save"
                         or info.notice
@@ -285,10 +282,9 @@ function storeModule.new(widgetPath, yaml, env, fileOps)
             end
             return true
         end
-        local saved, saveError, deferred =
-            backend:write(filename, prepared.serialized, prepared.info, guard, prepared.document.armed)
+        local saved, saveError = backend:write(filename, prepared.serialized, prepared.info, guard)
         if not saved then
-            return false, saveError, deferred
+            return false, saveError
         end
         local matches, identityError = identity(filename)
         if not matches then

@@ -1,8 +1,5 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local _, armedConfig = ...
-local validSwitch = assert(armedConfig, "navigation requires switch validation").valid
-
 --- GPS position, distance to home, and the north-up bearing from home.
 ---
 --- Direction is measured from home toward the model, not aircraft heading
@@ -20,7 +17,6 @@ local validSwitch = assert(armedConfig, "navigation requires switch validation")
 
 ---@class AeroGridNavigationSettings
 ---@field source? string GPS source name.
----@field armSwitch? string Arm switch position for first-arm home capture.
 ---@field homeMode? "edgetx"|"first-arm"
 ---@field label? string
 ---@field showTape? boolean
@@ -40,11 +36,10 @@ local validSwitch = assert(armedConfig, "navigation requires switch validation")
 
 local navigation = {
     id = "navigation",
-    apiVersion = 1,
     supportedSpans = { "any" },
     -- Telemetry GPS arrives at a few hertz at best, and the navigation service
     -- is itself rate limited because every update costs trigonometry.
-    refreshInterval = 25,
+    refreshInterval = 50,
     settings = {
         { key = "label", label = "Label", type = "string", default = "NAV" },
         { key = "source", label = "GPS source", type = "string", default = "GPS" },
@@ -55,7 +50,6 @@ local navigation = {
             default = "edgetx",
             choices = { "edgetx", "first-arm" },
         },
-        { key = "armSwitch", label = "Home arm switch", type = "string", default = "", legacyArm = true },
         { key = "satelliteSource", label = "Satellite count source", type = "string", default = "" },
         { key = "satelliteWarning", label = "Warn below satellites", type = "number", default = 8 },
         { key = "satelliteCritical", label = "Critical below satellites", type = "number", default = 4 },
@@ -80,12 +74,8 @@ local navigation = {
     },
 }
 
-function navigation.validateSettings(settings, _, _, modelArmed)
+function navigation.validateSettings(settings)
     local errors = {}
-    local arm = settings.armSwitch
-    if modelArmed == nil and arm ~= nil and arm ~= "" and not validSwitch(arm) then
-        errors[#errors + 1] = "armSwitch must be blank, a physical switch position, or a logical switch"
-    end
     for _, key in ipairs({ "satelliteWarning", "satelliteCritical" }) do
         local value = settings[key]
         if
@@ -141,6 +131,24 @@ function navigation.cardinal(bearing)
     return CARDINALS[index + 1]
 end
 
+--- Thresholds of the satellite count source, which alarm below the count.
+---@param settings AeroGridNavigationSettings
+---@return AeroGridThreshold[]
+function navigation.thresholds(settings)
+    if type(settings.satelliteSource) ~= "string" or settings.satelliteSource == "" then
+        return {}
+    end
+    return {
+        {
+            sensor = settings.satelliteSource,
+            warning = settings.satelliteWarning or 8,
+            critical = settings.satelliteCritical or 4,
+            falling = true,
+            strict = true,
+        },
+    }
+end
+
 --- Resolve the panel state from the navigation snapshot.
 ---
 --- Satellite thresholds apply even before a fix/home is available. Missing or
@@ -190,20 +198,6 @@ function navigation.resolveState(settings, view, satellites)
         end
     end
     return view.fix and "normal" or "unavailable"
-end
-
---- Format the dominant distance reading.
----@param view any
----@param formatter fun(view: table): string?
----@return string
-function navigation.distanceText(view, formatter)
-    if type(view) ~= "table" then
-        return "--"
-    end
-    if type(view.distance) ~= "number" then
-        return "--"
-    end
-    return formatter(view) or "--"
 end
 
 --- The distance split into the number and the unit riding beside it.
@@ -675,6 +669,8 @@ function navigation.create(parent, rect, settings, services)
         detail = "",
         origin = "",
         coordinates = "",
+        publisher = services.telemetryPublisher,
+        ownsTelemetry = services.ownsTelemetry,
     }
 
     -- Subscribing in create is the mechanism: a GPS source nothing references
@@ -682,7 +678,7 @@ function navigation.create(parent, rect, settings, services)
     local service = services.navigation
     if service then
         context.service = service
-        context.feed = service:subscribe(settings.source, settings.armSwitch, settings.homeMode)
+        context.feed = service:subscribe(settings.source, settings.homeMode)
         context.preview = services.preview
     end
     if settings.satelliteSource and settings.satelliteSource ~= "" then
@@ -890,6 +886,23 @@ function navigation.render(context, out)
     end
 end
 
+--- Publish derived navigation telemetry without touching the LVGL tree.
+function navigation.publish(context)
+    local publisher = context.publisher
+    local view = context.feed
+    if not publisher or not context.ownsTelemetry() or type(view) ~= "table" or view.state ~= "normal" then
+        return
+    end
+    if type(view.distance) == "number" then
+        publisher:publish("HDst", view.distance)
+    end
+    -- A gap is bridged by the next fresh fix: the straight line is the least
+    -- the aircraft flew.
+    if view.latitude and view.longitude then
+        publisher:track(view.latitude, view.longitude, context.service.distanceBetween)
+    end
+end
+
 --- Paint the panel from what `render` collected, and from nothing else.
 ---@param context AeroGridNavigationContext
 ---@param drawn table
@@ -997,14 +1010,13 @@ function navigation.refresh(context)
     if changed or pending then
         navigation.apply(context, drawn)
     end
+    navigation.publish(context)
 end
 
-function navigation.rebindArming(context, services)
-    if context.service then
-        context.service = services.navigation
-        context.feed =
-            context.service:subscribe(context.settings.source, context.settings.armSwitch, context.settings.homeMode)
-    end
+--- Keep publishing while the dashboard is hidden.
+function navigation.background(context)
+    navigation.publish(context)
+    return navigation.refreshInterval
 end
 
 --- Reposition after a zone change.

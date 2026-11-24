@@ -36,7 +36,7 @@
 ---@field index integer
 ---@field name string Configured name, or "FM<index>" when unnamed.
 
-local modelService = { RUNTIME_API = 1 }
+local modelService = {}
 modelService.__index = modelService
 
 --- Ticks of 10ms between updates. Timers advance once a second, so this is
@@ -49,6 +49,9 @@ local FACET_CAP = 4
 --- Ticks between model identity reads. Identity changes only when the model
 --- changes, which reloads the widget anyway, so it is polled rarely.
 local IDENTITY_INTERVAL = 500
+
+--- Ticks between reads of slow facets such as the TX battery.
+local SLOW_INTERVAL = 100
 
 --- EdgeTX stores model bitmaps in this directory.
 local IMAGE_PATH = "/IMAGES/"
@@ -78,31 +81,12 @@ end
 --- Register a facet and publish its immutable view.
 ---@param state table
 ---@param read fun(self: table, state: table, now: integer)
+---@param period? integer Ticks between reads; every update when omitted.
 ---@return table view
-function modelService:add(state, read)
-    local facet = self.support.addSubscription(self, self.facets, { state = state, read = read })
+function modelService:add(state, read, period)
+    local facet =
+        self.support.addSubscription(self, self.facets, { state = state, read = read, period = period, due = 0 })
     return facet.view
-end
-
---- Format a signed second count as a clock reading.
---- Hours appear only when they exist, so a flight timer does not waste width.
----@param seconds any
----@return string
-function modelService.formatTime(seconds)
-    if type(seconds) ~= "number" then
-        return "--:--"
-    end
-
-    local sign = seconds < 0 and "-" or ""
-    local total = math.floor(math.abs(seconds) + 0.5)
-    local hours = math.floor(total / 3600)
-    local minutes = math.floor(total / 60) % 60
-    local secs = total % 60
-
-    if hours > 0 then
-        return string.format("%s%d:%02d:%02d", sign, hours, minutes, secs)
-    end
-    return string.format("%s%d:%02d", sign, minutes, secs)
 end
 
 --- Read model identity, rate limited independently of the service interval.
@@ -191,7 +175,7 @@ function modelService:readTimer(state)
         state.expired = false
     end
 
-    state.text = modelService.formatTime(state.showElapsed and state.elapsed or value)
+    state.text = self.support.clockText(state.showElapsed and state.elapsed or value)
 end
 
 --- Subscribe to one model timer.
@@ -413,7 +397,7 @@ function modelService:batteryRange()
         empty = nil,
         full = nil,
         warn = nil,
-    }, modelService.readBatteryRange)
+    }, modelService.readBatteryRange, SLOW_INTERVAL)
 
     return self.batteryRangeView
 end
@@ -443,7 +427,7 @@ function modelService:txVoltage()
         updatedAt = nil,
         age = nil,
         revision = 0,
-    }, modelService.readTxVoltage)
+    }, modelService.readTxVoltage, SLOW_INTERVAL)
 
     return self.txVoltageView
 end
@@ -451,6 +435,13 @@ end
 --- Refresh a bounded slice of the subscribed facets.
 ---@param now integer
 local function readFacet(service, facet, now)
+    local period = facet.period
+    if period then
+        if now < facet.due then
+            return
+        end
+        facet.due = now + period
+    end
     facet.read(service, facet.state, now)
 end
 

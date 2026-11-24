@@ -36,18 +36,13 @@ local function harness(options, configured)
     local control = controlModule.new(env, support)
     runtime.byId.telemetry = telemetry
     runtime.byId.control = control
+    runtime.modelArmed = configured ~= false and "L01" or ""
     runtime.byId.armed = armedModule.new(env, support, runtime)
     local history = historyModule.new(env, support, runtime)
-    local armSwitch = configured ~= false and "L01" or ""
-    local session = history:session(armSwitch)
-    options = options or {}
-    options.armSwitch = armSwitch
-    local feed = history:subscribe("V", options)
-    local function poll(now, arm, value, otherArm)
+    local session = history:session()
+    local feed = history:subscribe("V", options or {})
+    local function poll(now, arm, value)
         values[1], values[100] = arm, value
-        if otherArm ~= nil then
-            values[2] = otherArm
-        end
         control:update(now)
         telemetry:update(now)
         history:update(now)
@@ -99,25 +94,16 @@ local function knots(history, feed)
     return result
 end
 
-local function accuracy(history, feed, samples, epsilon)
+--- Every sample must read back exactly as the value held at its time.
+local function held(history, feed, samples)
     local points = knots(history, feed)
-    local cursor, worst = 1, 0
+    local cursor = 1
     for _, sample in ipairs(samples) do
         while cursor < #points and points[cursor + 1][1] <= sample[1] do
             cursor = cursor + 1
         end
-        local first, second = points[cursor], points[cursor + 1]
-        local value = first[2]
-        if first[1] ~= sample[1] then
-            assert(second and not second[3], "sample has no connected reconstruction")
-            local fraction = (sample[1] - first[1]) / (second[1] - first[1])
-            value = first[2] * (1 - fraction) + second[2] * fraction
-        end
-        local difference = math.abs(value - sample[2])
-        worst = math.max(worst, difference)
-        assert(difference <= epsilon, string.format("at %d: error %.12g exceeds %.12g", sample[1], difference, epsilon))
+        equal(points[cursor][2], sample[2], string.format("value held at %d", sample[1]))
     end
-    return worst
 end
 
 local history, session, feed, poll = harness()
@@ -156,14 +142,10 @@ equal(history:preview():recordingBreak(session, 1), paused, "previews expose the
 equal(history:recordingBreak(session, 0), nil)
 equal(history:recordingBreak(session, 2), nil)
 equal(history:recordingBreak({}, 1), nil)
-equal(history:subscribe("V", { armSwitch = "L01" }), feed, "matching histories share storage")
+equal(history:subscribe("V", {}), feed, "matching histories share storage")
+equal(history:subscribe("V", { windowSeconds = 30 }), feed, "growing durations no longer distinguish recordings")
 equal(
-    history:subscribe("V", { armSwitch = "L01", windowSeconds = 30 }),
-    feed,
-    "growing durations no longer distinguish recordings"
-)
-equal(
-    history:subscribe("V", { armSwitch = "L01", windowSeconds = 600 }),
+    history:subscribe("V", { windowSeconds = 600 }),
     feed,
     "legacy growing windows must share the canonical recording"
 )
@@ -182,18 +164,6 @@ for _, case in ipairs({
     equal(minuteFeed.window, case[2], "history windows must grow by whole minutes without doubling")
 end
 equal(minuteHistory:point(minuteFeed, 1), 0, "minute growth must retain the beginning of the recording")
-assert(
-    history:subscribe("V", { armSwitch = "L01", precision = 0 }) ~= feed,
-    "Sensor and explicit precision subscriptions differ"
-)
-equal(
-    history:subscribe("V", { armSwitch = "L01", precision = 1 }),
-    history:subscribe("V", { armSwitch = "L01", precision = 1 })
-)
-assert(
-    history:subscribe("V", { armSwitch = "L01", precision = 2 })
-        ~= history:subscribe("V", { armSwitch = "L01", precision = 1 })
-)
 assert(not pcall(function()
     feed.value = 42
 end), "history views must be immutable")
@@ -219,48 +189,16 @@ equal(missingFeed.available, false)
 equal(missing:point(missingFeed, 1), nil)
 
 local independent, firstSession, firstFeed, independentPoll = harness()
-local secondSession = independent:session("L02")
-local secondFeed = independent:subscribe("V", { armSwitch = "L02" })
-assert(firstSession ~= secondSession and firstFeed ~= secondFeed, "different panel switches must isolate recordings")
-equal(independent:session("L01"), firstSession, "matching switch configurations share their clock")
-equal(independent:subscribe("V", { armSwitch = "L02" }), secondFeed)
-independentPoll(0, 1, 12, 0)
-independentPoll(100, 1, 15, 0)
-equal(firstFeed.max, 15)
-equal(secondFeed.available, false, "another panel's switch must not arm this history")
-independentPoll(200, 0, 20, 1)
-local firstElapsed = firstSession.elapsed
-independentPoll(300, 0, 25, 1)
-equal(firstSession.elapsed, firstElapsed, "only the second panel's clock may advance")
-equal(firstFeed.max, 15)
-equal(secondFeed.min, 20)
-equal(secondFeed.max, 25)
-local secondElapsed = secondSession.elapsed
-independentPoll(400, 1, 30, 1)
-independentPoll(500, 1, 35, 0)
-equal(firstFeed.max, 35)
-equal(secondFeed.max, 30, "the second recording must freeze when its own switch is off")
-assert(secondSession.elapsed > secondElapsed)
-local unconfigured = independent:session()
-local unconfiguredFeed = independent:subscribe("V")
-independentPoll(600, 1, 40, 1)
-equal(unconfigured.configured, false, "a blank panel must not inherit another panel's arm switch")
-equal(unconfiguredFeed.available, false)
-local unknownSession = independent:session("L03")
-local unknownFeed = independent:subscribe("V", { armSwitch = "L03" })
-independentPoll(700, nil, 45, 1)
+independentPoll(600, 1, 40)
+independentPoll(700, nil, 45)
 equal(firstSession.available, false, "an unavailable switch must not be treated as a known disarm condition")
 equal(firstSession.recording, false)
 equal(firstFeed.value, 40, "switch loss must freeze the last recorded reading")
 local unavailableElapsed = firstSession.elapsed
 local previousSegment = firstSession.segment
-independentPoll(800, nil, 55, 1)
+independentPoll(800, nil, 55)
 equal(firstSession.elapsed, unavailableElapsed)
-equal(secondFeed.max, 55, "another panel must continue recording during switch loss")
-equal(unknownSession.configured, true)
-equal(unknownSession.available, false)
-equal(unknownFeed.available, false, "unresolved switches must not start a recording")
-independentPoll(900, 1, 50, 0)
+independentPoll(900, 1, 50)
 equal(firstSession.available, true)
 equal(firstSession.segment, previousSegment + 1, "switch recovery must start a disconnected segment")
 equal(firstFeed.value, 50)
@@ -288,83 +226,72 @@ equal(select(2, bounded:preview():armBoundary(boundedSession, boundedSession.arm
 assert(#bounded.entries[1].resumeBits <= historyModule.CAPACITY // 32, "break reasons must use a bounded bitset")
 equal(select(4, bounded:point(boundedFeed, boundedFeed.last)), true, "resume bits survive physical ring reuse")
 
-local smoothed, _, smoothFeed, smoothPoll = harness({ smoothing = "medium", windowSeconds = 30 })
-smoothPoll(0, 1, 0)
-smoothPoll(100, 1, 10)
-equal(smoothFeed.value, 10)
-equal(smoothFeed.min, 0)
-equal(smoothFeed.max, 10)
-local _, filtered = smoothed:point(smoothFeed, smoothFeed.last)
-assert(filtered > 6.3 and filtered < 6.4, "smoothing must use elapsed time rather than redraw count")
-smoothPoll(200, 0, 10)
-smoothPoll(10000, 1, 20)
-_, filtered = smoothed:point(smoothFeed, smoothFeed.last)
-equal(filtered, 20, "filters restart at rearm boundaries")
-
-for precision = 0, 3 do
-    local compressor, output, sample = recorder({ precision = precision })
-    local originals = {}
-    local epsilon = 0.5 * 10 ^ -precision
-    for index = 0, 800 do
-        local number = math.sin(index * 0.17) * 10 + index * 0.002
-        if index % 29 == 0 then
-            number = number + 20
-        end
-        sample(index * 10, number)
-        originals[#originals + 1] = { index * 10, number }
-        if index < 40 or index % 80 == 0 then
-            accuracy(compressor, output, originals, epsilon)
-        end
-    end
-    equal(output.epsilon, epsilon)
-    accuracy(compressor, output, originals, epsilon)
-    assert(output.count < #originals)
+-- A reading holds until it changes: only changes are written, exactly as read.
+local steps, stepFeed, stepSample = recorder()
+for _, reading in ipairs({ { 0, 11 }, { 100, 10 }, { 299, 10 }, { 310, 10 } }) do
+    stepSample(reading[1], reading[2])
 end
+local stepKnots = knots(steps, stepFeed)
+equal(#stepKnots, 3, "two changes plus the end of the last hold")
+equal(stepKnots[1][1], 0)
+equal(stepKnots[1][2], 11)
+equal(stepKnots[2][1], 100)
+equal(stepKnots[2][2], 10)
+equal(stepKnots[3][1], 310)
+equal(stepKnots[3][2], 10)
+equal(stepFeed.min, 10)
 
--- A last raw sample need not lie on ANY line feasible for the whole corridor.
-local corridor, corridorFeed, corridorSample = recorder({ precision = 0 })
-local corridorOriginals = {}
-for index, number in ipairs({ 0, 1.4, 1.1, 2.4, -2, 3, -3, 1 }) do
-    corridorSample((index - 1) * 10, number)
-    corridorOriginals[#corridorOriginals + 1] = { (index - 1) * 10, number }
-    accuracy(corridor, corridorFeed, corridorOriginals, 0.5)
+local waves, waveFeed, waveSample = recorder()
+local waveOriginals = {}
+for index = 0, 800 do
+    local number = math.floor(math.sin(index * 0.017) * 3 + 0.5)
+    waveSample(index * 10, number)
+    waveOriginals[#waveOriginals + 1] = { index * 10, number }
 end
-local synthesized = false
-for _, point in ipairs(knots(corridor, corridorFeed)) do
-    for _, original in ipairs(corridorOriginals) do
-        if point[1] == original[1] and point[2] ~= original[2] then
-            synthesized = true
-        end
-    end
+held(waves, waveFeed, waveOriginals)
+for _, point in ipairs(knots(waves, waveFeed)) do
+    equal(point[2] % 1, 0, "stored values are never invented")
 end
-assert(synthesized, "corridor failures must commit a synthesized shared endpoint")
+assert(waveFeed.count < #waveOriginals // 4, "unchanged readings must not add entries")
 
-local growing, growingFeed, growingSample, _, growingSession = recorder({ windowSeconds = 30, precision = 3 })
+-- A dropout closes the hold at the last reading before it.
+local gaps, gapFeed, gapSample, gapReading = recorder()
+gapSample(0, 5)
+gapSample(100, 5)
+gapReading.fresh = false
+gapSample(200, 5)
+gapReading.fresh = true
+gapSample(300, 5)
+local gapKnots = knots(gaps, gapFeed)
+equal(#gapKnots, 3)
+equal(gapKnots[2][1], 100, "the hold ends where the signal was last seen")
+equal(gapKnots[3][3], true, "the value after a dropout starts a new run")
+
+local growing, growingFeed, growingSample, _, growingSession = recorder({ windowSeconds = 30 })
 local growingOriginals = {}
 for tick = 0, 500000, 100 do
-    local number = tick == 10000 and -100 or tick / 100
+    local number = tick == 10000 and -100 or tick // 100000
     growingSample(tick, number)
     growingOriginals[#growingOriginals + 1] = { tick, number }
 end
 equal(growingFeed.min, -100)
-equal(growingFeed.max, 5000)
+equal(growingFeed.max, 5)
 equal(growing:point(growingFeed, 1), 0, "growing history retains the start")
 equal(growingFeed.window, 504000)
 equal(growingSession.elapsed, 500000)
-accuracy(growing, growingFeed, growingOriginals, 0.0005)
-assert(growingFeed.count < 20, "straight spans must not grow with flight duration")
+held(growing, growingFeed, growingOriginals)
+assert(growingFeed.count < 20, "constant spans must not grow with flight duration")
 
 local rolling, rollingFeed, rollingSample = recorder({ timeRange = "rolling", windowSeconds = 30 })
 for tick = 0, 10000, 10 do
-    rollingSample(tick, tick / 100)
+    rollingSample(tick, 5)
 end
 equal(rollingFeed.window, 3000)
-equal(rollingFeed.count, 2, "rolling ramps retain a bracketing anchor and the live endpoint")
-equal(rollingFeed.min, 0)
-equal(rollingFeed.max, 100)
-accuracy(rolling, rollingFeed, { { 7000, 70 }, { 8000, 80 }, { 10000, 100 } }, 0.05)
+equal(rollingFeed.count, 2, "a rolling hold retains its start and its live end")
+equal(rollingFeed.min, 5)
+equal(rollingFeed.max, 5)
 
-local dense, denseFeed, denseSample = recorder({ precision = 3 })
+local dense, denseFeed, denseSample = recorder()
 local denseOriginals = {}
 for index = 0, 6000 do
     local number = index % 2 == 0 and -100 or 100
@@ -373,7 +300,7 @@ for index = 0, 6000 do
 end
 equal(denseFeed.count, 6001, "ten minutes at 10 Hz must fit even without compression savings")
 equal(denseFeed.full, false)
-accuracy(dense, denseFeed, denseOriginals, 0.0005)
+held(dense, denseFeed, denseOriginals)
 for index = 6001, historyModule.CAPACITY do
     denseSample(index * 10, index % 2 == 0 and -100 or 100)
 end
@@ -408,7 +335,7 @@ assert(collectgarbage("count") - fullMemory < 2, "full history must not retain m
 equal(denseFeed.count, historyModule.CAPACITY)
 equal(denseFeed.plotRevision, revision)
 
-local ring, ringFeed, ringSample = recorder({ precision = 3, timeRange = "rolling", windowSeconds = 600 })
+local ring, ringFeed, ringSample = recorder({ timeRange = "rolling", windowSeconds = 600 })
 for index = 0, historyModule.CAPACITY * 3 do
     ringSample(index * 10, index % 2 == 0 and -100 or 100)
 end
@@ -419,43 +346,27 @@ local ringOriginals = {}
 for index = historyModule.CAPACITY * 3 - 6000, historyModule.CAPACITY * 3 do
     ringOriginals[#ringOriginals + 1] = { index * 10, index % 2 == 0 and -100 or 100 }
 end
-accuracy(ring, ringFeed, ringOriginals, 0.0005)
+held(ring, ringFeed, ringOriginals)
 local lastAt, lastValue = ring:point(ringFeed, ringFeed.last)
 assert(lastAt and lastValue, "knots must remain readable after ring wrap")
 
-local pending, pendingFeed, pendingSample, pendingReading = recorder()
-pendingReading.precision, pendingReading.precisionKnown = 0, false
-pendingSample(0, 0)
-pendingSample(10, 0.009)
-equal(pendingFeed.epsilon, 0.0005, "unknown sensor precision must not irreversibly compress too loosely")
-pendingReading.precision, pendingReading.precisionKnown = 2, true
-pendingSample(20, 0.013)
-equal(pendingFeed.epsilon, 0.005)
-accuracy(pending, pendingFeed, { { 0, 0 }, { 10, 0.009 }, { 20, 0.013 } }, 0.005)
-
-local huge, hugeFeed, hugeSample = recorder({ precision = 3 })
+local huge, hugeFeed, hugeSample = recorder()
 local hugeOriginals = {}
 for index = 0, 30 do
     local number = index % 2 == 0 and 1e16 or -1e16
     hugeSample(index * 10, number)
     hugeOriginals[#hugeOriginals + 1] = { index * 10, number }
 end
-accuracy(huge, hugeFeed, hugeOriginals, 0.0005)
-equal(hugeFeed.count, 31, "when numerical margin consumes tolerance, retain exact native values")
+held(huge, hugeFeed, hugeOriginals)
+equal(hugeFeed.count, 31, "every change is retained exactly")
 
-local integers, integerFeed, integerSample = recorder({ precision = 3 })
+local integers, integerFeed, integerSample = recorder()
 integerSample(0, math.maxinteger)
 integerSample(10, math.maxinteger - 1)
 local _, integerValue = integers:point(integerFeed, integerFeed.first)
 equal(integerValue, math.maxinteger, "native integers must not be truncated through floating-point packing")
 _, integerValue = integers:point(integerFeed, integerFeed.last)
 equal(integerValue, math.maxinteger - 1)
-
-local extremes, extremesFeed, extremesSample = recorder({ precision = 3, smoothing = "medium" })
-extremesSample(0, 1e308)
-extremesSample(100, -1e308)
-local _, extremeValue = extremes:point(extremesFeed, extremesFeed.last)
-assert(extremeValue == extremeValue and math.abs(extremeValue) < math.huge, "EMA must not overflow finite endpoints")
 
 local failures, _, _, failurePoll, failureTelemetry = harness()
 failureTelemetry:observe({
@@ -469,7 +380,7 @@ failures.failure = "history observer failed"
 local ok, message = pcall(failures.update, failures, 10)
 assert(not ok and string.find(message, "history observer failed", 1, true))
 
-local resetHistory, resetFeed, resetSample, _, resetView = recorder({ smoothing = "strong" })
+local resetHistory, resetFeed, resetSample, _, resetView = recorder()
 resetSample(0, 10)
 resetSample(100, 20)
 local oldRevision, oldPlotRevision = resetFeed.revision, resetFeed.plotRevision
@@ -477,8 +388,8 @@ local nextItem = 1
 repeat
     nextItem = resetHistory:resetSession(120, nextItem)
 until not nextItem
-equal(resetHistory:session("L01"), resetView, "reset must retain the session view")
-equal(resetHistory:subscribe("V", { armSwitch = "L01", smoothing = "strong" }), resetFeed)
+equal(resetHistory:session(), resetView, "reset must retain the session view")
+equal(resetHistory:subscribe("V"), resetFeed)
 equal(resetView.elapsed, 0)
 equal(resetView.segment, 0)
 equal(resetFeed.count, 0)
@@ -490,7 +401,7 @@ resetSample(140, 50)
 equal(resetFeed.min, 50)
 equal(resetFeed.max, 50)
 local _, resetValue = resetHistory:point(resetFeed, resetFeed.last)
-equal(resetValue, 50, "the first post-reset sample must not inherit smoothing from old recordings")
+equal(resetValue, 50, "the first post-reset sample must not inherit old recordings")
 print(
     string.format(
         "  chart history: 6001 worst-case samples fit; %d bytes/knot on this runtime",

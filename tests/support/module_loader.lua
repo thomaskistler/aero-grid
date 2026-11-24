@@ -12,6 +12,11 @@ local function loadModule(relative)
     if relative == "lib/theme.lua" then
         return chunk(loadModule("lib/typography.lua"), loadModule("lib/panel_layout.lua"))
     end
+    if relative == "lib/layout.lua" then
+        return chunk(function()
+            return loadModule("lib/debrief_config.lua")
+        end)
+    end
     if relative == "lib/primitives.lua" then
         return chunk(loadModule("lib/reading.lua"))
     end
@@ -20,21 +25,9 @@ local function loadModule(relative)
         or relative == "panels/state.lua"
         or relative == "panels/navigation.lua"
         or relative == "panels/flight-counter.lua"
+        or relative == "panels/output.lua"
     then
         return chunk(loadModule("lib/scheduler.lua").new().budget, loadModule("lib/armed_service.lua"))
-    end
-    if relative == "main.lua" then
-        -- Instruction-budget tests measure one 8-slot segment per callback, so
-        -- widgets start without the extended callback budget. A test that wants
-        -- it clears `liveDangerouslyFailed`.
-        local definition = chunk()
-        local create = definition.create
-        definition.create = function(...)
-            local context = create(...)
-            context.liveDangerouslyFailed = true
-            return context
-        end
-        return definition
     end
     return chunk()
 end

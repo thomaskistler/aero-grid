@@ -13,7 +13,11 @@
 ---@field panels table[] Only valid, non-overlapping panels.
 --- Unrecognized top-level keys from the source document are preserved verbatim.
 
-local layout = { RUNTIME_API = 1 }
+-- Loads lib/debrief_config.lua on first use, so layouts without a debrief
+-- never pay for it.
+local loadDebrief = ...
+
+local layout = {}
 
 layout.VERSION = 5
 
@@ -31,6 +35,17 @@ local function chartMinutes(duration)
     return math.max(1, math.min(60, math.ceil(minutes)))
 end
 
+local LEGACY_FLIGHT_KEYS = {
+    "_legacyFlight",
+    "motorSource",
+    "motorReversed",
+    "minMotorPercent",
+    "minFlightDuration",
+    "disarmDuration",
+    "announcements",
+    "history",
+}
+
 function layout.normalizePanel(panel)
     if panel.type == "chart" and type(panel.config) == "table" and panel.config.duration ~= nil then
         panel.config.duration = chartMinutes(panel.config.duration)
@@ -39,41 +54,29 @@ function layout.normalizePanel(panel)
         -- Flight-session minimums were removed; EdgeTX's own minimum replaces them.
         panel.config.extrema = "source"
     end
-    if panel.type == "flight-counter" and type(panel.config) == "table" then
-        panel.config.announcements = nil
-        panel.config.history = nil
+    local config = type(panel.config) == "table" and panel.config or nil
+    if config and (panel.type == "flight-counter" or panel.type == "navigation" or panel.type == "chart") then
+        -- The model's Armed condition replaced per-panel arm switches.
+        config.armSwitch = nil
     end
-    if panel.type == "navigation" and type(panel.config) == "table" then
+    if config and panel.type == "flight-counter" then
+        -- Flight detection settings moved to model settings.
+        for _, key in ipairs(LEGACY_FLIGHT_KEYS) do
+            config[key] = nil
+        end
+    end
+    if config and panel.type == "navigation" then
         -- Former distance thresholds must never become satellite-count limits.
-        panel.config.warning = nil
-        panel.config.critical = nil
-    end
-    if panel.type == "rx-battery" and type(panel.config) == "table" then
-        -- Schema 2 was unreleased: accept its old selector, but never persist it.
-        panel.config.sourceType = nil
-        if panel.config.cellWarning == nil then
-            panel.config.cellWarning = panel.config.warning
-        end
-        if panel.config.cellCritical == nil then
-            panel.config.cellCritical = panel.config.critical
-        end
-        panel.config.warning = nil
-        panel.config.critical = nil
+        config.warning = nil
+        config.critical = nil
     end
     return panel
 end
 
 local migrations = {
-    [4] = {
-        header = function() end,
-        panel = function(panel)
-            if panel.type == "flight-counter" then
-                panel.config = panel.config or {}
-                panel.config._legacyFlight = true
-            end
-        end,
-    },
+    -- Version 4 was never released, so version 3 goes straight to 5.
     [3] = {
+        to = 5,
         header = function() end,
         panel = function(panel)
             if panel.type == "flight-counter" or panel.type == "navigation" then
@@ -123,6 +126,9 @@ local migrations = {
                     config.reading = "cell"
                 end
                 config.sourceType = nil
+                config.cellWarning = config.cellWarning == nil and config.warning or config.cellWarning
+                config.cellCritical = config.cellCritical == nil and config.critical or config.cellCritical
+                config.warning, config.critical = nil, nil
                 panel.config = config
             end
         end,
@@ -134,12 +140,13 @@ local function supportedVersion(version)
         return false
     end
 
-    for current = version, layout.VERSION - 1 do
-        if type(migrations[current]) ~= "table" then
+    while version < layout.VERSION do
+        if type(migrations[version]) ~= "table" then
             return false
         end
+        version = migrations[version].to or version + 1
     end
-    return true
+    return version == layout.VERSION
 end
 
 layout.supportsVersion = supportedVersion
@@ -157,7 +164,7 @@ function layout.migrateHeaderStep(document)
     end
     local version = document.version
     migrations[version].header(document)
-    document.version = version + 1
+    document.version = migrations[version].to or version + 1
     return true, document.version
 end
 
@@ -174,7 +181,7 @@ function layout.migratePanelStep(panel, sourceVersion)
         return true, sourceVersion
     end
     migrations[sourceVersion].panel(panel)
-    return true, sourceVersion + 1
+    return true, migrations[sourceVersion].to or sourceVersion + 1
 end
 
 --- Synchronous convenience for callers that can afford the complete chain.
@@ -343,6 +350,45 @@ function layout.validateDocument(document)
     return finalized, errors, sourceVersion
 end
 
+local debriefModule
+
+--- The debrief configuration module, loaded on first use.
+---@return table? module
+---@return string? error
+function layout.debrief()
+    if not debriefModule then
+        if type(loadDebrief) ~= "function" then
+            return nil, "debrief support is unavailable"
+        end
+        local module, loadError = loadDebrief()
+        if not module then
+            return nil, loadError
+        end
+        debriefModule = module
+    end
+    return debriefModule
+end
+
+--- Normalize a header's optional debrief section in place.
+--- Invalid tiles and series are dropped and reported as errors. Unknown
+--- settings are preserved and reported separately as non-blocking warnings.
+---@param header table
+---@return string[] errors
+---@return string[] warnings
+function layout.validateDebrief(header)
+    if header.debrief == nil then
+        return {}, {}
+    end
+    local module, loadError = layout.debrief()
+    if not module then
+        header.debrief = nil
+        return { "debrief: " .. tostring(loadError) }, {}
+    end
+    local normalized, errors, warnings = module.validate(header.debrief)
+    header.debrief = normalized
+    return errors, warnings
+end
+
 --- Validate one panel against the grid and the entries already accepted.
 --- Returning the outcome per entry lets the host validate and build panels
 --- one at a time, rather than holding the whole layout in one callback.
@@ -398,6 +444,9 @@ function layout.validate(document, grid)
     local normalized, errors, sourceVersion = layout.validateDocument(document)
     if not normalized or not sourceVersion then
         return nil, errors
+    end
+    for _, message in ipairs(layout.validateDebrief(normalized)) do
+        errors[#errors + 1] = message
     end
 
     if not isSequence(document.panels) then

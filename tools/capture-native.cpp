@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <dlfcn.h>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -79,11 +80,14 @@ int main(int argc, char** argv) {
     const size_t bytes = 480 * 272 * 2;
     std::vector<unsigned char> previous(bytes), image(bytes);
     std::string ready = std::string(argv[2]) + "/capture-ready.txt";
+    // Recorded-flight scenes need more than the default 30 seconds.
+    const char* limit = std::getenv("CAPTURE_TICKS");
+    const int ticks = limit ? std::atoi(limit) : 3000;
     int stable = 0;
     bool captured = false;
     init();
     start(false, argv[2], argv[2]);
-    for (int tick = 0; tick < 3000; ++tick) {
+    for (int tick = 0; tick < ticks; ++tick) {
         if (fullscreen && tick == 500) touchDown(200, 140);
         if (fullscreen && tick == 600) touchUp();
         for (const auto& action : actions) {

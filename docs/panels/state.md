@@ -28,11 +28,11 @@ Tap a reading under **Entries** to open its settings.
 | **Label** | STATE | Panel heading for the main reading; caption for supporting readings. Single-line text. New entries copy the last entry's label. |
 | **States** | No states | Up to three ordered conditions. Tap **+** to append a blank state, rather than copying the last state. |
 
-Use **Remove entry** in the entry's settings dialog to delete a reading.
+Tap a reading to edit, move, or delete it.
 
 ### State condition
 
-Tap a condition under **States** to open its settings.
+Tap a condition under **States** and choose **Edit** to open its settings.
 
 ![State condition settings](../assets/editor/state-condition.png)
 
@@ -42,7 +42,7 @@ Tap a condition under **States** to open its settings.
 | **Text** | Empty | Exact single-line text displayed when this condition wins. |
 | **Background** | normal | Main entry's whole-panel presentation: **normal**, **active**, **warning**, or **critical**. Supporting entries do not control the panel presentation. |
 
-Use **Remove state** in the condition's settings dialog to delete it.
+Tap a condition to move or delete it.
 
 ## Behavior
 
@@ -50,8 +50,7 @@ Conditions are evaluated in insertion order. The first true condition wins.
 An unknown, unavailable, or stale earlier condition stops evaluation rather
 than silently falling through. If none matches, the entry is unmapped; it
 never retains the previous state. New states append at the bottom. To change
-priority, delete a state and recreate it at the bottom; there are no reorder
-controls.
+priority, use **Move up** or **Move down**.
 
 Switch readings work without receiver telemetry. Texts such as `ARMED` are
 your own labels: verify their relationship to your model's configuration.

@@ -8,7 +8,7 @@ fixture.lvglMock.setAppMode(true)
 fixture.lvglMock.setFullScreen(false)
 local file = assert(fixture.hostIo.open(fixture.path .. "layouts/selective-restore.yaml", "w"))
 file:write([[
-version: 4
+version: 5
 grid:
   columns: 4
   rows: 4

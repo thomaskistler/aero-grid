@@ -40,11 +40,10 @@
 
 local rxBattery = {
     id = "rx-battery",
-    apiVersion = 1,
     supportedSpans = { "any" },
     -- A pack voltage moves over a flight, not over a frame, and every refresh
-    -- walks the cells table. Five hertz is already far more than a pilot reads.
-    refreshInterval = 20,
+    -- walks the cells table. Twice a second is as often as a pilot reads it.
+    refreshInterval = 50,
     settings = {
         { key = "label", label = "Label", type = "string", default = "PACK" },
         { key = "source", label = "Voltage source", type = "string", default = "RxBat" },
@@ -306,6 +305,16 @@ function rxBattery.estimateCount(voltage, cellFull)
         return nil
     end
     return count
+end
+
+--- Thresholds of the published lowest-cell sensor, judged as the panel does.
+---@param settings AeroGridRxBatterySettings
+---@return AeroGridThreshold[]
+function rxBattery.thresholds(settings)
+    if type(settings.cellWarning) ~= "number" and type(settings.cellCritical) ~= "number" then
+        return {}
+    end
+    return { { sensor = "VCel", warning = settings.cellWarning, critical = settings.cellCritical, falling = true } }
 end
 
 --- Resolve the panel state. Cell voltages always count downward.
@@ -676,6 +685,8 @@ function rxBattery.create(parent, rect, settings, services)
         -- Reused so a refresh allocates nothing; the host pays this per frame.
         summary = {},
         rect = rect,
+        publisher = services.telemetryPublisher,
+        ownsTelemetry = services.ownsTelemetry,
     }
 
     -- Subscribing in create is the mechanism: a source nothing references is
@@ -844,6 +855,13 @@ function rxBattery.gather(context)
     context.stale = stale
 end
 
+function rxBattery.publish(context)
+    local publisher = context.publisher
+    if publisher and context.ownsTelemetry() and type(context.perCell) == "number" and not context.stale then
+        publisher:publish("VCel", context.perCell)
+    end
+end
+
 --- Collect everything this panel draws.
 ---@param context AeroGridRxBatteryContext
 ---@param out table
@@ -979,6 +997,16 @@ function rxBattery.refresh(context)
     if changed or reflowed then
         rxBattery.apply(context, drawn)
     end
+    rxBattery.publish(context)
+end
+
+--- Keep publishing while the dashboard is hidden.
+function rxBattery.background(context)
+    if context.feed and context.publisher and context.ownsTelemetry() then
+        rxBattery.gather(context)
+        rxBattery.publish(context)
+    end
+    return rxBattery.refreshInterval
 end
 
 --- Reposition after a zone change.

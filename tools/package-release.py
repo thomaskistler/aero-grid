@@ -8,11 +8,11 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = re.compile(r'(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:beta|rc)\.[1-9]\d*)?')
-LAYOUTS = {"Default.yaml", "Empty.yaml", "Diagnostics.yaml", "Palette.yaml"}
+LAYOUTS = {"Default.yaml", "Empty.yaml"}
 ASSETS = {
     *(f"aerogrid-mark-{size}.png" for size in (36, 45, 62)),
     *(f"menu-{icon}-{color}-{size}.png"
-      for icon in ("model", "theme") for color in ("black", "white") for size in (36, 45, 62)),
+      for icon in ("model", "stats", "theme") for color in ("black", "white") for size in (36, 45, 62)),
     "aerogrid.svg",
     "menu-title.svg",
     *(f"menu-title-{size}.png" for size in (36, 45, 62)),

@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local viewer = { RUNTIME_API = 1 }
+local viewer = {}
 
 local function matches(event, name)
     return _G[name] ~= nil and event == _G[name]
@@ -130,7 +130,6 @@ function viewer.open(host)
         press = function()
             if host.logViewer == state then
                 state.closing = true
-                host.uiRequest = "log viewer"
             end
         end,
     })

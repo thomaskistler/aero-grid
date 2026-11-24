@@ -52,7 +52,7 @@ menu reservation, and editor behavior. See [Test and debug](testing.md) and
 card. Stop the simulator before deliberately updating tracked fixture files.
 
 Shared sensors, mixes, timers, and model setup come from `MODELS/model1.yml`.
-After changing them, regenerate the six category models, labels, and flight
+After changing them, regenerate the fixture models, labels, and flight
 announcement tracks:
 
 ```sh

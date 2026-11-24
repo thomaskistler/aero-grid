@@ -1,22 +1,17 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
---- Connected, error-bounded recordings of cumulative recording time.
-local history = { RUNTIME_API = 1, CAPACITY = 6144, FLIGHT_CAPACITY = 64 }
+--- Recordings of cumulative recording time. Each entry is a value that holds
+--- until the next entry.
+local history = { CAPACITY = 6144, FLIGHT_CAPACITY = 64 }
 history.updateCost = 1
 history.__index = history
 
-local TAU = { off = 0, light = 50, medium = 100, strong = 200 }
 local NUMBER_FORMAT, INTEGER_FORMAT, CHUNK = "<I4n", "<I4j", 64
 local BROKEN, INTEGER = 0x80000000, 0x40000000
 local BYTES = math.max(string.packsize(NUMBER_FORMAT), string.packsize(INTEGER_FORMAT))
 NUMBER_FORMAT = NUMBER_FORMAT .. string.rep("x", BYTES - string.packsize(NUMBER_FORMAT))
 INTEGER_FORMAT = INTEGER_FORMAT .. string.rep("x", BYTES - string.packsize(INTEGER_FORMAT))
-local ROUNDING = (string.packsize("n") == 4 and 2 ^ -23 or 2 ^ -52) * 32
-local abs, min, max, huge = math.abs, math.min, math.max, math.huge
-local EPSILON = {}
-for precision = 0, 3 do
-    EPSILON[precision] = 0.5 * 10 ^ -precision
-end
+local huge = math.huge
 history.BYTES_PER_POINT = BYTES
 
 local function finite(value)
@@ -51,7 +46,6 @@ local function write(entry, at, value, broken, resumed)
     local slot = (index - 1) % history.CAPACITY
     local chunk, offset = slot // CHUNK + 1, slot % CHUNK * BYTES + 1
     -- Preserve native integers too: float32 cannot represent every int32.
-    -- Never round a synthesized endpoint again when committing it.
     local integer = math.type(value) == "integer"
     local stamp = (broken and at | BROKEN or at) | (integer and INTEGER or 0)
     local packed = string.pack(integer and INTEGER_FORMAT or NUMBER_FORMAT, stamp, value)
@@ -66,12 +60,13 @@ local function write(entry, at, value, broken, resumed)
     end
 end
 
+--- Close the held value at the last time it was seen; a hold ends at the next
+--- entry, so only an interrupted or unfinished hold needs its own end.
 local function seal(entry)
     if entry.lastAt > entry.anchorAt then
-        write(entry, entry.lastAt, entry.endpoint, false)
-        entry.anchorAt, entry.anchor = entry.lastAt, entry.endpoint
+        write(entry, entry.lastAt, entry.anchor, false)
+        entry.anchorAt = entry.lastAt
     end
-    entry.low, entry.high = -math.huge, math.huge
 end
 
 local function expire(entry, cutoff, limit)
@@ -93,7 +88,8 @@ function history.new(env, support, runtime)
     return setmetatable({
         id = "history",
         revision = 0,
-        interval = 5,
+        -- Samples arrive through telemetry; updates only advance sessions and expire.
+        interval = 20,
         count = 0,
         due = 0,
         env = env,
@@ -109,8 +105,8 @@ function history.new(env, support, runtime)
     }, history)
 end
 
-local function sessionFor(service, armSwitch)
-    local armed = assert(service.runtime.byId.armed, "history requires Armed service"):state(armSwitch)
+local function sessionFor(service)
+    local armed = assert(service.runtime.byId.armed, "history requires Armed service"):state()
     local session = service.sessionNames[armed.key]
     if not session then
         local state = {
@@ -149,8 +145,8 @@ local function sessionFor(service, armSwitch)
     return session
 end
 
-function history:session(armSwitch)
-    return sessionFor(self, armSwitch).view
+function history:session()
+    return sessionFor(self).view
 end
 
 function history:destroy()
@@ -188,10 +184,10 @@ function history:resetSession(now, index)
         local state = entry.state
         entry.chunks, entry.resumeBits = {}, {}
         entry.last, entry.anchorAt, entry.lastAt = 0, 0, 0
-        entry.anchor, entry.endpoint, entry.low, entry.high = nil, nil, nil, nil
-        entry.segment, entry.filtered, entry.sampledAt, entry.gap = nil, nil, nil, true
+        entry.anchor = nil
+        entry.segment, entry.gap = nil, true
         state.available, state.stale, state.full = false, false, false
-        state.value, state.min, state.max, state.epsilon = nil, nil, nil, nil
+        state.value, state.min, state.max = nil, nil, nil
         state.first, state.last, state.count = 1, 0, 0
         state.window = entry.mode == "growing" and 6000 or state.window
         state.revision, state.plotRevision = state.revision + 1, state.plotRevision + 1
@@ -313,10 +309,11 @@ local function mapped(session, stamp, clipStart)
     return clipped, false
 end
 
-local function addFlight(session, id, at, known)
+--- `stamp` is the flight's start on the service clock, for its wall time.
+local function addFlight(session, id, at, known, stamp)
     local state = session.state
     local index = state.flightLast + 1
-    local interval = { id = id, start = at, startKnown = known }
+    local interval = { id = id, start = at, startKnown = known, startedAt = stamp }
     session.flights[(index - 1) % history.FLIGHT_CAPACITY + 1] = interval
     state.flightLast = index
     state.flightFirst = math.max(state.flightFirst, index - history.FLIGHT_CAPACITY + 1)
@@ -336,7 +333,7 @@ function history:flight(view, index)
     if interval.empty then
         return nil
     end
-    return interval.start, interval.finish, interval.startKnown, interval.endKnown
+    return interval.start, interval.finish, interval.startKnown, interval.endKnown, interval.startedAt
 end
 
 function history:armBoundary(view, index)
@@ -384,7 +381,7 @@ function history:boundaries()
         if session and session.epoch == event.epoch then
             local at, known = mapped(session, event.at, event.kind == "start")
             if event.kind == "start" and at and event.observedAt >= session.attachedAt then
-                addFlight(session, event.flightId, at, known)
+                addFlight(session, event.flightId, at, known, event.at)
             elseif event.kind == "end" then
                 local interval = session.openFlight
                 if interval and interval.id == event.flightId then
@@ -404,7 +401,7 @@ function history:boundaries()
             local at, known = mapped(session, flight.startedAt, true)
             -- Late attachment shows only the portion this runtime recorded,
             -- never a fabricated start marker or pre-attachment samples.
-            addFlight(session, flight.flightId, at or session.state.elapsed, known)
+            addFlight(session, flight.flightId, at or session.state.elapsed, known, flight.startedAt)
         end
         session.openFlight.observed = session.state.elapsed
     end
@@ -423,32 +420,16 @@ end
 local function recordingOptions(options)
     local window = options.windowSeconds or 60
     local mode = options.timeRange or "growing"
-    local smoothing, precision = options.smoothing or "off", options.precision
     assert(finite(window) and window >= 30 and window <= 600, "history window must be 30 to 600 seconds")
     assert(mode == "growing" or mode == "rolling", "invalid history time range")
-    assert(TAU[smoothing], "invalid history smoothing")
-    assert(
-        precision == nil or finite(precision) and precision >= 0 and precision <= 3 and precision % 1 == 0,
-        "invalid history precision"
-    )
     if mode == "growing" then
         window = 60
     end
-    return window, mode, smoothing, precision
+    return window, mode
 end
 
-local function recordingKey(name, source, window, mode, smoothing, precision)
-    return name
-        .. "\0"
-        .. source
-        .. "\0"
-        .. mode
-        .. "\0"
-        .. window
-        .. "\0"
-        .. smoothing
-        .. "\0"
-        .. tostring(precision or "sensor")
+local function recordingKey(name, source, window, mode)
+    return name .. "\0" .. source .. "\0" .. mode .. "\0" .. window
 end
 
 --- Drafts can read compatible live recordings, but cannot create pollers,
@@ -465,12 +446,11 @@ function history:preview()
         first = 1,
         last = 0,
     })
-    local function condition(legacy)
-        local modelArm = owner.runtime.byId.armed.condition
-        return modelArm ~= nil and modelArm or legacy or ""
+    local function condition()
+        return owner.runtime.byId.armed.condition or ""
     end
-    function facade:session(legacy)
-        local key = condition(legacy)
+    function facade:session()
+        local key = condition()
         local session = owner.sessionNames[key]
         return session and session.view
             or owner.support.snapshot({
@@ -486,9 +466,9 @@ function history:preview()
     end
     function facade:subscribe(source, options)
         options = options or {}
-        local window, mode, smoothing, precision = recordingOptions(options)
+        local window, mode = recordingOptions(options)
         source = type(source) == "string" and source or ""
-        local key = recordingKey(condition(options.armSwitch), source, window, mode, smoothing, precision)
+        local key = recordingKey(condition(), source, window, mode)
         return owner.names[key] and owner.names[key].view or empty
     end
     function facade:flight(view, index)
@@ -505,10 +485,10 @@ end
 
 function history:subscribe(source, options)
     options = options or {}
-    local window, mode, smoothing, precision = recordingOptions(options)
-    local session = sessionFor(self, options.armSwitch)
+    local window, mode = recordingOptions(options)
+    local session = sessionFor(self)
     source = type(source) == "string" and source or ""
-    local key = recordingKey(session.name, source, window, mode, smoothing, precision)
+    local key = recordingKey(session.name, source, window, mode)
     if self.names[key] then
         return self.names[key].view
     end
@@ -535,9 +515,6 @@ function history:subscribe(source, options)
         anchorAt = 0,
         lastAt = 0,
         mode = mode,
-        precision = precision,
-        epsilon = precision and EPSILON[precision],
-        tau = TAU[smoothing],
         gap = true,
         session = session,
     }
@@ -548,9 +525,10 @@ function history:subscribe(source, options)
     self.sources[source] = tracks
     tracks[#tracks + 1] = entry
     self.count = self.count + 1
+    self.support.subscribed(self)
     local telemetry = self.runtime.byId.telemetry
     if telemetry then
-        telemetry:subscribe(source)
+        telemetry:subscribe(source, nil, true)
         if not self.observing then
             telemetry:observe(self)
             self.observing = true
@@ -569,12 +547,12 @@ function history:point(view, index, retainedFirst)
         return nil
     end
     if index > entry.last then
-        return entry.lastAt, entry.endpoint, false, false
+        return entry.lastAt, entry.anchor, false, false
     end
     return read(entry, index)
 end
 
---- Observe the chart's filtered samples without polling again or changing knots.
+--- Observe the chart's samples without polling again or changing knots.
 --- Observers reset with their recording; consumers must detach when destroyed.
 function history:observeSamples(view, observer)
     local entry = assert(self.views[view], "unknown history subscription")
@@ -600,7 +578,8 @@ function history:unobserveSamples(view, observer)
     error("sample observer is not registered")
 end
 
-local function record(entry, value, at, epsilon, segment)
+--- A value holds until the next entry, so only changes are written.
+local function record(entry, value, at, segment)
     local state = entry.state
     if state.full then
         return
@@ -609,10 +588,9 @@ local function record(entry, value, at, epsilon, segment)
         expire(entry, at - state.window, 2)
     end
     local broken = entry.gap or entry.segment ~= segment or at <= entry.lastAt
-    if broken or state.epsilon ~= epsilon then
+    if broken then
         seal(entry)
     end
-    state.epsilon = epsilon
     if at > 0x3fffffff or entry.last - state.first + 1 >= history.CAPACITY then
         state.full = true
         publish(entry)
@@ -621,36 +599,11 @@ local function record(entry, value, at, epsilon, segment)
     if broken then
         write(entry, at, value, true, entry.segment ~= nil and entry.segment ~= segment)
         entry.anchorAt, entry.anchor = at, value
-        entry.lastAt, entry.endpoint = at, value
-        entry.low, entry.high = -huge, huge
-    else
-        for attempt = 1, 2 do
-            local elapsed = at - entry.anchorAt
-            local tolerance = epsilon - max(abs(value), abs(entry.anchor), epsilon) * ROUNDING
-            local low = max(entry.low, (value - entry.anchor - tolerance) / elapsed)
-            local high = min(entry.high, (value - entry.anchor + tolerance) / elapsed)
-            local endpoint = entry.anchor + (low / 2 + high / 2) * elapsed
-            local slope = (endpoint - entry.anchor) / elapsed
-            if tolerance > 0 and finite(endpoint) and low <= slope and slope <= high then
-                entry.low, entry.high = low, high
-                entry.lastAt, entry.endpoint = at, endpoint
-                break
-            end
-            -- The previous endpoint was feasible for EVERY previous sample.
-            -- Sharing it avoids the error from blindly committing a raw sample.
-            seal(entry)
-            if entry.last - state.first + 1 >= history.CAPACITY then
-                state.full = true
-                break
-            end
-            if attempt == 2 or tolerance <= 0 then
-                write(entry, at, value, false)
-                entry.anchorAt, entry.anchor = at, value
-                entry.lastAt, entry.endpoint = at, value
-                break
-            end
-        end
+    elseif value ~= entry.anchor then
+        write(entry, at, value, false)
+        entry.anchorAt, entry.anchor = at, value
     end
+    entry.lastAt = at
     entry.segment, entry.gap = segment, false
     publish(entry)
 end
@@ -661,52 +614,51 @@ function history:sample(reading, now)
         return
     end
     local frozen = editing(self, now)
+    local flight, maxAge = self.flightState, self.support.MAX_SAMPLE_AGE
+    local value = reading.value
+    -- Reading checks are shared by every recording of the source.
+    local valid = reading.fresh and reading.updatedAt == now and reading.kind == "number" and finite(value)
+    local advanced
     for _, entry in ipairs(entries) do
-        advance(entry.session, now, self.flightState, frozen, self.support.MAX_SAMPLE_AGE)
-        local session = entry.session.state
-        if session.recording then
+        local session = entry.session
+        if session ~= advanced then
+            advance(session, now, flight, frozen, maxAge)
+            advanced = session
+        end
+        local sessionState = session.state
+        if sessionState.recording then
             local state = entry.state
-            local valid = reading.fresh
-                and reading.updatedAt == now
-                and finite(reading.value)
-                and reading.kind == "number"
+            local observers = entry.observers
             if valid then
-                local value = reading.value
-                if entry.segment ~= session.segment or entry.gap or not entry.filtered then
-                    entry.filtered = value
-                    entry.gap = true
-                elseif entry.tau > 0 then
-                    local alpha = 1 - math.exp(-math.max(0, now - entry.sampledAt) / entry.tau)
-                    entry.filtered = entry.filtered * (1 - alpha) + value * alpha
-                else
-                    entry.filtered = value
-                end
-                entry.sampledAt = now
+                local segment = sessionState.segment
                 state.value = value
-                state.min = state.min and min(state.min, value) or value
-                state.max = state.max and max(state.max, value) or value
+                local low, high = state.min, state.max
+                if not low or value < low then
+                    state.min = value
+                end
+                if not high or value > high then
+                    state.max = value
+                end
                 state.unitText, state.precision = reading.unitText, reading.precision
                 state.available, state.stale = true, false
-                local epsilon = entry.epsilon
-                if not epsilon then
-                    local precision = reading.precisionKnown == false and 3 or reading.precision or 0
-                    precision = min(3, max(0, precision))
-                    epsilon = EPSILON[precision] or (0.5 * 10 ^ -precision)
+                local elapsed = sessionState.elapsed
+                local resumed, broken
+                if observers then
+                    resumed = entry.segment ~= nil and entry.segment ~= segment
+                    broken = entry.gap or entry.segment ~= segment or elapsed <= entry.lastAt
                 end
-                local resumed = entry.segment ~= nil and entry.segment ~= session.segment
-                local broken = entry.gap or entry.segment ~= session.segment or session.elapsed <= entry.lastAt
-                record(entry, entry.filtered, session.elapsed, epsilon, session.segment)
-                if entry.observers and not state.full then
-                    for _, observer in ipairs(entry.observers) do
-                        observer:sample(session.elapsed, entry.filtered, broken, resumed)
+                record(entry, value, elapsed, segment)
+                if observers and not state.full then
+                    for _, observer in ipairs(observers) do
+                        observer:sample(elapsed, value, broken, resumed)
                     end
                 end
                 state.revision = state.revision + 1
             else
                 entry.gap = true
-                if entry.observers and not entry.state.full then
-                    for _, observer in ipairs(entry.observers) do
-                        observer:sample(session.elapsed, nil, true)
+                if observers and not state.full then
+                    for _, observer in ipairs(observers) do
+                        observer:sample(sessionState.elapsed, nil, true)
                     end
                 end
                 if not state.stale then
@@ -715,6 +667,16 @@ function history:sample(reading, now)
                 end
             end
         end
+    end
+end
+
+--- Record one update's batch of telemetry readings.
+---@param readings AeroGridReading[]
+---@param count integer
+---@param now integer
+function history:samples(readings, count, now)
+    for index = 1, count do
+        self:sample(readings[index], now)
     end
 end
 

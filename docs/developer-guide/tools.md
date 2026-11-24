@@ -23,7 +23,7 @@ build/capture-venv/bin/python tools/capture-panels.py --all
 
 Select one of `--panel <type>`, `--recipe <path>`, or `--all`.
 The setup target installs pinned PyYAML. Bundled recipes cover user-facing
-panels, Host diagnostics, and Service probe.
+panels and Host diagnostics.
 
 Outputs go to `build/doc-capture/<panel>/`: gallery crops, `full-frame.png`,
 `frame.rgb565`, `recipe.yaml`, `provenance.json`, `sdcard/`, and `simulator.log`.
@@ -106,6 +106,10 @@ panels and their primary readings. Outputs are under
 
 Theme samples use `--scene theme-modern-dark`, `theme-modern-light`, or
 `theme-custom`; panel recipes also accept `theme: modern-light`.
+
+Flight debrief scenes are `debrief-settings`, `debrief-tile`, `debrief-ready`,
+and `debrief-view`. The last two fly a scripted flight of about 45 seconds
+through real services, so each takes over a minute.
 
 ### Publish reviewed images
 

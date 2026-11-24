@@ -48,14 +48,14 @@ local function hook(event)
         depth = depth - 1
     end
 end
--- 50 ms callbacks on a busy dashboard: 1, 2 and 7 slots offered in turn, as measured.
+-- 50 ms callbacks on a busy dashboard: 4, 8 and 28 slots offered in turn, as measured.
 local function callbacks(count)
     for _ = 1, count do
         now = now + 5
         counted, depth, inside = 0, 0, nil
         debug.sethook(hook, "cr", 1)
         phase = phase % 3 + 1
-        grant = ({ 1, 2, 7 })[phase]
+        grant = ({ 4, 8, 28 })[phase]
         grant = chart.offered(panel, grant)
         local offered = grant
         local _, _, used = chart.refresh(panel, false, grant)
@@ -159,13 +159,13 @@ for index, owner in ipairs(panel.columnConsumers) do
     end
 end
 -- Preparation uses what is left of the ordinary slot plus at most one extra slot.
-assert((worstByGrant[1] or 0) < 2400, "one-slot turns must keep preparation within the slot")
-assert((worstByGrant[2] or 0) < 4000, "preparation must not exceed one extra slot")
+assert((worstByGrant[4] or 0) < 2400, "four-slot turns must keep preparation within the grant")
+assert((worstByGrant[8] or 0) < 4000, "preparation must not exceed four extra slots")
 print(
     string.format(
         "Fixed chart windows slide by a minute within a second; worst refresh %d, worst preparation %d/%d instructions",
         worst,
-        worstByGrant[1] or 0,
-        worstByGrant[2] or 0
+        worstByGrant[4] or 0,
+        worstByGrant[8] or 0
     )
 )

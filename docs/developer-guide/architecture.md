@@ -10,7 +10,7 @@ signatures; `plans/` contains design material, not the runtime contract.
 | --- | --- |
 | `src/WIDGETS/AeroGrid/main.lua` | EdgeTX entry points, native options, event routing, and task enrollment. |
 | `src/WIDGETS/AeroGrid/lib/` | Loading, scheduling, services, geometry, rendering, themes, persistence, and editor. |
-| `src/WIDGETS/AeroGrid/panels/` | Panel modules, including diagnostics and the fixed-data theme showcase. |
+| `src/WIDGETS/AeroGrid/panels/` | Panel modules, including host diagnostics. |
 | `src/WIDGETS/AeroGrid/layouts/` | Shipped layouts. |
 | `src/WIDGETS/AeroGrid/assets/` | Runtime editor assets and licenses. |
 | `tests/unit/`, `tests/integration/` | Module tests and mocked host/UI tests. |
@@ -47,9 +47,8 @@ Glass shares sampled background brightness through
 `/AEROGRID/cache/backgrounds.yml`. This generated cache survives widget updates
 and can be deleted to regenerate it.
 
-`lib/package.lua` declares package, runtime API, panel API, and layout versions.
-Runtime modules expose `RUNTIME_API`; panels expose `apiVersion`. Deploy the
-complete widget directory: these checks do not detect every mixed package.
+`lib/package.lua` declares the package and layout versions. Deploy the
+complete widget directory; modules carry no separate API versions.
 
 Layout conversion uses adjacent header and panel steps in `layout.lua`, at
 most one transition per respective loader/save turn. Unsupported versions or
@@ -59,11 +58,15 @@ an upgrade notice; explicit editor **Save** persists the current schema.
 ## Scheduling and callback budgets
 
 `scheduler.lua` is firmware-independent. Flight, host transitions, services,
-and panels share a fair round-robin ring. Host readiness gates enforce input
-and lifecycle ordering; transitions can hold service or panel work.
+and panels share one persistent list ordered by due tick, which changes only
+when the dashboard changes. Each callback runs due tasks from the front and
+stops at the first task that is not due; ties go to the task that ran least
+recently. Tasks set their own next due tick; a source that makes a task due
+early moves it forward. Host readiness gates enforce input and lifecycle
+ordering; transitions can hold service or panel work.
 
-The default callback segment has eight nominal 2,000-instruction slots
-(`CAPACITY` and `INSTRUCTIONS_PER_SLOT`). A task receives at most eight slots
+A callback has 32 nominal 500-instruction slots
+(`CAPACITY` and `INSTRUCTIONS_PER_SLOT`). A task receives at most 32 slots
 per turn (`SLOTS`). Fixed-cost tasks reserve their declared cost; variable-cost
 tasks declare a minimum and report consumption. Unused slots become available
 to later tasks. Unfinished work retains its place across callbacks.
@@ -72,16 +75,9 @@ A continuation requests another turn after the other tasks have had theirs;
 it needs no separate opt-in. Pending work can run before its next due time.
 Return no continuation when work should wait for that time.
 
-The model's **Pre-release features** setting permits up to four additional
-segments for pending/deferred work in the same callback. It is disabled by
-default and also requires an explicitly enabled saved setting during startup.
-`native_budget.lua` owns the EdgeTX-specific mechanism for running those
-segments beyond the firmware instruction limit; the scheduler does not.
-
 Slots are estimates, not measured instruction limits, and exclude scheduler
 overhead. Keep normal callbacks within the
-[regression budgets](testing.md#performance-and-resource-regressions), rather
-than relying on the pre-release extension to hide excessive work.
+[regression budgets](testing.md#performance-and-resource-regressions).
 
 ## Shared services own firmware reads
 
@@ -148,21 +144,20 @@ Put a module at `panels/<type>.lua`, with an `id` matching that layout type.
 
 | Declaration or callback | Contract |
 | --- | --- |
-| `id`, `apiVersion`, `supportedSpans` | Identity, compatibility, and supported grid spans. |
+| `id`, `supportedSpans` | Identity and supported grid spans. |
 | `settings` | Typed fields, defaults, bounds, and choices shared by validation and the editor. |
 | `refreshInterval` | Interval in 10 ms ticks; zero or absent means every frame. |
 | `refreshCost`, `refreshMinCost` | Fixed cost of 0-8 slots (default 1), or `"variable"` with a minimum of 1-8. |
 | `create(parent, rect, settings, services)` | Construct objects, subscribe, and return instance state. |
 | `refresh(instance, creating, slots)` | Update objects; scheduled calls pass `false`. Returns next interval (1-6000 ticks, or nil to retain it), continuation, and consumed slots. Variable work must report consumption. |
-| `finish(instance, creating, slots)` | Optional variable-cost finishing task with the same results as refresh. Requires `finishPending` and `finishMinCost`. |
-| `finishPending(instance)` | Whether finishing work is ready; an optional second result sets its next minimum grant. Refresh waits while finishing is pending. |
 | `update(instance, rect, settings, detailsOnly, placement)` | Reflow/configuration update; host reflows and editor resizes pass placement as the fifth argument. |
-| `background(instance, creating, slots)` | Hidden-dashboard work; variable-cost when `backgroundMinCost` is declared, otherwise one slot. Returns an ignored first result, continuation, and consumed slots. |
+| `background(instance, creating, slots)` | Hidden-dashboard work; variable-cost when `backgroundMinCost` is declared, otherwise one slot. Returns an optional delay in ticks before the next call, continuation, and consumed slots. |
 | `resetSession(instance, now)` | Reset session state; second result true requests another bounded reset turn. |
 | `rebindArming(instance, services)` | Reconnect arming-dependent subscriptions after a model arm-switch change, keeping existing native objects. Receives the service registry's `byId` table. |
 | `event(instance, event)` | Return true when consumed. |
 | `destroy(instance)` | Release panel-owned references. |
 | `validateSettings(settings, span, config, modelArmed)` | Cross-field or span-dependent validation, with the effective model arm condition. |
+| `thresholds(settings)` | Configured `{ sensor, warning, critical, falling, strict }` list, registered with telemetry when the layout is built or saved; for each sensor the first panel in layout order wins. |
 
 A lifecycle failure disables the affected panel and reports its error without
 repeatedly invoking the failed panel.
@@ -196,24 +191,16 @@ Add a [panel reference page](../reference-guide/index.md) and, when needed, a
 `/AEROGRID/layouts/`, never over bundled layouts. New **Save as...** names need a
 script restart to enter the native Layout picker. Failed saves preserve drafts.
 
-`model_settings_store.lua` validates and serializes revisioned documents through
-a replaceable persistence backend. On EdgeTX 2.x, `model_settings_sidecar.lua`
-stores `/AEROGRID/models/<ID>.yaml`, linked by the CH32 name. Reads never write;
-after the broker accepts settings, filename changes fork the record while
-disarmed. Verified records are installed before claiming CH32, preserving all
+`model_settings_store.lua` validates and serializes revisioned documents;
+`model_settings_sidecar.lua` stores `/AEROGRID/models/<ID>.yaml`, linked by the CH32 name. Reads never write;
+after the broker accepts settings, filename changes fork the record.
+Verified records are installed before claiming CH32, preserving all
 channel fields. Saves guard model identity, CH32 name, and revision.
 Layout saves and previews do not write model settings.
 Changing the arm condition rebuilds registered dashboards and clears captured
 homes, while preserving layouts and active-flight completion/cleanup.
 
-An eventual EdgeTX 3.0 backend can store the same document in model userData
-without changing callers; it is not selected or implemented yet. Legacy
-filename-encoded development records are not imported.
-`env.backend` supplies `read(filename, backup)`, `check(info)`, and
-`write(filename, text, info, guard, armedCondition)`. Reads return text and
-metadata (`missing`, identity `token`, optional `recovered`/`blocked`);
-`forkOnRename` opts into sidecar-style adoption. The store guards the original
-bytes and filename; the backend guards its identity and installation boundary.
+Legacy filename-encoded development records are not imported.
 
 A model change or session reset advances the flight epoch. Session reset
 cancels detection, releases its owned output, and clears dashboard session

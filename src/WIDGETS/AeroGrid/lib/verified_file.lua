@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local verifiedFile = { RUNTIME_API = 1 }
+local verifiedFile = {}
 
 local function radioOperation(operation)
     if type(operation) ~= "function" then

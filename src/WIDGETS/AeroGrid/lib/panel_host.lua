@@ -12,15 +12,14 @@
 
 ---@class AeroGridPanelModule
 ---@field id string Must equal the panel type name used in YAML.
----@field apiVersion integer Must equal the host panel API version.
 ---@field supportedSpans? string[] Span strings such as "2x1", or "any".
 ---@field refreshInterval? integer Ticks of 10ms between refreshes. 0 or absent
 ---  means every frame. Telemetry rarely needs more than a few hertz, and the
 ---  host pays every panel's cost inside one instruction budget.
----@field refreshCost? integer|"variable" Nominal 2000-instruction slots, 0 to 8; defaults to 1.
+---@field refreshCost? integer|"variable" Nominal 500-instruction slots, 0 to 32; defaults to 1.
 --- An instance may override refreshCost and refreshMinCost; zero-cost refreshes
 --- run when due even without remaining slots.
----@field refreshMinCost? integer Minimum grant for a variable-cost refresh, 1 to 8.
+---@field refreshMinCost? integer Minimum grant for a variable-cost refresh, 1 to 32.
 ---@field settings? AeroGridPanelSetting[]
 ---@field create fun(parent: any, rect: table, settings: table, services: table): any
 ---@field update? fun(instance: any, rect: table, settings: table)
@@ -29,15 +28,12 @@
 --- A second result of true requests another turn in the same callback.
 --- Refreshes receive (instance, false, slots) and may return consumed slots as
 --- a third result. Variable refreshes must declare a minimum and report consumption.
----@field finish? fun(instance: any, creating: boolean, slots: integer) Finishing work after a refresh. Its own variable-cost task, ready while `finishPending` is true; may return the ticks until the next refresh is due, whether it requests another turn now, and slots consumed.
----@field finishPending? fun(instance: any): boolean, integer? While true the finishing task runs and refreshes wait. A second result sets the next stage's minimum grant.
----@field finishMinCost? integer Minimum grant for finishing, 1 to 8, when `finishPending` reports none.
 ---@field background? fun(instance: any, creating: boolean, slots: integer) While the dashboard is hidden. A fixed one-slot task unless `backgroundMinCost` is declared.
----@field backgroundMinCost? integer Makes background a variable-cost task with this minimum grant, 1 to 8; an instance may override it. It then reports consumed slots as a third result.
+---@field backgroundMinCost? integer Makes background a variable-cost task with this minimum grant, 1 to 32; an instance may override it. It then reports consumed slots as a third result.
 ---@field resetSession? fun(instance: any, now: integer) Second result true requests another reset turn.
----@field rebindArming? fun(instance: any, services: table) Reconnect arming-dependent subscriptions without replacing native objects.
 ---@field event? fun(instance: any, event: any): boolean
 ---@field destroy? fun(instance: any)
+---@field thresholds? fun(settings: table): AeroGridThreshold[] Configured thresholds per sensor, registered with telemetry.
 
 ---@class AeroGridPanelEntry
 ---@field placement table Validated YAML panel placement.
@@ -48,14 +44,20 @@
 ---@field nextRefresh integer Tick at which this panel is next due.
 ---@field failed? boolean Set after a lifecycle failure disables the panel.
 ---@field error? string First lifecycle failure message.
+---@field dispatched? fun(entry: AeroGridPanelEntry) Called after refresh and background callbacks, which may change slot costs, and after a failure.
 
-local panelHost = { RUNTIME_API = 1 }
---- Host-side panel API version. Modules declaring anything else are rejected.
-panelHost.API_VERSION = 1
+local panelHost = {}
 
 --- Optional lifecycle callbacks, in a fixed order so errors stay deterministic.
-local OPTIONAL_CALLBACKS =
-    { "update", "refresh", "finish", "finishPending", "background", "resetSession", "rebindArming", "event", "destroy" }
+local OPTIONAL_CALLBACKS = {
+    "update",
+    "refresh",
+    "background",
+    "resetSession",
+    "event",
+    "destroy",
+    "thresholds",
+}
 
 --- Restrict module identifiers to the same path-safe characters as layout types.
 ---@param value any
@@ -91,10 +93,6 @@ function panelHost.validateModule(module, typeName)
     if type(module) ~= "table" then
         return false, "panel module must return a table"
     end
-    if field(module, "apiVersion") ~= panelHost.API_VERSION then
-        return false, "incompatible panel API"
-    end
-
     local id = field(module, "id")
     if not isSafeIdentifier(id) then
         return false, "panel module declares an invalid id"
@@ -156,21 +154,6 @@ function panelHost.validateModule(module, typeName)
         )
     then
         return false, "backgroundMinCost must be a whole number from 1 to " .. maxSlots
-    end
-    local finishMinimum = field(module, "finishMinCost")
-    if
-        finishMinimum ~= nil
-        and (
-            type(finishMinimum) ~= "number"
-            or finishMinimum < 1
-            or finishMinimum > maxSlots
-            or finishMinimum ~= math.floor(finishMinimum)
-        )
-    then
-        return false, "finishMinCost must be a whole number from 1 to " .. maxSlots
-    end
-    if field(module, "finish") ~= nil and (finishMinimum == nil or field(module, "finishPending") == nil) then
-        return false, "finish requires finishMinCost and finishPending"
     end
     return true
 end
@@ -236,7 +219,7 @@ end
 ---@param config any Raw config mapping from the layout file.
 ---@return table settings
 ---@return string[] warnings
-function panelHost.resolveSettings(module, config, span, modelArmed)
+function panelHost.resolveSettings(module, config, span)
     local settings = {}
     local warnings = {}
     local declared = {}
@@ -306,7 +289,7 @@ function panelHost.resolveSettings(module, config, span, modelArmed)
     -- Limited display space is not a settings error: panels shed optional
     -- content at render time without changing the stored preferences.
     if type(rawget(module, "validateSettings")) == "function" then
-        local ok, reported = pcall(module.validateSettings, settings, span, config, modelArmed)
+        local ok, reported = pcall(module.validateSettings, settings, span, config)
         if not ok then
             warnings[#warnings + 1] = "validateSettings raised: " .. tostring(reported)
         elseif type(reported) == "table" then
@@ -342,17 +325,8 @@ function panelHost.dispatch(entry, event, ...)
     end
 
     local ok, resultOrError, again, consumed = pcall(callback, entry.instance, ...)
-    if ok and event == "finishPending" then
-        if type(resultOrError) ~= "boolean" then
-            ok, resultOrError = false, "finishPending must return a boolean"
-        elseif
-            again ~= nil
-            and (type(again) ~= "number" or again < 1 or again > maxSlots or again ~= math.floor(again))
-        then
-            ok, resultOrError = false, "finishPending minimum must be a whole number from 1 to " .. maxSlots
-        end
-    end
-    if ok and (event == "refresh" or event == "finish") and type(resultOrError) == "number" then
+    local dispatched = entry.dispatched
+    if ok and event == "refresh" and type(resultOrError) == "number" then
         if resultOrError < 1 or resultOrError > 6000 or resultOrError ~= math.floor(resultOrError) then
             ok, resultOrError = false, "refresh interval must be a whole number from 1 to 6000 ticks"
         else
@@ -360,11 +334,17 @@ function panelHost.dispatch(entry, event, ...)
         end
     end
     if ok then
+        if dispatched and (event == "refresh" or event == "background") then
+            dispatched(entry)
+        end
         return true, nil, resultOrError, again, consumed
     end
 
     entry.failed = true
     entry.error = tostring(resultOrError)
+    if dispatched then
+        dispatched(entry)
+    end
     return false, entry.error
 end
 

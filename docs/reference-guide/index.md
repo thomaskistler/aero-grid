@@ -18,7 +18,6 @@ This does not change saved settings or disable alarms.
 | [Model identity](../panels/model-identity.md) | Model name and picture. |
 | [Navigation](../panels/navigation.md) | GPS position, distance from home, and bearing toward the model. |
 | [RX battery](../panels/rx-battery.md) | Aircraft cell or pack voltage. |
-| [Service probe](../panels/service-probe.md) | Troubleshooting view of one shared data service. |
 | [State](../panels/state.md) | Up to three readings selected by ordered switch conditions. |
 | [Trim](../panels/trim-panel.md) | Aileron, elevator, and rudder trims. |
 | [TX battery](../panels/tx-battery.md) | TX battery voltage and an optional voltage-based estimate. |
@@ -39,16 +38,15 @@ The controls behave the same way in every panel:
 | Range min, Range max | Opens the keyboard to type a number, including negative values and decimals. Clear the text to restore **Auto** on charts or the default bound on Metric panels. |
 | Text | Opens the keyboard. Clearing an optional text restores its default, such as the source name. |
 | Source, Switch, Timer | Opens the standard EdgeTX picker. Sources that Lua cannot read are rejected with a message. |
-| Entry rows | Panels with lists, such as Metric, show one row per entry with a short summary. Tap a row to open that entry's settings. |
+| Entry rows | Panels with lists, such as Metric, show one row per entry with its label or a short summary. Tap a row and choose **Edit**, **Move up**, **Move down**, or **Delete**. A panel keeps at least its minimum number of entries. |
 | **+** | Adds an entry at the bottom. It is unavailable when the list is full. Individual panel pages describe how new entries are initialized. |
-| **Remove entry** | Inside an entry, deletes it. A panel keeps at least its minimum number of entries. |
 | **Remove panel** | Deletes the panel from the screen. |
 
 Press **RTN** or tap outside a settings dialog to go back one level. Changes
 stay in your draft until you save the layout.
 
 To add a screen, see [Add a dashboard](../user-guide/add-dashboard.md).
-To arrange panels, see [Edit a dashboard on the radio](../user-guide/edit-dashboard.md).
+To arrange panels, see [Edit a dashboard](../user-guide/edit-dashboard.md).
 Arming, flight detection, session reset, and flight-status output are
 [Model settings](../user-guide/model-settings.md), not normal panel settings.
 For legacy panel controls, see [Older layouts](../user-guide/model-settings.md#older-layouts).

@@ -900,6 +900,7 @@ function support.lvgl()
 
     local objects = {}
     local pendingClears = {}
+    local refCallbacks = {}
     local tempParent
     local deferCleanup = false
     local appMode = false
@@ -913,13 +914,36 @@ function support.lvgl()
     --- invalidates every reference in that object's child list, including ones
     --- created after the clear but within the same callback. Modelling clear()
     --- as an immediate flag hid a real defect, so this mirrors the ordering.
+    local function reachable(object)
+        local parent = object.parent or object.registeredParent
+        while parent do
+            -- LvglWidgetObjectBase::callRefs visits children only while visible.
+            if parent.hidden or parent.clearRequest then
+                return false
+            end
+            parent = parent.parent or parent.registeredParent
+        end
+        return true
+    end
+
     local function settle()
         if deferCleanup then
             return
         end
-        if #pendingClears == 0 then
+        if #pendingClears == 0 and #refCallbacks == 0 then
             return
         end
+        local active = {}
+        for _, object in ipairs(refCallbacks) do
+            if not object.invalid then
+                if not object.clearRequest and reachable(object) then
+                    rawset(object, "hidden", not object.properties.visible())
+                else
+                    active[#active + 1] = object
+                end
+            end
+        end
+        refCallbacks = active
 
         local pending = pendingClears
         pendingClears = {}
@@ -1166,6 +1190,10 @@ function support.lvgl()
         if not object.clearRequest then
             rawset(object, "clearRequest", true)
             pendingClears[#pendingClears + 1] = object
+            -- A visible callback next runs one callRefs after clearing children.
+            if type(object.properties.visible) == "function" then
+                refCallbacks[#refCallbacks + 1] = object
+            end
         end
     end
 
@@ -1359,6 +1387,9 @@ function support.lvgl()
         -- so cannot be seen by any assertion about what is drawn.
         hide = countedHide,
         show = countedShow,
+        disable = function(object)
+            rawset(object, "disabled", true)
+        end,
         isAppMode = function()
             return appMode
         end,

@@ -25,11 +25,11 @@
 ---@field bearing? number Initial bearing from home to model, 0 to 359 degrees.
 ---@field age? number Seconds since the fix was last updated.
 
-local navigationService = { RUNTIME_API = 1 }
+local navigationService = {}
 navigationService.__index = navigationService
 
 --- Ticks of 10ms between updates. Telemetry GPS rarely exceeds a few hertz.
-local INTERVAL = 20
+local INTERVAL = 50
 
 --- Subscriptions refreshed per update. A dashboard has very few GPS panels,
 --- and each update costs trigonometry, so this cap stays small.
@@ -343,9 +343,9 @@ end
 
 --- Subscribe to a GPS source.
 ---@param name any GPS source name.
----@param armSwitch? string Empty or omitted uses EdgeTX home.
+---@param homeMode? "edgetx"|"first-arm" First-arm captures home when the model arms.
 ---@return AeroGridNavigation
-function navigationService:subscribe(name, armSwitch, homeMode)
+function navigationService:subscribe(name, homeMode)
     if type(name) ~= "string" or name == "" then
         if not self.noneView then
             self.noneView = self.support.snapshot({
@@ -360,9 +360,8 @@ function navigationService:subscribe(name, armSwitch, homeMode)
         return self.noneView
     end
 
-    local customHome = homeMode == "first-arm" or homeMode == nil and type(armSwitch) == "string" and armSwitch ~= ""
-    local arm = customHome and assert(self.runtime.byId.armed, "navigation requires Armed service"):state(armSwitch)
-        or nil
+    local customHome = homeMode == "first-arm"
+    local arm = customHome and assert(self.runtime.byId.armed, "navigation requires Armed service"):state() or nil
     local key = arm and (name .. "\0" .. arm.key) or name
     local existing = self.sources[key]
     if existing then
@@ -437,15 +436,6 @@ function navigationService:resetSession(_, index)
         state.pilotLatitude, state.pilotLongitude, state.distance, state.bearing = nil, nil, nil, nil
     end
     return index + 1
-end
-
---- Format a distance with a sensible unit, switching to kilometres when the
---- metre reading stops being readable at a glance.
----@param metres any
----@return string
-function navigationService.formatDistance(metres)
-    local digits, unit = navigationService.distanceParts(metres)
-    return digits .. unit
 end
 
 --- Split a distance into its digits and its unit.

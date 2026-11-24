@@ -40,7 +40,6 @@
 
 local metric = {
     id = "metric",
-    apiVersion = 1,
     supportedSpans = { "any" },
     -- A numeric readout is indistinguishable at 5 Hz and 50 Hz in flight, and
     -- the host pays every panel's refresh inside one instruction budget.
@@ -185,6 +184,9 @@ local function captionOf(entry)
     return "Metric"
 end
 
+-- Ticks between reads of the supporting row.
+local SUPPORT_INTERVAL = 100
+
 local function readingText(entry, feed)
     local caption = captionOf(entry)
     if not feed or not feed.available or type(feed.value) ~= "number" then
@@ -305,6 +307,20 @@ local function threshold(settings, key)
     return value
 end
 
+--- Fill in the range, thresholds, and direction a reading is judged by.
+---@param entry table One configured reading.
+---@param into? table Settings to complete; a new table when absent.
+---@return table
+local function judgedBy(entry, into)
+    into = into or {}
+    into.rangeMin = entry.rangeMin or 0
+    into.rangeMax = entry.rangeMax or 100
+    into.warning = entry.warning
+    into.critical = entry.critical
+    into.direction = entry.direction or "auto"
+    return into
+end
+
 --- Report whether thresholds count downward for this metric.
 ---@param settings AeroGridResolvedMetricSettings
 ---@return boolean
@@ -319,6 +335,28 @@ local function isFalling(settings)
         return false
     end
     return warning ~= nil and critical ~= nil and critical < warning
+end
+
+--- Thresholds of every reading, judged as this panel judges its primary one.
+---@param config AeroGridMetricSettings
+---@return AeroGridThreshold[]
+function metric.thresholds(config)
+    local list = {}
+    for _, entry in ipairs(config.metrics or {}) do
+        if hasSource(entry) then
+            local resolved = judgedBy(entry)
+            local warning, critical = threshold(resolved, "warning"), threshold(resolved, "critical")
+            if warning ~= nil or critical ~= nil then
+                list[#list + 1] = {
+                    sensor = entry.source,
+                    warning = warning,
+                    critical = critical,
+                    falling = isFalling(resolved),
+                }
+            end
+        end
+    end
+    return list
 end
 
 --- Resolve the panel state from thresholds and reading availability.
@@ -420,7 +458,7 @@ function metric.render(context, out)
     -- no discard. Now the key is simply absent while the row is shed, and
     -- reappears when it is not, which is what `changed` compares.
     if context.showRange then
-        out.range = metric.detailText(context)
+        out.range = context.rangeLine or metric.detailText(context)
         if
             context.metrics
             and context.themeBuilder.measureText(context.fonts.label, out.range) > context.area.detailWidth
@@ -429,7 +467,7 @@ function metric.render(context, out)
         end
     end
     if context.showSecondary then
-        out.secondary = metric.secondaryText(context)
+        out.secondary = context.secondaryLine or metric.secondaryText(context)
         if
             context.metrics
             and context.themeBuilder.measureText(context.fonts.label, out.secondary) > context.area.rowRightWidth
@@ -543,16 +581,24 @@ function metric.refresh(context)
         metric.update(context, context.rect)
         context.rendered = nil
     end
-    if context.layout.supporting then
+    local supporting = context.layout.supporting
+    local now = context.clock and context.clock()
+    if supporting and (not now or not context.supportDue or now >= context.supportDue) then
+        -- Maximums and secondary sensors change slowly, so the supporting row is
+        -- read once a second. Its text area only grows, so a changed value
+        -- replaces the text without a relayout.
         local first = metric.detailText(context)
         local second = context.metrics[3] and metric.secondaryText(context) or nil
-        local supporting = context.layout.supporting
         local unit = context.suppressSensorUnit and "" or context.settings.unit
         if unit == "" and not context.suppressSensorUnit then
             unit = context.feed.unitText or ""
         end
-        if supporting[1] ~= first or supporting[2] ~= second or context.unitText ~= unit then
+        local builder, font = context.themeBuilder, context.fonts.label
+        local width = math.max(builder.measureText(font, first), second and builder.measureText(font, second) or 0)
+        local captions = captionOf(context.metrics[2]) .. "\n" .. captionOf(context.metrics[3])
+        if supporting.captions ~= captions or width > (supporting.width or -1) or context.unitText ~= unit then
             supporting[1], supporting[2] = first, second
+            supporting.captions, supporting.width = captions, width
             context.unitText = unit
             if context.unit then
                 context.unit:set({ text = unit })
@@ -560,6 +606,9 @@ function metric.refresh(context)
             metric.update(context, context.rect)
             context.rendered = nil
         end
+        context.supportDue = now and now + SUPPORT_INTERVAL
+        context.rangeLine = first
+        context.secondaryLine = second or ""
     end
     local changed, drawn = context.primitives.changed(context, metric.render)
     if changed then
@@ -705,20 +754,15 @@ function metric.create(parent, rect, config, services)
     -- placed first and pointed at a sensor afterwards.
     local primary = entries[1] or {}
     ---@type AeroGridResolvedMetricSettings
-    local settings = {
+    local settings = judgedBy(primary, {
         metrics = entries,
         source = primary.source,
         label = captionOf(primary),
         unit = primary.unit or "",
         precision = primary.precision or -1,
-        rangeMin = primary.rangeMin or 0,
-        rangeMax = primary.rangeMax or 100,
-        warning = primary.warning,
-        critical = primary.critical,
-        direction = primary.direction or "auto",
         accent = config.accent or "cyan",
         visual = config.visual or "none",
-    }
+    })
 
     local layout = metric.presentationFor(span.colSpan, span.rowSpan)
     layout.showRange = entries[2] ~= nil
@@ -741,6 +785,7 @@ function metric.create(parent, rect, config, services)
         metrics = entries,
         suppressSensorUnit = primary.unit == "",
         rect = rect,
+        clock = services.clock,
     }
 
     -- The host owns polling. Subscribing here, in create, is what tells the

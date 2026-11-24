@@ -28,23 +28,22 @@ local env = {
 }
 local function runtime(modelArm)
     local registry = support.runtime(env)
-    registry.modelArmed, registry.armGeneration = modelArm, 7
+    registry.modelArmed = modelArm
     registry.byId.control = controlModule.new(env, support)
     registry.byId.armed = armedModule.new(env, support, registry)
     return registry, registry.byId.armed, registry.byId.control
 end
-local registry, service, control = runtime()
-local empty = service:state()
+local _, unset = runtime()
+local empty = unset:state()
 equal(empty.configured, false)
 equal(empty.fresh, false)
 equal(empty.status, "unconfigured")
-local first, second = service:state("SFv"), service:state("SAv")
-assert(first ~= second, "unsaved model Armed must preserve distinct legacy switches")
-assert(service:state("SFv") == first)
+local registry, service, control = runtime("SFv")
+local first = service:state()
+assert(service:state() == first)
+local second = control:switch("SAv")
 assert(control:switch("SFv") == control.switches.SFv)
 equal(control.count, 2, "conditions are polled once, including State subscriptions")
-equal(first.origin, "legacy")
-equal(first.generation, 7)
 control:update(now)
 equal(reads, 2)
 equal(first.value, false)
@@ -76,21 +75,19 @@ equal(first.value, true)
 control.failed = true
 equal(first.fresh, false)
 equal(first.available, false)
-assert(not pcall(service.state, service, "ch5"), "legacy numeric sources need explicit replacement")
+local _, numeric = runtime("ch5")
+assert(not pcall(numeric.state, numeric), "legacy numeric sources need explicit replacement")
 
 local _, native, nativeControl = runtime("L01")
 local selected = native:state()
 equal(selected.condition, "L01")
-equal(selected.origin, "model")
-assert(native:state("SFv") == selected and native:state("ch5") == selected, "model Armed overrides legacy")
 equal(nativeControl.count, 1)
 equal(armedModule.name(1, control), "SFv")
 equal(armedModule.name(-3, control), "!L01")
 assert(not pcall(armedModule.name, 999, control), "unsupported switch kinds must be reported")
-equal(registry.modelArmed, nil, "legacy resolution must not save model settings")
+equal(registry.modelArmed, "SFv")
 local _, disabled = runtime("")
-assert(disabled:state("SFv") == disabled:state("SAv"))
-equal(disabled:state("SFv").configured, false, "saved None disables every legacy condition")
+equal(disabled:state().configured, false, "saved None disables arming")
 
 local _, inverted, invertedControl = runtime("!L01")
 local invertedState = inverted:state()
@@ -125,26 +122,17 @@ for number = 1, 64 do
     switchNames[#switchNames + 1] = "!" .. name
 end
 local invalidNames = { "L00", "!L00", "L65", "!L65", "L99", "!L99", "L4", "!L4", "!!L04", "SF", "!SFv", "ch5" }
-for _, panelName in ipairs({ "state", "chart", "navigation", "flight-counter" }) do
-    local panel = load("panels/" .. panelName .. ".lua")
-    local function settings(name)
-        if panelName == "state" then
-            return { entries = { { label = "ARM", states = { { switch = name, text = "ARMED" } } } } }
-        end
-        return { armSwitch = name }
-    end
-    for _, name in ipairs(switchNames) do
-        assert(armedModule.valid(name))
-        local _, warnings = host.resolveSettings(panel, settings(name))
-        equal(#warnings, 0, panelName .. " condition " .. name)
-    end
-    for _, name in ipairs(invalidNames) do
-        assert(not armedModule.valid(name))
-        local _, warnings = host.resolveSettings(panel, settings(name))
-        assert(#warnings > 0, panelName .. " accepted invalid condition " .. name)
-        if panelName ~= "state" then
-            _, warnings = host.resolveSettings(panel, settings(name), nil, "!L04")
-            equal(#warnings, 0, "saved model arming still overrides legacy conditions")
-        end
-    end
+local state = load("panels/state.lua")
+local function settings(name)
+    return { entries = { { label = "ARM", states = { { switch = name, text = "ARMED" } } } } }
+end
+for _, name in ipairs(switchNames) do
+    assert(armedModule.valid(name))
+    local _, warnings = host.resolveSettings(state, settings(name))
+    equal(#warnings, 0, "state condition " .. name)
+end
+for _, name in ipairs(invalidNames) do
+    assert(not armedModule.valid(name))
+    local _, warnings = host.resolveSettings(state, settings(name))
+    assert(#warnings > 0, "state accepted invalid condition " .. name)
 end

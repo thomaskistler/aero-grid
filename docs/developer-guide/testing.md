@@ -170,8 +170,8 @@ layout/panel context. Identical messages are deduplicated per widget across
 reloads, with 64 distinct messages retained. AeroGrid does not write an error
 file; use Companion's logging for persistence.
 
-The **Diagnostics** layout reports only its own host. To inspect another
-dashboard, add **Host diagnostics** there and select **panels** for rejected
+The development **Diagnostics** layout reports only its own host. To inspect
+another dashboard, add **Host diagnostics** there and select **panels** for rejected
 or failed panels and their reasons. Editor errors remain in their dialogs.
 
 For Navigation capture timing, select **log** before reproducing the issue.

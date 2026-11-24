@@ -2,7 +2,7 @@
 
 local root = assert(...)
 local module = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.lua"))()
-assert(module.SLOTS == 8 and module.CAPACITY == 8 and module.INSTRUCTIONS_PER_SLOT == 2000)
+assert(module.SLOTS == 32 and module.CAPACITY == 32 and module.INSTRUCTIONS_PER_SLOT == 500)
 
 for _, capacity in ipairs({ false, 0, -1, 1.5, math.huge, 0 / 0, "8" }) do
     assert(not pcall(module.new, { capacity = capacity }), "invalid capacity must be rejected")
@@ -35,7 +35,7 @@ do
     assert(table.concat(calls, ",") == "A,B,C,A,A")
     assert(used == 8 and requested == 5 and denied == 0)
     assert(queue.state(a).spent == 6 and not queue.state(a).pending)
-    for _, key in ipairs({ "spent", "pending", "refused", "denied", "spun", "ran", "zeroTurns" }) do
+    for _, key in ipairs({ "spent", "pending", "refused", "ran", "zeroTurns" }) do
         assert(rawget(a, key) == nil, "scheduler bookkeeping stays off the task: " .. key)
     end
     assert(a.now == 12 and a.context == context and a.slots == 2)
@@ -57,12 +57,11 @@ do
     local used, requested, denied = queue.run(0, 4)
     assert(table.concat(calls, ",") == "A,B")
     assert(used == 3 and requested == 3 and denied == 1 and queue.state(a).pending)
-    assert(queue.cursor == 1)
     a.due, b.due = 100, 100
     queue.clear()
     queue.add(a)
     queue.add(b)
-    assert(queue.run(1, 4) == 4)
+    assert(queue.run(1, 4) == 4, "a re-enrolled pending task resumes despite its due tick")
     assert(table.concat(calls, ",") == "A,B,A,A" and not queue.state(a).pending)
 end
 
@@ -72,13 +71,13 @@ do
     task("large", 8)
     task("small", 1)
     task("free", 0, 2)
-    local used, requested, denied = queue.run(0, 8)
+    local used, requested, denied = queue.run(1, 8)
     assert(table.concat(calls, ",") == "A,free,free")
     assert(used == 1 and requested == 4 and denied == 3)
-    assert(queue.cursor == 2 and queue.state(a).pending)
-    queue.run(1, 8)
-    assert(calls[4] == "large", "a deferred whole-budget task gets the first turn")
+    assert(queue.state(a).pending and queue.count == 4)
     queue.run(2, 8)
+    assert(calls[4] == "large", "a deferred whole-budget task gets the first turn")
+    queue.run(3, 8)
     assert(calls[6] == "small", "repeating whole-budget work must not starve later tasks")
 end
 
@@ -96,19 +95,17 @@ do
         }
     end
     local a, b, x = task("A", 8), task("B", 8), task("X", 0)
+    queue.add(a)
+    queue.add(b)
     for callback = 1, 20 do
-        queue.clear()
         if callback % 2 == 0 then
             queue.add(x)
+        else
+            queue.remove(x)
         end
-        queue.add(a)
-        queue.add(b)
         queue.run(callback, 8)
     end
-    assert(
-        turns.A == 10 and turns.B == 10 and turns.X == 10,
-        "deferred task identity stays fair as free tasks enter and leave the ring"
-    )
+    assert(turns.A == 10 and turns.B == 10 and turns.X == 10, "deferred work stays fair as free tasks enter and leave")
 end
 
 do
@@ -128,15 +125,16 @@ do
     queue.add(a)
     queue.add(b)
     queue.run(0, 8)
-    queue.clear()
+    assert(queue.has(b))
+    queue.remove(b)
+    assert(not queue.has(b) and queue.count == 1)
     local retired = setmetatable({ b }, { __mode = "v" })
     b = nil
     collectgarbage()
-    assert(retired[1] == nil, "the deferred cursor must not retain a retired task")
+    assert(retired[1] == nil, "the scheduler must not retain a withdrawn task")
     queue.add(x)
-    queue.add(a)
     queue.run(1, 8)
-    assert(turns.A == 2, "an absent deferred task falls back to its live successor")
+    assert(turns.A == 2 and turns.X == 1, "a withdrawn deferred task leaves no gap")
 end
 
 do
@@ -155,25 +153,13 @@ do
     local a, b, x = task("A", 8), task("B", 8), task("X", 0)
     queue.add(a)
     queue.add(b)
-    local _, _, _, failure = queue.run(0, 8, nil, {
-        segments = 1,
-        cross = function(run)
-            local ok, message = pcall(run)
-            return ok, message
-        end,
-    })
-    assert(not failure and turns.A == 1 and turns.B == 1, "extended capacity resumes the deferred task")
-    queue.clear()
+    queue.run(0, 16)
+    assert(turns.A == 1 and turns.B == 1)
     queue.add(x)
-    queue.add(a)
-    queue.add(b)
     queue.run(1, 8)
-    assert(turns.A == 1 and turns.B == 2, "extended segments preserve the deferred successor")
-    queue.clear()
-    queue.add(a)
-    queue.add(b)
+    assert(turns.A == 2 and turns.B == 1 and turns.X == 1, "the task that ran least recently goes first")
     queue.run(2, 8)
-    assert(turns.A == 2 and turns.B == 2, "the successor gets the next turn after enrollment changes")
+    assert(turns.A == 2 and turns.B == 2)
 end
 
 do
@@ -295,7 +281,7 @@ do
     assert(#failures == 1 and #calls == 2)
 end
 
-for _, invalid in ipairs({ false, -1, 1.5, 9, math.huge, 0 / 0, "1" }) do
+for _, invalid in ipairs({ false, -1, 1.5, 33, math.huge, 0 / 0, "1" }) do
     local queue, _, task = fixture()
     local variable = task("invalid", "variable")
     variable.minCost = 1
@@ -325,7 +311,7 @@ do
     assert(variable.error == "invalid minimum slot cost")
 end
 
-for _, invalid in ipairs({ false, -1, 1.5, 9, math.huge, 0 / 0, "1" }) do
+for _, invalid in ipairs({ false, -1, 1.5, 33, math.huge, 0 / 0, "1" }) do
     local queue, calls, task = fixture()
     local instance = task("invalid", invalid)
     local used, requested, denied = queue.run(0, 8)
@@ -334,33 +320,7 @@ for _, invalid in ipairs({ false, -1, 1.5, 9, math.huge, 0 / 0, "1" }) do
 end
 
 do
-    local queue, calls, task = fixture()
-    local future = task("future")
-    future.due = 10
-    local hidden = task("hidden")
-    hidden.ready = function(_, _, context)
-        return context.hidden
-    end
-    assert(queue.run(0, 8, { hidden = false }) == 0)
-    assert(queue.run(1, 8, { hidden = true }) == 1)
-    assert(queue.run(10, 8, { hidden = false }) == 1)
-    assert(table.concat(calls, ",") == "hidden,future")
-end
-
-do
-    local queue, calls, task = fixture()
-    local a = task("A", 1, 2)
-    a.ready = function(self)
-        return self.turns == 0
-    end
-    assert(queue.run(0, 8) == 1 and queue.state(a).pending)
-    assert(#calls == 1, "a pending task must still obey its readiness gate")
-    a.ready = nil
-    assert(queue.run(1, 8) == 1 and not queue.state(a).pending)
-end
-
-do
-    local queue = module.new({ capacity = 12 })
+    local queue = module.new({ capacity = 48 })
     local granted
     queue.add({
         name = "bounded",
@@ -371,19 +331,18 @@ do
             return slots, false
         end,
     })
-    assert(queue.run(0, 12) == 8 and granted == 8, "one variable turn must never exceed eight slots")
+    assert(queue.run(0, 48) == 32 and granted == 32, "one variable turn must never exceed thirty-two slots")
     queue.clear()
     assert(queue.count == 0 and next(queue.tasks) == nil)
-    local used, requested, denied = queue.run(1, 12)
+    local used, requested, denied = queue.run(1, 48)
     assert(used == 0 and requested == 0 and denied == 0)
-    queue.cursor = 20
     queue.add({
         name = "replacement",
         step = function(_, _, slots)
             return slots, false
         end,
     })
-    assert(queue.run(2, 12) == 1 and queue.cursor == 1)
+    assert(queue.run(2, 48) == 1 and queue.count == 1)
 end
 
 do
@@ -411,7 +370,7 @@ do
     assert(table.concat(calls, ",") == "small:2", "variable tasks must not run below their minimum")
 end
 
-for _, minimum in ipairs({ false, 0, 1.5, 9, math.huge, 0 / 0, "1" }) do
+for _, minimum in ipairs({ false, 0, 1.5, 33, math.huge, 0 / 0, "1" }) do
     local queue, _, task = fixture()
     local variable = task("invalid minimum", "variable")
     variable.minCost = minimum
@@ -456,70 +415,72 @@ do
     assert(queue.state(fixed).spent == 2, "an invalid continuation must not refund its grant")
 end
 
--- Further segments run inside `cross`, which reports like pcall.
-local function crossing()
-    local crossings = { count = 0 }
-    function crossings.cross(fn)
-        crossings.count = crossings.count + 1
-        return pcall(fn)
-    end
-    return crossings
-end
-
-do
-    -- A callback continues with new slots: only tasks that asked for another
-    -- step or did not fit run again, and a task that already ran is not rerun.
-    local queue, calls, task = fixture()
-    task("A", 4, 3)
-    task("B", 4)
-    task("C", 4)
-    task("D", 1)
-    local crossings, segments, callbacks = crossing(), queue.segments, queue.callbacks
-    local used, requested, denied, failure = queue.run(0, 8, nil, { segments = 4, cross = crossings.cross })
-    assert(table.concat(calls, ",") == "A,B,C,D,A,A" and used == 21, table.concat(calls, ","))
-    assert(requested == 6 and denied == 0 and failure == nil)
-    assert(queue.callbacks == callbacks + 1, "segments stay in the same callback")
-    assert(queue.segments == segments + 3 and crossings.count == 1, "unneeded segments are not run")
-    assert(queue.remaining == 0)
-    local stats = queue.stats()
-    assert(stats.callbacks == 1 and stats.used == 21 and stats.available == 40, "every allowed segment is available")
-    assert(stats.requested == 6 and stats.denied == 0)
-end
-
+-- Tasks stay enrolled in order of due tick; a run stops at the first task not due.
 do
     local queue, calls, task = fixture()
-    task("A", 1)
-    task("B", 1)
-    local crossings = crossing()
-    queue.run(0, 8, nil, { segments = 4, cross = crossings.cross })
-    assert(crossings.count == 0 and #calls == 2 and queue.remaining == 6, "ran tasks do not repeat")
-    local free = task("free", 0, 100)
+    local late, early, never = task("late"), task("early"), task("never")
+    late.due, early.due, never.due = 20, 10, module.NEVER
     queue.clear()
-    queue.add(free)
-    queue.run(1, 8, nil, { segments = 4, cross = crossings.cross })
-    assert(queue.state(free).pending and queue.state(free).refused == queue.callbacks)
-    assert(crossings.count == 0, "a task stopped after repeated free turns waits for the next callback")
+    queue.add(late)
+    queue.add(never)
+    queue.add(early)
+    local function step(self, now)
+        calls[#calls + 1] = self.name
+        self.due = now + 30
+        return 1, false
+    end
+    late.step, early.step, never.step = step, step, step
+    assert(queue.run(5, 8) == 0 and #calls == 0)
+    assert(queue.run(10, 8) == 1 and queue.run(20, 8) == 1 and queue.run(25, 8) == 0)
+    assert(table.concat(calls, ",") == "early,late", "tasks not due are never examined")
+    assert(queue.run(40, 8) == 1 and calls[3] == "early" and queue.count == 3)
+
+    -- A source that makes a task due earlier moves it forward; later is left to the step.
+    never.due = 50
+    queue.reschedule(never)
+    late.due = 60
+    queue.reschedule(late)
+    assert(queue.run(50, 8) == 1 and calls[4] == "never")
+    queue.remove(early)
+    assert(queue.run(1000, 8) == 2 and calls[5] == "late" and calls[6] == "never" and queue.count == 2)
+end
+
+-- A hold keeps due tasks waiting without retiring them.
+do
+    local queue, calls, task = fixture()
+    local hold = { on = true }
+    task("held").hold = hold
+    assert(queue.run(0, 8) == 0 and #calls == 0)
+    hold.on = false
+    assert(queue.run(1, 8) == 1 and calls[1] == "held")
+end
+
+-- A step that makes another task due moves it into this run.
+do
+    local queue, calls, task = fixture()
+    local waiting = task("waiting")
+    waiting.due = 100
+    queue.reschedule(waiting)
+    local source = task("source")
+    source.step = function(self, now)
+        calls[#calls + 1] = self.name
+        waiting.due = now
+        queue.reschedule(waiting)
+        self.due = now + 10
+        return 1, false
+    end
+    assert(queue.run(0, 8) == 2 and table.concat(calls, ",") == "source,waiting")
 end
 
 do
     local queue, calls, task = fixture()
     task("A", 4)
     task("heavy", 8)
-    local used, requested, denied = queue.run(0, 8, nil, { segments = 1, cross = crossing().cross })
-    assert(table.concat(calls, ",") == "A,heavy" and used == 12, "a deferred task continues")
-    assert(requested == 2 and denied == 0)
-    used, requested, denied = queue.run(1, 8)
-    assert(used == 8 and requested == 2 and denied == 1, "without further segments a deferred task waits")
-end
-
-do
-    local queue, _, task = fixture()
-    task("A", 8, 2)
-    local _, _, denied, failure = queue.run(0, 8, nil, {
-        segments = 2,
-        cross = function()
-            return false, "CPU limit"
-        end,
-    })
-    assert(failure == "CPU limit" and denied == 1 and queue.remaining == 0)
+    local used, requested, denied = queue.run(0, 8)
+    assert(
+        table.concat(calls, ",") == "A" and used == 4 and requested == 2 and denied == 1,
+        "a task that does not fit waits"
+    )
+    local stats = queue.stats()
+    assert(stats.callbacks == 1 and stats.used == 4 and stats.available == 8 and stats.denied == 1)
 end

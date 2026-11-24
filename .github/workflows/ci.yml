@@ -86,16 +86,20 @@ jobs:
 
       # The packaged image must match the sources it was built from, so a
       # broken build target cannot ship a stale dashboard. Development layouts
-      # are added from test fixtures only to the disposable simulator image.
+      # and panels are added from test fixtures only to the disposable
+      # simulator image.
       - name: Verify the built image matches sources
         run: |
-          diff -r src/WIDGETS/AeroGrid build/sdcard/WIDGETS/AeroGrid \
-            --exclude='review-*.yaml' \
-            --exclude='services*.yaml' \
-            --exclude='sim*.yaml' \
-            --exclude='states.yaml'
+          excludes=()
+          for fixture in tests/fixtures/layouts/development/*.yaml tests/fixtures/panels/*.lua; do
+            excludes+=(--exclude="$(basename "$fixture")")
+          done
+          diff -r src/WIDGETS/AeroGrid build/sdcard/WIDGETS/AeroGrid "${excludes[@]}"
           for layout in tests/fixtures/layouts/development/*.yaml; do
             cmp "$layout" "build/sdcard/WIDGETS/AeroGrid/layouts/$(basename "$layout")"
+          done
+          for panel in tests/fixtures/panels/*.lua; do
+            cmp "$panel" "build/sdcard/WIDGETS/AeroGrid/panels/$(basename "$panel")"
           done
 
       # Generated output must never be committed.

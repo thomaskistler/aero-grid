@@ -38,7 +38,7 @@ local function callbacks(count)
     for _ = 1, count do
         now = now + 5
         phase = phase % 3 + 1
-        grant = ({ 1, 2, 7 })[phase]
+        grant = ({ 4, 8, 28 })[phase]
         counted = 0
         debug.sethook(function()
             counted = counted + 1

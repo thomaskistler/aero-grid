@@ -56,6 +56,60 @@ fixture.radio.values[306] = -1024
 fixture.radio.rssi = 80
 fixture.radio.values[fixture.radio.fields.RQly.id] = 80
 fixture.radio.values[fixture.radio.fields.RxBt.id] = 16.8
+local sourceValue = getSourceValue
+local sourceInfo = getFieldInfo
+local sensorInfo = model.getSensor
+local publishedSensors, publishedValues = {}, {}
+local nextPublishedSensor = 50
+model.getSensor = function(index)
+    return publishedSensors[index] or sensorInfo(index)
+end
+getFieldInfo = function(name)
+    local number = type(name) == "string" and tonumber(string.match(name, "^telem(%d+)$"))
+    local index = number and number - 1 or nil
+    if index and publishedSensors[index] then
+        return { id = 10000 + index, unit = publishedSensors[index].unit }
+    end
+    return sourceInfo(name)
+end
+getSourceValue = function(source)
+    if publishedValues[source] ~= nil then
+        return publishedValues[source], true, true
+    end
+    return sourceValue and sourceValue(source)
+end
+setTelemetryValue = function(id, _, instance, value, unit, precision, name)
+    local index
+    for candidate, sensor in pairs(publishedSensors) do
+        if sensor.id == id and sensor.instance == instance then
+            index = candidate
+            break
+        end
+    end
+    if not index then
+        index = nextPublishedSensor
+        nextPublishedSensor = nextPublishedSensor + 1
+        publishedSensors[index] = {
+            type = 0,
+            id = id,
+            instance = instance,
+            name = name,
+            unit = unit,
+            prec = precision,
+        }
+        return true
+    end
+    publishedValues[10000 + index] = value / (10 ^ precision)
+    return false
+end
+local function published(name)
+    for index, sensor in pairs(publishedSensors) do
+        if sensor.name == name then
+            return publishedValues[10000 + index]
+        end
+    end
+    return nil
+end
 local first = definition.create({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "session-reset" }, path)
 local second = definition.create({ x = 0, y = 0, w = 480, h = 272 }, { Layout = "session-reset" }, path)
 local worst = 0
@@ -64,7 +118,9 @@ local function measured(callback, context)
     local field = settings and settings.build and settings.view.fields[settings.build]
     -- The 65-choice native picker runs extra Lua in this fixture. Its production
     -- grant is checked by native measurements, independently of this mock envelope.
-    local limit = field and field.key == "flightSwitch" and 18000 or 16000
+    -- Mock chart and panel slots cost more than native ones, so a callback packed
+    -- with cheap steps is allowed more here.
+    local limit = field and 33000 or 24000
     fixture.lvglMock.setPropertyValidation(false)
     fixture.lvglMock.setCallCounting(false)
     fixture.lcdMock.setTextMeasurement(false)
@@ -141,6 +197,37 @@ untilState(function()
     return owner.view.active
 end)
 secondVisible = false
+-- Hidden dashboards keep publishing; the first widget claimed every sensor and
+-- the second never takes over.
+local function hidden(steps, move)
+    for _ = 1, steps do
+        fixture.tick(20)
+        if move then
+            local position = fixture.radio.values[fixture.radio.fields.GPS.id]
+            fixture.radio.values[fixture.radio.fields.GPS.id] = {
+                lat = position.lat + 0.0001,
+                lon = position.lon,
+                ["pilot-lat"] = position["pilot-lat"],
+                ["pilot-lon"] = position["pilot-lon"],
+                delay = position.delay,
+            }
+        end
+        measured(definition.background, first)
+        measured(definition.background, second)
+    end
+end
+fixture.radio.values[fixture.radio.fields.RxBt.id] = 12
+hidden(30, true)
+equal(published("VCel"), 3, "hidden dashboards keep publishing derived telemetry")
+local flownBefore = published("FDst")
+assert(flownBefore and flownBefore > 0, "movement accumulates FDst")
+fixture.radio.rssi = 0
+fixture.radio.values[fixture.radio.fields.RQly.id] = 0
+hidden(30)
+local dropBefore = published("Drop")
+assert(dropBefore and dropBefore > 0, "link loss accumulates Drop")
+fixture.radio.rssi = 80
+fixture.radio.values[fixture.radio.fields.RQly.id] = 80
 equal(owner.view.count, 1)
 equal(model.getGlobalVariable(8, 0), 17)
 assert(owner.view.active and sticky)
@@ -186,6 +273,7 @@ equal(owner.document.revision, revision, "switch activation must not save model 
 equal(owner.view.count, 1)
 equal(model.getGlobalVariable(8, 0), 17)
 assert(not owner.view.active)
+assert(published("Drop") >= dropBefore and published("FDst") >= flownBefore, "Session reset keeps Drop and FDst")
 pump(60)
 equal(sticky, false)
 for index, context in ipairs({ first, second }) do
@@ -297,6 +385,9 @@ for _, context in ipairs({ first, second }) do
     equal(history:subscribe("Alt").count, 0, "paused recordings are cleared without restarting")
 end
 equal(owner.view.count, 2)
+local home, radioHome = panel(first, "home"), panel(first, "radio-home")
+assert(home.ownsTelemetry() and not radioHome.ownsTelemetry(), "the first Navigation panel publishes")
+assert(not panel(second, "home").ownsTelemetry(), "another widget never publishes a claimed sensor")
 equal(#first.errors, 0, table.concat(first.errors, "; "))
 equal(#second.errors, 0, table.concat(second.errors, "; "))
 print("model session reset: foreground and hidden consumers, worst " .. worst .. " instructions")

@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
---- Saved model Armed takes precedence over retained panel switches.
-local armed = { RUNTIME_API = 1 }
+--- The model's Armed condition, read from its model settings.
+local armed = {}
 armed.__index = armed
 
 local function valid(name)
@@ -49,13 +49,12 @@ function armed.new(env, support, runtime)
         support = support,
         runtime = runtime,
         condition = runtime.modelArmed,
-        generation = runtime.armGeneration or 0,
         views = {},
     }, armed)
 end
 
-function armed:state(legacy)
-    local name = self.condition ~= nil and self.condition or legacy or ""
+function armed:state()
+    local name = self.condition or ""
     if self.views[name] then
         return self.views[name]
     end
@@ -72,8 +71,6 @@ function armed:state(legacy)
         condition = name,
         key = name,
         configured = name ~= "",
-        generation = self.generation,
-        origin = self.condition ~= nil and "model" or name ~= "" and "legacy" or "none",
     }
     local revision = 0
     local lastValue, lastTime, lastAvailable, lastFresh

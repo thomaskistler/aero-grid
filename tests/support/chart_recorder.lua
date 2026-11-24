@@ -25,15 +25,14 @@ return function(count, options)
         model = {},
     })
     local runtime = support.runtime(env)
+    runtime.modelArmed = "L01"
     runtime.byId.control = controlModule.new(env, support)
     runtime.byId.armed = armedModule.new(env, support, runtime)
     local history = historyModule.new(env, support, runtime)
     local feeds = {}
     for index = 1, count do
         feeds[index] = history:subscribe("Columns" .. index, {
-            armSwitch = "L01",
             precision = 3,
-            smoothing = options and options.smoothing,
             timeRange = options and options.timeRange,
             windowSeconds = options and options.windowSeconds,
         })
@@ -51,5 +50,5 @@ return function(count, options)
         end
         history:update(at)
     end
-    return { history = history, feeds = feeds, sample = sample, session = history:session("L01") }
+    return { history = history, feeds = feeds, sample = sample, session = history:session() }
 end

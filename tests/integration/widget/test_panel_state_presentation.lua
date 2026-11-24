@@ -17,11 +17,9 @@ local definition = fixture.module("main.lua")
 local function createLoaded(zone, options, path)
     return fixture.createLoaded(zone, options, path, definition)
 end
-assert(
-    themeModule.setCatalog(
-        assert(loadfile(root .. "/tests/support/theme_catalog.lua"))()(root, fixture.module("lib/yaml.lua"))
-    )
-)
+local themeCatalog =
+    assert(loadfile(root .. "/tests/support/theme_catalog.lua"))()(root, fixture.module("lib/yaml.lua"))
+assert(themeModule.setCatalog(themeCatalog))
 
 local reflowDone = fixture.reflowDone
 
@@ -195,7 +193,7 @@ panels:
     local entry = entryById(context, "pack")
     local panel = entry.instance.panel
     local metricModule = assert(loadfile(sourcePath .. "panels/metric.lua"))()
-    local modern = themeModule.modernDark()
+    local modern = themeCatalog.themes[1].colors
 
     --- Every object carrying the accent, and where the radio would draw the arcs.
     local function assertAccent(expected, what)

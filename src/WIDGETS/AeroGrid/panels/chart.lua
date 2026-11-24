@@ -1,21 +1,14 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
 local budget = assert(..., "chart requires scheduler budget")
-local _, armedConfig = ...
-local validSwitch = assert(armedConfig, "chart requires switch validation").valid
 
 local chart = {
     id = "chart",
-    apiVersion = 1,
     supportedSpans = { "2x1", "3x1", "4x1", "2x2", "3x2", "4x2", "3x3", "4x3", "4x4" },
     refreshInterval = 20,
     refreshCost = "variable",
-    refreshMinCost = 1,
-    finishMinCost = 1,
-    backgroundMinCost = 1,
     settings = {
         { key = "label", label = "Label", type = "string", default = "" },
-        { key = "armSwitch", label = "Arm switch position", type = "string", default = "", legacyArm = true },
         {
             key = "metrics",
             label = "Metrics",
@@ -80,13 +73,6 @@ local chart = {
             end,
         },
         {
-            key = "smoothing",
-            label = "Line smoothing",
-            type = "string",
-            default = "off",
-            choices = { "off", "light", "medium", "strong" },
-        },
-        {
             key = "accent",
             label = "Accent",
             type = "string",
@@ -96,7 +82,6 @@ local chart = {
     },
 }
 
-local COLORS = { "cyan", "orange", "green" }
 local LEGEND_FONTS = { MIDSIZE, 0, SMLSIZE }
 local textCache = setmetatable({}, { __mode = "k" })
 
@@ -108,12 +93,8 @@ local function finite(value)
     return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
 end
 
-function chart.validateSettings(settings, _, _, modelArmed)
+function chart.validateSettings(settings)
     local warnings = {}
-    local arm = settings.armSwitch
-    if modelArmed == nil and arm ~= nil and arm ~= "" and not validSwitch(arm) then
-        warnings[#warnings + 1] = "armSwitch must be blank, a physical switch position, or a logical switch"
-    end
     if type(settings.metrics) ~= "table" then
         return { "metrics must contain a contiguous list of up to 3 sources" }
     end
@@ -174,10 +155,6 @@ local function heading(context)
     return context.settings.label or ""
 end
 
-function chart.format(value, precision)
-    return finite(value) and string.format("%." .. math.min(3, math.max(0, precision or 0)) .. "f", value) or "--"
-end
-
 function chart.durationText(ticks)
     local seconds = math.floor(ticks / 100)
     if seconds < 60 then
@@ -227,6 +204,10 @@ end
 local function slotsFor(model, instructions)
     return math.max(1, math.ceil((instructions + model.overhead) / model.slot))
 end
+
+-- The smallest useful grant leaves 700 instructions of chart work.
+local MIN_SLOTS = slotsFor(PIPELINE, 700)
+chart.refreshMinCost, chart.backgroundMinCost = MIN_SLOTS, MIN_SLOTS
 
 -- Plot state owned by one layer. Auto windows prepare the next window in a
 -- hidden layer with the same staged pipeline, then swap the layers.
@@ -1343,7 +1324,8 @@ function chart.render(context, defer)
         if unit == nil then
             unit = feed and feed.unitText or ""
         end
-        local value = chart.format(feed and feed.value, precision)
+        local numberText = context.themeBuilder.numberText
+        local value = numberText(feed and feed.value, precision)
         local unitText = value ~= "--" and unit or ""
         local color = feed and feed.stale and context.theme.color.textFaint or context.theme.color.text
         visibleChanged = visibleChanged
@@ -1355,8 +1337,8 @@ function chart.render(context, defer)
         item.rangeMinimum, item.rangeMaximum = feed and feed.min, feed and feed.max
         item.valueText, item.unitText = value, unitText
         item.readout = value .. item.unitText
-        local minimumText = chart.format(feed and feed.min, precision)
-        local maximumText = chart.format(feed and feed.max, precision)
+        local minimumText = numberText(feed and feed.min, precision)
+        local maximumText = numberText(feed and feed.max, precision)
         if item.minimumText ~= minimumText or item.maximumText ~= maximumText then
             item.extremaDirty = true
             visibleChanged = true
@@ -1536,7 +1518,7 @@ end
 -- Each reset turn also checks its state and walks the layers: about 300 to 500
 -- instructions beyond the hides, measured on the test runtime.
 local RESET_OVERHEAD = 500
-local RESET_ALLOWANCE = allowance(PIPELINE, 2) - RESET_OVERHEAD
+local RESET_ALLOWANCE = allowance(PIPELINE, 8) - RESET_OVERHEAD
 
 --- Retire the current native presentation in bounded batches.
 function chart.resetSession(context)
@@ -2181,7 +2163,7 @@ local function prepare(context, slots, spent, wanted)
     local used = background(context, math.min(math.max(wanted, declared), room))
     local need = context.auto and context.auto.need
     local minimum = need
-        and math.min(8, math.max(PREP_MIN_SLOTS, slotsFor(PIPELINE, PREP_OVERHEAD + need + INTAKE_MIN)))
+        and math.min(budget.slots, math.max(PREP_MIN_SLOTS, slotsFor(PIPELINE, PREP_OVERHEAD + need + INTAKE_MIN)))
     return used + PREP_OVERHEAD, minimum or PREP_MIN_SLOTS
 end
 
@@ -2198,6 +2180,10 @@ end
 -- Attaching one series to its recorded history.
 local ATTACH_COST = 450
 
+-- Geometry and every series attachment, laid out in one turn.
+local function setupCost(context)
+    return geometryCost(context) + ATTACH_COST * #context.series
+end
 -- A reflow measures again and then lays out the geometry.
 local function layoutCost(context)
     return 2500 + geometryCost(context)
@@ -2230,7 +2216,7 @@ local function preparationTurn(context, ready)
         and (auto.backgroundTurns or 0) < MAX_PREPARATION_TURNS
 end
 
---- Readouts and overlays are finished after an append, by their own task.
+--- Readouts and overlays are finished after an append, before the next one.
 ---@return boolean pending
 ---@return integer? minimum The smallest grant the next stage can honour.
 function chart.finishPending(context)
@@ -2254,7 +2240,7 @@ function chart.finishPending(context)
     if busy or preparationTurn(context, ready) then
         return false
     end
-    return true, context.columnsDecorating and 1 or slotsFor(END_TO_END, metadataCost(context))
+    return true, context.columnsDecorating and MIN_SLOTS or slotsFor(END_TO_END, metadataCost(context))
 end
 
 --- Pacing after a stage: a prepared layer takes an extra slot when one is left,
@@ -2331,13 +2317,6 @@ local function finishStage(context, slots)
     return nil, chart.finishPending(context), consumed
 end
 
-function chart.finish(context, creating, slots)
-    if creating or not chart.finishPending(context) then
-        return nil, false, 1
-    end
-    return finishStage(context, slots or budget.capacity)
-end
-
 -- Consecutive appends before overlays and readouts are finished.
 local MAX_APPEND_RUNS = 4
 
@@ -2357,7 +2336,7 @@ local function refreshColumns(context, slots)
         return 1, true, 1, false
     end
     if context.columnsDecorating or not context.metadataReady then
-        -- Readouts and overlays belong to the finishing task.
+        -- Readouts and overlays are finished first.
         return 1, true, 1, false
     end
     if remaining < 1 then
@@ -2425,8 +2404,8 @@ local function refreshChart(context, creating, slots)
         if not context.columnSetupIndex then
             -- The geometry is one piece; it waits for a grant that can pay for it.
             local cost = geometryCost(context)
-            if allowance < cost then
-                context.refreshMinCost = math.min(8, slotsFor(PIPELINE, cost))
+            if allowance < setupCost(context) then
+                context.refreshMinCost = math.min(budget.slots, slotsFor(PIPELINE, setupCost(context)))
                 return 1, true, 1, false
             end
             chart.geometry(context, context.rect)
@@ -2472,7 +2451,7 @@ local function refreshChart(context, creating, slots)
     return refreshColumns(context, slots)
 end
 
-function chart.refresh(context, creating, slots)
+local function refreshStep(context, creating, slots)
     slots = slots or budget.capacity
     context.refreshMinCost = nil
     if context.resetWork and not creating then
@@ -2528,15 +2507,37 @@ function chart.refresh(context, creating, slots)
         -- The visible plot still owes its next refresh.
         return math.max(1, math.min(6000, interval)), false, math.min(slots, slotsFor(PIPELINE, used))
     end
-    local interval, unfinished, consumed, again = refreshChart(context, creating, slots)
-    consumed = consumed or 1
-    if auto then
-        auto.backgroundTurns = 0
+    local interval, unfinished, consumed, again
+    if not creating and chart.finishPending(context) then
+        interval, again, consumed = finishStage(context, slots)
+        if interval then
+            context.appendAt = context.clock() + interval
+        end
+        -- Finishing continues next tick; the next append keeps the cycle's pace.
+        interval = again and 1 or math.max(1, (context.appendAt or 0) - context.clock())
+    else
+        interval, unfinished, consumed, again = refreshChart(context, creating, slots)
+        consumed = consumed or 1
+        if auto then
+            auto.backgroundTurns = 0
+        end
+        if auto and context.auto == auto and not creating then
+            -- A cycle ends when decorations publish, not when the append returns.
+            local idle = not unfinished and not context.columnsDecorating and not context.metadataReady
+            interval, consumed = pace(context, interval, consumed, slots, idle)
+        end
     end
-    if auto and context.auto == auto and not creating then
-        -- A cycle ends when decorations publish, not when the append returns.
-        local idle = not unfinished and not context.columnsDecorating and not context.metadataReady
-        interval, consumed = pace(context, interval, consumed, slots, idle)
+    return interval, again, consumed
+end
+
+function chart.refresh(context, creating, slots)
+    local interval, again, consumed = refreshStep(context, creating, slots)
+    consumed = consumed and math.min(consumed, slots or budget.capacity)
+    local pending, minimum = chart.finishPending(context)
+    if pending and not creating then
+        -- Finishing runs in this callback while slots are left.
+        context.refreshMinCost = minimum
+        again = true
     end
     return interval, again, consumed
 end
@@ -2573,16 +2574,13 @@ end
 
 local function subscribeHistory(context, entry)
     return context.history:subscribe(entry.source, {
-        armSwitch = context.settings.armSwitch,
         windowSeconds = timeWindow(context.settings) / 100,
         timeRange = "growing",
-        smoothing = context.settings.smoothing or "off",
-        precision = entry.precision,
     })
 end
 
 function chart.create(parent, rect, settings, services)
-    local warnings = chart.validateSettings(settings, nil, nil, services.host and services.host.modelArmed)
+    local warnings = chart.validateSettings(settings)
     assert(#warnings == 0, table.concat(warnings, "; "))
     local context = {
         theme = services.theme,
@@ -2617,13 +2615,13 @@ function chart.create(parent, rect, settings, services)
     context.plotRoot = lvgl.box(context.layerHost, { x = 0, y = 0, w = rect.w, h = rect.h })
     context.flightRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
     context.gridRoot = lvgl.box(context.plotRoot, { x = 0, y = 0, w = rect.w, h = rect.h })
-    context.session = context.history and context.history:session(settings.armSwitch)
+    context.session = context.history and context.history:session()
         or { elapsed = 0, configured = false, available = false, recording = false }
     if context.preview then
         context.previewMissing = context.session.previewMissing
     end
     for index, entry in ipairs(settings.metrics) do
-        local color = context.theme.chartColor[entry.accent or COLORS[index]]
+        local color = context.themeBuilder.seriesColor(context.theme, index, entry.accent)
         local item = {
             settings = entry,
             color = color,
@@ -2670,7 +2668,7 @@ function chart.create(parent, rect, settings, services)
         context.checkRange = checkRange
         context.columnSetup = assert(services.chartColumns, "chart column runtime unavailable")
         assert(context.columnRendererModule, "chart column renderer runtime unavailable")
-        context.refreshMinCost = math.min(8, slotsFor(PIPELINE, 1800 + 1500 * #context.series))
+        context.refreshMinCost = math.min(budget.slots, slotsFor(PIPELINE, setupCost(context)))
     else
         chart.geometry(context, rect)
     end
@@ -2759,31 +2757,6 @@ function chart.destroy(context)
         end
         context.columnConsumers = nil
     end
-end
-
-function chart.rebindArming(context, services)
-    if not context.history then
-        return
-    end
-    chart.destroy(context)
-    local hidden = context.auto and context.auto.hidden
-    if hidden then
-        if hidden.columnRenderer then
-            hidden.columnRenderer:destroy()
-        end
-        hidden.layerHost:clear()
-        lvgl.hide(hidden.layerHost)
-    end
-    context.auto, context.resetWork = nil, nil
-    resetPresentation(context, 0)
-    context.history = services.history
-    context.session = context.history:session(context.settings.armSwitch)
-    for _, item in ipairs(context.series) do
-        item.feed = subscribeHistory(context, item.settings)
-    end
-    context.columnSetup, context.columnSetupIndex = context.columnModule, nil
-    context.columnsReadonly, context.frameThrough = nil, nil
-    context.window, context.start, context.pixelStart = timeWindow(context.settings), 0, 0
 end
 
 return chart

@@ -22,6 +22,7 @@ A new layout should use version 5 and exactly a 4 × 4 grid. `col` and `row` are
 | `version` | integer | yes | Layout schema version. Write `5`. |
 | `grid` | mapping | yes | Must contain `columns: 4` and `rows: 4`. Other grid dimensions are rejected. |
 | `panels` | sequence of mappings | yes | Ordered panel placements. Use `[]` for an empty layout. |
+| `debrief` | mapping | no | Post-flight tiles; see [Flight debrief](#flight-debrief) and [Customize flight debrief](../user-guide/customize-debrief.md). |
 | `session` | mapping | no | Legacy compatibility only; see [Session](#session). |
 | `theme` | mapping | no | **Not supported.** A layout that has this key is reported as invalid. Choose a theme in widget settings instead. |
 
@@ -40,6 +41,28 @@ Each `panels` entry has these placement keys:
 A placement must fit the 4 × 4 grid: `col + colSpan <= 4` and `row + rowSpan <= 4`. Placements may touch edges but may not occupy the same cell. If two placements overlap, the first valid placement in the sequence wins and the later one is dropped. A panel must also support its exact span, written as `<colSpan>x<rowSpan>` (for example, `2x1`); the word `any` in a panel's span list accepts every in-bounds span.
 
 Panel IDs and types are case-sensitive. Unknown top-level keys and extra placement keys are preserved rather than rejected. In contrast, a key inside `config` that the panel does not declare is reported as an unknown setting; spelling and case must match exactly.
+
+## Flight debrief
+
+`debrief.size` selects one size for every tile: `compact` (2 × 2) or `wide`
+(4 × 2). A tile has a `title` and one to three `series`, each with a telemetry
+`source` and a `statistic`: `min`, `max`, `avg`, or `delta`.
+Series also accept `label`, `rangeMin`, `rangeMax`, `unit`, `precision` (0–3),
+and `accent` (`cyan`, `green`, `orange`, or `amber`).
+
+```yaml
+debrief:
+  size: wide
+  tiles:
+    - title: RX battery
+      series:
+        - source: VCel
+          statistic: min
+```
+
+There are at most 12 tiles. An empty `tiles: []` disables the debrief.
+Older files without `size` retain their per-tile `colSpan` and `rowSpan` until
+a shared size is chosen on the radio.
 
 ## Session
 
@@ -101,7 +124,6 @@ Drawer title: **Chart** · [drawer settings and behavior](../panels/chart.md) ·
 | `metrics` | sequence | `[]` | 0-3 contiguous entries | Metrics | Entry fields follow. |
 | `duration` | number | Unset (drawer: `Auto`) | Whole minutes `1`-`60` | Window minutes | Omit for a growing window. Earlier strings such as `30s` or `5m` round up to whole minutes; values above 60 are limited to 60. |
 | `scaling` | string | `shared` | `shared`, `independent` | Series scales | Independent scales suit unlike units. |
-| `smoothing` | string | `off` | `off`, `light`, `medium`, `strong` | Line smoothing | Changes the line, not raw readouts or extrema. |
 | `accent` | string | `cyan` | `cyan`, `green`, `orange`, `amber` | Accent | Panel accent only. |
 | `timeRange` | string | `fixed` | Any string | Not shown | Obsolete and ignored. |
 | `range` | string | `auto` | `auto`, `fixed` | Not shown | Obsolete and ignored. |
@@ -138,7 +160,6 @@ panels:
     config:
       label: Power
       scaling: independent
-      smoothing: light
       metrics:
         - source: RxBt
           label: RX
@@ -470,32 +491,6 @@ Cross-field rules:
     cells: 2
 ```
 
-### `service-probe`
-
-Drawer title: **Service probe** · [drawer settings and behavior](../panels/service-probe.md) · Supported spans: `2x2`, `3x2`, `4x2`, `2x3`, `3x3`, `4x3`, `2x4`, `3x4`, `4x4`.
-
-| Key | Type | Default | Allowed values | Drawer label | Notes |
-| --- | --- | --- | --- | --- | --- |
-| `service` | string | `telemetry` | `telemetry`, `model`, `control`, `navigation` | Service | Selects the host service under inspection. |
-| `source` | string | `""` | Any service/source name or blank | Source | |
-| `index` | number | `0` | Any number | Index | Service-specific lookup/index. |
-| `label` | string | `""` | Any string | Label | Blank derives the heading from the selected service. |
-| `accent` | string | `cyan` | `cyan`, `green`, `amber`, `orange` | Accent | |
-
-No panel-specific cross-field validation is declared.
-
-```yaml
-- id: probe
-  type: service-probe
-  col: 0
-  row: 0
-  colSpan: 2
-  rowSpan: 2
-  config:
-    service: telemetry
-    source: RSSI
-```
-
 ### `state`
 
 Drawer title: **State** · [drawer settings and behavior](../panels/state.md) · Supported spans: `any`.
@@ -721,5 +716,5 @@ With contrast correction enabled, chart inks are adjusted to at least 4.5:1
 contrast against the panel surface; the chart grid is unchanged. With correction
 disabled, explicit colors are preserved and you must check readability.
 Omitted alert backgrounds still use contrast-checked derived tints.
-Unknown fields and invalid values are rejected. Preview every state in
-**Palette** on the radio before using a custom theme.
+Unknown fields and invalid values are rejected. Check its normal and alert
+states on the radio before using a custom theme.

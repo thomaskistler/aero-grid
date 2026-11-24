@@ -32,6 +32,7 @@ local function captureFixture(homes)
         raw = { lat = 47, lon = 8, ["pilot-lat"] = 46, ["pilot-lon"] = 7, delay = 0 },
     }
     local runtime = {
+        modelArmed = "SFv",
         navigationHomes = homes,
         byId = {
             telemetry = {
@@ -50,7 +51,7 @@ local function captureFixture(homes)
     local env = services.environment({})
     runtime.byId.armed = armedService.new(env, services, runtime)
     local service = navigationService.new(env, services, runtime)
-    local view = service:subscribe("GPS", "SFv")
+    local view = service:subscribe("GPS", "first-arm")
     local function update(now, armed, pollAge)
         arm.value, arm.updatedAt = armed, now
         reading.updatedAt = now - (pollAge or 0)
@@ -62,7 +63,7 @@ end
 local function testRoundContinuesUntilEverySubscriptionIsPolled()
     local service, _, _, _, update = captureFixture()
     for index = 1, 4 do
-        service:subscribe("GPS" .. index, "SFv")
+        service:subscribe("GPS" .. index, "first-arm")
     end
     local total = #service.entries
     local polls = 0
@@ -84,7 +85,7 @@ end
 local function testContendedRoundSurvivesCallbacksAndSubscriptionChanges()
     local service = captureFixture()
     for index = 1, 3 do
-        service:subscribe("GPS" .. index, "SFv")
+        service:subscribe("GPS" .. index, "first-arm")
     end
     local polls = {}
     local poll = service.poll
@@ -119,7 +120,7 @@ local function testContendedRoundSurvivesCallbacksAndSubscriptionChanges()
 
     tick(50)
     assert(queue.state(task).pending, "navigation keeps its unfinished round pending")
-    service:subscribe("GPS-new", "SFv")
+    service:subscribe("GPS-new", "first-arm")
     tick(70)
     assert(not queue.state(task).pending, "a changing callback time and subscriber count cannot restart the round")
     for index = 1, 4 do
@@ -140,7 +141,7 @@ local function testFirstArmHome()
     assertions.assertEqual(view.pilotLatitude, 47)
     assertions.assertEqual(view.pilotLongitude, 8)
     assertions.assertEqual(view.distance, 0)
-    assert(service:subscribe("GPS", "SFv") == view, "identical panels must share captured home")
+    assert(service:subscribe("GPS", "first-arm") == view, "identical panels must share captured home")
     local edge = service:subscribe("GPS")
     reading.raw.lat = 47.001
     reading.raw["pilot-lat"] = 45

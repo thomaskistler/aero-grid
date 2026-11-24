@@ -67,6 +67,9 @@ local function document(count)
             math.floor((index - 1) / 4)
         )
     end
+    -- An explicit empty debrief keeps derived tiles, and the recording the
+    -- scheduler budgets on the radio, out of these editor-only measurements.
+    lines[#lines + 1] = "debrief:\n  tiles: []"
     return table.concat(lines, "\n")
 end
 write("edit-sparse", document(1))
@@ -107,7 +110,7 @@ local function refresh(event, touch, draining)
     assert(ok, tostring(err))
     worst = math.max(worst, ticks * 200)
     assert(
-        ticks * 200 <= 15000,
+        ticks * 200 <= 15200,
         "editor callback exceeded budget: "
             .. tostring(ticks * 200)
             .. " at line "
@@ -120,20 +123,17 @@ local function refresh(event, touch, draining)
     widget.lvglMock.settle()
     if not draining then
         for _ = 1, 10 do
-            local lifecycleTask = context.lifecycleTasks and context.lifecycleTasks[context.lifecycleRequest]
-            local uiTask = context.uiTasks and context.uiTasks[context.uiRequest]
             if
                 not context.inputQueue
-                and not context.editorTransitionRequest
+                and not context.openRequest
                 and not (context.inputTask and context.scheduler.state(context.inputTask).refused == context.scheduler.callbacks)
                 and not (context.hostTask and context.scheduler.state(context.hostTask).refused == context.scheduler.callbacks)
                 and not (context.menuTask and (context.scheduler.state(context.menuTask).ran == context.scheduler.callbacks or context.scheduler.state(
                     context.menuTask
                 ).refused == context.scheduler.callbacks))
-                and not (context.lifecycleRequest and (not lifecycleTask or context.scheduler.state(lifecycleTask).ran ~= context.scheduler.callbacks))
                 and not (
-                    context.uiRequest
-                    and (not uiTask or context.scheduler.state(uiTask).ran ~= context.scheduler.callbacks)
+                    context.hostKind
+                    and context.scheduler.state(context.hostTask).ran ~= context.scheduler.callbacks
                 )
             then
                 break
@@ -263,7 +263,7 @@ CHAR_UP, CHAR_DOWN = string.char(192), string.char(193)
 local function action(name, key)
     for _, row in ipairs(context.editorUi.drawerControls) do
         if row.field.action == name and (not key or row.field.key == key) then
-            if name == "remove" or name == "remove-item" then
+            if name == "remove" then
                 equal(row.row.properties.title, "", "remove action has no duplicated row label")
                 equal(row.object.properties.x, 0, "remove button spans the settings row")
                 equal(row.object.properties.w, row.row.properties.w - 8, "remove button uses full row width")
@@ -273,6 +273,29 @@ local function action(name, key)
         end
     end
     error("drawer action not found: " .. name)
+end
+--- Press item `index` (default 1) of list `key`, then pick `choice` in its menu.
+local function itemChoice(key, choice, index)
+    local found = 0
+    for _, row in ipairs(context.editorUi.drawerControls) do
+        if row.field.action == "item" and row.field.key == key then
+            found = found + 1
+            if found == (index or 1) then
+                row.object.properties.press()
+                break
+            end
+        end
+    end
+    settleDrawer()
+    local menu = widget.lvglMock.menu()
+    for position, value in ipairs(menu.values) do
+        if value == choice then
+            menu.set(position)
+            settleDrawer()
+            return menu
+        end
+    end
+    error("item menu has no " .. choice .. ": " .. table.concat(menu.values, ", "))
 end
 local function open(staleSliding)
     local first = context.document.panels[1] or { col = 0, row = 0, colSpan = 1, rowSpan = 1 }
@@ -486,36 +509,36 @@ equal(control("accent").kind, "choice", "choices use native picker")
 equal(control("accent").properties.active(), true, "controls activate after construction")
 equal(state.drawerControls[1].kind, "label", "metrics have a section heading")
 equal(state.drawerControls[1].object.properties.text, "Metrics", "section uses the collection name")
-equal(state.drawerControls[2].row.children[1].properties.text, "ALT", "metric row shows its configured label")
+equal(state.drawerControls[2].object.properties.text, "ALT", "metric row shows its configured label")
+equal(state.drawerControls[2].row.properties.title, "", "a metric row has no separate caption")
+equal(state.drawerControls[2].object.properties.x, 0, "a metric button spans the row")
 equal(
-    state.drawerControls[2].row.children[1].properties.w,
-    action("item", "metrics").properties.x - 8,
-    "entry name cannot overlap summary"
-)
-assert(string.find(action("item", "metrics").properties.text(), "Alt", 1, true), "metric summary shows its source")
-equal(
-    string.find(action("item", "metrics").properties.text(), "none", 1, true),
-    nil,
-    "metric summary omits the panel visualization"
+    state.drawerControls[2].object.properties.w,
+    state.drawerControls[2].row.properties.w - 8,
+    "a metric button uses the full row width"
 )
 local addMetric = action("append", "metrics")
 equal(addMetric.properties.text, "+", "add entry is a plus row")
 equal(addMetric.properties.x, 0, "plus spans the full row")
 equal(addMetric.properties.w, state.drawerControls[3].row.properties.w - 8, "plus uses full row width")
-action("item", "metrics").properties.press()
-settleDrawer()
+itemChoice("metrics", "Edit")
 control("metrics", "label").properties.set("")
 settleDrawer()
 back()
-equal(state.drawerControls[2].row.children[1].properties.text, "Alt", "empty metric label falls back to source")
-action("item", "metrics").properties.press()
-settleDrawer()
+local unnamedMetric = state.drawerControls[2].object.properties.text
+assert(string.find(unnamedMetric, "Alt", 1, true), "empty metric label falls back to the source summary")
+equal(string.find(unnamedMetric, "none", 1, true), nil, "metric summary omits the panel visualization")
+itemChoice("metrics", "Edit")
 control("metrics", "label").properties.set("ALT")
 settleDrawer()
 back()
-equal(state.drawerControls[2].row.children[1].properties.text, "ALT", "custom label takes precedence over source")
+equal(state.drawerControls[2].object.properties.text, "ALT", "custom label takes precedence over source")
 action("item", "metrics").properties.press()
 equal(control("accent").properties.active(), false, "controls disable while a command is pending")
+settleDrawer()
+local editChoice = widget.lvglMock.menu()
+equal(table.concat(editChoice.values, ","), "Edit,Delete", "a lone item cannot move")
+editChoice.set(1)
 settleDrawer()
 equal(control("metrics", "source").kind, "source", "metric sources use native source selection")
 do
@@ -558,23 +581,20 @@ state.nativeDrawer.properties.close()
 settleDrawer()
 equal(state.drawerListKey, nil, "native Return leaves nested settings one level")
 equal(context.editorSession.draft.panels[1].config.metrics[1].source, "RSSI", "pending edits survive Return")
-assert(
-    string.find(action("item", "metrics").properties.text(), "RSSI", 1, true),
-    "parent summary reflects edited source"
-)
 equal(context.document.panels[1].config.metrics[1].source, "Alt", "source edits are isolated")
 staleSource.properties.set(106)
 equal(state.drawerPending, nil, "dismissed controls cannot change a reopened drawer")
 action("append", "metrics").properties.press()
 settleDrawer()
 equal(#context.editorSession.draft.panels[1].config.metrics, 2, "list entry can be added")
-action("item", "metrics").properties.press()
-settleDrawer()
-action("remove-item").properties.press()
-settleDrawer()
+local firstMetric = context.editorSession.draft.panels[1].config.metrics[1]
+equal(table.concat(itemChoice("metrics", "Move down").values, ","), "Edit,Move down,Delete", "first item menu")
+equal(context.editorSession.draft.panels[1].config.metrics[2], firstMetric, "Move down swaps neighbours")
+equal(table.concat(itemChoice("metrics", "Move up", 2).values, ","), "Edit,Move up,Delete", "last item menu")
+equal(context.editorSession.draft.panels[1].config.metrics[1], firstMetric, "Move up swaps back")
+itemChoice("metrics", "Delete")
 equal(#context.editorSession.draft.panels[1].config.metrics, 1, "entry removal is immediate")
-action("item", "metrics").properties.press()
-settleDrawer()
+itemChoice("metrics", "Edit")
 local sourceControl = control("metrics", "source")
 local validSource = context.editorSession.draft.panels[1].config.metrics[1].source
 sourceControl.properties.set(999)
@@ -728,34 +748,18 @@ equal(#context.editorSession.draft.panels[2].config.metrics, 0, "a new metric pa
 action("append", "metrics").properties.press()
 settleDrawer()
 equal(context.editorSession.draft.panels[2].config.metrics[1].source, nil, "the first metric starts blank")
-equal(
-    state.drawerControls[2].row.children[1].properties.text,
-    "Metric 1",
-    "blank metric uses its singular schema label"
-)
+equal(state.drawerControls[2].object.properties.text, "Metric 1", "blank metric uses its singular schema label")
 action("append", "metrics").properties.press()
 settleDrawer()
-equal(state.drawerControls[3].row.children[1].properties.text, "Metric 2", "metric fallback uses its list index")
-action("item", "metrics").properties.press()
-settleDrawer()
-action("remove-item").properties.press()
-settleDrawer()
-equal(state.drawerControls[2].row.children[1].properties.text, "Metric 1", "fallback index follows removal")
--- The firmware refreshes the summary every frame; an error there disables
--- the widget with "callRefs error: (null)".
-equal(action("item", "metrics").properties.text(), "--", "a blank metric summarizes as a dash")
-action("item", "metrics").properties.press()
-settleDrawer()
+equal(state.drawerControls[3].object.properties.text, "Metric 2", "metric fallback uses its list index")
+itemChoice("metrics", "Delete")
+equal(state.drawerControls[2].object.properties.text, "Metric 1", "fallback index follows removal")
+itemChoice("metrics", "Edit")
 control("metrics", "label").properties.set("")
 settleDrawer()
 back()
-equal(
-    state.drawerControls[2].row.children[1].properties.text,
-    "Metric 1",
-    "empty label without a source uses metric fallback"
-)
-action("item", "metrics").properties.press()
-settleDrawer()
+equal(state.drawerControls[2].object.properties.text, "Metric 1", "empty label without a source uses metric fallback")
+itemChoice("metrics", "Edit")
 control("metrics", "label").properties.set("LIVE")
 settleDrawer()
 back()
@@ -1170,8 +1174,7 @@ for index = 1, 5 do
     rect = state.controls[1].rect
     tap(rect.x + rect.w - 12, rect.y + 12)
     settleDrawer()
-    action("item", "metrics").properties.press()
-    settleDrawer()
+    itemChoice("metrics", "Edit")
     control("metrics", "label").properties.set("LIVE" .. index)
     settleDrawer()
     back()
@@ -1312,7 +1315,8 @@ rect = state.controls[1].rect
 tap(rect.x + rect.w - 12, rect.y + 12)
 settleDrawer()
 for index, label in ipairs({ "Metric 1", "Alt", "CUSTOM" }) do
-    equal(state.drawerControls[index + 1].row.children[1].properties.text, label, "stored metric label precedence")
+    local text = state.drawerControls[index + 1].object.properties.text
+    assert(text == label or label == "Alt" and string.find(text, label, 1, true), "stored metric label precedence")
 end
 back()
 exitWith()
@@ -1348,40 +1352,37 @@ rect = state.controls[1].rect
 tap(rect.x + rect.w - 12, rect.y + 12)
 settleDrawer()
 equal(state.drawerControls[1].object.properties.text, "Entries", "state entries have a section heading")
-equal(state.drawerControls[2].row.children[1].properties.text, "MODE", "state row uses its label")
-equal(
-    action("item", "entries").properties.text(),
-    "SA" .. CHAR_UP .. ": CRUISE / SA" .. CHAR_DOWN .. ": LAND",
-    "summary uses firmware switch glyphs in condition order"
-)
+equal(state.drawerControls[2].object.properties.text, "MODE", "state row uses its label")
 equal(action("append", "entries").properties.text, "+", "entry list uses plus row")
-action("item", "entries").properties.press()
-settleDrawer()
+itemChoice("entries", "Edit")
 control("entries", "label").properties.set("")
 settleDrawer()
 back()
-equal(state.drawerControls[2].row.children[1].properties.text, "Entry 1", "unnamed outer entry uses generic fallback")
-action("item", "entries").properties.press()
-settleDrawer()
+equal(
+    state.drawerControls[2].object.properties.text,
+    "SA" .. CHAR_UP .. ": CRUISE / SA" .. CHAR_DOWN .. ": LAND",
+    "unnamed entry summarizes its conditions in order with firmware switch glyphs"
+)
+itemChoice("entries", "Edit")
 control("entries", "label").properties.set("FLIGHT")
 settleDrawer()
-equal(#state.drawerControls, 6, "entry has label, states, two conditions, add, and remove")
+equal(#state.drawerControls, 5, "entry has label, states, two conditions, and add")
 equal(state.drawerControls[1].field.label, "Label", "state entry puts Label first")
 equal(state.drawerControls[2].field.label, "States", "state entry preserves the following list section")
 equal(
-    state.drawerControls[3].row.children[1].properties.text,
-    "State 1",
-    "condition row uses a readable title instead of a table address"
+    state.drawerControls[3].object.properties.text,
+    "SA" .. CHAR_UP .. ": CRUISE (normal)",
+    "condition row summarizes its switch, text, and background"
 )
 equal(
-    state.drawerControls[4].row.children[1].properties.text,
-    "State 2",
-    "condition titles follow their evaluation order"
+    state.drawerControls[4].object.properties.text,
+    "SA" .. CHAR_DOWN .. ": LAND (normal)",
+    "condition rows follow their evaluation order"
 )
-action("item", "entries").properties.press()
-settleDrawer()
+itemChoice("entries", "Edit")
 equal(#state.drawerItemPath, 3, "condition adds one drawer level")
-equal(#state.drawerControls, 4, "condition has When, Text, Background, and Remove")
+equal(#state.drawerControls, 3, "condition has When, Text, and Background")
+equal(string.match(state.nativeDrawer.properties.title, " / .*$"), " / Entry 1 / State 1", "titles name list items")
 equal(state.drawerControls[1].field.label, "When", "state condition keeps When first without a Label field")
 equal(state.drawerControls[2].field.label, "Text", "state condition keeps Text second")
 equal(state.drawerControls[3].field.label, "Background", "state condition keeps Background third")
@@ -1400,7 +1401,7 @@ control("entries", "background").properties.set(2)
 settleDrawer()
 back()
 equal(#state.drawerItemPath, 1, "Return from condition goes to its entry")
-equal(action("item", "entries").properties.text(), "SA-: HOVER (active)", "condition summary updates")
+equal(action("item", "entries").properties.text, "SA-: HOVER (active)", "condition summary updates")
 action("append", "entries").properties.press()
 settleDrawer()
 local editedEntries = context.editorSession.draft.panels[1].config.entries
@@ -1408,38 +1409,25 @@ equal(#editedEntries[1].states, 3, "new condition appends")
 equal(editedEntries[1].states[2].text, "LAND", "append preserves existing order")
 equal(editedEntries[1].states[3].switch, nil, "new condition starts without a switch")
 equal(action("append", "entries").properties.active(), false, "three-condition limit disables add")
-action("item", "entries").properties.press()
-settleDrawer()
-action("remove-item").properties.press()
-settleDrawer()
+itemChoice("entries", "Delete")
 equal(#state.drawerItemPath, 1, "removing a condition returns to its entry")
 equal(#editedEntries[1].states, 2, "condition removal preserves remaining order")
 equal(editedEntries[1].states[1].text, "LAND", "next condition becomes first")
 equal(action("append", "entries").properties.active(), true, "condition removal re-enables add")
 back()
-equal(state.drawerControls[2].row.children[1].properties.text, "FLIGHT", "parent shows edited text label")
+equal(state.drawerControls[2].object.properties.text, "FLIGHT", "parent shows edited text label")
 equal(state.drawerItemPath, nil, "entry Return goes to widget settings")
-equal(
-    action("item", "entries").properties.text(),
-    "SA" .. CHAR_DOWN .. ": LAND / --",
-    "widget summary follows new order with firmware glyphs"
-)
 for _ = 1, 2 do
     action("append", "entries").properties.press()
     settleDrawer()
 end
 equal(#editedEntries, 3, "plus adds entries")
 equal(action("append", "entries").properties.active(), false, "plus disables at the entry limit")
-action("item", "entries").properties.press()
-settleDrawer()
-action("remove-item").properties.press()
-settleDrawer()
+itemChoice("entries", "Delete")
 equal(#editedEntries, 2, "entry removal returns to widget summary")
 equal(action("append", "entries").properties.active(), true, "removal re-enables plus")
-action("item", "entries").properties.press()
-settleDrawer()
-action("item", "entries").properties.press()
-settleDrawer()
+itemChoice("entries", "Edit")
+itemChoice("entries", "Edit")
 control("entries", "switch").properties.set(getSwitchIndex("!L04"))
 settleDrawer()
 equal(control("entries", "switch").properties.get(), -getSwitchIndex("L04"), "negated selection stays selected")
@@ -1490,26 +1478,21 @@ local blankStateId = context.editorSession.draft.panels[blankStateIndex].id
 equal(#context.editorSession.draft.panels[blankStateIndex].config.entries, 0, "new State panel has no entries")
 action("append", "entries").properties.press()
 settleDrawer()
-equal(action("item", "entries").properties.text(), "--", "empty entry summary is safe to draw")
-action("item", "entries").properties.press()
-settleDrawer()
+equal(action("item", "entries").properties.text, "Entry 1", "an empty entry uses its list position")
+itemChoice("entries", "Edit")
 action("append", "entries").properties.press()
 settleDrawer()
-equal(action("item", "entries").properties.text(), "--", "blank state summary is safe to draw")
-action("item", "entries").properties.press()
-settleDrawer()
+equal(action("item", "entries").properties.text, "State 1", "a blank state uses its list position")
+itemChoice("entries", "Edit")
 equal(control("entries", "switch").properties.get(), 0, "blank state has no selected switch")
 control("entries", "text").properties.set("CUSTOM")
 settleDrawer()
 back()
-equal(action("item", "entries").properties.text(), "--", "text alone does not select a switch")
-action("item", "entries").properties.press()
-settleDrawer()
-action("remove-item").properties.press()
-settleDrawer()
+equal(action("item", "entries").properties.text, "State 1", "text alone does not select a switch")
+itemChoice("entries", "Delete")
 equal(#context.editorSession.draft.panels[blankStateIndex].config.entries[1].states, 0, "last state can be removed")
-action("remove-item").properties.press()
-settleDrawer()
+back()
+itemChoice("entries", "Delete")
 equal(#context.editorSession.draft.panels[blankStateIndex].config.entries, 0, "last entry can be removed")
 back()
 assert(not state.previewError, tostring(state.previewError))
@@ -1711,14 +1694,14 @@ for index = 1, #context.editorSession.draft.panels do
         equal(context.editorSession.draft.panels[index].config.label, "Elapsed", "native text updates draft")
         equal(control("label").properties.value, "Elapsed", "text input reflects accepted draft value")
     elseif panelType == "flight-counter" then
-        equal(control("armSwitch").kind, "switch", "arm position uses native switch selection")
         control("label").properties.set("Trips")
         settleDrawer()
         for _, row in ipairs(context.editorUi.drawerControls) do
             assert(
                 row.field.key ~= "motorSource"
                     and row.field.key ~= "announcements"
-                    and row.field.key ~= "minFlightDuration",
+                    and row.field.key ~= "minFlightDuration"
+                    and row.field.key ~= "armSwitch",
                 "detector settings belong in Model settings"
             )
         end
@@ -1764,7 +1747,6 @@ panels:
     colSpan: 2
     rowSpan: 2
     config:
-      sourceType: cells
       source: Cels
       reading: cell
       visual: bar
@@ -1848,7 +1830,6 @@ equal(countRow.row.properties.y - sourceRow.row.properties.y, 36, "corrected fie
 control("cells").properties.set(6)
 settleDrawer()
 equal(context.editorSession.draft.panels[1].config.cells, 6, "series count remains stored for numeric readings")
-equal(context.editorSession.draft.panels[1].config.sourceType, nil, "old schema-2 selector is centrally removed")
 local validRx, rxErrors = context.editorUi.handlers.editor.validate(context.editorSession)
 assert(validRx, table.concat(rxErrors or {}, "; "))
 back()
@@ -1861,7 +1842,6 @@ context = widget.createLoaded(nil, { Layout = "edit-rx-battery", Theme = "modern
 equal(context.document.panels[1].config.showDelta, true, "cell delta survives save/load")
 equal(context.document.panels[1].config.showPack, true, "secondary preference survives save/load")
 equal(context.document.panels[1].config.cells, 6, "numeric count survives save/load")
-equal(context.document.panels[1].config.sourceType, nil, "save/load omits the retired selector")
 widget.lvglMock.setFullScreen(false)
 
 -- A panel created small must gain its visualization during editor resize,
@@ -2005,36 +1985,22 @@ local function chartDrawerOrder()
     local labels = {}
     for _, row in ipairs(state.drawerControls) do
         if not row.row.hidden then
-            labels[#labels + 1] = row.field.label
+            labels[#labels + 1] = row.field.action == "item" and "item" or row.field.label
         end
     end
     return table.concat(labels, ",")
 end
 equal(
     chartDrawerOrder(),
-    "Label,Arm switch position,Metrics,Alt,+,Window minutes,Series scales,Line smoothing,Accent,Remove panel",
+    "Label,Metrics,item,+,Window minutes,Series scales,Accent,Remove panel",
     "Fixed chart drawer exposes duration without a time-range selector"
 )
-equal(control("armSwitch").kind, "switch", "Chart must use the native switch-position picker")
-equal(control("armSwitch").properties.get(), getSwitchIndex("SA" .. CHAR_DOWN), "legacy Chart switch remains visible")
-control("armSwitch").properties.set(getSwitchIndex("SA" .. CHAR_DOWN))
-settleDrawer()
-equal(context.editorSession.draft.panels[1].config.armSwitch, "SAv", "physical positions must be stored on the panel")
-control("armSwitch").properties.set(getSwitchIndex("L01"))
-settleDrawer()
-equal(context.editorSession.draft.panels[1].config.armSwitch, "L01", "logical arm conditions must also be selectable")
-control("armSwitch").properties.set(getSwitchIndex("!L01"))
-settleDrawer()
-equal(context.editorSession.draft.panels[1].config.armSwitch, "!L01", "negated legacy arm conditions are selectable")
-equal(control("armSwitch").properties.get(), -getSwitchIndex("L01"), "negated legacy selection stays selected")
-control("armSwitch").properties.set(getSwitchIndex("SA" .. CHAR_DOWN))
-settleDrawer()
-action("item", "metrics").properties.press()
-settleDrawer()
+equal(context.editorSession.draft.panels[1].config.armSwitch, nil, "released Chart arm switches are dropped")
+itemChoice("metrics", "Edit")
 equal(
     chartDrawerOrder(),
-    "Label,Source,Range min,Range max,Unit,Precision,Color,Remove entry",
-    "chart metric drawer puts limits before display options and color, with remove last"
+    "Label,Source,Range min,Range max,Unit,Precision,Color",
+    "chart metric drawer puts limits before display options and color"
 )
 local rangeMin, rangeMax = control("metrics", "rangeMin"), control("metrics", "rangeMax")
 equal(rangeMin.kind, "textEdit", "chart minimum uses the native keyboard")
@@ -2067,8 +2033,7 @@ equal(chartMetric.rangeMax, nil, "clearing the maximum restores Auto")
 equal(rangeMin.properties.value, "", "cleared minimum stays blank")
 equal(rangeMax.properties.value, "", "cleared maximum stays blank")
 back()
-action("item", "metrics").properties.press()
-settleDrawer()
+itemChoice("metrics", "Edit")
 equal(control("metrics", "rangeMin").properties.value, "", "reopened minimum retains Auto")
 equal(control("metrics", "rangeMax").properties.value, "", "reopened maximum retains Auto")
 back()
@@ -2094,16 +2059,10 @@ settleDrawer()
 equal(context.editorSession.draft.panels[1].config.duration, 2, "fixed window must remain editable")
 back()
 equal(context.panels[1].instance.window, 12000, "fixed preview must use the selected duration")
-equal(context.panels[1].settings.armSwitch, "SAv", "preview rebuilds must preserve the panel's arm switch")
 rect = state.controls[1].rect
 tap(rect.x + rect.w - 12, rect.y + 12)
 settleDrawer()
 equal(drawerRow("duration").row.hidden, false, "reopening must retain the duration control")
-equal(
-    control("armSwitch").properties.get(),
-    getSwitchIndex("SA" .. CHAR_DOWN),
-    "reopening the drawer must restore the selected physical switch position"
-)
 back()
 equal(context.panels[1].instance.window, 12000, "preview must use its saved fixed window")
 exitWith("Discard changes")

@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local log = { RUNTIME_API = 1, DEFAULT_LIMIT = 64, MAX_LIMIT = 256 }
+local log = { DEFAULT_LIMIT = 64, MAX_LIMIT = 256 }
 log.__index = log
 
 function log.new()

@@ -97,7 +97,7 @@ local function backgroundUntil(context, predicate, limit)
             .. " lastTick="
             .. tostring(owner.lastTick)
             .. " disarmedAt="
-            .. tostring(owner.session.disarmedAt)
+            .. tostring(owner.session and owner.session.disarmedAt)
     )
 end
 
@@ -206,6 +206,7 @@ env.getSourceValue = function(id)
 end
 owner:setDocument({
     revision = 1,
+    armed = "SFv",
     flightCount = owner.document.flightCount,
     flight = context.flightConfig.resolve({
         smartDetection = true,
@@ -236,13 +237,23 @@ for _, span in ipairs({ { 1, 1 }, { 1, 2 }, { 2, 1 }, { 2, 2 }, { 4, 2 } }) do
     context, panel = create(span)
     fixture.pump(context, 10)
     local callback, normalFont = panel.value.properties.font, panel.value.properties.font()
-    context.flightBroker:setDocument({ revision = 0, flightCount = 16777215 })
+    context.flightBroker:setDocument({
+        revision = 0,
+        armed = "SFv",
+        flight = context.flightBroker.document.flight,
+        flightCount = 16777215,
+    })
     backgroundUntil(context, function()
         return panel.value.properties.text == "16777215"
     end)
     assert(panel.themeBuilder.measureText(panel.value.properties.font(), panel.text) <= panel.area.content)
     equal(panel.value.properties.font, callback, "large totals must retain the font callback")
-    context.flightBroker:setDocument({ revision = 0, flightCount = 42 })
+    context.flightBroker:setDocument({
+        revision = 0,
+        armed = "SFv",
+        flight = context.flightBroker.document.flight,
+        flightCount = 42,
+    })
     backgroundUntil(context, function()
         return panel.value.properties.text == "42"
     end)

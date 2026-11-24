@@ -2,7 +2,7 @@
 
 --- In-memory dashboard editing and all-or-nothing layout validation.
 
-local editor = { RUNTIME_API = 1 }
+local editor = {}
 
 editor.CATALOG = {
     { type = "output", label = "Channel output" },
@@ -16,7 +16,6 @@ editor.CATALOG = {
     { type = "model-identity", label = "Model identity" },
     { type = "navigation", label = "Navigation" },
     { type = "rx-battery", label = "RX battery" },
-    { type = "service-probe", label = "Service probe" },
     { type = "state", label = "State" },
     { type = "trim-panel", label = "Trim" },
     { type = "tx-battery", label = "TX battery" },
@@ -127,11 +126,11 @@ local function settingsFor(module, config)
     return values, knownConfig, errors
 end
 
-local function validatePanelSettings(module, settings, knownConfig, span, modelArmed)
+local function validatePanelSettings(module, settings, knownConfig, span)
     if type(module.validateSettings) ~= "function" then
         return true
     end
-    local ok, reported = pcall(module.validateSettings, settings, span, knownConfig, modelArmed)
+    local ok, reported = pcall(module.validateSettings, settings, span, knownConfig)
     if not ok then
         return false, "validateSettings raised: " .. tostring(reported)
     end
@@ -305,7 +304,7 @@ function editor.sizes(session)
                 and placement.col + colSpan <= 4
                 and placement.row + rowSpan <= 4
                 and not overlapsAny(session.grid, session.draft.panels, candidate, session.selected)
-                and validatePanelSettings(module, settings, knownConfig, candidate, session.modelArmed)
+                and validatePanelSettings(module, settings, knownConfig, candidate)
             then
                 sizes[#sizes + 1] = tostring(colSpan) .. "x" .. tostring(rowSpan)
             end
@@ -349,7 +348,6 @@ function editor.add(session, typeName)
             and type(setting.key) == "string"
             and setting.default ~= nil
             and not setting.drawerField
-            and not setting.legacyFlight
         then
             config[setting.key] = copy(setting.default)
         end
@@ -531,7 +529,7 @@ function editor.resize(session, colDelta, rowDelta, col, row)
         return false, "panel does not support span " .. tostring(resized.colSpan) .. "x" .. tostring(resized.rowSpan)
     end
     local settings, knownConfig = settingsFor(module, placement.config or {})
-    local compatible, settingError = validatePanelSettings(module, settings, knownConfig, resized, session.modelArmed)
+    local compatible, settingError = validatePanelSettings(module, settings, knownConfig, resized)
     if not compatible then
         return false, settingError
     end
@@ -568,7 +566,7 @@ function editor.resizePositions(session, left, top)
                 session.grid.validatePlacement(candidate, 4, 4)
                 and supportsSpan(module, width, height)
                 and not overlapsAny(session.grid, session.draft.panels, candidate, index)
-                and validatePanelSettings(module, settings, knownConfig, candidate, session.modelArmed)
+                and validatePanelSettings(module, settings, knownConfig, candidate)
             then
                 positions[#positions + 1] = candidate
             end
@@ -821,6 +819,21 @@ function editor.removeItem(session, key, index, path)
     return true
 end
 
+--- Swap a list entry with the one above (`delta` -1) or below (`delta` 1).
+function editor.moveItem(session, key, index, delta, path)
+    local setting, value, err = tableSetting(session, key, path)
+    if not setting or type(value) ~= "table" then
+        return false, err
+    end
+    local target = type(index) == "number" and index + delta or nil
+    if not target or value[index] == nil or value[target] == nil then
+        return false, "table entry cannot move there"
+    end
+    value[index], value[target] = value[target], value[index]
+    session.dirty = true
+    return true
+end
+
 local function flattenFields(value, path, label, result)
     local valueType = type(value)
     if valueType ~= "table" then
@@ -1012,31 +1025,68 @@ function editor.settings(session)
     end
     local fields = {}
     for _, setting in ipairs(module.settings or {}) do
-        if
-            not setting.legacyFlight
-            and (not setting.legacyArm or (session.modelArmed == nil and config[setting.key] ~= ""))
-        then
-            fields[#fields + 1] = setting
-        end
+        fields[#fields + 1] = setting
     end
     return fields, config, module
 end
 
-function editor.restoreDefault(session, document)
-    if type(document) ~= "table" or type(document.panels) ~= "table" then
-        return false, "default layout is invalid"
-    end
-    session.draft = copy(document)
-    session.selected = #session.draft.panels > 0 and 1 or 0
-    session.dirty = true
-    return true
-end
-
 function editor.cancel(session)
     session.draft = copy(session.original)
+    session.debriefDerived = session.originalDebriefDerived
     session.selected = #session.draft.panels > 0 and 1 or 0
     session.dirty = false
     session.errors = {}
+    return true
+end
+
+--- Apply one debrief_config draft operation, such as "moveTile", to the
+--- draft's debrief. Only adding a tile or a fill creates the section: an
+--- absent debrief and an empty one are different things. Any edit makes a
+--- derived debrief the layout's own, so Save writes it.
+---@return any result The operation's result; false when it failed.
+---@return string? error
+function editor.editDebrief(session, operation, ...)
+    local module, loadError = session.layout.debrief()
+    if not module then
+        return false, loadError
+    end
+    local section = session.draft.debrief
+    if not section and operation ~= "addTile" and operation ~= "fill" then
+        return false, "the layout has no debrief"
+    end
+    section = section or { tiles = {} }
+    local result, message = module[operation](section, ...)
+    if result then
+        session.draft.debrief = section
+        session.dirty = true
+        session.debriefDerived = false
+    end
+    return result, message
+end
+
+--- Mark the draft's debrief as derived from its panels rather than saved in
+--- the layout. Save leaves a derived debrief out of the file.
+---@param session table
+---@param derived boolean
+function editor.setDebriefDerived(session, derived)
+    session.debriefDerived = derived == true
+    session.originalDebriefDerived = session.debriefDerived
+end
+
+--- Rebuild a derived debrief from the draft's panels, which may have changed
+--- since it was derived. Not an edit, so the draft stays clean.
+---@param session table
+---@param thresholds? table<string, table> The draft's thresholds by sensor.
+---@return boolean rebuilt
+function editor.deriveDebrief(session, thresholds)
+    if not session.debriefDerived then
+        return false
+    end
+    local module = session.layout.debrief()
+    if not module then
+        return false
+    end
+    session.draft.debrief = module.fromPanels(session.draft.panels, nil, thresholds)
     return true
 end
 
@@ -1047,6 +1097,9 @@ function editor.validate(session)
     if not normalized then
         session.errors = errors
         return false, copy(errors)
+    end
+    for _, message in ipairs(session.layout.validateDebrief(document)) do
+        errors[#errors + 1] = message
     end
     if type(document.panels) ~= "table" then
         session.errors = { "panels must be a sequence" }
@@ -1083,8 +1136,7 @@ function editor.validate(session)
                         module.validateSettings,
                         settings,
                         { colSpan = placement.colSpan, rowSpan = placement.rowSpan },
-                        knownConfig,
-                        session.modelArmed
+                        knownConfig
                     )
                     if not ok then
                         errors[#errors + 1] = "panel "

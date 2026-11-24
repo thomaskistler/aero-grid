@@ -4,6 +4,7 @@ local root = (... and ... ~= "" and ...) or "."
 local moduleLoader = assert(loadfile(root .. "/tests/support/module_loader.lua"))(root)
 
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
+local sweep = assert(loadfile(root .. "/tests/support/threshold_sweep.lua"))(root)
 local WidgetFixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))()
 local primitives = moduleLoader("lib/primitives.lua")
 
@@ -288,7 +289,90 @@ local function testThresholdsOutsideRangeAreOff()
     assertions.assertEqual(metric.resolveState(settings, 5, false), "critical", "a reversed range still bounds")
 end
 
+local function testThresholdRegistrations()
+    local metric = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/metric.lua"))()
+    local entries = {
+        { source = "Curr", rangeMax = 120, warning = 60, critical = 90 },
+        { source = "RxBt", rangeMax = 10, warning = 7, critical = 6.6 },
+        { source = "Tmp1", warning = 40, direction = "falling" },
+        { source = "Alt", warning = 50, direction = "auto" },
+        { source = "Alt", warning = 150 },
+        { warning = 1 },
+    }
+    local list = metric.thresholds({ metrics = entries })
+    assertions.assertEqual(#list, 4, "out-of-range and sourceless thresholds register nothing")
+    for index, spec in ipairs(list) do
+        local entry = entries[index]
+        local settings = {
+            rangeMin = entry.rangeMin or 0,
+            rangeMax = entry.rangeMax or 100,
+            warning = entry.warning,
+            critical = entry.critical,
+            direction = entry.direction or "auto",
+        }
+        sweep(spec, function(value)
+            return metric.resolveState(settings, value, false)
+        end, 0.1, "metric " .. entry.source)
+    end
+end
+
+--- A supporting value is read once a second and replaces its text in place.
+local function testSupportingValueWithoutRelayout()
+    local fixture = WidgetFixture.new()
+    local dashboard = fixture.createLoaded()
+    local metric = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/metric.lua"))()
+    local now = 0
+    local feeds = {
+        Alt = { available = true, value = 120, unitText = "m", precision = 0 },
+        ["Alt+"] = { available = true, value = 180, unitText = "m", precision = 0 },
+    }
+    local panel = metric.create(dashboard.page, { x = 0, y = 0, w = 238, h = 134 }, {
+        metrics = { { source = "Alt", label = "ALT" }, { source = "Alt+", label = "MAX" } },
+        visual = "none",
+    }, {
+        theme = dashboard.theme,
+        primitives = dashboard.primitives,
+        fonts = dashboard.themeBuilder.typography(2, 2),
+        span = { colSpan = 2, rowSpan = 2 },
+        themeBuilder = dashboard.themeBuilder,
+        clock = function()
+            return now
+        end,
+        telemetry = {
+            subscribe = function(_, source)
+                return feeds[source]
+            end,
+        },
+        state = function(name, accent)
+            return dashboard.themeBuilder.state(dashboard.theme, name, accent)
+        end,
+    })
+    metric.refresh(panel)
+    assertions.assertEqual(panel.range.properties.text, "MAX 180 m")
+    local update, relayouts = metric.update, 0
+    metric.update = function(...)
+        relayouts = relayouts + 1
+        return update(...)
+    end
+    feeds["Alt+"].value = 190
+    now = 50
+    metric.refresh(panel)
+    assertions.assertEqual(panel.range.properties.text, "MAX 180 m", "the supporting row refreshes once a second")
+    now = 100
+    metric.refresh(panel)
+    assertions.assertEqual(panel.range.properties.text, "MAX 190 m")
+    assertions.assertEqual(relayouts, 0, "a supporting value change must not relayout the panel")
+    feeds["Alt+"].value = 1900
+    now = 200
+    metric.refresh(panel)
+    assertions.assertEqual(panel.range.properties.text, "MAX 1900 m")
+    assertions.assertEqual(relayouts, 1, "a wider supporting value grows its text area once")
+    metric.update = update
+end
+
 local function run()
+    testSupportingValueWithoutRelayout()
+    testThresholdRegistrations()
     testThresholdsOutsideRangeAreOff()
     testUnconfiguredMetric()
     testDefaultSensorUnitAfterResize()

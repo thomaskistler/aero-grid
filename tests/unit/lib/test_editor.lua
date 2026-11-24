@@ -4,14 +4,15 @@ local root = (... and ... ~= "" and ...) or "."
 local moduleLoader = assert(loadfile(root .. "/tests/support/module_loader.lua"))(root)
 local editor = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/editor.lua"))()
 local grid = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/grid.lua"))()
-local layout = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/layout.lua"))()
+local layout = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/layout.lua"))(function()
+    return assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/debrief_config.lua"))()
+end)
 local panelHost = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/panel_host.lua"))()
 panelHost.SLOTS = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.lua"))().SLOTS
 
 local modules = {
     sample = {
         id = "sample",
-        apiVersion = 1,
         supportedSpans = { "1x1", "2x1", "1x2" },
         settings = {
             { key = "label", type = "string", default = "SAMPLE" },
@@ -79,7 +80,7 @@ local function testCatalogAlphabeticalOrder()
         end
     end
     assert(rxIndex and editor.CATALOG[rxIndex - 1].type == "navigation")
-    assert(editor.CATALOG[rxIndex + 1].type == "service-probe")
+    assert(editor.CATALOG[rxIndex + 1].type == "state")
 end
 
 local function testWorkingCopyCancelAndApply()
@@ -142,8 +143,63 @@ local function testAddRemoveAndStrictSettings()
     assert(not valid and string.find(table.concat(errors, "\n"), "label must not be empty", 1, true))
 end
 
+local function testDebriefDraft()
+    local session = newSession()
+    assert(not editor.editDebrief(session, "removeTile", 1), "a layout without a debrief has no tiles")
+    assert(session.draft.debrief == nil and not session.dirty)
+    assert(editor.editDebrief(session, "addTile") == 1 and session.dirty)
+    local valid, errors = editor.validate(session)
+    assert(not valid and string.find(table.concat(errors, "\n"), "series 1: source is required", 1, true))
+    assert(editor.editDebrief(session, "setSeriesValue", 1, 1, "source", "VCel"))
+    local applied, saved = editor.apply(session)
+    assert(applied, table.concat(saved or {}, "; "))
+    assert(saved.debrief.tiles[1].title == "Tile 1")
+
+    assert(editor.editDebrief(session, "removeTile", 1))
+    assert(editor.cancel(session))
+    assert(#session.draft.debrief.tiles == 1, "cancel restores the debrief")
+
+    session.draft.debrief.tiles[1].futureTile = "preserved"
+    session.draft.debrief.tiles[1].series[1].futureSeries = "preserved"
+    local normalized
+    valid, normalized = editor.validate(session)
+    assert(valid, table.concat(normalized, "\n"))
+    assert(normalized.debrief.tiles[1].futureTile == "preserved")
+    assert(normalized.debrief.tiles[1].series[1].futureSeries == "preserved")
+
+    session.draft.debrief.tiles[1].series[1].statistic = "last"
+    valid, errors = editor.validate(session)
+    assert(not valid and string.find(table.concat(errors, "\n"), "debrief tile 1", 1, true))
+    session.draft.debrief = "invalid"
+    valid, errors = editor.validate(session)
+    assert(not valid and string.find(table.concat(errors, "\n"), "debrief must be a mapping", 1, true))
+end
+
+local function testDerivedDebrief()
+    local session = newSession()
+    assert(not editor.deriveDebrief(session), "a layout's own debrief is never derived")
+    assert(session.draft.debrief == nil)
+
+    editor.setDebriefDerived(session, true)
+    assert(editor.deriveDebrief(session) and type(session.draft.debrief) == "table")
+    assert(session.debriefDerived and not session.dirty, "deriving is not an edit")
+
+    assert(editor.editDebrief(session, "addTile"))
+    assert(session.debriefDerived == false and session.dirty, "an edit makes the debrief the layout's own")
+    assert(editor.cancel(session))
+    assert(session.debriefDerived and session.draft.debrief == nil, "cancel restores the derived state")
+
+    -- Fill creates the section, even when the panels map to no tiles.
+    local filled = newSession()
+    filled.draft.panels = {}
+    assert(editor.editDebrief(filled, "fill", filled.draft.panels) == 0)
+    assert(filled.draft.debrief and #filled.draft.debrief.tiles == 0 and filled.dirty)
+end
+
 local function testAddChannelOutput()
-    modules.output = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/output.lua"))()
+    modules.output = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/output.lua"))(
+        assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/scheduler.lua"))().new().budget
+    )
     local session = newSession({ version = layout.VERSION, grid = { columns = 4, rows = 4 }, panels = {} })
     local added, addError = editor.add(session, "output")
     assert(added, addError)
@@ -259,7 +315,7 @@ local function testCatalogPanelSizes()
             end
         end
     end
-    local showcase = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/theme-showcase.lua"))()
+    local showcase = assert(loadfile(root .. "/tests/fixtures/panels/theme-showcase.lua"))()
     for rows = 1, 4 do
         for columns = 1, 4 do
             assert(panelHost.supportsSpan(showcase, columns, rows) == (columns == 4 and rows == 4))
@@ -369,7 +425,6 @@ end
 local function testDeclaredEntryFieldsAreAlwaysOffered()
     modules.listed = {
         id = "listed",
-        apiVersion = 1,
         supportedSpans = { "1x1" },
         settings = {
             {
@@ -413,30 +468,6 @@ local function testDeclaredEntryFieldsAreAlwaysOffered()
     assert(editor.setPath(session, "items", { 1, "positions", "middle" }, "MID"))
     assert(session.draft.panels[1].config.items[1].positions.middle == "MID")
     modules.listed = nil
-end
-
-local function testRestoreDefaultDoesNotApply()
-    local session = newSession()
-    local default = {
-        version = layout.VERSION,
-        grid = { columns = 4, rows = 4 },
-        panels = {
-            {
-                id = "default",
-                type = "sample",
-                col = 0,
-                row = 0,
-                colSpan = 1,
-                rowSpan = 1,
-                config = {},
-            },
-        },
-    }
-    assert(editor.restoreDefault(session, default))
-    assert(session.draft.panels[1].id == "default")
-    assert(session.original.panels[1].id == "first")
-    editor.cancel(session)
-    assert(session.draft.panels[1].id == "first")
 end
 
 local function testResizePreservesSpanDependentSettings()
@@ -682,7 +713,7 @@ end
 local function testAllPanelDrawersStartWithLabel()
     local expectedOrder = {
         output = { "label", "firstChannel", "channelCount", "showNames", "showTrim", "accent" },
-        chart = { "label", "metrics", "timeRange", "duration", "scaling", "range", "smoothing", "accent" },
+        chart = { "label", "metrics", "timeRange", "duration", "scaling", "range", "accent" },
         ["flight-counter"] = {
             "label",
         },
@@ -851,12 +882,13 @@ testCompatibleSwaps()
 testWorkingCopyCancelAndApply()
 testPlacementRulesAndResizeAnchor()
 testAddRemoveAndStrictSettings()
+testDebriefDraft()
+testDerivedDebrief()
 testAddChannelOutput()
 testAddSpanDeclarations()
 testCatalogPanelSizes()
 testRxBatteryFormAndSourceDrawers()
 testSinglePrecisionVoltageSteps()
-testRestoreDefaultDoesNotApply()
 testDeclaredEntryFieldsAreAlwaysOffered()
 testResizePreservesSpanDependentSettings()
 testOptionalNumbersCanBeCleared()

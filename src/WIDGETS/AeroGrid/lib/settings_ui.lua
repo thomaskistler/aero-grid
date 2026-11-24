@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-only
 
-local ui = { RUNTIME_API = 1 }
+local ui = {}
 
 local function retireHost(view)
     if view.host then
@@ -232,9 +232,11 @@ function ui.row(view, field)
     if field.description then
         ui.description(view, field.description)
     end
-    local fullWidth = field.action == "remove"
-        or field.action == "remove-item"
+    local fullWidth = field.fullWidth == true
+        or field.action == "item"
+        or field.action == "remove"
         or field.action == "append"
+        or field.action == "fill"
         or field.type == "section"
     local rowHeight = field.type == "section" and math.floor(view.height * 0.625) or view.rowHeight
     local row = lvgl.setting(view.dialog, {
@@ -242,19 +244,9 @@ function ui.row(view, field)
         y = view.nextY,
         w = view.width,
         h = rowHeight,
-        title = (fullWidth or field.action == "item") and "" or field.label,
+        title = fullWidth and "" or field.label,
     })
-    local controlX = fullWidth and 0
-        or math.floor(view.width * (field.action == "item" and 0.28 or view.controlFraction))
-    if field.action == "item" then
-        lvgl.label(row, {
-            x = 0,
-            y = math.floor((view.height - view.fontHeight()) / 2),
-            w = controlX - 8,
-            h = view.height,
-            text = field.label,
-        })
-    end
+    local controlX = fullWidth and 0 or math.floor(view.width * view.controlFraction)
     return {
         row = row,
         field = field,
@@ -555,7 +547,7 @@ end
 
 function ui.cost(view, capacity, finish)
     local field = view.fields[view.build]
-    return math.min(field and (field.slots or 1) or finish or 1, capacity)
+    return math.min(field and (field.slots or 4) or finish or 4, capacity)
 end
 
 return ui

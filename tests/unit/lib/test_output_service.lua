@@ -54,7 +54,7 @@ local service = control.new(env, support)
 local feed = service:output(0)
 equal(service:output(0), feed)
 equal(service.count, 1)
-equal(service.interval, 10, "output subscriptions use the fast service cadence")
+equal(service.interval, 20, "output subscriptions keep the service cadence")
 assert(not feed.available)
 assert(not feed.nameReady, "new subscriptions must not publish unresolved captions")
 assert(not pcall(function()
@@ -78,14 +78,11 @@ equal(feed.trim.name, "trim-ail")
 equal(feed.trim.fraction, 0.25)
 local metadataReads = reads
 raw, trimRaw = 768, 512
-service:update(now + 10)
-equal(feed.fraction, 0.75, "outputs update between ordinary control polls")
-equal(feed.trim.fraction, 0.25, "trims retain their slower polling cadence")
-equal(reads, metadataReads, "output metadata retains its slower polling cadence")
 now = now + 20
 service:update(now)
-equal(feed.trim.fraction, 0.5, "trims update on the next ordinary control poll")
-assert(reads > metadataReads, "metadata scanning resumes on the ordinary control poll")
+equal(feed.fraction, 0.75, "outputs update on the next poll")
+equal(feed.trim.fraction, 0.5, "trims update with outputs")
+assert(reads > metadataReads, "metadata scanning continues with output sampling")
 local rows = {}
 assert(service:describe(rows) >= 1, "output subscriptions must remain safe in service diagnostics")
 raw = -1536
@@ -214,7 +211,6 @@ end
 settle()
 
 local missing = control.new({}, support)
-equal(missing.interval, 20, "services without outputs retain their original cadence")
 local absent = missing:output(0)
 missing:update(0)
 assert(not absent.available)

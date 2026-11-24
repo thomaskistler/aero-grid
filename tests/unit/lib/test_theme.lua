@@ -17,11 +17,16 @@ local themes = assert(loadfile(root .. "/tests/support/theme_catalog.lua"))()(ro
 assert(theme.setCatalog(themes))
 local customIndex = 0
 
+-- The color the radio shows after packing to RGB565 and widening back.
 local function quantized(rgb)
+    local function widen(value, bits)
+        local levels = 2 ^ bits - 1
+        return math.floor(math.floor(value / 2 ^ (8 - bits)) * 255 / levels + 0.5)
+    end
     local r = math.floor(rgb / 65536) % 256
     local g = math.floor(rgb / 256) % 256
     local b = rgb % 256
-    return theme.fromRgb565(math.floor(r / 8) * 2048 + math.floor(g / 4) * 32 + math.floor(b / 8))
+    return widen(r, 5) * 65536 + widen(g, 6) * 256 + widen(b, 5)
 end
 
 local function buildCustomTheme(overrides)

@@ -25,7 +25,7 @@ local function finish()
     until not context.optionsRequest
         and not context.stage
         and not context.reloadState
-        and not context.lifecycleRequest
+        and not context.hostKind
         and not context.reflowIndex
         and context.width == zone.w
         and context.height == zone.h
@@ -50,7 +50,7 @@ local function finish()
         for _ = 1, 150 do
             refresh()
         end
-        assert(output.showRows == output.area.count, "output rows did not finish mounting")
+        assert(output.placeIndex == nil and not output.rowsRoot.hidden, "output rows did not finish mounting")
         assert(output.rows[1].feed.available, "output service was not exercised")
     end
     if fixture.instanceOf(context, "power") then

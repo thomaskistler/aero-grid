@@ -15,23 +15,9 @@ local buildCustomTheme = fixture.buildCustomTheme
 local primitives = fixture.primitives
 local assertEqual = fixture.assertEqual
 local assertFont = fixture.assertFont
+local MODERN = fixture.themeDocument.themes[1].colors
 
 local function testColorConversion()
-    local function toRgb565(rgb)
-        local red = math.floor(rgb / 65536) % 256
-        local green = math.floor(rgb / 256) % 256
-        local blue = rgb % 256
-        return math.floor(red * 31 / 255) * 2048 + math.floor(green * 63 / 255) * 32 + math.floor(blue * 31 / 255)
-    end
-
-    assertEqual(theme.fromRgb565(toRgb565(0x000000)), 0x000000)
-    assertEqual(theme.fromRgb565(toRgb565(0xFFFFFF)), 0xFFFFFF)
-
-    -- Widening is lossy, so require closeness rather than equality.
-    local widened = theme.fromRgb565(toRgb565(0x70D6F3))
-    local red = math.floor(widened / 65536) % 256
-    assert(math.abs(red - 0x70) <= 8, "red channel drifted: " .. red)
-
     assertEqual(math.floor(theme.contrast(0x000000, 0xFFFFFF) + 0.5), 21)
     assertEqual(theme.contrast(0x123456, 0x123456), 1)
     assertEqual(theme.shade(0x000000, 1), 0xFFFFFF)
@@ -157,9 +143,9 @@ local function testCustomTheme()
         "the host adapted the named palette without saying so"
     )
     assertEqual(resolved.accent, "green")
-    assertEqual(resolved.rgb.border, theme.modernDark().border)
+    assertEqual(resolved.rgb.border, MODERN.border)
     assertEqual(#resolved.warnings, 0)
-    assertEqual(resolved.rgb.text, theme.modernDark().text)
+    assertEqual(resolved.rgb.text, MODERN.text)
 
     local light = buildCustomTheme({ surface = 0xFFFFFF })
     assert(theme.contrast(light.rgb.surface, light.rgb.text) >= 4.5, "custom light surface left text unreadable")
@@ -184,7 +170,7 @@ end
 --- what the radio is given and asserting a mock's identity function.
 local function testStates()
     local resolved = theme.build("modern-dark")
-    local modern = theme.modernDark()
+    local modern = MODERN
 
     local normal = theme.state(resolved, "normal", "green")
     assertEqual(normal.accent, lcd.RGB(modern.green))
@@ -355,10 +341,6 @@ local function testPrimitiveMath()
     assertEqual(primitives.arcSweep(270, 1), 270)
     assertEqual(primitives.arcSweep(270, 2), 270)
     assertEqual(primitives.arcSweep(270, nil), 0)
-
-    local resolved = theme.build("modern-dark")
-    assertEqual(primitives.contentWidth(resolved, 100), 100 - resolved.spacing.padding * 2)
-    assertEqual(primitives.contentWidth(resolved, 4), 1, "width must never collapse")
 end
 
 --- Empty flow collections are the natural way to express "no entries".
@@ -412,7 +394,7 @@ end
 --- a tint would otherwise take. If that guarantee is removed, `alertSurface`
 --- returns a colour violating it, and the assertion fails.
 local function testAlertTintGuarantees()
-    local modern = theme.modernDark()
+    local modern = MODERN
 
     --- Tokens that are legible at rest, with one field replaced.
     local function tokensWith(overrides)
@@ -546,7 +528,7 @@ local function testDerivedThemesStayLegible()
 
         -- Critical red is an alarm: it must look identical on every radio, so it
         -- is never adjusted. The surface moves instead to keep it visible.
-        assertEqual(tokens.critical, theme.modernDark().critical, label .. ": critical red was altered")
+        assertEqual(tokens.critical, MODERN.critical, label .. ": critical red was altered")
         assert(
             theme.contrast(tokens.surface, tokens.critical) >= 2.5,
             label .. ": critical red vanished into the surface"
@@ -574,7 +556,7 @@ end
 --- Freshness must override a panel's decorative accent.
 local function testStaleOverridesAccent()
     local resolved = theme.build("modern-dark")
-    local modern = theme.modernDark()
+    local modern = MODERN
 
     local normal = theme.state(resolved, "normal", "green")
     local stale = theme.state(resolved, "stale", "green")

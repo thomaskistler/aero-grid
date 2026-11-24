@@ -3,6 +3,7 @@
 local root = (... and ... ~= "" and ...) or "."
 
 local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
+local sweep = assert(loadfile(root .. "/tests/support/threshold_sweep.lua"))(root)
 local navigation = assert(loadfile(root .. "/tests/support/module_loader.lua"))(root)("panels/navigation.lua")
 
 local function testPresentation()
@@ -21,7 +22,6 @@ local function testPresentation()
     local hidden, hiddenErrors = host.resolveSettings(navigation, { showSatellites = false })
     assertions.assertEqual(#hiddenErrors, 0)
     assertions.assertEqual(hidden.showSatellites, false)
-    assertions.assertEqual(settings.armSwitch, "")
     assertions.assertEqual(settings.satelliteSource, "")
     assertions.assertEqual(settings.satelliteWarning, 8)
     assertions.assertEqual(settings.satelliteCritical, 4)
@@ -37,14 +37,8 @@ local function testPresentation()
         local _, errors = host.resolveSettings(navigation, { [removed] = 500 })
         assert(#errors > 0, "distance thresholds are no longer panel settings")
     end
-    for _, arm in ipairs({ "", "SF^", "SA-", "SFv", "L01" }) do
-        local _, errors = host.resolveSettings(navigation, { armSwitch = arm })
-        assertions.assertEqual(#errors, 0)
-    end
-    for _, arm in ipairs({ "SF", "SFx", "L1", "GPS" }) do
-        local _, errors = host.resolveSettings(navigation, { armSwitch = arm })
-        assert(#errors > 0, "invalid armed switch must be rejected")
-    end
+    local _, armErrors = host.resolveSettings(navigation, { armSwitch = "SFv" })
+    assert(#armErrors > 0, "navigation uses the model Armed condition")
     for _, removed in ipairs({ "presentation", "showBearing" }) do
         local _, errors = host.resolveSettings(navigation, { [removed] = true })
         assertions.assertEqual(#errors, 1)
@@ -147,30 +141,34 @@ local function testNavigationStates()
     )
 end
 
-local function testDistanceText()
+local function testSettingsAndCoordinateText()
     local host = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/lib/panel_host.lua"))()
     local _, warnings = host.resolveSettings(navigation, { distanceSource = "Dist" })
     assertions.assertEqual(#warnings, 1)
     assertions.assertEqual(warnings[1], "distanceSource is not a setting of this panel")
-    assertions.assertEqual(
-        navigation.distanceText({ distance = 12 }, function()
-            return "12 km"
-        end),
-        "12 km"
-    )
-    assertions.assertEqual(
-        navigation.distanceText({}, function()
-            return "12 km"
-        end),
-        "--"
-    )
     assertions.assertEqual(navigation.coordinateText({ latitude = 1, longitude = 2 }), "1.00000 2.00000")
 end
 
+local function testThresholdRegistration()
+    assertions.assertEqual(#navigation.thresholds({ satelliteSource = "" }), 0)
+    local view = { source = "GPS", known = true, fix = true }
+    for _, settings in ipairs({
+        { satelliteSource = "Sats", satelliteWarning = 10, satelliteCritical = 6 },
+        { satelliteSource = "Sats" },
+    }) do
+        local spec = navigation.thresholds(settings)[1]
+        assertions.assertEqual(spec.sensor, "Sats")
+        sweep(spec, function(count)
+            return navigation.resolveState(settings, view, { available = true, value = count })
+        end, 1, "satellites " .. spec.warning .. "/" .. spec.critical)
+    end
+end
+
 local function run()
+    testThresholdRegistration()
     testPresentation()
     testNavigationStates()
-    testDistanceText()
+    testSettingsAndCoordinateText()
 end
 
 run()

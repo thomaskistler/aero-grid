@@ -29,7 +29,6 @@
 
 local flightTimer = {
     id = "flight-timer",
-    apiVersion = 1,
     supportedSpans = { "any" },
     -- A clock advances once a second, so anything faster is wasted work charged
     -- to the same instruction budget as every other panel on the dashboard.
@@ -163,7 +162,7 @@ end
 --- Render a second count as this panel's clock: minutes and seconds, always.
 ---
 --- **It does not change shape, and that is the whole of why it exists.**
---- `modelService.formatTime` grows an hours field the moment a reading
+--- `services.clockText` grows an hours field the moment a reading
 --- passes 3600 seconds, so a clock steps from `59:59` to `1:00:00` -- two
 --- characters wider -- while it is being read. That is a panel reflowing
 --- itself at the moment attention is on it, and it is what forced the old

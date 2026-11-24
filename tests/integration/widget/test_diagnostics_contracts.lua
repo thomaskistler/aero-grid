@@ -175,7 +175,7 @@ local function testDiagnosticsFitTheirPanels()
         "rows were not restored when the panel grew again"
     )
 
-    for _ = 1, 4 do
+    for _ = 1, 6 do
         tick(50)
         definition.refresh(context)
     end
@@ -237,7 +237,7 @@ end
 
 local function testHostDiagnosticsReportsTheHost()
     resetRadio()
-    local source = assert(hostIo.open(sourcePath .. "layouts/Diagnostics.yaml", "r"))
+    local source = assert(hostIo.open(root .. "/tests/fixtures/layouts/development/Diagnostics.yaml", "r"))
     local yaml = source:read("a")
     source:close()
 
@@ -488,7 +488,7 @@ panels:
 ]],
         {
             ["raiser.lua"] = [==[
-local raiser = {id = "raiser", apiVersion = 1, supportedSpans = {"any"},
+local raiser = {id = "raiser", supportedSpans = {"any"},
   settings = {{key = "label", type = "string", default = ""}}}
 function raiser.create() error("deliberate failure") end
 return raiser
@@ -496,7 +496,7 @@ return raiser
             -- Builds, then raises on its first refresh, which is the other way a
             -- panel dies and the only one the host keeps an entry for.
             ["latebreak.lua"] = [==[
-local latebreak = {id = "latebreak", apiVersion = 1, supportedSpans = {"any"},
+local latebreak = {id = "latebreak", supportedSpans = {"any"},
   settings = {{key = "label", type = "string", default = ""}}}
 function latebreak.create() return {ticks = 0} end
 function latebreak.refresh() error("deliberate late failure") end

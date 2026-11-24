@@ -38,25 +38,25 @@ end
 
 definition.event(context, EVT_TOUCH_FIRST, point)
 definition.event(context, EVT_TOUCH_TAP, point)
-assert(context.inputQueue and not context.logOpenRequest and not context.logViewerModule)
+assert(context.inputQueue and not context.openRequest and not context.logViewerModule)
 untilState(function()
-    return context.logOpenRequest ~= nil
+    return context.openRequest ~= nil
 end)
 definition.background(context)
-assert(context.logOpenRequest and not context.logViewer, "hidden callbacks retain entry without constructing UI")
+assert(context.openRequest and not context.logViewer, "hidden callbacks retain entry without constructing UI")
 noGrant(context, fixture.lvglMock.objects, function()
     definition.refresh(context)
     definition.background(context)
-    assert(context.logOpenRequest and not context.logViewer)
+    assert(context.openRequest and not context.logViewer)
 end)
-context.scheduler.cursor = 1
+fixture.requeue(context)
 local before = flights
 definition.refresh(context)
 assert(flights == before + 1 and not context.logViewer, "opening must wait for its whole-capacity grant")
 definition.refresh(context)
 local state = assert(context.logViewer)
-assert(flights == before + 1 and context.logOpenTask.cost == context.scheduler.budget.capacity)
-assert(not context.scheduler.state(context.logOpenTask).pending and not context.logOpenRequest and state.prepareIndex)
+assert(flights == before + 1 and context.hostTask.cost == context.scheduler.budget.capacity)
+assert(not context.scheduler.state(context.hostTask).pending and not context.openRequest and state.prepareIndex)
 untilState(function()
     return not state.prepareIndex
 end)
@@ -72,12 +72,12 @@ assert(state.dragY == 100, "granted input must keep its arrival coordinates")
 definition.event(context, EVT_ROT_LEFT)
 assert(state.index == position and state.offset == offset, "viewer input cannot scroll synchronously")
 local inputTask = context.inputTask
-context.scheduler.cursor = 1
+fixture.requeue(context)
 definition.refresh(context)
 assert(context.inputQueue and context.scheduler.state(inputTask).refused == context.scheduler.callbacks)
 definition.refresh(context)
 assert(not context.inputQueue and not context.scheduler.state(inputTask).pending)
-local task = context.uiTasks["log viewer"]
+local task = context.hostTask
 assert(not context.scheduler.state(task).pending, "applied input must not leave viewer work behind")
 
 state.closeButton.properties.press()
@@ -88,11 +88,12 @@ noGrant(context, fixture.lvglMock.objects, function()
 end)
 definition.background(context)
 assert(context.logViewer == state, "hidden callbacks cannot mutate the log overlay")
+local spent = context.scheduler.state(task).spent
 untilState(function()
     return not context.logViewer
 end)
-assert(context.logOverlay.hidden and not task.ui and not context.scheduler.state(task).pending)
-assert(task.cost == 1, "closing must not retain the viewer's full-budget reservation")
+assert(context.logOverlay.hidden and not context.scheduler.state(task).pending)
+assert(context.scheduler.state(task).spent == spent + 1, "closing must not retain the viewer's full-budget reservation")
 
 -- Retired buttons cannot close a later viewer that reused the overlay.
 definition.event(context, EVT_TOUCH_FIRST, point)
@@ -114,12 +115,12 @@ fixture.pump(context, 30)
 definition.event(context, EVT_TOUCH_FIRST, point)
 definition.event(context, EVT_TOUCH_TAP, point)
 untilState(function()
-    return context.logOpenRequest ~= nil
+    return context.openRequest ~= nil
 end)
 local filename = fixture.radio.modelFilename
 fixture.radio.modelFilename = "another-model.yml"
 untilState(function()
-    return not context.logOpenRequest
+    return not context.openRequest
 end)
 assert(not context.logViewer, "deferred entry cannot open a snapshot for a different model")
 fixture.radio.modelFilename = filename
@@ -127,17 +128,17 @@ fixture.radio.modelFilename = filename
 definition.event(context, EVT_TOUCH_FIRST, point)
 definition.event(context, EVT_TOUCH_TAP, point)
 untilState(function()
-    return context.logOpenRequest ~= nil
+    return context.openRequest ~= nil
 end)
 fixture.lvglMock.setFullScreen(false)
 untilState(function()
-    return not context.logOpenRequest
+    return not context.openRequest
 end)
 assert(not context.logViewer, "stale entry cannot construct an overlay after fullscreen exit")
 
 fixture.lvglMock.setFullScreen(true)
 assert(fixture.pumpUntil(context, function()
-    return not context.stage and not context.reloadState and not context.lifecycleRequest
+    return not context.stage and not context.reloadState and not context.hostKind
 end, 200))
 fixture.pump(context, 10)
 entry = assert(fixture.entryById(context, "sources"))
@@ -147,12 +148,12 @@ point = { x = rect.x + rect.w / 2, y = rect.y + rect.h / 2 }
 definition.event(context, EVT_TOUCH_FIRST, point)
 definition.event(context, EVT_TOUCH_TAP, point)
 untilState(function()
-    return context.logOpenRequest ~= nil
+    return context.openRequest ~= nil
 end)
 local oldPage = context.page
 context.page = {}
 untilState(function()
-    return not context.logOpenRequest
+    return not context.openRequest
 end)
 context.page = oldPage
 assert(not context.logViewer, "deferred entry cannot construct under a replaced page")
@@ -164,5 +165,5 @@ fixture.pump(context, 30)
 definition.event(context, EVT_TOUCH_FIRST, point)
 definition.event(context, EVT_TOUCH_BREAK, { x = 0, y = 0 })
 untilState(function()
-    return context.logOpenRequest ~= nil
+    return context.openRequest ~= nil
 end)

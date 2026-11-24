@@ -144,7 +144,7 @@ local function testThemeAppearance()
     local widgetPath = makeWidget(
         "panel-opacity",
         [[
-version: 4
+version: 5
 grid:
   columns: 4
   rows: 4

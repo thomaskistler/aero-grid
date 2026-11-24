@@ -7,7 +7,7 @@ LvglWidgetMenu instead. AeroGrid uses box/rectangle/image/label and its own
 deferred event routing, avoiding unsupported focus styles or native dialogs.
 
 Artwork: EdgeTX v2.12.0 GPL-2.0-only masks, radio/src/bitmaps/<display>/
-default_theme/mask_menu_{model,theme}.png. Their inverse grayscale is the exact
+default_theme/mask_menu_{model,theme,stats}.png. Their inverse grayscale is the exact
 alpha used by EdgeTX's encode-bitmap.py. Both foreground colors are pre-rendered
 because Lua's image primitive exposes no recoloring API. The pilot-wings
 silhouette and palette generator are deliberately untouched.
@@ -20,7 +20,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = "https://raw.githubusercontent.com/EdgeTX/edgetx/v2.12.0/radio/src/bitmaps"
 DISPLAYS = {"320x240": 36, "480x272": 45, "800x480": 62}
-ICONS = ("model", "theme")
+ICONS = ("model", "theme", "stats")
 
 spec = importlib.util.spec_from_file_location("header_icons", ROOT / "tools/generate-menu-icon.py")
 png = importlib.util.module_from_spec(spec)

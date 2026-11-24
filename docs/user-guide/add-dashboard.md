@@ -58,8 +58,6 @@ Choose a layout to decide what that dashboard displays.
 | --- | --- |
 | **Empty** | A blank starting point for your own dashboard. Shows instructions until you start editing. |
 | **Default** | A ready-made aircraft dashboard. Configure its sources, switches, battery cell count, and alarms for your model before using it. |
-| **Diagnostics** | A diagnostics dashboard for checking loaded components and errors. |
-| **Palette** | Fixed theme samples: color tokens, text, bars, a dial, and every panel state. Not flight data. |
 
 Bundled layouts are stored in `/WIDGETS/AeroGrid/layouts/`. Your saved layouts
 are stored separately in `/AEROGRID/layouts/`, so upgrading AeroGrid leaves
@@ -94,5 +92,5 @@ standard information alongside it. In App mode, a wider top-left panel
 leaves more room beside the menu button.
 
 To arrange and configure panels, continue with
-[Edit a dashboard on the radio](edit-dashboard.md). For palette settings, see
+[Edit a dashboard](edit-dashboard.md). For palette settings, see
 [Customize themes](customize-themes.md).

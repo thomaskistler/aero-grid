@@ -7,7 +7,7 @@ local files, folders =
     {}, {
         ["/WIDGETS/AeroGrid/themes"] = { "modern-dark.yml", "modern-light.yml", "modern-test.yml" },
         ["/AEROGRID/themes"] = {},
-        ["/WIDGETS/AeroGrid/layouts"] = { "Default.yaml", "Empty.yaml", "Diagnostics.yaml", "Palette.yaml" },
+        ["/WIDGETS/AeroGrid/layouts"] = { "Default.yaml", "Empty.yaml" },
         ["/AEROGRID/layouts"] = {},
     }
 for _, name in ipairs({ "modern-dark", "modern-light" }) do

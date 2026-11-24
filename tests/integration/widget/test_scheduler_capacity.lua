@@ -10,7 +10,7 @@ loadScript = function(filename)
     if chunk and string.sub(filename, -#relative) == relative then
         return function(...)
             local module = chunk(...)
-            module.CAPACITY = 12
+            module.CAPACITY = 40
             return module
         end
     end
@@ -20,12 +20,12 @@ local context = fixture.createLoaded(nil, { Layout = "Empty", Theme = "modern-da
 fixture.pump(context, 6)
 loadScript = originalLoadScript
 local definition = fixture.module("main.lua")
-assert(context.scheduler.budget.capacity == 12)
-assert(context.scheduler.budget.slots == 8)
-assert(context.panelHost.SLOTS == 8)
-local panel = { id = "test", apiVersion = 1, create = function() end, refreshCost = 12 }
+assert(context.scheduler.budget.capacity == 40)
+assert(context.scheduler.budget.slots == 32)
+assert(context.panelHost.SLOTS == 32)
+local panel = { id = "test", create = function() end, refreshCost = 40 }
 assert(not context.panelHost.validateModule(panel, "test"))
-panel.refreshCost = 13
+panel.refreshCost = 41
 assert(not context.panelHost.validateModule(panel, "test"))
 
 context.flightFactory = nil
@@ -47,8 +47,11 @@ local totals = context.scheduler.stats()
 local used, available = totals.used, totals.available
 fixture.tick(100)
 definition.refresh(context)
-assert(granted == 8 and context.remainingSlots == 4)
-assert(totals.available - available == 12 and totals.used - used < 12)
+assert(granted == 32 and context.remainingSlots == 8)
+assert(totals.available - available == 40 and totals.used - used < 40)
 fixture.tick(10)
 definition.background(context)
-assert(granted == 8 and context.remainingSlots == 4, "a task turn stays capped at eight slots in hidden callbacks")
+assert(
+    granted == 32 and context.remainingSlots == 8,
+    "a task turn stays capped at thirty-two slots in hidden callbacks"
+)

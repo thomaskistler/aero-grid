@@ -258,7 +258,7 @@ return {
     if settings.count("\nbacklightMode: ") != 1:
         raise ValueError("Radio backlight setting changed; update video preparation")
     radio.write_text(re.sub(r"(?m)^backlightMode: \w+$", "backlightMode: backlight_mode_on", settings))
-    (sd / "AEROGRID/layout-registry.txt").write_text("Empty\nDefault\nDiagnostics\nPalette\n")
+    (sd / "AEROGRID/layout-registry.txt").write_text("Empty\nDefault\n")
     (sd / "capture-ready.txt").unlink(missing_ok=True)
     return sd
 

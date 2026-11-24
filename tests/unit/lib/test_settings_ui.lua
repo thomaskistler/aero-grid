@@ -50,7 +50,7 @@ end
 
 open()
 assert(view.host and view.dialog.registeredParent == view.host, "the native dialog must register below its host")
-assert(ui.cost(view, 8, 8) == 1 and #view.controls == 0)
+assert(ui.cost(view, 32, 32) == 4 and #view.controls == 0)
 local field, first = ui.advance(view)
 assert(field == fields[1] and #view.controls == 1 and view.build == 2, "one advancement builds exactly one row")
 local toggle = first.object.properties
@@ -59,7 +59,7 @@ toggle.set(1)
 assert(not pending and toggle.get() == 0, "building must not optimistically accept blocked edits")
 ui.advance(view)
 assert(#view.controls == 2 and view.controls[2].row.hidden)
-assert(ui.cost(view, 8, 8) == 8, "finishing can include caller-owned rendering")
+assert(ui.cost(view, 32, 32) == 32, "finishing can include caller-owned rendering")
 ui.advance(view)
 assert(not view.build and toggle.active())
 local count = reads
