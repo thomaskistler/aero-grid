@@ -229,7 +229,7 @@ end, conflict)
 assert(owner.session == pinned and owner.state.active, "another widget cannot replace model arming")
 assert(fixture.radio.logicalSwitches[20], "another widget must not reset the pinned output")
 full = true
-fixture.radio.values[305] = -1024
+fixture.radio.values[305], fixture.radio.rssi = -1024, 0
 untilState(second, function()
     return not owner.state.active
 end, conflict)
@@ -254,12 +254,12 @@ untilState(second, function()
     return not second.stage and not second.reloadState and #second.panels == 0
 end)
 assert(second.flightBroker == owner, "Empty layout reattachment must keep the same broker")
-fixture.radio.values[305] = 1024
+fixture.radio.values[305], fixture.radio.rssi = 1024, 80
 untilState(second, function()
     return owner.state.active
 end)
 assert(owner.view.count == 2, "tracking must work without any Flight counter")
-fixture.radio.values[305] = -1024
+fixture.radio.values[305], fixture.radio.rssi = -1024, 0
 untilState(second, function()
     return not owner.state.active and not owner.output
 end)
@@ -309,6 +309,7 @@ assert(
 
 -- Smart remains model-specific and counts once even with two Empty dashboards
 -- calling the broker through foreground/background callbacks.
+fixture.radio.rssi = 80
 smartSensors[31] = { type = 0, id = 9, instance = 0, unit = 10, prec = 2, name = "EDIT" }
 fixture.radio.fields.telem32 = { id = 900, unit = 10 }
 smartSamples[900] = { value = 10 }
@@ -377,7 +378,7 @@ assert(not owner.document.flight.smartDetection and owner.session.settings.smart
 assert(owner.view.reason == "smart-altitude" and owner.view.count == 3)
 pump(second, 350, third)
 assert(owner.view.count == 3 and #tones == 0, "standard timeout must not requalify Smart flight")
-fixture.radio.values[305] = -1024
+fixture.radio.values[305], fixture.radio.rssi = -1024, 0
 untilState(second, function()
     return not owner.view.active and not owner.output
 end, third)

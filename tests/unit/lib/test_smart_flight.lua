@@ -375,11 +375,11 @@ do
     step(40, 4)
     step(240, 4)
     equal(c.phase, "active")
-    c.arm.value = false
+    c.arm.value, c.link.live = false, false
     step(260, 100)
     step(360, 100)
     equal(c.phase, "ground")
-    c.arm.value = true
+    c.arm.value, c.link.live = true, true
     step(380, 100)
     equal(c.altitudeReference, 100, "immediate rearm after confirmed completion must use a new reference")
     step(580, 100)

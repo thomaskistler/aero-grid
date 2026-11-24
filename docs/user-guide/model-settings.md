@@ -45,7 +45,8 @@ Numeric sources such as `ch5` or `sa` are not arm conditions.
 
 Flight detection distinguishes a flight from simply being armed. It observes
 the armed condition, motor output, and (by default) live telemetry to confirm
-a flight start, then confirms its end after sustained disarming.
+a flight start, then confirms its end after sustained disarming and (by
+default) receiver disconnection.
 
 Each confirmed start increments the model's flight total once, shown by
 Flight counter. Detection also supplies Chart flight shading, keeps recording
@@ -63,10 +64,10 @@ It keeps counting even when you display an external total.
 | --- | --- | --- |
 | **Motor channel** | CH3 | Channel used to measure motor output. |
 | **Reverse motor** | off | Enable when the motor channel runs from high at idle to low at full power. |
-| **Require receiver** | on | Require a live receiver telemetry connection to confirm flight start. Turn off to test without a receiver; arming, motor threshold, and detection windows still apply. |
+| **Require receiver** | on | Require a live receiver telemetry connection to confirm flight start, and receiver disconnection to confirm flight end. Turn off to test without a receiver; arming, motor threshold, and detection windows still apply. |
 | **Motor threshold (%)** | 25 | Motor output must be strictly above this percentage to qualify a flight. Set from 0 to 99 in whole-percent steps. |
 | **Start detection window (s)** | 30 | How long the start conditions must hold continuously to confirm flight start. |
-| **End detection window (s)** | 10 | Continuous disarming required to confirm flight end. Rearming within this window keeps the flight open. |
+| **End detection window (s)** | 10 | Continuous disarming required to confirm flight end. With **Require receiver** on, the flight also stays open until the receiver disconnects. Rearming before completion restarts this window. |
 | **Smart detection** | off | Also allows supported altitude or GPS groundspeed readings to confirm takeoff earlier. See [Smart detection](#smart-detection). |
 | **Flight count source** | AeroGrid | Show AeroGrid's total, **GV9** in flight mode 0, or **GV8:GV9** (`GV8 × 1000 + GV9`) in flight mode 0. External GVs must have precision 0 and values from 0 to 999. |
 

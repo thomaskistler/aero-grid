@@ -64,6 +64,21 @@ for _, source in ipairs({ "arm", "motor", "link" }) do
     end
 end
 equal(#flightConfig.validate(context.settings), 0)
+for _, age in ipairs({ -1, 0, 500, 501 }) do
+    local candidate, advance = new()
+    candidate.settings.disarmDuration = 1
+    candidate.phase, candidate.arm.value, candidate.link.live = "active", false, false
+    advance(0)
+    local now = 1000
+    candidate.arm.updatedAt = now
+    candidate.link.updatedAt = now - age
+    detector.advance(candidate, now, support.MAX_SAMPLE_AGE)
+    equal(
+        candidate.phase,
+        age >= 0 and age <= 500 and "ground" or "ending",
+        "completion requires a current receiver-disconnection observation, not stale or future data"
+    )
+end
 step(0)
 equal(context.phase, "ground")
 context.arm.value, context.motor.value = true, 0
@@ -118,6 +133,7 @@ context.arm.fresh = false
 step(5999)
 equal(context.phase, "active", "missing arm input must not mean disarmed")
 context.arm.fresh = true
+context.link.live = false
 step(6000)
 step(6999)
 equal(context.phase, "ending")
@@ -139,7 +155,7 @@ step(20)
 step(3020)
 equal(context.feed.raw, 40)
 equal(#context.sounds, 0, "legacy announcement settings must not play audio at qualification")
-context.arm.value = false
+context.arm.value, context.link.live = false, false
 step(4000)
 step(5000)
 equal(#context.logs, 0)

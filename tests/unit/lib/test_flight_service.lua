@@ -244,9 +244,9 @@ do
     step(3)
     equal(owner.view.countAvailable, false)
     assert(owner.view.sourceError and not owner.view.countError)
-    radio.arms[1] = false
+    radio.arms[1], radio.rssi = false, 0
     step(15)
-    radio.arms[1] = true
+    radio.arms[1], radio.rssi = true, 80
     step(20)
     equal(owner.view.count, 41, "invalid external data must not block internal counting")
     equal(radio.external[8], 501)
@@ -311,6 +311,55 @@ for _, smart in ipairs({ false, true }) do
     radio.arms[1] = true
     step(20)
     equal(radio.writes, 1, "re-enabling the receiver requirement blocks the next offline flight")
+end
+
+do
+    local owner, radio, step = fixture()
+    radio.arms[1] = true
+    step(15)
+    radio.arms[1] = false
+    step(15)
+    equal(owner.view.phase, "ending", "the disarm window alone cannot end a receiver-required flight")
+    equal(radio.sticky, true, "flight status stays on while waiting for receiver disconnection")
+    equal(#owner:boundaries(0), 1, "waiting for receiver disconnection must not publish an end")
+    radio.arms[1] = true
+    step(3)
+    equal(owner.view.phase, "active", "rearming after the disarm window keeps the same flight open")
+    equal(owner.session.disarmedAt, nil)
+    equal(radio.writes, 1, "rearming while connected must not count a second flight")
+    radio.rssi, radio.arms[1] = 0, false
+    step(2)
+    equal(owner.view.active, true, "receiver loss cannot bypass the restarted disarm window")
+    radio.rssi = 80
+    step(15)
+    equal(owner.view.phase, "ending", "a recovered receiver must still block completion")
+    local disarmedAt = owner.session.disarmedAt
+    radio.rssi = 0
+    step(3)
+    equal(owner.view.active, false, "disconnection completes an already-qualified disarm window")
+    equal(radio.sticky, false)
+    local events = owner:boundaries(0)
+    equal(#events, 2)
+    equal(events[2].at, disarmedAt, "the end timestamp remains the beginning of disarming")
+    step(15)
+    equal(#owner:boundaries(0), 2, "completion is published exactly once")
+end
+
+do
+    local owner, radio, step = fixture()
+    local settings = config.resolve(owner.document.flight)
+    settings.requireReceiver = false
+    owner:setDocument({ revision = 2, flight = settings })
+    step(3)
+    radio.arms[1] = true
+    step(15)
+    radio.arms[1] = false
+    step(2)
+    equal(owner.view.active, true, "receiver opt-out still requires the full disarm window")
+    step(15)
+    equal(owner.session.link.live, true)
+    equal(owner.view.active, false, "receiver opt-out completes even while the receiver remains connected")
+    equal(radio.sticky, false)
 end
 
 do
@@ -435,6 +484,7 @@ step(2)
 radio.now = radio.now + 200
 pump(owner, radio.now)
 equal(owner.view.active, true, "unobserved disarm grace cannot complete")
+radio.rssi = 0
 step(15)
 equal(owner.view.active, false)
 
@@ -477,9 +527,9 @@ radio.failCount = false
 owner:setDocument({ revision = 2, flight = owner.document.flight })
 step(15)
 equal(radio.writes, 1, "acknowledging a count error must still require disarm")
-radio.arms[1] = false
+radio.arms[1], radio.rssi = false, 0
 step(10)
-radio.arms[1] = true
+radio.arms[1], radio.rssi = true, 80
 step(15)
 equal(radio.writes, 2, "a new arm cycle can recover after explicit model Save")
 equal(owner.view.countError, nil)
@@ -496,9 +546,9 @@ equal(radio.commands[1], false)
 
 owner, radio, step = fixture()
 for _ = 1, 33 do
-    radio.arms[1] = true
+    radio.arms[1], radio.rssi = true, 80
     step(20)
-    radio.arms[1] = false
+    radio.arms[1], radio.rssi = false, 0
     step(20)
 end
 local records, oldest, gap = owner:boundaries(0, owner.epoch)
@@ -553,7 +603,7 @@ equal(events[1].observedAt, owner.view.qualifiedAt)
 assert(events[1].observedAt - events[1].at < 3000)
 step(180)
 equal(radio.writes, 1, "the later standard deadline cannot produce a second transition")
-radio.arms[1] = false
+radio.arms[1], radio.rssi = false, 0
 step(15)
 events = owner:boundaries(0)
 equal(#events, 2)
@@ -621,7 +671,7 @@ for _, path in ipairs({ "altitude", "speed" }) do
             advance(100)
             equal(state.writes, 1)
             equal(state.sounds, 0)
-            state.arms[1] = false
+            state.arms[1], state.rssi = false, 0
             advance(50)
             equal(#broker:boundaries(0), 2)
             equal(state.sounds, 0)
