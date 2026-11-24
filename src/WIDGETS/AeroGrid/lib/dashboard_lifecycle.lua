@@ -243,6 +243,7 @@ function module.new(dependencies)
         context.debriefContent = nil
         context.debriefShield = nil
         context.debriefPill = nil
+        context.debriefCleared = nil
         if context.debrief then
             context.debriefModule.detach(context.debrief)
         end
