@@ -6,11 +6,12 @@ tiles with each tile's recorded values.
 ## Configure the tiles
 
 **AeroGrid → Flight debrief** configures the current layout's post-flight tiles.
+Turn **Enabled** off to disable it for this layout without deleting its tiles.
 **Tile size** applies to the whole debrief: **Compact** or **Wide**.
 Each tile has a title and up to three telemetry series. Tap a tile or series to edit, move, or delete it.
 **Fill from dashboard** places RX battery and Link first, when present.
 
-![Flight debrief settings with Tile size set to Compact and four tiles](../assets/editor/debrief-settings.png)
+![Flight debrief settings with the toggle on, Compact tile size, and four tiles](../assets/editor/debrief-settings.png)
 
 ![Link tile settings with two series, minimum RQly and minimum 1RSS](../assets/editor/debrief-tile.png)
 

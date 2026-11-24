@@ -187,6 +187,10 @@ function debrief.validateHeader(value)
         result[key] = field
     end
     result.tiles = {}
+    if value.enabled ~= nil and type(value.enabled) ~= "boolean" then
+        errors[#errors + 1] = "debrief enabled must be a boolean"
+        result.enabled = nil
+    end
     if value.size ~= nil and value.size ~= "compact" and value.size ~= "wide" then
         errors[#errors + 1] = "debrief size must be compact or wide"
     end
@@ -221,6 +225,14 @@ function debrief.validate(value)
         result.tiles[#result.tiles + 1] = tile
     end
     return result, errors, warnings
+end
+
+function debrief.setEnabled(section, enabled)
+    if type(enabled) ~= "boolean" then
+        return false, "debrief enabled must be a boolean"
+    end
+    section.enabled = enabled
+    return true
 end
 
 --- Older layouts retain their per-tile sizes until a shared size is chosen.

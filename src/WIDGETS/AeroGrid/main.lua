@@ -915,7 +915,7 @@ initialize = function(context)
             end
             local service = registry.byId.debrief
             if not service then
-                if not (section and section.tiles and #section.tiles > 0) then
+                if not (section and section.enabled ~= false and section.tiles and #section.tiles > 0) then
                     return
                 end
                 local module, moduleError = loadModule(host.path, "lib/debrief_service.lua")
@@ -929,6 +929,10 @@ initialize = function(context)
                 end
                 host.servicesModule.register(registry, instance, getTime())
                 service = instance
+            end
+            if not section or section.enabled == false then
+                service:configure(nil, {})
+                return
             end
             local widths, bySize = {}, {}
             for index, tile in ipairs(section and section.tiles or {}) do

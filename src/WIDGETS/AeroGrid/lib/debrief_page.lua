@@ -25,11 +25,19 @@ local function missing(tile)
     return false
 end
 
+local function setAvailability(fields, enabled, canAdd)
+    for index = 2, #fields do
+        local field = fields[index]
+        field.active = enabled and (field.action ~= "append" or canAdd)
+    end
+end
+
 --- Rows of the tile list.
 ---@param state table Editor state: `session` and `status`.
 ---@param config table `configured` (flight detection) and `canAdd`.
 function page.listFields(state, config)
     local fields = {
+        { key = "enabled", label = "Enabled", type = "boolean" },
         {
             key = "size",
             label = "Tile size",
@@ -46,6 +54,7 @@ function page.listFields(state, config)
     end
     fields[#fields + 1] = { action = "append", label = "+", active = config.canAdd }
     fields[#fields + 1] = { action = "fill", label = "Fill from dashboard" }
+    setAvailability(fields, state.session.draft.debrief.enabled ~= false, config.canAdd)
     local notes = {}
     if state.status and state.status ~= "" then
         notes[#notes + 1] = state.status
@@ -107,10 +116,20 @@ local function show(context, state, target)
             configured = configured(context),
             canAdd = module.canAdd(state.session.draft.debrief),
         })
-        read = function()
+        read = function(field)
+            if field.key == "enabled" then
+                return state.session.draft.debrief.enabled ~= false
+            end
             return module.viewSize(state.session.draft.debrief)
         end
-        write = function(_, value)
+        write = function(field, value)
+            if field.key == "enabled" then
+                local ok, err = editor.editDebrief(state.session, "setEnabled", value)
+                if ok then
+                    setAvailability(fields, value, module.canAdd(state.session.draft.debrief))
+                end
+                return ok, err
+            end
             return editor.editDebrief(state.session, "setSize", value)
         end
         state.status = ""

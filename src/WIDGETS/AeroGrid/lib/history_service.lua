@@ -490,7 +490,13 @@ function history:subscribe(source, options)
     source = type(source) == "string" and source or ""
     local key = recordingKey(session.name, source, window, mode)
     if self.names[key] then
-        return self.names[key].view
+        local entry = self.names[key]
+        if options.debrief then
+            entry.debrief = true
+        else
+            entry.shared = true
+        end
+        return entry.view
     end
     local state = {
         name = source,
@@ -517,6 +523,9 @@ function history:subscribe(source, options)
         mode = mode,
         gap = true,
         session = session,
+        key = key,
+        debrief = options.debrief == true,
+        shared = not options.debrief,
     }
     self.entries[#self.entries + 1] = entry
     self.names[key], self.views[entry.view] = entry, entry
@@ -535,6 +544,37 @@ function history:subscribe(source, options)
         end
     end
     return entry.view
+end
+
+--- Keep a live recording used by an adopted chart preview.
+function history:retain(view)
+    local entry = assert(self.views[view], "unknown history subscription")
+    entry.shared = true
+end
+
+--- Release recordings used only by the debrief, leaving chart recordings intact.
+function history:releaseDebrief()
+    for index = #self.entries, 1, -1 do
+        local entry = self.entries[index]
+        if entry.debrief then
+            entry.debrief = nil
+            if not entry.shared then
+                self.names[entry.key], self.views[entry.view] = nil, nil
+                local tracks = self.sources[entry.state.name]
+                for position = #tracks, 1, -1 do
+                    if tracks[position] == entry then
+                        table.remove(tracks, position)
+                        break
+                    end
+                end
+                if #tracks == 0 then
+                    self.sources[entry.state.name] = nil
+                end
+                table.remove(self.entries, index)
+                self.count = self.count - 1
+            end
+        end
+    end
 end
 
 --- Absolute sequence numbers remain stable as a rolling history expires.
