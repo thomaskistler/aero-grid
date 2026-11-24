@@ -129,3 +129,24 @@ local live = fixture.instanceOf(context, "power")
 assert(live.history ~= history and not live.preview)
 equal(live.series[1].feed.value, 55)
 equal(#context.errors, 0, table.concat(context.errors, "\n"))
+
+-- A chart preview can reuse a debrief-only recording. Saving the chart while
+-- disabling that debrief must retain the recording rather than remove it.
+local currentHistory = context.serviceRuntime.byId.history
+context.document.debrief = {
+    tiles = {
+        { title = "Link", colSpan = 2, rowSpan = 2, series = { { source = "RQly", statistic = "min" } } },
+    },
+}
+context.configureDebrief(context)
+local debriefFeed = context.serviceRuntime.byId.debrief.feeds[1][1]
+draft, handlers = preview(function(config)
+    config.metrics[1].source = "RQly"
+    context.editorSession.draft.debrief.enabled = false
+end)
+local sharedPreview = fixture.instanceOf(context, "power")
+assert(sharedPreview.preview and not sharedPreview.previewMissing and sharedPreview.series[1].feed == debriefFeed)
+save(draft, handlers)
+assert(not context.reloadState and not sharedPreview.preview)
+assert(currentHistory.views[debriefFeed], "the adopted chart keeps the debrief recording")
+equal(sharedPreview.series[1].feed, currentHistory:subscribe("RQly"))

@@ -175,6 +175,11 @@ function module.new(dependencies)
             entry.editorVisible = nil
             if entry.module.id == "chart" and entry.instance.preview then
                 entry.instance.history = context.serviceRuntime.byId.history
+                if entry.instance.history then
+                    for _, series in ipairs(entry.instance.series) do
+                        entry.instance.history:retain(series.feed)
+                    end
+                end
                 entry.instance.preview = false
             end
         end

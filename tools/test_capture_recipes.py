@@ -97,6 +97,16 @@ class CaptureRecipeTests(unittest.TestCase):
                         (capture.ROOT / f"tests/fixtures/sdcard/MODELS/model{number}.yml").read_bytes(),
                     )
 
+    def test_debrief_drawers_use_lightweight_dashboard(self):
+        capture = load_tool("capture_editor", "capture-editor.py")
+        for scene in ("debrief-settings", "debrief-tile"):
+            with self.subTest(scene=scene), tempfile.TemporaryDirectory() as directory:
+                sd = Path(directory) / "sdcard"
+                capture.prepare(sd, scene)
+                layout = yaml.safe_load((sd / "WIDGETS/AeroGrid/layouts/Default.yaml").read_text())
+                self.assertEqual(layout["panels"], [])
+                self.assertEqual(len(layout["debrief"]["tiles"]), 4)
+
     def test_chart_drawers_use_chart_settings_and_native_source(self):
         capture = load_tool("capture_editor", "capture-editor.py")
         for scene in ("chart-settings", "chart-metric-entry"):

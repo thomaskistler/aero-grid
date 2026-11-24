@@ -60,12 +60,16 @@ function debrief:configure(section, widths)
     self.job, self.tiles, self.widths, self.feeds = nil, {}, widths, {}
     self.history, self.session, self.count = history, nil, 0
     if not history or not section then
+        self.latest = nil
+        if history then
+            history:releaseDebrief()
+        end
         return
     end
     for index, tile in ipairs(section.tiles) do
         local feeds = {}
         for position, series in ipairs(tile.series) do
-            feeds[position] = history:subscribe(series.source)
+            feeds[position] = history:subscribe(series.source, { debrief = true })
         end
         self.tiles[index], self.feeds[index] = tile, feeds
         self.count = self.count + #feeds

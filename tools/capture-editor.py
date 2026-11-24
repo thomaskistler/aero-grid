@@ -379,6 +379,8 @@ screenData:
         layout = "version: 5\ngrid:\n  columns: 4\n  rows: 4\npanels: []\n"
     elif scene in DASHBOARD_SCENES:
         layout = (ROOT / "src/WIDGETS/AeroGrid/layouts/Default.yaml").read_text()
+    elif scene in ("debrief-settings", "debrief-tile"):
+        layout = "version: 5\ngrid:\n  columns: 4\n  rows: 4\npanels: []\n" + DEBRIEF_SECTION
     elif scene in DEBRIEF_SCENES:
         layout = (ROOT / "src/WIDGETS/AeroGrid/layouts/Default.yaml").read_text() + DEBRIEF_SECTION
     elif scene in PANEL_SETTINGS_SCENES or scene == "chart-metric-entry":
@@ -1074,11 +1076,12 @@ def main():
         } if args.scene in DASHBOARD_SCENES else None),
         "method": ("Native TX16S framebuffer; fullscreen production Default dashboard with isolated sample inputs."
                    if args.scene in DASHBOARD_SCENES else
-                   "Native TX16S framebuffer; production Default dashboard with a sample debrief section. "
-                   "A scripted flight arms SF and drives the motor channel and synthetic telemetry "
-                   "through real services, which detect, record and show the flight."
-                   + (" Settings drawers are cropped to the dialog and stitched."
-                      if args.scene in ("debrief-settings", "debrief-tile") else "")
+                   ("Native TX16S framebuffer; isolated empty dashboard with a sample debrief section. "
+                    "Settings drawers are cropped to the dialog and stitched."
+                    if args.scene in ("debrief-settings", "debrief-tile") else
+                    "Native TX16S framebuffer; production Default dashboard with a sample debrief section. "
+                    "A scripted flight arms SF and drives the motor channel and synthetic telemetry "
+                    "through real services, which detect, record and show the flight.")
                    if args.scene in DEBRIEF_SCENES else
                    "Native TX16S framebuffer; isolated sample layouts and editor command automation."
                    + (" Configuration drawers are cropped to the dialog and stitched from pages whose "

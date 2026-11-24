@@ -65,6 +65,12 @@ local function testEmptyAndMalformedSections()
     local unordered
     unordered, errors = debrief.validate({ tiles = { title = "A" } })
     assert(#unordered.tiles == 0 and hasMessage(errors, "sequence"))
+    local disabled
+    disabled, errors = debrief.validate({ enabled = false, tiles = { tile("Saved") } })
+    assert(#errors == 0 and disabled.enabled == false and #disabled.tiles == 1)
+    local invalid
+    invalid, errors = debrief.validate({ enabled = "off", tiles = {} })
+    assert(invalid.enabled == nil and hasMessage(errors, "enabled must be a boolean"))
 end
 
 local function testInvalidEntriesAreDropped()

@@ -475,6 +475,31 @@ debrief:configure({ tiles = {} }, {})
 equal(debrief.count, 0)
 equal(debrief:update(7000, 4), 1)
 
+-- Disabling drops debrief-only recordings and results, but not shared charts.
+do
+    local shared = history:subscribe("shared")
+    local section = { tiles = { tile({ { source = "shared" }, { source = "only-debrief" } }) } }
+    debrief:configure(section, { 30 })
+    assert(history:subscribe("shared") == shared)
+    local only = debrief.feeds[1][2]
+    debrief.latest, debrief.job = {}, {}
+    debrief:configure(nil, {})
+    assert(not debrief:result() and not debrief.job and debrief.count == 0)
+    assert(history.views[shared] and not history.views[only])
+    assert(history:subscribe("shared") == shared, "disabling keeps shared chart history")
+    debrief:configure(section, { 30 })
+    assert(debrief.feeds[1][1] == shared and debrief.feeds[1][2] ~= only)
+    -- A chart may subscribe after the debrief has already created its feed.
+    local later = history:subscribe("only-debrief")
+    debrief:configure(nil, {})
+    assert(history.views[later] and history:subscribe("only-debrief") == later)
+    debrief:configure({ tiles = { tile({ { source = "preview" } }) } }, { 30 })
+    local preview = history:preview():subscribe("preview")
+    history:retain(preview)
+    debrief:configure(nil, {})
+    assert(history.views[preview], "adopted chart preview retains its recording")
+end
+
 --- Capture one flight from a fake history of `knots` ({ at, value, broken }).
 local function fake(knots, from, to, series, width)
     local feed = { first = 1, last = #knots, count = #knots }

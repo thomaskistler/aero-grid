@@ -107,6 +107,21 @@ local unconfigured = context.flightFactory.broker.view.status == "unconfigured"
 -- its panels; deriving is not an edit.
 assert(context.debriefGenerated and state().session.debriefDerived and not state().session.dirty)
 assert(#tiles() == 1 and tiles()[1].title == "Alt" and tiles()[1].series[1].source == "Alt")
+assert(state().drawerView.fields[1].label == "Enabled", "the toggle is the first setting")
+assert(row("Enabled").object.properties.get() == 1, "existing layouts default to enabled")
+row("Enabled").object.properties.set(0)
+settle()
+assert(state().session.draft.debrief.enabled == false and #tiles() == 1)
+assert(active("Enabled"), "the toggle remains available")
+for _, label in ipairs({ "Tile size", "Alt", "+", "Fill from dashboard" }) do
+    assert(not active(label), label .. " is disabled")
+end
+row("Enabled").object.properties.set(1)
+settle()
+assert(state().session.draft.debrief.enabled == true and #tiles() == 1)
+for _, label in ipairs({ "Tile size", "Alt", "+", "Fill from dashboard" }) do
+    assert(active(label), label .. " is enabled again")
+end
 local tileRow = row("Alt")
 assert(tileRow.object.properties.text == "Alt" and tileRow.object.properties.x == 0)
 assert(
@@ -116,7 +131,7 @@ assert(
 for _, child in ipairs(tileRow.row.children or {}) do
     assert(child.kind ~= "label", "a full-width tile has no separate caption")
 end
-assert((row("Tile size").field.description == note) == unconfigured, "the note follows flight detection")
+assert((row("Enabled").field.description == note) == unconfigured, "the note follows flight detection")
 
 -- Fill from dashboard asks before it replaces tiles, then makes them the layout's own.
 tiles()[1].title = "Renamed"
@@ -145,13 +160,11 @@ state().session.draft.panels = {}
 press("Fill from dashboard")
 state().session.draft.panels = panels
 assert(#tiles() == 0 and state().session.draft.debrief)
-assert(
-    row("Tile size").field.description == context.debriefPageModule.FILL_EMPTY .. (unconfigured and " " .. note or "")
-)
+assert(row("Enabled").field.description == context.debriefPageModule.FILL_EMPTY .. (unconfigured and " " .. note or ""))
 state().status = nil
 state().drawerPending = { action = "list" }
 settle()
-assert((row("Tile size").field.description == note) == unconfigured, "the note follows flight detection")
+assert((row("Enabled").field.description == note) == unconfigured, "the note follows flight detection")
 for _, configured in ipairs({ false, true }) do
     local fields = context.debriefPageModule.listFields(state(), { configured = configured, canAdd = true })
     assert(fields[1].description == (not configured and note or nil))
@@ -329,7 +342,7 @@ for index = 1, #tiles() do
     end
     for position = 1, 3 do
         for key, value in pairs({
-            source = "Alt",
+            source = string.format("Alt%d_%d", index, position),
             statistic = "max",
             label = "Altitude",
             unit = "m",
@@ -364,3 +377,55 @@ definition.refresh = refresh
 assert(worst < 18000, "debrief Save callback exceeded its budget: " .. worst)
 assert(#context.document.debrief.tiles == 12 and context.serviceRuntime.byId.debrief.count == 36)
 assert(context.page == page and context.serviceRuntime == runtime, "maximum debrief Save keeps the dashboard")
+
+-- Save the toggle in both directions without losing the configured tiles.
+local function saveEnabled(value)
+    context.aeroMenuHandlers.debrief()
+    assert(fixture.pumpUntil(context, function(host)
+        return host.editorUi and host.editorUi.nativeDrawer
+    end, 300))
+    settle()
+    if value then
+        assert(
+            not active("Tile size") and not active("Tile 2") and not active("+") and not active("Fill from dashboard")
+        )
+    end
+    row("Enabled").object.properties.set(value and 1 or 0)
+    settle()
+    if value then
+        assert(active("Tile size") and active("Tile 2") and active("Fill from dashboard"))
+        assert(not active("+"), "the tile limit still applies after re-enabling")
+    end
+    back()
+    local toggleWorst = 0
+    definition.refresh = function(...)
+        local count = 0
+        debug.sethook(function()
+            count = count + 100
+        end, "", 100)
+        refresh(...)
+        debug.sethook()
+        toggleWorst = math.max(toggleWorst, count)
+    end
+    state().exitCommand = { action = "save" }
+    assert(fixture.pumpUntil(context, function(host)
+        return not host.editorUi and not host.editorRestore
+    end, 1000))
+    definition.refresh = refresh
+    assert(toggleWorst < 18000, "debrief toggle Save exceeded its budget: " .. toggleWorst)
+    assert(#context.errors == 0, table.concat(context.errors, "\n"))
+    local file = assert(fixture.hostIo.open(context.layoutPath, "r"))
+    local persisted = assert(context.yaml.parse(file:read("*a")))
+    file:close()
+    assert(persisted.debrief.enabled == value and #persisted.debrief.tiles == 12)
+end
+saveEnabled(false)
+assert(runtime.byId.debrief.count == 0 and not runtime.byId.debrief:result())
+assert(#runtime.byId.history.entries == 0, "debrief-only histories are released")
+local disabled = fixture.createLoaded(nil, { Layout = "debrief-setup", Theme = "modern-dark" }, nil, definition)
+fixture.pump(disabled, 60)
+assert(disabled.document.debrief.enabled == false and #disabled.document.debrief.tiles == 12)
+assert(not disabled.serviceRuntime.byId.debrief, "a disabled layout does not start the debrief recorder")
+assert(#disabled.serviceRuntime.byId.history.entries == 0, "a disabled layout does not subscribe debrief series")
+saveEnabled(true)
+assert(runtime.byId.debrief.count == 36 and #context.document.debrief.tiles == 12)
