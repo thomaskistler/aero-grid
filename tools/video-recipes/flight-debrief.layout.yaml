@@ -1,0 +1,104 @@
+version: 5
+grid:
+  columns: 4
+  rows: 4
+panels:
+  - id: receiver-battery
+    type: rx-battery
+    col: 0
+    row: 1
+    colSpan: 2
+    rowSpan: 1
+    config:
+      label: RX battery
+      source: RxBt
+      cells: 2
+      reading: cell
+      visual: none
+      showCount: true
+      showPack: true
+  - id: flight-clock
+    type: flight-timer
+    col: 0
+    row: 0
+    colSpan: 2
+    rowSpan: 1
+    config:
+      timer: 0
+      label: Flight timer
+  - id: mode
+    type: state
+    col: 2
+    row: 0
+    colSpan: 1
+    rowSpan: 1
+    config:
+      entries:
+        - label: Mode
+          states:
+            - switch: SF^
+              text: DISARMED
+            - switch: SFv
+              text: ARMED
+              background: warning
+  - id: flight-count
+    type: flight-counter
+    col: 3
+    row: 0
+    colSpan: 1
+    rowSpan: 1
+    config:
+      label: Flights
+  - id: altitude
+    type: metric
+    col: 0
+    row: 2
+    colSpan: 2
+    rowSpan: 2
+    config:
+      metrics:
+        - source: Alt
+          label: Altitude
+          precision: 1
+      visual: none
+  - id: identity
+    type: model-identity
+    col: 2
+    row: 1
+    colSpan: 2
+    rowSpan: 3
+    config:
+      presentation: name
+debrief:
+  size: compact
+  tiles:
+    - title: PACK
+      series:
+        - source: VCel
+          statistic: min
+    - title: Speed
+      series:
+        - source: GSpd
+          statistic: max
+    - title: NAV
+      series:
+        - source: HDst
+          statistic: max
+        - source: FDst
+          statistic: delta
+          label: flown
+    - title: Satellites
+      series:
+        - source: Sats
+          statistic: min
+    - title: Altitude
+      series:
+        - source: Alt
+          statistic: max
+        - source: VSpd
+          statistic: max
+    - title: Expo
+      series:
+        - source: gvar1
+          statistic: max
+          unit: "%"

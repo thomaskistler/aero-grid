@@ -4,6 +4,7 @@ import io
 import json
 from pathlib import Path
 import shutil
+import subprocess
 import unittest
 from unittest.mock import patch
 import uuid
@@ -75,6 +76,29 @@ class VideoTests(unittest.TestCase):
                 video.read_actions(path, 20)
         path.write_text("10 2 2 1\n11 3 3 1\n12 3 3 0\n")
         self.assertEqual(len(video.read_actions(path, 20)), 3)
+
+    def test_edit_validation(self):
+        length = self.recipe["duration"]
+        valid = [{"start": 0, "end": 1, "duration": length}]
+        self.validate(dict(self.recipe, edits=valid))
+        invalid = [
+            [], [{"start": 0, "end": 1}], [dict(valid[0], duration=length - 1)],
+            [dict(valid[0], end=10000)], [dict(valid[0], end=0)],
+            [dict(valid[0], start=.01)],
+            [{"start": 0, "end": 1, "duration": length / 2},
+             {"start": .5, "end": 2, "duration": length / 2}],
+        ]
+        for edits in invalid:
+            with self.subTest(edits=edits), self.assertRaises(ValueError):
+                self.validate(dict(self.recipe, edits=edits))
+
+    def test_source_time_cuts_retimes_and_holds_a_single_frame(self):
+        edits = [{"start": 2, "end": 4, "duration": 1},
+                 {"start": 6, "end": 6.05, "duration": 2}]
+        for time, expected in ((0, 2), (.5, 3), (1, 6), (2.95, 6)):
+            self.assertAlmostEqual(video.source_time(time, edits), expected)
+        with self.assertRaises(ValueError):
+            video.source_time(3, edits)
 
     def test_gesture_timing_drag_and_return(self):
         actions = [[1200, 10, 20, 1], [1210, 20, 30, 1], [1220, 20, 30, 0],
@@ -182,6 +206,39 @@ class VideoTests(unittest.TestCase):
         self.assertEqual(names[1], "Default")
         self.assertIn("\nbacklightMode: backlight_mode_on\n", (sd / "RADIO/radio.yml").read_text())
 
+    def test_recorded_debrief_preparation(self):
+        recipe = video.load_recipe(video.RECIPES / "flight-debrief.json")
+        with self.assertRaises(ValueError):
+            video.prepare(recipe, self.directory)
+        replay = self.directory / "recording"
+        replay.mkdir()
+        (replay / "manifest.lua").write_text("return {tiles={}}\n")
+        (replay / "series-1-1.lua").write_text("return {width=226}\n")
+        (replay / "unrelated.lua").write_text("error('must not copy')\n")
+        sd = video.prepare(recipe, self.directory, replay)
+        widget = sd / "WIDGETS/AeroGrid"
+        self.assertEqual((widget / "replay/series-1-1.lua").read_bytes(),
+                         (replay / "series-1-1.lua").read_bytes())
+        self.assertFalse((widget / "replay/unrelated.lua").exists())
+        self.assertIn("getTime() >= 7900", (widget / "main.lua").read_text())
+        self.assertNotIn("captureReady", (widget / "main.lua").read_text())
+        self.assertNotIn("videoReplayResult", (video.ROOT / "src/WIDGETS/AeroGrid/main.lua").read_text())
+        settings = (sd / "AEROGRID/models/AGCAP1.yaml").read_text()
+        self.assertIn('armed: "SFv"', settings)
+        self.assertIn("requireReceiver: true", settings)
+        self.assertIn("getOutput = model.getOutput", (widget / "capture-inputs.lua").read_text())
+        self.assertIn('label: "RxBt"', (sd / "MODELS/model1.yml").read_text())
+        self.assertIn("title: Satellites", (widget / "layouts/Default.yaml").read_text())
+
+    def test_recorded_debrief_rejects_invalid_timing_and_initial_state(self):
+        path = video.RECIPES / "flight-debrief.json"
+        self.path, self.recipe = path, video.load_recipe(path)
+        for tick in (True, 400, 30000, 7900.5):
+            with self.subTest(tick=tick), self.assertRaises(ValueError):
+                self.validate(dict(self.recipe, debrief_replay_at=tick))
+        with self.assertRaises(ValueError):
+            self.validate(dict(self.recipe, initial="fresh-model"))
+
     def test_offline_render_screen_and_radio(self):
         try:
             video.ffmpeg()
@@ -216,6 +273,37 @@ class VideoTests(unittest.TestCase):
             video.render(recipe, path, self.directory, raw, photo, cache, False, .2)
             report = json.loads((self.directory / "render-provenance.json").read_text())
             self.assertEqual(report["voice"], video.VOICE)
+
+    def test_edited_render_and_frame_export_skip_unwanted_frames(self):
+        try:
+            video.ffmpeg()
+        except ImportError:
+            self.skipTest("Run make video-setup for FFmpeg smoke tests")
+        recipe = dict(self.recipe, trim_start=.05, duration=.3, edits=[
+            {"start": .05, "end": .15, "duration": .1},
+            {"start": .2, "end": .25, "duration": .2},
+        ])
+        raw = self.directory / "frames.rgb565"
+        raw.write_bytes(b"".join(pixel * (480 * 272 * 2)
+                                 for pixel in (b"\0\xf8", b"\xe0\x07", b"\x1f\0")))
+        video.render(recipe, self.path, self.directory, raw, None,
+                     self.directory / "missing-cache", True, None)
+        pixels = subprocess.check_output(video.ffmpeg() + [
+            "-i", str(self.directory / f"{recipe['id']}.mp4"),
+            "-f", "rawvideo", "-pix_fmt", "rgb24", "-"])
+        self.assertEqual(len(pixels), 480 * 272 * 3 * 6)
+        for index in range(6):
+            rgb = pixels[index * 480 * 272 * 3:index * 480 * 272 * 3 + 3]
+            self.assertGreater(rgb[1 if index < 2 else 2], 240)
+            self.assertLess(rgb[0], 10)
+        images = video.frames(raw, self.directory, [0, .1, .25],
+                              recipe["trim_start"], recipe["edits"])
+        self.assertNotEqual(images[0].read_bytes(), images[1].read_bytes())
+        self.assertEqual(images[1].read_bytes(), images[2].read_bytes())
+        raw.write_bytes(raw.read_bytes()[:-video.FRAME_BYTES])
+        with self.assertRaisesRegex(ValueError, "shorter than the edits"):
+            video.render(recipe, self.path, self.directory, raw, None,
+                         self.directory / "missing-cache", True, None)
 
 
 if __name__ == "__main__":

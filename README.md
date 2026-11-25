@@ -29,6 +29,8 @@ Select a thumbnail to watch the walkthrough on YouTube.
 | [![Watch the installation walkthrough](https://img.youtube.com/vi/JgGA676uW7E/hqdefault.jpg)](https://www.youtube.com/watch?v=JgGA676uW7E) | [![Watch the dashboard setup walkthrough](https://img.youtube.com/vi/Z-_Z-rtot8U/hqdefault.jpg)](https://www.youtube.com/watch?v=Z-_Z-rtot8U) |
 | **Add, move, and resize panels** | **Set up model settings** |
 | [![Watch the panel editing walkthrough](https://img.youtube.com/vi/hJtvJaOf7YY/hqdefault.jpg)](https://www.youtube.com/watch?v=hJtvJaOf7YY) | [![Watch the model settings walkthrough](https://img.youtube.com/vi/VtwC9R3lhOQ/hqdefault.jpg)](https://www.youtube.com/watch?v=VtwC9R3lhOQ) |
+| **Review and customize flight debriefs** | |
+| [![Watch the flight debrief walkthrough](https://img.youtube.com/vi/zqayzBjz4sg/hqdefault.jpg)](https://www.youtube.com/watch?v=zqayzBjz4sg) | |
 
 ## Documentation
 

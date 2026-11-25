@@ -111,6 +111,11 @@ geometry, and provenance. Actions are recipe-relative `tick x y down` rows
 with 10 ms ticks; negative `x` encodes key `-x-1` (`-2` is RTN). Consecutive
 touch-down positions form a drag; end with release and do not overlap contacts.
 
+Optional `edits` list source `start`/`end` seconds after `trim_start`, each with
+an output `duration`. They cut/retime video and touch feedback together; their
+durations must sum to the recipe duration. Use 0.05-second frame boundaries.
+Narration uses output time.
+
 The bundled tutorials cover:
 
 | Recipe | Demonstrated scope |
@@ -118,6 +123,13 @@ The bundled tutorials cover:
 | `create-empty-dashboard` | Add an App-mode widget with Empty and Modern Dark. |
 | `add-move-resize-panel` | Configure, move, resize, and save a panel. Restart/layout selection are narrated, not replayed. |
 | `model-settings` | Arm/detection settings, Sticky L01 with start sound, flight-status output, and session reset. The end sound is narrated, not replayed. |
+| `flight-debrief` | Flight-detection prerequisites, derived-sensor discovery, post-flight charts, and layout-specific debrief customization. |
+
+The debrief tutorial reuses the six-chart recording from PR #256. Supply its
+local `replay/` directory with `--debrief-replay` when preparing or capturing;
+the recording is not bundled. Only use trusted replay files: EdgeTX loads them
+as Lua. The charts retain their recorded values; Expo is the saved 30%, not
+logged telemetry, and threshold colors were not reconstructed.
 
 Fixed-coordinate scripts depend on firmware, widget behavior, and machine load.
 There is no UI-state recovery: maintain the scripts and retain approved videos

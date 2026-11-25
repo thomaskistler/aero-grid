@@ -72,9 +72,9 @@ theme to suit your radio.
 
 ## How to use
 
-Follow these four short walkthroughs to install
+Follow these short walkthroughs to install
 [AeroGrid](user-guide/installation.md), create a dashboard, customize it, and
-set it up for your model.
+set it up for your model, then review your flights.
 
 <div class="ag-video-gallery">
   <section>
@@ -96,5 +96,10 @@ set it up for your model.
     <h3>Set up model settings</h3>
     <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/VtwC9R3lhOQ" title="Set up AeroGrid model settings" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
     <p><a href="user-guide/model-settings/">Read the model settings guide</a> or <a href="https://www.youtube.com/watch?v=VtwC9R3lhOQ">watch on YouTube</a>.</p>
+  </section>
+  <section>
+    <h3>Review and customize flight debriefs</h3>
+    <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/zqayzBjz4sg" title="Review and customize AeroGrid flight debriefs" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+    <p><a href="user-guide/customize-debrief/">Read the flight debrief guide</a> or <a href="https://www.youtube.com/watch?v=zqayzBjz4sg">watch on YouTube</a>.</p>
   </section>
 </div>
