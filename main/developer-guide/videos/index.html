@@ -307,6 +307,10 @@ fields and requires initial state, timing, action path, narration, radio
 geometry, and provenance. Actions are recipe-relative <code>tick x y down</code> rows
 with 10 ms ticks; negative <code>x</code> encodes key <code>-x-1</code> (<code>-2</code> is RTN). Consecutive
 touch-down positions form a drag; end with release and do not overlap contacts.</p>
+<p>Optional <code>edits</code> list source <code>start</code>/<code>end</code> seconds after <code>trim_start</code>, each with
+an output <code>duration</code>. They cut/retime video and touch feedback together; their
+durations must sum to the recipe duration. Use 0.05-second frame boundaries.
+Narration uses output time.</p>
 <p>The bundled tutorials cover:</p>
 <table>
 <thead>
@@ -328,8 +332,17 @@ touch-down positions form a drag; end with release and do not overlap contacts.<
 <td><code>model-settings</code></td>
 <td>Arm/detection settings, Sticky L01 with start sound, flight-status output, and session reset. The end sound is narrated, not replayed.</td>
 </tr>
+<tr>
+<td><code>flight-debrief</code></td>
+<td>Flight-detection prerequisites, derived-sensor discovery, post-flight charts, and layout-specific debrief customization.</td>
+</tr>
 </tbody>
 </table>
+<p>The debrief tutorial reuses the six-chart recording from PR #256. Supply its
+local <code>replay/</code> directory with <code>--debrief-replay</code> when preparing or capturing;
+the recording is not bundled. Only use trusted replay files: EdgeTX loads them
+as Lua. The charts retain their recorded values; Expo is the saved 30%, not
+logged telemetry, and threshold colors were not reconstructed.</p>
 <p>Fixed-coordinate scripts depend on firmware, widget behavior, and machine load.
 There is no UI-state recovery: maintain the scripts and retain approved videos
 separately rather than assuming byte-identical recreation.</p>
