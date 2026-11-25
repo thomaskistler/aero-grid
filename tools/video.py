@@ -10,6 +10,7 @@ import mmap
 import os
 from pathlib import Path
 import re
+import shutil
 import struct
 import subprocess
 import urllib.error
@@ -80,7 +81,8 @@ def read_actions(path, ticks):
 def load_recipe(path):
     recipe = json.loads(path.read_text())
     fields(recipe, ("version", "id", "initial", "ticks", "warmup_ticks", "trim_start",
-                    "duration", "actions", "narration", "radio", "provenance"), ("sample_telemetry",))
+                    "duration", "actions", "narration", "radio", "provenance"),
+           ("sample_telemetry", "debrief_replay_at", "edits"))
     if type(recipe["version"]) is not int or recipe["version"] != 1:
         raise ValueError("Only recipe version 1 is supported")
     if not isinstance(recipe["id"], str) or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", recipe["id"]):
@@ -96,10 +98,35 @@ def load_recipe(path):
     number(recipe["trim_start"])
     if recipe["trim_start"] >= (recipe["ticks"] - recipe["warmup_ticks"]) / 100:
         raise ValueError("Trim removes the whole capture")
+    if "edits" in recipe:
+        if not isinstance(recipe["edits"], list) or not recipe["edits"]:
+            raise ValueError("Edits must be a nonempty list")
+        previous = 0
+        for edit in recipe["edits"]:
+            fields(edit, ("start", "end", "duration"))
+            number(edit["start"])
+            number(edit["end"])
+            number(edit["duration"], 1 / FPS)
+            if any(not math.isclose(value * FPS, round(value * FPS), rel_tol=0, abs_tol=1e-8)
+                   for value in edit.values()):
+                raise ValueError("Edit times must fall on frame boundaries")
+            if (edit["start"] < previous or edit["end"] < edit["start"] + 1 / FPS - 1e-8 or
+                    edit["end"] + recipe["trim_start"] >
+                    (recipe["ticks"] - recipe["warmup_ticks"]) / 100):
+                raise ValueError("Edits must be ordered, nonoverlapping and within the capture")
+            previous = edit["end"]
+        if not math.isclose(sum(edit["duration"] for edit in recipe["edits"]), recipe["duration"],
+                            rel_tol=0, abs_tol=1e-8):
+            raise ValueError("Edit durations must add up to recipe duration")
     if type(recipe.get("sample_telemetry", False)) is not bool:
         raise ValueError("sample_telemetry must be boolean")
     if recipe.get("sample_telemetry") and recipe["initial"] != "empty-dashboard":
         raise ValueError("Sample telemetry is only supported for empty-dashboard")
+    if "debrief_replay_at" in recipe:
+        start = recipe["debrief_replay_at"]
+        if (type(start) is not int or not recipe["warmup_ticks"] < start < recipe["ticks"] or
+                recipe["initial"] != "default-dashboard" or recipe.get("sample_telemetry")):
+            raise ValueError("Debrief replay needs a capture tick and default-dashboard")
     if not isinstance(recipe["actions"], str) or Path(recipe["actions"]).is_absolute() or ".." in Path(recipe["actions"]).parts:
         raise ValueError("Actions must be a recipe-relative path")
     read_actions(path.parent / recipe["actions"], recipe["ticks"])
@@ -166,11 +193,16 @@ def capture_module():
     return module
 
 
-def prepare(recipe, directory):
+def prepare(recipe, directory, replay=None):
     sd = directory / "sdcard"
     if sd.exists():
         raise ValueError(f"{sd} already exists; use a new --output directory")
-    capture_module().prepare(sd, "select-layout")
+    if ("debrief_replay_at" in recipe) != (replay is not None):
+        raise ValueError("Debrief replay recipes require --debrief-replay; other recipes cannot use it")
+    if replay is not None and not (replay / "manifest.lua").is_file():
+        raise ValueError("Debrief replay directory must contain manifest.lua and its series files")
+    capture = capture_module()
+    capture.prepare(sd, "dashboard" if replay is not None else "select-layout")
     model = """semver: 3.0.0
 header:
    name: "Crack Yak"
@@ -251,6 +283,62 @@ return {
         loader.write_text(source.replace(
             "support.environment()",
             'support.environment(assert(loadScript("/WIDGETS/AeroGrid/video-inputs.lua"))())'))
+    if replay is not None:
+        model = (sd / "MODELS/model1.yml").read_text().replace('name: "Crack Yak"', 'name: "FMS Ranger"')
+        settings = sd / "AEROGRID/models/AGCAP1.yaml"
+        settings.write_text(settings.read_text() + 'armed: "SFv"\nflight:\n  requireReceiver: true\n')
+        inputs = capture.DASHBOARD_INPUTS.replace(
+            "getInfo = model.getInfo,",
+            "getInfo = model.getInfo,\n        getOutput = model.getOutput,\n        setOutput = model.setOutput,")
+        (widget / "capture-inputs.lua").write_text(inputs)
+        (widget / "replay").mkdir()
+        for file in sorted(replay.glob("*.lua")):
+            if file.name == "manifest.lua" or re.fullmatch(r"series-\d+-\d+\.lua", file.name):
+                shutil.copyfile(file, widget / "replay" / file.name)
+        shutil.copyfile(RECIPES / "flight-debrief.replay.lua", widget / "video-replay.lua")
+        layout = widget / "layouts/Default.yaml"
+        layout.write_text((RECIPES / "flight-debrief.layout.yaml").read_text())
+        sensors = (("RxBt", 1, 2), ("RQly", 13, 0), ("1RSS", 17, 0), ("Alt", 9, 1),
+                   ("VSpd", 5, 1), ("GSpd", 7, 1), ("Sats", 0, 0),
+                   ("HDst", 9, 0), ("FDst", 9, 0))
+        model += "telemetrySensors:\n" + "".join(f"""   {index}:
+      id1:
+         id: {20 + index}
+      id2:
+         instance: 0
+      label: "{label}"
+      subId: 0
+      type: TYPE_CUSTOM
+      unit: {unit}
+      prec: {precision}
+      logs: 1
+      cfg:
+         custom:
+            ratio: 0
+            offset: 0
+""" for index, (label, unit, precision) in enumerate(sensors))
+        source = (ROOT / "src/WIDGETS/AeroGrid/main.lua").read_text()
+        result_hook = "local function debriefResult(context)\n"
+        refresh_hook = "    refresh = refresh,"
+        if source.count(result_hook) != 1 or source.count(refresh_hook) != 1:
+            raise ValueError("Debrief hooks changed; update video replay")
+        source = source.replace(result_hook, result_hook +
+                                "    if context.videoReplayResult then return context.videoReplayResult end\n")
+        source = source.replace(refresh_hook, """
+    refresh = function(context, event, touch)
+        if getTime() >= REPLAY_AT and isFullScreen() and context.document
+            and not context.stage and not context.reloadState and not context.videoReplayResult then
+            if not context.videoReplay then
+                context.videoReplay = assert(loadModule(context.path, "video-replay.lua"))
+            else
+                context.videoReplay.advance(context, loadModule)
+            end
+            return
+        end
+        refresh(context, event, touch)
+    end,
+""".replace("REPLAY_AT", str(recipe["debrief_replay_at"])))
+        (widget / "main.lua").write_text(source)
     (sd / "MODELS/model1.yml").write_text(model)
     # A touch after the backlight times out only wakes the screen, so keep it on through narration pauses.
     radio = sd / "RADIO/radio.yml"
@@ -295,14 +383,29 @@ def accepted_touches(recipe, actions, log):
     return missing
 
 
-def frames(raw, directory, times, trim_start=0):
+def source_time(time, edits=None):
+    number(time)
+    if edits is None:
+        return time
+    beginning = 0
+    for edit in edits:
+        if time < beginning + edit["duration"] - 1e-8:
+            return min(edit["end"] - 1 / FPS,
+                       edit["start"] + max(0, time - beginning) *
+                       (edit["end"] - edit["start"]) / edit["duration"])
+        beginning += edit["duration"]
+    raise ValueError(f"No edit at {time:g} seconds")
+
+
+def frames(raw, directory, times, trim_start=0, edits=None):
     size = raw.stat().st_size
     if not size or size % FRAME_BYTES:
         raise ValueError("Raw capture must contain complete 480x272 RGB565LE frames")
     written = []
     with raw.open("rb") as file:
         for time in times:
-            index = round((number(time) + trim_start) * FPS)
+            position = (source_time(time, edits) + trim_start) * FPS
+            index = round(position) if edits is None else math.floor(position + 1e-8)
             if index >= size // FRAME_BYTES:
                 raise ValueError(f"No frame at {time:g} seconds")
             file.seek(index * FRAME_BYTES)
@@ -325,9 +428,9 @@ def contact_sheet(images, output, columns=4):
     return output
 
 
-def capture(recipe, path, directory, library, architecture):
+def capture(recipe, path, directory, library, architecture, replay=None):
     executable = compile_native(directory, library, architecture)
-    sd = prepare(recipe, directory)
+    sd = prepare(recipe, directory, replay)
     raw = directory / "frames.rgb565"
     with (directory / "simulator.log").open("w") as log:
         run([executable, library, sd, path.parent / recipe["actions"], raw,
@@ -352,6 +455,7 @@ def capture(recipe, path, directory, library, architecture):
         "driver_sha256": digest(Path(__file__)),
         "sd_preparer_sha256": digest(ROOT / "tools/capture-editor.py"),
         "sources": sources, "raw_sha256": digest(raw),
+        "debrief_replay": {file.name: digest(file) for file in sorted((sd / "WIDGETS/AeroGrid/replay").glob("*.lua"))},
         "unaccepted_touch_ticks": missing,
         "verification": "Frame count and firmware touch acceptance only; inspect frames and the "
                         "complete recording for UI success.",
@@ -359,6 +463,10 @@ def capture(recipe, path, directory, library, architecture):
     (directory / "capture-provenance.json").write_text(json.dumps(report, indent=2) + "\n")
     if missing:
         raise ValueError(f"Firmware did not report presses for touch ticks {missing}; see simulator.log")
+    errors = re.findall(r"^.*(?:\[AeroGrid\] ERROR|Error in widget|PANIC).*$",
+                        (directory / "simulator.log").read_text(errors="replace"), re.M)
+    if errors:
+        raise ValueError("Widget failed during capture: " + "; ".join(errors))
     print(f"Recorded {raw}; inspect last-frame.png and the full video before publishing.", flush=True)
 
 
@@ -463,7 +571,7 @@ def feedback(recipe, actions, raw, output, duration, radio):
     try:
         with raw.open("rb") as file, mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ) as frames:
             for index in range(math.ceil(duration * FPS)):
-                time = index / FPS
+                time = source_time(index / FPS, recipe.get("edits"))
                 pixels = bytearray(width * height * 4)
                 offset = min(int((time + recipe["trim_start"]) * FPS),
                              len(frames) // FRAME_BYTES - 1) * FRAME_BYTES
@@ -549,6 +657,9 @@ def render(recipe, path, directory, raw, photo, cache, silent, limit):
         raise ValueError("Raw capture must contain complete 480x272 RGB565LE frames")
     if recipe["trim_start"] >= size / FRAME_BYTES / FPS:
         raise ValueError("Raw capture is shorter than trim_start")
+    if any(edit["end"] + recipe["trim_start"] > size / FRAME_BYTES / FPS + 1e-8
+           for edit in recipe.get("edits", [])):
+        raise ValueError("Raw capture is shorter than the edits")
     duration = recipe["duration"] if limit is None else number(limit, .05)
     if duration > recipe["duration"]:
         raise ValueError("--limit cannot exceed recipe duration")
@@ -558,8 +669,22 @@ def render(recipe, path, directory, raw, photo, cache, silent, limit):
     feedback(recipe, actions, raw, overlay, duration, bool(photo))
     inputs = ["-f", "rawvideo", "-pixel_format", "rgb565le", "-video_size", "480x272",
               "-framerate", str(FPS), "-i", str(raw)]
-    graph = (f"[0:v]trim=start={recipe['trim_start']},setpts=PTS-STARTPTS,"
-             f"tpad=stop_mode=clone:stop_duration={duration}")
+    graph = ""
+    source = "[0:v]"
+    if recipe.get("edits"):
+        for index, edit in enumerate(recipe["edits"]):
+            start, end = edit["start"] + recipe["trim_start"], edit["end"] + recipe["trim_start"]
+            length = edit["duration"]
+            graph += (f"[0:v]trim=start={start}:end={end},"
+                      f"setpts=(PTS-STARTPTS)*{length / (end - start)},fps={FPS},"
+                      f"tpad=stop_mode=clone:stop_duration={length},trim=duration={length},"
+                      f"setpts=PTS-STARTPTS[edit{index}];")
+        graph += "".join(f"[edit{i}]" for i in range(len(recipe["edits"])))
+        graph += f"concat=n={len(recipe['edits'])}:v=1:a=0,fps={FPS}[edited];"
+        source = "[edited]"
+    trim = 0 if recipe.get("edits") else recipe["trim_start"]
+    graph += (f"{source}trim=start={trim},setpts=PTS-STARTPTS,"
+              f"tpad=stop_mode=clone:stop_duration={duration}")
     if photo:
         base, bezel = radio_assets(recipe, photo, directory)
         x, y, sw, sh = recipe["radio"]["screen"]
@@ -584,6 +709,7 @@ def render(recipe, path, directory, raw, photo, cache, silent, limit):
     output = directory / f"{recipe['id']}.mp4"
     run(ffmpeg() + ["-filter_complex_threads", "1", *inputs, "-filter_complex", graph, *maps,
                     "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p",
+                    "-r", str(FPS),
                     "-sn", "-t", str(duration), "-movflags", "+faststart", output], timeout=900)
     run(ffmpeg() + ["-i", output, "-f", "null", "-"], timeout=300)
     report = {
@@ -617,6 +743,7 @@ def main(argv=None):
     parser.add_argument("--architecture", choices=("arm64", "x86_64"))
     parser.add_argument("--raw", type=Path, help="External RGB565LE capture; default <output>/frames.rgb565")
     parser.add_argument("--photo", type=Path, help="User-supplied photo matching recipe crop")
+    parser.add_argument("--debrief-replay", type=Path, help="Trusted local directory of recorded debrief Lua data")
     parser.add_argument("--cache", type=Path, default=ROOT / "build/video/speech-cache")
     parser.add_argument("--cache-source", type=Path, help="Explicitly trust/import legacy WAV filenames from recipe")
     parser.add_argument("--online", action="store_true", help="Allow paid Azure synthesis (speech command only)")
@@ -637,16 +764,17 @@ def main(argv=None):
             raise ValueError("Output cannot be the repository root, a parent, or source tree")
         directory.mkdir(parents=True, exist_ok=True)
         if args.command == "prepare":
-            print(prepare(recipe, directory))
+            print(prepare(recipe, directory, args.debrief_replay))
         elif args.command == "compile":
             print(compile_native(directory, args.library.resolve(), args.architecture))
         elif args.command == "capture":
-            capture(recipe, args.recipe, directory, args.library.resolve(), args.architecture)
+            capture(recipe, args.recipe, directory, args.library.resolve(), args.architecture,
+                    args.debrief_replay)
         elif args.command == "frames":
             if not args.times:
                 raise ValueError("frames requires --times")
             images = frames((args.raw or directory / "frames.rgb565").resolve(), directory,
-                            args.times, recipe["trim_start"])
+                            args.times, recipe["trim_start"], recipe.get("edits"))
             print("\n".join(map(str, images)))
             print(contact_sheet(images, directory / "frames-sheet.png"))
         elif args.command == "speech":

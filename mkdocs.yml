@@ -28,12 +28,12 @@ extra_javascript:
 nav:
   - Home: index.md
   - User Guide:
-      - Install and upgrade: user-guide/installation.md
+      - Install and Upgrade: user-guide/installation.md
       - Add a dashboard: user-guide/add-dashboard.md
       - Edit a dashboard: user-guide/edit-dashboard.md
-      - Edit model settings: user-guide/model-settings.md
-      - Customize flight debrief: user-guide/customize-debrief.md
-      - Customize themes: user-guide/customize-themes.md
+      - Model Settings: user-guide/model-settings.md
+      - Flight debriefs: user-guide/customize-debrief.md
+      - Custom Themes: user-guide/customize-themes.md
       - Troubleshoot and file bugs: user-guide/troubleshooting.md
   - Reference Guide:
       - Overview: reference-guide/index.md

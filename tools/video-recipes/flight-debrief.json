@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "id": "flight-debrief",
+  "initial": "default-dashboard",
+  "debrief_replay_at": 7900,
+  "ticks": 22300,
+  "warmup_ticks": 500,
+  "trim_start": 0,
+  "duration": 116.95,
+  "actions": "flight-debrief.actions.txt",
+  "edits": [
+    {"start": 0, "end": 6, "duration": 3.85},
+    {"start": 6, "end": 24, "duration": 11.6},
+    {"start": 24, "end": 46, "duration": 12.8},
+    {"start": 46, "end": 62, "duration": 2.6},
+    {"start": 62, "end": 80, "duration": 11},
+    {"start": 80, "end": 93, "duration": 6.7},
+    {"start": 93, "end": 112, "duration": 12.25},
+    {"start": 112, "end": 126, "duration": 7.05},
+    {"start": 126, "end": 141, "duration": 9.7},
+    {"start": 141, "end": 154, "duration": 7.85},
+    {"start": 154, "end": 177, "duration": 13.1},
+    {"start": 177, "end": 190.25, "duration": 8.4},
+    {"start": 192, "end": 192.05, "duration": 10.05}
+  ],
+  "narration": [
+    {
+      "start": 0,
+      "end": 3.85,
+      "text": "Before we look at debriefs, there are two things to set up.",
+      "rate": 0
+    },
+    {
+      "start": 3.85,
+      "end": 15.45,
+      "text": "First, AeroGrid needs to know when you're flying. Open AeroGrid's Model settings and configure your arm switch and flight detection. We covered those settings in the previous tutorial.",
+      "rate": 0
+    },
+    {
+      "start": 15.45,
+      "end": 28.25,
+      "text": "Next, open the Edge T X model settings, go to Telemetry, and select Discover new sensors so Edge T X can discover AeroGrid's telemetry values. Once they appear, stop discovery.",
+      "rate": 0
+    },
+    {
+      "start": 28.25,
+      "end": 30.85,
+      "text": "Now we're ready to go flying.",
+      "rate": 0
+    },
+    {
+      "start": 30.85,
+      "end": 41.85,
+      "text": "After your flight, disarm the model and disconnect the receiver. Once AeroGrid detects the end of the flight, a Preparing debrief bar appears at the bottom of the dashboard.",
+      "rate": 0
+    },
+    {
+      "start": 41.85,
+      "end": 48.55,
+      "text": "Give it about ten seconds. When it changes to Debrief ready, go fullscreen and tap the bar.",
+      "rate": 0
+    },
+    {
+      "start": 48.55,
+      "end": 60.8,
+      "text": "At the top, you'll see your flight summary. Below that are charts showing your recorded telemetry, with important readings highlighted, for example, your lowest receiver battery voltage or maximum speed.",
+      "rate": 0
+    },
+    {
+      "start": 60.8,
+      "end": 67.85,
+      "text": "Drag up or down to move through the charts. When you're finished, press Return to go back to the dashboard.",
+      "rate": 0
+    },
+    {
+      "start": 67.85,
+      "end": 77.55,
+      "text": "You can choose what appears in your debrief. Open the AeroGrid menu and select Flight debrief. These settings are saved with the current layout.",
+      "rate": 0
+    },
+    {
+      "start": 77.55,
+      "end": 85.4,
+      "text": "Fill from dashboard creates tiles from your existing panels. It replaces any tiles you've already configured.",
+      "rate": 0
+    },
+    {
+      "start": 85.4,
+      "end": 98.5,
+      "text": "Tap a tile to edit it. Each tile can show up to three telemetry series. For each series, choose a source and the value you want to highlight: minimum, maximum, average, or change.",
+      "rate": 0
+    },
+    {
+      "start": 98.5,
+      "end": 106.9,
+      "text": "Choose Compact for smaller tiles or Wide for larger charts. When you're finished, leave the editor and save the layout.",
+      "rate": 0
+    },
+    {
+      "start": 106.9,
+      "end": 116.95,
+      "text": "That's it. Set up your debrief once, and after each flight you'll have the important readings together in one place, ready for a quick check before the next flight.",
+      "rate": 0
+    }
+  ],
+  "radio": {
+    "crop": [2080, 1000, 960, 2700],
+    "canvas": [1560, 750],
+    "screen": [317, 80, 930, 532],
+    "return_button": [147, 507],
+    "mask_threshold": [80, 120],
+    "source": "User-supplied 4000x4000 upscale of RadioMaster TX16S product photo: https://radiomasterrc.com/cdn/shop/files/478937e8d66c767632b986b2cb0362f5_1800x1800.jpg?v=1755743144"
+  },
+  "provenance": {
+    "status": "Native replay on the EdgeTX Companion 2.12 TX16S simulator; review the full video before publishing.",
+    "notes": "Uses the original six compact charts prepared for PR #256 from the 10:50 FMS Ranger flight log, supplied separately with --debrief-replay. Recorded columns and statistics are unchanged; Expo is the saved 30 percent, not logged telemetry, and thresholds were not reconstructed. The view and its Preparing/Ready feedback use production rendering. Flight detection and receiver disconnection are explained, not replayed. Dashboard readings are synthetic. All visible navigation and edits use native touch/key input. Visual timing is compressed to match the unchanged narration. The closing holds a finished dashboard frame, omitting the post-save rebuild and fullscreen exit."
+  }
+}
