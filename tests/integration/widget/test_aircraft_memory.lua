@@ -5,10 +5,10 @@ local fixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))().
 local definition = fixture.module("main.lua")
 local radio = fixture.radio
 fixture.reset()
-radio.fields.VSpd = { id = 150, name = "VSpd", unit = fixture.firmware.UNIT.METERS_PER_SECOND }
-radio.fields["VSpd+"] = { id = 151, name = "VSpd+", unit = fixture.firmware.UNIT.METERS_PER_SECOND }
-fixture.radioMock.indexFields()
-radio.globalDetails[0].prec = 0
+local outputValue = 0
+function getOutputValue()
+    return outputValue
+end
 local context = fixture.createLoaded(nil, { Layout = "Default", Theme = "modern-dark" })
 local owner = context.flightBroker
 local selected = context.flightConfig.resolve({ countSource = "gv9" })
@@ -28,17 +28,13 @@ local function pump(count)
 end
 
 local function inputs(index)
+    outputValue = index % 2049 - 1024
     radio.rssi = 75
     radio.values[100] = 6.6 + (index % 19) / 10
-    radio.values[106] = index % 1000
-    radio.values[108] = 1000 + index % 1000
-    radio.values[150] = (index % 101 - 50) / 10
-    radio.values[151] = (index % 41) / 10
     radio.values[141] = 70 + index % 31
     radio.values[143] = -110 + index % 70
     radio.values[146] = index % 2 == 0 and 21 or 27
     radio.values[320] = 6.5 + (index % 19) / 10
-    radio.globals[0] = index % 101
     radio.globals[8] = index % 999
     radio.timers[0].value = index
 end
@@ -47,7 +43,7 @@ local link = assert(fixture.instanceOf(context, "link"))
 local battery = assert(fixture.instanceOf(context, "receiver-battery"))
 local clock = assert(fixture.instanceOf(context, "flight-clock"))
 local flights = assert(fixture.instanceOf(context, "flight-count"))
-local altitude = assert(fixture.instanceOf(context, "altitude"))
+local outputs = assert(fixture.instanceOf(context, "outputs"))
 local baselineObjects
 local function checkpoint()
     inputs(0)
@@ -78,7 +74,7 @@ local function cycle(number)
         "changing battery telemetry never reached the panel"
     )
     assert(flights.text == tostring(radio.globals[8]), "changing GV never reached the panel")
-    assert(altitude.feed.value == radio.values[106], "changing altitude never reached the panel")
+    assert(outputs.rows[1].feed.raw == outputValue, "changing outputs never reached the panel")
     radio.rssi = 0
     pump(40)
     assert(link.text == "NO LINK" and link.stateName == "critical", "link loss was not exercised")

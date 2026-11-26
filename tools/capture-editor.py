@@ -511,21 +511,28 @@ panels:
         refresh(context, widgetEvent, touchState)
         if #context.errors > 0 then error(table.concat(context.errors, "\\n")) end
         if not isFullScreen() or context.stage or context.reloadState or context.captureReady then return end
-        if #context.panels ~= 9 then return end
+        if #context.panels ~= 7 then return end
         local expected = {
             ["receiver-battery"] = "4.06", ["link"] = "98",
-            ["transmitter-battery"] = "8.1", ["altitude"] = "128.4",
+            ["transmitter-battery"] = "8.1",
             ["flight-clock"] = "5:47", ["flight-count"] = "42",
-            ["expo"] = "30", ["mode"] = "DISARMED",
         }
         for _, entry in ipairs(context.panels) do
             local instance = entry.instance
             if not instance or instance.stateName == "unavailable" or instance.stateName == "stale" then return end
             local text = expected[entry.placement.id]
-            assert(text or entry.placement.id == "identity", "Default layout changed; update capture checks")
+            assert(text or entry.placement.id == "identity" or entry.placement.id == "outputs",
+                "Default layout changed; update capture checks")
             if text and instance.text ~= text then return end
             if entry.placement.id == "identity" then
                 if not instance.image or not instance.feed.available or instance.feed.name ~= "Crack Yak" then return end
+            end
+            if entry.placement.id == "outputs" then
+                assert(instance.area.count >= 4, "Default outputs must fit the primary control channels")
+                if #instance.rows < instance.area.count then return end
+                for _, row in ipairs(instance.rows) do
+                    if not row.feed or not row.feed.available or not row.available then return end
+                end
             end
         end
         local file = assert(io.open("/capture-ready.txt", "w"))

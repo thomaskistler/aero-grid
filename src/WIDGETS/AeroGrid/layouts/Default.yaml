@@ -20,7 +20,7 @@ panels:
   - id: link
     type: link-status
     col: 0
-    row: 2
+    row: 3
     colSpan: 2
     rowSpan: 1
     config:
@@ -33,34 +33,17 @@ panels:
       visual: none
   - id: transmitter-battery
     type: tx-battery
-    col: 3
+    col: 0
     row: 0
     colSpan: 1
     rowSpan: 1
     config:
-      label: TX battery
-  - id: altitude
-    type: metric
-    col: 0
-    row: 3
-    colSpan: 2
-    rowSpan: 1
-    config:
-      metrics:
-        - source: Alt
-          label: Altitude
-          precision: 1
-        - source: Alt+
-          label: MAX ALT
-          precision: 1
-        - source: VSpd+
-          label: MAX VS
-          precision: 1
+      label: TX
       visual: none
   - id: flight-clock
     type: flight-timer
     col: 0
-    row: 0
+    row: 2
     colSpan: 2
     rowSpan: 1
     config:
@@ -68,47 +51,25 @@ panels:
       label: Flight timer
   - id: flight-count
     type: flight-counter
-    col: 2
-    row: 1
+    col: 1
+    row: 0
     colSpan: 1
     rowSpan: 1
     config:
       label: Flights
       armSwitch: SFv
       motorSource: ch3
-  - id: expo
-    type: metric
-    col: 3
-    row: 1
-    colSpan: 1
-    rowSpan: 1
-    config:
-      metrics:
-        - source: gvar1
-          label: Expo
-          unit: "%"
-          precision: 0
-      visual: none
   - id: identity
     type: model-identity
     col: 2
-    row: 2
+    row: 0
     colSpan: 2
     rowSpan: 2
     config:
       presentation: image
-  - id: mode
-    type: state
+  - id: outputs
+    type: output
     col: 2
-    row: 0
-    colSpan: 1
-    rowSpan: 1
-    config:
-      entries:
-        - label: Mode
-          states:
-            - switch: SF^
-              text: DISARMED
-            - switch: SFv
-              text: ARMED
-              background: warning
+    row: 2
+    colSpan: 2
+    rowSpan: 2
