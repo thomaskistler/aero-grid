@@ -1,8 +1,8 @@
 # Edit a dashboard
 
 <div class="ag-video">
-  <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/hJtvJaOf7YY" title="Add, move, and resize AeroGrid panels" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-  <p><a href="https://www.youtube.com/watch?v=hJtvJaOf7YY">Watch the panel editing walkthrough on YouTube</a>.</p>
+  <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/Ap_hg6-jGzQ" title="Add, move, and resize AeroGrid panels" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+  <p><a href="https://www.youtube.com/watch?v=Ap_hg6-jGzQ">Watch the panel editing walkthrough on YouTube</a>.</p>
 </div>
 
 [Add a dashboard](add-dashboard.md) first, then customize its panels on the radio.

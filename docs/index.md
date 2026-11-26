@@ -84,22 +84,22 @@ set it up for your model, then review your flights.
   </section>
   <section>
     <h3>Create an Empty dashboard</h3>
-    <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/Z-_Z-rtot8U" title="Create an Empty AeroGrid dashboard" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-    <p><a href="user-guide/add-dashboard/">Read the setup guide</a> or <a href="https://www.youtube.com/watch?v=Z-_Z-rtot8U">watch on YouTube</a>.</p>
+    <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/5773_GTdGJg" title="Create an Empty AeroGrid dashboard" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+    <p><a href="user-guide/add-dashboard/">Read the setup guide</a> or <a href="https://www.youtube.com/watch?v=5773_GTdGJg">watch on YouTube</a>.</p>
   </section>
   <section>
     <h3>Add, move, and resize panels</h3>
-    <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/hJtvJaOf7YY" title="Add, move, and resize AeroGrid panels" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-    <p><a href="user-guide/edit-dashboard/">Read the editing guide</a> or <a href="https://www.youtube.com/watch?v=hJtvJaOf7YY">watch on YouTube</a>.</p>
+    <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/Ap_hg6-jGzQ" title="Add, move, and resize AeroGrid panels" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+    <p><a href="user-guide/edit-dashboard/">Read the editing guide</a> or <a href="https://www.youtube.com/watch?v=Ap_hg6-jGzQ">watch on YouTube</a>.</p>
   </section>
   <section>
     <h3>Set up model settings</h3>
-    <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/VtwC9R3lhOQ" title="Set up AeroGrid model settings" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-    <p><a href="user-guide/model-settings/">Read the model settings guide</a> or <a href="https://www.youtube.com/watch?v=VtwC9R3lhOQ">watch on YouTube</a>.</p>
+    <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/3HjrdTvX9n8" title="Set up AeroGrid model settings" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+    <p><a href="user-guide/model-settings/">Read the model settings guide</a> or <a href="https://www.youtube.com/watch?v=3HjrdTvX9n8">watch on YouTube</a>.</p>
   </section>
   <section>
     <h3>Review and customize flight debriefs</h3>
-    <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/zqayzBjz4sg" title="Review and customize AeroGrid flight debriefs" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-    <p><a href="user-guide/customize-debrief/">Read the flight debrief guide</a> or <a href="https://www.youtube.com/watch?v=zqayzBjz4sg">watch on YouTube</a>.</p>
+    <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/N3q7D7pY414" title="Review and customize AeroGrid flight debriefs" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+    <p><a href="user-guide/customize-debrief/">Read the flight debrief guide</a> or <a href="https://www.youtube.com/watch?v=N3q7D7pY414">watch on YouTube</a>.</p>
   </section>
 </div>

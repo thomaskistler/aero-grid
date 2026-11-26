@@ -94,6 +94,11 @@ rolling development build; beta and RC releases require manual installation.
   <span>Do not close this page or let another application write to the card. Afterwards, disconnect in the page, safely eject the drive through your operating system, then unplug the USB data cable.</span>
 </div>
 
+<div class="ag-video">
+  <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/G94kl055Am0" title="Install AeroGrid over USB" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+  <p><a href="https://www.youtube.com/watch?v=G94kl055Am0">Watch the USB installation walkthrough on YouTube</a>.</p>
+</div>
+
 ## Manual installation
 
 ### First installation
@@ -114,9 +119,9 @@ Leave `/AEROGRID/` untouched, apart from the legacy registry rename described
 above. There is no need to restore saved layouts after an upgrade.
 
 <details class="ag-install-details">
-<summary>Watch the installation walkthrough</summary>
+<summary>Watch the manual installation walkthrough</summary>
 <div class="ag-video">
   <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/JgGA676uW7E" title="Install AeroGrid on an EdgeTX radio" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-  <p><a href="https://www.youtube.com/watch?v=JgGA676uW7E">Watch the installation walkthrough on YouTube</a>.</p>
+  <p><a href="https://www.youtube.com/watch?v=JgGA676uW7E">Watch the manual installation walkthrough on YouTube</a>.</p>
 </div>
 </details>

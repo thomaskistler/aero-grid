@@ -26,11 +26,11 @@ Select a thumbnail to watch the walkthrough on YouTube.
 
 | Install AeroGrid | Create an Empty dashboard |
 | --- | --- |
-| [![Watch the installation walkthrough](https://img.youtube.com/vi/JgGA676uW7E/hqdefault.jpg)](https://www.youtube.com/watch?v=JgGA676uW7E) | [![Watch the dashboard setup walkthrough](https://img.youtube.com/vi/Z-_Z-rtot8U/hqdefault.jpg)](https://www.youtube.com/watch?v=Z-_Z-rtot8U) |
+| [![Watch the installation walkthrough](https://img.youtube.com/vi/JgGA676uW7E/hqdefault.jpg)](https://www.youtube.com/watch?v=JgGA676uW7E) | [![Watch the dashboard setup walkthrough](https://img.youtube.com/vi/5773_GTdGJg/hqdefault.jpg)](https://www.youtube.com/watch?v=5773_GTdGJg) |
 | **Add, move, and resize panels** | **Set up model settings** |
-| [![Watch the panel editing walkthrough](https://img.youtube.com/vi/hJtvJaOf7YY/hqdefault.jpg)](https://www.youtube.com/watch?v=hJtvJaOf7YY) | [![Watch the model settings walkthrough](https://img.youtube.com/vi/VtwC9R3lhOQ/hqdefault.jpg)](https://www.youtube.com/watch?v=VtwC9R3lhOQ) |
+| [![Watch the panel editing walkthrough](https://img.youtube.com/vi/Ap_hg6-jGzQ/hqdefault.jpg)](https://www.youtube.com/watch?v=Ap_hg6-jGzQ) | [![Watch the model settings walkthrough](https://img.youtube.com/vi/3HjrdTvX9n8/hqdefault.jpg)](https://www.youtube.com/watch?v=3HjrdTvX9n8) |
 | **Review and customize flight debriefs** | |
-| [![Watch the flight debrief walkthrough](https://img.youtube.com/vi/zqayzBjz4sg/hqdefault.jpg)](https://www.youtube.com/watch?v=zqayzBjz4sg) | |
+| [![Watch the flight debrief walkthrough](https://img.youtube.com/vi/N3q7D7pY414/hqdefault.jpg)](https://www.youtube.com/watch?v=N3q7D7pY414) | |
 
 ## Documentation
 
