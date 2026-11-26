@@ -1,8 +1,8 @@
 # Flight debriefs
 
 <div class="ag-video">
-  <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/zqayzBjz4sg" title="Review and customize AeroGrid flight debriefs" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-  <p><a href="https://www.youtube.com/watch?v=zqayzBjz4sg">Watch the flight debrief walkthrough on YouTube</a>.</p>
+  <iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/N3q7D7pY414" title="Review and customize AeroGrid flight debriefs" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+  <p><a href="https://www.youtube.com/watch?v=N3q7D7pY414">Watch the flight debrief walkthrough on YouTube</a>.</p>
 </div>
 
 After a recorded flight, the flight debrief shows a flight summary and a set of
