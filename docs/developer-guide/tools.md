@@ -100,7 +100,7 @@ build/capture-venv/bin/python tools/capture-editor.py --scene dashboard
 
 This captures the full display with **Default** and **Modern Dark**, without
 color/presentation overrides or an open editor. It uses fixture model data and
-synthetic telemetry through real services. Readiness checks cover all nine
+synthetic telemetry through real services. Readiness checks cover all seven
 panels and their primary readings. Outputs are under
 `build/editor-capture/dashboard/`, with inputs/hashes in the root provenance.
 

@@ -57,7 +57,7 @@ Choose a layout to decide what that dashboard displays.
 | Layout | Purpose |
 | --- | --- |
 | **Empty** | A blank starting point for your own dashboard. Shows instructions until you start editing. |
-| **Default** | A ready-made aircraft dashboard. Configure its sources, switches, battery cell count, and alarms for your model before using it. |
+| **Default** | Flight timer, transmitter and receiver batteries, link status, flight count, channel outputs, and model image. Configure its sources, battery cell count, and alarms for your model before using it. |
 
 Bundled layouts are stored in `/WIDGETS/AeroGrid/layouts/`. Your saved layouts
 are stored separately in `/AEROGRID/layouts/`, so upgrading AeroGrid leaves

@@ -45,7 +45,7 @@ Use **Documentation version** in the header to match your installed release.
   </a>
 </div>
 
-![Full AeroGrid Default dashboard in Modern Dark, showing telemetry, flight timer, flight count, switch state, and a model image](assets/dashboard/dashboard.png)
+![Full AeroGrid Default dashboard in Modern Dark, showing batteries, link status, flight timer, flight count, channel outputs, and a model image](assets/dashboard/dashboard.png)
 
 The Default layout in Modern Dark, with illustrative readings.
 

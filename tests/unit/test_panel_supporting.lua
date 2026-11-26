@@ -5,8 +5,8 @@ local assertions = assert(loadfile(root .. "/tests/support/assertions.lua"))()
 local WidgetFixture = assert(loadfile(root .. "/tests/support/widget_fixture.lua"))()
 local fixture = WidgetFixture.new()
 fixture.reset()
-local context = fixture.createLoaded()
-local panel = fixture.instanceOf(context, "altitude")
+local context = fixture.createLoaded(nil, { Layout = "review-metric", Theme = "modern-dark" })
+local panel = fixture.instanceOf(context, "wide-altitude")
 local builder = panel.themeBuilder
 local function areaFor(w, h, supporting, compact, out)
     local rect = { x = 0, y = 0, w = w, h = h }
