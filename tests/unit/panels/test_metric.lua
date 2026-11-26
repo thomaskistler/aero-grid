@@ -10,9 +10,9 @@ local primitives = moduleLoader("lib/primitives.lua")
 
 local function testMetricStates()
     local fixture = WidgetFixture.new()
-    local context = fixture.createLoaded()
+    local context = fixture.createLoaded(nil, { Layout = "review-metric", Theme = "modern-dark" })
     local metric = fixture.instanceOf(context, "altitude")
-    assert(metric, "default layout should load the altitude metric")
+    assert(metric, "metric review layout should load the altitude metric")
 
     local metricModule = assert(loadfile(root .. "/src/WIDGETS/AeroGrid/panels/metric.lua"))()
     metric.settings.precision = 0
