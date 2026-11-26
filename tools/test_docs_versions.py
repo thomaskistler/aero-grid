@@ -19,6 +19,47 @@ def release(version, draft=False):
 
 
 class ReleaseVersionTests(unittest.TestCase):
+    def test_exported_tutorial_urls_are_updated_without_changing_other_content(self):
+        old_ids = ("Z-_Z-rtot8U", "hJtvJaOf7YY", "VtwC9R3lhOQ", "zqayzBjz4sg")
+        new_ids = ("5773_GTdGJg", "Ap_hg6-jGzQ", "3HjrdTvX9n8", "N3q7D7pY414")
+        prefixes = (
+            "https://www.youtube.com/watch?v=",
+            "https://www.youtube.com/embed/",
+            "https://www.youtube-nocookie.com/embed/",
+            "https://img.youtube.com/vi/",
+            "https://i.ytimg.com/vi/",
+        )
+        preserved = (
+            '<h1>Release-specific instructions</h1>'
+            '<a href="https://www.youtube.com/watch?v=JgGA676uW7E">Manual installation</a>'
+            '<a href="https://www.youtube.com/watch?v=G94kl055Am0">USB installation</a>'
+            '<a href="https://example.com/Z-_Z-rtot8U">Unrelated link</a>'
+            '<a href="https://www.youtube.com/watch?v=Z-_Z-rtot8UX">Not a video ID</a>'
+            '<p>Old ID: Z-_Z-rtot8U</p>'
+        )
+        links = "".join(
+            f'<a href="{prefix}{video_id}{suffix}">Tutorial</a>'
+            for video_id in old_ids
+            for prefix in prefixes
+            for suffix in ("", "?start=2", "&amp;t=2", "/hqdefault.jpg")
+        )
+        expected = links
+        for old, new in zip(old_ids, new_ids):
+            expected = expected.replace(old, new)
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            versions = [{"version": version} for version in ("main", "0.1.0", "0.2.0-beta.1")]
+            for entry in versions:
+                page = output / entry["version"] / "guide/index.html"
+                page.parent.mkdir(parents=True)
+                page.write_text(preserved + links)
+            docs_versions.update_video_links(output, versions)
+            for entry in versions:
+                page = output / entry["version"] / "guide/index.html"
+                self.assertEqual(page.read_text(), preserved + expected)
+            docs_versions.update_video_links(output, versions)
+            self.assertEqual(page.read_text(), preserved + expected)
+
     def test_rolling_developer_release_uses_main_docs_not_a_version_snapshot(self):
         developer = {"tag_name": "dev", "draft": False, "prerelease": True}
         self.assertEqual(docs_versions.release_versions([release("0.1.0"), developer], release("0.1.0")),
@@ -89,7 +130,10 @@ class VersionedDocumentationTests(unittest.TestCase):
             "theme:\n  name: mkdocs\n"
             "plugins:\n  - search\n"
         )
-        (docs / "index.md").write_text("# Released one\n\nOnly first-release features.\n")
+        (docs / "index.md").write_text(
+            "# Released one\n\nOnly first-release features.\n"
+            "\n[Dashboard tutorial](https://www.youtube.com/watch?v=Z-_Z-rtot8U)\n"
+        )
         cls.commit("First release", "v0.1.0")
         config_path = cls.repo / "mkdocs.yml"
         config_path.write_text(config_path.read_text().replace(
@@ -254,6 +298,10 @@ class VersionedDocumentationTests(unittest.TestCase):
         self.assertEqual(next(entry["version"] for entry in catalog
                               if "latest" in entry["aliases"]), "0.1.0")
         self.assertIn("New main", (output / "main/index.html").read_text())
+        released = (output / "0.1.0/index.html").read_text()
+        self.assertIn("https://www.youtube.com/watch?v=5773_GTdGJg", released)
+        self.assertNotIn("Z-_Z-rtot8U", released)
+        self.assertIn("Z-_Z-rtot8U", self.git("show", "gh-pages:0.1.0/index.html"))
         self.assertIn("docs-page-missing=1", (output / "guide/index.html").read_text())
         self.assertIn("docs-page-missing=1", (output / "development-only/index.html").read_text())
         main = next(entry for entry in catalog if entry["version"] == "main")
