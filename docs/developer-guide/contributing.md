@@ -133,7 +133,8 @@ It runs on relevant `main` changes and release publication; use
 The default is the latest stable release. **Documentation version** selects
 released versions, prereleases, or `main`; installer release selection is
 independent. Content/layouts are version-specific, while navigation, installer
-UI, and analytics configuration use the current publishing implementation.
+UI, analytics configuration, and replacement tutorial links use the current
+publishing implementation.
 
 Snapshots are stored on `gh-pages`; do not edit it manually.
 Repository **Settings > Pages > Source** must be **GitHub Actions**.
