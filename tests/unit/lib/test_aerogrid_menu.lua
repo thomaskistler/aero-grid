@@ -18,6 +18,11 @@ local function fixture(width, height, size)
         zone = { w = width or 480, h = height or 272 },
         path = base .. "/",
         gesture = assert(loadfile(base .. "/lib/gesture.lua"))(),
+        theme = {
+            light = false,
+            color = { surfaceRaised = lcd.RGB(229, 234, 240) },
+            spacing = { radius = 8 },
+        },
     }
     local handlers = {
         fullscreen = function()
@@ -104,26 +109,22 @@ do
         )
         assert(#state.background == 3 and #state.root.children == 4, "only three shapes and the PNG are needed")
         local size = display[3]
-        local shoulder, middle, edge = math.floor(size * 0.8), math.floor(size / 2), size - 1
+        local radius = c.theme.spacing.radius
         local rectangle = state.background[1]
         assert(rectangle.kind == "rectangle" and rectangle.properties.filled)
         assert(rectangle.properties.x == 0 and rectangle.properties.y == 0)
-        assert(rectangle.properties.w == shoulder and rectangle.properties.h == size)
-        local expected = {
-            { { shoulder, 0 }, { edge, middle }, { shoulder, middle } },
-            { { shoulder, middle }, { edge, middle }, { shoulder, edge } },
-        }
+        assert(rectangle.properties.w == size and rectangle.properties.h == size)
+        assert(rectangle.painted.radius == radius, "the tab must match the panel corner radius")
         for index, shape in ipairs(state.background) do
             assert(shape.properties.color == state.backgroundColor)
             if index > 1 then
-                assert(shape.kind == "triangle")
-                for vertex, point in ipairs(shape.properties.pts) do
-                    assert(point[1] == expected[index - 1][vertex][1])
-                    assert(point[2] == expected[index - 1][vertex][2])
-                end
+                assert(shape.kind == "rectangle" and shape.properties.filled and shape.painted.radius == 0)
+                assert(shape.properties.x == 0 and shape.properties.y == 0)
+                assert(shape.properties.w == (index == 2 and size or radius))
+                assert(shape.properties.h == (index == 2 and radius or size))
             end
         end
-        assert(state.button == nil, "no rectangular button may cover the pilot-wings silhouette")
+        assert(state.button == nil, "the visual tab must not add another native input button")
         open(c)
         local b = state.bounds
         assert(state.titleRule.properties.y == 0 and state.titleRule.properties.h > 0)
@@ -158,27 +159,35 @@ do
     local c, state, _, handlers, dimensions = fixture()
     local existing, created = menu.ensure(c, dimensions, handlers)
     assert(existing == state and not created, "existing icon must not consume another initialization callback")
-    local focus = lcd.RGB(243, 17, 89)
     lcd.getColor = function()
-        return focus
+        return lcd.RGB(243, 17, 89)
     end
     menu.ensure(c, dimensions, handlers)
     for _, rectangle in ipairs(state.background) do
-        assert(rectangle.properties.color == focus)
+        assert(rectangle.properties.color == lcd.RGB(62, 75, 92), "radio focus colors must not recolor the tab")
     end
-    local updatedFocus = lcd.RGB(17, 217, 101)
-    focus = updatedFocus
-    menu.ensure(c, dimensions, handlers)
-    for _, rectangle in ipairs(state.background) do
-        assert(rectangle.properties.color == updatedFocus)
+    c.theme.light = true
+    local light, rebuilt = menu.ensure(c, dimensions, handlers)
+    assert(rebuilt and light ~= state and state.root.cleared, "static images require rebuilding on a theme change")
+    assert(string.find(light.image.properties.file, "aerogrid-mark-light-45.png", 1, true))
+    for _, rectangle in ipairs(light.background) do
+        assert(rectangle.properties.color == c.theme.color.surfaceRaised)
     end
-    lcd.getColor = function()
-        return nil
+    c.theme.color.surfaceRaised = lcd.RGB(200, 210, 220)
+    existing, created = menu.ensure(c, dimensions, handlers)
+    assert(existing == light and not created, "color-only changes can reuse the painted tab")
+    for _, rectangle in ipairs(light.background) do
+        assert(rectangle.properties.color == c.theme.color.surfaceRaised)
     end
-    menu.ensure(c, dimensions, handlers)
-    for _, rectangle in ipairs(state.background) do
-        assert(rectangle.properties.color == lcd.RGB(54, 86, 115))
-    end
+    c.theme.spacing.radius = 10
+    local rounded
+    rounded, rebuilt = menu.ensure(c, dimensions, handlers)
+    assert(rebuilt and rounded ~= light and light.root.cleared, "rounding is applied only at construction")
+    assert(rounded.background[1].painted.radius == 10)
+    assert(rounded.background[2].properties.h == 10 and rounded.background[3].properties.w == 10)
+    open(c)
+    selectTile(c, 1)
+    assert(menu.advance(c), "menu actions must still work after a theme and radius rebuild")
     lcd.getColor = getColor
 end
 

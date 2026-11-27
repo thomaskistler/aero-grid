@@ -2036,6 +2036,7 @@ local function prepareAeroMenu(context)
         or context.aeroMenuZoneHeight ~= context.zone.h
         or context.aeroMenuFullscreen ~= fullscreen
         or context.aeroMenuModal ~= modal
+        or context.aeroMenuTheme ~= context.theme
     then
         local _, created = context.aeroMenuModule.ensure(
             context,
@@ -2045,6 +2046,7 @@ local function prepareAeroMenu(context)
         context.aeroMenuParent, context.aeroMenuHeight = context.root, height
         context.aeroMenuWidth, context.aeroMenuZoneHeight = context.zone.w, context.zone.h
         context.aeroMenuFullscreen, context.aeroMenuModal = fullscreen, modal
+        context.aeroMenuTheme = context.theme
         context.chromeRoot:set({ w = context.zone.w, h = context.zone.h })
         -- Keep icon construction separate from idle reload work without dropping input.
         if created then
@@ -2365,7 +2367,7 @@ local function menuWorkNeeded(context, fullscreen)
         and (
             not context.aeroMenuModule
             or not context.chromeRoot
-            or context.chromeRoot and (context.aeroMenuParent ~= context.root or context.aeroMenuHeight ~= buttonHeight() or context.aeroMenuWidth ~= context.zone.w or context.aeroMenuZoneHeight ~= context.zone.h or context.aeroMenuFullscreen ~= fullscreen or context.aeroMenuModal ~= modal)
+            or context.chromeRoot and (context.aeroMenuParent ~= context.root or context.aeroMenuHeight ~= buttonHeight() or context.aeroMenuWidth ~= context.zone.w or context.aeroMenuZoneHeight ~= context.zone.h or context.aeroMenuFullscreen ~= fullscreen or context.aeroMenuModal ~= modal or context.aeroMenuTheme ~= context.theme)
             or menu
                 and (menu.pending or menu.action or menu.dismiss or menu.selectionDirty or context.flightFactory and context.flightFactory.broker and menu.modelFilename ~= context.flightFactory.broker.filename)
         )
@@ -2393,6 +2395,7 @@ local function menuCost(context)
         or context.aeroMenuHeight ~= buttonHeight()
         or context.aeroMenuWidth ~= context.zone.w
         or context.aeroMenuZoneHeight ~= context.zone.h
+        or context.aeroMenuTheme ~= context.theme
         or menu.pending and not menu.screen
     then
         return context.scheduler.budget.slots

@@ -52,6 +52,11 @@ class ReleaseTests(unittest.TestCase):
                 assets = {name.split("/")[-1] for name in names if "/assets/" in name}
                 self.assertEqual(assets, release.ASSETS)
                 self.assertEqual(
+                    {name for name in assets if name.startswith("aerogrid-mark-")},
+                    {f"aerogrid-mark-{variant}{size}.png" for variant in ("", "light-")
+                     for size in (36, 45, 62)},
+                )
+                self.assertEqual(
                     {name for name in assets if name.startswith("menu-")},
                     {f"menu-{icon}-{color}-{size}.png" for icon in ("model", "stats", "theme")
                      for color in ("black", "white") for size in (36, 45, 62)}

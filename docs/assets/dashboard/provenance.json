@@ -1,13 +1,16 @@
 {
-  "revision": "dde428c04ace5d102b19cf1f10cf8dc14e8d5387",
+  "revision": "fd4f3b99fa0b00cd1e0d64bf7ece6d9f3004a567",
   "simulator": "/Applications/EdgeTX Companion 2.12.app/Contents/Resources/libedgetx-tx16s-simulator.dylib",
   "simulator_sha256": "7ca1e6982909b2c22a6c8d306cb4ffd84929374251ec4ba8bb917bf4b7809acc",
   "source_sha256": {
     "src/WIDGETS/AeroGrid/assets/LICENSE.txt": "ecd4f03d060b429615ed6cbb63ef166b1821ca725a03678a77430d57c1948eb8",
-    "src/WIDGETS/AeroGrid/assets/aerogrid-mark-36.png": "4bf212c899eea0026b2fddac8cd085b6da45e839798d995d4de02e0b1abc4624",
-    "src/WIDGETS/AeroGrid/assets/aerogrid-mark-45.png": "dd1cb816ee0fd3ba73dfc24ac07507ebd111ceb08f2c82aea173899cda47950a",
-    "src/WIDGETS/AeroGrid/assets/aerogrid-mark-62.png": "ad447ae03443493a8b74cd467de7cb44b2b3f6770a8b537d82b358a031f0a8ab",
-    "src/WIDGETS/AeroGrid/assets/aerogrid.svg": "8c2e7c290205f029503e1d514b43742624aa51f454e490d817c52f55c78a6abf",
+    "src/WIDGETS/AeroGrid/assets/aerogrid-mark-36.png": "b15d4d15f3eb59e278388077543104d61a313ef131e91fc06d546ae4dba1c5ac",
+    "src/WIDGETS/AeroGrid/assets/aerogrid-mark-45.png": "8a225f7288a05ab027c0d31408e26eed5af3602b08916924d86bc8d3c30653a2",
+    "src/WIDGETS/AeroGrid/assets/aerogrid-mark-62.png": "143c35efca8add3232d852b56effe2f758df7ff4cb4ae8e8a90f621cd1f01bfa",
+    "src/WIDGETS/AeroGrid/assets/aerogrid-mark-light-36.png": "ffe2fdfce371af21ea2135aaa55f3ed5e72136bc766b05c0409b0f163913f9f4",
+    "src/WIDGETS/AeroGrid/assets/aerogrid-mark-light-45.png": "74414e2567f8a60b2b246bda08ed71f7b55d4c6efd2d5a489d2683f2ef67863b",
+    "src/WIDGETS/AeroGrid/assets/aerogrid-mark-light-62.png": "1e11e28800e1db77d78341dba196489660098d7cb10d0981ccb2dfc1a6c9e1b6",
+    "src/WIDGETS/AeroGrid/assets/aerogrid.svg": "3cf4238f54692a70d2c83eb8f2add998c576e8bffca91fc1295159cf98806361",
     "src/WIDGETS/AeroGrid/assets/editor-configure-light.png": "286abe12e76322b69160106229251413edf69479f249c83a68264a1f61200a46",
     "src/WIDGETS/AeroGrid/assets/editor-configure-light.svg": "93e98e5267ce39c0aa39f3676d7824b3d6e55afdbeea620397c8d0011906ce21",
     "src/WIDGETS/AeroGrid/assets/editor-configure.png": "aa45e923ae975b03f1ef6851512ab5b60987a5b015f85babc950b739eb436229",
@@ -41,7 +44,7 @@
     "src/WIDGETS/AeroGrid/assets/satellite.svg": "e297296220d6f2fb63b49541c09ee21f76a267bfac7ca83e6877a0b4f631c33e",
     "src/WIDGETS/AeroGrid/layouts/Default.yaml": "9fa7296dfa20b3ef4dc0ad95902d9856a3ae4737a972e82bc148518a1296b097",
     "src/WIDGETS/AeroGrid/layouts/Empty.yaml": "4d1b4a1b518865c49d5eb8922c772c66b9b2bf8ac8f035b830318c04874fe78b",
-    "src/WIDGETS/AeroGrid/lib/aerogrid_menu.lua": "424c1db949ed7a98309a800004a027dd71c38f86c492e3f1c813e9e1b827161b",
+    "src/WIDGETS/AeroGrid/lib/aerogrid_menu.lua": "baace234dc110bb0b43cb21a041986c497c2f51a1e8443f01d01a1add21bd8f8",
     "src/WIDGETS/AeroGrid/lib/armed_service.lua": "559c6ebf0fa44ce4749a5e88c980552e5e17a1ab97b30e0fb46e44edec12be4c",
     "src/WIDGETS/AeroGrid/lib/background_cache.lua": "7af7ec0994a2d0b23440e437f4a85c41d9d8eb21a415676f338af529d75df44d",
     "src/WIDGETS/AeroGrid/lib/chart_columns.lua": "e0e5ab449583594808025e1cb4cda81d816136739efba4dacd8ee52d70f9f20b",
@@ -92,7 +95,7 @@
     "src/WIDGETS/AeroGrid/lib/typography.lua": "48daf28b7ffe82087a6519a0359451eee7df9bd504a81d569f6965df3d2cb96e",
     "src/WIDGETS/AeroGrid/lib/verified_file.lua": "9c35b818a998b215ce5e39b9a0b341656f5e12888aa260219bffa70748e7c392",
     "src/WIDGETS/AeroGrid/lib/yaml.lua": "71bc2a4e1cbddb6afa32d91277efd2d9a33806d04d8ccad488be7b0cf9d120d4",
-    "src/WIDGETS/AeroGrid/main.lua": "3171a636c486e09372659ea492465850f3a4dc98628e43cea939bc051c173a9a",
+    "src/WIDGETS/AeroGrid/main.lua": "76d6754bed8ff5d2e13060c3afe51b04509c6ef781635927fb9d3c388dc3736f",
     "src/WIDGETS/AeroGrid/panels/chart.lua": "d1d3c623f9b6a2f66c12f80d7ca25bcfc2d5a5e4b49691cf8acb97fb01984190",
     "src/WIDGETS/AeroGrid/panels/flight-counter.lua": "3ea32fe53803eb911fcefa7cc5b636db1138ca0625b260e07364c97304092428",
     "src/WIDGETS/AeroGrid/panels/flight-mode.lua": "ecf1eb88d3813a99eb03f93fdadf31f5970663cd807efe6d085aa728d1801eea",
@@ -111,7 +114,7 @@
     "src/WIDGETS/AeroGrid/themes/modern-light.yml": "ac7d1aafc08787f0d25abfabdac1669a05c38c662b63f3109b7abb6952196e81"
   },
   "capture_sha256": {
-    "capture-editor.py": "a2ef4d0b46b65b8eb08996f1c109f61ebd82979d7716404d6b2b22da4cc2e1a4",
+    "capture-editor.py": "6b18d90bf841ad05b495b76bb7b7e1c83c805ab1333f8a8da37e14a673641e59",
     "capture-native.cpp": "8f70502c73785066bea96e7b341916cf617147324760f5118bddbe9d05dcfb28"
   },
   "dashboard_sample": {

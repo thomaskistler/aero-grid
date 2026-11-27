@@ -24,7 +24,7 @@ them. The ID can appear in channel source lists and Output panels.
 To transfer settings to another radio, also copy
 `/AEROGRID/models/<ID>.yaml` from the SD card.
 
-![AeroGrid menu with Model settings and UI setup](../assets/editor/aero-menu.png)
+![AeroGrid menu with Model settings, UI setup, and Flight debrief](../assets/editor/aero-menu.png)
 
 ## Arming
 

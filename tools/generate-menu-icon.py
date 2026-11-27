@@ -1,12 +1,11 @@
 # SPDX-License-Identifier: GPL-2.0-only
-"""Generate native-sized menu artwork with EdgeTX's exact 8-bit silhouette.
+"""Render transparent native-size AeroGrid menu emblems for both themes.
 
-Uses macOS sips, as used for local asset conversion, and the official GPL-2.0
-EdgeTX v2.12.0 masks. No third-party artwork or rendering service is involved.
+Uses macOS sips, the approved SVG, and the built-in themes' panel greens.
 """
+import re
 import struct
 import subprocess
-import urllib.request
 import zlib
 from pathlib import Path
 
@@ -14,11 +13,17 @@ ROOT = Path(__file__).resolve().parents[1]
 SIZES = {"320x240": 36, "480x272": 45, "800x480": 62}
 
 
-def asset_name(size):
-    return f"aerogrid-mark-{size}.png"
+def asset_name(size, light=False):
+    return f"aerogrid-mark-{'light-' if light else ''}{size}.png"
 
 
-SOURCE = "https://raw.githubusercontent.com/EdgeTX/edgetx/v2.12.0/radio/src/bitmaps"
+def green(light=False):
+    mode = "modern-light" if light else "modern-dark"
+    palette = ROOT / "src/WIDGETS/AeroGrid/themes" / f"{mode}.yml"
+    match = re.search(r"^  green: 0x([0-9A-Fa-f]{6})$", palette.read_text(), re.MULTILINE)
+    if not match:
+        raise ValueError(f"Missing panel green in {palette}")
+    return tuple(int(match[1][index:index + 2], 16) for index in (0, 2, 4))
 
 
 def read_png(path):
@@ -71,27 +76,18 @@ def generate():
     output = ROOT / "build/native-logo"
     output.mkdir(parents=True, exist_ok=True)
     assets = ROOT / "src/WIDGETS/AeroGrid/assets"
-    for display, size in SIZES.items():
-        mask_path = output / f"{display}.png"
-        urllib.request.urlretrieve(f"{SOURCE}/{display}/default_theme/mask_topleft.png", mask_path)
-        mask = read_png(mask_path)
-        assert len(mask) == size and len(mask[0]) == size
+    colors = {light: green(light) for light in (False, True)}
+    for size in SIZES.values():
         rendered = output / f"mark-{size}.png"
         subprocess.run(["sips", "-s", "format", "png", "-z", str(size), str(size),
                         str(assets / "aerogrid.svg"), "--out", str(rendered)], check=True,
                        stdout=subprocess.DEVNULL)
         artwork = read_png(rendered)
-        rows = []
-        for y in range(size):
-            row = []
-            for x in range(size):
-                # Native encode-bitmap.py encode_8bits uses 255 - grayscale.
-                silhouette = 255 - mask[y][x][0]
-                pixel = artwork[y][x]
-                coverage = pixel[3] if len(pixel) == 4 else 255
-                row.append((*pixel[:3], (coverage * silhouette + 127) // 255))
-            rows.append(row)
-        write_png(assets / asset_name(size), rows)
+        if len(artwork[0][0]) != 4:
+            raise ValueError(f"Menu emblem must have transparent RGBA pixels: {rendered}")
+        for light, color in colors.items():
+            write_png(assets / asset_name(size, light),
+                      [[(*color, pixel[3]) for pixel in row] for row in artwork])
 
 
 if __name__ == "__main__":

@@ -13,66 +13,66 @@ capture = load_tool("menu_capture", "capture-editor.py")
 
 
 class MenuIconTests(unittest.TestCase):
-    def test_selected_straight_grid_design(self):
+    def test_menu_uses_approved_aerogrid_emblem(self):
         svg = ET.parse(ROOT / "src/WIDGETS/AeroGrid/assets/aerogrid.svg").getroot()
+        approved = ET.parse(ROOT / "docs/assets/branding/aerogrid-mark.svg").getroot()
         ns = {"svg": "http://www.w3.org/2000/svg"}
-        self.assertIsNone(svg.find("svg:path", ns))
-        grid = svg.find("svg:g", ns)
-        self.assertEqual(grid.get("fill"), "#DCEAF0")
-        self.assertEqual(grid.get("clip-path"), "url(#grid-inset)")
-        tiles = grid.findall("svg:rect", ns)
-        self.assertEqual(len(tiles), 9)
-        self.assertEqual({float(tile.get("x")) for tile in tiles}, {6, 17.5, 29})
-        self.assertEqual({float(tile.get("y")) for tile in tiles}, {6, 17.5, 29})
-        self.assertTrue(all(tile.get("transform") is None for tile in tiles))
-        plane = svg.find("svg:image", ns)
-        self.assertEqual(plane.get("x"), "4.5")
-        self.assertEqual(plane.get("y"), "1")
-        self.assertIsNone(plane.get("transform"))
+        mark = svg.find(".//*[@id='mark']")
+        reference = approved.find(".//*[@id='mark']")
+        self.assertEqual(mark.get("d"), reference.get("d"))
+        self.assertEqual(mark.get("fill"), reference.get("fill"))
+        for tag in ("image", "text", "rect"):
+            self.assertEqual(svg.findall(".//svg:" + tag, ns), [])
 
     def test_transparent_artwork_assets_at_every_display_size(self):
         for size in (36, 45, 62):
-            rows = icons.read_png(ROOT / "src/WIDGETS/AeroGrid/assets" / icons.asset_name(size))
-            self.assertEqual(len(rows), size)
-            self.assertTrue(all(len(row) == size for row in rows))
-            self.assertEqual(rows[0][0][3], 0)
-            self.assertEqual(rows[0][-1][3], 0)
-            self.assertGreater(sum(pixel[3] > 0 for row in rows for pixel in row), 0)
-            opaque_colors = {
-                pixel[:3]
-                for row in rows
-                for pixel in row
-                if pixel[3] == 255
-            }
-            self.assertIn((220, 234, 240), opaque_colors)
-            self.assertTrue(any(min(pixel[:3]) >= 250 for pixel in opaque_colors))
+            variants = []
+            for light in (False, True):
+                with self.subTest(size=size, light=light):
+                    rows = icons.read_png(
+                        ROOT / "src/WIDGETS/AeroGrid/assets" / icons.asset_name(size, light))
+                    variants.append(rows)
+                    self.assertEqual(len(rows), size)
+                    self.assertTrue(all(len(row) == size for row in rows))
+                    self.assertEqual(rows[0][0][3], 0)
+                    self.assertEqual(rows[0][-1][3], 0)
+                    self.assertGreater(sum(pixel[3] > 0 for row in rows for pixel in row), 0)
+                    opaque_colors = {
+                        pixel[:3] for row in rows for pixel in row if pixel[3] == 255
+                    }
+                    self.assertEqual(opaque_colors, {icons.green(light)})
+            self.assertEqual([[pixel[3] for pixel in row] for row in variants[0]],
+                             [[pixel[3] for pixel in row] for row in variants[1]])
 
-    def test_capture_comparison_rejects_hitbox_only_parity(self):
+    def test_capture_requires_square_tab_with_only_bottom_right_rounding(self):
         black = bytes(480 * 3)
         rows = [black for _ in range(272)]
+        rounded = list(rows)
         for y in range(45):
             rows[y] = bytes([255] * (45 * 3)) + black[45 * 3:]
-        report = capture.verify_menu_icon_pair(rows, rows)
+            visible = sum(x < 37 or y < 37 or (x + 0.5 - 37) ** 2 + (y + 0.5 - 37) ** 2 <= 64
+                          for x in range(45))
+            rounded[y] = bytes([255] * (visible * 3)) + black[visible * 3:]
+        report = capture.verify_menu_icon_pair(rows, rounded)
         self.assertEqual(report["bounds"], [0, 0, 45, 45])
-        smaller = list(rows)
+        self.assertEqual(report["corner_radius"], 8)
+        with self.assertRaisesRegex(RuntimeError, "bottom-right"):
+            capture.verify_menu_icon_pair(rows, rows)
+        smaller = list(rounded)
         smaller[0] = black
-        with self.assertRaisesRegex(RuntimeError, "silhouettes differ"):
+        with self.assertRaisesRegex(RuntimeError, "bounds"):
             capture.verify_menu_icon_pair(rows, smaller)
-        narrower = list(rows)
-        narrower[0] = bytes([255] * (44 * 3)) + black[44 * 3:]
-        report = capture.verify_menu_icon_pair(rows, narrower)
-        self.assertEqual(report["matching_rows"], 44)
-        self.assertEqual(report["max_edge_difference"], 1)
-        narrower[0] = bytes([255] * (43 * 3)) + black[43 * 3:]
-        with self.assertRaisesRegex(RuntimeError, "silhouettes differ"):
-            capture.verify_menu_icon_pair(rows, narrower)
-        wider = list(rows)
+        other_corner = list(rounded)
+        other_corner[0] = bytes(6 * 3) + rounded[0][6 * 3:]
+        with self.assertRaisesRegex(RuntimeError, "bottom-right"):
+            capture.verify_menu_icon_pair(rows, other_corner)
+        wider = list(rounded)
         wider[0] = bytes([255] * (46 * 3)) + black[46 * 3:]
-        with self.assertRaisesRegex(RuntimeError, "silhouettes differ"):
+        with self.assertRaisesRegex(RuntimeError, "bounds"):
             capture.verify_menu_icon_pair(rows, wider)
-        hole = list(rows)
-        hole[0] = rows[0][:30] + bytes(3) + rows[0][33:]
-        with self.assertRaisesRegex(RuntimeError, "silhouettes differ"):
+        hole = list(rounded)
+        hole[0] = rounded[0][:30] + bytes(3) + rounded[0][33:]
+        with self.assertRaisesRegex(RuntimeError, "bottom-right"):
             capture.verify_menu_icon_pair(rows, hole)
 
 

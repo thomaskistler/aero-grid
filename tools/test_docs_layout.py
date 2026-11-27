@@ -2,13 +2,17 @@
 
 import functools
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+import math
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
 import threading
 import unittest
+from xml.etree import ElementTree
 
+import yaml
 from playwright.sync_api import sync_playwright
 
 
@@ -128,6 +132,177 @@ class DocumentationLayoutTests(unittest.TestCase):
         page = self.browser.new_page(**options)
         page.route("https://www.googletagmanager.com/**", lambda route: route.abort())
         return page
+
+    def test_vector_branding_is_readable_and_header_controls_fit(self):
+        svg_namespace = "{http://www.w3.org/2000/svg}"
+        artwork = {}
+        for name in ("aerogrid-logo.svg", "aerogrid-mark.svg"):
+            artwork[name] = ElementTree.parse(ROOT / "docs/assets/branding" / name).getroot()
+            self.assertGreater(len(artwork[name].findall(svg_namespace + "path")), 0)
+            for tag in ("image", "text", "rect", "foreignObject"):
+                self.assertEqual(artwork[name].findall(".//" + svg_namespace + tag), [])
+        self.assertEqual(artwork["aerogrid-logo.svg"].find(".//*[@id='mark']").get("d"),
+                         artwork["aerogrid-mark.svg"].find(".//*[@id='mark']").get("d"))
+        for width in (320, 375, 450, 451, 650, 651, 768, 1280):
+            for scheme in ("light", "dark"):
+                with self.subTest(width=width, scheme=scheme):
+                    page = self.new_page(viewport={"width": width, "height": 900},
+                                         color_scheme=scheme)
+                    try:
+                        for path in ("", "user-guide/model-settings/"):
+                            page.goto(f"{self.url}/{path}")
+                            page.evaluate("document.fonts.ready")
+                            logo = page.locator(".ag-brand .ag-logo")
+                            image = logo.locator("img")
+                            image.evaluate("image => image.decode()")
+                            asset = "aerogrid-mark.svg" if width <= 450 else "aerogrid-logo.svg"
+                            self.assertTrue(image.evaluate("image => image.currentSrc").endswith(asset))
+                            self.assertEqual(image.get_attribute("alt"), "AeroGrid")
+                            self.assertTrue(logo.is_visible())
+                            self.assertEqual(
+                                logo.evaluate(
+                                    "node => getComputedStyle(node).backgroundColor"),
+                                "rgba(0, 0, 0, 0)",
+                            )
+                            controls = [logo, page.get_by_role("combobox", name="Documentation version"),
+                                        page.locator(".ag-search-link"), page.locator(".ag-edit-link")]
+                            boxes = [control.bounding_box() for control in controls]
+                            for box in boxes:
+                                self.assertIsNotNone(box)
+                                self.assertGreaterEqual(box["x"], 0)
+                                self.assertLessEqual(box["x"] + box["width"], width)
+                                self.assertGreaterEqual(box["y"], 0)
+                                self.assertLessEqual(box["y"] + box["height"],
+                                                     page.locator(".navbar").bounding_box()["height"])
+                            for left, right in zip(boxes, boxes[1:]):
+                                self.assertLessEqual(left["x"] + left["width"], right["x"])
+                            self.assertLessEqual(
+                                page.evaluate("document.documentElement.scrollWidth"), width)
+                            self.assertEqual(page.locator(".ag-icon-rail > a").count(), 4)
+                            if not path:
+                                heading = page.get_by_role("heading", name="AeroGrid", exact=True)
+                                self.assertTrue(heading.is_visible())
+                                heading.locator("img").evaluate("image => image.decode()")
+                                self.assertGreaterEqual(heading.locator("img").bounding_box()["width"], 160)
+                            else:
+                                logo.click()
+                                self.assertEqual(page.url, f"{self.url}/")
+                    finally:
+                        page.close()
+
+    def test_logo_mark_matches_panel_green_and_gap_width(self):
+        palette = yaml.safe_load(
+            (ROOT / "src/WIDGETS/AeroGrid/themes/modern-dark.yml").read_text())
+        green = f"#{palette['colors']['green']:06x}"
+        for name in ("aerogrid-logo.svg", "aerogrid-mark.svg"):
+            with self.subTest(asset=name):
+                artwork = ElementTree.parse(ROOT / "docs/assets/branding" / name).getroot()
+                mark = artwork.find(".//*[@id='mark']")
+                self.assertEqual(mark.get("fill"), green)
+                polygons = re.findall(
+                    r"M([\d.]+)\s+([\d.]+)H([\d.]+)L([\d.]+)\s+([\d.]+)H([\d.]+)Z",
+                    mark.get("d"))
+                self.assertEqual(len(polygons), 2)
+                wide, narrow = [tuple(map(float, polygon)) for polygon in polygons]
+                for bar in (wide, narrow):
+                    self.assertAlmostEqual(bar[2] - bar[0], bar[3] - bar[5],
+                                           msg="Each slash must keep a constant width")
+                self.assertAlmostEqual(narrow[2] - narrow[0], narrow[0] - wide[2],
+                                       msg="The narrow slash must match the top gap width")
+                self.assertAlmostEqual(narrow[3] - narrow[5], narrow[5] - wide[3],
+                                       msg="The narrow slash must match the bottom gap width")
+                self.assertAlmostEqual((wide[0] - wide[5]) / (wide[4] - wide[1]),
+                                       (narrow[0] - narrow[5]) / (narrow[4] - narrow[1]),
+                                       msg="The slashes must remain parallel")
+
+    def test_logo_a_legs_are_parallel_and_match_wordmark_weight(self):
+        artwork = ElementTree.parse(ROOT / "docs/assets/branding/aerogrid-logo.svg").getroot()
+        matrix = artwork.find(".//*[@id='wordmark']").get("transform")
+        a, b, c, d, e, f = map(float, matrix.partition("(")[2].rstrip(")").split())
+
+        def transform(point):
+            x, y = point
+            return a * x + c * y + e, b * x + d * y + f
+
+        def line_edges(path):
+            position = None
+            edges = []
+            for command in re.findall(r"[MLCHV][^MLCHVZ]+", path.get("d")):
+                values = [float(value) for value in command[1:].replace(",", " ").split()]
+                if command[0] == "H":
+                    endpoint = (values[0], position[1])
+                elif command[0] == "V":
+                    endpoint = (position[0], values[0])
+                else:
+                    endpoint = tuple(values[-2:])
+                if command[0] in ("L", "V"):
+                    edges.append((position, endpoint))
+                position = endpoint
+            return edges
+
+        def stroke_width(outer, inner):
+            dx, dy = outer[1][0] - outer[0][0], outer[1][1] - outer[0][1]
+            return abs(dy * (inner[0][0] - outer[0][0]) -
+                       dx * (inner[0][1] - outer[0][1])) / math.hypot(dx, dy)
+
+        reference_edges = [(transform(start), transform(end))
+                           for start, end in line_edges(artwork.find(".//*[@id='letter-r-first']"))]
+        self.assertGreaterEqual(len(reference_edges), 2)
+        reference_edges.sort(key=lambda edge: math.dist(*edge), reverse=True)
+        reference_width = stroke_width(*reference_edges[:2])
+        legs = {"left": [], "right": []}
+        for start, end in line_edges(artwork.find(".//*[@id='letter-a']")):
+            side = "right" if (end[0] - start[0]) * (end[1] - start[1]) > 0 else "left"
+            legs[side].append((transform(start), transform(end)))
+        for side, edges in legs.items():
+            with self.subTest(leg=side):
+                self.assertEqual(len(edges), 3)
+                outer, lower, upper = edges
+                slope = (outer[1][0] - outer[0][0]) / (outer[1][1] - outer[0][1])
+                for start, end in (lower, upper):
+                    self.assertAlmostEqual(slope, (end[0] - start[0]) / (end[1] - start[1]), places=6,
+                                           msg="The A's inner and outer leg edges must be parallel")
+                self.assertAlmostEqual(lower[0][0] - slope * lower[0][1],
+                                       upper[0][0] - slope * upper[0][1], places=5,
+                                       msg="Leg thickness must be consistent across the crossbar")
+                width = stroke_width(outer, upper)
+                self.assertGreaterEqual(width, reference_width,
+                                        "Diagonal legs must not look thinner than the r's stem")
+                self.assertLessEqual(width, reference_width * 1.1,
+                                     "Optical weight adjustment must not overwhelm the wordmark")
+
+    def test_logo_lower_edges_are_flat(self):
+        page = self.new_page()
+        try:
+            page.goto(f"{self.url}/")
+            image = page.locator(".ag-home-logo img")
+            image.evaluate("image => image.decode()")
+            edges = image.evaluate("""image => {
+                const scale = 20;
+                const canvas = document.createElement('canvas');
+                canvas.width = 207 * scale;
+                canvas.height = 24 * scale;
+                const context = canvas.getContext('2d');
+                context.drawImage(image, 0, 0, canvas.width, canvas.height);
+                const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+                return [['e', 70, 84], ['o', 109, 121], ['G', 135, 152], ['d', 187, 197]]
+                    .map(([letter, left, right]) => {
+                        const depths = [];
+                        for (let x = left * scale; x < right * scale; x++) {
+                            let y = canvas.height - 1;
+                            while (y >= 0 && pixels[(y * canvas.width + x) * 4 + 3] < 128) y--;
+                            depths.push(y);
+                        }
+                        return {letter, shallowest: Math.min(...depths), deepest: Math.max(...depths)};
+                    });
+            }""")
+            for edge in edges:
+                with self.subTest(letter=edge["letter"]):
+                    self.assertGreater(edge["shallowest"], 0)
+                    self.assertEqual(edge["shallowest"], edge["deepest"],
+                                     "The straight lower edge must not contain tracing steps")
+        finally:
+            page.close()
 
     def test_every_page_image_loads(self):
         page = self.new_page()
