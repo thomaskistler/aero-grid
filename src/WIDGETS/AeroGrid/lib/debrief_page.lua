@@ -150,13 +150,18 @@ local function show(context, state, target)
             return series[field.key]
         end
         write = function(field, value)
-            if value == "" and not field.required then
-                value = nil
-            end
             return editor.editDebrief(state.session, "setSeriesValue", target.tile, target.series, field.key, value)
         end
     end
-    drawer.settingsDialog(context, state, title, fields, read, write, function()
+    drawer.settingsDialog(context, state, title, fields, read, function(field, value)
+        if value == "" and not field.required then
+            value = nil
+        end
+        if value == read(field) then
+            return true
+        end
+        return write(field, value)
+    end, function()
         return { action = "back" }
     end)
 end

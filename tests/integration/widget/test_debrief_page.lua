@@ -85,11 +85,34 @@ local function tiles()
     return state().session.draft.debrief.tiles
 end
 
-context.aeroMenuHandlers.debrief()
-assert(fixture.pumpUntil(context, function(host)
-    return host.editorUi and host.editorUi.nativeDrawer
-end, 300))
-settle()
+local function openDebrief()
+    context.aeroMenuHandlers.debrief()
+    assert(fixture.pumpUntil(context, function(host)
+        return host.editorUi and host.editorUi.nativeDrawer
+    end, 300))
+    settle()
+end
+
+local function unchangedReturn()
+    local document = context.document
+    local derived = state().session.debriefDerived
+    for _, label in ipairs({ "Enabled", "Tile size" }) do
+        if active(label) then
+            local control = row(label).object.properties
+            control.set(control.get())
+            settle()
+        end
+    end
+    assert(not state().session.dirty, "reporting current settings is not an edit")
+    assert(state().session.debriefDerived == derived, "unchanged settings preserve a derived debrief")
+    local enabled = row("Enabled").object.properties
+    enabled.set(enabled.get())
+    back()
+    assert(not context.editorUi and not context.editorRestore, "RTN without edits closes without a Save prompt")
+    assert(context.document == document and context.page == page and context.serviceRuntime == runtime)
+end
+
+openDebrief()
 assert(state().debrief and state().debriefTarget.kind == "list")
 assert(state().mode == "debrief" and state().nativeDrawer)
 assert(active("+"))
@@ -107,6 +130,8 @@ local unconfigured = context.flightFactory.broker.view.status == "unconfigured"
 -- its panels; deriving is not an edit.
 assert(context.debriefGenerated and state().session.debriefDerived and not state().session.dirty)
 assert(#tiles() == 1 and tiles()[1].title == "Alt" and tiles()[1].series[1].source == "Alt")
+unchangedReturn()
+openDebrief()
 assert(state().drawerView.fields[1].label == "Enabled", "the toggle is the first setting")
 assert(row("Enabled").object.properties.get() == 1, "existing layouts default to enabled")
 row("Enabled").object.properties.set(0)
@@ -325,6 +350,21 @@ saved:close()
 local persisted = assert(context.yaml.parse(text))
 assert(persisted.debrief.size == "wide" and #persisted.debrief.tiles == 2, "Save writes the shared size and tiles")
 
+openDebrief()
+press("Battery")
+choose("Edit")
+row("Title").object.properties.set("Battery")
+settle()
+press("max")
+choose("Edit")
+row("Label").object.properties.set("")
+settle()
+row("Statistic").object.properties.set(row("Statistic").object.properties.get())
+settle()
+back()
+back()
+unchangedReturn()
+
 -- Saving the largest supported debrief must stay below the radio's CPU limit,
 -- including the editor's panel checks and adopting the saved layout.
 context.aeroMenuHandlers.debrief()
@@ -422,6 +462,8 @@ end
 saveEnabled(false)
 assert(runtime.byId.debrief.count == 0 and not runtime.byId.debrief:result())
 assert(#runtime.byId.history.entries == 0, "debrief-only histories are released")
+openDebrief()
+unchangedReturn()
 local disabled = fixture.createLoaded(nil, { Layout = "debrief-setup", Theme = "modern-dark" }, nil, definition)
 fixture.pump(disabled, 60)
 assert(disabled.document.debrief.enabled == false and #disabled.document.debrief.tiles == 12)
