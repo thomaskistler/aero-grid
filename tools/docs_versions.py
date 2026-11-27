@@ -21,6 +21,17 @@ VERSION = re.compile(r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:beta
 TRAILER = "\n\nCo-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>"
 SHARED_ASSETS = ("stylesheets/versions.css", "javascripts/versions.mjs")
 REDIRECT = ROOT / "docs/overrides/version-redirect.html"
+VIDEO_REPLACEMENTS = {
+    "Z-_Z-rtot8U": "5773_GTdGJg",
+    "hJtvJaOf7YY": "Ap_hg6-jGzQ",
+    "VtwC9R3lhOQ": "3HjrdTvX9n8",
+    "zqayzBjz4sg": "N3q7D7pY414",
+}
+VIDEO_URL = re.compile(
+    r"(https://(?:www\.youtube(?:-nocookie)?\.com/(?:watch\?v=|embed/)"
+    r"|(?:img\.youtube\.com|i\.ytimg\.com)/vi/))"
+    r"([A-Za-z0-9_-]{11})(?=[^A-Za-z0-9_-]|$)"
+)
 
 
 def run(repo, *args):
@@ -175,6 +186,19 @@ def update_installers(output, versions):
             shutil.copyfile(output / "main/javascripts" / name, root / "javascripts" / name)
 
 
+def update_video_links(output, versions):
+    for entry in versions:
+        for page in (output / entry["version"]).rglob("*.html"):
+            original = page.read_text()
+            updated = VIDEO_URL.sub(
+                lambda match: match[1] + VIDEO_REPLACEMENTS.get(match[2], match[2]),
+                original,
+            )
+            if updated != original:
+                page.write_text(updated)
+                print(f"Updated tutorial video links in {page.relative_to(output)}", flush=True)
+
+
 def export_site(repo, branch, output, latest_version):
     if output.exists():
         raise ValueError(f"Pages output already exists: {output}")
@@ -182,6 +206,7 @@ def export_site(repo, branch, output, latest_version):
     latest_pages = json.loads((output / latest_version / "pages.json").read_text())
     versions = json.loads((output / "versions.json").read_text())
     update_installers(output, versions)
+    update_video_links(output, versions)
     paths = set()
     reserved = {"latest", "installer", *(entry["version"] for entry in versions)}
     for entry in versions:
