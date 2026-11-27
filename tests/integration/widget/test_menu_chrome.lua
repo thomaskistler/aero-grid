@@ -78,4 +78,22 @@ fixture.lvglMock.setFullScreen(true)
 definition.refresh(refreshOnly)
 assert(not refreshOnly.chromeRoot.hidden and not refreshPreloaded.root.hidden)
 assert(refreshOnly.aerogridMenu == refreshPreloaded, "first refresh must show the preloaded icon even without update")
+local dashboardRoot = refreshOnly.root
+assert(
+    refreshOnly.themeBuilder.setCatalog(
+        assert(loadfile(root .. "/tests/support/theme_catalog.lua"))()(root, refreshOnly.yaml)
+    )
+)
+refreshOnly.theme = refreshOnly.themeBuilder.build("modern-light")
+fixture.pump(refreshOnly, 20)
+local lightMenu = refreshOnly.aerogridMenu
+assert(refreshOnly.root == dashboardRoot, "recoloring menu chrome must not rebuild dashboard panels")
+assert(
+    lightMenu ~= refreshPreloaded and #refreshPreloaded.root.children == 0,
+    "a theme change replaces the static icon"
+)
+assert(string.find(lightMenu.image.properties.file, "aerogrid-mark-light-45.png", 1, true))
+assert(lightMenu.backgroundColor == refreshOnly.theme.color.surfaceRaised)
+assert(lightMenu.background[1].painted.radius == refreshOnly.theme.spacing.radius)
+assert(not refreshOnly.chromeRoot.hidden and not lightMenu.root.hidden)
 print("AeroGrid button follows fullscreen and stays while editing")

@@ -11,30 +11,39 @@ local TILES = {
     { icon = "stats", label = "Flight\ndebrief", action = "debrief" },
 }
 
---- EdgeTX fills its native top-left icon with the theme's FOCUS color.
-local function backgroundColor()
-    local focus = lcd and lcd.getColor and COLOR_THEME_FOCUS and lcd.getColor(COLOR_THEME_FOCUS)
-    return type(focus) == "number" and focus or lcd.RGB(54, 86, 115)
+local function backgroundColor(context)
+    return context.theme.light and context.theme.color.surfaceRaised or lcd.RGB(62, 75, 92)
 end
 
-local function createBackground(root, size, color)
-    local shoulder, middle, edge = math.floor(size * 0.8), math.floor(size / 2), size - 1
+local function createBackground(root, size, color, radius)
+    -- Square off the top and left corners; only the bottom-right remains rounded.
     return {
         lvgl.rectangle(root, {
             x = 0,
             y = 0,
-            w = shoulder,
+            w = size,
             h = size,
             filled = true,
             color = color,
+            rounded = radius,
         }),
-        lvgl.triangle(root, {
-            pts = { { shoulder, 0 }, { edge, middle }, { shoulder, middle } },
+        lvgl.rectangle(root, {
+            x = 0,
+            y = 0,
+            w = size,
+            h = radius,
+            filled = true,
             color = color,
+            rounded = 0,
         }),
-        lvgl.triangle(root, {
-            pts = { { shoulder, middle }, { edge, middle }, { shoulder, edge } },
+        lvgl.rectangle(root, {
+            x = 0,
+            y = 0,
+            w = radius,
+            h = size,
+            filled = true,
             color = color,
+            rounded = 0,
         }),
     }
 end
@@ -233,13 +242,22 @@ end
 --- Dimensions are supplied by the host's native button footprint calculation.
 function menu.ensure(context, dimensions, handlers)
     local size = dimensions.h
-    local name = "aerogrid-mark-" .. size .. ".png"
+    local radius = math.min(context.theme.spacing.radius, math.floor(size / 2))
+    local name = "aerogrid-mark-" .. (context.theme.light and "light-" or "") .. size .. ".png"
     local path = handlers.iconPath or ((context.path or "/WIDGETS/AeroGrid/") .. "assets/" .. name)
-    local color = backgroundColor()
+    local color = backgroundColor(context)
     local state = context.aerogridMenu
     local created = false
     local parent = handlers.parent or context.root
-    if state and (state.parent ~= parent or state.backgroundSize ~= size or state.iconPath ~= path) then
+    if
+        state
+        and (
+            state.parent ~= parent
+            or state.backgroundSize ~= size
+            or state.backgroundRadius ~= radius
+            or state.iconPath ~= path
+        )
+    then
         menu.close(context)
         state.root:clear()
         if state.screen then
@@ -261,7 +279,8 @@ function menu.ensure(context, dimensions, handlers)
             iconPath = path,
             backgroundColor = color,
             backgroundSize = size,
-            background = createBackground(root, size, color),
+            backgroundRadius = radius,
+            background = createBackground(root, size, color, radius),
         }
         context.aerogridMenu = state
         state.image = lvgl.image(root, {

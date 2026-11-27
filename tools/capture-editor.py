@@ -27,7 +27,7 @@ PANEL_SETTINGS_SCENES = tuple(f"{kind}-settings" for kind in PANEL_DRAWER_KINDS)
 SCENES = SCENES + PANEL_SETTINGS_SCENES
 STITCHED_SCENES = ("model-settings", "debrief-settings", "debrief-tile", "settings", "state-settings", "state-entry", "state-condition", "metric-entry", "chart-metric-entry") + PANEL_SETTINGS_SCENES
 THEME_SCENES = ("theme-modern-dark", "theme-modern-light", "theme-custom")
-DASHBOARD_SCENES = ("dashboard",)
+DASHBOARD_SCENES = ("dashboard", "dashboard-light")
 FLIGHT_SETTINGS_SCENES = ("aero-menu", "aero-menu-selected", "aero-ui-setup", "model-settings", "model-settings-motor", "model-settings-reset", "model-settings-bottom", "model-settings-switch", "model-settings-switch-select",
                          "model-settings-autosave", "model-settings-exit",
                          "native-app-icon", "aero-fullscreen-icon")
@@ -325,7 +325,7 @@ screenData:
                         type: Unsigned
                         value:
                            unsignedValue: THEME
-""".replace("THEME", {"theme-modern-light": "2", "theme-custom": "3"}.get(scene, "1")))
+""".replace("THEME", {"theme-modern-light": "2", "dashboard-light": "2", "theme-custom": "3"}.get(scene, "1")))
     if scene in DASHBOARD_SCENES + DEBRIEF_SCENES:
         model = sd / "MODELS/model1.yml"
         model.write_text(model.read_text().replace('name: "AEROGRID SHOT"', 'name: "Crack Yak"')
@@ -586,7 +586,7 @@ panels:
         local result = debriefResult(context)
         if not result or not context.debrief or context.debrief.result ~= result then return end
         if scene == "debrief-ready" then
-            if not context.debriefPill or debriefPillStale(context) then return end
+            if not debriefReady(context) or not context.debriefPill or debriefPillStale(context) then return end
             return settle()
         end
         if not debriefShown(context) then
@@ -808,37 +808,33 @@ def write_png(path, rows):
                      + chunk(b"IEND", b""))
 
 
-def verify_menu_icon_pair(native, fullscreen):
-    """Compare silhouettes, allowing one edge pixel for triangle rasterization."""
+def verify_menu_icon_pair(native, fullscreen, radius=8):
+    """Keep the native footprint, with only the fullscreen bottom-right rounded."""
     masks = []
     for rows in (native, fullscreen):
         background = rows[50][150:153]
         masks.append([[rows[y][x * 3:x * 3 + 3] != background for x in range(64)]
                       for y in range(64)])
-    max_edge_difference = 0
-    for expected, actual in zip(*masks):
-        if expected == actual:
-            continue
-        spans = [[x for x, visible in enumerate(row) if visible] for row in (expected, actual)]
-        if any(not span or span != list(range(span[0], span[-1] + 1)) for span in spans):
-            raise RuntimeError("Native App and fullscreen AeroGrid icon silhouettes differ")
-        difference = abs(spans[0][-1] - spans[1][-1])
-        if spans[0][0] != spans[1][0] or difference > 1:
-            raise RuntimeError("Native App and fullscreen AeroGrid icon silhouettes differ")
-        max_edge_difference = max(max_edge_difference, difference)
-    points = [(x, y) for y, row in enumerate(masks[0]) for x, visible in enumerate(row) if visible]
-    bounds = (min(x for x, _ in points), min(y for _, y in points),
-              max(x for x, _ in points) + 1, max(y for _, y in points) + 1)
-    if bounds != (0, 0, 45, 45):
-        raise RuntimeError(f"Unexpected native TX16S icon bounds: {bounds}")
-    actual_points = [(x, y) for y, row in enumerate(masks[1]) for x, visible in enumerate(row) if visible]
-    actual_bounds = (min(x for x, _ in actual_points), min(y for _, y in actual_points),
-                     max(x for x, _ in actual_points) + 1, max(y for _, y in actual_points) + 1)
-    if actual_bounds != bounds:
-        raise RuntimeError(f"Native App and fullscreen AeroGrid icon silhouettes differ: bounds {actual_bounds}")
-    return {"display": [480, 272], "bounds": list(bounds), "visible_pixels": len(points),
-            "matching_rows": sum(masks[0][y] == masks[1][y] for y in range(45)),
-            "max_edge_difference": max_edge_difference, "reserved_footprint": [47, 45]}
+    counts = []
+    for name, mask in zip(("native", "fullscreen"), masks):
+        points = [(x, y) for y, row in enumerate(mask) for x, visible in enumerate(row) if visible]
+        if not points:
+            raise RuntimeError(f"Missing {name} TX16S icon")
+        bounds = (min(x for x, _ in points), min(y for _, y in points),
+                  max(x for x, _ in points) + 1, max(y for _, y in points) + 1)
+        if bounds != (0, 0, 45, 45):
+            raise RuntimeError(f"Unexpected {name} TX16S icon bounds: {bounds}")
+        counts.append(len(points))
+    for y, row in enumerate(masks[1][:45]):
+        span = [x for x, visible in enumerate(row) if visible]
+        offset = max(0, y + 0.5 - (45 - radius))
+        edge = min(44, int(45 - radius + (radius ** 2 - offset ** 2) ** 0.5 - 0.5)) if offset else 44
+        # Allow one antialiased edge pixel in the RGB565 framebuffer.
+        if not span or span != list(range(span[-1] + 1)) or abs(span[-1] - edge) > 1:
+            raise RuntimeError("Fullscreen tab must be square with only its bottom-right corner rounded")
+    return {"display": [480, 272], "bounds": [0, 0, 45, 45],
+            "native_visible_pixels": counts[0], "visible_pixels": counts[1],
+            "corner_radius": radius, "reserved_footprint": [47, 45]}
 
 
 def verify_menu_grid(rows, selected):

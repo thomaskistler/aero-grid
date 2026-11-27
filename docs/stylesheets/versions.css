@@ -47,7 +47,11 @@
 }
 
 @media (max-width: 450px) {
-  .navbar .ag-brand-name {
-    display: none;
+  .navbar .ag-logo-image {
+    width: 28px;
+  }
+
+  .ag-docs-version select {
+    width: 128px;
   }
 }

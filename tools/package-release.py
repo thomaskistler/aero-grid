@@ -11,6 +11,7 @@ VERSION = re.compile(r'(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:beta
 LAYOUTS = {"Default.yaml", "Empty.yaml"}
 ASSETS = {
     *(f"aerogrid-mark-{size}.png" for size in (36, 45, 62)),
+    *(f"aerogrid-mark-light-{size}.png" for size in (36, 45, 62)),
     *(f"menu-{icon}-{color}-{size}.png"
       for icon in ("model", "stats", "theme") for color in ("black", "white") for size in (36, 45, 62)),
     "aerogrid.svg",

@@ -1,4 +1,4 @@
-# AeroGrid
+<h1 id="aerogrid"><span class="ag-logo ag-home-logo"><img class="ag-logo-image" src="assets/branding/aerogrid-logo.svg" alt="AeroGrid" width="207" height="24"></span></h1>
 
 AeroGrid is a customizable dashboard for EdgeTX color-screen radios.
 Choose flight, telemetry, battery, navigation, and control panels, then

@@ -3,6 +3,7 @@
 import hashlib
 from pathlib import Path
 import unittest
+import xml.etree.ElementTree as ET
 
 from tool_test_support import load_tool
 
@@ -12,6 +13,19 @@ capture = load_tool("menu_capture", "capture-editor.py")
 
 
 class MenuTilesTests(unittest.TestCase):
+    def test_title_uses_approved_wordmark_without_a_substitute_font(self):
+        title = ET.parse(ROOT / "src/WIDGETS/AeroGrid/assets/menu-title.svg").getroot()
+        reference = ET.parse(ROOT / "docs/assets/branding/aerogrid-logo.svg").getroot()
+        wordmark = title.find(".//*[@id='wordmark']")
+        approved = reference.find(".//*[@id='wordmark']")
+        self.assertIsNotNone(wordmark)
+        self.assertEqual(wordmark.get("fill"), "#000000")
+        self.assertEqual(wordmark.get("transform"), approved.get("transform"))
+        self.assertEqual(wordmark.get("fill-rule"), approved.get("fill-rule"))
+        self.assertEqual([path.attrib for path in wordmark], [path.attrib for path in approved])
+        self.assertEqual(title.findall(".//{http://www.w3.org/2000/svg}text"), [])
+        self.assertEqual(title.findall(".//{http://www.w3.org/2000/svg}image"), [])
+
     def test_title_tab_dimensions_and_colors(self):
         for size in tiles.DISPLAYS.values():
             rows = tiles.png.read_png(ROOT / f"src/WIDGETS/AeroGrid/assets/menu-title-{size}.png")

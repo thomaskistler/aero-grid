@@ -9,6 +9,18 @@ capture = load_tool("capture_editor", "capture-editor.py")
 
 
 class ThemeCaptureTests(unittest.TestCase):
+    def test_debrief_ready_capture_waits_for_completed_preparation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sd = Path(directory) / "sdcard"
+            capture.prepare(sd, "debrief-ready")
+            source = (sd / "WIDGETS/AeroGrid/main.lua").read_text()
+            ready_branch = source.split('if scene == "debrief-ready" then', 1)[1].split(
+                "if not debriefShown(context)", 1)[0]
+            self.assertIn(
+                "if not debriefReady(context) or not context.debriefPill or debriefPillStale(context) then return end",
+                ready_branch,
+            )
+
     def test_dashboard_uses_production_layout_and_isolated_samples(self):
         with tempfile.TemporaryDirectory() as directory:
             sd = Path(directory) / "sdcard"
