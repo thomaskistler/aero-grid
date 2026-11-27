@@ -1,0 +1,12 @@
+{
+  "source": "Approved AeroGrid promotional artwork, aerogrid-debrief-launch.png (1445 x 1088)",
+  "crop": [50, 45, 305, 100],
+  "artwork": "Custom vector logo preserving the approved wordmark's original letter shapes and placement, not re-typeset",
+  "typeface": "Original typeface remains unidentified; lettering is SVG path artwork, with no font dependency",
+  "geometry": "Letter proportions based on the approved 207 x 24 wordmark; clean hand-drawn line and Bezier contours replace antialiasing-derived tracing artifacts",
+  "vectorization": "Flat letter baselines, tangent-continuous rounded contours, a consistent 0.18 stem shear, and identical repeated r outlines; emblem edges are two parallel straight-sided slashes, with the narrow slash matching the gap width",
+  "colors": {"emblem": "#55d990", "lettering": "#22364b"},
+  "emblemColorSource": "Modern Dark panel theme: src/WIDGETS/AeroGrid/themes/modern-dark.yml, colors.green",
+  "background": "Transparent, including letter counters; no embedded images or SVG text",
+  "assets": {"logo": "aerogrid-logo.svg", "emblem": "aerogrid-mark.svg"}
+}

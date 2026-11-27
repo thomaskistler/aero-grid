@@ -16,9 +16,11 @@
 {% endblock %}
 
 {% block site_name %}
-  <a class="navbar-brand ag-brand" href="{{ nav.homepage.url|url }}">
-    <span class="ag-brand-mark" aria-hidden="true">A</span>
-    <span class="ag-brand-name">{{ config.site_name }}</span>
+  <a class="navbar-brand ag-brand" href="{{ nav.homepage.url|url }}" aria-label="{{ config.site_name }} home">
+    <picture class="ag-logo">
+      <source media="(max-width: 450px)" srcset="{{ 'assets/branding/aerogrid-mark.svg'|url }}" width="34" height="24">
+      <img class="ag-logo-image" src="{{ 'assets/branding/aerogrid-logo.svg'|url }}" alt="{{ config.site_name }}" width="207" height="24">
+    </picture>
     <span class="ag-brand-divider" aria-hidden="true">/</span>
     <span class="ag-current-page">{{ page.title }}</span>
   </a>

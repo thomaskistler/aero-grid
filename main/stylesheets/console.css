@@ -76,17 +76,30 @@ body::before {
   color: var(--ag-console-text);
 }
 
-.ag-brand-mark {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
-  place-items: center;
-  border-radius: 7px;
-  color: #fff;
-  background: var(--ag-console-blue);
-  font-size: var(--ag-font-sm);
-  font-weight: 800;
+.ag-logo {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  max-width: 100%;
+}
+
+.ag-logo-image {
+  display: block;
+  width: 190px;
+  height: auto;
+  flex: 0 0 auto;
+}
+
+.ag-article .ag-home-logo {
+  width: 276px;
+}
+
+.ag-article .ag-home-logo img {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .ag-brand-divider {
@@ -110,6 +123,7 @@ body::before {
 #navbar-collapse.navbar-collapse {
   display: flex !important;
   flex-basis: auto;
+  flex-shrink: 0;
   align-items: center;
   justify-content: flex-end;
 }
@@ -221,6 +235,7 @@ body::before {
 
 .navbar .nav.navbar-nav {
   flex-direction: row;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 5px;
 }
@@ -761,11 +776,8 @@ button:focus-visible {
     font-size: var(--ag-font-base);
   }
 
-  .ag-brand-mark {
-    width: 24px;
-    height: 24px;
-    flex-basis: 24px;
-    font-size: var(--ag-font-xs);
+  .ag-logo-image {
+    width: 150px;
   }
 
   .ag-brand-divider,

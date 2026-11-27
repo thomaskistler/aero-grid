@@ -40,9 +40,11 @@
     <body>
         <div class="navbar fixed-top navbar-expand-lg navbar-light bg-light">
             <div class="container">
-  <a class="navbar-brand ag-brand" href="../..">
-    <span class="ag-brand-mark" aria-hidden="true">A</span>
-    <span class="ag-brand-name">AeroGrid</span>
+  <a class="navbar-brand ag-brand" href="../.." aria-label="AeroGrid home">
+    <picture class="ag-logo">
+      <source media="(max-width: 450px)" srcset="../../assets/branding/aerogrid-mark.svg" width="34" height="24">
+      <img class="ag-logo-image" src="../../assets/branding/aerogrid-logo.svg" alt="AeroGrid" width="207" height="24">
+    </picture>
     <span class="ag-brand-divider" aria-hidden="true">/</span>
     <span class="ag-current-page">Model Settings</span>
   </a>
@@ -216,7 +218,7 @@ Changing or clearing the CH32 name unlinks settings; restoring the ID relinks
 them. The ID can appear in channel source lists and Output panels.
 To transfer settings to another radio, also copy
 <code>/AEROGRID/models/&lt;ID&gt;.yaml</code> from the SD card.</p>
-<p><img alt="AeroGrid menu with Model settings and UI setup" src="../../assets/editor/aero-menu.png" /></p>
+<p><img alt="AeroGrid menu with Model settings, UI setup, and Flight debrief" src="../../assets/editor/aero-menu.png" /></p>
 <h2 id="arming">Arming</h2>
 <p>Arming tells AeroGrid when your model is armed, using the switch condition
 you select. It starts Chart recording, captures Navigation's <strong>first-arm</strong>
